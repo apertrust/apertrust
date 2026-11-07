@@ -301,7 +301,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "toml 0.8.23",
- "toml_edit 0.22.27",
+ "toml_edit 0.25.17+spec-1.1.0",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
