@@ -111,7 +111,7 @@ muda = { version = "0.21.2", default-features = false }
 naga = { version = "30.0.1", features = ["wgsl-in"] }
 png = "0.18.1"
 pollster = "1.0.1"
-quick-xml = "0.41.0"
+quick-xml = "0.42.0"
 rawler = "0.8.0"
 # The platform's file dialogs (crates/app/src/dialogs.rs): AppKit on macOS, COM on Windows,
 # the XDG desktop portal on Linux, which loads the system's libdbus at run time; never its
