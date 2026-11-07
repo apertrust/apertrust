@@ -391,6 +391,7 @@ settings-group-confirmations = Potwierdzenia
 settings-group-thumbnails = Miniatury
 settings-group-side-panel = Panel boczny
 settings-group-gpu = GPU
+settings-group-diagnostics = Diagnostyka
 setting-theme-label = Motyw
 setting-theme-option-dark = Ciemny
 setting-theme-option-light = Jasny
@@ -403,6 +404,38 @@ setting-side-panel-tab-names-label = Pokaż nazwy kart
 setting-engine-adapter-label = Karta graficzna
 setting-engine-adapter-hint = Automatycznie
 setting-engine-memory-budget-label = Budżet pamięci
+setting-log-keep-label = Prowadź dziennik tej sesji
+setting-log-keep-help = Zachowuje dziennik tej sesji w pamięci od chwili włączenia, dla Pomoc › Pokaż dziennik. Aby prowadzić go od samego początku, uruchom Apertrust ponownie. Nic nie trafia do pliku, dopóki go nie zapiszesz.
+setting-log-domains-label = Dziennik
+setting-log-domains-help = Co dziennik zachowuje oprócz ostrzeżeń i błędów, które zachowuje zawsze. „Szczegółowo” dodaje znacznie więcej, dla programisty.
+setting-log-domains-option-gpu = GPU
+setting-log-domains-option-raw = Raw
+setting-log-domains-option-pipe = Potok
+setting-log-domains-option-perf = Wydajność
+setting-log-domains-option-memory = Pamięć
+setting-log-domains-option-settings = Ustawienia
+setting-log-domains-option-control = Sterowanie
+setting-log-domains-option-event = Zdarzenia
+setting-log-domains-option-verbose = Szczegółowo
+
+## Okno dziennika, Pomoc › Pokaż dziennik; jego filtry to opcje wiersza „Dziennik”
+
+action-show-log = Pokaż dziennik
+log-name = Dziennik
+log-off-title = Dziennik nie jest prowadzony
+log-off-text = Włącz go w ustawieniach, a od tej chwili wiersze będą zachowywane w pamięci, tylko dla tej sesji.
+log-open-settings = Otwórz ustawienia diagnostyki…
+log-filters = Pokaż
+log-filter-warnings = Ostrzeżenia i błędy
+log-filter-not-kept = Niezachowywane: włącz w Ustawienia › Ogólne › Diagnostyka
+log-lines = Wiersze
+log-dropped = Najstarszych wierszy już nie ma: { $count }. Dziennik zachowuje 20 000 najnowszych.
+log-newer = ↓ Nowsze wiersze: { $count }
+log-counts = Zachowane wiersze: { $kept } · pokazane: { $shown } · tylko ta sesja, w pamięci
+log-names-files = Wiersze zawierają nazwy Twoich plików i folderów.
+log-save = Zapisz do pliku…
+log-copy = Kopiuj do schowka
+log-save-title = Zapisz dziennik
 
 ## O programie Apertrust
 

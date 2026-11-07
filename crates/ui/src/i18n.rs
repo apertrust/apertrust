@@ -816,6 +816,9 @@ mod tests {
                 args.set("size", "large");
                 // The grid cell's: its colour labels.
                 args.set("labels", "Red, Blue");
+                // The log window's counts of lines.
+                args.set("kept", 1284);
+                args.set("shown", 1107);
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

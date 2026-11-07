@@ -107,6 +107,7 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [x] Actions with a default keyboard map, shown in tooltips and menus; keys can be overridden in the settings file.
 - [x] Settings kept in a file, with `--user-data-dir` and darktable's `--conf` for one run; a Settings window for the theme and language.
 - [ ] The Settings window's other pages, key rebinding among them.
+- [x] A log window, Help › Show Log: this session's log kept in memory while Settings' Diagnostics says so, filtered, copied or saved as the terminal writes it ([gui.md](gui.md#the-log-window)).
 - [x] The photo's background: six neutral greys from black to white, chosen from the surround's right-click menu or the View menu, the theme's own the default, those for judging colour within ISO 12646.
 - [x] File › Open Image… for one raw.
 - [x] Dialogs as native windows on the Mac, and its system alerts.

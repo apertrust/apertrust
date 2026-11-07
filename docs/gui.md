@@ -34,7 +34,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - The actions registry and the [default keyboard map](#the-default-keyboard-map) in `crates/app/src/actions.rs`.
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
-- The dialog host, with Settings, the Export dialog, the jobs window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog)).
+- The dialog host, with Settings, the Export dialog, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog), [The log window](#the-log-window)).
 - Folder mode's first parts: File › Open Folder…, the Library tab's Folders section, the grid panel's cells and the central panel's empty states ([The grid panel](#the-grid-panel), [The central panel's layouts](#the-central-panels-layouts)).
 
 Still to come:
@@ -703,6 +703,8 @@ macOS only: the menu AppKit fills once it is the app's Windows menu.
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
 | Search, macOS only, at the top | macOS's | Shift+Cmd+/ | macOS |
+| Show Log | `show-log`: the log window, logging on or off ([The log window](#the-log-window)) | — | Built, every platform |
+| — | | | |
 | Keyboard Shortcuts | `keyboard-shortcuts`: Settings, at its keys | Ctrl+? on Windows and Linux; none on macOS, where Cmd+? is the search | New, Phase 2, with rebinding (step 7) |
 | —, Windows and Linux | | | |
 | About Apertrust, Windows and Linux; in the app menu on macOS | `about` | — | Built; drawn on Windows and Linux with their menus |
@@ -1029,7 +1031,7 @@ flowchart LR
 - `Gated`, which holds the engine's submit gate round every eframe callback (decision 18), creates a dialog's winit window when the app asks, hidden, with what winit takes at creation: the owner on Windows (`with_owner_window`), the dialog type on X11.
 - Each window gets an egui-winit `State` with an AccessKit adapter of its own, made before the window first shows, and an egui `Context` of its own with the app's fonts, theme, language and interface scale. It also gets a surface and an egui-wgpu `Renderer` on the engine's one device, from eframe's `RenderState`.
 - `Gated` routes the window's events, its AccessKit requests and its repaints, sent as eframe's `UserEvent::RequestRepaint` under a viewport id of the host's, to the host and never to eframe. After eframe's `about_to_wait` it keeps the earlier of the two repaint times.
-- The window takes its content's size at the interface's scale, measured as it is drawn: its first frame is drawn hidden, at that size, before it shows.
+- The window takes its content's size at the interface's scale, measured as it is drawn: its first frame is drawn hidden, at that size, before it shows. A dialog may instead say the person resizes it (`Dialog::resize`, a least size and the size it opens at): its window is resizable from that least, its content takes the window's size, and the size it is left at goes to the app as it closes (`Dialog::sized`). Only the log window does ([The log window](#the-log-window)); on Linux, where the host draws the frame, it resizes from bands inside its edges, as the main window does there.
 - So every reconfigure of a dialog's surface runs while the engine cannot submit. Like every reconfigure on the shared device, it waits for the GPU to finish what the engine has submitted, so a dialog opened during a photo's first render appears once that render's work is done: up to about 0.4 s at 61 MP on the M4, and 1 s in the first run after a build, minutes on WARP (decision 18's open question).
 - A dialog repaints on its own, not with the main window's frames, and the main window keeps showing the engine's frames behind it.
 - **Revisit** once eframe gives every viewport an AccessKit adapter (egui pull request #8810) and the app a viewport's window: the content functions then move onto immediate viewports unchanged, and the host goes.
@@ -1081,7 +1083,7 @@ One helper builds every dialog and modal window, on every platform, without dupl
 
 - `id`, its stable name, which tells one dialog from another and names it in the log; `title`, translated, which its window takes and screen readers read;
 - `form(os)`, the form it asks for: `Sheet` (attached to the main window, which takes no input until it goes), `Modal` (a window of its own, centred on the main window, which takes no input until it goes) or `Modeless` (a window of its own beside the main window, both taking input, opening where it was last left);
-- `look`, the colour its window is cleared to and the margin round its content; every dialog's window takes its content's size, measured as it is drawn;
+- `look`, the colour its window is cleared to and the margin round its content; every dialog's window takes its content's size, measured as it is drawn, but the log window's, which says how it is resized (`resize`, `sized`);
 - `keys(os)`, what Escape, Cmd+W and Cmd+. do in its window (each closes it as its Cancel), the host applying them after the content, so a field typed in or a list of its own keeps Escape;
 - `show(&mut Ui)`, its content, returning what it asks of the app (`Output`), whether it closes, and whether a list of its own holds Escape;
 - `placed`, what the app keeps of where its modeless window was left, for the dialogs whose place is kept.
@@ -1166,6 +1168,31 @@ The first two confirmations: Export's overwrite question and the quit alert.
 - **About** stays Apertrust's own modal over the window on the `scrim` token, closed by a click anywhere ([Help](#help)).
 - **A splash screen** while the app loads is Apertrust's own too, drawn as About is; its design waits until one is wanted.
 - The `scrim` token stays for these two alone.
+
+### The log window
+
+Help › Show Log (`show-log`): this session's log as the terminal writes it, for an issue, without a terminal. Apertrust's own addition: darktable has no log window. The UI wireframe's LogWindow and SettingsDiagnostics frames are its design.
+
+```mermaid
+flowchart LR
+    Lines["tracing's lines"] --> Stderr["stderr's layer, as -d says"]
+    Lines --> Kept["the kept log's layer, off until log.keep"]
+    Kept --> Memory["20,000 lines in memory"]
+    Memory -->|"read since the last frame"| Window["the log window"]
+    Kept -.->|"a waker, once per frame"| Window
+```
+
+- **Logging off,** the default, the window says "No log is being kept", that lines are kept from the moment logging is on, and offers **Open Diagnostics settings…**, which opens Settings on General. The menu item is never disabled with no reason. Off, nothing listens and nothing is kept, so it costs nothing.
+- **Logging on,** Settings › General › Diagnostics' **Keep a log of this session** (`log.keep`): the lines are kept in memory for this session only, from that moment, never written anywhere by themselves. They are the terminal's, the seconds since start, the domain and the line (decision 44), for the domains **Log** (`log.domains`) ticks, any domain `-d` turned on for the run, and warnings and errors always; Verbose adds `trace!`'s detail. A repeated line is kept once, with how often, as on the terminal. As keeping starts, the startup banner comes first.
+- **The window** is a modeless window of the dialog host in a slot of its own, `Slot::Log`, beside the dialog and the jobs window, following the main window's theme, language and scale; its place is kept as the jobs window's is, `log_window.position` and `log_window.scale_factor` (`Output::LogPlaced`).
+- **Its size** is the person's: the one dialog they resize (`Dialog::resize`). It opens at 960 by 466 points the first time, the filters on one line and 380 points of lines, is never made smaller than 560 by 320, and opens next at the size it was left at, `log_window.size`, in whole points without the frame the host draws on Linux (`Output::LogSized`).
+- **The filters,** a bar of checkboxes at its top: Warnings and errors, then each of Log's options, wrapping onto further lines where the window is narrow, each box whole. They filter only what is shown, among what is kept, and change no setting. A domain not kept is drawn disabled, unticked, its tooltip "Not kept: turn it on in Settings › General › Diagnostics".
+- **The lines** take all the width and all the height the filters and the footer leave, at least three rows, in columns: the seconds right-aligned in 64 points, the domain in 92, the line cut with "…" at the end; 20 points a row, in `text.small`; warnings in `warning` and errors in `error` on a faint band of their colour. Drawn row by row, only those in view (`quiet_scroll_rows`, over egui's `ScrollArea::show_rows`), each a label to screen readers, inside a region of the log role named Lines. Past 20,000 lines the oldest go, and the first row says how many.
+- **Following the end:** while the view is at its end, new lines scroll it with them; scrolled up, it stays put, and a pill, "↓ 3 newer lines", goes back to the end.
+- **The footer,** one line however narrow the window: where it is short the note gives way first, then the counts are cut with "…", and the two buttons are never cut. It holds the counts, in the language's number format, "1,284 lines kept · 1,107 shown · this session only, in memory", the note "Lines name your files and folders.", **Save to file…** and **Copy to clipboard**. Both take the lines shown as plain text, each as the terminal writes it. Save asks through the platform's save dialog (`dialogs::Saving`, rfd's, as the open dialog is), offering `apertrust-log-<the session's start, YYYY-MM-DD-HH-MM>.txt`, in Downloads the first time and then in the folder the last save went to (`log_window.folder`), and writes the file on a thread of its own, a failure a warning under `control`.
+- **Repaints:** the window reads the lines kept since its last frame into a copy of its own, never holding the log while it draws. A line kept wakes it through a waker the host hands it as its window is made (`Dialog::wake_with`), once until it next reads; nothing else draws it again.
+
+**Built** (`crates/app/src/log_window.rs`, `apertrust_base::log::Kept`): all of the above, tested in kittest (the empty state and its button, the filters, Copy's text, following the end and the pill, the layout at the least size and at a large one, snapshots in the dark theme). Not built: Cmd/Ctrl+F to find in the lines, Cmd/Ctrl+C on selected lines, the newest line announced politely to screen readers while followed.
 
 ### Still to build
 
@@ -2877,6 +2904,8 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 - the chosen page inside a margin of 12 points above and below and 24 at the sides, its groups each under its title (`settings-group-<group>`, 15-point Medium in `text_strong`, centred on a 28-point line), 12 points before each group but the first, so the first page's name and the first title share a centre 26 points from the top; their rows in the schema's order;
 - each row one line, 24 points (`sizes.panel_line`), as a module's one-line rows, by darktable's grid: the label column as wide as the page's widest label at the body size in the language shown, rounded up, at least 176 points and no wider than leaves room for the rest, a longer label wrapping in it; then 16 points, the dot's 14-point column, 4, and the control, its start edge on the column's, whatever its kind; the label's double-click and right-click take its own column only;
 - each control by its kind, with the design system's components: a checkbox for a boolean (`ToggleRow`), a Boxed `Choice` for a choice, a `ValueField` for a number with its unit inside it after the value, at the field's end in `text_secondary` ("100 %", "2048 MiB", `ValueField::suffix`), a `TextField` for a text, later a folder row with Choose…;
+- a list of a choice (`kind = "list"` of a `choice`) as a checkbox per option, named by the option's words, stacked in the control column in the type's order, each box drawn as a boolean's, with no words of its own, so it starts where a boolean's and the choices' boxes do, its option's words after it ticking it too, each on a 24-point line, the row as tall as they are; one dot, on its first line, and one Reset for the whole list, and a change sets the whole list, the options ticked in the type's order. It is generic: any such list on a page is drawn so;
+- a row's help, its words' `setting-<id>-help` where it has one, as its label's tooltip: no row of its own;
 - one width for every choice box, number field and text field on a page, as darktable's preferences have it, so their starts and ends line up: 180 points, or as wide as the widest box a choice on the page needs in the language shown (its widest option, its chevron and padding), up to the control column's 220 (`Choice::min_box_width`); a checkbox stays a box at the control's start;
 - a page that holds nothing yet is listed dimmed, saying it is to come, and cannot be chosen;
 - the page last shown is kept, `settings_window.page`, and the dialog opens on it, or on General where that page holds nothing;
@@ -2900,6 +2929,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 | --- | --- | --- |
 | General | Interface | Theme, Language, Interface size (`scale`, in per cent) |
 | General | Confirmations | Ask before overwriting an exported file (`export.ask_before_overwrite`) |
+| General | Diagnostics | Keep a log of this session (`log.keep`, off), Log (`log.domains`, a list of the `-d` domains and Verbose, all but Memory and Verbose ticked); each with its help in its tooltip ([The log window](#the-log-window)) |
 | Library | Thumbnails | Square thumbnails (`grid_panel.square_thumbnails`) |
 | Editing | Side panel | Show tab names (`side_panel.tab_names`) |
 | Processing | GPU | Graphics card (`engine.adapter`), Memory budget (`engine.memory_budget`, in MiB), both after a restart |
@@ -2908,7 +2938,7 @@ Import, Storage, Shortcuts, Presets and AI are dimmed until they hold something.
 
 **Its window** is a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)): on the Mac a modeless window rather than a sheet, minimise and zoom dimmed, no Close button, its own close button and Cmd+W closing it and Escape not, as in the Mac's own Settings windows, opening where the user last left it, centred over the main window the first time. On Windows and Linux it is a modal window of the host, with its Close button, and Escape closes it. Its content is 960 by 640 points, the page list 200 of them.
 
-**Built** (`crates/app/src/settings_dialog.rs`, a `Dialog` of the dialog host on every platform): the page list, the pages of rows drawn from the registry by kind, the dot, the reset by a double-click or the row's menu, `--conf`'s rows disabled, the after-restart note and the page kept. A change goes to the app as `settings_dialog::Change` (a setting set to a value as `settings.toml` keeps it, or reset), which `Keeper::apply` keeps in the store, after the frame's own settings, and the shell takes in from the settings read back (`Shell::follow`): the theme and the language as before, the interface's size, square thumbnails in the grid and the tab names in the side panel at once; the engine's settings are kept for its next start. The dialog shows the theme and the language in its own window at once too. Still to build: the hand-built pages, Storage and Shortcuts first, key rebinding among them, and the help button that opens a page's documentation.
+**Built** (`crates/app/src/settings_dialog.rs`, a `Dialog` of the dialog host on every platform): the page list, the pages of rows drawn from the registry by kind, a list of a choice's checkboxes, the help in the label's tooltip, the dot, the reset by a double-click or the row's menu, `--conf`'s rows disabled, the after-restart note and the page kept. A change goes to the app as `settings_dialog::Change` (a setting set to a value as `settings.toml` keeps it, or reset), which `Keeper::apply` keeps in the store, after the frame's own settings, and the shell takes in from the settings read back (`Shell::follow`): the theme and the language as before, the interface's size, square thumbnails in the grid, the tab names in the side panel and the log kept as Diagnostics says at once; the engine's settings are kept for its next start. The dialog shows the theme and the language in its own window at once too. Still to build: the hand-built pages, Storage and Shortcuts first, key rebinding among them, and the help button that opens a page's documentation.
 
 ### What the file looks like
 

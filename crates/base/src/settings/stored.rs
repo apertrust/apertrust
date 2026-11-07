@@ -54,8 +54,8 @@ pub trait Stored: Copy + Sync + 'static {
     /// decimals, a choice by its id; None for none, an optional setting's.
     fn write(kind: &Kind, value: &Self::Owned) -> Option<Value>;
 
-    /// A choice's options' ids, in its type's order, as the Settings dialog lists them;
-    /// none for another kind.
+    /// A choice's options' ids, in its type's order, as the Settings dialog lists them, and
+    /// a list of a choice's; none for another kind.
     fn options() -> Vec<&'static str> {
         Vec::new()
     }
@@ -240,6 +240,11 @@ impl<T: Stored> Stored for &'static [T] {
         let items = value.iter().filter_map(|item| T::write(of(kind), item));
         Some(Value::Array(items.collect()))
     }
+
+    /// A list of a choice's: the choice's options, which the Settings dialog ticks.
+    fn options() -> Vec<&'static str> {
+        T::options()
+    }
 }
 
 /// A table keyed by another registry's ids, in their order: an entry that cannot be read
@@ -332,7 +337,8 @@ pub trait Declared: Sync {
     /// one; None for an optional setting's.
     fn default_value(&self) -> Option<Value>;
 
-    /// A choice's options' ids, in its type's order; none for another kind.
+    /// A choice's options' ids, in its type's order, and a list of a choice's; none for
+    /// another kind.
     fn options(&self) -> Vec<&'static str>;
 
     /// Its value in `store`, as `settings.toml` keeps it ([`Store::value`]).

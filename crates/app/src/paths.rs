@@ -16,8 +16,9 @@
 
 //! The person's own folders that the app looks in, found through the `directories` crate,
 //! never a path built by hand (`desktop-architecture`, App paths and settings): for now
-//! their Pictures folder, where the open dialog starts. Apertrust's own folders, the user
-//! data folder among them, are `apertrust_base::folders`'s (decision 43).
+//! their Pictures folder, where the open dialog starts, and their Downloads, where the log
+//! window's save dialog first opens. Apertrust's own folders, the user data folder among
+//! them, are `apertrust_base::folders`'s (decision 43).
 
 use std::path::{Path, PathBuf};
 
@@ -27,4 +28,9 @@ use directories::UserDirs;
 /// from `user-dirs.dirs`, so the app reads it once, as it starts.
 pub fn pictures() -> Option<PathBuf> {
     UserDirs::new()?.picture_dir().map(Path::to_owned)
+}
+
+/// The person's Downloads folder, or None where the system names none.
+pub fn downloads() -> Option<PathBuf> {
+    UserDirs::new()?.download_dir().map(Path::to_owned)
 }

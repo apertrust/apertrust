@@ -56,6 +56,7 @@ mod exposure;
 mod folder;
 mod jobs;
 mod library;
+mod log_window;
 mod menus;
 mod mirror;
 mod modules;
@@ -236,7 +237,7 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     };
-    let _logging = match apertrust_base::log::init(&domains) {
+    let logging = match apertrust_base::log::init(&domains) {
         Ok(logging) => logging,
         Err(error) => {
             eprintln!("apertrust: {error}");
@@ -246,6 +247,8 @@ fn main() -> eframe::Result {
     // Only with a domain on, as the CLI: the app is as silent as decision 44 has it,
     // since its stderr goes nowhere when it is opened from the desktop.
     apertrust_base::log::starting(apertrust_base::program!(), build);
+    // The log kept in memory for the log window, off until settings turn it on.
+    let kept = logging.kept();
     // `--conf`'s values for this run, checked against the settings before anything is
     // read or created: one the app cannot take stops the start (decision 43).
     let overrides = match settings::overrides(&conf) {
@@ -337,6 +340,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     budget,
                     app_host,
+                    kept,
                 )))
             }),
             &event_loop,
@@ -787,6 +791,14 @@ struct App {
     thumbnails: thumbnails::Textures,
     /// The thumbnails asked for of the photos in the grid panel's sight.
     thumbnails_asked: thumbnails::Asking,
+    /// The session's log kept in memory, while Settings says so, for the log window.
+    kept: apertrust_base::log::Kept,
+    /// The log window's save dialog, while it asks.
+    saving: Option<dialogs::Saving>,
+    /// When the session started, to the minute, which names a saved log.
+    started: apertrust_export::variables::DateTime,
+    /// The Downloads folder, where the log's save dialog first opens; read once.
+    downloads: Option<PathBuf>,
 }
 
 /// What the top panel asked for this frame.
@@ -1104,6 +1116,8 @@ struct Shell {
     central_panel: settings::CentralPanel,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
     settings: bool,
+    /// Whether Show Log ran, for the app to open the log window after the action.
+    show_log: bool,
     about: about::About,
     /// Whether Open Image… ran, for the app to show the open dialog after the frame.
     open: bool,
@@ -1155,6 +1169,9 @@ struct Shell {
     settings_window: Option<settings::Position>,
     /// Where the jobs window was last left.
     jobs_window: Option<settings::Position>,
+    /// The log kept in memory, as Settings' Diagnostics has it, and its window's place and
+    /// folder.
+    log: settings::Log,
     /// The tab the shell opened on, and Edit's tab as settings had it, which stays until
     /// the user chooses another, even one this build does not have or cannot choose yet;
     /// None once the user has chosen a tab, so the id read is never written back.
@@ -1193,6 +1210,7 @@ impl Shell {
             proof_margin: false,
             central_panel: settings.central_panel,
             settings: false,
+            show_log: false,
             about: about::About::default(),
             open: false,
             open_folder: false,
@@ -1217,6 +1235,7 @@ impl Shell {
             window: settings.window,
             settings_window: settings.settings_window,
             jobs_window: settings.jobs_window,
+            log: settings.log.clone(),
             opening_tab: Some((panel_tab, settings.edit.tab.clone())),
             maximise: MAXIMISES && settings.window.maximized,
         }
@@ -1235,6 +1254,7 @@ impl Shell {
             window: self.window,
             settings_window: self.settings_window,
             jobs_window: self.jobs_window,
+            log: self.log.clone(),
             tab_names: self.tab_names,
             panel_width: self.panel_width,
             central_panel: self.central_panel,
@@ -1664,6 +1684,7 @@ impl Shell {
     fn apply(&mut self, intent: Intent, ctx: &egui::Context, regions: &[egui::Rect]) {
         match intent {
             Intent::About => self.about.open(ctx),
+            Intent::ShowLog => self.show_log = true,
             Intent::Settings => self.settings = true,
             Intent::Open => self.open = true,
             Intent::OpenFolder => self.open_folder = true,
@@ -1737,10 +1758,23 @@ impl Shell {
         }
         self.tab_names = settings.tab_names;
         self.grid.square_thumbnails = settings.grid.square_thumbnails;
+        self.log.keep = settings.log.keep;
+        self.log.domains.clone_from(&settings.log.domains);
         self.overwrite =
             alerts::Overwrite::new(settings.ask_before_overwrite, self.overwrite.held());
         ctx.request_repaint();
     }
+}
+
+/// Keeps the session's log in memory as `log` says, at once: while `log.keep` is on, the
+/// lines of its domains from now on, the banner first as keeping starts; nothing while it
+/// is off (`docs/gui.md`, The log window). The same settings again change nothing.
+fn keep_log(kept: &apertrust_base::log::Kept, log: &settings::Log) {
+    kept.keep(log.keep.then_some(log.domains.as_slice()), || {
+        let program = apertrust_base::program!();
+        let command = apertrust_base::log::command_line();
+        apertrust_base::log::banner(program, &build(&program), &command)
+    });
 }
 
 /// What the user changed in Settings, kept by `keeper` with the rest of settings and shown
@@ -1761,7 +1795,8 @@ fn apply_settings(
 impl App {
     /// The app as `settings` left it, before its first frame; `keeper` writes them back.
     /// Its session plans within `budget` bytes, `engine.memory_budget`. Its dialogs are the
-    /// host's.
+    /// host's. It keeps the session's log in `kept` while settings say so.
+    #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
         cc: &eframe::CreationContext<'_>,
         path: Option<PathBuf>,
@@ -1770,7 +1805,9 @@ impl App {
         gate: SubmitGate,
         budget: u64,
         dialogs: dialog_host::Host,
+        kept: apertrust_base::log::Kept,
     ) -> Self {
+        keep_log(&kept, &settings.log);
         let ask = &apertrust_export::settings::registry::EXPORT_ASK_BEFORE_OVERWRITE;
         let shell = Shell {
             overwrite: alerts::Overwrite::new(
@@ -1861,6 +1898,10 @@ impl App {
             quit_again: false,
             thumbnails: thumbnails::Textures::default(),
             thumbnails_asked: thumbnails::Asking::default(),
+            kept,
+            saving: None,
+            started: apertrust_engine::names::now(),
+            downloads: paths::downloads(),
         };
         if let Some(path) = path {
             app.open(path);
@@ -1992,6 +2033,53 @@ impl App {
     /// dialogs at rest, as a sheet does.
     fn asking_modal(&self) -> bool {
         self.asking.is_some() || self.alerts.pending().is_some()
+    }
+
+    /// Does what the log window asked: Open Diagnostics settings… opens Settings on
+    /// General, as Settings… does; Save to file… asks where, offering the session's name
+    /// in the folder the last save went to, or Downloads, unless it is asking already.
+    fn log_asked(&mut self, asked: log_window::Asked, ctx: &egui::Context) {
+        match asked {
+            log_window::Asked::Settings => {
+                let page = settings::registry::SETTINGS_WINDOW_PAGE.id;
+                let general = apertrust_base::settings::Page::General.id();
+                let general = settings_dialog::Change::Set(page, general.into());
+                apply_settings(&[general], &mut self.shell, &mut self.keeper, ctx);
+                self.run_actions([ActionId::SETTINGS], ctx, &[]);
+            }
+            log_window::Asked::Save(text) => {
+                if self.saving.is_some() {
+                    return;
+                }
+                let name = log_window::file_name(&self.started);
+                let last = self.shell.log.folder.as_deref();
+                let folder = log_window::save_folder(last, self.downloads.as_deref());
+                let saving = dialogs::Saving::ask(ctx, text, &name, folder.as_deref());
+                self.saving = Some(saving);
+            }
+        }
+    }
+
+    /// Once the save dialog has its answer: writes the log's text to the file chosen, on a
+    /// thread of its own, so a slow disk never holds a frame, and keeps its folder for the
+    /// next save. A cancel writes nothing.
+    fn log_saved(&mut self, ctx: &egui::Context) {
+        let Some(answer) = self.saving.as_mut().and_then(|saving| saving.chosen(ctx)) else {
+            return;
+        };
+        self.saving = None;
+        let Some((path, text)) = answer else {
+            return;
+        };
+        if let Some(folder) = path.parent() {
+            self.shell.log.folder = Some(folder.to_owned());
+        }
+        std::thread::spawn(move || {
+            if let Err(e) = std::fs::write(&path, text) {
+                let path = path.display();
+                tracing::warn!(target: "control", "log not saved to {path}: {e}");
+            }
+        });
     }
 
     /// Does what a button of the jobs window asked ([`jobs::Mirror::act`]). Closing the
@@ -2282,6 +2370,11 @@ impl App {
             }
             if std::mem::take(&mut self.shell.export_again) {
                 self.export_again(ctx);
+            }
+            if std::mem::take(&mut self.shell.show_log) {
+                let size = self.shell.log.size.map(egui::Vec2::from);
+                let window = log_window::Window::new(self.kept.clone(), size);
+                self.dialogs.open_log(window, self.shell.log.window, ctx);
             }
             if let Some(command) = command {
                 // Everything goes back to its default, what is still pending included.
@@ -2881,12 +2974,19 @@ impl eframe::App for App {
         let state = self.state(ctx);
         let taken = take_dialogs(&mut self.shell, &mut self.dialogs, &state, ctx);
         apply_settings(&taken.settings, &mut self.shell, &mut self.keeper, ctx);
+        if !taken.settings.is_empty() {
+            keep_log(&self.kept, &self.shell.log);
+        }
         for asked in taken.export {
             self.export(asked, ctx);
         }
         for action in taken.jobs {
             self.jobs_action(action, ctx);
         }
+        for asked in taken.log {
+            self.log_asked(asked, ctx);
+        }
+        self.log_saved(ctx);
         // The app's keys pressed in a dialog's own window, Quit among them.
         self.run_actions(taken.actions, ctx, &[]);
         settle(taken.quit, &mut self.shell, &mut self.keeper, ctx);
@@ -2986,6 +3086,7 @@ fn take_dialogs(
 ) -> Taken {
     let mut export = Vec::new();
     let mut jobs = Vec::new();
+    let mut log = Vec::new();
     let mut actions = Vec::new();
     let mut settings = Vec::new();
     for output in dialogs.outputs() {
@@ -3001,6 +3102,12 @@ fn take_dialogs(
             dialog_host::Output::Placed(place) => shell.settings_window = Some(place),
             dialog_host::Output::JobsPlaced(place) => shell.jobs_window = Some(place),
             dialog_host::Output::Jobs(action) => jobs.push(action),
+            dialog_host::Output::LogPlaced(place) => shell.log.window = Some(place),
+            // Kept in whole points, as the schema has it.
+            dialog_host::Output::LogSized(size) => {
+                shell.log.size = Some([size.x.round(), size.y.round()]);
+            }
+            dialog_host::Output::Log(asked) => log.push(asked),
             dialog_host::Output::Export(asked) => {
                 if let Some(values) = &asked.values {
                     shell.export = values.clone();
@@ -3016,6 +3123,7 @@ fn take_dialogs(
         settings,
         export,
         jobs,
+        log,
         actions,
     }
 }
@@ -3042,6 +3150,8 @@ struct Taken {
     export: Vec<export::Asked>,
     /// What was pressed in the jobs window, in order.
     jobs: Vec<apertrust_ui::components::ActivityAction>,
+    /// What the log window asked, in order.
+    log: Vec<log_window::Asked>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
 }
@@ -5970,6 +6080,21 @@ mod tests {
         fn close_jobs(&mut self) {
             self.0.borrow_mut().jobs_closing = true;
         }
+
+        /// The log window is drawn in its own tests (`log_window::tests`).
+        fn open_log(
+            &mut self,
+            _: log_window::Window,
+            _: Option<settings::Position>,
+            _: &egui::Context,
+        ) {
+        }
+
+        fn log_shown(&self) -> Option<dialog_host::Shown> {
+            None
+        }
+
+        fn close_log(&mut self) {}
 
         fn ask(
             &mut self,

@@ -38,13 +38,15 @@
 //! engine's submit gate, so every configure of the dialog's surface runs while the engine
 //! cannot submit (decision 18), waiting, as every configure does, for what the engine has
 //! submitted. The window takes its content's size at the interface's scale, measured as it
-//! is drawn; a modeless window opens where it was last left, which the app keeps in
+//! is drawn, but for one the person resizes, the log window's ([`Dialog::resize`]), whose
+//! content takes the window's size; a modeless window opens where it was last left, which the app keeps in
 //! settings, or centred on the main window, and a modal one centred on it.
 //!
 //! The jobs window (`docs/gui.md`, The jobs window) is a second, modeless window beside the
 //! dialog's: it has a slot of its own ([`Slot`]), so it stays open while Settings or Export
-//! open, closes alone and keeps its own place. At most one dialog and one jobs window are
-//! open at a time.
+//! open, closes alone and keeps its own place. The log window (`docs/gui.md`, The log
+//! window) is a third, in a slot of its own the same way. At most one dialog, one jobs
+//! window and one log window are open at a time.
 //!
 //! A modeless window ([`Form::Modeless`]: Settings on the Mac, and the jobs window) leaves
 //! both windows taking input, and a second request brings it to the front. A modal one
@@ -65,6 +67,7 @@ use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, Weak};
+use std::task::{Wake, Waker};
 use std::time::Instant;
 
 use apertrust_display::ColorSpace;
@@ -84,6 +87,7 @@ use egui_winit::winit::window::{Window, WindowButtons, WindowId};
 use crate::actions::Focus;
 use crate::export;
 use crate::jobs;
+use crate::log_window;
 use crate::settings::Position;
 use crate::settings_dialog;
 
@@ -97,20 +101,29 @@ pub fn viewport() -> ViewportId {
 }
 
 /// The viewport id the jobs window's repaints are asked under, apart from the dialog's, so
-/// the host knows which of its two windows to draw.
+/// the host knows which of its windows to draw.
 fn jobs_viewport() -> ViewportId {
     ViewportId::from_hash_of("apertrust dialog host jobs window")
 }
 
-/// Which of the host's two windows: the dialog, or the jobs window beside it.
+/// The viewport id the log window's repaints are asked under, as the jobs window's are.
+fn log_viewport() -> ViewportId {
+    ViewportId::from_hash_of("apertrust dialog host log window")
+}
+
+/// Which of the host's three windows: the dialog, or the jobs or the log window beside it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Slot {
     Dialog,
     Jobs,
+    Log,
 }
 
+/// How many windows the host may have open at once, one per [`Slot`].
+const SLOTS: usize = 3;
+
 impl Slot {
-    const ALL: [Slot; 2] = [Slot::Dialog, Slot::Jobs];
+    const ALL: [Slot; SLOTS] = [Slot::Dialog, Slot::Jobs, Slot::Log];
 
     fn index(self) -> usize {
         self as usize
@@ -121,6 +134,7 @@ impl Slot {
         match self {
             Slot::Dialog => viewport(),
             Slot::Jobs => jobs_viewport(),
+            Slot::Log => log_viewport(),
         }
     }
 
@@ -164,7 +178,7 @@ impl Form {
 
 /// How a dialog's window looks round its content. Every dialog's window takes its
 /// content's size, measured as it is drawn, and the person never resizes it (decision
-/// 41), so the look holds no size.
+/// 41) but where the dialog says ([`Dialog::resize`]), so the look holds no size.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Look {
     /// What its window is cleared to.
@@ -223,6 +237,23 @@ pub trait Dialog: Any + std::fmt::Debug {
         let _ = at;
         None
     }
+    /// Takes `waker`, which asks for its window's next frame from any thread, as its window
+    /// is made: for a dialog whose content changes off the UI thread, the log window's as
+    /// lines come; nothing for any other.
+    fn wake_with(&mut self, waker: Waker) {
+        let _ = waker;
+    }
+    /// How the person resizes its window, if they do: the log window's. None for a window
+    /// that takes its content's size, as every other dialog's does (decision 41).
+    fn resize(&self) -> Option<Resize> {
+        None
+    }
+    /// What the app is to keep of the size a window the person resized was left at, in
+    /// points, as it closed; nothing for a dialog whose size is not kept.
+    fn sized(&self, size: egui::Vec2) -> Option<Output> {
+        let _ = size;
+        None
+    }
 }
 
 /// What a dialog asked of the app, which takes it before its next frame.
@@ -239,6 +270,13 @@ pub enum Output {
     Jobs(ActivityAction),
     /// Where the jobs window was left as it closed, for it to open there next time.
     JobsPlaced(Position),
+    /// What the log window asked of the app: Settings, or its lines saved.
+    Log(log_window::Asked),
+    /// Where the log window was left as it closed, for it to open there next time.
+    LogPlaced(Position),
+    /// The size the log window was left at as it closed, in points, which it opens at
+    /// next time.
+    LogSized(egui::Vec2),
     /// Key presses a dialog's window left alone, for the app's keymap to read, as Quit's.
     Keys(Unread),
 }
@@ -296,6 +334,39 @@ pub enum Gesture {
 /// The height of the strip at a dialog window's top where the host draws its frame, in
 /// points: its close button and the space a drag moves the window from.
 const FRAME: f32 = 32.0;
+
+/// The room the frame the host draws on `os` takes above a dialog's content, in points.
+fn frame_strip(os: OperatingSystem) -> egui::Vec2 {
+    if platform::draws_frame(os) {
+        egui::vec2(0.0, FRAME)
+    } else {
+        egui::Vec2::ZERO
+    }
+}
+
+/// egui's way to resize a window as winit's.
+fn resize_direction(way: egui::ResizeDirection) -> egui_winit::winit::window::ResizeDirection {
+    use egui::ResizeDirection as From;
+    use egui_winit::winit::window::ResizeDirection as To;
+    match way {
+        From::North => To::North,
+        From::South => To::South,
+        From::East => To::East,
+        From::West => To::West,
+        From::NorthEast => To::NorthEast,
+        From::SouthEast => To::SouthEast,
+        From::NorthWest => To::NorthWest,
+        From::SouthWest => To::SouthWest,
+    }
+}
+
+/// How a window the person resizes is sized ([`Dialog::resize`]), in points, without the
+/// frame the host draws: never smaller than `least`, and opened at `size`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Resize {
+    pub least: egui::Vec2,
+    pub size: egui::Vec2,
+}
 
 /// Where [`draw`] keeps whether a field had the keyboard as the last frame ended.
 fn typing_id() -> egui::Id {
@@ -541,6 +612,19 @@ pub trait Dialogs {
     fn set_jobs(&mut self, jobs: Vec<Job>);
     /// Closes the jobs window open, which stops no job.
     fn close_jobs(&mut self);
+    /// Opens the log window, a window of its own beside any dialog and the jobs window, at
+    /// `place` as the jobs window opens, with the focus; where it is open already, its
+    /// window comes to the front.
+    fn open_log(
+        &mut self,
+        window: log_window::Window,
+        place: Option<Position>,
+        main: &egui::Context,
+    );
+    /// The log window, if open.
+    fn log_shown(&self) -> Option<Shown>;
+    /// Closes the log window open.
+    fn close_log(&mut self);
     /// Asks `request` as the system's alert, on the dialog's window if a modal one is shown
     /// (a sheet or a modal window), else on the main window, whose context is `main`, and
     /// returns at
@@ -582,15 +666,16 @@ impl AppDialogs {
     }
 
     /// The windows open, as one: the dialog's form, which is what keeps the main window's
-    /// input, and the focus if either window has it. The jobs window alone is modeless.
+    /// input, and the focus if any window has it. The jobs and the log window are modeless.
     pub fn shown(&self) -> Option<Shown> {
-        match (self.host.shown(), self.host.jobs_shown()) {
-            (Some(dialog), Some(jobs)) => Some(Shown {
-                focused: dialog.focused || jobs.focused,
-                ..dialog
-            }),
-            (dialog, jobs) => dialog.or(jobs),
-        }
+        let windows = [
+            self.host.shown(),
+            self.host.jobs_shown(),
+            self.host.log_shown(),
+        ];
+        let focused = windows.iter().flatten().any(|shown| shown.focused);
+        let first = windows.into_iter().flatten().next()?;
+        Some(Shown { focused, ..first })
     }
 
     /// What the windows open asked of the app since the last call.
@@ -614,15 +699,28 @@ impl AppDialogs {
         self.host.set_jobs(jobs);
     }
 
-    /// Closes the window with the focus, as Close Window does: the jobs window if it has
-    /// it, else the dialog.
+    /// Opens the log window, or brings it forward ([`Dialogs::open_log`]).
+    pub fn open_log(
+        &mut self,
+        window: log_window::Window,
+        place: Option<Position>,
+        main: &egui::Context,
+    ) {
+        self.host.open_log(window, place, main);
+    }
+
+    /// Closes the window with the focus, as Close Window does: the jobs or the log window
+    /// if it has it, else the dialog.
     pub fn close(&mut self) {
         let jobs = self.host.jobs_shown().is_some_and(|jobs| jobs.focused);
+        let log = self.host.log_shown().is_some_and(|log| log.focused);
         let dialog = self.host.shown().is_some_and(|dialog| dialog.focused);
-        if jobs && !dialog {
+        if dialog || !(jobs || log) {
+            self.host.close();
+        } else if jobs {
             self.host.close_jobs();
         } else {
-            self.host.close();
+            self.host.close_log();
         }
     }
 
@@ -651,6 +749,7 @@ impl AppDialogs {
         }
         self.host.close();
         self.host.close_jobs();
+        self.host.close_log();
         self.quitting = true;
         false
     }
@@ -683,12 +782,12 @@ struct Inner {
     render: Option<RenderState>,
     main: Weak<Window>,
     /// What each window is asked for, and the window open, by [`Slot`].
-    asked: [Option<Asked>; 2],
-    open: [Option<Open>; 2],
+    asked: [Option<Asked>; SLOTS],
+    open: [Option<Open>; SLOTS],
     closed: Option<Closed>,
     outputs: Vec<Output>,
     /// Whether each window open is to close as its Cancel would.
-    close: [bool; 2],
+    close: [bool; SLOTS],
     /// How the alert asked ended, set from the run loop once its sheet has gone.
     answer: Rc<Cell<Option<Answer>>>,
 }
@@ -787,6 +886,9 @@ struct Open {
     repaint: Option<Instant>,
     /// The main window's theme as the window last followed it ([`Open::follow_look`]).
     theme: Option<Arc<apertrust_ui::Theme>>,
+    /// Whether the person resizes it ([`Dialog::resize`]): then it never takes its
+    /// content's size, which takes the window's.
+    resizable: bool,
 }
 
 impl Host {
@@ -796,11 +898,11 @@ impl Host {
             proxy: Arc::new(Mutex::new(proxy)),
             render: None,
             main: Weak::new(),
-            asked: [None, None],
-            open: [None, None],
+            asked: Default::default(),
+            open: Default::default(),
             closed: None,
             outputs: Vec::new(),
-            close: [false, false],
+            close: [false; SLOTS],
             answer: Rc::new(Cell::new(None)),
         })))
     }
@@ -959,7 +1061,7 @@ impl Host {
     /// As the loop ends: lets the windows open go with it, with no animation, since the run
     /// loop runs no more.
     pub fn exiting(&self) {
-        self.0.borrow_mut().open = [None, None];
+        self.0.borrow_mut().open = Default::default();
     }
 }
 
@@ -1080,6 +1182,40 @@ impl Dialogs for Host {
         self.0.borrow_mut().close[Slot::Jobs.index()] = true;
     }
 
+    fn open_log(
+        &mut self,
+        window: log_window::Window,
+        place: Option<Position>,
+        main: &egui::Context,
+    ) {
+        let mut inner = self.0.borrow_mut();
+        let slot = Slot::Log.index();
+        match &inner.open[slot] {
+            Some(open) => open.window.focus_window(),
+            None => {
+                inner.asked[slot] = Some(Asked {
+                    dialog: Box::new(window),
+                    focus: true,
+                    place,
+                    main: main.clone(),
+                    at: Instant::now(),
+                });
+            }
+        }
+    }
+
+    fn log_shown(&self) -> Option<Shown> {
+        let inner = self.0.borrow();
+        inner.open[Slot::Log.index()].as_ref().map(|open| Shown {
+            form: open.form,
+            focused: open.focused,
+        })
+    }
+
+    fn close_log(&mut self) {
+        self.0.borrow_mut().close[Slot::Log.index()] = true;
+    }
+
     fn ask(&mut self, request: &alert::Request, main: &egui::Context) -> Ask {
         let inner = self.0.borrow();
         // The modal dialog's window if one is up, else the main window: a window with a
@@ -1165,12 +1301,26 @@ impl Inner {
         let form = platform::form(dialog.form(os), os);
         // A first guess, which the first frame corrects before the window shows.
         let guess = egui::vec2(400.0, 300.0) * zoom;
+        let logical = |size: egui::Vec2| LogicalSize::new(f64::from(size.x), f64::from(size.y));
         let attributes = Window::default_attributes()
             .with_title(&title)
-            .with_inner_size(LogicalSize::new(f64::from(guess.x), f64::from(guess.y)))
+            .with_inner_size(logical(guess))
             .with_resizable(false)
             .with_enabled_buttons(WindowButtons::CLOSE)
             .with_visible(false);
+        // One the person resizes opens at its size, never smaller than its least, the
+        // frame the host draws on top of both.
+        let resize = dialog.resize();
+        let attributes = match resize {
+            Some(resize) => {
+                let frame = frame_strip(os);
+                attributes
+                    .with_resizable(true)
+                    .with_inner_size(logical((resize.size + frame) * zoom))
+                    .with_min_inner_size(logical((resize.least + frame) * zoom))
+            }
+            None => attributes,
+        };
         let attributes = platform::attributes(attributes, form, &main);
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
@@ -1196,6 +1346,12 @@ impl Inner {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
+        // A proxy of the waker's own, so no lock another holds keeps a line waiting.
+        let mut dialog = dialog;
+        dialog.wake_with(Waker::from(Arc::new(Wakes {
+            proxy: Mutex::new(proxy.clone()),
+            viewport: slot.viewport(),
+        })));
         state.init_accesskit(event_loop, &window, proxy);
         let configuration = egui_wgpu::WgpuConfiguration {
             wgpu_setup: WgpuSetup::Existing(WgpuSetupExisting {
@@ -1253,6 +1409,7 @@ impl Inner {
             moved: false,
             repaint: None,
             theme: None,
+            resizable: resize.is_some(),
         };
         // Drawn before it shows, at its content's size, so it never shows empty or
         // stretched: AppKit draws no hidden window, so these frames are drawn here rather
@@ -1327,6 +1484,8 @@ impl Inner {
             window,
             main,
             opener,
+            ctx,
+            resizable,
             ..
         } = open;
         if form == Form::Modeless
@@ -1337,6 +1496,13 @@ impl Inner {
                 scale_factor: window.scale_factor() as f32,
             };
             self.outputs.extend(dialog.placed(place));
+        }
+        // A window the person resized: its size in points, the host's frame left out.
+        if resizable {
+            let logical = window.inner_size().to_logical::<f32>(window.scale_factor());
+            let points = egui::vec2(logical.width, logical.height) / ctx.zoom_factor();
+            self.outputs
+                .extend(dialog.sized(points - frame_strip(ctx.os())));
         }
         drop(painter);
         drop(state);
@@ -1374,9 +1540,23 @@ impl Open {
             crate::release_after_drag(&self.ctx, &mut input);
         }
         input.viewports = std::iter::once((ViewportId::ROOT, self.info.clone())).collect();
+        // Where the host draws the frame, a window the person resizes resizes from the
+        // bands inside its edges, as the main window does there.
+        let banded = self.resizable && platform::draws_frame(self.ctx.os());
+        if banded && let Some(way) = crate::resize_press(&self.ctx, &mut input) {
+            match self.window.drag_resize_window(resize_direction(way)) {
+                Ok(()) => self.moved = true,
+                Err(e) => tracing::warn!(target: "gpu", "dialog not resized: {e}"),
+            }
+        }
         let mut drawn = None;
         let dialog = self.dialog.as_mut();
-        let output = self.ctx.run_ui(input, |ui| drawn = Some(draw(ui, dialog)));
+        let output = self.ctx.run_ui(input, |ui| {
+            drawn = Some(draw(ui, dialog));
+            if banded {
+                crate::resize_hover(ui.ctx());
+            }
+        });
         crate::popups::show(&self.ctx, &*self.window);
         self.info.events.clear();
         self.state.handle_platform_output_with_event_loop(
@@ -1446,11 +1626,12 @@ impl Open {
     }
 
     /// Gives the window its content's size at the interface's scale, in whole points, as
-    /// its last frame measured it. Returns whether it changed, for the frame to be drawn
+    /// its last frame measured it; a window the person resizes keeps its own. Returns
+    /// whether it changed, for the frame to be drawn
     /// again.
     fn fit(&mut self) -> bool {
         let size = self.size.ceil();
-        if self.fitted == Some(size) || size.min_elem() <= 0.0 {
+        if self.resizable || self.fitted == Some(size) || size.min_elem() <= 0.0 {
             return false;
         }
         self.fitted = Some(size);
@@ -1569,11 +1750,12 @@ impl Open {
 }
 
 impl Open {
-    /// Follows the main window's theme and language, for the window that stays open while
-    /// Settings changes them (the jobs window); a dialog's own context is changed by the
-    /// dialog itself, which the main window then follows, so it is left alone.
+    /// Follows the main window's theme and language, for the windows that stay open while
+    /// Settings changes them (the jobs and the log window); a dialog's own context is
+    /// changed by the dialog itself, which the main window then follows, so it is left
+    /// alone.
     fn follow_look(&mut self) {
-        if self.slot != Slot::Jobs {
+        if self.slot == Slot::Dialog {
             return;
         }
         let theme = apertrust_ui::theme(&self.main);
@@ -1613,6 +1795,23 @@ fn given_back(form: Form, opener: Option<egui::Id>, now: Option<egui::Id>) -> Op
 /// dialog, Export's preview and the jobs window's rows.
 fn dialog_mut<T: Dialog>(dialog: &mut Box<dyn Dialog>) -> Option<&mut T> {
     (dialog.as_mut() as &mut dyn Any).downcast_mut()
+}
+
+/// The waker a dialog is handed ([`Dialog::wake_with`]): it asks for its window's frame
+/// from any thread, as its context's repaint does, through a proxy of its own.
+struct Wakes {
+    proxy: Mutex<EventLoopProxy<eframe::UserEvent>>,
+    viewport: ViewportId,
+}
+
+impl Wake for Wakes {
+    fn wake(self: Arc<Self>) {
+        wake(&self.proxy, self.viewport);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        wake(&self.proxy, self.viewport);
+    }
 }
 
 /// Wakes the event loop for the host's next callback, as a window's repaint does.

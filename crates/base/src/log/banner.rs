@@ -295,8 +295,9 @@ fn platform() -> String {
     format!("{} {arch} {profile}", std::env::consts::OS)
 }
 
-/// The command line as given, an argument with a space or none quoted.
-fn command_line() -> String {
+/// The command line as given, an argument with a space or none quoted: the banner's
+/// `[starting] as:`, which the app's kept log starts with too.
+pub fn command_line() -> String {
     std::env::args_os()
         .map(|arg| {
             let arg = arg.to_string_lossy();

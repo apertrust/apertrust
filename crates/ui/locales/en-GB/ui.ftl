@@ -470,7 +470,9 @@ settings-group-confirmations = Confirmations
 settings-group-thumbnails = Thumbnails
 settings-group-side-panel = Side panel
 settings-group-gpu = GPU
-# Each setting's row, by the setting's id, its dots and underscores as hyphens.
+settings-group-diagnostics = Diagnostics
+# Each setting's row, by the setting's id, its dots and underscores as hyphens; a row's
+# -help, where it has one, is its label's tooltip.
 setting-theme-label = Theme
 setting-theme-option-dark = Dark
 setting-theme-option-light = Light
@@ -484,6 +486,58 @@ setting-engine-adapter-label = Graphics card
 # What the graphics card's field shows while empty: the system's choice.
 setting-engine-adapter-hint = Automatic
 setting-engine-memory-budget-label = Memory budget
+setting-log-keep-label = Keep a log of this session
+setting-log-keep-help = Keeps this session's log in memory from the moment it is on, for Help › Show Log. To log from the start, restart Apertrust. Nothing is written to a file unless you save it.
+setting-log-domains-label = Log
+setting-log-domains-help = What the log keeps besides warnings and errors, which it always keeps. Verbose adds much more, for a developer.
+setting-log-domains-option-gpu = GPU
+setting-log-domains-option-raw = Raw
+setting-log-domains-option-pipe = Pipe
+setting-log-domains-option-perf = Performance
+setting-log-domains-option-memory = Memory
+setting-log-domains-option-settings = Settings
+setting-log-domains-option-control = Control
+setting-log-domains-option-event = Events
+setting-log-domains-option-verbose = Verbose
+
+## The log window, Help › Show Log (docs/gui.md, The log window); its filters are the
+## Log row's options. $count, $kept and $shown are numbers of lines.
+
+action-show-log = Show Log
+# The window's title, and its name for screen readers.
+log-name = Log
+log-off-title = No log is being kept
+log-off-text = Turn it on in Settings, and lines are kept from then on, in memory, for this session.
+log-open-settings = Open Diagnostics settings…
+# The bar of checkboxes that filter what is shown, and its first box.
+log-filters = Show
+log-filter-warnings = Warnings and errors
+# The tooltip of a filter whose lines the log does not keep.
+log-filter-not-kept = Not kept: turn it on in Settings › General › Diagnostics
+# The lines, as screen readers name them.
+log-lines = Lines
+# The first line, once the oldest have gone.
+log-dropped =
+    { $count ->
+        [one] The oldest line has gone: the log keeps the newest 20,000.
+       *[other] The oldest { $count } lines have gone: the log keeps the newest 20,000.
+    }
+# The pill that goes back to the newest lines while the view is scrolled up.
+log-newer =
+    { $count ->
+        [one] ↓ 1 newer line
+       *[other] ↓ { $count } newer lines
+    }
+log-counts =
+    { $kept ->
+        [one] 1 line kept
+       *[other] { $kept } lines kept
+    } · { $shown } shown · this session only, in memory
+log-names-files = Lines name your files and folders.
+log-save = Save to file…
+log-copy = Copy to clipboard
+# The save dialog's title.
+log-save-title = Save the Log
 
 ## About Apertrust
 

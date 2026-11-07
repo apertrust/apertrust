@@ -35,19 +35,25 @@
 //! Binaries call [`init`] with their `-d` switches, keeping the [`Logging`] it returns,
 //! then [`starting`] with the [`Program`] that [`program!`](crate::program) names, which
 //! prints the [`banner()`] when a domain is on.
+//!
+//! The app also keeps the session's lines in memory for its log window while the
+//! `log.keep` setting is on ([`Kept`]): the same lines, for the domains `log.domains`
+//! names and those `-d` turned on, warnings and errors always.
 
 mod banner;
+mod kept;
 
 pub use banner::{
-    Item, Program, REPOSITORY, about, accesskit, banner, egui, full_version, kernels, languages,
-    onnx_runtime, print_version, rawler, starting, version_asked, wgpu,
+    Item, Program, REPOSITORY, about, accesskit, banner, command_line, egui, full_version, kernels,
+    languages, onnx_runtime, print_version, rawler, starting, version_asked, wgpu,
 };
+pub use kept::{CAPACITY, Cursor, Kept, Line, Read, Severity};
 
 use std::borrow::Cow;
 use std::fmt;
 use std::io::Write as _;
 use std::path::Path;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -63,50 +69,89 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 /// A kind of diagnostics that `-d` switches on.
+///
+/// It is also the type of the options of the `log.domains` setting (decision 43; [`Kept`]):
+/// the domains the app keeps a log of, then [`Domain::VERBOSE`], which is no domain of
+/// [`DOMAINS`] but the detail `-d verbose` adds. `golden` is none of them: it is the
+/// harness's alone, and the app writes no line of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Domain {
     pub name: &'static str,
     pub about: &'static str,
 }
 
-pub const DOMAINS: &[Domain] = &[
-    Domain {
+impl Domain {
+    pub const GPU: Domain = Domain {
         name: "gpu",
         about: "the adapter in use, its limits and wgpu's own messages",
-    },
-    Domain {
+    };
+    pub const RAW: Domain = Domain {
         name: "raw",
         about: "decoding: the camera, sensor, levels and white balance",
-    },
-    Domain {
+    };
+    pub const PIPE: Domain = Domain {
         name: "pipe",
         about: "the plan: operations in order, their images and passes",
-    },
-    Domain {
+    };
+    pub const PERF: Domain = Domain {
         name: "perf",
         about: "timings: decoding, uploading, compiling, each pass, writing",
-    },
-    Domain {
+    };
+    pub const MEMORY: Domain = Domain {
         name: "memory",
         about: "GPU buffers: what is allocated, and how much",
-    },
-    Domain {
+    };
+    pub const GOLDEN: Domain = Domain {
         name: "golden",
         about: "the harness: darktable-cli runs and cached references",
-    },
-    Domain {
+    };
+    pub const SETTINGS: Domain = Domain {
         name: "settings",
         about: "the user data folder, how it was chosen, and each read and write of settings",
-    },
-    Domain {
+    };
+    pub const CONTROL: Domain = Domain {
         name: "control",
         about: "background jobs: each added, run, discarded or cancelled, its queue and priority",
-    },
-    Domain {
+    };
+    pub const EVENT: Domain = Domain {
         name: "event",
         about: "the session's events: each sent, with its numbers, and each drain; signal too",
-    },
+    };
+    /// `-d verbose`'s detail for the domains on, `trace!`'s lines: an option of
+    /// `log.domains`, never one of [`DOMAINS`].
+    pub const VERBOSE: Domain = Domain {
+        name: "verbose",
+        about: "detail for the domains on: each parameter, each buffer, each pass",
+    };
+}
+
+pub const DOMAINS: &[Domain] = &[
+    Domain::GPU,
+    Domain::RAW,
+    Domain::PIPE,
+    Domain::PERF,
+    Domain::MEMORY,
+    Domain::GOLDEN,
+    Domain::SETTINGS,
+    Domain::CONTROL,
+    Domain::EVENT,
 ];
+
+/// The options of `log.domains`, kept by their names, in `-d`'s order: every domain but
+/// `golden`, then `verbose`.
+impl crate::settings::Choice for Domain {
+    const OPTIONS: &'static [(Domain, &'static str)] = &[
+        (Domain::GPU, Domain::GPU.name),
+        (Domain::RAW, Domain::RAW.name),
+        (Domain::PIPE, Domain::PIPE.name),
+        (Domain::PERF, Domain::PERF.name),
+        (Domain::MEMORY, Domain::MEMORY.name),
+        (Domain::SETTINGS, Domain::SETTINGS.name),
+        (Domain::CONTROL, Domain::CONTROL.name),
+        (Domain::EVENT, Domain::EVENT.name),
+        (Domain::VERBOSE, Domain::VERBOSE.name),
+    ];
+}
 
 /// Other names of domains, as darktable's `-d signal` for its signals: each turns on the
 /// domain it names (decision 59).
@@ -190,6 +235,16 @@ impl Switches {
         let wgpu = target.starts_with("wgpu_core") || target.starts_with("wgpu_hal");
         wgpu && self.verbose && self.domains.contains(&"gpu") && level <= Level::INFO
     }
+
+    /// rawler's lens lookups are the raw domain's lines, not warnings: Apertrust does not
+    /// use the lens yet, so they show only with `raw` on.
+    fn admits_event(&self, event: &Event<'_>) -> bool {
+        let normalized = event.normalized_metadata();
+        let metadata = normalized.as_ref().unwrap_or_else(|| event.metadata());
+        !metadata.target().starts_with("rawler")
+            || self.domains.contains(&"raw")
+            || !is_lens(&message_of(event))
+    }
 }
 
 impl<S> Filter<S> for Switches {
@@ -197,14 +252,8 @@ impl<S> Filter<S> for Switches {
         self.admits(metadata.target(), *metadata.level())
     }
 
-    /// rawler's lens lookups are the raw domain's lines, not warnings: Apertrust does not
-    /// use the lens yet, so they show only with `raw` on.
     fn event_enabled(&self, event: &Event<'_>, _: &Context<'_, S>) -> bool {
-        let normalized = event.normalized_metadata();
-        let metadata = normalized.as_ref().unwrap_or_else(|| event.metadata());
-        !metadata.target().starts_with("rawler")
-            || self.domains.contains(&"raw")
-            || !is_lens(&message_of(event))
+        self.admits_event(event)
     }
 
     fn max_level_hint(&self) -> Option<LevelFilter> {
@@ -240,6 +289,9 @@ fn message_of(event: &Event<'_>) -> String {
 /// included. `RUST_LOG`, when set, replaces the switches with its own filter. With a
 /// domain on, or `RUST_LOG`, [`starting`] then prints the banner. Keep what it returns
 /// until the program ends: dropped, it writes how often the last line repeated.
+///
+/// Beside stderr's it sets up the log the app keeps in memory ([`Kept`]), which keeps
+/// nothing and costs nothing until [`Kept::keep`] turns it on.
 pub fn init<S: AsRef<str>>(switches: &[S]) -> Result<Logging, Error> {
     let switches = Switches::parse(switches)?;
     let developer_filter = std::env::var("RUST_LOG")
@@ -247,29 +299,27 @@ pub fn init<S: AsRef<str>>(switches: &[S]) -> Result<Logging, Error> {
         .and_then(|value| EnvFilter::try_new(value).ok());
     let shown = !switches.domains.is_empty() || developer_filter.is_some();
     let whole = switches.verbose || developer_filter.is_some();
-    let (lines, shared) = layer(whole, std::io::stderr);
-    let registry = tracing_subscriber::registry();
+    let start = Instant::now();
+    let (lines, shared) = layer(start, whole, std::io::stderr);
+    let (kept_lines, kept) = kept::layer(start, switches.clone());
+    let registry = tracing_subscriber::registry().with(kept_lines);
     match developer_filter {
         Some(filter) => registry.with(lines.with_filter(filter)).try_init(),
         None => registry.with(lines.with_filter(switches)).try_init(),
     }
     .map_err(|_| Error::AlreadySet)?;
     banner::SHOWN.store(shown, Ordering::Relaxed);
-    Ok(Logging(shared))
+    Ok(Logging { shared, kept })
 }
 
-/// The layer that writes the lines to `writer`, other crates' whole when `whole`, and the
-/// state they share.
-fn layer<S, W>(whole: bool, writer: W) -> (impl Layer<S>, Arc<Shared>)
+/// The layer that writes the lines to `writer`, their seconds counted from `start`, other
+/// crates' whole when `whole`, and the state they share.
+fn layer<S, W>(start: Instant, whole: bool, writer: W) -> (impl Layer<S>, Arc<Shared>)
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
     W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
 {
-    let shared = Arc::new(Shared {
-        start: Instant::now(),
-        whole,
-        last: Mutex::new(Last::default()),
-    });
+    let shared = Arc::new(Shared::new(start, whole));
     let lines = tracing_subscriber::fmt::layer()
         .with_writer(writer)
         .event_format(Lines(shared.clone()));
@@ -278,11 +328,21 @@ where
 
 /// Logging, set up by [`init`]: dropped, it writes how often the last line repeated.
 #[must_use = "dropped, it ends the count of a repeated line"]
-pub struct Logging(Arc<Shared>);
+pub struct Logging {
+    shared: Arc<Shared>,
+    kept: Kept,
+}
+
+impl Logging {
+    /// The log kept in memory, off until the app turns it on.
+    pub fn kept(&self) -> Kept {
+        self.kept.clone()
+    }
+}
 
 impl Drop for Logging {
     fn drop(&mut self) {
-        if let Some(line) = self.0.repeats() {
+        if let Some(line) = self.shared.repeats() {
             let _ = std::io::stderr().lock().write_all(line.as_bytes());
         }
     }
@@ -292,11 +352,12 @@ impl Drop for Logging {
 /// crates' lines are cut to it unless `verbose` is on.
 pub const WIDTH: usize = 100;
 
-/// What every line shares.
+/// What every line of one writer shares: stderr's, or the log kept in memory.
 struct Shared {
     start: Instant,
-    /// Whether other crates' lines show whole: under `verbose`, or `RUST_LOG`.
-    whole: bool,
+    /// Whether other crates' lines show whole: under `verbose`, or `RUST_LOG`. Fixed for
+    /// stderr; the kept log's follows its own switches.
+    whole: AtomicBool,
     last: Mutex<Last>,
 }
 
@@ -313,6 +374,14 @@ struct Last {
 }
 
 impl Shared {
+    fn new(start: Instant, whole: bool) -> Shared {
+        Shared {
+            start,
+            whole: AtomicBool::new(whole),
+            last: Mutex::new(Last::default()),
+        }
+    }
+
     fn last(&self) -> std::sync::MutexGuard<'_, Last> {
         self.last
             .lock()
@@ -322,18 +391,91 @@ impl Shared {
     /// The line saying how often the last one repeated, if it did, and the count ended.
     fn repeats(&self) -> Option<String> {
         let mut last = self.last();
-        let line = (last.repeats > 0).then(|| {
-            format!(
-                "{:10.4} {} (repeated {}×)\n",
-                last.at, last.written, last.repeats
-            )
-        });
+        let line = last.repeated();
         *last = Last::default();
         line
     }
+
+    /// Writes the line for an event of `metadata`, whose fields `fields` writes, to
+    /// `writer`, after the line saying how often the last one repeated where this one ends
+    /// the count; nothing for another repeat of it. darktable's line: seconds since start,
+    /// the domain, the message.
+    fn write(
+        &self,
+        metadata: &Metadata<'_>,
+        fields: &mut dyn FnMut(Writer<'_>) -> fmt::Result,
+        mut writer: Writer<'_>,
+    ) -> fmt::Result {
+        let seconds = self.start.elapsed().as_secs_f64();
+        let (target, level) = (metadata.target(), *metadata.level());
+        let label = match level {
+            Level::ERROR => "error: ",
+            Level::WARN => "warning: ",
+            _ => "",
+        };
+        let domain = domain_of(target);
+        if DOMAINS.iter().any(|domain| domain.name == target) {
+            if let Some(repeats) = self.repeats() {
+                writer.write_str(&repeats)?;
+            }
+            write!(writer, "{seconds:10.4} [{domain}] {label}")?;
+            fields(writer.by_ref())?;
+            return writeln!(writer);
+        }
+        let mut message = String::new();
+        fields(Writer::new(&mut message))?;
+        let whole = self.whole.load(Ordering::Relaxed);
+        // rawler's lens lookups, one line however often it says so for one lookup.
+        // Its warnings come from more than one of rawler's modules.
+        let lens = !whole && is_lens(&message);
+        if lens {
+            message = LENS.to_owned();
+        }
+        let from = if lens { domain } else { target };
+        let key = Some((from.to_owned(), level, message.clone()));
+        let mut last = self.last();
+        if last.key == key {
+            if !lens {
+                last.repeats += 1;
+                last.at = seconds;
+            }
+            // An empty write writes no line.
+            return Ok(());
+        }
+        drop(last);
+        if let Some(repeats) = self.repeats() {
+            writer.write_str(&repeats)?;
+        }
+        let label = if lens { "" } else { label };
+        let prefix = format!("{seconds:10.4} [{domain}] {label}");
+        let text = if whole || lens {
+            message
+        } else if level == Level::ERROR {
+            // An error whole, its cause last.
+            one_line(&message)
+        } else {
+            condense(&message, WIDTH.saturating_sub(prefix.chars().count()))
+        };
+        let mut last = self.last();
+        last.key = key;
+        last.written = format!("[{domain}] {label}{text}");
+        writeln!(writer, "{prefix}{text}")
+    }
 }
 
-/// darktable's line: seconds since start, the domain, the message.
+impl Last {
+    /// The line saying how often it repeated, if it did.
+    fn repeated(&self) -> Option<String> {
+        (self.repeats > 0).then(|| {
+            format!(
+                "{:10.4} {} (repeated {}×)\n",
+                self.at, self.written, self.repeats
+            )
+        })
+    }
+}
+
+/// stderr's lines, as [`Shared::write`] writes them.
 struct Lines(Arc<Shared>);
 
 impl<S, N> FormatEvent<S, N> for Lines
@@ -344,65 +486,13 @@ where
     fn format_event(
         &self,
         ctx: &FmtContext<'_, S, N>,
-        mut writer: Writer<'_>,
+        writer: Writer<'_>,
         event: &Event<'_>,
     ) -> fmt::Result {
         let normalized = event.normalized_metadata();
         let metadata = normalized.as_ref().unwrap_or_else(|| event.metadata());
-        let seconds = self.0.start.elapsed().as_secs_f64();
-        let (target, level) = (metadata.target(), *metadata.level());
-        let label = match level {
-            Level::ERROR => "error: ",
-            Level::WARN => "warning: ",
-            _ => "",
-        };
-        let domain = domain_of(target);
-        if DOMAINS.iter().any(|domain| domain.name == target) {
-            if let Some(repeats) = self.0.repeats() {
-                writer.write_str(&repeats)?;
-            }
-            write!(writer, "{seconds:10.4} [{domain}] {label}")?;
-            ctx.field_format().format_fields(writer.by_ref(), event)?;
-            return writeln!(writer);
-        }
-        let mut message = String::new();
-        ctx.field_format()
-            .format_fields(Writer::new(&mut message), event)?;
-        // rawler's lens lookups, one line however often it says so for one lookup.
-        // Its warnings come from more than one of rawler's modules.
-        let lens = !self.0.whole && is_lens(&message);
-        if lens {
-            message = LENS.to_owned();
-        }
-        let from = if lens { domain } else { target };
-        let key = Some((from.to_owned(), level, message.clone()));
-        let mut last = self.0.last();
-        if last.key == key {
-            if !lens {
-                last.repeats += 1;
-                last.at = seconds;
-            }
-            // An empty write writes no line.
-            return Ok(());
-        }
-        drop(last);
-        if let Some(repeats) = self.0.repeats() {
-            writer.write_str(&repeats)?;
-        }
-        let label = if lens { "" } else { label };
-        let prefix = format!("{seconds:10.4} [{domain}] {label}");
-        let text = if self.0.whole || lens {
-            message
-        } else if level == Level::ERROR {
-            // An error whole, its cause last.
-            one_line(&message)
-        } else {
-            condense(&message, WIDTH.saturating_sub(prefix.chars().count()))
-        };
-        let mut last = self.0.last();
-        last.key = key;
-        last.written = format!("[{domain}] {label}{text}");
-        writeln!(writer, "{prefix}{text}")
+        let mut fields = |writer: Writer<'_>| ctx.field_format().format_fields(writer, event);
+        self.0.write(metadata, &mut fields, writer)
     }
 }
 
@@ -549,8 +639,19 @@ mod tests {
         assert!(!gpu.admits("wgpu_hal::vulkan", Level::DEBUG));
     }
 
+    /// Held by each test that logs through a dispatcher of its own: tracing's callsites
+    /// keep one interest for every dispatcher, rebuilt as a filter changes, and a rebuild
+    /// in another test meanwhile can lose an event of this one's.
+    pub(super) fn serial() -> std::sync::MutexGuard<'static, ()> {
+        static SERIAL: Mutex<()> = Mutex::new(());
+        SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// The lines `log` writes with `switches` on, each without its time.
     fn written(switches: &[&str], log: impl FnOnce()) -> (Vec<String>, Option<String>) {
+        let _serial = serial();
         #[derive(Clone, Default)]
         struct Captured(Arc<Mutex<Vec<u8>>>);
         impl std::io::Write for Captured {
@@ -565,7 +666,7 @@ mod tests {
         let captured = Captured::default();
         let writer = captured.clone();
         let switches = Switches::parse(switches).unwrap();
-        let (lines, shared) = layer(switches.verbose, move || writer.clone());
+        let (lines, shared) = layer(Instant::now(), switches.verbose, move || writer.clone());
         let subscriber = tracing_subscriber::registry().with(lines.with_filter(switches));
         tracing::subscriber::with_default(subscriber, log);
         let text = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
