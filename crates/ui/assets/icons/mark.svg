@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-linejoin="round">
+  <g transform="scale(0.1282051) translate(-50 -50)">
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+      <path d="M0 0 H256 V256 H0 Z" fill="white" stroke="none"/>
+      <path d="M128 62 L192 192 L156 192 L128 128 Z" fill="black" stroke="black" stroke-width="32"/>
+    </mask>
+    <path d="M128 62 L64 192 L100 192 L128 128 Z" stroke-width="14" mask="url(#cut)"/>
+    <path d="M128 62 L192 192 L156 192 L128 128 Z" stroke-width="14"/>
+    <path d="M128 169 L135.8 173.5 L135.8 182.5 L128 187 L120.2 182.5 L120.2 173.5 Z" stroke-width="3"/>
+  </g>
+</svg>

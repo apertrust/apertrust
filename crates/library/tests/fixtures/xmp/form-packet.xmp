@@ -1,0 +1,25 @@
+﻿<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<!-- a comment before the packet -->
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="forms">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <!-- references and CDATA for the text, an array as the rdf:value of a struct -->
+  <rdf:Description rdf:about=""
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:ex="https://example.org/ns/1.0/"
+    xmp:Rating="&#x33;">
+   <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Harbour</rdf:li><rdf:li xml:lang="de"><![CDATA[Hafen]]></rdf:li></rdf:Alt></dc:title>
+   <dc:subject><rdf:Bag><rdf:li>harbour</rdf:li><rdf:li><![CDATA[a & b]]></rdf:li></rdf:Bag></dc:subject>
+   <ex:place><rdf:Description ex:city="Oslo" ex:country="NO"></rdf:Description></ex:place>
+   <ex:link rdf:resource="https://example.org/a"/>
+   <ex:note><rdf:Description><rdf:value>kept</rdf:value><ex:since>2020</ex:since></rdf:Description></ex:note>
+   <ex:history rdf:parseType="Resource"><rdf:value><rdf:Seq>
+    <rdf:li><rdf:Description ex:num="0" ex:op="exposure"/></rdf:li>
+    <rdf:li><rdf:Description ex:num="1" ex:op="flip"/></rdf:li>
+   </rdf:Seq></rdf:value></ex:history>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+
+
+<?xpacket end="w"?>

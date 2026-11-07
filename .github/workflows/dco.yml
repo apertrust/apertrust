@@ -1,0 +1,42 @@
+name: DCO
+
+# Every commit of a pull request carries a Signed-off-by line naming its author
+# (git commit -s), certifying the Developer Certificate of Origin.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  signoff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the sign-offs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          failed=0
+          # Merge commits carry no sign-off of their own.
+          for commit in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            author=$(git log -1 --format='%an <%ae>' "$commit")
+            # Bots' commits (Dependabot's updates) certify nothing; the maintainer who
+            # merges them answers for them.
+            case "$author" in
+              "dependabot[bot] <"*"+dependabot[bot]@users.noreply.github.com>") continue ;;
+            esac
+            if ! git log -1 --format=%B "$commit" | grep -Fxq "Signed-off-by: $author"; then
+              # Only the short hash goes into the annotation: a subject could hold a workflow command.
+              echo "::error::Commit $(git log -1 --format=%h "$commit") has no Signed-off-by line matching its author"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "Add the line with 'git commit -s --amend' (one commit) or 'git rebase --signoff $BASE' (several), then push again."
+            exit 1
+          fi

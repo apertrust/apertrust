@@ -1,0 +1,42 @@
+[package]
+name = "apertrust-operations"
+description = "The list of Apertrust's built-in operations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+apertrust-op-agx.workspace = true
+apertrust-op-bilat.workspace = true
+apertrust-op-bloom.workspace = true
+apertrust-op-channelmixerrgb.workspace = true
+apertrust-op-colorbalancergb.workspace = true
+apertrust-op-colorequal.workspace = true
+apertrust-op-colorin.workspace = true
+apertrust-op-colorout.workspace = true
+apertrust-op-demosaic.workspace = true
+apertrust-op-exposure.workspace = true
+apertrust-op-filmicrgb.workspace = true
+apertrust-op-flip.workspace = true
+apertrust-op-grain.workspace = true
+apertrust-op-hazeremoval.workspace = true
+apertrust-op-highlights.workspace = true
+apertrust-op-primaries.workspace = true
+apertrust-op-rawprepare.workspace = true
+apertrust-op-rgbcurve.workspace = true
+apertrust-op-rgblevels.workspace = true
+apertrust-op-sigmoid.workspace = true
+apertrust-op-soften.workspace = true
+apertrust-op-temperature.workspace = true
+apertrust-op-toneequal.workspace = true
+apertrust-op-vignette.workspace = true
+apertrust-plugin.workspace = true
+
+[dev-dependencies]
+naga.workspace = true
+
+[lints]
+workspace = true

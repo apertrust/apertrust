@@ -1,0 +1,35 @@
+[package]
+name = "apertrust-modules"
+description = "Apertrust's modules: definitions, values and bindings to operation parameters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# `testing::Sample`, a module for the module layer's tests in other crates; never in
+# MODULES.
+testing = []
+
+[dependencies]
+# RGB curve's curve maths, for the Tone curve's panel, and darktable's illuminants, for
+# Colour calibration's defaults and follow writes; White balance's maths later.
+apertrust-color.workspace = true
+apertrust-plugin.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# The invariant tests in tests/ render through the engine (decision 28); unit tests in
+# src/ never use it, or the crate would be compiled twice. The golden harness gives them
+# its synthetic sweep and its CIEDE2000, and apertrust-raw the corpus raws.
+apertrust-engine.workspace = true
+apertrust-golden.workspace = true
+apertrust-operations.workspace = true
+apertrust-raw.workspace = true
+apertrust-ui.workspace = true
+pollster.workspace = true
+
+[lints]
+workspace = true

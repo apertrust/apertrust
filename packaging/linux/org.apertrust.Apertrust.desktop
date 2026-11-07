@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Apertrust
+GenericName=Raw Photo Editor
+Comment=A free, non-destructive, cross-platform raw photo editor
+Exec=apertrust %f
+Icon=org.apertrust.Apertrust
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;Photography;
+Keywords=raw;photo;photography;darkroom;editor;
+StartupWMClass=apertrust
+MimeType=image/x-adobe-dng;image/x-apple-qtk;image/x-arri-ari;image/x-canon-cr2;image/x-canon-cr3;image/x-canon-crm;image/x-canon-crw;image/x-epson-erf;image/x-fuji-raf;image/x-hasselblad-3fr;image/x-hasselblad-fff;image/x-kodak-dcr;image/x-kodak-dcs;image/x-kodak-kdc;image/x-leaf-mos;image/x-mamiya-mef;image/x-minolta-mrw;image/x-nikon-nef;image/x-nikon-nrw;image/x-olympus-orf;image/x-olympus-ori;image/x-panasonic-rw;image/x-panasonic-rw2;image/x-pentax-pef;image/x-phaseone-iiq;image/x-samsung-srw;image/x-sigma-x3f;image/x-sony-arw;

@@ -1,0 +1,2 @@
+# Slang compiler output: collapsed in GitHub diffs and excluded from language stats.
+crates/**/generated/*.wgsl linguist-generated=true

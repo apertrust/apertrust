@@ -1,0 +1,587 @@
+// Apertrust, a free, non-destructive, cross-platform raw photo editor
+// Copyright (C) 2026  Apertrust developers
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+//! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
+//! alerts, asked through the dialog host and answered on a later frame. Two so far:
+//!
+//! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
+//!   replaces files, as darktable does, from the Export dialog's own sheet.
+//! - **The quit alert** ([`Purpose::Quit`]): Quit or Close Window while a job the user
+//!   started runs. The decision is [`Guard`], a small machine the tests drive: it asks
+//!   once, lets the app leave when nothing runs, and after a yes waits for the jobs that
+//!   cannot be stopped.
+//!
+//! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
+//! text.
+
+use apertrust_ui::alert::{Request, Role};
+use apertrust_ui::i18n::Args;
+use apertrust_ui::{tr, translator};
+use eframe::egui;
+
+use apertrust_engine::jobs::JobId;
+
+use crate::dialog_host::{Answer, AppDialogs, Ask};
+use crate::jobs::{Mirror, Running};
+
+/// What an alert is asked for, which says what its answer does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Purpose {
+    /// Export would replace files already there: yes sends the export.
+    Overwrite,
+    /// A job the user started runs: yes stops those that can be stopped and quits once
+    /// the others have finished.
+    Quit,
+}
+
+/// The alert asked and not yet answered, if one.
+#[derive(Debug, Default)]
+pub struct Alerts {
+    pending: Option<Purpose>,
+}
+
+impl Alerts {
+    /// What the alert up is for, if one is.
+    pub fn pending(&self) -> Option<Purpose> {
+        self.pending
+    }
+
+    /// Asks `request` for `purpose` through `dialogs`, over the window of the main
+    /// context `ctx`, and says what came of it: [`Ask::Busy`] while another alert is up,
+    /// nothing asked then; [`Ask::Failed`] for a request that cannot be shown. Only
+    /// [`Ask::Shown`] leaves an alert up.
+    pub fn ask(
+        &mut self,
+        dialogs: &mut AppDialogs,
+        purpose: Purpose,
+        request: &Request,
+        ctx: &egui::Context,
+    ) -> Ask {
+        if self.pending.is_some() {
+            return Ask::Busy;
+        }
+        if let Err(why) = request.check() {
+            tracing::error!(target: "gpu", "alert not shown: {why:?}");
+            return Ask::Failed;
+        }
+        let asked = dialogs.ask(request, ctx);
+        if asked == Ask::Shown {
+            self.pending = Some(purpose);
+        }
+        asked
+    }
+
+    /// The alert's answer, with what it was asked for, once it has gone.
+    pub fn answered(&mut self, dialogs: &mut AppDialogs) -> Option<(Purpose, Answer)> {
+        let answer = dialogs.answer()?;
+        Some((self.pending.take()?, answer))
+    }
+}
+
+/// "Export in overwrite mode?": Overwrite, which destroys and has no key, or Cancel, the
+/// default, which Return and Escape both press, and Don't ask again. The answers are
+/// Overwrite's index 0 (the yes) and Cancel's 1. With the setting `held` by `--conf`
+/// ([`Overwrite::held`]) there is no box, since ticking it would do nothing.
+pub fn overwrite_request(ctx: &egui::Context, held: bool) -> Request {
+    let request = Request::new(
+        tr(ctx, "alert-overwrite-title"),
+        tr(ctx, "alert-overwrite-message"),
+    )
+    .button(tr(ctx, "alert-overwrite-button"), Role::Destructive)
+    .button(tr(ctx, "alert-cancel"), Role::Cancel)
+    .default_button(1);
+    if held {
+        request
+    } else {
+        request.suppression(tr(ctx, "alert-overwrite-suppress"))
+    }
+}
+
+/// Whether Export, and Export Again, ask the overwrite question: darktable's "ask before
+/// exporting in overwrite mode" (`export.ask_before_overwrite`, on at first). A yes with
+/// Don't ask again ticked turns it off, for good, as it is kept in the settings, unless
+/// `--conf` holds the setting for the run: then the store would refuse the write, so the
+/// run goes on asking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Overwrite {
+    ask: bool,
+    held: bool,
+}
+
+impl Default for Overwrite {
+    /// Asks, and `--conf` holds nothing.
+    fn default() -> Self {
+        Overwrite::new(true, false)
+    }
+}
+
+impl Overwrite {
+    /// As the settings have it, `held` being whether `--conf` sets it for this run.
+    pub fn new(ask: bool, held: bool) -> Overwrite {
+        Overwrite { ask, held }
+    }
+
+    /// Whether `--conf` sets the setting for this run, so that ticking the box would do
+    /// nothing and the alert shows none.
+    pub fn held(self) -> bool {
+        self.held
+    }
+
+    /// Whether a question the alert would ask is asked.
+    pub fn asks(self) -> bool {
+        self.ask
+    }
+
+    /// The answer to an alert asked for `purpose`: a yes to the overwrite question with its
+    /// box ticked stops the asking. A no with the box ticked changes nothing: the person
+    /// did not go ahead.
+    pub fn answered(&mut self, purpose: Purpose, answer: Answer) {
+        if purpose == Purpose::Overwrite && answer.confirmed() && answer.ticked() && !self.held {
+            self.ask = false;
+        }
+    }
+}
+
+/// "Quit while a job is running?": its message says what a yes does to the `running` jobs.
+pub fn quit_request(ctx: &egui::Context, running: Running) -> Request {
+    let mut args = Args::new();
+    args.set("stoppable", running.stoppable as f64);
+    args.set("waiting", running.waiting as f64);
+    let message = translator(ctx).text_with("alert-quit-message", Some(&args));
+    Request::new(tr(ctx, "alert-quit-title"), message)
+        .button(tr(ctx, "alert-quit-button"), Role::Destructive)
+        .button(tr(ctx, "alert-cancel"), Role::Cancel)
+}
+
+/// One Quit or Close Window deciding whether the app leaves: `run_action` asks
+/// [`Leave::may`] once no dialog is open, and the app asks the alert afterwards if
+/// [`Leave::ask`] says so.
+pub struct Leave<'a> {
+    guard: &'a mut Guard,
+    running: Running,
+    /// The quit alert is to be asked.
+    pub ask: bool,
+}
+
+impl<'a> Leave<'a> {
+    pub fn new(guard: &'a mut Guard, running: Running) -> Leave<'a> {
+        Leave {
+            guard,
+            running,
+            ask: false,
+        }
+    }
+
+    /// Whether the app leaves now ([`Guard::attempt`]).
+    pub fn may(&mut self) -> bool {
+        match self.guard.attempt(self.running) {
+            Attempt::Leave => true,
+            Attempt::Hold => false,
+            Attempt::Ask => {
+                self.ask = true;
+                false
+            }
+        }
+    }
+}
+
+/// Asks the quit alert for the `running` jobs. Returns whether to quit again at once:
+/// - where the platform shows no alert, quitting asks nothing from now on, as it did before
+///   the alerts;
+/// - where showing it failed, this one Quit leaves, and the next asks again;
+/// - while another alert is up, this Quit does nothing.
+pub fn ask_quit(
+    alerts: &mut Alerts,
+    dialogs: &mut AppDialogs,
+    guard: &mut Guard,
+    running: Running,
+    ctx: &egui::Context,
+) -> bool {
+    let request = quit_request(ctx, running);
+    match alerts.ask(dialogs, Purpose::Quit, &request, ctx) {
+        Ask::Shown => false,
+        Ask::Busy => {
+            guard.answered(false);
+            false
+        }
+        Ask::NoAlerts => {
+            guard.skip();
+            true
+        }
+        Ask::Failed => {
+            guard.leave_once();
+            true
+        }
+    }
+}
+
+/// What the app does once an alert for `purpose` is answered.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Then {
+    /// Nothing: the question was answered no, or the system took the alert away.
+    Nothing,
+    /// Send the export, and close the dialog it was pressed in.
+    Export,
+    /// Stop these jobs, and go on quitting: the app leaves once none runs.
+    Stop(Vec<JobId>),
+}
+
+/// The decision an answer makes: only a yes (the first button, the default) does anything.
+/// A yes to the quit alert is told to `guard`, which then waits for the jobs to end; any
+/// other answer lets the next Quit ask again.
+pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) -> Then {
+    let confirmed = answer.confirmed();
+    match purpose {
+        Purpose::Overwrite if confirmed => Then::Export,
+        Purpose::Overwrite => Then::Nothing,
+        Purpose::Quit => {
+            guard.answered(confirmed);
+            if confirmed {
+                Then::Stop(jobs.stoppable())
+            } else {
+                Then::Nothing
+            }
+        }
+    }
+}
+
+/// Where quitting is: not asked, asking, or asked and said yes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Phase {
+    #[default]
+    Idle,
+    /// The alert is up.
+    Asking,
+    /// The person said yes: the jobs that can be stopped are cancelled, and the app leaves
+    /// once none runs.
+    Confirmed,
+    /// The platform shows no alert: quitting asks nothing, as it did before the alerts.
+    Skipped,
+    /// The alert could not be shown this time: the next attempt leaves, then it is Idle.
+    LeaveOnce,
+}
+
+/// What Quit or Close Window does now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Attempt {
+    /// The app leaves.
+    Leave,
+    /// The alert is to be asked; the app stays meanwhile.
+    Ask,
+    /// The app stays: the alert is up, or the jobs have not ended.
+    Hold,
+}
+
+/// The quit alert's decisions: when quitting asks, and what each answer does.
+#[derive(Debug, Default)]
+pub struct Guard {
+    phase: Phase,
+}
+
+impl Guard {
+    /// Quit, or Close Window on the main window, once no dialog is open: with nothing
+    /// running the app leaves; with a job running it asks, once; after a yes it waits for
+    /// the jobs to end; while the alert is up it waits for the answer.
+    pub fn attempt(&mut self, running: Running) -> Attempt {
+        match self.phase {
+            Phase::Skipped => Attempt::Leave,
+            Phase::LeaveOnce => {
+                self.phase = Phase::Idle;
+                Attempt::Leave
+            }
+            Phase::Asking => Attempt::Hold,
+            Phase::Confirmed if running.none() => Attempt::Leave,
+            Phase::Confirmed => Attempt::Hold,
+            Phase::Idle if running.none() => Attempt::Leave,
+            Phase::Idle => {
+                self.phase = Phase::Asking;
+                Attempt::Ask
+            }
+        }
+    }
+
+    /// The alert's answer: yes keeps quitting, waiting for the jobs; anything else drops
+    /// it, and the next Quit asks again.
+    pub fn answered(&mut self, confirmed: bool) {
+        self.phase = if confirmed {
+            Phase::Confirmed
+        } else {
+            Phase::Idle
+        };
+    }
+
+    /// The alert could not be shown: quitting asks nothing from now on.
+    pub fn skip(&mut self) {
+        self.phase = Phase::Skipped;
+    }
+
+    /// The alert could not be shown: the next attempt leaves, and the one after asks again.
+    pub fn leave_once(&mut self) {
+        self.phase = Phase::LeaveOnce;
+    }
+
+    /// Whether the person said yes and the app only waits for the jobs: when they have
+    /// ended it is to leave without being asked again.
+    pub fn confirmed(&self) -> bool {
+        self.phase == Phase::Confirmed
+    }
+
+    /// Whether the alert is up or has been answered yes, so a quit is in progress: a job
+    /// started now would not be among those the alert's yes counted.
+    pub fn quitting(&self) -> bool {
+        matches!(self.phase, Phase::Asking | Phase::Confirmed)
+    }
+
+    /// Whether the main window's close button is held, for Quit to decide: while a job
+    /// runs, unless the platform shows no alert.
+    pub fn holds_close(&self, running: Running) -> bool {
+        !matches!(self.phase, Phase::Skipped | Phase::LeaveOnce) && !running.none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use apertrust_ui::{Locale, Theme};
+
+    use super::*;
+
+    const NONE: Running = Running {
+        stoppable: 0,
+        waiting: 0,
+    };
+    const EXPORT: Running = Running {
+        stoppable: 1,
+        waiting: 0,
+    };
+    const STUCK: Running = Running {
+        stoppable: 0,
+        waiting: 1,
+    };
+
+    #[test]
+    fn quitting_with_nothing_running_asks_nothing() {
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(NONE), Attempt::Leave);
+        assert!(!guard.holds_close(NONE));
+    }
+
+    #[test]
+    fn quitting_with_a_job_running_asks_once_and_waits_for_the_answer() {
+        let mut guard = Guard::default();
+        assert!(guard.holds_close(EXPORT));
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        // Quit again, or the window's close, while the alert is up: no second alert.
+        assert_eq!(guard.attempt(EXPORT), Attempt::Hold);
+        // Even if the job ends meanwhile, the alert is the person's to answer.
+        assert_eq!(guard.attempt(NONE), Attempt::Hold);
+    }
+
+    #[test]
+    fn cancelling_the_alert_stays_and_the_next_quit_asks_again() {
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        guard.answered(false);
+        assert!(!guard.confirmed());
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+    }
+
+    #[test]
+    fn confirming_waits_for_the_jobs_that_cannot_stop_and_then_leaves() {
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        guard.answered(true);
+        assert!(guard.confirmed());
+        // The export was cancelled and has not ended yet; a job that cannot stop runs.
+        assert_eq!(guard.attempt(STUCK), Attempt::Hold);
+        assert_eq!(guard.attempt(EXPORT), Attempt::Hold);
+        assert_eq!(guard.attempt(NONE), Attempt::Leave);
+    }
+
+    #[test]
+    fn when_the_alert_cannot_be_shown_one_quit_leaves_and_the_next_asks_again() {
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        guard.leave_once();
+        assert!(!guard.holds_close(EXPORT));
+        assert_eq!(guard.attempt(EXPORT), Attempt::Leave);
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+    }
+
+    #[test]
+    fn where_the_platform_shows_no_alert_quitting_leaves_as_before() {
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        guard.skip();
+        assert_eq!(guard.attempt(EXPORT), Attempt::Leave);
+        assert!(!guard.holds_close(EXPORT));
+    }
+
+    fn context(locale: Locale) -> egui::Context {
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        apertrust_ui::set_locale(&ctx, locale);
+        ctx
+    }
+
+    #[test]
+    fn the_overwrite_question_is_a_destructive_yes_and_a_default_cancel_in_the_language() {
+        let request = overwrite_request(&context(Locale::EnGb), false);
+        assert_eq!(request.title, "Export in overwrite mode?");
+        assert_eq!(request.check(), Ok(()));
+        let buttons: Vec<_> = request
+            .buttons
+            .iter()
+            .map(|button| (button.label.as_str(), button.role))
+            .collect();
+        assert_eq!(
+            buttons,
+            [("Overwrite", Role::Destructive), ("Cancel", Role::Cancel)]
+        );
+        // Cancel is the default, which Return presses, and Escape's as well; Overwrite is
+        // reached by a click or by Tab alone.
+        assert_eq!((request.default, request.cancel()), (1, Some(1)));
+        // And carries Don't ask again, which the quit alert does not, and which the alert
+        // leaves out while `--conf` holds the setting.
+        assert_eq!(
+            overwrite_request(&context(Locale::EnGb), true).suppression,
+            None
+        );
+        let held = overwrite_request(&context(Locale::EnGb), true);
+        assert_eq!((held.buttons.len(), held.default), (2, 1));
+        assert_eq!(request.suppression.as_deref(), Some("Don’t ask again"));
+        let quit = quit_request(&context(Locale::EnGb), EXPORT);
+        assert_eq!(quit.suppression, None);
+        let suppression = |locale| overwrite_request(&context(locale), false).suppression;
+        assert_eq!(suppression(Locale::Uk).as_deref(), Some("Більше не питати"));
+        assert_eq!(
+            suppression(Locale::Pl).as_deref(),
+            Some("Nie pytaj ponownie")
+        );
+        let ukrainian = overwrite_request(&context(Locale::Uk), false);
+        assert_eq!(ukrainian.buttons[0].label, "Перезаписати");
+        assert_eq!(ukrainian.buttons[1].label, "Скасувати");
+        let polish = overwrite_request(&context(Locale::Pl), false);
+        assert_eq!(polish.buttons[1].label, "Anuluj");
+    }
+
+    #[test]
+    fn only_a_yes_with_the_box_ticked_stops_the_overwrite_question() {
+        let after = |purpose, answer| {
+            let mut overwrite = Overwrite::default();
+            overwrite.answered(purpose, answer);
+            overwrite.asks()
+        };
+        assert!(!after(Purpose::Overwrite, Answer::Ticked(0)));
+        // Not ticked, a no, taken away, or another alert's: the question stays.
+        assert!(after(Purpose::Overwrite, Answer::Pressed(0)));
+        assert!(after(Purpose::Overwrite, Answer::Ticked(1)));
+        assert!(after(Purpose::Overwrite, Answer::Dismissed));
+        assert!(after(Purpose::Quit, Answer::Ticked(0)));
+        // `--conf` holds it: it stays whatever the answer.
+        let mut held = Overwrite::new(true, true);
+        held.answered(Purpose::Overwrite, Answer::Ticked(0));
+        assert!(held.asks());
+        // Already off, it stays off.
+        let mut off = Overwrite::new(false, false);
+        off.answered(Purpose::Overwrite, Answer::Pressed(0));
+        assert!(!off.asks());
+    }
+
+    /// A mirror with an export of the user's running, and its job.
+    fn exporting() -> (Mirror, JobId) {
+        let job = crate::jobs::tests::ids(1)[0];
+        let mut mirror = Mirror::new(None);
+        let added = crate::jobs::tests::added(job, apertrust_engine::jobs::Queue::UserExport, None);
+        mirror.apply(&added);
+        (mirror, job)
+    }
+
+    #[test]
+    fn only_a_yes_to_the_overwrite_question_exports() {
+        let (mirror, _) = exporting();
+        let mut guard = Guard::default();
+        let then = |answer, guard: &mut Guard| then(Purpose::Overwrite, answer, guard, &mirror);
+        assert_eq!(then(Answer::Pressed(0), &mut guard), Then::Export);
+        assert_eq!(then(Answer::Pressed(1), &mut guard), Then::Nothing);
+        assert_eq!(then(Answer::Dismissed, &mut guard), Then::Nothing);
+        // The overwrite question says nothing of quitting.
+        assert!(!guard.confirmed());
+    }
+
+    #[test]
+    fn a_yes_to_the_quit_alert_stops_the_jobs_that_can_be_stopped_and_a_no_stops_none() {
+        let (mirror, job) = exporting();
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(mirror.running()), Attempt::Ask);
+        let stop = then(Purpose::Quit, Answer::Pressed(0), &mut guard, &mirror);
+        assert_eq!(stop, Then::Stop(vec![job]));
+        assert!(guard.confirmed());
+
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(mirror.running()), Attempt::Ask);
+        for answer in [Answer::Pressed(1), Answer::Dismissed] {
+            let nothing = then(Purpose::Quit, answer, &mut guard, &mirror);
+            assert_eq!(nothing, Then::Nothing);
+            assert!(!guard.confirmed());
+            // Back to asking: the next Quit asks again.
+            assert_eq!(guard.attempt(mirror.running()), Attempt::Ask);
+        }
+    }
+
+    #[test]
+    fn leaving_asks_through_the_alert_only_once_and_says_so() {
+        let mut guard = Guard::default();
+        let mut leave = Leave::new(&mut guard, EXPORT);
+        assert!(!leave.may());
+        assert!(leave.ask);
+        let mut leave = Leave::new(&mut guard, EXPORT);
+        assert!(!leave.may());
+        assert!(!leave.ask, "the alert is up");
+        let mut guard = Guard::default();
+        let mut leave = Leave::new(&mut guard, NONE);
+        assert!(leave.may());
+        assert!(!leave.ask);
+    }
+
+    #[test]
+    fn the_quit_message_says_what_a_yes_does_to_the_jobs_running() {
+        let ctx = context(Locale::EnGb);
+        let message = |stoppable, waiting| quit_request(&ctx, Running { stoppable, waiting });
+        let stops = message(2, 0);
+        assert_eq!(stops.title, "Quit while a job is running?");
+        assert!(
+            stops.message.starts_with("The running jobs stop"),
+            "{}",
+            stops.message
+        );
+        assert_eq!(stops.check(), Ok(()));
+        let mixed = message(1, 1);
+        assert!(
+            mixed.message.contains("once the others have finished"),
+            "{}",
+            mixed.message
+        );
+        let waits = message(0, 1);
+        assert!(
+            waits.message.starts_with("Apertrust quits once"),
+            "{}",
+            waits.message
+        );
+        assert_eq!(waits.buttons[0].label, "Quit");
+        assert_eq!(waits.buttons[0].role, Role::Destructive);
+        assert_eq!(waits.buttons[1].role, Role::Cancel);
+    }
+}

@@ -1,0 +1,29 @@
+[package]
+name = "apertrust-library"
+description = "Apertrust's library: folders, their photos and sidecars"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The decoder's extensions, which say what a raw is, and a raw's embedded picture for its
+# thumbnail; no GPU or engine (decision 54).
+apertrust-raw.workspace = true
+# Its `fs` part alone: removes the temporaries of writes that never ended from a folder it
+# lists (decision 53).
+apertrust-base = { workspace = true, features = ["fs"] }
+# The hash of a sidecar's bytes, and later the photo's fingerprint (decision 53).
+blake3.workspace = true
+# The sidecar's XML (decision 54, layer 1).
+quick-xml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

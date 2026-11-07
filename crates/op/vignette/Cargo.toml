@@ -1,0 +1,15 @@
+[package]
+name = "apertrust-op-vignette"
+description = "Vignetting, ported from darktable"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+apertrust-plugin.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Apertrust's AppStream metadata, installed as share/metainfo/org.apertrust.Apertrust.metainfo.xml. -->
+<component type="desktop-application">
+	<id>org.apertrust.Apertrust</id>
+	<metadata_license>CC0-1.0</metadata_license>
+	<project_license>GPL-3.0-or-later</project_license>
+	<name>Apertrust</name>
+	<summary>A free, non-destructive, cross-platform raw photo editor</summary>
+	<developer id="org.apertrust">
+		<name>Apertrust developers</name>
+	</developer>
+	<description>
+		<p>
+			Apertrust is a raw photo editor for people who care how their pictures look and
+			want predictable results on their own computer. It processes photos on the GPU and
+			builds on darktable's colour science.
+		</p>
+		<p>
+			Everything runs locally: no account, no cloud, no subscription. Edits are saved in
+			a readable file beside the photo, and the original is never touched.
+		</p>
+		<p>Apertrust is free software in early development, not yet ready for everyday use.</p>
+	</description>
+	<launchable type="desktop-id">org.apertrust.Apertrust.desktop</launchable>
+	<icon type="stock">org.apertrust.Apertrust</icon>
+	<url type="homepage">https://apertrust.org</url>
+	<url type="vcs-browser">https://github.com/apertrust/apertrust</url>
+	<url type="bugtracker">https://github.com/apertrust/apertrust/issues</url>
+	<categories>
+		<category>Graphics</category>
+		<category>Photography</category>
+	</categories>
+	<keywords>
+		<keyword>raw</keyword>
+		<keyword>photo</keyword>
+		<keyword>photography</keyword>
+		<keyword>darkroom</keyword>
+	</keywords>
+	<provides>
+		<binary>apertrust</binary>
+		<binary>apertrust-cli</binary>
+	</provides>
+	<supports>
+		<control>pointing</control>
+		<control>keyboard</control>
+	</supports>
+	<content_rating type="oars-1.1"/>
+</component>

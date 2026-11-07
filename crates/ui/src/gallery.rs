@@ -1,0 +1,1930 @@
+// Apertrust, a free, non-destructive, cross-platform raw photo editor
+// Copyright (C) 2026  Apertrust developers
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+//! The gallery: every token, icon and, as they arrive, every component, in every theme
+//! (`docs/gui.md`, Components). A component is built here before any panel uses it, and
+//! the snapshot tests photograph the gallery. It is a tool for developers, so its own
+//! labels are not translated.
+
+use std::ops::RangeInclusive;
+
+use egui::{Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, vec2};
+
+use crate::components::{
+    ActionRow, Available, Axis, CellPicture, CellRating, CellStatus, CentralBar, CentralBarAction,
+    Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup, ColourLabel, ColourLabels, Curve,
+    CurveAction, Equalizer, EqualizerAction, ExportDetails, ExportFailure, FileManager, GridCell,
+    GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job, JobMessage, JobPhase,
+    Jobs, Margin, Mark, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab,
+    PhotoCaption, PhotoFrame, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction,
+    Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb,
+    Toggle, ToggleRow, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
+    group_label,
+};
+use crate::fonts::{MEDIUM, SEMIBOLD};
+use crate::i18n::{Args, Locale, Translator};
+use crate::popup::{self, Answer, Entry, Item, Request, Submenu};
+use crate::theme::{self, Builtin, Theme, contrast};
+use crate::{Icon, set_locale, set_theme};
+
+/// Text that exercises the typeface: English, Ukrainian and Polish, a signed number with
+/// the minus sign (U+2212) and one with the decimal comma.
+const SAMPLE: &str = "Exposure · Експозиція · Ekspozycja  −1.25 EV  +0,50";
+
+/// What the gallery shows: the theme and the language the developer picked.
+pub struct Gallery {
+    pub theme: Builtin,
+    pub locale: Locale,
+    /// One translator for each locale, for the translation table.
+    translators: Vec<Translator>,
+    /// The controls' values: the gallery stands in for the session, applying what the
+    /// components report.
+    demo: Demo,
+}
+
+impl Gallery {
+    pub fn new(theme: Builtin) -> Self {
+        Gallery {
+            theme,
+            locale: Locale::default(),
+            translators: Locale::ALL.into_iter().map(Translator::new).collect(),
+            demo: Demo::default(),
+        }
+    }
+
+    /// Opens the ☰'s menu on the first frame, with View expanded, as the snapshot tests
+    /// photograph it. The gallery run by hand opens it only when the ☰ is pressed.
+    pub fn with_menu_open(mut self) -> Self {
+        self.demo.open_menu = true;
+        self
+    }
+
+    /// Draws the gallery's side panel alone, `width` points wide, as the snapshot tests
+    /// photograph it at its narrowest.
+    pub fn show_side_panel(&mut self, ui: &mut Ui, width: f32) {
+        let t = theme::theme(ui.ctx());
+        self.demo.panel_width = Some(width);
+        side_panel(ui, &t, &mut self.demo);
+    }
+
+    /// Draws the gallery on the panel's colour, as a page of its own.
+    pub fn show(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        egui::Frame::new()
+            .fill(t.colors.panel)
+            .inner_margin(t.spacing.l)
+            .show(ui, |ui| self.page(ui));
+    }
+
+    fn page(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        ui.horizontal(|ui| {
+            ui.label("Theme");
+            for which in Builtin::ALL {
+                if ui
+                    .selectable_label(self.theme == which, which.id())
+                    .clicked()
+                {
+                    self.theme = which;
+                    set_theme(ui.ctx(), Theme::builtin(which));
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Language");
+            for locale in Locale::ALL {
+                if ui
+                    .selectable_label(self.locale == locale, locale.native_name())
+                    .clicked()
+                {
+                    self.locale = locale;
+                    set_locale(ui.ctx(), locale);
+                }
+            }
+        });
+        checks(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Controls");
+        controls(ui, &t, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Side panel");
+        side_panel(ui, &t, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        scopes_in_use(ui, &t, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Shell");
+        shell(ui, &t, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Grid cells");
+        grid_cells(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Jobs");
+        jobs_section(ui, &t, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Colours");
+        colours(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Type");
+        typography(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Icons");
+        icons(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Translation");
+        translation(ui, &t, &self.translators);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Spacing");
+        spacing(ui, &t);
+    }
+}
+
+/// The grid cell's states, as it draws them at rest, with a sample picture or with none:
+/// plain, selected, active, edited, with a status mark and with a long name, each with a
+/// sample rating and labels, so the whole caption shows; then with labels off and with
+/// square thumbnails.
+fn grid_cells(ui: &mut Ui, t: &Theme) {
+    use ColourLabel::*;
+    let ctx = ui.ctx().clone();
+    let (wide, tall) = (sample_picture(&ctx, true), sample_picture(&ctx, false));
+    let rating = |stars, rejected, labels: &[ColourLabel]| {
+        Some(CellRating {
+            stars,
+            rejected,
+            labels: ColourLabels::of(labels.iter().copied()),
+        })
+    };
+    ui.spacing_mut().item_spacing = vec2(t.spacing.m, t.spacing.m);
+    // Rows of cells from the top, so cells with and without captions line up.
+    let rows = egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true);
+    ui.with_layout(rows, |ui| {
+        let cell = |name| GridCell::new(name);
+        cell("IMG_2041.ARW")
+            .picture(Some(wide))
+            .rating(rating(3, false, &[Red, Yellow, Green]))
+            .show(ui);
+        cell("IMG_2042.ARW")
+            .picture(Some(tall))
+            .selected(true)
+            .rating(rating(1, false, &[Red]))
+            .show(ui);
+        cell("IMG_2043.ARW")
+            .picture(Some(tall))
+            .active(true)
+            .selected(true)
+            .edited(true)
+            .rating(rating(2, false, &[Blue, Purple]))
+            .show(ui);
+        cell("IMG_2044.CR3")
+            .picture(Some(wide))
+            .status(Some(CellStatus::ViewOnly))
+            .rating(rating(4, true, &[]))
+            .show(ui);
+        cell("IMG_2045.NEF")
+            .status(Some(CellStatus::Unreadable("not an Apertrust edit")))
+            .rating(rating(0, false, &[]))
+            .show(ui);
+        cell("Wedding_2026-10-31_ceremony_0042.DNG")
+            .picture(Some(wide))
+            .rating(rating(5, false, &[Green]))
+            .show(ui);
+    });
+    ui.with_layout(rows, |ui| {
+        let cell = |name| GridCell::new(name);
+        // Without a rating, as the library has none yet: the name alone.
+        cell("IMG_2046.ARW").picture(Some(wide)).show(ui);
+        // Labels off: the picture alone, the corner marks kept.
+        cell("IMG_2047.ARW")
+            .picture(Some(tall))
+            .edited(true)
+            .labels(false)
+            .active(true)
+            .show(ui);
+        // Square thumbnails: each fills its square, the ring round the square.
+        cell("IMG_2048.ARW")
+            .picture(Some(wide))
+            .square(true)
+            .selected(true)
+            .show(ui);
+        cell("IMG_2049.ARW")
+            .picture(Some(tall))
+            .square(true)
+            .edited(true)
+            .show(ui);
+        // Small: the name alone, cut in its middle.
+        cell("P1044066.RW2")
+            .side(84.0)
+            .picture(Some(wide))
+            .rating(rating(3, false, &[Red]))
+            .show(ui);
+    });
+}
+
+/// A sample thumbnail for the gallery's cells, 3:2 or 2:3: a sky over a field, made once.
+fn sample_picture(ctx: &egui::Context, landscape: bool) -> CellPicture {
+    let id = egui::Id::unique(if landscape {
+        "gallery wide picture"
+    } else {
+        "gallery tall picture"
+    });
+    let handle = ctx.data_mut(|d| d.get_temp::<egui::TextureHandle>(id));
+    let handle = handle.unwrap_or_else(|| {
+        let [w, h] = if landscape { [30, 20] } else { [20, 30] };
+        let pixels = (0..w * h)
+            .map(|i| {
+                if i / w < h * 3 / 5 {
+                    Color32::from_rgb(122, 147, 168)
+                } else {
+                    Color32::from_rgb(90, 107, 78)
+                }
+            })
+            .collect();
+        let image = egui::ColorImage::new([w, h], pixels);
+        let handle = ctx.load_texture("gallery sample", image, egui::TextureOptions::NEAREST);
+        ctx.data_mut(|d| d.insert_temp(id, handle.clone()));
+        handle
+    });
+    CellPicture {
+        texture: handle.id(),
+        size: handle.size_vec2(),
+    }
+}
+
+fn heading(ui: &mut Ui, text: &str) {
+    ui.label(RichText::new(text).heading());
+}
+
+fn checks(ui: &mut Ui, t: &Theme) {
+    let issues = t.check();
+    if issues.is_empty() {
+        ui.label(
+            RichText::new("Checks pass: contrast and a neutral surround.").color(t.colors.success),
+        );
+    }
+    for issue in issues {
+        ui.label(RichText::new(issue.to_string()).color(t.colors.error));
+    }
+}
+
+fn colours(ui: &mut Ui, t: &Theme) {
+    egui::Grid::new("gallery colours")
+        .num_columns(4)
+        .spacing(vec2(t.spacing.l, t.spacing.xs))
+        .show(ui, |ui| {
+            for (name, colour) in t.named_colors() {
+                let (rect, _) = ui.allocate_exact_size(vec2(36.0, 18.0), Sense::hover());
+                ui.painter().rect(
+                    rect,
+                    t.shape.radius_small,
+                    colour,
+                    Stroke::new(t.shape.hairline, t.colors.border),
+                    egui::StrokeKind::Inside,
+                );
+                ui.label(name);
+                let [r, g, b, a] = colour.to_srgba_unmultiplied();
+                let hex = if a == 255 {
+                    format!("#{r:02X}{g:02X}{b:02X}")
+                } else {
+                    format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
+                };
+                ui.label(RichText::new(hex).color(t.colors.text_secondary));
+                let ratio = if a == 255 {
+                    format!("{:.1}:1 on panel", contrast(colour, t.colors.panel))
+                } else {
+                    String::new()
+                };
+                ui.label(RichText::new(ratio).color(t.colors.text_secondary));
+                ui.end_row();
+            }
+        });
+}
+
+fn typography(ui: &mut Ui, t: &Theme) {
+    let families = [
+        ("Regular", FontFamily::Proportional),
+        ("Medium", FontFamily::Name(MEDIUM.into())),
+        ("SemiBold", FontFamily::Name(SEMIBOLD.into())),
+    ];
+    for (name, size) in [
+        ("heading", t.text.heading),
+        ("title", t.text.title),
+        ("section title", t.text.section_title),
+        ("body", t.text.body),
+        ("small", t.text.small),
+        ("caption", t.text.caption),
+    ] {
+        for (weight, family) in &families {
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    vec2(150.0, t.sizes.row),
+                    egui::Label::new(
+                        RichText::new(format!("{name} {size} {weight}"))
+                            .color(t.colors.text_secondary),
+                    ),
+                );
+                ui.label(RichText::new(SAMPLE).font(FontId::new(size, family.clone())));
+            });
+        }
+    }
+}
+
+fn icons(ui: &mut Ui, t: &Theme) {
+    egui::Grid::new("gallery icons")
+        .num_columns(6)
+        .spacing(vec2(t.spacing.l, t.spacing.s))
+        .show(ui, |ui| {
+            for (i, icon) in Icon::ALL.into_iter().enumerate() {
+                ui.horizontal(|ui| {
+                    for (scale, colour) in [(1.0, t.colors.text), (2.0, t.colors.accent_text)] {
+                        let side = icon.size() * scale;
+                        let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+                        icon.paint(ui.painter(), rect, colour);
+                    }
+                    ui.label(RichText::new(icon.name()).color(t.colors.text_secondary));
+                });
+                if i % 3 == 2 {
+                    ui.end_row();
+                }
+            }
+        });
+}
+
+fn spacing(ui: &mut Ui, t: &Theme) {
+    let s = &t.spacing;
+    for (name, value) in [
+        ("xxs", s.xxs),
+        ("xs", s.xs),
+        ("s", s.s),
+        ("m", s.m),
+        ("l", s.l),
+        ("xl", s.xl),
+        ("xxl", s.xxl),
+    ] {
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                vec2(60.0, t.sizes.control),
+                egui::Label::new(
+                    RichText::new(format!("{name} {value}")).color(t.colors.text_secondary),
+                ),
+            );
+            let (rect, _) = ui.allocate_exact_size(vec2(value, 12.0), Sense::hover());
+            ui.painter().rect_filled(rect, 0.0, t.colors.accent_text);
+        });
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("photo surround").color(t.colors.text_secondary));
+        let (rect, _) = ui.allocate_exact_size(vec2(120.0, 40.0), Sense::hover());
+        ui.painter()
+            .rect_filled(rect, t.shape.radius, t.colors.photo_surround);
+        ui.painter().rect_filled(
+            rect.shrink2(vec2(30.0, 8.0)),
+            0.0,
+            Color32::from_rgb(0x9A, 0x84, 0x6B),
+        );
+    });
+}
+
+/// A row of the translation table: its name, and how to make its text in a locale.
+type Sample<'a> = (&'a str, &'a dyn Fn(&Translator) -> String);
+
+/// Sample messages and numbers in every locale, side by side.
+fn translation(ui: &mut Ui, t: &Theme, translators: &[Translator]) {
+    let count = |translator: &Translator, n: f64| {
+        let mut args = Args::new();
+        args.set("count", n);
+        translator.text_with("photo-count", Some(&args))
+    };
+    // A value with its unit, as a slider writes it at rest.
+    let with_unit = |tr: &Translator, unit: &str, value: f64, decimals: usize, signed: bool| {
+        let mut args = Args::new();
+        args.set("value", tr.format_number(value, decimals, signed));
+        tr.text_with(unit, Some(&args))
+    };
+    let samples: [Sample; 12] = [
+        ("tab-base", &|tr| tr.text("tab-base")),
+        ("action-copy-edit", &|tr| tr.text("action-copy-edit")),
+        ("theme-high-contrast", &|tr| tr.text("theme-high-contrast")),
+        ("photo-count 1", &|tr| count(tr, 1.0)),
+        ("photo-count 3", &|tr| count(tr, 3.0)),
+        ("photo-count 5", &|tr| count(tr, 5.0)),
+        ("photo-count 1.5", &|tr| count(tr, 1.5)),
+        ("photo-count 12345", &|tr| count(tr, 12345.0)),
+        ("value −1.25", &|tr| tr.format_number(-1.25, 2, true)),
+        ("value 5600 K", &|tr| tr.format_number(5600.0, 0, false)),
+        ("unit-ev-value 0, signed", &|tr| {
+            with_unit(tr, EV, 0.0, 2, true)
+        }),
+        ("unit-percent-value 25", &|tr| {
+            with_unit(tr, PERCENT, 25.0, 2, false)
+        }),
+    ];
+    let shown: Vec<&Translator> = translators
+        .iter()
+        .filter(|tr| tr.locale() != Locale::Pseudo)
+        .collect();
+    egui::Grid::new("gallery translation")
+        .num_columns(1 + shown.len())
+        .spacing(vec2(t.spacing.l, t.spacing.xs))
+        .show(ui, |ui| {
+            ui.label("");
+            for tr in &shown {
+                ui.label(RichText::new(tr.locale().id()).color(t.colors.text_secondary));
+            }
+            ui.end_row();
+            for (name, sample) in samples {
+                ui.label(RichText::new(name).color(t.colors.text_secondary));
+                for tr in &shown {
+                    ui.label(sample(tr));
+                }
+                ui.end_row();
+            }
+        });
+    if let Some(pseudo) = translators.iter().find(|tr| tr.locale() == Locale::Pseudo) {
+        ui.add_space(t.spacing.s);
+        ui.label(RichText::new("Pseudo-locale").color(t.colors.text_secondary));
+        for text in [
+            pseudo.text("action-copy-edit"),
+            pseudo.text("slider-keep"),
+            count(pseudo, 12.0),
+        ] {
+            ui.label(text);
+        }
+    }
+}
+
+/// A slider's sample state.
+#[derive(Clone, Debug)]
+struct DemoSlider {
+    value: f64,
+    default: f64,
+    mark: Mark,
+}
+
+impl DemoSlider {
+    fn new(value: f64, default: f64, mark: Mark) -> Self {
+        DemoSlider {
+            value,
+            default,
+            mark,
+        }
+    }
+
+    fn apply(&mut self, action: SliderAction) {
+        match action {
+            SliderAction::Set { value, .. } => {
+                self.value = value;
+                self.mark = Mark::Kept;
+            }
+            SliderAction::Reset => {
+                self.value = self.default;
+                self.mark = Mark::None;
+            }
+            SliderAction::ToggleKeep => {
+                self.mark = if self.mark == Mark::Kept {
+                    Mark::None
+                } else {
+                    Mark::Kept
+                };
+            }
+            SliderAction::Quad => {}
+        }
+    }
+}
+
+/// The controls' sample values, one of each state the wireframe draws.
+#[derive(Clone, Debug)]
+struct Demo {
+    sliders: Vec<DemoSlider>,
+    picking: bool,
+    scale: usize,
+    adaptation: usize,
+    /// The Blended Adaptation's kept marker, as a module's choice has one.
+    adaptation_mark: Mark,
+    /// White balance's Mode, a preset row: none of its options while the light is the
+    /// user's own, the box then showing Custom.
+    mode: Option<usize>,
+    tool: usize,
+    camera_bias: bool,
+    /// The collapsible groups ([`GROUPS`]): which are open, and their sliders' values,
+    /// two to a group.
+    groups: [bool; 3],
+    group_sliders: Vec<DemoSlider>,
+    range: usize,
+    last: String,
+    /// The curves: Tone curve's luminance curve, the points between its ends, and a
+    /// histogram; its red curve, on a logarithmic axis, with levels.
+    curve: Vec<(f32, f32)>,
+    levels: (f32, f32),
+    histogram: Vec<f32>,
+    red_curve: Vec<(f32, f32)>,
+    red_levels: (f32, f32),
+    /// The tone equalizer's bands, −8 EV to +0 EV, and its mask's histograms: one that
+    /// fits the bands and one that overflows them at both ends.
+    bands: Vec<f32>,
+    mask: (Vec<f32>, [f32; 2]),
+    overflowing: (Vec<f32>, [f32; 2]),
+    /// The side panel: its width (None for the theme's), its tab, whether tabs show names,
+    /// which sections are open, Exposure's tab, and which section is peeking.
+    panel_width: Option<f32>,
+    panel_tab: usize,
+    tab_names: bool,
+    open: [bool; 7],
+    exposure_tab: usize,
+    peeking: Option<&'static str>,
+    /// The scopes: a gradient measured, and the same half as bright again from a lower black,
+    /// clipping at both ends; the pinned section's view, and the five in use.
+    gradient: Measured,
+    clipping: Measured,
+    scopes: ScopeView,
+    in_use: [ScopeView; 5],
+    /// The shell: whether the ☰'s menu is to open by itself ([`Gallery::with_menu_open`]),
+    /// the central bar's toggles and scale, and the grid panel.
+    open_menu: bool,
+    guides: bool,
+    proof: bool,
+    zoom: Option<f64>,
+    active: usize,
+    selected: Vec<usize>,
+}
+
+impl Default for Demo {
+    fn default() -> Self {
+        Demo {
+            sliders: vec![
+                DemoSlider::new(0.42, 0.0, Mark::Auto),
+                DemoSlider::new(12.0, 0.0, Mark::Kept),
+                DemoSlider::new(0.0, 0.0, Mark::None),
+                DemoSlider::new(5600.0, 5600.0, Mark::None),
+                DemoSlider::new(215.0, 0.0, Mark::Kept),
+                DemoSlider::new(-100.0, 0.0, Mark::None),
+                DemoSlider::new(100.0, 0.0, Mark::None),
+                DemoSlider::new(18.0, 18.0, Mark::None),
+                DemoSlider::new(1600.0, 1600.0, Mark::None),
+            ],
+            picking: false,
+            scale: 0,
+            adaptation: 0,
+            adaptation_mark: Mark::Kept,
+            mode: None,
+            tool: 0,
+            camera_bias: true,
+            groups: [false, false, true],
+            group_sliders: vec![
+                DemoSlider::new(0.0, 0.0, Mark::None),
+                DemoSlider::new(100.0, 100.0, Mark::None),
+                DemoSlider::new(1.0, 1.0, Mark::None),
+                DemoSlider::new(-0.05, 0.0, Mark::Kept),
+                DemoSlider::new(20.0, 0.0, Mark::Kept),
+                DemoSlider::new(50.0, 50.0, Mark::None),
+            ],
+            range: 0,
+            last: "nothing yet".to_owned(),
+            curve: vec![(0.25, 0.19), (0.72, 0.83)],
+            levels: (0.03, 0.97),
+            // Two humps, as a photo's luminance might have.
+            histogram: (0..96)
+                .map(|i| {
+                    let x = (i as f32 + 0.5) / 96.0;
+                    let hump = |at: f32, width: f32| (-((x - at) / width).powi(2)).exp();
+                    hump(0.28, 0.11) + 0.55 * hump(0.62, 0.16) + 0.04
+                })
+                .collect(),
+            red_curve: vec![(0.0, 0.0), (0.08, 0.14), (0.4, 0.52), (1.0, 1.0)],
+            red_levels: (0.0, 1.0),
+            bands: vec![0.0, 0.15, 0.4, 0.55, 0.45, 0.1, -0.35, -0.7, -0.9],
+            mask: mask_histogram(false),
+            overflowing: mask_histogram(true),
+            panel_width: None,
+            panel_tab: 1,
+            tab_names: true,
+            open: [true, false, false, true, false, false, false],
+            exposure_tab: 0,
+            peeking: None,
+            gradient: Measured::of(gradient),
+            clipping: Measured::of(|x, y| gradient(x, y).map(|c| 1.5 * c - 0.05)),
+            scopes: ScopeView::default(),
+            in_use: [
+                ScopeView {
+                    scale: Scale::Logarithmic,
+                    channels: [true, true, true, true],
+                    highlight_clipping: true,
+                    ..ScopeView::default()
+                },
+                ScopeView {
+                    scope: Scope::Waveform,
+                    ..ScopeView::default()
+                },
+                ScopeView {
+                    scope: Scope::Parade,
+                    ..ScopeView::default()
+                },
+                ScopeView {
+                    scope: Scope::Vectorscope,
+                    ..ScopeView::default()
+                },
+                ScopeView {
+                    scope: Scope::Waveform,
+                    ..ScopeView::default()
+                },
+            ],
+            open_menu: false,
+            guides: false,
+            proof: false,
+            zoom: Some(400.0),
+            active: 5,
+            selected: vec![5, 6],
+        }
+    }
+}
+
+/// A sample slider: its label, full name, range, step, decimal places and unit, the
+/// message that writes a value with it. Its sign follows from its range.
+type DemoRow = (
+    &'static str,
+    &'static str,
+    RangeInclusive<f64>,
+    f64,
+    usize,
+    Option<&'static str>,
+);
+
+/// The units the samples are written with, as darktable writes them.
+const EV: &str = "unit-ev-value";
+const PERCENT: &str = "unit-percent-value";
+const DEGREES: &str = "unit-degrees-value";
+const KELVIN: &str = "unit-kelvin-value";
+const ISO: &str = "unit-iso-value";
+
+/// White balance's modes, and colour calibration's illuminants as darktable names them.
+/// Custom is no mode: what Mode's box shows while the light matches none (decision 2).
+const WHITE_BALANCE_MODES: [&str; 3] = ["As shot", "Camera reference", "Daylight"];
+const ILLUMINANTS: [&str; 4] = [
+    "Daylight",
+    "Black body",
+    "Fluorescent F11 (narrow tri-band)",
+    "Custom",
+];
+
+fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let rows: [DemoRow; 9] = [
+        ("Exposure", "Exposure", -4.0..=4.0, 0.01, 2, Some(EV)),
+        (
+            "Contrast",
+            "Contrast",
+            -100.0..=100.0,
+            1.0,
+            0,
+            Some(PERCENT),
+        ),
+        (
+            "Brightness",
+            "Brightness",
+            -100.0..=100.0,
+            1.0,
+            0,
+            Some(PERCENT),
+        ),
+        (
+            "Temperature",
+            "Temperature",
+            2000.0..=12000.0,
+            50.0,
+            0,
+            Some(KELVIN),
+        ),
+        ("Hue", "Shadows hue", 0.0..=360.0, 1.0, 0, Some(DEGREES)),
+        (
+            "Saturation",
+            "Saturation, at its minimum",
+            -100.0..=100.0,
+            1.0,
+            0,
+            Some(PERCENT),
+        ),
+        (
+            "Highlights",
+            "Highlights, at its maximum",
+            -100.0..=100.0,
+            1.0,
+            0,
+            Some(PERCENT),
+        ),
+        (
+            "Pivot",
+            "Contrast pivot, disabled",
+            1.0..=50.0,
+            0.1,
+            1,
+            Some(PERCENT),
+        ),
+        (
+            "Coarseness",
+            "Grain coarseness",
+            20.0..=6400.0,
+            1.0,
+            0,
+            Some(ISO),
+        ),
+    ];
+    for (i, (label, name, range, step, decimals, unit)) in rows.into_iter().enumerate() {
+        let sample = &demo.sliders[i];
+        let mut row = SliderRow::new(label, sample.value, range)
+            .name(name)
+            .promise("The control's promise: what it changes and what it keeps. 0 = untouched.")
+            .default_value(sample.default)
+            .step(step)
+            .decimals(decimals)
+            .mark(sample.mark);
+        if let Some(unit) = unit {
+            row = row.unit(unit);
+        }
+        row = match i {
+            0 => row.before_match(0.0),
+            3 => row.track(Track::temperature()).no_fill().quad(Quad {
+                icon: Icon::Pick,
+                name: "Pick a neutral on the photo",
+                active: demo.picking,
+            }),
+            4 => row.track(Track::hue()).no_fill(),
+            7 => row.no_fill().enabled(false),
+            8 => row.no_fill(),
+            _ => row,
+        };
+        if let Some(action) = row.show(ui) {
+            if action == SliderAction::Quad {
+                demo.picking = !demo.picking;
+            }
+            demo.sliders[i].apply(action);
+            demo.last = format!("{name}: {action:?}");
+        }
+    }
+    ui.label(RichText::new(format!("Last action: {}", demo.last)).color(t.colors.text_secondary));
+    ui.add_space(t.spacing.s);
+    ui.horizontal(|ui| {
+        IconButton::new(Icon::Wand, "Auto").show(ui);
+        IconButton::new(Icon::Reset, "Reset Exposure")
+            .shortcut("Ctrl+R")
+            .show(ui);
+        IconButton::new(Icon::Presets, "Exposure presets").show(ui);
+        IconButton::new(Icon::Options, "Scopes options").show(ui);
+        IconButton::new(Icon::Pick, "Picking")
+            .toggled(true)
+            .show(ui);
+        IconButton::new(Icon::Undo, "Undo, nothing to undo")
+            .enabled(false)
+            .show(ui);
+        ui.add_space(t.spacing.l);
+        if let Some(i) = Segmented::new("Scale", &["Linear", "Log"], demo.scale).show(ui) {
+            demo.scale = i;
+        }
+    });
+    ui.add_space(t.spacing.s);
+    // Dropdown rows, Boxed as everywhere but module panels; then the same rows Blended, as
+    // module panels draw them, at the side panel's width under a slider row whose value
+    // their options end with, stacked as a section stacks rows.
+    ui.push_id("boxed", |ui| choices(ui, t, demo, ChoiceStyle::Boxed));
+    ui.add_space(t.spacing.s);
+    let column = t.sizes.side_panel - 2.0 * t.spacing.l;
+    ui.push_id("blended", |ui| {
+        ui.allocate_ui(vec2(column, t.sizes.row), |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            SliderRow::new("Exposure", 0.42, -4.0..=4.0)
+                .name("Exposure, over the blended rows")
+                .decimals(2)
+                .unit(EV)
+                .show(ui);
+            choices(ui, t, demo, ChoiceStyle::Blended);
+        });
+    });
+    ui.add_space(t.spacing.s);
+    // A segmented row: its label on a line of its own, the options across the width.
+    if let Some(i) = Segmented::new("Retouch tool", &["Heal", "Clone", "AI erase"], demo.tool)
+        .label("Tool")
+        .show(ui)
+    {
+        demo.tool = i;
+    }
+    // A checkbox row, live and disabled, as on a photo that records no camera bias.
+    if let Some(on) = ToggleRow::new("Use camera bias", demo.camera_bias)
+        .name("Use the camera's exposure bias")
+        .promise("Undoes the exposure compensation set on the camera.")
+        .show(ui)
+    {
+        demo.camera_bias = on;
+    }
+    ToggleRow::new("Use camera bias", true)
+        .name("Use the camera's exposure bias, no bias recorded")
+        .enabled(false)
+        .show(ui);
+    // An action row, live, and disabled as an action is until its tool comes.
+    if ActionRow::new("Set from above")
+        .name("Set the primaries after tone mapping from above")
+        .promise("Set parameters to completely reverse primaries modifications.")
+        .show(ui)
+    {
+        demo.last = "Set from above: run".to_owned();
+    }
+    ActionRow::new("Auto tune levels")
+        .promise("Set black and white relative exposure using the selected area.")
+        .enabled(false)
+        .show(ui);
+    groups(ui, demo);
+    let colour = |rgb: u32| {
+        let [_, r, g, b] = rgb.to_be_bytes();
+        SwatchFill::Color(Color32::from_rgb(r, g, b))
+    };
+    let swatches = [
+        Swatch {
+            name: "Red",
+            fill: colour(0xD9534F),
+        },
+        Swatch {
+            name: "Orange",
+            fill: colour(0xD98A4F),
+        },
+        Swatch {
+            name: "Yellow",
+            fill: colour(0xD9B44F),
+        },
+        Swatch {
+            name: "Green",
+            fill: colour(0x8CC152),
+        },
+        Swatch {
+            name: "Aqua",
+            fill: colour(0x4FC1C1),
+        },
+        Swatch {
+            name: "Blue",
+            fill: colour(0x4F7BD9),
+        },
+        Swatch {
+            name: "Purple",
+            fill: colour(0x8A5FD1),
+        },
+        Swatch {
+            name: "Magenta",
+            fill: colour(0xC25FA8),
+        },
+        Swatch {
+            name: "Custom",
+            fill: SwatchFill::Spectrum,
+        },
+    ];
+    if let Some(i) = Swatches::new("Colour range", &swatches, demo.range).show(ui) {
+        demo.range = i;
+    }
+    ui.add_space(t.spacing.s);
+    curves(ui, t, demo);
+    ui.add_space(t.spacing.l);
+    equalizers(ui, t, demo);
+}
+
+/// A slider in a collapsible group: its label, full name, range, decimal places and
+/// unit, the message that writes a value with it.
+type GroupRow = (
+    &'static str,
+    &'static str,
+    RangeInclusive<f64>,
+    usize,
+    Option<&'static str>,
+);
+
+/// Collapsible groups as darktable's modules have them, two sliders each: AgX's Advanced
+/// curve parameters and Look, and Lens correction's Manual vignette correction.
+/// Dropdown rows in `style`: one listing an option it cannot choose, as darktable's options
+/// that are not ported, a preset row with a picker before its option, showing Custom while
+/// none of its options is chosen, one disabled, and in narrow columns one whose widest
+/// illuminant does not fit beside its label, so the label and the option share the line,
+/// each cut at its end, and narrower still share less. Blended, as in a module panel, the
+/// controls have the kept marker, the first kept, and the preset row, which stores
+/// nothing, has none.
+fn choices(ui: &mut Ui, t: &Theme, demo: &mut Demo, style: ChoiceStyle) {
+    let blended = style == ChoiceStyle::Blended;
+    let marked = |row: Choice<'static>, mark: Mark| {
+        if blended { row.mark(mark) } else { row }
+    };
+    let adaptation = Choice::new(
+        "Adaptation",
+        &["CAT16", "Bradford", "XYZ scaling", "None"],
+        demo.adaptation,
+    )
+    .name("Chromatic adaptation")
+    .promise("How the photo's white is carried to the display's.")
+    .disabled_options(&[3], "Coming in a later version")
+    .style(style);
+    match marked(adaptation, demo.adaptation_mark).show(ui) {
+        Some(ChoiceAction::Set(i)) => demo.adaptation = i,
+        Some(ChoiceAction::ToggleKeep) => {
+            demo.adaptation_mark = if demo.adaptation_mark == Mark::Kept {
+                Mark::None
+            } else {
+                Mark::Kept
+            };
+        }
+        Some(ChoiceAction::Quad) | None => {}
+    }
+    match Choice::new("Mode", &WHITE_BALANCE_MODES, demo.mode)
+        .name("White balance mode")
+        .none_chosen("Custom")
+        .quad(Quad {
+            icon: Icon::Pick,
+            name: "Pick a neutral on the photo",
+            active: demo.picking,
+        })
+        .style(style)
+        .show(ui)
+    {
+        Some(ChoiceAction::Set(i)) => demo.mode = Some(i),
+        Some(ChoiceAction::Quad) => demo.picking = !demo.picking,
+        Some(ChoiceAction::ToggleKeep) | None => {}
+    }
+    let disabled = Choice::new("Adaptation", &["CAT16", "Bradford", "XYZ scaling"], 1)
+        .name("Chromatic adaptation, disabled")
+        .enabled(false)
+        .style(style);
+    marked(disabled, Mark::None).show(ui);
+    for (width, name) in [(240.0, "Illuminant"), (160.0, "Illuminant, cut")] {
+        ui.allocate_ui(vec2(width, t.sizes.row), |ui| {
+            let row = Choice::new("Illuminant", &ILLUMINANTS, 2)
+                .name(name)
+                .style(style);
+            marked(row, Mark::None).show(ui)
+        });
+    }
+}
+
+const GROUPS: [(&str, [GroupRow; 2]); 3] = [
+    (
+        "Advanced curve parameters",
+        [
+            (
+                "Shoulder start",
+                "Shoulder start",
+                0.0..=100.0,
+                2,
+                Some(PERCENT),
+            ),
+            (
+                "Target white",
+                "Target white",
+                50.0..=100.0,
+                2,
+                Some(PERCENT),
+            ),
+        ],
+    ),
+    (
+        "Look",
+        [
+            ("Slope", "Look slope", 0.0..=2.0, 2, None),
+            ("Lift", "Look lift", -0.5..=0.5, 2, None),
+        ],
+    ),
+    (
+        "Manual vignette correction",
+        [
+            (
+                "Strength",
+                "Manual vignette strength",
+                0.0..=100.0,
+                0,
+                Some(PERCENT),
+            ),
+            (
+                "Radius",
+                "Manual vignette radius",
+                0.0..=100.0,
+                0,
+                Some(PERCENT),
+            ),
+        ],
+    ),
+];
+
+/// A static group label over its row, then collapsible groups: one closed, one closed with
+/// a control in it set, which shows the dot, one open, and one disabled, with nothing
+/// behind it yet. A group counts as set the
+/// sliders in it off their defaults, as the app reads them from the session's mirror.
+fn groups(ui: &mut Ui, demo: &mut Demo) {
+    group_label(ui, "Basic curve parameters");
+    SliderRow::new("Contrast", 3.0, 0.1..=5.0)
+        .name("AgX contrast")
+        .default_value(3.0)
+        .decimals(2)
+        .no_fill()
+        .show(ui);
+    for (g, (title, rows)) in GROUPS.iter().enumerate() {
+        let sliders = &mut demo.group_sliders[2 * g..2 * g + 2];
+        let set = sliders.iter().filter(|s| s.value != s.default).count();
+        let mut changed = None;
+        let toggled = CollapsibleGroup::new(title, demo.groups[g])
+            .set(set)
+            .show(ui, |ui| {
+                for (i, ((label, name, range, decimals, unit), sample)) in
+                    rows.iter().zip(sliders.iter()).enumerate()
+                {
+                    let mut row = SliderRow::new(label, sample.value, range.clone())
+                        .name(name)
+                        .default_value(sample.default)
+                        .decimals(*decimals)
+                        .no_fill()
+                        .mark(sample.mark);
+                    if let Some(unit) = unit {
+                        row = row.unit(unit);
+                    }
+                    let action = row.show(ui);
+                    if let Some(action) = action {
+                        changed = Some((i, action));
+                    }
+                }
+            });
+        if let Some((i, action)) = changed {
+            sliders[i].apply(action);
+            demo.last = format!("{}: {action:?}", rows[i].1);
+        }
+        if toggled {
+            demo.groups[g] = !demo.groups[g];
+            demo.last = format!("{title}: toggled");
+        }
+    }
+    // A group with nothing behind it yet, drawn disabled, as AgX's Show curve is.
+    CollapsibleGroup::new("Show curve", false)
+        .disabled("Coming in a later version")
+        .show(ui, |_| {});
+}
+
+/// Tone curve's luminance curve, its handles the curve's ends, over a histogram; its red
+/// curve on a logarithmic axis, with levels; and its green curve, disabled.
+fn curves(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let width = (ui.available_width() - 2.0 * t.spacing.l) / 3.0;
+    let green = [(0.0, 0.0), (0.5, 0.42), (1.0, 1.0)];
+    let (black, white) = demo.levels;
+    let nodes: Vec<(f32, f32)> = std::iter::once((black, 0.0))
+        .chain(demo.curve.iter().copied())
+        .chain(std::iter::once((white, 1.0)))
+        .collect();
+    let luma = Smooth::through(&nodes);
+    let red = Smooth::through(&demo.red_curve);
+    let (luma_action, red_action) = ui
+        .horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = t.spacing.l;
+            let luma_action = ui
+                .allocate_ui(vec2(width, width + t.sizes.row), |ui| {
+                    Curve::new("Tone curve, Luma", &demo.curve)
+                        .function(&|x| luma.at(x))
+                        .ends(black, white)
+                        .histogram(&demo.histogram)
+                        .max_points(18)
+                        .show(ui)
+                })
+                .inner;
+            let red_action = ui
+                .allocate_ui(vec2(width, width + t.sizes.row), |ui| {
+                    Curve::new("Tone curve, Red", &demo.red_curve)
+                        .function(&|x| red.at(x))
+                        .levels(demo.red_levels.0, demo.red_levels.1)
+                        .axis(Axis::Log(32.0))
+                        .max_points(20)
+                        .show(ui)
+                })
+                .inner;
+            ui.allocate_ui(vec2(width, width + t.sizes.row), |ui| {
+                Curve::new("Tone curve, Green", &green)
+                    .levels(0.0, 1.0)
+                    .enabled(false)
+                    .show(ui)
+            });
+            (luma_action, red_action)
+        })
+        .inner;
+    for (action, points, levels, name, reset) in [
+        (
+            luma_action,
+            &mut demo.curve,
+            &mut demo.levels,
+            "Luma",
+            vec![],
+        ),
+        (
+            red_action,
+            &mut demo.red_curve,
+            &mut demo.red_levels,
+            "Red",
+            vec![(0.0, 0.0), (1.0, 1.0)],
+        ),
+    ] {
+        let Some(action) = action else { continue };
+        match action {
+            CurveAction::Move { index, x, y, .. } => points[index] = (x, y),
+            CurveAction::Add { x, y } => {
+                let at = points.partition_point(|p| p.0 < x);
+                points.insert(at, (x, y));
+            }
+            CurveAction::Remove(index) => {
+                points.remove(index);
+            }
+            CurveAction::BlackPoint { value, .. } => levels.0 = value,
+            CurveAction::WhitePoint { value, .. } => levels.1 = value,
+            CurveAction::Reset => {
+                *points = reset;
+                *levels = (0.0, 1.0);
+            }
+        }
+        demo.last = format!("Tone curve, {name}: {action:?}");
+    }
+}
+
+/// A smooth curve through points, monotone between them (Fritsch and Carlson's cubic
+/// Hermite): a stand-in for the engine's interpolation, which the curve leaves to its
+/// caller.
+struct Smooth<'a> {
+    points: &'a [(f32, f32)],
+    slopes: Vec<f32>,
+}
+
+impl<'a> Smooth<'a> {
+    fn through(points: &'a [(f32, f32)]) -> Self {
+        let secants: Vec<f32> = points
+            .windows(2)
+            .map(|w| (w[1].1 - w[0].1) / (w[1].0 - w[0].0).max(f32::EPSILON))
+            .collect();
+        let n = points.len();
+        let mut slopes: Vec<f32> = (0..n)
+            .map(
+                |i| match (i.checked_sub(1).map(|k| secants[k]), secants.get(i)) {
+                    (Some(a), Some(&b)) if a * b > 0.0 => (a + b) / 2.0,
+                    (Some(_), Some(_)) => 0.0,
+                    (Some(a), None) => a,
+                    (None, Some(&b)) => b,
+                    (None, None) => 0.0,
+                },
+            )
+            .collect();
+        for (i, &secant) in secants.iter().enumerate() {
+            if secant == 0.0 {
+                slopes[i] = 0.0;
+                slopes[i + 1] = 0.0;
+                continue;
+            }
+            let (a, b) = (slopes[i] / secant, slopes[i + 1] / secant);
+            let length = a * a + b * b;
+            if length > 9.0 {
+                let scale = 3.0 / length.sqrt();
+                slopes[i] = scale * a * secant;
+                slopes[i + 1] = scale * b * secant;
+            }
+        }
+        Smooth { points, slopes }
+    }
+
+    fn at(&self, x: f32) -> f32 {
+        let p = self.points;
+        let after = p.partition_point(|q| q.0 <= x);
+        if after == 0 || after == p.len() {
+            return p
+                .get(after.min(p.len().saturating_sub(1)))
+                .map_or(x, |q| q.1);
+        }
+        let ((x0, y0), (x1, y1)) = (p[after - 1], p[after]);
+        let h = x1 - x0;
+        let s = (x - x0) / h;
+        let (s2, s3) = (s * s, s * s * s);
+        (2.0 * s3 - 3.0 * s2 + 1.0) * y0
+            + (s3 - 2.0 * s2 + s) * h * self.slopes[after - 1]
+            + (3.0 * s2 - 2.0 * s3) * y1
+            + (s3 - s2) * h * self.slopes[after]
+    }
+}
+
+/// The tone equalizer's graph of its bands: with nothing measured yet, over a mask that
+/// fits the bands, over one that overflows them at both ends, which shows darktable's two
+/// warnings, and with no curve fitting the bands, drawn in the warning colour.
+fn equalizers(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let width = (ui.available_width() - t.spacing.l) / 2.0;
+    let names = [
+        "−8 EV", "−7 EV", "−6 EV", "−5 EV", "−4 EV", "−3 EV", "−2 EV", "−1 EV", "+0 EV",
+    ];
+    let curve = stand_in_curve(&demo.bands);
+    fn histogram((bins, percentiles): &(Vec<f32>, [f32; 2])) -> MaskHistogram<'_> {
+        MaskHistogram {
+            bins,
+            range: [-8.0, 0.0],
+            percentiles: *percentiles,
+        }
+    }
+    let mut actions = Vec::new();
+    for row in [[0, 1], [2, 3]] {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = t.spacing.l;
+            for k in row {
+                let (name, mask) = match k {
+                    0 => ("Tone equalizer, nothing measured", None),
+                    1 => ("Tone equalizer, its mask", Some(histogram(&demo.mask))),
+                    2 => (
+                        "Tone equalizer, a mask past both ends",
+                        Some(histogram(&demo.overflowing)),
+                    ),
+                    _ => ("Tone equalizer, no curve fits", None),
+                };
+                let mut graph = Equalizer::new(name, &demo.bands, &names).histogram(mask);
+                graph = if k == 3 {
+                    graph.failed(true)
+                } else {
+                    graph.curve(&curve)
+                };
+                if let Some(action) = ui.allocate_ui(vec2(width, 0.0), |ui| graph.show(ui)).inner {
+                    actions.push(action);
+                }
+            }
+        });
+        ui.add_space(t.spacing.l);
+    }
+    for action in actions {
+        match &action {
+            EqualizerAction::Move { to, .. } => demo.bands.clone_from(to),
+            EqualizerAction::ResetBand(i) => demo.bands[*i] = 0.0,
+            EqualizerAction::Reset => demo.bands = vec![0.0; 9],
+        }
+        demo.last = format!("Tone equalizer: {action:?}");
+    }
+}
+
+/// A smooth curve near the bands, 256 samples from −8 EV to +0 EV: a Gaussian-weighted
+/// mean of them, a stand-in for the engine's fit, which the graph leaves to its caller.
+fn stand_in_curve(bands: &[f32]) -> Vec<f32> {
+    (0..256)
+        .map(|k| {
+            let exposure = -8.0 + 8.0 * k as f32 / 255.0;
+            let (mut sum, mut weights) = (0.0, 0.0);
+            for (i, &band) in bands.iter().enumerate() {
+                let d = exposure - (i as f32 - 8.0);
+                let weight = (-d * d / 0.8).exp();
+                sum += weight * band;
+                weights += weight;
+            }
+            sum / weights
+        })
+        .collect()
+}
+
+/// A sample of the tone equalizer's mask: 256 bins from −8 EV to +0 EV, a photo's tones
+/// in three humps, or one whose shadows and highlights pile into the end bins, with its
+/// 5th and 95th percentiles in EV.
+fn mask_histogram(overflowing: bool) -> (Vec<f32>, [f32; 2]) {
+    let hump = |e: f32, at: f32, width: f32| (-(e - at) * (e - at) / (2.0 * width * width)).exp();
+    let bins: Vec<f32> = (0..256)
+        .map(|k| {
+            let e = -8.0 + 8.0 * k as f32 / 255.0;
+            // A little grain, as a photo's counts have.
+            let grain = 0.9 + 0.2 * ((k as f32 * 12.9898).sin() * 43758.547).fract().abs();
+            let counts = if overflowing {
+                if !(2..=253).contains(&k) {
+                    return 1.0;
+                }
+                0.06 * hump(e, -4.0, 1.2) + 0.4 * (e + 0.3).exp() + 0.4 * (-(e + 7.7)).exp()
+            } else {
+                0.45 * hump(e, -5.4, 0.9) + 0.8 * hump(e, -3.2, 0.8) + 0.3 * hump(e, -1.6, 0.4)
+            };
+            counts * grain
+        })
+        .collect();
+    let total: f32 = bins.iter().sum();
+    let percentile = |share: f32| {
+        let mut sum = 0.0;
+        let k = bins
+            .iter()
+            .position(|&count| {
+                sum += count;
+                sum >= share * total
+            })
+            .unwrap_or(255);
+        -8.0 + 8.0 * k as f32 / 255.0
+    };
+    let percentiles = [percentile(0.05), percentile(0.95)];
+    (bins, percentiles)
+}
+
+/// The side panel as the Base tab shows it: Scopes and Layers pinned, the modules below.
+/// Library and History, with nothing behind them yet, are drawn disabled. Its edge, here
+/// at its end as for a panel at the window's start, resizes it.
+fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let ids = [
+        (Icon::Library, "tab-library", false),
+        (Icon::Base, "tab-base", true),
+        (Icon::Color, "tab-color", true),
+        (Icon::Correct, "tab-correct", true),
+        (Icon::Effect, "tab-effect", true),
+        (Icon::History, "tab-history", false),
+    ];
+    let names: Vec<String> = ids
+        .iter()
+        .map(|(_, id, _)| crate::tr(page.ctx(), id))
+        .collect();
+    let tabs: Vec<PanelTab> = ids
+        .iter()
+        .zip(&names)
+        .enumerate()
+        .map(|(i, ((icon, _, enabled), name))| PanelTab {
+            icon: *icon,
+            name,
+            shortcut: Some(format!("Ctrl+{}", i + 1)),
+            enabled: *enabled,
+        })
+        .collect();
+    // The app's widths: down to 240, opening at the theme's 320.
+    let widths = 240.0..=page.available_width().clamp(240.0, 600.0);
+    let width = demo.panel_width.unwrap_or(t.sizes.side_panel);
+    let name = crate::tr(page.ctx(), "panel-width");
+    let edge = PanelEdge::new(&name, width, widths).at_start(true);
+    let (rect, _) = page.allocate_exact_size(vec2(edge.width(page.ctx()), 560.0), Sense::hover());
+    page.painter().rect_filled(rect, 0.0, t.colors.panel);
+    // The sections stop short of the edge's line, as the app's panel keeps room for it.
+    let inside = rect.with_max_x(rect.right() - t.shape.hairline);
+    let mut child = page.new_child(egui::UiBuilder::new().max_rect(inside));
+    let ui = &mut child;
+    ui.set_clip_rect(inside);
+    match TabBar::new(&tabs, demo.panel_tab, demo.tab_names).show(ui) {
+        Some(TabBarAction::Select(i)) => demo.panel_tab = i,
+        Some(TabBarAction::ShowNames(on)) => demo.tab_names = on,
+        Some(TabBarAction::Customise) => demo.last = "Customise tabs".to_owned(),
+        None => {}
+    }
+    ui.spacing_mut().item_spacing.y = 0.0;
+
+    // The sections report; the gallery applies what they report after drawing them. It
+    // reads H itself, where the app's actions registry would.
+    let (open, exposure_tab) = (demo.open, demo.exposure_tab);
+    let peek = ui.input(|i| i.key_down(egui::Key::H)) && !ui.ctx().text_edit_focused();
+    let mut pinned_out = Vec::new();
+    let mut scrolling_out = Vec::new();
+    let (view, gradient) = (demo.scopes, &demo.gradient);
+    let mut scope_action = None;
+    PanelBody::new()
+        .pinned(|ui| {
+            let out = Section::new("Scopes", open[0])
+                .peek(peek)
+                .show(ui, |ui| scope_action = gradient.scopes(view).show(ui));
+            pinned_out.push((0, "Scopes", out));
+            let out = Section::new("Layers", open[1]).peek(peek).show(ui, |_| {});
+            pinned_out.push((1, "Layers", out));
+        })
+        .show(ui, |ui| {
+            let modules: [&'static str; 5] = [
+                "White balance",
+                "Exposure",
+                "High dynamic range",
+                "Colour grading",
+                "Vignette",
+            ];
+            for (k, title) in modules.into_iter().enumerate() {
+                let i = k + 2;
+                let mut section = Section::new(title, open[i]).module().peek(peek);
+                if title == "Exposure" {
+                    section = section.tabs(&["Basic", "Advanced"], exposure_tab);
+                }
+                let out = section.show(ui, |ui| {
+                    if title == "Exposure" {
+                        exposure_body(ui, exposure_tab);
+                    }
+                });
+                scrolling_out.push((i, title, out));
+            }
+        });
+    if let Some(action) = scope_action {
+        demo.scopes.apply(action);
+        demo.last = format!("Scopes: {action:?}");
+    }
+    demo.peeking = None;
+    for (i, title, out) in pinned_out.into_iter().chain(scrolling_out) {
+        for action in out.actions {
+            match action {
+                SectionAction::Toggle => demo.open[i] = !demo.open[i],
+                SectionAction::Tab(tab) => demo.exposure_tab = tab,
+                other => demo.last = format!("{title}: {other:?}"),
+            }
+        }
+        if out.peeking {
+            demo.peeking = Some(title);
+        }
+    }
+    if let Some(action) = edge.show(page, rect) {
+        demo.panel_width = match action {
+            PanelEdgeAction::Resize(width) => Some(width),
+            PanelEdgeAction::Reset => None,
+        };
+    }
+}
+
+/// The four graphs of a photo that clips at both ends, with their controls shown, as the
+/// pointer over them would show them.
+///
+/// The first two have the clipping overlays to toggle, the next two not yet. The last has
+/// nothing measured yet and an app that cannot measure the vectorscope.
+fn scopes_in_use(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let width = (ui.available_width() - t.spacing.l) / 2.0;
+    let measured = &demo.clipping;
+    let mut actions = Vec::new();
+    for row in [0..2, 2..4, 4..5] {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = t.spacing.l;
+            for k in row.clone() {
+                let scopes = if k < 4 {
+                    measured.scopes(demo.in_use[k]).overlays(k < 2)
+                } else {
+                    Histogram::new(demo.in_use[k]).available(&[
+                        Scope::Histogram,
+                        Scope::Waveform,
+                        Scope::Parade,
+                    ])
+                }
+                .show_controls(true)
+                .id_salt(("scopes in use", k));
+                let action = ui.allocate_ui(vec2(width, 0.0), |ui| scopes.show(ui)).inner;
+                if let Some(action) = action {
+                    actions.push((k, action));
+                }
+            }
+        });
+        ui.add_space(t.spacing.l);
+    }
+    for (k, action) in actions {
+        demo.in_use[k].apply(action);
+        demo.last = format!("Scopes {}: {action:?}", k + 1);
+    }
+}
+
+/// The gallery's photo for the scopes: brightness rising across it, from near black to
+/// near white, under a cool sky that warms down to sunlit ground. Its red, green and blue
+/// at a point from 0 to 1 across and down.
+fn gradient(x: f32, y: f32) -> [f32; 3] {
+    let value = 0.04 + 0.9 * x.powf(1.4);
+    let sky = [0.70, 0.86, 1.0];
+    let ground = [1.0, 0.80, 0.55];
+    std::array::from_fn(|k| value * (sky[k] + (ground[k] - sky[k]) * y))
+}
+
+/// A photo measured as the engine is to measure the shown frame for the scopes: the counts
+/// of a histogram, a waveform and a vectorscope, and how much clips.
+#[derive(Clone, Debug)]
+struct Measured {
+    /// Red, green, blue and luminance.
+    histogram: [Vec<f32>; 4],
+    waveform: [Vec<f32>; 4],
+    vectorscope: Vec<f32>,
+    /// Each vectorscope cell's hue at full saturation and brightness, as the engine gives
+    /// darktable's.
+    colours: Vec<Color32>,
+    clipped: Clipped,
+}
+
+const BINS: usize = 128;
+const COLUMNS: usize = 64;
+const LEVELS: usize = 64;
+const GRID: usize = 48;
+
+impl Measured {
+    /// Measures a 1024 × 96 photo whose pixel at a point, 0 to 1 across and down, is `pixel`
+    /// before it is clipped to the display.
+    fn of(pixel: impl Fn(f32, f32) -> [f32; 3]) -> Measured {
+        let (width, height) = (1024, 96);
+        let bin = |v: f32, n: usize| ((v * n as f32) as usize).min(n - 1);
+        let mut histogram: [Vec<f32>; 4] = std::array::from_fn(|_| vec![0.0; BINS]);
+        let mut waveform: [Vec<f32>; 4] = std::array::from_fn(|_| vec![0.0; COLUMNS * LEVELS]);
+        let mut vectorscope = vec![0.0; GRID * GRID];
+        let (mut shadows, mut highlights) = (0, 0);
+        for y in 0..height {
+            for x in 0..width {
+                let raw = pixel(
+                    (x as f32 + 0.5) / width as f32,
+                    (y as f32 + 0.5) / height as f32,
+                );
+                shadows += usize::from(raw.iter().any(|&c| c <= 0.0));
+                highlights += usize::from(raw.iter().any(|&c| c >= 1.0));
+                let [r, g, b] = raw.map(|c| c.clamp(0.0, 1.0));
+                let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                let column = x * COLUMNS / width;
+                for (k, value) in [r, g, b, luminance].into_iter().enumerate() {
+                    histogram[k][bin(value, BINS)] += 1.0;
+                    waveform[k][column * LEVELS + bin(value, LEVELS)] += 1.0;
+                }
+                // The hue plane, red to the right and green a third of a turn on.
+                let (a, c) = (r - (g + b) / 2.0, (g - b) * 3f32.sqrt() / 2.0);
+                let cell = bin((1.0 - c) / 2.0, GRID) * GRID + bin((a + 1.0) / 2.0, GRID);
+                vectorscope[cell] += 1.0;
+            }
+        }
+        let colours = (0..GRID * GRID)
+            .map(|cell| {
+                // The hue at the cell's centre, in sixths of a turn from red.
+                let centre = |k: usize| 2.0 * (k as f32 + 0.5) / GRID as f32 - 1.0;
+                let (a, c) = (centre(cell % GRID), -centre(cell / GRID));
+                let hue = c.atan2(a).to_degrees().rem_euclid(360.0) / 60.0;
+                let channel = |n: f32| {
+                    let k = (n + hue) % 6.0;
+                    1.0 - k.min(4.0 - k).clamp(0.0, 1.0)
+                };
+                let byte = |v: f32| (v * 255.0).round() as u8;
+                Color32::from_rgb(byte(channel(5.0)), byte(channel(3.0)), byte(channel(1.0)))
+            })
+            .collect();
+        let pixels = (width * height) as f32;
+        Measured {
+            histogram,
+            waveform,
+            vectorscope,
+            colours,
+            clipped: Clipped {
+                shadows: shadows as f32 / pixels,
+                highlights: highlights as f32 / pixels,
+            },
+        }
+    }
+
+    fn scopes(&self, view: ScopeView) -> Histogram<'_> {
+        let [red, green, blue, luminance] = &self.histogram;
+        let [w_red, w_green, w_blue, w_luminance] = &self.waveform;
+        Histogram::new(view)
+            .histogram(HistogramBins {
+                red,
+                green,
+                blue,
+                luminance,
+            })
+            .waveform(WaveformBins {
+                columns: COLUMNS,
+                levels: LEVELS,
+                red: w_red,
+                green: w_green,
+                blue: w_blue,
+                luminance: w_luminance,
+            })
+            .vectorscope(VectorscopeBins {
+                size: GRID,
+                counts: &self.vectorscope,
+                colours: &self.colours,
+            })
+            .clipped(self.clipped)
+    }
+}
+
+/// Exposure's two tabs, with sample values.
+fn exposure_body(ui: &mut Ui, tab: usize) {
+    if tab == 0 {
+        SliderRow::new("Exposure", 0.42, -4.0..=4.0)
+            .decimals(2)
+            .unit(EV)
+            .show(ui);
+        SliderRow::new("Contrast", 12.0, -100.0..=100.0)
+            .unit(PERCENT)
+            .mark(Mark::Kept)
+            .show(ui);
+        SliderRow::new("Brightness", 0.0, -100.0..=100.0)
+            .unit(PERCENT)
+            .show(ui);
+    } else {
+        group_label(ui, "Contrast");
+        SliderRow::new("Pivot", 18.0, 1.0..=50.0)
+            .name("Contrast pivot")
+            .default_value(18.0)
+            .decimals(1)
+            .unit(PERCENT)
+            .no_fill()
+            .show(ui);
+    }
+}
+
+/// A sample of the menus as the ☰ opens them, with access keys at the top, submenus,
+/// keys, check marks, separators and disabled items. The words stand in for the app's.
+fn sample_menu(anchor: egui::Rect) -> Request {
+    let entries = vec![
+        Submenu::new(
+            "file",
+            "&File",
+            vec![
+                Item::new("open", "Open Image…").shortcut("Ctrl+O").into(),
+                Submenu::new(
+                    "open-recent",
+                    "Open Recent",
+                    vec![
+                        Item::new("recent-1", "Holidays 2026").into(),
+                        Item::new("recent-2", "Studio").into(),
+                    ],
+                )
+                .into(),
+                Entry::Separator,
+                Item::new("export", "Export…")
+                    .shortcut("Ctrl+E")
+                    .enabled(false)
+                    .into(),
+                Entry::Separator,
+                Item::new("quit", "Quit").shortcut("Ctrl+Q").into(),
+            ],
+        )
+        .into(),
+        Submenu::new(
+            "edit",
+            "&Edit",
+            vec![
+                Item::new("undo", "Undo").shortcut("Ctrl+Z").into(),
+                Item::new("redo", "Redo")
+                    .shortcut("Ctrl+Shift+Z")
+                    .enabled(false)
+                    .into(),
+                Entry::Separator,
+                Item::new("settings", "Settings…").shortcut("Ctrl+,").into(),
+            ],
+        )
+        .into(),
+        Submenu::new(
+            "view",
+            "&View",
+            vec![
+                Item::new("guides", "Guides")
+                    .shortcut("G")
+                    .checked(true)
+                    .into(),
+                Item::new("proof-margin", "Proof Margin")
+                    .checked(false)
+                    .into(),
+                Item::new("before-after", "Before and After")
+                    .shortcut("\\")
+                    .checked(false)
+                    .enabled(false)
+                    .into(),
+                Entry::Separator,
+                Submenu::new(
+                    "interface-size",
+                    "Interface Size",
+                    vec![
+                        Item::new("larger", "Larger").shortcut("Ctrl+=").into(),
+                        Item::new("smaller", "Smaller").shortcut("Ctrl+-").into(),
+                    ],
+                )
+                .into(),
+                Entry::Separator,
+                Item::new("full-screen", "Full Screen")
+                    .shortcut("F11")
+                    .checked(false)
+                    .into(),
+            ],
+        )
+        .into(),
+        Submenu::new(
+            "help",
+            "&Help",
+            vec![Item::new("about", "About Apertrust").into()],
+        )
+        .into(),
+    ];
+    Request::pull_down(anchor, "Menu", entries)
+}
+
+/// The jobs spinner's states, as the top panel draws them: turning while jobs run, and at
+/// rest the tick, or the warning sign where one failed; then the jobs window's content with
+/// several jobs, newest first, an export's row among them.
+fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let mut at_rest = sample_jobs();
+    at_rest.retain(|job| !matches!(job.phase, JobPhase::Queued | JobPhase::Running));
+    let finished: Vec<Job> = at_rest
+        .iter()
+        .filter(|job| job.phase == JobPhase::Finished)
+        .cloned()
+        .collect();
+    ui.horizontal(|ui| {
+        for (i, jobs) in [sample_jobs(), at_rest.clone(), finished]
+            .iter()
+            .enumerate()
+        {
+            ui.push_id(("spinner", i), |ui| {
+                if let Some(spinner) = Jobs::new(jobs).spinner(ui)
+                    && spinner.clicked()
+                {
+                    demo.last = "Jobs spinner: opened".to_owned();
+                }
+            });
+            ui.add_space(t.spacing.l);
+        }
+    });
+    ui.add_space(t.spacing.m);
+    let jobs = sample_jobs();
+    let mut asked = None;
+    Frame::popup(ui.style())
+        .inner_margin(t.spacing.l)
+        .show(ui, |ui| {
+            ui.set_width(380.0);
+            asked = Jobs::new(&jobs)
+                .file_manager(FileManager::Finder)
+                .window(ui);
+        });
+    if let Some(action) = asked {
+        demo.last = format!("Jobs window: {action:?}");
+    }
+}
+
+/// Sample jobs, as the app would mirror them from the session: the oldest first, a failed
+/// export, a finished import, a delete that cannot be cancelled, a running export with
+/// another waiting, and thumbnails.
+fn sample_jobs() -> Vec<Job> {
+    let folder = "~/Pictures/apertrust_exported";
+    let mut failed = ExportDetails::new(12, folder);
+    failed.done = 11;
+    failed.failed = 1;
+    failed.failure = Some(ExportFailure {
+        photo: "IMG_2047.ARW".to_owned(),
+        file: "IMG_2047.jpg".to_owned(),
+        cause: "the disk is full".to_owned(),
+    });
+    let mut running = ExportDetails::new(12, folder);
+    running.done = 3;
+    running.current = Some("IMG_2044.ARW".to_owned());
+    let message = |id: &str, done: f64, total: f64| {
+        JobMessage::new(id)
+            .number("done", done)
+            .number("total", total)
+    };
+    vec![
+        Job::new(
+            1,
+            JobPhase::Failed,
+            message("job-export", 11.0, 12.0).text("target", "file on disk"),
+        )
+        .fraction(1.0)
+        .export(failed),
+        Job::new(2, JobPhase::Finished, message("job-import", 212.0, 212.0)).fraction(1.0),
+        Job::new(3, JobPhase::Running, message("job-delete", 4.0, 9.0)).fraction(0.44),
+        Job::new(
+            4,
+            JobPhase::Running,
+            message("job-export", 3.0, 12.0).text("target", "file on disk"),
+        )
+        .fraction(0.25)
+        .cancellable(true)
+        .export(running),
+        Job::new(
+            5,
+            JobPhase::Queued,
+            message("job-export", 0.0, 5.0).text("target", "file on disk"),
+        )
+        .cancellable(true)
+        .export(ExportDetails::new(
+            5,
+            "~/Pictures/Wedding/apertrust_exported",
+        )),
+        Job::new(6, JobPhase::Running, JobMessage::new("job-thumbnails"))
+            .fraction(0.6)
+            .cancellable(true),
+    ]
+}
+
+/// The shell's parts, with sample state: the top panel, the central bar, the caption and
+/// the grid panel.
+fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let ctx = ui.ctx().clone();
+    let available = Available {
+        redo: false,
+        apply: false,
+        ..Available::default()
+    };
+    let jobs = sample_jobs();
+    if let Some(action) = TopPanel::new()
+        .available(available)
+        .saved(SaveState::Saved)
+        .jobs(Jobs::new(&jobs).file_manager(FileManager::Finder))
+        .undo_tip("Undo Exposure: Brightness +8")
+        .shortcut(TopPanelAction::Export, "Ctrl+E")
+        .shortcut(TopPanelAction::Undo, "Ctrl+Z")
+        .show(ui)
+    {
+        demo.last = format!("Top panel: {action:?}");
+    }
+    // As the title bar on Windows and Linux, with the ☰ at its start and the window's
+    // caption buttons at its end: the window as it is, its menu open at first with View
+    // expanded where the snapshots photograph it, then maximised. Without Saved, as with no
+    // photo open.
+    let menu = TopPanel::menu_popup();
+    for maximised in [false, true] {
+        ui.add_space(t.spacing.s);
+        let action = TopPanel::new()
+            .available(available)
+            .menu_button(true)
+            .title_bar(true)
+            .caption_buttons(true)
+            .maximised(maximised)
+            .shortcut(TopPanelAction::Menu, "F10")
+            .show(ui);
+        let anchor = TopPanel::menu_anchor(&ctx);
+        let first = !maximised && demo.open_menu;
+        if let Some(anchor) = anchor.filter(|_| first || action == Some(TopPanelAction::Menu)) {
+            let mut request = sample_menu(anchor);
+            if first {
+                request = request.expanded("view");
+                demo.open_menu = false;
+            }
+            popup::open(&ctx, menu, request);
+        } else if let Some(action) = action {
+            demo.last = format!("Top panel: {action:?}");
+        }
+        if !maximised {
+            // Room for the menu, so it covers nothing else.
+            ui.allocate_space(vec2(ui.available_width(), 210.0));
+        }
+    }
+    popup::show(&ctx);
+    match popup::answer(&ctx, menu) {
+        Some(Answer::Chosen(id)) => demo.last = format!("Menu: {id}"),
+        Some(Answer::Dismissed) => demo.last = "Menu: dismissed".to_owned(),
+        None => {}
+    }
+    ui.add_space(t.spacing.s);
+    let image = crate::tr(&ctx, "layer-image");
+    let zoom = Zoom {
+        fit: 23.0,
+        scale: demo.zoom,
+        enabled: true,
+    };
+    if let Some(action) = CentralBar::new(&image, zoom)
+        .toggles(
+            Toggle::new(false, true),
+            Toggle::new(demo.proof, true),
+            Toggle::new(false, false),
+            Toggle::new(demo.guides, true),
+        )
+        .layers(true)
+        .values(Some([142, 128, 113]))
+        .show(ui)
+    {
+        match action {
+            CentralBarAction::Guides => demo.guides = !demo.guides,
+            CentralBarAction::ProofMargin => demo.proof = !demo.proof,
+            CentralBarAction::Zoom(scale) => demo.zoom = scale,
+            other => demo.last = format!("Central bar: {other:?}"),
+        }
+    }
+    // The photo frame in its slot: a 3:2 photo fitted under the margin, or under Proof
+    // margin's with its white border, and its caption under it.
+    let (slot, _) = ui.allocate_exact_size(vec2(ui.available_width(), 150.0), Sense::hover());
+    ui.painter().rect_filled(slot, 0.0, t.colors.photo_surround);
+    let margin = if demo.proof {
+        Margin::Proof(0.1)
+    } else {
+        Margin::Points(10.0)
+    };
+    let frame = PhotoFrame::new(slot, margin);
+    let room = frame.bounds();
+    let width = room.x.min(room.y * 1.5);
+    let placed = frame.place(vec2(width, width / 1.5), ui.pixels_per_point());
+    ui.painter().rect_filled(placed.photo, 0.0, t.colors.sunken);
+    let exposure = ["1/250 s", "f/8", "35 mm", "ISO 100"].map(str::to_owned);
+    PhotoCaption::new("IMG_2041.ARW")
+        .view_only(true)
+        .exposure(&exposure)
+        .show(ui, placed.caption);
+    let names: Vec<String> = (0..40)
+        .map(|i| format!("IMG_{:04}.ARW", 2036 + i))
+        .collect();
+    let thumb = |i: usize| Thumb {
+        name: &names[i],
+        edited: [0, 2, 3, 5, 9].contains(&i),
+        status: match i {
+            4 => Some(CellStatus::ViewOnly),
+            7 => Some(CellStatus::Unreadable("not an Apertrust edit")),
+            _ => None,
+        },
+        selected: demo.selected.contains(&i),
+        picture: None,
+        rating: None,
+    };
+    let panel = GridPanel::new(names.len(), Some(demo.active), thumb).show(ui);
+    if let Some(action) = panel.action {
+        match action {
+            GridPanelAction::Open(i) => {
+                demo.active = i;
+                demo.selected = vec![i];
+            }
+            GridPanelAction::ToggleSelected(i) => {
+                if let Some(k) = demo.selected.iter().position(|&s| s == i) {
+                    demo.selected.remove(k);
+                } else {
+                    demo.selected.push(i);
+                }
+            }
+            GridPanelAction::SelectRange(i) => {
+                let (a, b) = (demo.active.min(i), demo.active.max(i));
+                demo.selected = (a..=b).collect();
+            }
+        }
+    }
+}

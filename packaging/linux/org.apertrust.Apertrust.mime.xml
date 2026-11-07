@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	Installed as share/mime/packages/org.apertrust.Apertrust.xml: the raw formats rawler
+	decodes that shared-mime-info does not name, each a kind of image/x-dcraw as its raw
+	types are. The others are shared-mime-info's own, which the desktop file lists too
+	(crates/app/tests/packaging.rs holds both to apertrust_raw::extensions()).
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+	<mime-type type="image/x-apple-qtk">
+		<comment>Apple QuickTake image</comment>
+		<sub-class-of type="image/x-dcraw"/>
+		<generic-icon name="image-x-generic"/>
+		<glob pattern="*.qtk"/>
+	</mime-type>
+	<mime-type type="image/x-arri-ari">
+		<comment>ARRI raw image</comment>
+		<sub-class-of type="image/x-dcraw"/>
+		<generic-icon name="image-x-generic"/>
+		<glob pattern="*.ari"/>
+	</mime-type>
+	<mime-type type="image/x-canon-crm">
+		<comment>Canon Cinema RAW Light image</comment>
+		<sub-class-of type="image/x-dcraw"/>
+		<generic-icon name="image-x-generic"/>
+		<glob pattern="*.crm"/>
+	</mime-type>
+	<mime-type type="image/x-kodak-dcs">
+		<comment>Kodak DCS raw image</comment>
+		<sub-class-of type="image/x-dcraw"/>
+		<generic-icon name="image-x-generic"/>
+		<glob pattern="*.dcs"/>
+	</mime-type>
+	<mime-type type="image/x-olympus-ori">
+		<comment>Olympus raw image</comment>
+		<sub-class-of type="image/x-dcraw"/>
+		<generic-icon name="image-x-generic"/>
+		<glob pattern="*.ori"/>
+	</mime-type>
+</mime-info>

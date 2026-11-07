@@ -1,0 +1,580 @@
+# Apertrust's settings schema (decisions 43 and 45; docs/settings.md, The settings
+# schema).
+#
+# Every setting is declared once, here: a table whose header is its id, the dotted path of
+# its key in settings.toml, permanent, each part snake_case. The crate that owns a setting
+# generates it from this file in its build.rs, as a typed static named after its id
+# (side_panel.width is SIDE_PANEL_WIDTH), in this file's order, which the Settings dialog
+# follows; the generator is crates/base/src/settings/codegen.rs. settings.toml's version
+# is the file's own, not a setting.
+#
+# A setting's fields:
+# - owner: "app", read by the desktop app alone; "engine", by every process that runs the
+#   engine; "export", the Export dialog's last settings, which the app keeps and the CLI's
+#   export reads (decision 56); "module:<id>", a module's tool setting.
+# - kind, with its own fields:
+#   "boolean";
+#   "number": min, max, step and decimals (how many it is kept and shown with), or in
+#     place of min, above, what it must be more than: a value that is not cannot be read,
+#     where one out of min and max is read as the nearer end; unit, the id of the words
+#     it is shown with (unit-<unit>), and factor, what it is multiplied by where it is
+#     shown, as darktable's slider factor (100 shows 1.1 as 110 %);
+#   "choice": type, the path of a Rust type that implements
+#     apertrust_base::settings::Choice, whose options it takes, so none is listed here;
+#   "text";
+#   "list": of, its items' kind, and length, when it is set; one of no set length may be
+#     written as its single item, without the list;
+#   "table": by, the registry whose ids key it (actions, sections, modules or groups),
+#     and of, its values' kind.
+#   An item's or a value's kind is a kind's name, or an inline table of kind and that
+#   kind's fields.
+# - default: a value of its kind, or "computed", computed in Rust by the function its
+#   owner's crate defines under the setting's name (computed::side_panel_width). A
+#   setting with no value until its owner keeps one has none, and says optional = true.
+# - applies: "at-once", "next-photo" or "after-restart".
+# - page and group: the Settings dialog's page that shows it as a row (general, import,
+#   library, editing, processing, storage, shortcuts, presets or ai) and the titled group
+#   on it (snake_case), each with the other; neither for what the app keeps by itself,
+#   which the dialog never shows. A page's groups and rows are in this file's order.
+#
+# Decision 43's other fields and kinds, platforms, whole numbers and folders, come with
+# the first setting that needs one.
+#
+# The comment above a setting is a developer's note, which its static's docs carry. Its
+# words for people are Fluent messages (crates/ui/locales), with ids that follow from its
+# id: no English here.
+
+# The interface's theme: one of the design system's built-in themes.
+[theme]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::Builtin"
+default = "dark"
+applies = "at-once"
+page = "general"
+group = "interface"
+
+# The interface's language, kept only once the user chooses one: until then it follows
+# the system's, as it does when a release build reads the pseudo-locale.
+[locale]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::Locale"
+default = "computed"
+applies = "at-once"
+page = "general"
+group = "interface"
+
+# The interface's size, egui's zoom factor on top of the system's scale: stepped in
+# tenths by the keys, kept in hundredths, so that 1.1 is not 1.100000023841858, and shown
+# in per cent.
+[scale]
+owner = "app"
+kind = "number"
+min = 0.5
+max = 3.0
+step = 0.1
+decimals = 2
+unit = "percent"
+factor = 100
+default = 1.0
+applies = "at-once"
+page = "general"
+group = "interface"
+
+# The window's inner size in logical pixels, as it last stood while neither maximised nor
+# full screen, kept in whole pixels; each part more than 0, and never under the shell's
+# smallest, 960 by 600. The default is the size at the first start.
+[window.size]
+owner = "app"
+kind = "list"
+of = { kind = "number", decimals = 0, above = 0 }
+length = 2
+default = [1600, 1000]
+applies = "at-once"
+
+# The window's outer position in physical pixels, where the platform reports one (Wayland
+# never does), with the display's scale factor then: none until the window stood
+# somewhere, so that the system places it.
+[window.position]
+owner = "app"
+kind = "list"
+of = { kind = "number", decimals = 0 }
+length = 2
+optional = true
+applies = "at-once"
+
+# The display's scale factor when window.position was kept, which turns its pixels into
+# the points macOS places windows in; more than 0. Kept and removed with the position.
+[window.scale_factor]
+owner = "app"
+kind = "number"
+above = 0
+optional = true
+applies = "at-once"
+
+# Whether the window was maximised. macOS's zoom is not, so there the window opens at its
+# last size.
+[window.maximized]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+
+# Where Settings' own window was last left, on the Mac where it is one (decision 41), as
+# window.position keeps the main window's: its outer position in physical pixels, none
+# until it has closed once, so that it opens centred over the main window.
+[settings_window.position]
+owner = "app"
+kind = "list"
+of = { kind = "number", decimals = 0 }
+length = 2
+optional = true
+applies = "at-once"
+
+# The display's scale factor when settings_window.position was kept; more than 0. Kept
+# and removed with the position.
+[settings_window.scale_factor]
+owner = "app"
+kind = "number"
+above = 0
+optional = true
+applies = "at-once"
+
+# The Settings dialog's page last shown, which it opens on next; one that holds nothing
+# yet opens General.
+[settings_window.page]
+owner = "app"
+kind = "choice"
+type = "apertrust_base::settings::Page"
+default = "general"
+applies = "at-once"
+
+# Where the jobs window was last left (decision 57), as settings_window.position keeps
+# Settings': its outer position in physical pixels, none until it has closed once, so that
+# it opens centred over the main window.
+[jobs_window.position]
+owner = "app"
+kind = "list"
+of = { kind = "number", decimals = 0 }
+length = 2
+optional = true
+applies = "at-once"
+
+# The display's scale factor when jobs_window.position was kept; more than 0. Kept and
+# removed with the position.
+[jobs_window.scale_factor]
+owner = "app"
+kind = "number"
+above = 0
+optional = true
+applies = "at-once"
+
+# Whether the side panel's tabs show their names.
+[side_panel.tab_names]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "editing"
+group = "side_panel"
+
+# The side panel's width in points, as the user dragged its edge, kept whole; until then
+# the theme's. A narrow window shows the panel narrower, never more than half the window,
+# and keeps this width.
+[side_panel.width]
+owner = "app"
+kind = "number"
+min = 240
+max = 600
+decimals = 0
+default = "computed"
+applies = "at-once"
+
+# The margin round the photo and its caption in the central panel, in points; the photo
+# fits in what the slot leaves inside it (docs/gui.md, The photo frame). darktable's
+# darkroom border (plugins/darkroom/ui/border_size, 10). Not on a page of the Settings
+# dialog: it is set here, or by --conf central_panel.margin=16.
+[central_panel.margin]
+owner = "app"
+kind = "number"
+min = 0
+max = 100
+decimals = 0
+default = 10
+applies = "at-once"
+
+# The margin while Proof margin is on, as a fraction of the slot's smaller side, sized as
+# darktable's colour assessment border (darkroom/ui/color_assessment_total_border_width,
+# whose default is 0.2), but 0.12 by default, 40% less, and with no white inner border. Not
+# on a page of the Settings dialog either.
+[central_panel.proof_margin]
+owner = "app"
+kind = "number"
+min = 0.05
+max = 0.4
+decimals = 2
+default = 0.12
+applies = "at-once"
+
+# The background behind the photo: one of six neutral greys (docs/gui.md, The
+# background), chosen from the central panel's right-click menu or View › Background.
+# Computed: until one is chosen it follows the theme, whose own surround is its default.
+[central_panel.background]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::Background"
+default = "computed"
+applies = "at-once"
+
+# Edit's side panel tab, by its id. Text, not a choice: Customise tabs will make tabs of
+# the user's own. An id that is no tab, or a tab that cannot be chosen yet, shows Base.
+[edit.tab]
+owner = "app"
+kind = "text"
+default = "base"
+applies = "at-once"
+
+# The sections the user opened (true) or closed (false), by id; the others start as their
+# section does.
+[edit.sections]
+owner = "app"
+kind = "table"
+by = "sections"
+of = "boolean"
+default = {}
+applies = "at-once"
+
+# The collapsible groups the user opened or closed, by module and group, the same for
+# every photo; the others start closed (decision 29).
+[edit.groups]
+owner = "app"
+kind = "table"
+by = "modules"
+of = { kind = "table", by = "groups", of = "boolean" }
+default = {}
+applies = "at-once"
+
+# The folders opened, newest first, at most ten: File › Open Recent's list and the Library
+# tab's recent folders (docs/gui.md, File). Paths as text. Kept here until the small state
+# file of their own that the plan names exists.
+[library.recent_folders]
+owner = "app"
+kind = "list"
+of = "text"
+default = []
+applies = "at-once"
+
+# The grid panel's sort: its key, chosen in the grid bar's Sort or View › Sort By
+# (docs/gui.md, The grid bar). The app's mirror sorts the folder's photos by it.
+[grid_panel.sort]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::SortKey"
+default = "capture-time"
+applies = "at-once"
+
+# Whether the grid panel's sort runs descending; ties keep their order either way.
+[grid_panel.descending]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+
+# The thumbnails' size, by name, so its points can be retuned: the grid bar's Zoom and
+# View › Thumbnail Size.
+[grid_panel.thumbnails]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::ThumbnailSize"
+default = "medium"
+applies = "at-once"
+
+# Whether the thumbnails show their captions, the rating and labels over the file name:
+# the grid bar's Labels and View › Show Labels (docs/gui.md, The cell).
+[grid_panel.labels]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+
+# Whether each thumbnail fills its square, cut at its longer sides, rather than fitting in
+# it whole (docs/gui.md, The cell).
+[grid_panel.square_thumbnails]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+page = "library"
+group = "thumbnails"
+
+# Where the grid panel is: along the bottom, or a column at the left or right, from the
+# grid bar's options menu and View › Grid Panel Position (docs/gui.md, Its position).
+[grid_panel.position]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::GridPosition"
+default = "bottom"
+applies = "at-once"
+
+# How many rows of thumbnails the grid panel shows at the bottom, as its edge was dragged:
+# whole rows, so a change of scale or of the thumbnails' size still gives whole ones. A
+# smaller window shows fewer, never more than half its height, and keeps this number.
+[grid_panel.rows]
+owner = "app"
+kind = "number"
+min = 1
+max = 20
+decimals = 0
+default = 1
+applies = "at-once"
+
+# How many columns of thumbnails the grid panel shows at the left or right, as its edge
+# was dragged, kept apart from its rows; never more than half the window's width.
+[grid_panel.columns]
+owner = "app"
+kind = "number"
+min = 1
+max = 20
+decimals = 0
+default = 1
+applies = "at-once"
+
+# The Scopes section's graph.
+[scopes.graph]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::Scope"
+default = "histogram"
+applies = "at-once"
+
+# The scopes' scale: the counts as they are, or their logarithm, so a few pixels show.
+[scopes.scale]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::Scale"
+default = "linear"
+applies = "at-once"
+
+# The channels the scopes show, each named once or more; the others are hidden.
+[scopes.channels]
+owner = "app"
+kind = "list"
+of = { kind = "choice", type = "apertrust_ui::components::Channel" }
+default = ["red", "green", "blue"]
+applies = "at-once"
+
+# Whether the photo shows where its shadows clip.
+[scopes.shadow_clipping]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+
+# Whether the photo shows where its highlights clip.
+[scopes.highlight_clipping]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+
+# The GPU adapter the engine opens: the first whose name holds this text, ignoring case.
+# Empty takes wgpu's high-performance choice. One that names no adapter, as after a GPU
+# is removed or the folder moves to another machine, is warned of and wgpu's choice
+# taken, where a binary's own --adapter flag that names none is an error. After a
+# restart, since the window's device is the engine's (decision 17).
+[engine.adapter]
+owner = "engine"
+kind = "text"
+default = ""
+applies = "after-restart"
+page = "processing"
+group = "gpu"
+
+# The GPU memory a render may take before it tiles, in MiB, on top of the working
+# buffers (decision 12): wgpu reports no GPU's memory, so it is a setting. Kept whole.
+# After a restart, since the session takes it as it starts; at the next photo once the
+# session takes a command for it.
+[engine.memory_budget]
+owner = "engine"
+kind = "number"
+min = 256
+max = 65536
+step = 256
+decimals = 0
+unit = "mib"
+default = 2048
+applies = "after-restart"
+page = "processing"
+group = "gpu"
+
+# The keys that differ from the defaults, by action, in the portable form Shortcut::text
+# writes (Ctrl+Shift+Z, Ctrl being Cmd on macOS), the same on every platform. An empty
+# list leaves the action without a key; a single key may be written without its list.
+[keys]
+owner = "app"
+kind = "table"
+by = "actions"
+of = { kind = "list", of = "text" }
+default = {}
+applies = "at-once"
+
+# The Export dialog's last settings (decision 56; docs/engine.md, Export jobs, Settings and
+# presets), one per darktable conf key the dialog holds, under darktable's default,
+# kind and range, each option of a choice in darktable's order: the app keeps them as
+# darktable keeps its conf, and the CLI's export takes its format's options from them, as
+# darktable-cli takes its own from darktablerc. A key darktable does not declare in
+# darktableconfig.xml.in takes the value its conf reads for one: none, so 0 or false.
+
+# File on disk's path, darktable's plugins/imageio/storage/disk/file_directory, a pattern
+# of darktable's variables, its folder apertrust_exported where darktable's says
+# darktable_exported (D6).
+[export.disk.path]
+owner = "export"
+kind = "text"
+default = "$(FILE_FOLDER)/apertrust_exported/$(FILE_NAME)"
+applies = "at-once"
+
+# File on disk's on conflict, darktable's plugins/imageio/storage/disk/overwrite, which
+# darktable does not declare: 0, create unique filename.
+[export.disk.on_conflict]
+owner = "export"
+kind = "choice"
+type = "apertrust_export::settings::OnConflict"
+default = "create_unique_filename"
+applies = "at-once"
+
+# The file format, darktable's plugins/lighttable/export/format_name, by darktable's names
+# for its formats; the others come with their writers.
+[export.format]
+owner = "export"
+kind = "choice"
+type = "apertrust_export::settings::FileFormat"
+default = "jpeg"
+applies = "at-once"
+
+# JPEG's quality, darktable's plugins/imageio/format/jpeg/quality.
+[export.jpeg.quality]
+owner = "export"
+kind = "number"
+min = 5
+max = 100
+step = 1
+decimals = 0
+default = 95
+applies = "at-once"
+
+# JPEG's chroma subsampling, darktable's plugins/imageio/format/jpeg/subsample, which
+# darktable does not declare: 0, auto.
+[export.jpeg.subsample]
+owner = "export"
+kind = "choice"
+type = "apertrust_export::jpeg::Subsample"
+default = "auto"
+applies = "at-once"
+
+# PNG's bit depth, darktable's plugins/imageio/format/png/bpp, an enum of 8 and 16.
+[export.png.bit_depth]
+owner = "export"
+kind = "choice"
+type = "apertrust_export::png::BitDepth"
+default = "8"
+applies = "at-once"
+
+# PNG's compression, zlib's level, darktable's plugins/imageio/format/png/compression.
+[export.png.compression]
+owner = "export"
+kind = "number"
+min = 0
+max = 9
+step = 1
+decimals = 0
+default = 5
+applies = "at-once"
+
+# Set size, darktable's plugins/lighttable/export/dimensions_type.
+[export.size.mode]
+owner = "export"
+kind = "choice"
+type = "apertrust_export::settings::SizeMode"
+default = "pixels"
+applies = "at-once"
+
+# The largest width in pixels, 0 for no limit, darktable's plugins/lighttable/export/width:
+# pixels whatever the mode, the print sizes in cm or inches held as pixels at the dpi, as
+# darktable holds them.
+[export.size.width]
+owner = "export"
+kind = "number"
+min = 0
+decimals = 0
+default = 0
+applies = "at-once"
+
+# The largest height in pixels, 0 for no limit, darktable's
+# plugins/lighttable/export/height, as export.size.width.
+[export.size.height]
+owner = "export"
+kind = "number"
+min = 0
+decimals = 0
+default = 0
+applies = "at-once"
+
+# The print sizes' dots per inch, darktable's plugins/lighttable/export/print_dpi; in the cm
+# and inch modes a JPEG's density too, as darktable's metadata/resolution is then.
+[export.size.dpi]
+owner = "export"
+kind = "number"
+min = 72
+max = 9600
+decimals = 0
+default = 300
+applies = "at-once"
+
+# By scale, darktable's text for it, plugins/lighttable/export/resizing_factor: a whole
+# number, a decimal or a fraction, 0 or empty being 1. darktable does not declare it, so
+# its conf reads none, which is 1; "1" is what its reset and its first export write.
+[export.size.scale]
+owner = "export"
+kind = "text"
+default = "1"
+applies = "at-once"
+
+# Allow upscaling, darktable's plugins/lighttable/export/upscale, which darktable does not
+# declare: false.
+[export.size.upscale]
+owner = "export"
+kind = "boolean"
+default = false
+applies = "at-once"
+
+# High quality resampling, darktable's plugins/lighttable/export/high_quality_processing.
+[export.size.high_quality]
+owner = "export"
+kind = "boolean"
+default = false
+applies = "at-once"
+
+# The profile, darktable's plugins/lighttable/export/icctype: -1, image settings, the
+# edit's own output colour profile, else one of darktable's export profiles, by the
+# output colour profile's names for them (decision 26).
+[export.profile]
+owner = "export"
+kind = "choice"
+type = "apertrust_export::settings::Profile"
+default = "image_settings"
+applies = "at-once"
+
+# Ask before exporting in overwrite mode, darktable's
+# plugins/lighttable/export/ask_before_export_overwrite: the alert "Export in overwrite
+# mode?", asked as darktable's disk storage asks (ask_user_confirmation): for On conflict
+# Overwrite, whether or not a file is there, and never for Overwrite if changed. Its Don't
+# ask again turns it off.
+[export.ask_before_overwrite]
+owner = "export"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "general"
+group = "confirmations"

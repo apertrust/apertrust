@@ -1,0 +1,58 @@
+# cargo-deny: run `cargo deny check` before adding dependencies.
+# Apertrust is GPL-3.0-or-later, so every dependency licence must be GPLv3-compatible.
+
+[graph]
+all-features = true
+
+[advisories]
+ignore = [
+    # zbus's name and value types, merged into zbus 6 and no longer published apart; not
+    # vulnerabilities. They come with egui's Linux screen-reader bridge (accesskit_unix,
+    # atspi, zbus 5), which has no zbus 6 release yet. Remove
+    # these when AccessKit moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; AccessKit's Linux bridge is still on zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; AccessKit's Linux bridge is still on zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; AccessKit's Linux bridge is still on zbus 5" },
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    # jpeg-encoder's forward DCT, the Independent JPEG Group's, allowed by the user on
+    # 2026-11-05 (decision 56). The FSF lists it as compatible with the GPL; a binary's
+    # documentation must say it is based in part on the group's work, as CREDITS.md does.
+    "IJG",
+    "ISC",
+    # rawler, which still uses the deprecated identifier for LGPL-2.1-only. LGPL 2.1
+    # section 3 lets its code be used under the GPL, version 2 or later.
+    "LGPL-2.1",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0-or-later",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Workspace crates are unpublished and share the project licence.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace path dependencies have no version; allow them for private crates.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

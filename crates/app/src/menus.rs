@@ -1,0 +1,1301 @@
+// Apertrust, a free, non-destructive, cross-platform raw photo editor
+// Copyright (C) 2026  Apertrust developers
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+//! The application menus (`docs/gui.md`, The menus and The menu bar; decision 39).
+//!
+//! One model, [`MENUS`]: menus of groups that lines separate, each entry an action of the
+//! registry by id, a submenu, or one of the Mac's own items. It names actions as the top
+//! panel's `TOP_PANEL` does, so the registry still declares each action once: an item's
+//! words are its action's message, its key the keymap's first for the platform, and it is
+//! enabled exactly when its action can run where it is ([`shown`]). Only actions the
+//! registry declares are placed, drawn disabled until they are built; a later one joins the
+//! tree when the registry declares it, and a menu with nothing to hold is left out, but for
+//! the Mac's Window and Help menus, which AppKit fills (`docs/gui.md`, The menu bar).
+//!
+//! On the Mac the menus are the system's menu bar, built with muda once the window exists
+//! ([`NativeMenus`]). Each frame the app hands it the keymap and the state, and it calls
+//! muda only for what changed; a choice comes back through muda's event handler, down a
+//! channel, and runs in `App::logic`, before the next frame or, while the window is
+//! minimised or hidden, without one ([`runs`] says when). On Windows and Linux the same
+//! model is the one menu of the top panel's ☰ (decision 39), drawn by the popup service
+//! ([`request`]); the id chosen in it runs as the Mac's choices do.
+
+// Off the Mac the Mac's own parts are read only by the tests.
+#![cfg_attr(
+    not(target_os = "macos"),
+    allow(
+        dead_code,
+        reason = "the Mac's own items and key repeats are the Mac's alone"
+    )
+)]
+
+use apertrust_ui::{Translator, popup, translator};
+use eframe::egui::{self, Pos2, Rect, os::OperatingSystem};
+
+use crate::actions::{self, ActionId, Focus, Keymap, Platforms, Shortcut, State, Trigger};
+
+/// What the system does with a menu on the Mac.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    /// A menu of the app's own.
+    Plain,
+    /// The app menu, which macOS titles with the app's name, whatever its title says.
+    App,
+    /// The Window menu, where AppKit adds its tiling items and lists the windows.
+    Window,
+    /// The Help menu, where AppKit adds its search.
+    Help,
+}
+
+/// A menu or a submenu.
+pub struct Menu {
+    /// Its title, a message id.
+    pub title: &'static str,
+    pub role: Role,
+    /// The platforms that have it.
+    pub on: Platforms,
+    /// Its entries in groups, which lines separate.
+    pub groups: &'static [&'static [Entry]],
+}
+
+/// One entry of a menu.
+pub enum Entry {
+    /// A registry action, on the platforms given.
+    Action(ActionId, Platforms),
+    Submenu(&'static Menu),
+    /// One of the Mac's own items, which the system performs.
+    System(System),
+}
+
+/// The Mac's own items, which muda predefines: macOS performs them, so they are not the
+/// registry's actions, and they keep the system's keys (Cmd+H, Option+Cmd+H, Cmd+M).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum System {
+    Services,
+    Hide,
+    HideOthers,
+    ShowAll,
+    Minimise,
+    Zoom,
+    BringAllToFront,
+}
+
+impl System {
+    /// Its words, a message id.
+    pub fn message(self) -> &'static str {
+        match self {
+            System::Services => "menu-services",
+            System::Hide => "menu-hide-app",
+            System::HideOthers => "menu-hide-others",
+            System::ShowAll => "menu-show-all",
+            System::Minimise => "menu-minimise",
+            System::Zoom => "menu-zoom-window",
+            System::BringAllToFront => "menu-bring-all-to-front",
+        }
+    }
+}
+
+const fn item(id: ActionId) -> Entry {
+    Entry::Action(id, Platforms::All)
+}
+
+static PANEL_TAB: Menu = Menu {
+    title: "menu-panel-tab",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::PANEL_TABS[0]),
+        item(ActionId::PANEL_TABS[1]),
+        item(ActionId::PANEL_TABS[2]),
+        item(ActionId::PANEL_TABS[3]),
+        item(ActionId::PANEL_TABS[4]),
+    ]],
+};
+
+static INTERFACE_SIZE: Menu = Menu {
+    title: "menu-interface-size",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::SCALE_UP),
+        item(ActionId::SCALE_DOWN),
+        item(ActionId::SCALE_RESET),
+    ]],
+};
+
+static SORT_BY: Menu = Menu {
+    title: "menu-sort-by",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[
+        &[
+            item(ActionId::SORT[0]),
+            item(ActionId::SORT[1]),
+            item(ActionId::SORT[2]),
+            item(ActionId::SORT[3]),
+        ],
+        &[
+            item(ActionId::SORT_ASCENDING),
+            item(ActionId::SORT_DESCENDING),
+        ],
+    ],
+};
+
+static THUMBNAIL_SIZE: Menu = Menu {
+    title: "menu-thumbnail-size",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::THUMBNAILS[0]),
+        item(ActionId::THUMBNAILS[1]),
+        item(ActionId::THUMBNAILS[2]),
+        item(ActionId::THUMBNAILS[3]),
+    ]],
+};
+
+/// View › Background, which the central panel's right-click menu lists too.
+pub static BACKGROUND: Menu = Menu {
+    title: "menu-background",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::BACKGROUND[0]),
+        item(ActionId::BACKGROUND[1]),
+        item(ActionId::BACKGROUND[2]),
+        item(ActionId::BACKGROUND[3]),
+        item(ActionId::BACKGROUND[4]),
+        item(ActionId::BACKGROUND[5]),
+    ]],
+};
+
+static GRID_POSITION: Menu = Menu {
+    title: "menu-grid-position",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::GRID_POSITION[0]),
+        item(ActionId::GRID_POSITION[1]),
+        item(ActionId::GRID_POSITION[2]),
+    ]],
+};
+
+/// The menus as `docs/gui.md` (The tree) places them, macOS first, with only the actions
+/// the registry declares; the few it declares that no menu holds are the tests' `LEFT_OUT`.
+pub static MENUS: [Menu; 7] = [
+    // The app menu, macOS only.
+    Menu {
+        title: "app-name",
+        role: Role::App,
+        on: Platforms::Mac,
+        groups: &[
+            // Apertrust's own About, never muda's predefined one, which shows macOS's panel.
+            &[item(ActionId::ABOUT)],
+            &[item(ActionId::SETTINGS)],
+            &[Entry::System(System::Services)],
+            &[
+                Entry::System(System::Hide),
+                Entry::System(System::HideOthers),
+                Entry::System(System::ShowAll),
+            ],
+            // Never muda's predefined Quit, which would leave without the app's exit path.
+            &[item(ActionId::QUIT)],
+        ],
+    },
+    Menu {
+        title: "menu-file",
+        role: Role::Plain,
+        on: Platforms::All,
+        groups: &[
+            &[item(ActionId::OPEN), item(ActionId::OPEN_FOLDER)],
+            &[
+                item(ActionId::IMPORT),
+                item(ActionId::EXPORT),
+                item(ActionId::EXPORT_AGAIN),
+            ],
+            // Close Window on the Mac; Exit on Windows, Quit on Linux.
+            &[
+                Entry::Action(ActionId::CLOSE_WINDOW, Platforms::Mac),
+                Entry::Action(ActionId::QUIT, Platforms::NotMac),
+            ],
+        ],
+    },
+    Menu {
+        title: "menu-edit",
+        role: Role::Plain,
+        on: Platforms::All,
+        groups: &[
+            &[item(ActionId::UNDO), item(ActionId::REDO)],
+            &[
+                item(ActionId::COPY_EDIT),
+                item(ActionId::APPLY_EDIT),
+                item(ActionId::COPY_APPLY_PARTS),
+            ],
+            &[item(ActionId::RESET)],
+            &[Entry::Action(ActionId::SETTINGS, Platforms::NotMac)],
+        ],
+    },
+    Menu {
+        title: "menu-photo",
+        role: Role::Plain,
+        on: Platforms::All,
+        groups: &[&[item(ActionId::NEXT_PHOTO), item(ActionId::PREVIOUS_PHOTO)]],
+    },
+    Menu {
+        title: "menu-view",
+        role: Role::Plain,
+        on: Platforms::All,
+        groups: &[
+            // The grid bar's menus (`docs/gui.md`, The grid bar).
+            &[
+                Entry::Submenu(&SORT_BY),
+                Entry::Submenu(&THUMBNAIL_SIZE),
+                item(ActionId::SHOW_LABELS),
+                Entry::Submenu(&GRID_POSITION),
+            ],
+            &[
+                item(ActionId::LIBRARY),
+                Entry::Submenu(&PANEL_TAB),
+                Entry::Submenu(&INTERFACE_SIZE),
+                Entry::Submenu(&BACKGROUND),
+            ],
+            &[item(ActionId::FULL_SCREEN)],
+        ],
+    },
+    // AppKit adds its tiling items and the windows' list.
+    Menu {
+        title: "menu-window",
+        role: Role::Window,
+        on: Platforms::Mac,
+        groups: &[
+            &[Entry::System(System::Minimise), Entry::System(System::Zoom)],
+            &[Entry::System(System::BringAllToFront)],
+        ],
+    },
+    // AppKit adds its search on the Mac; Keyboard Shortcuts joins it once the registry
+    // declares it. About ends it on Windows and Linux.
+    Menu {
+        title: "menu-help",
+        role: Role::Help,
+        on: Platforms::All,
+        groups: &[&[Entry::Action(ActionId::ABOUT, Platforms::NotMac)]],
+    },
+];
+
+/// Whether `entry` has something to show on `os`.
+fn holds(entry: &Entry, os: OperatingSystem) -> bool {
+    match entry {
+        Entry::Action(_, on) => on.includes(os),
+        Entry::Submenu(menu) => present(menu, os),
+        Entry::System(_) => os == OperatingSystem::Mac,
+    }
+}
+
+/// Whether `menu` is there on `os`: when it holds anything there, and on the Mac the
+/// Window and Help menus always, since AppKit fills them.
+pub fn present(menu: &Menu, os: OperatingSystem) -> bool {
+    let filled = os == OperatingSystem::Mac && matches!(menu.role, Role::Window | Role::Help);
+    menu.on.includes(os)
+        && (filled
+            || menu
+                .groups
+                .iter()
+                .flat_map(|g| g.iter())
+                .any(|e| holds(e, os)))
+}
+
+/// The menus there on `os`, in order.
+pub fn menus(os: OperatingSystem) -> impl Iterator<Item = &'static Menu> {
+    MENUS.iter().filter(move |menu| present(menu, os))
+}
+
+/// `menu`'s groups on `os`, each with only the entries there, and none left empty.
+pub fn groups(menu: &'static Menu, os: OperatingSystem) -> Vec<Vec<&'static Entry>> {
+    menu.groups
+        .iter()
+        .map(|group| group.iter().filter(|e| holds(e, os)).collect::<Vec<_>>())
+        .filter(|group| !group.is_empty())
+        .collect()
+}
+
+/// What an action's item shows, but for its words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shown {
+    /// Whether it can be chosen: exactly when its action can run where it is.
+    pub enabled: bool,
+    /// Its key: the first the keymap gives its action on the platform, unless the focused
+    /// widget keeps it, so a native menu never takes what is typed into a field
+    /// (`docs/gui.md`, Who owns the keys).
+    pub key: Option<Shortcut>,
+}
+
+/// What `id`'s item shows with `keymap`, in `state`, while `focus` has the focus.
+pub fn shown(id: ActionId, keymap: &Keymap, state: &State, focus: Focus) -> Shown {
+    Shown {
+        enabled: actions::action(id).is_some_and(|a| a.enabled(state)),
+        key: keymap
+            .keys(id)
+            .first()
+            .copied()
+            .filter(|k| !focus.keeps(k.key, k.modifiers)),
+    }
+}
+
+/// Whether choosing `id`'s item runs it: always when clicked or pressed, and when AppKit
+/// performs its key equivalent again for a key held down (`repeat`), only for an action
+/// that repeats, since the registry runs any other once a press.
+pub fn runs(id: ActionId, repeat: bool) -> bool {
+    actions::action(id).is_some_and(|a| !repeat || a.trigger == Trigger::Repeat)
+}
+
+/// The ☰'s menu, hung from `anchor` (decision 39): the menus [`MENUS`] has on the
+/// context's platform, each a submenu whose words carry its access key, and their items as
+/// the Mac's show them ([`shown`]): the action's words, enabled exactly when it can run
+/// where it is, and the keymap's first key as the platform spells it, whatever has the
+/// focus, since the registry reads every key there and the menu only shows them; and a
+/// check mark where the action turns something on or chooses one of a set. An item's id is
+/// its action's ([`chosen`]).
+pub fn request(
+    ctx: &egui::Context,
+    keymap: &Keymap,
+    state: &State,
+    anchor: Rect,
+) -> popup::Request {
+    let tr = translator(ctx);
+    let os = ctx.os();
+    let entries = menus(os)
+        .map(|menu| drawn(menu, os, keymap, state, &tr).into())
+        .collect();
+    popup::Request::pull_down(anchor, tr.text("top-panel-menu"), entries)
+}
+
+/// `menu`'s items alone, hung from the pointer at `at`, as a right-click menu: the central
+/// panel's, which is View › Background's. Its items' ids are their actions' ([`chosen`]).
+pub fn context(
+    ctx: &egui::Context,
+    keymap: &Keymap,
+    state: &State,
+    menu: &'static Menu,
+    at: Pos2,
+) -> popup::Request {
+    let tr = translator(ctx);
+    let entries = drawn(menu, ctx.os(), keymap, state, &tr).entries;
+    let anchor = Rect::from_min_size(at, egui::Vec2::ZERO);
+    popup::Request::pull_down(anchor, tr.text(menu.title), entries)
+}
+
+/// `menu` as a submenu of the ☰'s menu, its id its title's message id.
+fn drawn(
+    menu: &'static Menu,
+    os: OperatingSystem,
+    keymap: &Keymap,
+    state: &State,
+    tr: &Translator,
+) -> popup::Submenu {
+    let mut entries = Vec::new();
+    for (i, group) in groups(menu, os).into_iter().enumerate() {
+        if i > 0 {
+            entries.push(popup::Entry::Separator);
+        }
+        for entry in group {
+            match entry {
+                Entry::Action(id, _) => {
+                    let Some(action) = actions::action(*id) else {
+                        continue;
+                    };
+                    let shown = shown(*id, keymap, state, Focus::None);
+                    let mut item =
+                        popup::Item::new(id.0, tr.text(action.message)).enabled(shown.enabled);
+                    if let Some(key) = shown.key {
+                        item = item.shortcut(key.spell(os, tr));
+                    }
+                    if let Some(on) = action.checked(state) {
+                        item = item.checked(on);
+                    }
+                    entries.push(item.into());
+                }
+                Entry::Submenu(inner) => entries.push(drawn(inner, os, keymap, state, tr).into()),
+                // The Mac's alone, which `groups` leaves out elsewhere.
+                Entry::System(_) => {}
+            }
+        }
+    }
+    popup::Submenu::new(menu.title, tr.text(menu.title), entries)
+}
+
+/// The action of the item chosen in the ☰'s menu, by its id.
+pub fn chosen(id: &str) -> Option<ActionId> {
+    actions::ACTIONS.iter().find(|a| a.id.0 == id).map(|a| a.id)
+}
+
+#[cfg(target_os = "macos")]
+pub use mac::NativeMenus;
+
+/// No native menus off the Mac: Windows and Linux will draw [`MENUS`] in the top panel.
+#[cfg(not(target_os = "macos"))]
+pub enum NativeMenus {}
+
+#[cfg(not(target_os = "macos"))]
+impl NativeMenus {
+    pub fn install(_: &eframe::egui::Context) -> Option<NativeMenus> {
+        None
+    }
+
+    pub fn chosen(&self) -> Vec<ActionId> {
+        match *self {}
+    }
+
+    pub fn update(&mut self, _: &eframe::egui::Context, _: &Keymap, _: &State) {
+        match *self {}
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod mac {
+    use std::str::FromStr;
+    use std::sync::mpsc;
+
+    use apertrust_ui::{Locale, Translator, translator};
+    use eframe::egui::{self, Key, os::OperatingSystem};
+    use muda::accelerator::{Key as Logical, KeyAccelerator, Modifiers as Held, NamedKey};
+    use muda::{MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+
+    use super::{Entry, Role, Shown, System, groups, menus, runs, shown};
+    use crate::actions::{self, ACTIONS, ActionId, Focus, Keymap, Shortcut, State};
+
+    /// The Mac's menu bar, built from [`super::MENUS`] once the window exists, on the main
+    /// thread, and handed to AppKit in place of winit's default menu.
+    pub struct NativeMenus {
+        /// Kept: dropping it would take the menu bar from AppKit.
+        bar: muda::Menu,
+        /// Each action's item, with what it shows now.
+        items: Vec<Placed>,
+        /// The menus' titles and the system's items, by their message ids.
+        titles: Vec<(&'static str, Titled)>,
+        /// The language the words are in.
+        locale: Locale,
+        /// The ids of the items chosen, from muda's event handler, each with whether a
+        /// key's repeat chose it.
+        chosen: mpsc::Receiver<(MenuId, bool)>,
+        /// Whether a key muda refused has been reported.
+        refused: bool,
+    }
+
+    /// An action's item, where it sits and what it shows.
+    struct Placed {
+        id: ActionId,
+        item: MenuItem,
+        menu: Submenu,
+        position: usize,
+        shown: Shown,
+    }
+
+    enum Titled {
+        Menu(Submenu),
+        System(PredefinedMenuItem),
+    }
+
+    impl NativeMenus {
+        /// Builds the menu bar in the interface's language and hands it to AppKit, the
+        /// Window and Help menus as such; None, with a warning, if muda fails. Its items
+        /// rest, disabled and without keys, until the first [`NativeMenus::update`].
+        pub fn install(ctx: &egui::Context) -> Option<NativeMenus> {
+            let built = NativeMenus::build(ctx);
+            if let Err(e) = &built {
+                tracing::warn!(target: "gpu", "menu bar not built: {e}");
+            }
+            built.ok()
+        }
+
+        fn build(ctx: &egui::Context) -> muda::Result<NativeMenus> {
+            let tr = translator(ctx);
+            let (sender, chosen) = mpsc::channel();
+            let mut built = NativeMenus {
+                bar: muda::Menu::new(),
+                items: Vec::new(),
+                titles: Vec::new(),
+                locale: tr.locale(),
+                chosen,
+                refused: false,
+            };
+            let mut roles = Vec::new();
+            for menu in menus(OperatingSystem::Mac) {
+                let submenu = built.submenu(menu, &tr)?;
+                built.bar.append(&submenu)?;
+                roles.push((menu.role, submenu));
+            }
+            built.bar.init_for_nsapp();
+            // Once the bar is the app's: muda finds them in it.
+            for (role, submenu) in &roles {
+                match role {
+                    Role::Window => submenu.set_as_windows_menu_for_nsapp(),
+                    Role::Help => submenu.set_as_help_menu_for_nsapp(),
+                    Role::App | Role::Plain => {}
+                }
+            }
+            // A choice wakes egui as an engine event does, and runs after the next frame.
+            let ctx = ctx.clone();
+            MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+                // Now, while AppKit handles the key event the item answers, if any.
+                let repeat = apertrust_display::handling_key_repeat();
+                let _ = sender.send((event.id, repeat));
+                ctx.request_repaint();
+            }));
+            Ok(built)
+        }
+
+        /// `menu` as a muda submenu, its entries in place, recorded for updates.
+        fn submenu(
+            &mut self,
+            menu: &'static super::Menu,
+            tr: &Translator,
+        ) -> muda::Result<Submenu> {
+            // muda leaves out the `&` of a top-level menu's access key on the Mac.
+            let submenu = Submenu::new(tr.text(menu.title), true);
+            for (i, group) in groups(menu, OperatingSystem::Mac).into_iter().enumerate() {
+                if i > 0 {
+                    submenu.append(&PredefinedMenuItem::separator())?;
+                }
+                for entry in group {
+                    match entry {
+                        Entry::Action(id, _) => {
+                            let words =
+                                actions::action(*id).map_or(String::new(), |a| tr.text(a.message));
+                            let item = MenuItem::with_id(id.0, words, false, None);
+                            let position = submenu.items().len();
+                            submenu.append(&item)?;
+                            self.items.push(Placed {
+                                id: *id,
+                                item,
+                                menu: submenu.clone(),
+                                position,
+                                shown: Shown {
+                                    enabled: false,
+                                    key: None,
+                                },
+                            });
+                        }
+                        Entry::Submenu(inner) => {
+                            let inner = self.submenu(inner, tr)?;
+                            submenu.append(&inner)?;
+                        }
+                        Entry::System(system) => {
+                            let item = predefined(*system, &tr.text(system.message()));
+                            submenu.append(&item)?;
+                            self.titles.push((system.message(), Titled::System(item)));
+                        }
+                    }
+                }
+            }
+            self.titles
+                .push((menu.title, Titled::Menu(submenu.clone())));
+            Ok(submenu)
+        }
+
+        /// The actions chosen from the menus since the last call, in order, but for a
+        /// press action chosen by a key's repeat ([`runs`]). `App::logic` runs them, each
+        /// only if it can still run where it is (`Shell::run`).
+        pub fn chosen(&self) -> Vec<ActionId> {
+            self.chosen
+                .try_iter()
+                .filter_map(|(id, repeat)| {
+                    let action = ACTIONS.iter().find(|a| a.id.0 == id.0)?;
+                    runs(action.id, repeat).then_some(action.id)
+                })
+                .collect()
+        }
+
+        /// Brings every item up to date with `keymap`, `state`, the focus and the
+        /// language, calling muda only for what changed: a language chosen in Settings
+        /// renames every menu, and while a widget has focus no item holds a key it keeps.
+        pub fn update(&mut self, ctx: &egui::Context, keymap: &Keymap, state: &State) {
+            let tr = translator(ctx);
+            if tr.locale() != self.locale {
+                self.locale = tr.locale();
+                for placed in &self.items {
+                    if let Some(action) = actions::action(placed.id) {
+                        placed.item.set_text(tr.text(action.message));
+                    }
+                }
+                for (message, titled) in &self.titles {
+                    match titled {
+                        Titled::Menu(menu) => menu.set_text(tr.text(message)),
+                        Titled::System(item) => item.set_text(tr.text(message)),
+                    }
+                }
+            }
+            let focus = Focus::of(ctx);
+            for placed in &mut self.items {
+                let now = shown(placed.id, keymap, state, focus);
+                if now.enabled != placed.shown.enabled {
+                    placed.item.set_enabled(now.enabled);
+                }
+                if now.key != placed.shown.key
+                    && let Err(e) = placed.set_key(now.key.and_then(key_equivalent))
+                    && !self.refused
+                {
+                    tracing::warn!(target: "gpu", "menu key for {} not set: {e}", placed.id.0);
+                    self.refused = true;
+                }
+                placed.shown = now;
+            }
+        }
+    }
+
+    impl Placed {
+        /// Gives the item `key` as its key equivalent, or none. Given none, muda 0.21 keeps
+        /// the key equivalent it had (muda 0.21 leaves it in place), so the item is then put
+        /// back in its place, which builds it afresh without one. That relies on AppKit
+        /// only appending its own items to a menu (Edit's dictation, Window's tiling), so
+        /// muda's index of the item among its children is still its index in the NSMenu.
+        fn set_key(&self, key: Option<KeyAccelerator>) -> muda::Result<()> {
+            let none = key.is_none();
+            self.item.set_key_accelerator(key)?;
+            if none {
+                self.menu.remove(&self.item)?;
+                self.menu.insert(&self.item, self.position)?;
+            }
+            Ok(())
+        }
+    }
+
+    fn predefined(system: System, words: &str) -> PredefinedMenuItem {
+        let words = Some(words);
+        match system {
+            System::Services => PredefinedMenuItem::services(words),
+            System::Hide => PredefinedMenuItem::hide(words),
+            System::HideOthers => PredefinedMenuItem::hide_others(words),
+            System::ShowAll => PredefinedMenuItem::show_all(words),
+            System::Minimise => PredefinedMenuItem::minimize(words),
+            System::Zoom => PredefinedMenuItem::zoom(words),
+            System::BringAllToFront => PredefinedMenuItem::bring_all_to_front(words),
+        }
+    }
+
+    /// `key` as an AppKit key equivalent: the logical key, which AppKit matches as the
+    /// registry does, with Cmd for the command key and Control for a Mac's Control key.
+    /// None for a key muda cannot express, or gets wrong, which then stays with the
+    /// registry alone and its item shows none (`docs/gui.md`, Who owns the keys): the
+    /// clipboard's and the browser's keys, and Forward Delete, which muda gives the Delete
+    /// key's character.
+    pub fn key_equivalent(key: Shortcut) -> Option<KeyAccelerator> {
+        let m = key.modifiers;
+        let mut held = Held::empty();
+        for (on, modifier) in [
+            (m.command || m.mac_cmd, Held::META),
+            (m.ctrl, Held::CONTROL),
+            (m.alt, Held::ALT),
+            (m.shift, Held::SHIFT),
+        ] {
+            if on {
+                held |= modifier;
+            }
+        }
+        let character = |c: &str| Some(Logical::Character(c.to_owned()));
+        let named = |n| Some(Logical::Named(n));
+        let logical = match key.key {
+            Key::ArrowDown => named(NamedKey::ArrowDown),
+            Key::ArrowLeft => named(NamedKey::ArrowLeft),
+            Key::ArrowRight => named(NamedKey::ArrowRight),
+            Key::ArrowUp => named(NamedKey::ArrowUp),
+            Key::Escape => named(NamedKey::Escape),
+            Key::Tab => named(NamedKey::Tab),
+            // The Mac's Delete key, which AppKit's menus write ⌫.
+            Key::Backspace => named(NamedKey::Backspace),
+            Key::Enter => named(NamedKey::Enter),
+            Key::Insert => named(NamedKey::Insert),
+            Key::Home => named(NamedKey::Home),
+            Key::End => named(NamedKey::End),
+            Key::PageUp => named(NamedKey::PageUp),
+            Key::PageDown => named(NamedKey::PageDown),
+            Key::Space => character(" "),
+            Key::Colon => character(":"),
+            Key::Comma => character(","),
+            Key::Backslash => character("\\"),
+            Key::Slash => character("/"),
+            Key::Pipe => character("|"),
+            Key::Questionmark => character("?"),
+            Key::Exclamationmark => character("!"),
+            Key::OpenBracket => character("["),
+            Key::CloseBracket => character("]"),
+            Key::OpenCurlyBracket => character("{"),
+            Key::CloseCurlyBracket => character("}"),
+            Key::Backtick => character("`"),
+            Key::Minus => character("-"),
+            Key::Period => character("."),
+            Key::Plus => character("+"),
+            Key::Equals => character("="),
+            Key::Semicolon => character(";"),
+            Key::Quote => character("'"),
+            key => {
+                let name = key.name();
+                let first = name.chars().next()?;
+                if name.len() == 1 && (first.is_ascii_uppercase() || first.is_ascii_digit()) {
+                    character(&name.to_ascii_lowercase())
+                } else if first == 'F' && name[1..].bytes().all(|b| b.is_ascii_digit()) {
+                    NamedKey::from_str(name).ok().map(Logical::Named)
+                } else {
+                    None
+                }
+            }
+        }?;
+        Some(KeyAccelerator::new(held, logical))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use apertrust_ui::{Locale, Translator};
+    use eframe::egui::{Key, Modifiers};
+
+    use super::*;
+    use crate::actions::{ACTIONS, Trigger, View};
+
+    const PLATFORMS: [OperatingSystem; 3] = [
+        OperatingSystem::Mac,
+        OperatingSystem::Windows,
+        OperatingSystem::Nix,
+    ];
+
+    /// The actions the registry declares that no menu holds, on purpose (`docs/gui.md`, The
+    /// menu bar, Rules): the Edit view's, since the layouts' items join only once there are
+    /// two layouts; F6's, which move the focus as Tab does; and H's peek, held, while a menu
+    /// item is a press; and the ☰'s menu's own, which opens the menu it would be in.
+    const LEFT_OUT: [ActionId; 5] = [
+        ActionId::EDIT_VIEW,
+        ActionId::NEXT_REGION,
+        ActionId::PREVIOUS_REGION,
+        ActionId::PEEK,
+        ActionId::MENU,
+    ];
+
+    /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
+    /// the window with its caption's close button (`docs/gui.md`, Windows and Linux).
+    const MAC_ONLY: [ActionId; 1] = [ActionId::CLOSE_WINDOW];
+
+    /// The actions `menu` holds on `os`, its submenus' included, in order.
+    fn placed_in(menu: &'static Menu, os: OperatingSystem, ids: &mut Vec<ActionId>) {
+        for entry in groups(menu, os).into_iter().flatten() {
+            match entry {
+                Entry::Action(id, _) => ids.push(*id),
+                Entry::Submenu(inner) => placed_in(inner, os, ids),
+                Entry::System(_) => {}
+            }
+        }
+    }
+
+    fn placed(os: OperatingSystem) -> Vec<ActionId> {
+        let mut ids = Vec::new();
+        for menu in menus(os) {
+            placed_in(menu, os, &mut ids);
+        }
+        ids
+    }
+
+    /// Every menu and submenu, wherever it is there.
+    fn every_menu() -> Vec<&'static Menu> {
+        fn walk(menu: &'static Menu, found: &mut Vec<&'static Menu>) {
+            found.push(menu);
+            for entry in menu.groups.iter().flat_map(|g| g.iter()) {
+                if let Entry::Submenu(inner) = entry {
+                    walk(inner, found);
+                }
+            }
+        }
+        let mut found = Vec::new();
+        for menu in &MENUS {
+            walk(menu, &mut found);
+        }
+        found
+    }
+
+    /// A state in which everything built can run.
+    fn everything() -> State {
+        State {
+            view: View::Edit,
+            photo: true,
+            edited: true,
+            photos: 2,
+            tabs: &[true; 5],
+            scale: 1.5,
+            dialog: false,
+            modal: false,
+            dialog_window: false,
+            full_screen: false,
+            panel_tab: 0,
+            grid: crate::settings::Grid::default(),
+            shown: true,
+            background: Some(apertrust_ui::Background::Dark),
+        }
+    }
+
+    #[test]
+    fn every_item_is_a_declared_action_placed_once_and_never_held() {
+        for os in PLATFORMS {
+            let ids = placed(os);
+            let unique: HashSet<ActionId> = ids.iter().copied().collect();
+            assert_eq!(unique.len(), ids.len(), "{os:?}: placed twice in {ids:?}");
+            for id in ids {
+                let action = actions::action(id).unwrap_or_else(|| panic!("{} undeclared", id.0));
+                assert_ne!(action.trigger, Trigger::Hold, "{os:?}: {} is held", id.0);
+            }
+        }
+    }
+
+    #[test]
+    fn every_action_is_placed_or_left_out_on_purpose() {
+        for os in PLATFORMS {
+            let ids = placed(os);
+            for action in &ACTIONS {
+                let placed = ids.contains(&action.id);
+                let off_mac = os != OperatingSystem::Mac && MAC_ONLY.contains(&action.id);
+                let left_out = LEFT_OUT.contains(&action.id) || off_mac;
+                assert!(placed != left_out, "{os:?}: {}", action.id.0);
+            }
+        }
+        for id in LEFT_OUT {
+            assert!(actions::action(id).is_some(), "{} undeclared", id.0);
+        }
+    }
+
+    #[test]
+    fn settings_and_quit_sit_where_each_platform_puts_them() {
+        let menu_of = |os, id| {
+            menus(os)
+                .find(|menu| {
+                    let mut ids = Vec::new();
+                    placed_in(menu, os, &mut ids);
+                    ids.contains(&id)
+                })
+                .map(|menu| menu.title)
+        };
+        let mac = OperatingSystem::Mac;
+        assert_eq!(menu_of(mac, ActionId::ABOUT), Some("app-name"));
+        assert_eq!(menu_of(mac, ActionId::SETTINGS), Some("app-name"));
+        assert_eq!(menu_of(mac, ActionId::QUIT), Some("app-name"));
+        assert_eq!(menu_of(mac, ActionId::CLOSE_WINDOW), Some("menu-file"));
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            assert_eq!(menu_of(os, ActionId::ABOUT), Some("menu-help"));
+            assert_eq!(menu_of(os, ActionId::SETTINGS), Some("menu-edit"));
+            assert_eq!(menu_of(os, ActionId::QUIT), Some("menu-file"));
+        }
+    }
+
+    #[test]
+    fn export_again_follows_export_in_file_on_every_platform() {
+        for os in PLATFORMS {
+            let file = menus(os)
+                .find(|menu| menu.title == "menu-file")
+                .expect("File is there");
+            let mut ids = Vec::new();
+            placed_in(file, os, &mut ids);
+            let export = ids.iter().position(|id| *id == ActionId::EXPORT);
+            let again = ids.iter().position(|id| *id == ActionId::EXPORT_AGAIN);
+            assert_eq!(again, export.map(|at| at + 1), "{os:?}");
+            // In Export's group, with no line between them.
+            let group: Vec<ActionId> = groups(file, os)
+                .into_iter()
+                .map(|group| {
+                    group
+                        .into_iter()
+                        .filter_map(|entry| match entry {
+                            Entry::Action(id, _) => Some(*id),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .find(|group| group.contains(&ActionId::EXPORT))
+                .expect("Export's group");
+            assert!(group.contains(&ActionId::EXPORT_AGAIN), "{os:?}");
+        }
+    }
+
+    #[test]
+    fn open_image_comes_first_in_file_on_every_platform() {
+        for os in PLATFORMS {
+            let file = menus(os)
+                .find(|menu| menu.title == "menu-file")
+                .expect("File is there");
+            let mut ids = Vec::new();
+            placed_in(file, os, &mut ids);
+            assert_eq!(ids.first(), Some(&ActionId::OPEN), "{os:?}");
+            // A group of its own, Open Folder… after it, as Open Recent will join them.
+            let first: Vec<_> = groups(file, os)[0]
+                .iter()
+                .map(|entry| match entry {
+                    Entry::Action(id, _) => *id,
+                    _ => panic!("an action"),
+                })
+                .collect();
+            assert_eq!(first, [ActionId::OPEN, ActionId::OPEN_FOLDER], "{os:?}");
+        }
+    }
+
+    #[test]
+    fn a_menu_with_nothing_to_hold_is_left_out_but_the_mac_s_window_and_help() {
+        let titles = |os| menus(os).map(|m| m.title).collect::<Vec<_>>();
+        assert_eq!(
+            titles(OperatingSystem::Mac),
+            [
+                "app-name",
+                "menu-file",
+                "menu-edit",
+                "menu-photo",
+                "menu-view",
+                "menu-window",
+                "menu-help"
+            ]
+        );
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            assert_eq!(
+                titles(os),
+                [
+                    "menu-file",
+                    "menu-edit",
+                    "menu-photo",
+                    "menu-view",
+                    "menu-help"
+                ]
+            );
+        }
+        // No group is left empty, nor two lines in a row.
+        for os in PLATFORMS {
+            for menu in every_menu() {
+                assert!(groups(menu, os).iter().all(|g| !g.is_empty()));
+            }
+        }
+    }
+
+    #[test]
+    fn every_title_and_system_item_has_words_in_every_language() {
+        let mut ids: Vec<&str> = every_menu().iter().map(|m| m.title).collect();
+        for menu in every_menu() {
+            for entry in menu.groups.iter().flat_map(|g| g.iter()) {
+                if let Entry::System(system) = entry {
+                    ids.push(system.message());
+                }
+            }
+        }
+        for locale in [Locale::EnGb, Locale::EnUs, Locale::Uk, Locale::Pl] {
+            let tr = Translator::new(locale);
+            for id in &ids {
+                assert!(tr.has(id), "{} lacks {id}", locale.id());
+            }
+        }
+        // The app's name is never translated.
+        assert_eq!(
+            Translator::new(Locale::Uk).text("menu-hide-app"),
+            "Приховати Apertrust"
+        );
+    }
+
+    #[test]
+    fn an_item_holds_no_key_the_focused_widget_keeps() {
+        let state = everything();
+        let mac = OperatingSystem::Mac;
+        let keymap = Keymap::defaults(mac);
+        let key = |id, focus| shown(id, &keymap, &state, focus).key;
+        let command = |k| Shortcut {
+            modifiers: Modifiers::COMMAND,
+            key: k,
+        };
+        // A value field keeps Cmd+Z and every plain key, but not Cmd+, nor Cmd+Q.
+        assert_eq!(key(ActionId::UNDO, Focus::None), Some(command(Key::Z)));
+        assert_eq!(key(ActionId::UNDO, Focus::Text), None);
+        assert_eq!(key(ActionId::LIBRARY, Focus::Text), None);
+        assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Text), None);
+        assert_eq!(
+            key(ActionId::SETTINGS, Focus::Text),
+            Some(command(Key::Comma))
+        );
+        assert_eq!(key(ActionId::QUIT, Focus::Text), Some(command(Key::Q)));
+        // A slider keeps Space, the next photo's, but not Cmd+Z.
+        assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Control), None);
+        assert_eq!(key(ActionId::UNDO, Focus::Control), Some(command(Key::Z)));
+        // Whatever the focus, an item holds exactly the action's first key that it does
+        // not keep.
+        for os in PLATFORMS {
+            let keymap = Keymap::defaults(os);
+            for id in placed(os) {
+                for focus in [Focus::None, Focus::Control, Focus::Text] {
+                    let first = keymap.keys(id).first().copied();
+                    let expected = first.filter(|k| !focus.keeps(k.key, k.modifiers));
+                    assert_eq!(shown(id, &keymap, &state, focus).key, expected, "{}", id.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_item_is_enabled_exactly_when_its_action_can_run_where_it_is() {
+        let keymap = Keymap::defaults(OperatingSystem::Mac);
+        let mut state = everything();
+        let enabled = |id, state: &State| shown(id, &keymap, state, Focus::None).enabled;
+        assert!(enabled(ActionId::RESET, &state));
+        assert!(enabled(ActionId::SETTINGS, &state));
+        // Declared, not built: drawn disabled.
+        assert!(!enabled(ActionId::UNDO, &state));
+        assert!(!enabled(ActionId::NEXT_PHOTO, &state));
+        state.edited = false;
+        assert!(!enabled(ActionId::RESET, &state));
+        for os in PLATFORMS {
+            for id in placed(os) {
+                let action = actions::action(id).expect("declared");
+                assert_eq!(enabled(id, &state), action.enabled(&state), "{}", id.0);
+            }
+        }
+    }
+
+    #[test]
+    fn a_key_held_down_runs_again_only_an_action_that_repeats() {
+        // Control+Cmd+F held: full screen once, not on every repeat; Cmd+= held: larger
+        // each time.
+        assert!(runs(ActionId::FULL_SCREEN, false));
+        assert!(!runs(ActionId::FULL_SCREEN, true));
+        assert!(!runs(ActionId::QUIT, true));
+        assert!(runs(ActionId::SCALE_UP, true));
+        assert!(!runs(ActionId("no-such-action"), false));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn every_default_key_of_a_placed_item_is_a_key_equivalent() {
+        // None is left without one on purpose yet.
+        let os = OperatingSystem::Mac;
+        let keymap = Keymap::defaults(os);
+        for id in placed(os) {
+            if let Some(key) = keymap.keys(id).first() {
+                assert!(
+                    mac::key_equivalent(*key).is_some(),
+                    "{}: {}",
+                    id.0,
+                    key.text(os)
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn key_equivalents_carry_the_mac_s_modifiers_and_the_logical_key() {
+        use muda::accelerator::{Key as Logical, Modifiers as Held};
+        let equivalent = |modifiers, key| {
+            mac::key_equivalent(Shortcut { modifiers, key })
+                .map(|k| (k.modifiers(), k.key().clone()))
+        };
+        let character = |c: &str| Logical::Character(c.to_owned());
+        assert_eq!(
+            equivalent(Modifiers::COMMAND, Key::Comma),
+            Some((Held::META, character(",")))
+        );
+        assert_eq!(
+            equivalent(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z),
+            Some((Held::META | Held::SHIFT, character("z")))
+        );
+        // Control+Cmd+F, full screen.
+        assert_eq!(
+            equivalent(Modifiers::CTRL.plus(Modifiers::MAC_CMD), Key::F),
+            Some((Held::CONTROL | Held::META, character("f")))
+        );
+        assert_eq!(
+            equivalent(Modifiers::COMMAND, Key::Num1),
+            Some((Held::META, character("1")))
+        );
+        assert_eq!(
+            equivalent(Modifiers::NONE, Key::Space),
+            Some((Held::empty(), character(" ")))
+        );
+        assert!(equivalent(Modifiers::NONE, Key::F11).is_some());
+        // What muda cannot express, or gets wrong, stays with the registry.
+        assert_eq!(equivalent(Modifiers::NONE, Key::Delete), None);
+        assert_eq!(equivalent(Modifiers::NONE, Key::Copy), None);
+        assert_eq!(equivalent(Modifiers::NONE, Key::BrowserBack), None);
+    }
+
+    /// The ☰'s menu as Linux draws it, in `locale`, with `state`.
+    fn drawn_menu(locale: Locale, state: &State) -> popup::Request {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, locale);
+        request(
+            &ctx,
+            &Keymap::defaults(OperatingSystem::Nix),
+            state,
+            Rect::NOTHING,
+        )
+    }
+
+    /// The submenus at the top of `menu`.
+    fn tops(menu: &popup::Request) -> Vec<&popup::Submenu> {
+        menu.entries
+            .iter()
+            .map(|entry| match entry {
+                popup::Entry::Submenu(submenu) => submenu,
+                other => panic!("not a menu at the top: {other:?}"),
+            })
+            .collect()
+    }
+
+    /// Every item in `entries`, its submenus' included.
+    fn items(entries: &[popup::Entry]) -> Vec<&popup::Item> {
+        entries
+            .iter()
+            .flat_map(|entry| match entry {
+                popup::Entry::Item(item) => vec![item],
+                popup::Entry::Submenu(submenu) => items(&submenu.entries),
+                popup::Entry::Separator => Vec::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_menu_on_linux_holds_the_menus_with_items_as_the_registry_has_them() {
+        let mut state = everything();
+        state.edited = false;
+        state.full_screen = true;
+        state.panel_tab = 2;
+        let menu = drawn_menu(Locale::EnGb, &state);
+        assert_eq!(menu.name, "Menu");
+        let titles: Vec<(&str, &str)> = tops(&menu)
+            .iter()
+            .map(|s| (s.id.as_str(), s.text.as_str()))
+            .collect();
+        assert_eq!(
+            titles,
+            [
+                ("menu-file", "&File"),
+                ("menu-edit", "&Edit"),
+                ("menu-photo", "&Photo"),
+                ("menu-view", "&View"),
+                ("menu-help", "&Help"),
+            ]
+        );
+        // File: Open Image…, Import and Export, Quit, in groups that lines separate.
+        let file = tops(&menu)[0];
+        let separators = |s: &popup::Submenu| {
+            s.entries
+                .iter()
+                .filter(|e| **e == popup::Entry::Separator)
+                .count()
+        };
+        assert_eq!(separators(file), 2);
+        assert_eq!(
+            file.entries[0],
+            popup::Item::new("open", "Open Image…")
+                .shortcut("Ctrl+O")
+                .into()
+        );
+        let all = items(&menu.entries);
+        let find = |id: ActionId| {
+            *all.iter()
+                .find(|item| item.id == id.0)
+                .unwrap_or_else(|| panic!("{} not in the menu", id.0))
+        };
+        // Built and able to run: enabled. Declared but not built, or unable to run: there,
+        // disabled.
+        assert!(find(ActionId::EXPORT).enabled);
+        assert!(!find(ActionId::RESET).enabled);
+        assert!(find(ActionId::SETTINGS).enabled);
+        // The keys as Linux spells them, the first of each, whatever has the focus.
+        assert_eq!(
+            find(ActionId::NEXT_PHOTO).shortcut.as_deref(),
+            Some("Space")
+        );
+        assert_eq!(
+            find(ActionId::REDO).shortcut.as_deref(),
+            Some("Ctrl+Shift+Z")
+        );
+        assert_eq!(find(ActionId::RESET).shortcut, None);
+        // Check marks for what is on and the chosen one of a set; none for a command.
+        assert_eq!(find(ActionId::FULL_SCREEN).checked, Some(true));
+        assert_eq!(find(ActionId::PANEL_TABS[2]).checked, Some(true));
+        assert_eq!(find(ActionId::PANEL_TABS[0]).checked, Some(false));
+        assert_eq!(find(ActionId::QUIT).checked, None);
+        // Every item is its action's, as the registry has it, and the menus' order.
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let en = Translator::new(Locale::EnGb);
+        let ids: Vec<&str> = all.iter().map(|item| item.id.as_str()).collect();
+        let placed: Vec<&str> = placed(OperatingSystem::Nix).iter().map(|id| id.0).collect();
+        assert_eq!(ids, placed);
+        for item in all {
+            let id = chosen(&item.id).expect("an action's id");
+            let action = actions::action(id).expect("declared");
+            assert_eq!(item.text, en.text(action.message), "{}", id.0);
+            assert_eq!(item.enabled, action.enabled(&state), "{}", id.0);
+            let key = keymap
+                .keys(id)
+                .first()
+                .map(|k| k.spell(OperatingSystem::Nix, &en));
+            assert_eq!(item.shortcut, key, "{}", id.0);
+            assert_eq!(item.checked, action.checked(&state), "{}", id.0);
+        }
+        // With a dialog open, the view's items rest.
+        state.dialog = true;
+        let menu = drawn_menu(Locale::EnGb, &state);
+        let next = items(&menu.entries)
+            .into_iter()
+            .find(|item| item.id == ActionId::NEXT_PHOTO.0)
+            .expect("there");
+        assert!(!next.enabled);
+    }
+
+    #[test]
+    fn each_top_level_menu_has_an_access_key_of_its_own_in_every_language() {
+        let state = everything();
+        // AltGr types these on a Polish keyboard, so Alt cannot.
+        const ALTGR: &str = "ąćęłńóśźż";
+        for locale in Locale::ALL {
+            let menu = drawn_menu(locale, &state);
+            let mut keys = HashSet::new();
+            for submenu in tops(&menu) {
+                let key = submenu
+                    .access_key()
+                    .unwrap_or_else(|| panic!("{}: {} has none", locale.id(), submenu.id));
+                let key = key.to_lowercase().next().unwrap_or(key);
+                assert!(keys.insert(key), "{}: {key} twice", locale.id());
+                assert!(!ALTGR.contains(key), "{}: {key}", locale.id());
+                assert_eq!(menu.access_key(key), Some(submenu.id.as_str()));
+            }
+            // The Mac's Window menu too, which Windows and Linux do not have.
+            let tr = Translator::new(locale);
+            let window = popup::Submenu::new("menu-window", tr.text("menu-window"), vec![]);
+            let key = window.access_key().expect("Window has one");
+            assert!(menu.access_key(key).is_none(), "{}: {key}", locale.id());
+        }
+        assert_eq!(
+            drawn_menu(Locale::Uk, &state).access_key('ф'),
+            Some("menu-file")
+        );
+        assert_eq!(
+            drawn_menu(Locale::Pl, &state).access_key('M'),
+            Some("menu-help")
+        );
+        // The file's word as a term has no `&`: only the menu's title carries it.
+        let en = Translator::new(Locale::EnGb);
+        assert_eq!(en.text("menu-file"), "&File");
+    }
+
+    #[test]
+    fn a_choice_names_its_action_by_id() {
+        assert_eq!(chosen("settings"), Some(ActionId::SETTINGS));
+        assert_eq!(
+            chosen(ActionId::PANEL_TABS[3].0),
+            Some(ActionId::PANEL_TABS[3])
+        );
+        assert_eq!(chosen("no-such-action"), None);
+    }
+}

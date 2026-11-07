@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/apertrust/apertrust/discussions
+    about: Ask how something works, or talk an idea through, in GitHub Discussions.
+  - name: Report a security problem
+    url: https://github.com/apertrust/apertrust/security/advisories/new
+    about: Report a vulnerability privately. Please do not open a public issue for it.

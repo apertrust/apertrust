@@ -1,0 +1,61 @@
+[package]
+name = "apertrust"
+description = "Apertrust desktop editor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+directories.workspace = true
+eframe.workspace = true
+egui-winit.workspace = true
+egui_commonmark.workspace = true
+apertrust-base = { workspace = true, features = ["folders", "log"] }
+apertrust-display.workspace = true
+apertrust-engine.workspace = true
+# The Export dialog's settings, its choices, the variables it lists and the size it computes.
+apertrust-export.workspace = true
+apertrust-modules.workspace = true
+apertrust-operations.workspace = true
+# The image context a module's view of the pending values takes.
+apertrust-plugin.workspace = true
+apertrust-ui.workspace = true
+rfd.workspace = true
+# The settings' values as settings.toml keeps them, which the Settings dialog's rows show
+# and change without their types.
+toml.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda.workspace = true
+
+[build-dependencies]
+# The settings generator: the app's settings, generated from the schema (decision 43);
+# and the version and the banner's versions, read in the app's own build (decision 44).
+apertrust-base = { workspace = true, features = ["codegen", "build"] }
+
+# The executable's icon and version resource, compiled on Windows by the SDK's rc.exe
+# (build.rs; docs/packaging.md). A host dependency: Windows builds are built on Windows.
+[target.'cfg(windows)'.build-dependencies]
+winresource.workspace = true
+
+[dev-dependencies]
+# The jobs' control, which gives the jobs mirror's tests real job numbers.
+apertrust-base = { workspace = true, features = ["jobs"] }
+# Its `testing::Sample` module, whose rows the renderer's tests draw too.
+apertrust-modules = { workspace = true, features = ["testing"] }
+egui_kittest.workspace = true
+naga.workspace = true
+# The app icon's platform files, rendered from its SVGs by `examples/icons.rs`
+# (tools/build-icons.sh), and the disk image's background by `examples/dmg_background.rs`
+# (tools/build-dmg-background.sh).
+png.workspace = true
+pollster.workspace = true
+resvg.workspace = true
+
+[lints]
+workspace = true

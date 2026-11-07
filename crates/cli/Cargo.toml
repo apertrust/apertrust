@@ -1,0 +1,37 @@
+[package]
+name = "apertrust-cli"
+description = "Headless Apertrust: export, batch, info, serve and mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+# The person's home, Pictures and Desktop, which an export's variables name; the engine
+# reads no platform folder (decision 43).
+directories.workspace = true
+pollster.workspace = true
+apertrust-base = { workspace = true, features = ["folders", "log"] }
+apertrust-engine.workspace = true
+apertrust-export.workspace = true
+apertrust-library.workspace = true
+apertrust-modules.workspace = true
+apertrust-operations.workspace = true
+apertrust-plugin.workspace = true
+apertrust-raw.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+# The version and the banner's versions, read in this binary's own build (decision 44).
+apertrust-base = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+# Its `testing::Sample` module, for the flags' tests.
+apertrust-modules = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

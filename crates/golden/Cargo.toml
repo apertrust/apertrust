@@ -1,0 +1,38 @@
+[package]
+name = "apertrust-golden"
+description = "Golden-image harness: compares Apertrust modules against darktable-cli renders"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# The library has a name of its own so that its API docs and the binary's do not
+# overwrite each other in target/doc.
+[lib]
+name = "golden"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+flate2.workspace = true
+png.workspace = true
+pollster.workspace = true
+apertrust-base = { workspace = true, features = ["log"] }
+apertrust-color.workspace = true
+apertrust-engine.workspace = true
+apertrust-export.workspace = true
+apertrust-modules.workspace = true
+apertrust-operations.workspace = true
+apertrust-plugin.workspace = true
+apertrust-raw.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+# The version and the banner's versions, read in this binary's own build (decision 44).
+apertrust-base = { workspace = true, features = ["build"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Apertrust 0.4.0+12~g1a2b3c4">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:apertrust="https://apertrust.org/ns/xmp/"
+    xmlns:control="https://apertrust.org/ns/xmp/control/"
+    xmlns:param="https://apertrust.org/ns/xmp/param/"
+    apertrust:version="1">
+   <apertrust:modules>
+    <rdf:Seq>
+     <rdf:li>
+      <rdf:Description
+        apertrust:module="look"
+        apertrust:moduleVersion="2"
+        apertrust:kept="strength style curve"
+        control:strength="0.3"
+        control:style="hard"
+        control:preserve="false"
+        control:curve="0.25,0.2 0.75,0.8"/>
+     </rdf:li>
+    </rdf:Seq>
+   </apertrust:modules>
+   <apertrust:operations>
+    <rdf:Seq>
+     <rdf:li>
+      <rdf:Description
+        apertrust:operation="fake"
+        apertrust:schema="2"
+        param:amount="0.3"
+        param:level="42"
+        param:mode="hard"
+        param:on="false"/>
+     </rdf:li>
+    </rdf:Seq>
+   </apertrust:operations>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

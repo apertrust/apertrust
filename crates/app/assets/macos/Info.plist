@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Embedded in the app's binary on macOS by crates/app/build.rs, for a run without a
+	bundle (cargo run): macOS then titles the app menu from it rather than with the binary's
+	name. The Dock and the app switcher still show the binary's name until the app is
+	packaged, with the bundle's own Info.plist.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Apertrust</string>
+</dict>
+</plist>

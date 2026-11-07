@@ -1,0 +1,109 @@
+# Apertrust's light theme: the UI wireframe's colours (docs/gui.md, decision 36).
+# Every token is named by its role; crates/ui/src/theme.rs says what each one is for.
+# Colours are sRGB, #RRGGBB or #RRGGBBAA. Sizes are points, before scaling.
+
+name = "light"
+dark = false
+
+[colors]
+surface = "#EDEDEA"
+panel = "#EDEDEA"
+raised = "#FFFFFF"
+scrim = "#0000004D"
+sunken = "#FFFFFF"
+photo_surround = "#777777"
+surround_text = "#A0A0A0"
+surround_text_on_light = "#000000"
+text = "#1D1D1B"
+text_strong = "#000000"
+text_secondary = "#57574F"
+text_disabled = "#8E8E86"
+text_on_accent = "#1D1D1B"
+border = "#B5B5AE"
+control_outline = "#85857F"
+divider = "#D9D9D4"
+separator = "#C9C9C3"
+accent = "#F0A81C"
+accent_text = "#8F5A00"
+accent_subtle = "#FCF1DA"
+focus_ring = "#B87600"
+selection = "#F7DFA8"
+field_selection = "#C9C9C3"
+hover = "#E2E2DE"
+list_chosen = "#D4D4CE"
+close_hover = "#C42B1C"
+text_on_close_hover = "#FFFFFF"
+slider_track = "#D4D4CE"
+slider_fill = "#8E8E86"
+slider_handle = "#1D1D1B"
+slider_handle_outline = "#EDEDEA"
+slider_handle_hover = "#000000"
+slider_handle_active = "#B87600"
+kept_marker = "#1D1D1B"
+scroll_thumb = "#A3A39C"
+scroll_thumb_hover = "#87877F"
+scroll_thumb_active = "#72726B"
+channel_red = "#B3261E"
+channel_green = "#2A7530"
+channel_blue = "#1F5BC6"
+graph_histogram = "#61616180"
+warning = "#B34A00"
+error = "#C42B1C"
+success = "#2A7530"
+clip_shadows = "#2F6BFF"
+clip_highlights = "#FF3B30"
+mask_overlay = "#FF3B3080"
+guides = "#FFFFFF66"
+frame_ring = "#57574F"
+thumb_scrim = "#00000099"
+text_on_thumb_scrim = "#FFFFFF"
+warning_on_thumb_scrim = "#FFB833"
+label_red = "#C42B1C"
+label_yellow = "#8F6A00"
+label_green = "#2A7530"
+label_blue = "#1F5BC6"
+label_purple = "#7A3FB8"
+
+[text]
+body = 13.0
+small = 12.0
+caption = 11.0
+title = 14.0
+section_title = 15.0
+heading = 16.0
+
+[spacing]
+xxs = 2.0
+xs = 4.0
+s = 6.0
+m = 8.0
+l = 12.0
+xl = 16.0
+xxl = 24.0
+
+[sizes]
+row = 26.0
+panel_line = 24.0
+control = 22.0
+field = 18.0
+icon = 14.0
+icon_large = 16.0
+section_header = 30.0
+top_bar = 44.0
+slider_row = 37.0
+track_strip = 16.0
+marker_column = 16.0
+value_column = 54.0
+side_panel = 320.0
+
+[shape]
+radius_small = 3.0
+radius = 4.0
+radius_large = 5.0
+hairline = 1.0
+separator_width = 2.0
+track = 4.0
+
+[motion]
+hover_ms = 80.0
+open_ms = 120.0

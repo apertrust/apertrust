@@ -1,0 +1,109 @@
+# Apertrust's high-contrast theme: text at 7:1 or more, WCAG AAA (docs/gui.md, decision 36).
+# Every token is named by its role; crates/ui/src/theme.rs says what each one is for.
+# Colours are sRGB, #RRGGBB or #RRGGBBAA. Sizes are points, before scaling.
+
+name = "high-contrast"
+dark = true
+
+[colors]
+surface = "#000000"
+panel = "#000000"
+raised = "#0A0A0A"
+scrim = "#000000B3"
+sunken = "#000000"
+photo_surround = "#000000"
+surround_text = "#FFFFFF"
+surround_text_on_light = "#000000"
+text = "#FFFFFF"
+text_strong = "#FFFFFF"
+text_secondary = "#D9D9D9"
+text_disabled = "#8C8C8C"
+text_on_accent = "#000000"
+border = "#FFFFFF"
+control_outline = "#FFFFFF"
+divider = "#8C8C8C"
+separator = "#8C8C8C"
+accent = "#FFBF00"
+accent_text = "#FFBF00"
+accent_subtle = "#3D2E00"
+focus_ring = "#FFBF00"
+selection = "#5C4500"
+field_selection = "#595959"
+hover = "#1F1F1F"
+list_chosen = "#333333"
+close_hover = "#C42B1C"
+text_on_close_hover = "#FFFFFF"
+slider_track = "#8C8C8C"
+slider_fill = "#FFFFFF"
+slider_handle = "#FFD400"
+slider_handle_outline = "#000000"
+slider_handle_hover = "#FFFFFF"
+slider_handle_active = "#FFBF00"
+kept_marker = "#FFBF00"
+scroll_thumb = "#A0A0A0"
+scroll_thumb_hover = "#D0D0D0"
+scroll_thumb_active = "#FFFFFF"
+channel_red = "#FF7B72"
+channel_green = "#6FE07F"
+channel_blue = "#8DB4FF"
+graph_histogram = "#BFBFBF80"
+warning = "#FF7A1A"
+error = "#FF6B6B"
+success = "#5CE65C"
+clip_shadows = "#2F6BFF"
+clip_highlights = "#FF3B30"
+mask_overlay = "#FF3B3080"
+guides = "#FFFFFFB3"
+frame_ring = "#FFFFFF"
+thumb_scrim = "#00000099"
+text_on_thumb_scrim = "#FFFFFF"
+warning_on_thumb_scrim = "#FFB833"
+label_red = "#FF6B6B"
+label_yellow = "#FFD24D"
+label_green = "#5CE65C"
+label_blue = "#6FA8FF"
+label_purple = "#D08CFF"
+
+[text]
+body = 13.0
+small = 12.0
+caption = 11.0
+title = 14.0
+section_title = 15.0
+heading = 16.0
+
+[spacing]
+xxs = 2.0
+xs = 4.0
+s = 6.0
+m = 8.0
+l = 12.0
+xl = 16.0
+xxl = 24.0
+
+[sizes]
+row = 26.0
+panel_line = 24.0
+control = 22.0
+field = 18.0
+icon = 14.0
+icon_large = 16.0
+section_header = 30.0
+top_bar = 44.0
+slider_row = 37.0
+track_strip = 16.0
+marker_column = 16.0
+value_column = 54.0
+side_panel = 320.0
+
+[shape]
+radius_small = 3.0
+radius = 4.0
+radius_large = 5.0
+hairline = 1.0
+separator_width = 2.0
+track = 4.0
+
+[motion]
+hover_ms = 80.0
+open_ms = 120.0

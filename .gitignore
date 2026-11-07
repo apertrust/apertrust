@@ -16,9 +16,125 @@ target
 # rustc will dump stack traces when hitting an internal compiler error to PWD
 rustc-ice-*.txt
 
-# RustRover
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+# Pinned external tools downloaded by tools/ (e.g. the Slang compiler)
+/external
+
+# Web client builds (trunk, wasm-pack) and JS tooling
+dist/
+pkg/
+node_modules/
+
+# Coverage and profiling output
+*.profraw
+*.profdata
+lcov.info
+cobertura.xml
+tarpaulin-report.html
+flamegraph.svg
+perf.data
+perf.data.old
+dhat-*.json
+*.tracy
+*.trace/
+
+# GPU frame captures (RenderDoc, Xcode Metal, PIX)
+*.rdc
+*.gputrace/
+*.wpix
+
+# Photo corpus and AI models are downloaded, not committed.
+# Force-add a small test fixture with `git add -f` when one is needed.
+/test-images
+*.[Aa][Rr][Ww]
+*.[Cc][Rr][23]
+*.[Cc][Rr][Ww]
+*.[Nn][Ee][Ff]
+*.[Nn][Rr][Ww]
+*.[Oo][Rr][Ff]
+*.[Rr][Aa][Ff]
+*.[Rr][Ww]2
+*.[Rr][Ww][Ll]
+*.[Pp][Ee][Ff]
+*.[Ss][Rr][Ww]
+*.[Dd][Nn][Gg]
+*.3[Ff][Rr]
+*.[Ii][Ii][Qq]
+*.[Ee][Rr][Ff]
+*.[Mm][Rr][Ww]
+*.[Xx]3[Ff]
+*.onnx
+*.ort
+
+# Python (AgX mapping notebooks, helper scripts)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings and agent worktrees
+.claude/settings.local.json
+.claude/worktrees/
+# Skills, agents and commands a developer chooses to install from the agent kit
+# (apertrust/agent-kit), copied by its install.sh with its manifest; never committed
+.claude/skills/
+.claude/agents/
+.claude/commands/
+.claude/.agent-kit-installed
+.agents/
+.opencode/
+.github/agents/
+.github/prompts/
+.github/skills/
+AGENTS.local.md
+CLAUDE.local.md
+# Pull request drafts written by /draft-pr
+/PR.md
+
+# VS Code: keep shared project settings, ignore the rest
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+
+# JetBrains (RustRover, CLion)
+.idea/
+
+# Editor swap and backup files
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.fuse_hidden*
+.nfs*
+
+# Images a failed snapshot test leaves beside its snapshot
+**/tests/snapshots/*.new.png
+**/tests/snapshots/*.diff.png
+**/tests/snapshots/*.old.png

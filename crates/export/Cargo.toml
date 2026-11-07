@@ -1,0 +1,32 @@
+[package]
+name = "apertrust-export"
+description = "What an Apertrust export writes: darktable's JPEG and PNG formats, its quantising, its sRGB profile, its size and the export settings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Its settings part alone, for the types of its generated statics and the store a client
+# reads them from (decisions 43 and 56), and its `fs` part, the hidden temporary a file
+# is written to and its rename, shared with the sidecar's writer (decision 53).
+apertrust-base = { workspace = true, features = ["fs"] }
+apertrust-color.workspace = true
+flate2.workspace = true
+jpeg-encoder.workspace = true
+png.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+# The settings generator, which writes the export settings' statics from the schema.
+apertrust-base = { workspace = true, features = ["codegen"] }
+
+[dev-dependencies]
+jpeg-decoder.workspace = true
+
+[lints]
+workspace = true

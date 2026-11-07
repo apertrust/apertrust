@@ -1,0 +1,40 @@
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossless.DNG | 256x171
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossy.DNG | 256x171
+Apple/iPhone 12 Pro/IMG_1361.DNG | 192x256
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2 | 256x171
+Canon/EOS 5D Mark IV/B13A0729.CR2 | 256x171
+Canon/EOS 7D Mark II/capture000106.cr2 | 256x171
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3 | 256x171
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3 | 256x171
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3 | 256x171
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3 | 256x171
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | 256x192
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | 256x171
+Fujifilm/X-H2S/IMG-20221005-0665.raf | 256x171
+Fujifilm/X-T5/DSCF0021.RAF | 256x171
+Fujifilm/X100VI/DSCF0074.RAF | 171x256
+GoPro/HERO5 Black/GOPR0020.GPR | none
+Google/Pixel 4a/PXL_20201121_100251397.dng | 256x192
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | error: rawler: Error: Unknown camera, model ' CFV-50c/Flash Sync', make: 'Hasselblad', mode: ''
+Leica/M Monochrom (Typ 246)/M2462362.DNG | 160x120
+Leica/Q2/L1000750.DNG | 256x171
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | 256x170
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | 256x171
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | 256x171
+Nikon/Z 6/DSC_0750.NEF | 256x170
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | 256x171
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | 256x171
+OM System/OM-1 Mark II/20mp-12bit.orf | none
+Olympus/E-M1MarkIII/_3160529.ORF | none
+Panasonic/DC-GH6/1-1.RW2 | 256x192
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | 256x171
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | 256x171
+Pentax/K-1 Mark II/_IMG2387.DNG | 256x171
+Pentax/K-3 Mark III/IMGP9854.PEF | 256x171
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | none
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | none
+Sigma/DP1 Merrill/SDIM0555.X3F | error: rawler: the decoder panicked reading the embedded picture
+Sony/ILCE-1/A1_full_compressed.ARW | 256x171
+Sony/ILCE-6400/DSC00087.ARW | 256x171
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | 256x171
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | 256x171

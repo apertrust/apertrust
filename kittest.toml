@@ -1,0 +1,15 @@
+# Snapshot tests (egui_kittest) photograph the interface on whichever GPU runs them, and
+# GPUs rasterise antialiased edges and text a little differently (docs/gui.md, Testing).
+# Snapshots made on Linux differ on the Apple M4 by at most 2/255 in a channel, on 1 to 2%
+# of their pixels. These options let that through, and nothing a person would see.
+#
+# threshold is per pixel, in dify's weighted squared YIQ distance (0.5053 dY² + 0.299 dI²
+# + 0.1957 dQ², channels 0 to 255), counted after dify sets aside the pixels it judges
+# antialiased. A pixel within 2/255 in every channel is at most 2.17, so it passes; a grey
+# step of 3/255 is 4.55, so it fails. The default, 0.6, lets only 1/255 through.
+threshold = 2.5
+
+# A couple of edge pixels a GPU draws differently by more, as lavapipe did on the curve's
+# snapshot. A label that loses its last letter fails 8 pixels, a slider moved by a point
+# hundreds: crates/ui/tests/tolerance.rs checks both on every runner.
+max_failed_pixels = 2

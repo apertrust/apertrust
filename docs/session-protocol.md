@@ -1,0 +1,142 @@
+# Session protocol
+
+Every client reaches the engine through one session protocol: the desktop app, the command line, and later the web client, MCP agents and scripts. A client sends commands and receives events; it never calls into the engine's state. This document describes the protocol: who speaks it, the commands as they are today, how they are numbered and batched, the transports, the commands planned, and what stays out on purpose. The events, their kinds, order and delivery, are in [events.md](events.md).
+
+**Status.** The in-process protocol is built, as `apertrust_engine::session`'s `Command` and `Event` (decisions 17 and 28, and the decisions that add commands). The library's first commands, a folder opened and closed, are built. Its other commands, remote transports and several photos in one session are planned (decisions 37, 54 and 59). The session's behaviour behind each command is in [engine.md](engine.md#session-and-threads).
+
+## Every client through the session
+
+- **The engine never depends on UI code** (AGENTS.md, Engineering rules). Every client, the desktop UI, the web UI, MCP and scripts, reaches it through the session protocol. Widgets only emit commands; they never touch engine state. This keeps undo, agents and the remote web mode behaving as the app does.
+- **Clients speak modules, not operations** (decisions 4 and 28). A client sets, resets and keeps a module's controls by the module's and the control's ids. The session turns module values into operation parameters through each module's binding. No client translates module values itself, so the CLI and MCP see what the app sees. Operations never appear in the protocol, apart from `Set`, which leaves it before the first release.
+- **One session per window** (decision 37, planned until spike W1 measures it): the session holds every photo the window shows, the active one live, and serves the library's commands too, so every client sees one protocol.
+
+```mermaid
+flowchart TB
+    subgraph clients["Clients"]
+        app["apertrust (egui)"]
+        cli["apertrust-cli"]
+        web["web client (later)"]
+        mcp["MCP agents (later)"]
+        scripts["scripts (later)"]
+    end
+    clients -- "commands" --> session
+    session -- "events" --> clients
+    session["Session: modules bound to operation parameters; jobs"] --> engine["Engine: the pipeline, its caches and tiles; the edit writer; the library's calls"]
+```
+
+## Where it lives
+
+The protocol's types are `Command` and `Event`, with the types they carry, in `crates/engine/src/session.rs`. They are plain data, so that they can move unchanged.
+
+They stay in the engine, as a `protocol` module once they need one, until a client must compile them without the engine. That will be the web client, and `apertrust-protocol` is to be made for it then, for decision 65's dependency-direction reason (decision 59). `Frame`, which carries a GPU buffer in process, maps to an encoded frame there.
+
+Shape a new command so it moves unchanged: plain data, no references, no GPU objects (the `desktop-architecture` skill).
+
+## The in-process session
+
+Built. A client starts a session and talks to it through its handle:
+
+- `Session::start(gpu, operations, modules, build, budget, wake)` starts the engine thread on `gpu` with the binaries' `OPERATIONS` and `MODULES`, the build that every edit written records (decision 44), the engine's memory budget (decision 12) and `wake`, which the session calls when events arrive ([events.md](events.md#one-outbox-per-session)).
+- `Session::send(command) -> u64` sends a command and returns its number. It never waits.
+- `Session::events() -> Vec<Event>` drains the events that have arrived, oldest first. It never waits.
+- Dropping the handle ends the session: the edit commands still queued apply, rendering nothing, up to one that opens another photo; the edit is saved; then the jobs end, as the control's shutdown ends them.
+
+The app sends commands from its frame and drains in `App::logic`, its `wake` `egui::Context::request_repaint`. The CLI runs the same session in-process: `apertrust-cli export` sends `Export` and waits on a channel its `wake` sends to, printing each photo's result as the job reports it (`crates/cli/src/main.rs`, `export_in_session`).
+
+## Numbers and batches
+
+- **Numbers.** Commands are numbered in the order sent, 1 for the first, by `Session::send`; the engine thread counts them in the same order, since one channel carries them. Events name the commands they include or answer ([events.md](events.md#numbers)).
+- **Batches coalesce commands** (decision 17). The engine thread waits for a command, then takes every other that has arrived, and applies them in order as one batch. A batch sends one `Values` after its commands on the edit, failed or not, and renders one `Frame`. So a fast drag renders only its latest value, and a client's pending value is replaced by the engine's either way. Nothing else merges commands: each is applied, and each refusal reported.
+- **Commands on the edit.** Every command acts on the open photo's edit except `Open`, `Resize`, `Scopes`, `CancelJob`, `Export`, `PreviewExport` and `Library` (`on_edit` in `session.rs`). A command on the edit ends a gesture under way (decision 42), is followed by a `Values`, and is refused on a photo open for viewing only (decision 43). A new command that changes no edit, as `Readouts` will be, must join that list.
+- **Gestures.** `SetControl { done: false }` changes merge into one history step on the `done: true` that ends them; only a completed change saves the edit. `CancelGesture` takes a gesture back ([engine.md](engine.md#session-and-threads)).
+- **Refusals.** A value out of range or of the wrong kind (decision 21), out of the range its module's values give (decision 30), or an option the photo does not list (decision 30) is refused whole, the command changing nothing, and reported as `SessionError::Refused` with the command's number.
+
+## Commands
+
+`Command` today. Each is described more fully on the session's side in [engine.md](engine.md#session-and-threads), and the export's in [engine.md](engine.md#export-jobs).
+
+| Command | What it does | On the edit |
+| --- | --- | --- |
+| `Open(path)` | Opens a raw with the edit saved beside it, saving and closing the photo before it; answered by `Opened` or `Failed(Open { open, .. })` | no |
+| `Resize { width, height }` | The most physical pixels the photo may be shown in; renders again if it changed | no |
+| `SetControl { module, control, value, done }` | Sets a module's control, or a lossless view's coordinate (decision 2), which keeps it; its module's follow writes in the same change (decision 27); `done` on a gesture's last change, which saves | yes |
+| `ResetControl { module, control }` | A control, or a coordinate, back to its default for the photo, no longer kept | yes |
+| `ResetModule { module }` | Every control of a module back to its default: the header's reset | yes |
+| `CancelGesture { module }` | Puts the module back as before the gesture's first `done: false` change, with no history step (decision 42) | yes |
+| `Keep { module, control, kept }` | Keeps or releases a control, leaving its value | yes |
+| `ApplyPreset { module, preset, option }` | Applies a preset row's option as one change (decision 2) | yes |
+| `Set { operation, param, value }` | A parameter no module owns, of an operation an unedited photo runs; leaves the protocol before the first release | yes |
+| `Reset` | The whole edit back to nothing | yes |
+| `Scopes(graphs)` | What the scopes count of each frame, or nothing with `None` (decision 19) | no |
+| `CancelJob { job }` | Cancels a job with a progress; refused for one that cannot be cancelled (decision 57) | no |
+| `Export { photos, settings, places }` | An export job, one at a time, its `Added` naming this command (decision 56) | no |
+| `PreviewExport { photos, settings, places }` | The Export dialog's lines, answered by `ExportPreview`; the preview before it is cancelled | no |
+| `Library(LibraryCommand::Open(Source::Folder(path)))` | Opens a folder: a cancellable `UserBackground` job, its progress as `Event::Job`, `Added` naming this command, what it finds as `Event::Library` naming it too ([events.md](events.md#the-librarys-events)); the reading of the folder before it is cancelled. Opens no photo | no |
+| `Library(LibraryCommand::Close)` | Cancels the folder's reading and answers `LibraryEvent::Closed` naming this command | no |
+| `Library(LibraryCommand::Thumbnails { photos, size })` | The open folder's photos' thumbnails, by file name, at most `size` pixels on their longer side, the first the most wanted: a `SystemForeground` job each with no progress, deduplicated by photo and size, the newest asked first, each answered by `LibraryEvent::Thumbnail` naming the folder's open ([events.md](events.md#the-librarys-events)); a new open or a close cancels those not yet sent; nothing with no folder open | no |
+
+`places` are the person's folders and name, which the client passes since the engine reads no platform folder (decision 43). `LibraryCommand` and what its events carry are `apertrust_library::ops`'s, re-exported as `session::library`. Five more variants exist only in tests: `Synthetic`, `HoldExport`, `HoldPreview`, `HoldFolder` and `HoldThumbnails`.
+
+## Commands planned
+
+- **`Readouts(Vec<ReadoutId>)`**, the readouts a client shows, by module (decision 19; [engine.md](engine.md#readouts)).
+- **`Show(cells)`**, the cells on screen, each a photo id and a size, with commands naming photos by id, the selection and the active photo the session's (decision 37).
+- **The library's commands**, `Command::Library(LibraryCommand)` (decision 54). `LibraryCommand`, about forty commands in the end, is layer 4 of the library's API, served by the session from `apertrust-library`.
+  - The long ones run as jobs of the session's control on darktable's queues: a folder's reading on `UserBackground`; thumbnails on `SystemForeground`; move, copy, rename, delete and Import… on `UserForeground`. Each call into a root runs on that root's queue (decisions 53 and 57).
+  - The first three, `Open(Source::Folder)`, `Close` and `Thumbnails`, are built ([Commands](#commands)). `Show` and `Page` are planned; meanwhile the client keeps the photos listed and asks for the thumbnails of the cells it draws.
+  - Clients see `PhotoRef`, `Target` and `Rules`, never the library's lower layers ([library.md](library.md#planned)). Its events are `Event::Library(LibraryEvent)` ([events.md](events.md#lower-crates-report-through-an-observer)).
+- **Undo and Redo**, asked by the client; history lives in the session (Phase 2; decision 47).
+- **`Sync`** and the handshake, for remote clients ([below](#remote-clients)).
+- **Masks and layers**, `render_viewport(region, zoom)`, later phases.
+
+## Transports
+
+- **In process**, built: the app and the CLI, as above. A second in-process client, the app's MCP endpoint, is to get a receiver of its own from the session's outbox (decision 59).
+- **IPC, WebSocket or WebTransport**, later: `apertrust-cli serve` for web and tablet clients on a home server (`apertrust-server`; [architecture.md](architecture.md#programs)). The engine is the same; only the transport differs.
+- **MCP**, later: `apertrust-cli mcp` over stdio and the app's endpoint (`apertrust-mcp`, through `rmcp`), a thin adapter over the protocol. Its tools are generated from the modules' definitions and `LibraryCommand`'s schema, off until the person allows them and read-only unless writes are allowed (principle 8; decision 54).
+
+## Web, tablets and remote access
+
+Planned (decision 58). The browser and tablets are remote clients of a native engine; [gui.md](gui.md#why-egui) holds why the desktop and the browser share one egui interface.
+
+**Web mode** (decision 58). Desktop and browser share mouse, keyboard and a large screen, so they share the UI. Two pieces are pluggable: the engine connection (in-process on the desktop, remote over WebSocket or WebTransport on the web) and the viewport's source (a GPU display buffer on the desktop, decision 17; streamed frames on the web). The remote engine on a GPU machine gives full native performance and full AI models.
+
+**Why there is no in-browser processing.** It faces uneven WebGPU on Linux (as of September 2026, Chrome enables it only on Intel Gen12+ and recent NVIDIA, Firefox not at all), memory and buffer limits that force tiling, cross-origin isolation for threads, and smaller AI models through ONNX Runtime Web. The engine always runs natively, on the user's machine or a home server, and browsers and tablets connect to it on the local network or over the Internet.
+
+**Remote access.** The main web use is a home server running the engine, reached from a browser or tablet at home or over the Internet. That adds requirements a local app does not have:
+
+- Authentication and encrypted transport (HTTPS, secure WebSocket or WebTransport over TLS). Access through a VPN is the recommended default for Internet use, rather than exposing the server directly.
+- Bandwidth-aware frame streaming: compressed frames at reduced resolution while dragging sliders, full quality when idle. Wide-gamut and HDR frames need a codec that keeps them.
+- The photo library lives on the server; the client only browses and edits it.
+
+**Touch** comes with the mobile phase, after Phase 3 (decision 1): a native app for phones and tablets over the session protocol, designed for touch rather than adapted from the desktop layout.
+
+## Remote clients
+
+Planned (decision 59), with the server or MCP, whichever comes first:
+
+- **Per connection, notices are queued** in order, to a bound, 1024 to start with, **and facts are coalesced by topic**: a later fact replaces the queued one of its topic and takes its place after the notices before it, so the order guarantees still hold ([events.md](events.md#order-and-delivery)). A frame or a still is encoded only while none is in flight to that client.
+- **A connection that overflows its notices is closed as lagged.** Its client reconnects and syncs; the engine never waits for it.
+- **`Command::Sync`** sends the current facts and the open folder's listing again, as to a client joining late.
+- **Versioning:** `Hello { protocol, client }` and `Welcome { protocol, build }`, with one protocol number, raised only by a change a client cannot ignore. New variants and fields with defaults keep it, and a client ignores what it does not know.
+- **Encoding:** commands and events as JSON tagged by `type`; frames and stills as binary messages.
+- **Numbers** stay one sequence across connections, assigned as a command enters the inbox, each connection learning its own from the acknowledgement.
+
+## What stays out
+
+On purpose, so that the protocol stays one boundary:
+
+- **Operations.** Clients name modules and controls; `Set` is the one operation-level command, and it leaves before the first release.
+- **Engine state.** No client holds a reference into the session, a GPU object outside the in-process `Frame`, or a lock; widgets never touch engine state.
+- **Files the client should read.** The engine opens no settings file or folder (decision 43): a client reads its settings and an export preset and sends their values.
+- **A bus.** No subscriptions and no handlers run inside the engine on a client's behalf ([events.md](events.md#against-darktable)).
+- **A second API.** The library has no API beside its commands here: no SQL or query language beyond darktable's rules, no traits with one implementation (decision 54).
+- **History in the client.** Undo and history are the session's; a client asks for them.
+
+## Tests
+
+Planned with the remote protocol: a JSON fixture for each variant, read and written byte for byte, so a change on the wire is deliberate; a client that syncs mid-session mirrors what a client there from the start mirrors; a slow connection closed as lagged while the live frame keeps its time. The in-process side is held by the session's tests ([events.md](events.md#tests)).
+
+## Open questions
+
+- **Remote access:** which codec streams wide-gamut and HDR viewport frames efficiently over the Internet, and how does authentication work beyond VPN access?

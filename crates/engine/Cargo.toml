@@ -1,0 +1,45 @@
+[package]
+name = "apertrust-engine"
+description = "Apertrust processing engine: GPU-resident pipeline, no UI dependencies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+# Its settings part, for the store the binaries hand the engine's settings and the types
+# of its generated statics, and its jobs, darktable's control, which the session runs
+# (decision 57): never its folders, so the engine finds no settings file itself
+# (decision 43).
+apertrust-base = { workspace = true, features = ["jobs"] }
+apertrust-color.workspace = true
+# What an export writes and where, which its session's export jobs use (decision 56).
+apertrust-export.workspace = true
+apertrust-modules.workspace = true
+apertrust-plugin.workspace = true
+apertrust-raw.workspace = true
+# The .apxmp file's text layer, `apertrust_library::sidecar`; the engine reads and writes
+# its values with the modules (decision 54).
+apertrust-library.workspace = true
+# The export's start, for darktable's variables (`names`).
+chrono.workspace = true
+pollster.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+wgpu.workspace = true
+
+[build-dependencies]
+# The settings generator, which writes the engine's statics from the schema (decision 43).
+apertrust-base = { workspace = true, features = ["codegen"] }
+
+[dev-dependencies]
+naga.workspace = true
+# Its `testing::Sample` module, for the session's and the edit's tests.
+apertrust-modules = { workspace = true, features = ["testing"] }
+apertrust-operations.workspace = true
+
+[lints]
+workspace = true

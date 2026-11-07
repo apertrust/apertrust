@@ -1,0 +1,53 @@
+[package]
+name = "apertrust-base"
+description = "What every Apertrust program sets up as it starts: its settings, logging and folders"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# The settings generator, for the build scripts of the crates that own settings, which
+# alone turn it on (decision 43).
+codegen = ["dep:toml_edit"]
+# The version and the banner's versions, read by each binary's build script, the only
+# crates that turn it on, so that a commit rebuilds no library (decision 44).
+build = []
+# The log: darktable's `-d` domains, short lines and the startup banner (decision 44), for the binaries. The design system never turns it on.
+log = ["dep:thiserror", "dep:tracing-log", "dep:tracing-subscriber"]
+# Apertrust's folders: the user data folder and how it was chosen (decision 43), for
+# the binaries. The design system and the golden harness never turn it on.
+folders = ["dep:directories", "dep:thiserror"]
+# Background jobs: darktable's control jobs, its queues, workers, progress and cancel
+# (decision 57), with std threads and tracing alone, for the engine and the library.
+# The design system and the golden harness never turn it on.
+jobs = []
+# The safe write (decision 53): a file replaced through a hidden temporary, for the
+# sidecar's writer, the export's and the library's listing. No `unsafe`.
+fs = ["dep:tempfile"]
+
+[dependencies]
+# The safe write's hidden temporary file.
+tempfile = { workspace = true, optional = true }
+# The platform's user data folder, the folders' default.
+directories = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+# The settings file's reading and writing, the store's (decision 43).
+toml.workspace = true
+toml_edit = { workspace = true, optional = true }
+# The store's lines under -d settings, and the log's own, without the log feature too.
+tracing.workspace = true
+tracing-log = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+[dev-dependencies]
+# The generator's and the folders' tests, which build them without their features.
+directories.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+toml_edit.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,37 @@
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:ex="https://example.org/ns/1.0/">
+  <rdf:Description rdf:about="" xmp:Rating="3">
+    <dc:title>
+      <rdf:Alt>
+        <rdf:li xml:lang="x-default">Harbour</rdf:li>
+        <rdf:li xml:lang="de">Hafen</rdf:li>
+      </rdf:Alt>
+    </dc:title>
+    <dc:subject>
+      <rdf:Bag>
+        <rdf:li>harbour</rdf:li>
+        <rdf:li>a &amp; b</rdf:li>
+      </rdf:Bag>
+    </dc:subject>
+  </rdf:Description>
+  <rdf:Description rdf:about="">
+    <ex:place ex:city="Oslo" ex:country="NO"/>
+    <ex:link rdf:resource="https://example.org/a"/>
+    <ex:note>
+      <rdf:Description>
+        <rdf:value>kept</rdf:value>
+        <ex:since>2020</ex:since>
+      </rdf:Description>
+    </ex:note>
+  </rdf:Description>
+  <rdf:Description rdf:about="">
+    <ex:history>
+      <rdf:Seq>
+        <rdf:li ex:num="0" ex:op="exposure"/>
+        <rdf:li ex:num="1" ex:op="flip"/>
+      </rdf:Seq>
+    </ex:history>
+  </rdf:Description>
+</rdf:RDF>

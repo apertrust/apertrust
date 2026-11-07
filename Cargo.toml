@@ -1,0 +1,151 @@
+[workspace]
+resolver = "3"
+# Each crate's folder is its package name without `apertrust-`; crates/op holds the
+# operation crates and is no crate itself, so the others are listed by name.
+members = [
+    "crates/app",
+    "crates/base",
+    "crates/cli",
+    "crates/color",
+    "crates/display",
+    "crates/engine",
+    "crates/export",
+    "crates/golden",
+    "crates/library",
+    "crates/modules",
+    "crates/operations",
+    "crates/plugin",
+    "crates/raw",
+    "crates/ui",
+    "crates/op/*",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/apertrust/apertrust"
+publish = false
+
+[workspace.dependencies]
+apertrust-base = { path = "crates/base" }
+apertrust-color = { path = "crates/color" }
+apertrust-display = { path = "crates/display" }
+apertrust-engine = { path = "crates/engine" }
+apertrust-export = { path = "crates/export" }
+apertrust-golden = { path = "crates/golden" }
+apertrust-library = { path = "crates/library" }
+apertrust-modules = { path = "crates/modules" }
+apertrust-op-agx = { path = "crates/op/agx" }
+apertrust-op-bilat = { path = "crates/op/bilat" }
+apertrust-op-bloom = { path = "crates/op/bloom" }
+apertrust-op-channelmixerrgb = { path = "crates/op/channelmixerrgb" }
+apertrust-op-colorbalancergb = { path = "crates/op/colorbalancergb" }
+apertrust-op-colorequal = { path = "crates/op/colorequal" }
+apertrust-op-colorin = { path = "crates/op/colorin" }
+apertrust-op-colorout = { path = "crates/op/colorout" }
+apertrust-op-demosaic = { path = "crates/op/demosaic" }
+apertrust-op-exposure = { path = "crates/op/exposure" }
+apertrust-op-filmicrgb = { path = "crates/op/filmicrgb" }
+apertrust-op-flip = { path = "crates/op/flip" }
+apertrust-op-grain = { path = "crates/op/grain" }
+apertrust-op-hazeremoval = { path = "crates/op/hazeremoval" }
+apertrust-op-highlights = { path = "crates/op/highlights" }
+apertrust-op-primaries = { path = "crates/op/primaries" }
+apertrust-op-rawprepare = { path = "crates/op/rawprepare" }
+apertrust-op-rgbcurve = { path = "crates/op/rgbcurve" }
+apertrust-op-rgblevels = { path = "crates/op/rgblevels" }
+apertrust-op-sigmoid = { path = "crates/op/sigmoid" }
+apertrust-op-soften = { path = "crates/op/soften" }
+apertrust-op-temperature = { path = "crates/op/temperature" }
+apertrust-op-toneequal = { path = "crates/op/toneequal" }
+apertrust-op-vignette = { path = "crates/op/vignette" }
+apertrust-operations = { path = "crates/operations" }
+apertrust-plugin = { path = "crates/plugin" }
+apertrust-raw = { path = "crates/raw" }
+apertrust-ui = { path = "crates/ui" }
+
+anyhow = "1.0.104"
+# Pure Rust only (decision 5): `pure` leaves out the C and assembly implementations.
+blake3 = { version = "1.8.7", default-features = false, features = ["pure"] }
+base64 = "0.23.1"
+bytemuck = "1.25.2"
+# The export's start as local time, for darktable's variables (apertrust-engine's
+# names); rawler builds it already.
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+clap = { version = "4.6.7", features = ["derive"] }
+# The platform's folders: apertrust-base's user data folder and home folder
+# (crates/base/src/folders.rs), the app's Pictures (crates/app/src/paths.rs), and the
+# home, Pictures and Desktop folders darktable's variables name (apertrust-cli's places).
+directories = "6.0.0"
+# AccessKit: screen readers on every platform (docs/gui.md, Accessibility; decision 36).
+# Links: a link opens in the system's browser, through webbrowser (Rust).
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "links", "wgpu", "wayland", "x11"] }
+# Without its default fonts, which fail the licence policy (decision 36).
+egui = { version = "0.37.0", default-features = false }
+# eframe's own, for its winit: the app places its window where settings say.
+egui-winit = { version = "0.37.0", default-features = false }
+# About's Credits, CREDITS.md drawn as Markdown: the parser alone, no image loading.
+egui_commonmark = { version = "0.26.0", default-features = false, features = ["pulldown_cmark"] }
+egui_kittest = { version = "0.37.0", features = ["wgpu", "snapshot"] }
+# CLDR number formats, compiled in (Unicode-3.0, allowed by deny.toml).
+icu_decimal = { version = "2.4.0", features = ["alloc"] }
+icu_locale_core = "2.4.0"
+# Thread-safe ICU data (Arc instead of Rc), so formatters can be shared.
+icu_provider = { version = "2.4.0", features = ["sync"] }
+flate2 = "1.1.10"
+fluent-bundle = "0.16.0"
+fluent-syntax = "0.12.0"
+# A JPEG decoder for the export's tests: zune-jpeg, the image crate's, misreads a baseline
+# JPEG with a scan for each component and subsampled chroma (0.5.15), which jpeg-encoder
+# writes with optimised Huffman tables.
+jpeg-decoder = { version = "0.3.2", default-features = false }
+# The export's JPEG writer (crates/export): pure Rust, "(MIT OR Apache-2.0) AND IJG", its
+# forward DCT the Independent JPEG Group's, whose licence is allowed for it
+# (decision 56); CREDITS.md acknowledges it, as the licence asks.
+jpeg-encoder = "0.7.1"
+# The Mac's native menu bar, the app's on macOS only; without GTK, its Linux backend
+# (docs/gui.md, The menus; decision 39).
+muda = { version = "0.21.2", default-features = false }
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+png = "0.18.1"
+pollster = "1.0.1"
+quick-xml = "0.41.0"
+rawler = "0.8.0"
+# The platform's file dialogs (crates/app/src/dialogs.rs): AppKit on macOS, COM on Windows,
+# the XDG desktop portal on Linux, which loads the system's libdbus at run time; never its
+# GTK backend (decision 5).
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
+# SVG icons only: no text, system fonts or bitmap images.
+resvg = { version = "0.49.0", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+# The export's temporary files, made exclusively beside their names and renamed into place
+# (apertrust-export's disk, decision 56).
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+toml = "0.8.23"
+# The settings generator's reader (crates/base): toml's own, with each item's place in the
+# file and the comments above it.
+toml_edit = { version = "0.22.27", default-features = false, features = ["parse"] }
+tracing = "0.1.44"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt", "env-filter", "tracing-log"] }
+unic-langid = "0.9.6"
+wgpu = "30.0.1"
+# The app's Windows resources (crates/app/build.rs), through the SDK's own rc.exe; without
+# its `toml` feature, which reads a manifest's metadata the build script does not use.
+winresource = { version = "0.1.34", default-features = false }
+
+[workspace.lints.rust]
+# FFI crates opt out with a crate-level `#![allow(unsafe_code)]`.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+# Decoding a 60 MP raw with an unoptimised decoder takes seconds, so rawler is
+# optimised in debug builds too.
+[profile.dev.package.rawler]
+opt-level = 3

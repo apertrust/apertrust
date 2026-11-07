@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	The app bundle's keys, merged by cargo-packager over those it writes from
+	packaging/Packager.toml (the executable, the identifier, the icon), these taking
+	precedence. tools/package.sh fills in the version: @SHORT_VERSION@ is the release's
+	X.Y.Z, @BUILD@ the count of commits (X.Y.Z when a packager sets APERTRUST_VERSION).
+	The binary embeds crates/app/assets/macos/Info.plist for an unbundled run; every key
+	there has the same value here (crates/app/tests/packaging.rs).
+
+	The languages are the interface's, so that macOS writes its own menu items in the one
+	it picks for the app (docs/gui.md, The menus).
+
+	Document types: every extension rawler decodes (apertrust_raw::extensions()), by the
+	system's type where macOS declares one, by a type imported here where it does not.
+	Apertrust is an editor of them at the Alternate rank, so it is offered in Open With
+	and never takes a raw from the app that opens it now.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Apertrust</string>
+	<key>CFBundleDisplayName</key>
+	<string>Apertrust</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en-GB</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en-GB</string>
+		<string>uk</string>
+		<string>pl</string>
+	</array>
+	<key>CFBundleShortVersionString</key>
+	<string>@SHORT_VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@BUILD@</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.photography</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (C) 2026 Apertrust developers. GPL-3.0-or-later.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Raw image</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.raw-image</string>
+				<string>com.canon.cr2-raw-image</string>
+				<string>com.canon.cr3-raw-image</string>
+				<string>com.canon.crw-raw-image</string>
+				<string>com.epson.raw-image</string>
+				<string>com.fuji.raw-image</string>
+				<string>com.hasselblad.3fr-raw-image</string>
+				<string>com.hasselblad.fff-raw-image</string>
+				<string>com.kodak.raw-image</string>
+				<string>com.konicaminolta.raw-image</string>
+				<string>com.leafamerica.raw-image</string>
+				<string>com.leica.rwl-raw-image</string>
+				<string>com.nikon.nrw-raw-image</string>
+				<string>com.nikon.raw-image</string>
+				<string>com.olympus.raw-image</string>
+				<string>com.panasonic.raw-image</string>
+				<string>com.panasonic.rw2-raw-image</string>
+				<string>com.pentax.raw-image</string>
+				<string>com.phaseone.raw-image</string>
+				<string>com.samsung.raw-image</string>
+				<string>com.sony.arw-raw-image</string>
+				<string>org.apertrust.raw-image.ari</string>
+				<string>org.apertrust.raw-image.crm</string>
+				<string>org.apertrust.raw-image.dcs</string>
+				<string>org.apertrust.raw-image.kdc</string>
+				<string>org.apertrust.raw-image.mef</string>
+				<string>org.apertrust.raw-image.qtk</string>
+				<string>org.apertrust.raw-image.x3f</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.ari</string>
+			<key>UTTypeDescription</key>
+			<string>ARRI raw image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ari</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.crm</string>
+			<key>UTTypeDescription</key>
+			<string>Canon Cinema RAW Light image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>crm</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.dcs</string>
+			<key>UTTypeDescription</key>
+			<string>Kodak DCS raw image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>dcs</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.kdc</string>
+			<key>UTTypeDescription</key>
+			<string>Kodak raw image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>kdc</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.mef</string>
+			<key>UTTypeDescription</key>
+			<string>Mamiya raw image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mef</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.qtk</string>
+			<key>UTTypeDescription</key>
+			<string>Apple QuickTake image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>qtk</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.raw-image.x3f</string>
+			<key>UTTypeDescription</key>
+			<string>Sigma raw image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.camera-raw-image</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>x3f</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

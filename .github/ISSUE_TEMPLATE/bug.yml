@@ -1,0 +1,72 @@
+name: Bug report
+description: Something does not work, or a photo does not look as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. The more exactly you can tell us what happened, the sooner it can be fixed.
+        If you are not sure it is a bug, please ask in Discussions first.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The steps that lead to it, as short as you can make them.
+      placeholder: |
+        1. Open the raw
+        2. Set Exposure to +1 EV
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: raw
+    attributes:
+      label: The raw
+      description: The camera and the file format, for example "Sony ILCE-7RM5, ARW". If you can share the file, say where; please do not attach photos you do not have the right to share.
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.1, Windows 11 24H2, Fedora 42 (Wayland) ...
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      description: "`apertrust-cli gpu` lists the adapters and the one the engine opens."
+      placeholder: Apple M4, NVIDIA RTX 5060 (driver 570.x), Radeon 780M (Mesa 25.x) ...
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: The output of `apertrust --version`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Run the program again with debug domains on, for example `apertrust -d gpu -d pipe FILE`, and paste what it prints. `-d all` prints everything.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, how often it happens, what you already tried.
+    validations:
+      required: false

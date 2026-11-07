@@ -1,0 +1,30 @@
+name: Feature request
+description: Something Apertrust should do, or do differently.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please start from the problem you have. A proposal is welcome, but the problem comes first, because there may be a better way to solve it than the one that comes to mind.
+        To bring a darktable module to Apertrust, use the "Port a darktable module" form instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way? A photo, a task or a workflow makes it concrete.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Your proposal
+      description: How you think it could work. It is fine to leave this empty.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now
+      description: How you work around it today, in Apertrust or in another program.
+    validations:
+      required: false

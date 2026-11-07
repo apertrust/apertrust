@@ -1,0 +1,43 @@
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="forms">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:ex="https://example.org/ns/1.0/">
+   <xmp:Rating>3</xmp:Rating>
+   <dc:title>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Harbour</rdf:li>
+     <rdf:li xml:lang="de">Hafen</rdf:li>
+    </rdf:Alt>
+   </dc:title>
+   <dc:subject>
+    <rdf:Bag>
+     <rdf:li>harbour</rdf:li>
+     <rdf:li>a &#38; b</rdf:li>
+    </rdf:Bag>
+   </dc:subject>
+   <ex:place rdf:parseType="Resource">
+    <ex:city>Oslo</ex:city>
+    <ex:country>NO</ex:country>
+   </ex:place>
+   <ex:link rdf:resource="https://example.org/a"></ex:link>
+   <ex:note rdf:parseType="Resource">
+    <rdf:value>kept</rdf:value>
+    <ex:since>2020</ex:since>
+   </ex:note>
+   <ex:history>
+    <rdf:Seq>
+     <rdf:li rdf:parseType="Resource">
+      <ex:num>0</ex:num>
+      <ex:op>exposure</ex:op>
+     </rdf:li>
+     <rdf:li rdf:parseType="Resource">
+      <ex:num>1</ex:num>
+      <ex:op>flip</ex:op>
+     </rdf:li>
+    </rdf:Seq>
+   </ex:history>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

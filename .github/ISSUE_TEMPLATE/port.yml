@@ -1,0 +1,37 @@
+name: Port a darktable module
+description: Ask for a darktable module to be migrated to Apertrust.
+labels: ["port"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Apertrust reimplements darktable's processing. Each module is ported from darktable's own source and checked against darktable's output. See `docs/modules/README.md` for what is built and planned; check there first.
+  - type: input
+    id: module
+    attributes:
+      label: Which module
+      description: The module's name in darktable, and its operation name if you know it.
+      placeholder: color zones (colorzones)
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why you need it
+      description: What you do with it, and what you use now in its place.
+    validations:
+      required: true
+  - type: textarea
+    id: needs
+    attributes:
+      label: What it needs
+      description: Anything you know of that the port needs, such as the controls you use, the parts you do not, whether it works on the raw or the finished image, or tools it depends on (pickers, masks, a histogram).
+    validations:
+      required: false
+  - type: input
+    id: darktable-version
+    attributes:
+      label: darktable version you know it from
+      placeholder: "5.6.2"
+    validations:
+      required: false

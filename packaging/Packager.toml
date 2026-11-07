@@ -1,0 +1,104 @@
+# Apertrust's packages, built by cargo-packager from this one file (docs/packaging.md):
+# on macOS the app bundle and its disk image, on Windows an NSIS installer, on Linux an
+# AppImage. tools/package.sh builds the binaries, fills in the placeholders and runs it:
+# @ROOT@ is the repository's top folder, @VERSION@ the package's version (the release's
+# X.Y.Z, with +N, the count of commits, unless a packager sets APERTRUST_VERSION),
+# @BINARIES@ the folder of the release binaries, and @INFO_PLIST@ macos/Info.plist with
+# its version filled in. Never run cargo-packager on this file itself.
+
+# Named, so cargo-packager does not look for a Cargo.toml beside the filled-in copy.
+name = "apertrust"
+productName = "Apertrust"
+version = "@VERSION@"
+identifier = "org.apertrust.Apertrust"
+description = "A free, non-destructive, cross-platform raw photo editor"
+homepage = "https://apertrust.org"
+authors = ["Apertrust developers"]
+publisher = "Apertrust developers"
+copyright = "Copyright (C) 2026 Apertrust developers"
+category = "Photography"
+
+# cargo-packager 0.11.8 reads its --binaries-dir flag but never applies it.
+binariesDir = '@BINARIES@'
+# The app first, which a package starts; the CLI beside it: in the bundle's
+# Contents/MacOS, the install folder on Windows, the AppImage's usr/bin.
+binaries = [
+    { path = "apertrust", main = true },
+    { path = "apertrust-cli" },
+]
+
+# The bundle's and the disk image's .icns, and the hicolor tree for Linux; the Windows
+# executable carries its .ico itself (crates/app/build.rs).
+icons = [
+    '@ROOT@/crates/app/assets/icons/apertrust.icns',
+    '@ROOT@/crates/app/assets/icons/png/linux/hicolor/*/apps/org.apertrust.Apertrust.png',
+]
+
+# The licences every package ships: the GPL, the components and their notices (also in
+# About), the fonts' OFL, which the binary compiles in, and Lucide's, whose icons it
+# draws. In the bundle's Contents/Resources, beside the executable on Windows, in
+# usr/lib/apertrust in the AppImage.
+resources = [
+    { src = '@ROOT@/LICENSE', target = "LICENSE" },
+    { src = '@ROOT@/CREDITS.md', target = "CREDITS.md" },
+    { src = '@ROOT@/crates/ui/assets/fonts/OFL.txt', target = "licences/OFL.txt" },
+    { src = '@ROOT@/crates/ui/assets/icons/LICENSE-Lucide', target = "licences/LICENSE-Lucide" },
+]
+
+# Every extension rawler decodes (apertrust_raw::extensions(), held to it by
+# crates/app/tests/packaging.rs), opened by the app: the Windows installer registers
+# them in Open With, its template reading this list (windows/installer.nsi); macOS takes its document types from macos/Info.plist and Linux its MIME types
+# from linux/org.apertrust.Apertrust.desktop.
+[[fileAssociations]]
+name = "Apertrust.RawImage"
+description = "Raw image"
+role = "editor"
+extensions = [
+    "3fr", "ari", "arw", "cr2", "cr3", "crm", "crw", "dcr", "dcs", "dng", "erf", "fff",
+    "iiq", "kdc", "mef", "mos", "mrw", "nef", "nrw", "orf", "ori", "pef", "qtk", "raf",
+    "raw", "rw2", "rwl", "srw", "x3f",
+]
+
+[macos]
+# Merged over the keys cargo-packager writes: the version, the minimum macOS, the
+# document types (macos/Info.plist).
+infoPlistPath = '@INFO_PLIST@'
+# Ad hoc: no Developer ID or notarisation yet (docs/packaging.md, Signing).
+signingIdentity = "-"
+
+[nsis]
+# For the person installing, in their own folder, with no administrator's rights.
+installMode = "currentUser"
+# cargo-packager's script with Apertrust's changes: the folder in
+# %LOCALAPPDATA%\Programs, the raw types in Open With alone, and an uninstaller that
+# removes them (windows/installer.nsi).
+template = '@ROOT@/packaging/windows/installer.nsi'
+installerIcon = '@ROOT@/crates/app/assets/icons/apertrust.ico'
+compression = "lzma"
+
+[linux]
+generateDesktopEntry = true
+
+[deb]
+# The AppImage's desktop file: ours, written as cargo-packager names it after the binary.
+desktopTemplate = '@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop'
+
+[appimage]
+# The platform's libraries are the system's, never bundled (decision 5): linuxdeploy
+# leaves out the Vulkan loader and drivers, libwayland, libxkbcommon, the X11 libraries
+# and libdbus, which winit, wgpu and rfd load at run time.
+excludedLibs = [
+    "libvulkan.so*",
+    "libwayland-*.so*",
+    "libxkbcommon*.so*",
+    "libX*.so*",
+    "libxcb*.so*",
+    "libdbus-1.so*",
+    "libGL*.so*",
+    "libEGL*.so*",
+]
+
+[appimage.files]
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.metainfo.xml"
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.mime.xml' = "usr/share/mime/packages/org.apertrust.Apertrust.xml"
+'@ROOT@/crates/app/assets/icons/png/linux/hicolor' = "usr/share/icons/hicolor"
