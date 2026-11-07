@@ -328,7 +328,13 @@ fn a_job_cancelled_before_it_starts_never_runs() {
     go.send(()).unwrap();
     heard.until(|told| *told == Told::Stopped("y", Ok(1)));
     assert_eq!(heard.started(), ["gate", "y"]);
-    assert_eq!(control.state(y), None);
+    // The job says it stopped before its worker ends it, and it sends no events: wait
+    // until the control has ended it.
+    let deadline = std::time::Instant::now() + PATIENCE;
+    while control.state(y).is_some() {
+        assert!(std::time::Instant::now() < deadline, "y never ended");
+        std::thread::yield_now();
+    }
     assert!(!control.cancel(y), "a job that has ended is gone");
 }
 

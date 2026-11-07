@@ -1,2 +1,9 @@
+# Text files are checked out as they are committed, with LF, on every system: Windows' git
+# would write CR LF into the sources and fixtures the tests read byte for byte. Git tells
+# binary files by their content and leaves them as they are.
+* text=auto eol=lf
+# The fonts' licence as it is shipped, with its CR LF (OFL-1.1: the files unmodified).
+crates/ui/assets/fonts/OFL.txt -text
+
 # Slang compiler output: collapsed in GitHub diffs and excluded from language stats.
 crates/**/generated/*.wgsl linguist-generated=true

@@ -59,3 +59,14 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo run -p apertrust-cli -- gpu
       - run: cargo test --workspace
+      # A snapshot that fails leaves its new image and its difference beside it: keep them
+      # to look at.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: snapshot-diffs-${{ matrix.os }}
+          path: |
+            crates/**/tests/snapshots/*.new.png
+            crates/**/tests/snapshots/*.diff.png
+          if-no-files-found: ignore
+          retention-days: 7
