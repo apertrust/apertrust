@@ -30,7 +30,7 @@ tools/build-api-docs.sh
 ```
 
 - **A kernel:** `tools/build-kernels.sh --check` needs the pinned Slang compiler, which `tools/fetch-slang.sh` downloads.
-- **Windows and macOS:** a pull request runs clippy on both, which compiles their code and tests, and the tests on Windows when it changes a path listed in `.github/windows-paths.txt`. Every platform's tests run each night. If your change needs Windows or macOS tested before it is merged, ask for the `full-ci` label, which runs the tests on both. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
+- **Windows and macOS:** a pull request runs clippy on both, which compiles their code and tests. The tests run on macOS each night, and on Windows not for now, since they take hours there. If your change needs macOS tested before it is merged, ask for the `full-ci` label. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
 - **Required checks:** a pull request merges when `ci-passed`, which CI's other jobs feed, and `signoff`, the sign-off check, pass. A pull request that changes only documentation skips the code's checks, and `ci-passed` still passes.
 - **A new dependency:** run `cargo deny check`, and follow [docs/dependencies.md](docs/dependencies.md).
 - **A kernel or a port:** CI cannot run darktable-cli, so run the golden checks locally and paste their results in the pull request: `apertrust-golden run CASE` for the ΔE2000 results and `apertrust-golden gradient CASE` for the derivatives. AGENTS.md's Golden-image harness section says what they need.

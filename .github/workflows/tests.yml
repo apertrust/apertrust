@@ -22,7 +22,7 @@ env:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
+    name: ${{ startsWith(matrix.os, 'ubuntu') && 'Linux, lavapipe' || startsWith(matrix.os, 'windows') && 'Windows, WARP' || 'macOS, Metal' }}
     strategy:
       fail-fast: false
       matrix:
@@ -30,9 +30,8 @@ jobs:
         # macOS uses the Apple paravirtual Metal device.
         os: ${{ fromJSON(inputs.os) }}
     runs-on: ${{ matrix.os }}
-    # WARP is the slowest: in debug the whole suite took 4 to 6 hours on it, the engine's
-    # tiling and geometry tests most of that. Windows tests in release; its limit is
-    # GitHub's 6 hours until a release run is timed.
+    # Windows is not called for now (decision 70): on WARP the suite ran past two hours even
+    # in release and one test at a time. What it needs is kept here for when it runs again.
     timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 360 || 40 }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

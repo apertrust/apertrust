@@ -9,8 +9,8 @@ Apertrust runs on Windows, macOS and Linux ([0006](0006-two-programs-on-three-de
 **Three layers.**
 
 1. **Every pull request and push to main** (`.github/workflows/ci.yml`): `lint` (formatting, clippy, the licence headers, the UI strings, the Windows paths' guard, the credits, the API docs), `deny`, and **the full test suite on Linux**, on lavapipe. On **Windows and macOS, `cargo clippy --workspace --all-targets -- -D warnings`**, which compiles the tests and each platform's cfg code without running them. macOS's tests run locally on every change, on the maintainer's machine and the agents', and in the agent kit's end-of-turn hooks.
-2. **Windows' tests on a pull request that changes a Windows-relevant path,** listed in `.github/windows-paths.txt`, one git glob a line; **Windows' and macOS's tests on a pull request labelled `full-ci`**. The list is wider than the files with a platform cfg, since Windows also fails in code without one, on Unix paths in tests and CR LF in fixtures: the window's platform code and the packages; every crate or file that handles paths, files or folders; every file with a platform cfg; the manifests, the lockfile, the toolchain, `.cargo/`, `.gitattributes`, the workflows and `kittest.toml`. CI's `platforms` job matches the pull request's changes, from its merge base, against the list.
-3. **Every night** (`.github/workflows/nightly-tests.yml`, 02:23 UTC, and by hand): the full test suite on Linux, Windows and macOS. A failed night opens an issue labelled `nightly-tests-failed`, naming the failed jobs and linking the run, or comments on the one already open; a night that passes closes it.
+2. **macOS's tests on a pull request labelled `full-ci`.** **Windows' tests are off for now:** on WARP the suite ran past two hours even in release and one test at a time, and in parallel its Direct3D 12 devices crash; clippy on Windows still compiles the tests. When they run again, they run on a pull request that changes a Windows-relevant path, listed in `.github/windows-paths.txt`, one git glob a line, and with `full-ci`. The list is wider than the files with a platform cfg, since Windows also fails in code without one, on Unix paths in tests and CR LF in fixtures: the window's platform code and the packages; every crate or file that handles paths, files or folders; every file with a platform cfg; the manifests, the lockfile, the toolchain, `.cargo/`, `.gitattributes`, the workflows and `kittest.toml`. CI's `platforms` job matches the pull request's changes, from its merge base, against the list.
+3. **Every night** (`.github/workflows/nightly-tests.yml`, 02:23 UTC, and by hand): the full test suite on Linux and macOS, and on Windows once its tests run again. A failed night opens an issue labelled `nightly-tests-failed`, naming the failed jobs and linking the run, or comments on the one already open; a night that passes closes it.
 
 **A guard keeps the list current.** `tools/check-windows-paths.sh`, run in `lint` and locally, fails when a Rust source or Cargo manifest with a platform cfg (`cfg(windows)`, `cfg!(target_os = …)`, `cfg_attr(unix, …)`, inside `any()` or `not()` too) is not covered by the list. With `--changed REVS` it prints the files a diff changes that the list covers, which is how CI matches.
 
@@ -18,7 +18,7 @@ Apertrust runs on Windows, macOS and Linux ([0006](0006-two-programs-on-three-de
 
 **One check is required of CI:** `ci-passed`, the last job of `ci.yml`, passes when every other job passed or was skipped and fails naming those that failed or were cancelled. The ruleset on main requires it and the DCO workflow's `signoff` alone, since a skipped matrix job or reusable workflow reports under another name than its runs.
 
-**Every job has a timeout**: tests 40 minutes on Linux and macOS and 60 on Windows, the rest what they need. CI, CodeQL and the DCO check cancel a pull request's run in progress when a new push arrives; main's runs all finish. The tests are one reusable workflow, `.github/workflows/tests.yml`, which CI and the nightly call with their runners, so both test the same way.
+**Every job has a timeout**: tests 40 minutes on Linux and macOS, the rest what they need. CI, CodeQL and the DCO check cancel a pull request's run in progress when a new push arrives; main's runs all finish. The tests are one reusable workflow, `.github/workflows/tests.yml`, which CI and the nightly call with their runners, so both test the same way.
 
 ## Options considered
 
@@ -30,7 +30,7 @@ Apertrust runs on Windows, macOS and Linux ([0006](0006-two-programs-on-three-de
 
 ## Consequences
 
-- A Windows-only or Metal-only bug, or a kernel FXC refuses, can reach main in a pull request that changes no listed path, and shows the next morning in the nightly's issue. The engine's naga test still catches a kernel's write at a run-time index on every machine ([0010](0010-fxc-on-direct3d-12-and-no-writes-at-run-time-indices.md)).
+- While Windows' tests are off, a Windows-only bug, or a kernel FXC refuses, can reach main and shows only on a Windows machine. A Metal-only bug can reach main and shows the next morning in the nightly's issue. The engine's naga test still catches a kernel's write at a run-time index on every machine ([0010](0010-fxc-on-direct3d-12-and-no-writes-at-run-time-indices.md)).
 - A file that gains a platform cfg fails `lint` until it is added to the list.
-- A contributor whose change needs Windows or macOS tested before merging asks for the `full-ci` label ([CONTRIBUTING.md](../../CONTRIBUTING.md)). Any label added to a pull request runs its CI again.
+- A contributor whose change needs macOS tested before merging asks for the `full-ci` label ([CONTRIBUTING.md](../../CONTRIBUTING.md)). Any label added to a pull request runs its CI again.
 - The `full-ci` and `nightly-tests-failed` labels exist in the repository. `nightly` is kept for the nightly builds, planned ([packaging.md](../packaging.md)).

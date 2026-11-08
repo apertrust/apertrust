@@ -2,9 +2,9 @@ name: CI
 
 # Three layers (decision 70). Every pull request and push to main: lint, deny, the tests
 # on Linux, and clippy on Windows and macOS, which compiles the tests and each platform's
-# code without running them. A pull request that changes a path in
-# .github/windows-paths.txt runs the tests on Windows too, and one labelled `full-ci` on
-# Windows and macOS. nightly-tests.yml runs them on all three every night. A pull request
+# code without running them. A pull request labelled `full-ci` runs the tests on macOS
+# too, and nightly-tests.yml runs them on Linux and macOS every night. Windows' tests are
+# off for now: on WARP they ran past two hours. A pull request
 # that changes only the documentation in .github/docs-only-paths.txt skips lint, clippy
 # and the tests: they report as skipped, so the workflow still ends.
 on:
@@ -28,6 +28,7 @@ env:
 
 jobs:
   lint:
+    name: Lint and repository checks
     needs: platforms
     if: needs.platforms.outputs.code == 'true'
     runs-on: ubuntu-24.04
@@ -47,6 +48,7 @@ jobs:
       - run: tools/build-api-docs.sh
 
   deny:
+    name: Licences and advisories
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -55,7 +57,7 @@ jobs:
 
   # Windows' and macOS's code and tests compiled, not run.
   clippy:
-    name: clippy (${{ matrix.os }})
+    name: ${{ startsWith(matrix.os, 'windows') && 'Clippy, Windows' || 'Clippy, macOS' }}
     needs: platforms
     if: needs.platforms.outputs.code == 'true'
     strategy:
@@ -71,10 +73,11 @@ jobs:
 
   # Whether the code's checks run, and the runners the tests run on. The checks run on
   # main, and for a pull request that changes a file outside .github/docs-only-paths.txt
-  # or is labelled `full-ci`. The tests run on Linux always; on Windows too for a pull
-  # request that changes a path in .github/windows-paths.txt; on Windows and macOS for
-  # one labelled `full-ci`.
+  # or is labelled `full-ci`. The tests run on Linux always, and on macOS too for a pull
+  # request labelled `full-ci`. Windows' tests are off for now; .github/windows-paths.txt
+  # and its guard stay, for when they run again.
   platforms:
+    name: Choose what runs
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -101,19 +104,13 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           os='"ubuntu-24.04"'
           if [ "$FULL_CI" = true ]; then
-            echo "Labelled full-ci: the tests run on Windows and macOS too."
-            os="$os, \"windows-2025\", \"macos-15\""
-          elif [ "$EVENT" = pull_request ]; then
-            changed=$(tools/check-windows-paths.sh --changed "$BASE...$HEAD")
-            if [ -n "$changed" ]; then
-              echo "The tests run on Windows too, for these files:"
-              echo "$changed"
-              os="$os, \"windows-2025\""
-            fi
+            echo "Labelled full-ci: the tests run on macOS too."
+            os="$os, \"macos-15\""
           fi
           echo "os=[$os]" >> "$GITHUB_OUTPUT"
 
   test:
+    name: Tests
     needs: platforms
     if: needs.platforms.outputs.code == 'true'
     uses: ./.github/workflows/tests.yml

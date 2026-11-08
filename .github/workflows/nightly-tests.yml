@@ -1,7 +1,8 @@
 name: Nightly tests
 
-# The test suite on Linux, Windows and macOS every night (decision 70): pull requests run
-# it on Linux alone unless they change a Windows path or are labelled `full-ci`. A failed
+# The test suite on Linux and macOS every night (decision 70): pull requests run it on
+# Linux alone unless they are labelled `full-ci`. Windows' tests are off for now: on WARP
+# they ran past two hours. A failed
 # night opens an issue labelled `nightly-tests-failed`, or comments on the one open; a
 # night that passes closes it.
 on:
@@ -14,11 +15,13 @@ permissions:
 
 jobs:
   test:
+    name: Tests
     uses: ./.github/workflows/tests.yml
     with:
-      os: '["ubuntu-24.04", "windows-2025", "macos-15"]'
+      os: '["ubuntu-24.04", "macos-15"]'
 
   report:
+    name: Report the night's result
     needs: test
     if: always() && (needs.test.result == 'success' || needs.test.result == 'failure')
     runs-on: ubuntu-24.04
