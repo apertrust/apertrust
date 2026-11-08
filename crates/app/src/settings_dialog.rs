@@ -19,8 +19,10 @@
 //! the start, the chosen one marked, and the chosen page's groups, each under its title,
 //! with a row per setting the schema puts there, in the schema's order. A row is its label
 //! at the start and its control by its kind at the end: a checkbox, a choice, a number with
-//! its unit or a text.
+//! its unit or a text; a list of a choice is a checkbox per option, stacked in the control
+//! column in its type's order, the row as tall as they are.
 //!
+//! - A row's help, where its words have one (`setting-<id>-help`), is its label's tooltip.
 //! - A row off its default has darktable's dot before its control; a double-click on its
 //!   label, or Reset in its right-click menu, puts the default back.
 //! - A row `--conf` sets for this run is drawn disabled, saying so (decision 43).
@@ -569,6 +571,12 @@ fn draw_row(ui: &mut Ui, t: &Theme, row: &Row, widths: (f32, f32, f32)) -> Optio
         .galley(pos2(top.x, top.y + (line - first) / 2.0), text, colour);
     let resets = enabled && row.changed();
     response.widget_info(|| WidgetInfo::labeled(Role::Label, enabled, &label));
+    let help = format!("setting-{}-help", row.words());
+    let response = if tr_.has(&help) {
+        response.on_hover_text(tr_.text(&help))
+    } else {
+        response
+    };
     if row.changed() {
         let said = tr_.text("settings-changed");
         ctx.accesskit_node_builder(response.id, |node| node.set_description(said));
@@ -610,15 +618,19 @@ fn draw_row(ui: &mut Ui, t: &Theme, row: &Row, widths: (f32, f32, f32)) -> Optio
         };
         ui.painter().circle_filled(dot.center(), DOT_RADIUS, colour);
     }
-    // The control, its start edge on the column's.
+    // The control, its start edge on the column's; a list's checkboxes one under another.
     let start = dot.right() + t.spacing.xs;
-    let control_rect = Rect::from_min_size(pos2(start, top.y), vec2(CONTROL, line));
-    let mut column = ui.new_child(
-        UiBuilder::new()
-            .max_rect(control_rect)
-            .layout(Layout::left_to_right(Align::Center)),
-    );
-    column.set_min_size(vec2(CONTROL, line));
+    let (lines, layout) = match row.kind {
+        Kind::List {
+            of: Kind::Choice(_),
+            ..
+        } => (row.options.len().max(1), Layout::top_down(Align::Min)),
+        _ => (1, Layout::left_to_right(Align::Center)),
+    };
+    let height = line * lines as f32;
+    let control_rect = Rect::from_min_size(pos2(start, top.y), vec2(CONTROL, height));
+    let mut column = ui.new_child(UiBuilder::new().max_rect(control_rect).layout(layout));
+    column.set_min_size(vec2(CONTROL, height));
     column.spacing_mut().item_spacing.x = t.spacing.m;
     if let Some(changed) = column
         .add_enabled_ui(enabled, |ui| control(ui, t, row, &label, control_width))
@@ -661,7 +673,9 @@ fn draw_row(ui: &mut Ui, t: &Theme, row: &Row, widths: (f32, f32, f32)) -> Optio
 }
 
 /// `row`'s control by its kind, `label` its full name: a checkbox, or `width` wide, a
-/// choice, a number with its unit inside it, or a text. Returns the value the user gave it.
+/// choice, a number with its unit inside it, or a text; for a list of a choice, a checkbox
+/// per option, each on a line of its own, named by its option. Returns the value the user
+/// gave it.
 fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option<Change> {
     let ctx = ui.ctx().clone();
     let set = |value| Some(Change::Set(row.id, value));
@@ -759,7 +773,81 @@ fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option
             let (_, typed) = field.show(ui);
             typed.and_then(|typed| set(Value::String(typed)))
         }
-        // No list or table is on a page yet.
+        Kind::List {
+            of: Kind::Choice(_),
+            ..
+        } => {
+            let ticked: Vec<&str> = row
+                .value
+                .as_ref()
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let (ids, names) = options(&ctx, row);
+            let line = t.sizes.panel_line;
+            let mut toggled = None;
+            for (id, name) in ids.iter().zip(&names) {
+                // Each box drawn as a boolean's, with no words of its own, so it starts
+                // where a boolean's does: egui places a box with words further in.
+                let at = ui.cursor().min;
+                let rect = Rect::from_min_size(
+                    pos2(at.x - CHECKBOX_INSET, at.y),
+                    vec2(ui.max_rect().width() + CHECKBOX_INSET, line),
+                );
+                let mut toggle = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                let on = ticked.contains(id);
+                if let Some(on) = ToggleRow::new("", on).name(name).show(&mut toggle) {
+                    toggled = Some((*id, on));
+                }
+                // The option's words after it, which tick it too, as a checkbox's own do.
+                let galley = toggle.painter().layout_no_wrap(
+                    name.clone(),
+                    FontId::proportional(t.text.body),
+                    t.colors.text,
+                );
+                // As far after the box as egui puts a checkbox's own words.
+                let spacing = toggle.spacing();
+                let start = at.x + spacing.icon_width + spacing.icon_spacing;
+                let words = Rect::from_min_size(
+                    pos2(start, at.y + (line - galley.size().y) / 2.0),
+                    galley.size(),
+                );
+                let colour = if toggle.is_enabled() {
+                    t.colors.text
+                } else {
+                    t.colors.text_disabled
+                };
+                toggle.painter().galley(words.min, galley, colour);
+                let id_of = egui::Id::unique(("settings option words", row.id, *id));
+                let sense = if toggle.is_enabled() {
+                    Sense::click()
+                } else {
+                    Sense::hover()
+                };
+                if toggle.interact(words, id_of, sense).clicked() {
+                    toggled = Some((*id, !on));
+                }
+                ui.allocate_space(vec2(ui.max_rect().width(), line));
+            }
+            // The options ticked after the change, in the type's order.
+            let (changed, on) = toggled?;
+            let items = ids
+                .iter()
+                .filter(|id| {
+                    if **id == changed {
+                        on
+                    } else {
+                        ticked.contains(id)
+                    }
+                })
+                .map(|id| Value::String((*id).to_owned()));
+            set(Value::Array(items.collect()))
+        }
+        // No other list, and no table, is on a page yet.
         Kind::List { .. } | Kind::Table { .. } => None,
     }
 }
@@ -1033,6 +1121,118 @@ mod tests {
             harness.state().changes.last(),
             Some(&Change::Reset("export.ask_before_overwrite"))
         );
+    }
+
+    /// A list of a choice is a checkbox per option, one under another in its type's order:
+    /// a change sets the whole list, one dot says the row is off its default, one Reset puts
+    /// it all back, and the row's help is its label's tooltip.
+    #[test]
+    fn a_list_of_a_choice_is_a_checkbox_per_option_with_one_dot_and_one_reset() {
+        let mut harness = dialog();
+        let options = [
+            ("GPU", true),
+            ("Raw", true),
+            ("Pipe", true),
+            ("Performance", true),
+            ("Memory", false),
+            ("Settings", true),
+            ("Control", true),
+            ("Events", true),
+            ("Verbose", false),
+        ];
+        let label = harness.get_by_role_and_label(Role::Label, "Log").rect();
+        let mut above = label.top() - 1.0;
+        // Every box is drawn as a boolean's, on the same page: the same widget, with no
+        // words of its own, its left edge the boolean box's, where the choices' boxes start.
+        let keep = harness
+            .get_by_role_and_label(Role::CheckBox, "Keep a log of this session")
+            .rect();
+        let ask = harness
+            .get_by_role_and_label(Role::CheckBox, "Ask before overwriting an exported file")
+            .rect();
+        assert_eq!(keep.left(), ask.left());
+        for (name, ticked) in options {
+            let node = harness.get_by_role_and_label(Role::CheckBox, name);
+            let on = node.accesskit_node().toggled() == Some(Toggled::True);
+            assert_eq!(on, ticked, "{name}");
+            let rect = node.rect();
+            assert!(rect.top() > above, "{name} is under the one before");
+            assert_eq!(rect.left(), keep.left(), "{name}");
+            assert_eq!(
+                rect.width(),
+                keep.width(),
+                "{name}: a box alone, as a boolean's"
+            );
+            above = rect.top();
+        }
+        // The option's words, after its box, tick it too.
+        let pipe = harness.get_by_role_and_label(Role::CheckBox, "Pipe").rect();
+        let words = pos2(pipe.right() + 12.0, pipe.center().y);
+        let pipe_on = |harness: &Harness<'_, Bench>| {
+            let node = harness.get_by_role_and_label(Role::CheckBox, "Pipe");
+            node.accesskit_node().toggled() == Some(Toggled::True)
+        };
+        for expected in [false, true] {
+            harness.run_steps(30);
+            harness.hover_at(words);
+            press(&mut harness, words, PointerButton::Primary);
+            harness.run();
+            assert_eq!(pipe_on(&harness), expected, "the words tick their box");
+        }
+        harness.state_mut().changes.clear();
+        assert!(!dotted(&harness, "Log"));
+        harness
+            .get_by_role_and_label(Role::CheckBox, "Memory")
+            .click();
+        harness.run();
+        let ids = |ids: &[&str]| {
+            let items = ids.iter().map(|id| Value::String((*id).to_owned()));
+            Value::Array(items.collect())
+        };
+        let with_memory = [
+            "gpu", "raw", "pipe", "perf", "memory", "settings", "control", "event",
+        ];
+        assert_eq!(
+            harness.state().changes,
+            [Change::Set("log.domains", ids(&with_memory))]
+        );
+        assert!(dotted(&harness, "Log"));
+        harness.get_by_role_and_label(Role::CheckBox, "GPU").click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes.last(),
+            Some(&Change::Set("log.domains", ids(&with_memory[1..])))
+        );
+        // One Reset for the whole list.
+        let at = harness
+            .get_by_role_and_label(Role::Label, "Log")
+            .rect()
+            .center();
+        right_click(&mut harness, at);
+        harness.get_by_label("Reset").click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes.last(),
+            Some(&Change::Reset("log.domains"))
+        );
+        assert!(!dotted(&harness, "Log"));
+        let gpu = harness.get_by_role_and_label(Role::CheckBox, "GPU");
+        assert_eq!(gpu.accesskit_node().toggled(), Some(Toggled::True));
+        // The help, in the label's tooltip.
+        harness.run_steps(30);
+        harness.get_by_role_and_label(Role::Label, "Log").hover();
+        harness.run_steps(10);
+        let help = "What the log keeps besides warnings and errors, which it always keeps. \
+                    Verbose adds much more, for a developer.";
+        let shown: Vec<String> = harness
+            .get_all_by_role(Role::Label)
+            .filter_map(|node| {
+                node.accesskit_node()
+                    .label()
+                    .or(node.accesskit_node().value())
+            })
+            .collect();
+        assert!(shown.iter().any(|text| text == help), "{shown:?}");
     }
 
     /// A row `--conf` sets is disabled, saying so, and its label resets nothing; a setting

@@ -85,6 +85,7 @@ pub use section::{Section, SectionAction, SectionOutput};
 pub use segmented::Segmented;
 pub use side_panel::{
     PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction, quiet_scroll,
+    quiet_scroll_rows,
 };
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track};
 pub use swatches::{Swatch, SwatchFill, Swatches};

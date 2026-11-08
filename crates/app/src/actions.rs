@@ -61,6 +61,8 @@ pub struct ActionId(pub &'static str);
 
 impl ActionId {
     pub const ABOUT: ActionId = ActionId("about");
+    /// Help › Show Log: the log window.
+    pub const SHOW_LOG: ActionId = ActionId("show-log");
     pub const SETTINGS: ActionId = ActionId("settings");
     pub const OPEN: ActionId = ActionId("open");
     pub const OPEN_FOLDER: ActionId = ActionId("open-folder");
@@ -176,6 +178,8 @@ pub enum Emit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Intent {
     About,
+    /// The log window, opened or brought to the front (`log_window`).
+    ShowLog,
     Settings,
     /// The platform's open dialog, for one raw (`dialogs`).
     Open,
@@ -434,7 +438,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 52] = [
+pub static ACTIONS: [Action; 53] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -444,6 +448,16 @@ pub static ACTIONS: [Action; 52] = [
         trigger: Trigger::Press,
         available: no_modal_dialog,
         emits: Emit::Intent(Intent::About),
+    },
+    // Help › Show Log, logging on or off: off, the window says where to turn it on.
+    Action {
+        id: ActionId::SHOW_LOG,
+        message: "action-show-log",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: no_modal_dialog,
+        emits: Emit::Intent(Intent::ShowLog),
     },
     Action {
         id: ActionId::SETTINGS,

@@ -386,6 +386,7 @@ settings-group-confirmations = Підтвердження
 settings-group-thumbnails = Мініатюри
 settings-group-side-panel = Бічна панель
 settings-group-gpu = GPU
+settings-group-diagnostics = Діагностика
 setting-theme-label = Тема
 setting-theme-option-dark = Темна
 setting-theme-option-light = Світла
@@ -398,6 +399,38 @@ setting-side-panel-tab-names-label = Показувати назви вклад�
 setting-engine-adapter-label = Відеокарта
 setting-engine-adapter-hint = Автоматично
 setting-engine-memory-budget-label = Бюджет пам'яті
+setting-log-keep-label = Вести журнал цього сеансу
+setting-log-keep-help = Зберігає журнал цього сеансу в пам'яті з моменту ввімкнення, для Довідка › Показати журнал. Щоб вести журнал від самого початку, перезапустіть Apertrust. У файл нічого не записується, доки ви його не збережете.
+setting-log-domains-label = Журнал
+setting-log-domains-help = Що журнал зберігає, крім попереджень і помилок, які він зберігає завжди. «Докладно» додає набагато більше, для розробника.
+setting-log-domains-option-gpu = GPU
+setting-log-domains-option-raw = Raw
+setting-log-domains-option-pipe = Конвеєр
+setting-log-domains-option-perf = Продуктивність
+setting-log-domains-option-memory = Пам'ять
+setting-log-domains-option-settings = Налаштування
+setting-log-domains-option-control = Керування
+setting-log-domains-option-event = Події
+setting-log-domains-option-verbose = Докладно
+
+## Вікно журналу, Довідка › Показати журнал; його фільтри — варіанти рядка «Журнал»
+
+action-show-log = Показати журнал
+log-name = Журнал
+log-off-title = Журнал не ведеться
+log-off-text = Увімкніть його в налаштуваннях, і відтоді рядки зберігатимуться в пам'яті, лише для цього сеансу.
+log-open-settings = Відкрити налаштування діагностики…
+log-filters = Показати
+log-filter-warnings = Попередження і помилки
+log-filter-not-kept = Не зберігається: увімкніть у Налаштування › Загальні › Діагностика
+log-lines = Рядки
+log-dropped = Найстаріших рядків уже немає: { $count }. Журнал зберігає 20 000 найновіших.
+log-newer = ↓ Новіші рядки: { $count }
+log-counts = Збережено рядків: { $kept } · показано: { $shown } · лише цей сеанс, у пам'яті
+log-names-files = Рядки називають ваші файли й теки.
+log-save = Зберегти у файл…
+log-copy = Копіювати в буфер обміну
+log-save-title = Зберегти журнал
 
 ## Про Apertrust
 

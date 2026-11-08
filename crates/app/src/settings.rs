@@ -40,6 +40,16 @@
 //! position = [1200, 160]
 //! scale_factor = 2.0
 //!
+//! [log]
+//! keep = true
+//! domains = ["gpu", "perf"]
+//!
+//! [log_window]
+//! position = [400, 300]
+//! scale_factor = 2.0
+//! size = [960, 466]
+//! folder = "/Users/you/Downloads"
+//!
 //! [side_panel]
 //! tab_names = false
 //! width = 480
@@ -186,6 +196,8 @@ pub struct Settings {
     pub settings_window: Option<Position>,
     /// Where the jobs window was last left; None opens it centred over the main window.
     pub jobs_window: Option<Position>,
+    /// The log kept in memory, and its window's place and folder.
+    pub log: Log,
     /// Whether the side panel's tabs show their names.
     pub tab_names: bool,
     /// The side panel's width in points, within `PANEL_WIDTHS`, as the user dragged it;
@@ -230,6 +242,7 @@ impl Default for Settings {
             },
             settings_window: None,
             jobs_window: None,
+            log: Log::default(),
             tab_names: SIDE_PANEL_TAB_NAMES.default(),
             panel_width: None,
             central_panel: CentralPanel::default(),
@@ -270,6 +283,10 @@ impl Settings {
             store.get(&JOBS_WINDOW_POSITION),
             store.get(&JOBS_WINDOW_SCALE_FACTOR),
         );
+        let log_window = position(
+            store.get(&LOG_WINDOW_POSITION),
+            store.get(&LOG_WINDOW_SCALE_FACTOR),
+        );
         let shown = store.get(&SCOPES_CHANNELS);
         Settings {
             theme: store.get(&THEME),
@@ -282,6 +299,13 @@ impl Settings {
             },
             settings_window,
             jobs_window,
+            log: Log {
+                keep: store.get(&LOG_KEEP),
+                domains: store.get(&LOG_DOMAINS),
+                window: log_window,
+                size: store.get(&LOG_WINDOW_SIZE),
+                folder: store.get(&LOG_WINDOW_FOLDER).map(PathBuf::from),
+            },
             tab_names: store.get(&SIDE_PANEL_TAB_NAMES),
             panel_width: store.kept(&SIDE_PANEL_WIDTH),
             central_panel: CentralPanel {
@@ -360,6 +384,27 @@ impl Settings {
         if s.jobs_window != was.jobs_window {
             let (pixels, scale_factor) = (&JOBS_WINDOW_POSITION, &JOBS_WINDOW_SCALE_FACTOR);
             keep_position(store, pixels, scale_factor, s.jobs_window);
+        }
+        let (log, before) = (&s.log, &was.log);
+        if log.keep != before.keep {
+            store.set(&LOG_KEEP, log.keep);
+        }
+        if log.domains != before.domains {
+            store.set(&LOG_DOMAINS, log.domains.clone());
+        }
+        if log.window != before.window {
+            let (pixels, scale_factor) = (&LOG_WINDOW_POSITION, &LOG_WINDOW_SCALE_FACTOR);
+            keep_position(store, pixels, scale_factor, log.window);
+        }
+        if log.size != before.size {
+            store.set(&LOG_WINDOW_SIZE, log.size);
+        }
+        if log.folder != before.folder {
+            let folder = log.folder.as_ref();
+            store.set(
+                &LOG_WINDOW_FOLDER,
+                folder.map(|f| f.to_string_lossy().into_owned()),
+            );
         }
         if s.window.maximized != was.window.maximized {
             store.set(&WINDOW_MAXIMIZED, s.window.maximized);
@@ -474,12 +519,13 @@ fn keep<T: Stored>(store: &mut Store, setting: &Setting<T>, value: Option<T::Own
 
 /// What the app cannot use of what `store` read, beyond what the store itself warned of,
 /// each after where it came from, the file or `--conf`: a position without its scale
-/// factor, the main window's, Settings' or the jobs window's.
+/// factor, the main window's, Settings', the jobs window's or the log window's.
 fn warnings(store: &Store) -> Vec<(&str, String)> {
     [
         (&WINDOW_POSITION, &WINDOW_SCALE_FACTOR),
         (&SETTINGS_WINDOW_POSITION, &SETTINGS_WINDOW_SCALE_FACTOR),
         (&JOBS_WINDOW_POSITION, &JOBS_WINDOW_SCALE_FACTOR),
+        (&LOG_WINDOW_POSITION, &LOG_WINDOW_SCALE_FACTOR),
     ]
     .into_iter()
     .filter(|(pixels, scale_factor)| {
@@ -507,6 +553,34 @@ pub struct CentralPanel {
     pub proof_margin: f32,
     /// The background chosen behind the photo; None for the theme's own.
     pub background: Option<apertrust_ui::Background>,
+}
+
+/// The log the app keeps in memory, `[log]`, the Settings dialog's Diagnostics, and what
+/// its window keeps, `[log_window]` (`docs/gui.md`, The log window).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Log {
+    /// Whether the session's log is kept, from the moment it is on.
+    pub keep: bool,
+    /// The domains it keeps, and `verbose`'s detail where it holds it, in `-d`'s order.
+    pub domains: Vec<apertrust_base::log::Domain>,
+    /// Where the log window was last left; None opens it centred over the main window.
+    pub window: Option<Position>,
+    /// The size it was last left at, in points; None opens it at its design's.
+    pub size: Option<[f32; 2]>,
+    /// The folder Save to file… last wrote to; None opens its dialog in Downloads.
+    pub folder: Option<PathBuf>,
+}
+
+impl Default for Log {
+    fn default() -> Self {
+        Log {
+            keep: LOG_KEEP.default(),
+            domains: LOG_DOMAINS.default().to_vec(),
+            window: None,
+            size: None,
+            folder: None,
+        }
+    }
 }
 
 impl Default for CentralPanel {
@@ -868,6 +942,19 @@ mod tests {
                 pixels: [1200.0, 160.0],
                 scale_factor: 2.0,
             }),
+            log: Log {
+                keep: true,
+                domains: vec![
+                    apertrust_base::log::Domain::GPU,
+                    apertrust_base::log::Domain::MEMORY,
+                ],
+                window: Some(Position {
+                    pixels: [400.0, 300.0],
+                    scale_factor: 2.0,
+                }),
+                size: Some([720.0, 400.0]),
+                folder: Some(PathBuf::from("/photos/logs")),
+            },
             tab_names: false,
             panel_width: Some(480.0),
             central_panel: CentralPanel {
@@ -979,6 +1066,15 @@ mod tests {
                 },
                 settings_window: None,
                 jobs_window: None,
+                log: Log {
+                    keep: false,
+                    domains: ["gpu", "raw", "pipe", "perf", "settings", "control", "event"]
+                        .map(|id| apertrust_base::settings::option(id, id))
+                        .to_vec(),
+                    window: None,
+                    size: None,
+                    folder: None,
+                },
                 tab_names: true,
                 panel_width: None,
                 central_panel: CentralPanel {
@@ -1148,6 +1244,16 @@ undo = [\"Ctrl+K\"]
 
 [library]
 recent_folders = [\"/photos/b\", \"/photos/a\"]
+
+[log]
+domains = [\"gpu\", \"memory\"]
+keep = true
+
+[log_window]
+folder = \"/photos/logs\"
+position = [400, 300]
+scale_factor = 2.0
+size = [720, 400]
 
 [scopes]
 channels = [\"red\", \"blue\", \"luminance\"]

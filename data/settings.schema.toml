@@ -170,6 +170,45 @@ above = 0
 optional = true
 applies = "at-once"
 
+# Where the log window was last left (docs/gui.md, The log window), as
+# jobs_window.position keeps the jobs window's: none until it has closed once.
+[log_window.position]
+owner = "app"
+kind = "list"
+of = { kind = "number", decimals = 0 }
+length = 2
+optional = true
+applies = "at-once"
+
+# The display's scale factor when log_window.position was kept; more than 0. Kept and
+# removed with the position.
+[log_window.scale_factor]
+owner = "app"
+kind = "number"
+above = 0
+optional = true
+applies = "at-once"
+
+# The log window's size as the person last left it, in points, without the frame the
+# dialog host draws on Linux, kept in whole points; each part more than 0. None until it
+# has closed once, so that it opens at its design's size, 960 by 466; it is never made
+# smaller than 560 by 320.
+[log_window.size]
+owner = "app"
+kind = "list"
+of = { kind = "number", decimals = 0, above = 0 }
+length = 2
+optional = true
+applies = "at-once"
+
+# The folder the log window's Save to file… last wrote to, which its save dialog opens in
+# next; none until then, when it opens in Downloads.
+[log_window.folder]
+owner = "app"
+kind = "text"
+optional = true
+applies = "at-once"
+
 # Whether the side panel's tabs show their names.
 [side_panel.tab_names]
 owner = "app"
@@ -578,3 +617,26 @@ default = true
 applies = "at-once"
 page = "general"
 group = "confirmations"
+
+# Whether the app keeps this session's log in memory for its log window (docs/gui.md, The
+# log window): from the moment it is on, never written to a file by itself. Off, nothing
+# is kept and nothing listens to keep it (apertrust_base::log::Kept).
+[log.keep]
+owner = "app"
+kind = "boolean"
+default = false
+page = "general"
+group = "diagnostics"
+applies = "at-once"
+
+# The domains the log keeps, with the detail verbose adds, in -d's order; warnings and
+# errors are always kept, and so is any domain -d turns on for the run. Kept while the log
+# is off, and used once it is on.
+[log.domains]
+owner = "app"
+kind = "list"
+of = { kind = "choice", type = "apertrust_base::log::Domain" }
+default = ["gpu", "raw", "pipe", "perf", "settings", "control", "event"]
+page = "general"
+group = "diagnostics"
+applies = "at-once"

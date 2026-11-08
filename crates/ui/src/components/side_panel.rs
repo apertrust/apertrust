@@ -634,3 +634,23 @@ pub fn quiet_scroll<R>(ui: &mut Ui, area: ScrollArea, add: impl FnOnce(&mut Ui) 
     });
     out.expect("the scroll area shows its content")
 }
+
+/// [`quiet_scroll`] for `rows` rows of one height, `row_height`: `add` draws only those in
+/// view, given their range, as egui's `ScrollArea::show_rows` does, as the log window's
+/// lines are drawn. Returns the area's output, where it is scrolled to among it.
+pub fn quiet_scroll_rows<R>(
+    ui: &mut Ui,
+    area: ScrollArea,
+    row_height: f32,
+    rows: usize,
+    add: impl FnOnce(&mut Ui, std::ops::Range<usize>) -> R,
+) -> egui::scroll_area::ScrollAreaOutput<R> {
+    let t = theme(ui.ctx());
+    let mut out = None;
+    scroll_area(ui, &t, |ui| {
+        out = Some(area.show_rows(ui, row_height, rows, |ui, range| {
+            ui.scope(|ui| restore(ui, |ui| add(ui, range))).inner
+        }));
+    });
+    out.expect("the scroll area shows its content")
+}

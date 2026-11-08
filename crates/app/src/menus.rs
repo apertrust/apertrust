@@ -290,7 +290,10 @@ pub static MENUS: [Menu; 7] = [
         title: "menu-help",
         role: Role::Help,
         on: Platforms::All,
-        groups: &[&[Entry::Action(ActionId::ABOUT, Platforms::NotMac)]],
+        groups: &[
+            &[item(ActionId::SHOW_LOG)],
+            &[Entry::Action(ActionId::ABOUT, Platforms::NotMac)],
+        ],
     },
 ];
 
@@ -893,6 +896,30 @@ mod tests {
             assert_eq!(menu_of(os, ActionId::SETTINGS), Some("menu-edit"));
             assert_eq!(menu_of(os, ActionId::QUIT), Some("menu-file"));
         }
+    }
+
+    /// Help › Show Log on every platform, first, and enabled whether or not a log is kept:
+    /// the window says why it is empty.
+    #[test]
+    fn show_log_opens_help_on_every_platform() {
+        for os in PLATFORMS {
+            let help = menus(os)
+                .find(|menu| menu.title == "menu-help")
+                .expect("a Help menu");
+            let mut ids = Vec::new();
+            placed_in(help, os, &mut ids);
+            assert_eq!(ids.first(), Some(&ActionId::SHOW_LOG), "{os:?}");
+            let keymap = Keymap::defaults(os);
+            let item = shown(ActionId::SHOW_LOG, &keymap, &everything(), Focus::None);
+            assert!(item.enabled, "{os:?}");
+        }
+        let action = actions::action(ActionId::SHOW_LOG).expect("declared");
+        assert_eq!(
+            action.emits,
+            actions::Emit::Intent(actions::Intent::ShowLog)
+        );
+        let words = apertrust_ui::Translator::new(apertrust_ui::Locale::EnGb);
+        assert_eq!(words.text(action.message), "Show Log");
     }
 
     #[test]

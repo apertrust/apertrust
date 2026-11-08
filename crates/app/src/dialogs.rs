@@ -15,7 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The platform's file dialogs (`docs/gui.md`, The menu bar, File): File › Open Image…'s,
-//! which asks for one raw, and File › Open Folder…'s, which asks for a folder.
+//! which asks for one raw, and File › Open Folder…'s, which asks for a folder; and the log
+//! window's save dialog ([`Saving`]).
 //!
 //! They are rfd's asynchronous dialogs, so the window keeps drawing and the engine keeps
 //! rendering while one is open: a blocking dialog would run its modal loop inside an
@@ -161,6 +162,43 @@ impl OpenDialog for Native<'_> {
             pick,
             path: file.path().to_owned(),
         })
+    }
+}
+
+/// The log window's Save to file… (`docs/gui.md`, The log window): the platform's save
+/// dialog, asynchronous as the open dialog is, with the text it is to write once the
+/// person chooses where.
+pub struct Saving {
+    text: String,
+    answer: Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>,
+}
+
+impl Saving {
+    /// Asks where to save `text`, offering `name` in `folder`, and returns at once. A
+    /// window of its own, on no parent: the log window that asked is the dialog host's.
+    pub fn ask(ctx: &egui::Context, text: String, name: &str, folder: Option<&Path>) -> Saving {
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_title(tr(ctx, "log-save-title"))
+            .set_file_name(name);
+        if let Some(folder) = folder {
+            dialog = dialog.set_directory(folder);
+        }
+        Saving {
+            text,
+            answer: Box::pin(dialog.save_file()),
+        }
+    }
+
+    /// The file chosen, with the text to write to it, once the person has chosen; None
+    /// inside while they cancelled. Nothing while it asks; `ctx` is asked for a frame when
+    /// the answer comes.
+    pub fn chosen(&mut self, ctx: &egui::Context) -> Option<Option<(PathBuf, String)>> {
+        let waker = Waker::from(Arc::new(Repaint(ctx.clone())));
+        let Poll::Ready(file) = self.answer.as_mut().poll(&mut Context::from_waker(&waker)) else {
+            return None;
+        };
+        let text = std::mem::take(&mut self.text);
+        Some(file.map(|file| (file.path().to_owned(), text)))
     }
 }
 
