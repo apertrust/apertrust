@@ -1514,7 +1514,7 @@ Planned, Phase 2, with folder mode. Its design is the [UI wireframe](https://cla
 
 **What it holds:**
 
-- **Recents:** the folders, libraries and projects opened, newest first, the list Open Recent holds ([File](#file)), each with its kind's icon, its name and its path. One that is missing is marked so, with Locate… and Remove from the List. Whether an entry is there is asked once the window shows, off the interface's thread and on its root's queue with decision 53's deadlines, so a slow share never holds the window; an entry not yet answered is unmarked.
+- **Recents:** the folders, libraries and projects opened, newest first, the list Open Recent holds ([File](#file)), each with its kind's icon, its name and its path, the chosen one on `accent` with its icon and words in `text_on_accent`. One that is missing is marked so, with Locate… and Remove from the List. Whether an entry is there is asked once the window shows, off the interface's thread and on its root's queue with decision 53's deadlines, so a slow share never holds the window; an entry not yet answered is unmarked.
 - **Buttons:** at the bottom left, New Library…, New Project…, Open Folder… and Browse…; at the right, Open, the accent button, which opens the recent chosen. Browse… finds a library or project file anywhere, as File › Open… does, named so beside the Open button. New Library… and New Project… come with Phase 5, as their actions do.
 
 **Keys:** the list takes ↑, ↓, Home and End, Enter opens the recent chosen, and Escape closes the window, as its close button does. Tab goes from the list to the buttons. Screen readers hear each recent's kind, name and path, and "missing" where it is.
