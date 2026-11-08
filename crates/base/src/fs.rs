@@ -89,6 +89,8 @@ mod tests {
         );
         assert_eq!(long(r"\\?\C:\x\y"), Path::new(r"\\?\C:\x\y"));
         // A relative path starts in the current folder.
-        assert!(long("a.jpg").starts_with(r"\\?\"));
+        let here = std::env::current_dir().expect("the current folder");
+        let expected = format!(r"\\?\{}", here.join("a.jpg").display());
+        assert_eq!(long("a.jpg"), Path::new(&expected));
     }
 }
