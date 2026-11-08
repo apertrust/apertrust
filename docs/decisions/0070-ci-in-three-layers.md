@@ -16,6 +16,8 @@ Apertrust runs on Windows, macOS and Linux ([0006](0006-two-programs-on-three-de
 
 **A pull request that changes only documentation skips the code's checks:** when every file it changes is matched by `.github/docs-only-paths.txt` (`docs/` and the top-level Markdown, the issue forms and the pull request template, less `CREDITS.md` and `docs/engine.md`, which code reads), the `platforms` job skips `lint`, `clippy` and the tests, which report as skipped; `tools/check-docs-paths.sh`, in `lint`, fails when a file the list matches is named by code in `crates/` or `tools/`, and main and a pull request labelled `full-ci` always run everything.
 
+**One check is required of CI:** `ci-passed`, the last job of `ci.yml`, passes when every other job passed or was skipped and fails naming those that failed or were cancelled. The ruleset on main requires it and the DCO workflow's `signoff` alone, since a skipped matrix job or reusable workflow reports under another name than its runs.
+
 **Every job has a timeout**: tests 40 minutes on Linux and macOS and 60 on Windows, the rest what they need. CI, CodeQL and the DCO check cancel a pull request's run in progress when a new push arrives; main's runs all finish. The tests are one reusable workflow, `.github/workflows/tests.yml`, which CI and the nightly call with their runners, so both test the same way.
 
 ## Options considered
