@@ -41,7 +41,8 @@ fn run(args: &[&str]) -> Output {
 fn a_debug_domain_puts_the_banner_on_stderr_only() {
     let with = run(&["-d", "pipe", "edit", "no-such-raw.CR2"]);
     let stderr = String::from_utf8_lossy(&with.stderr);
-    let first = format!("Apertrust CLI {} [", apertrust_base::program!().version);
+    let program = apertrust_base::program!();
+    let first = format!("{} CLI {} [", program.app_name(), program.version);
     assert!(stderr.starts_with(&first), "{stderr}");
     for line in [
         "\nCopyright (C) 2026 Apertrust developers\n",
@@ -73,7 +74,8 @@ fn version_prints_the_banner_on_stdout() {
         let output = run(&[flag]);
         assert!(output.status.success());
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let first = format!("Apertrust CLI {} [", apertrust_base::program!().version);
+        let program = apertrust_base::program!();
+        let first = format!("{} CLI {} [", program.app_name(), program.version);
         assert!(stdout.starts_with(&first), "{stdout}");
         assert!(stdout.contains("\nBuild:\n  wgpu "), "{stdout}");
         assert!(stdout.ends_with("/issues to report bugs.\n"), "{stdout}");

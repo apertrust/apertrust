@@ -62,18 +62,24 @@ fn main() {
 }
 
 /// The icon and the version resource of `apertrust.exe`: its four numbers the release's
-/// and the count of commits, its strings the full version, as the banner gives it.
+/// and the count of commits, its strings the full version, as the banner gives it, and
+/// the name Apertrust Dev for a development build.
 #[cfg(windows)]
 fn windows_resources(version: &apertrust_base::build::Version) {
     let icon = "assets/icons/apertrust.ico";
     println!("cargo:rerun-if-changed={icon}");
     let [x, y, z, build] = version.numbers().map(u64::from);
     let numbers = x << 48 | y << 32 | z << 16 | build;
+    let name = if version.dev {
+        "Apertrust Dev"
+    } else {
+        "Apertrust"
+    };
     let mut resources = winresource::WindowsResource::new();
     resources
         .set_icon(icon)
-        .set("ProductName", "Apertrust")
-        .set("FileDescription", "Apertrust")
+        .set("ProductName", name)
+        .set("FileDescription", name)
         .set("CompanyName", "Apertrust developers")
         .set("LegalCopyright", "Copyright (C) 2026 Apertrust developers")
         .set("InternalName", "apertrust")

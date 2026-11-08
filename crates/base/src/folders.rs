@@ -30,8 +30,9 @@
 //! - then the platform's folder, where settings have always been, so nothing moves:
 //!   `~/Library/Application Support/Apertrust` on macOS, `%APPDATA%\Apertrust\config` on
 //!   Windows, and on Linux `$XDG_CONFIG_HOME/apertrust`, by default `~/.config/apertrust`,
-//!   one whole folder, never split by XDG's kinds. From the first release tag, a
-//!   development build's default becomes Apertrust Dev's (decision 43, not built).
+//!   one whole folder, never split by XDG's kinds. A development build's is Apertrust
+//!   Dev's instead (`platform_folder`): `Apertrust Dev` for `Apertrust` on macOS and
+//!   Windows, `apertrust-dev` on Linux (decision 43).
 //!
 //! A leading `~` is the home folder, as darktable has it: `~` alone or `~/…`, never another
 //! user's `~ana`, since the shell leaves it after `=` and in quotes. A relative folder is
@@ -160,11 +161,12 @@ pub struct Folders {
 
 impl Folders {
     /// Chooses the folders: the user data folder `given` names on the command line, else
-    /// [`VARIABLE`]'s, else the platform's, created where it is missing, and logs it under
-    /// `-d settings`. None, with a warning, where neither names one and the system gives
-    /// none, as on a system with no home folder: nothing is kept then.
-    pub fn find(given: Option<Given>) -> Result<Option<Folders>, Error> {
-        Folders::look(given, true)
+    /// [`VARIABLE`]'s, else the platform's, Apertrust Dev's for a `dev` build
+    /// (`Program::dev`), created where it is missing, and logs it under `-d settings`.
+    /// None, with a warning, where neither names one and the system gives none, as on a
+    /// system with no home folder: nothing is kept then.
+    pub fn find(given: Option<Given>, dev: bool) -> Result<Option<Folders>, Error> {
+        Folders::look(given, dev, true)
     }
 
     /// Chooses the folders as [`find`](Folders::find) does, for a program that reads them
@@ -172,13 +174,14 @@ impl Folders {
     /// whether one can be written. One given by flag or variable that is missing or cannot
     /// be read is an [`Error`] naming it; the platform's, when missing, is chosen all the
     /// same and stays missing, so its settings are the defaults.
-    pub fn find_to_read(given: Option<Given>) -> Result<Option<Folders>, Error> {
-        Folders::look(given, false)
+    pub fn find_to_read(given: Option<Given>, dev: bool) -> Result<Option<Folders>, Error> {
+        Folders::look(given, dev, false)
     }
 
-    /// Chooses the folders for a program that `writes` them, or only reads them.
-    fn look(given: Option<Given>, writes: bool) -> Result<Option<Folders>, Error> {
-        let platform = ProjectDirs::from("", "", "Apertrust");
+    /// Chooses the folders for a `dev` build or not, for a program that `writes` them,
+    /// or only reads them.
+    fn look(given: Option<Given>, dev: bool, writes: bool) -> Result<Option<Folders>, Error> {
+        let platform = ProjectDirs::from_path(platform_folder(dev).into());
         let platform = platform.map(|dirs| dirs.config_dir().to_owned());
         let home = BaseDirs::new().map(|dirs| dirs.home_dir().to_owned());
         let variable = std::env::var_os(VARIABLE);
@@ -206,6 +209,19 @@ impl Folders {
     /// yet.
     pub fn settings(&self) -> PathBuf {
         self.user_data.join("settings.toml")
+    }
+}
+
+/// The platform folder's own part, which `directories` puts in the system's place:
+/// Apertrust's, or a development build's, Apertrust Dev's, beside it. Lower case on
+/// Linux, with a hyphen for the space, as the stable folder's `apertrust` is.
+fn platform_folder(dev: bool) -> &'static str {
+    let lower = !cfg!(any(target_os = "macos", target_os = "windows"));
+    match (dev, lower) {
+        (false, false) => "Apertrust",
+        (false, true) => "apertrust",
+        (true, false) => "Apertrust Dev",
+        (true, true) => "apertrust-dev",
     }
 }
 
@@ -408,6 +424,29 @@ mod tests {
 
     fn found(chosen: Result<Option<Folders>, Error>) -> Folders {
         chosen.expect("usable").expect("a folder")
+    }
+
+    /// A development build's platform folder is Apertrust Dev's, beside Apertrust's, and
+    /// Apertrust's stays where settings have always been.
+    #[test]
+    fn a_development_build_has_a_platform_folder_of_its_own() {
+        let config = |dev| {
+            let dirs = ProjectDirs::from_path(platform_folder(dev).into());
+            dirs.map(|dirs| dirs.config_dir().to_owned())
+        };
+        let stable = ProjectDirs::from("", "", "Apertrust").map(|d| d.config_dir().to_owned());
+        assert_eq!(config(false), stable, "Apertrust's, as before");
+        let (Some(stable), Some(dev)) = (config(false), config(true)) else {
+            return; // a system with no home folder
+        };
+        assert_ne!(dev, stable);
+        let wanted = if cfg!(any(target_os = "macos", target_os = "windows")) {
+            "Apertrust Dev"
+        } else {
+            "apertrust-dev"
+        };
+        let named = |path: &Path, name| path.components().any(|part| part.as_os_str() == name);
+        assert!(named(&dev, wanted), "{}", dev.display());
     }
 
     #[test]

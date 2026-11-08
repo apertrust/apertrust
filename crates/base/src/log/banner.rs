@@ -68,6 +68,10 @@ pub struct Program {
     /// grows along main, for what takes numbers only, as macOS's `CFBundleVersion`.
     /// `None` where the version is `0.0.0` or a packager's.
     pub build_number: Option<u32>,
+    /// Whether this is a development build, Apertrust Dev, which installs and keeps its
+    /// settings beside Apertrust (docs/settings.md, Development builds): a nightly
+    /// package, or, once the history has a release tag, a build not on one.
+    pub dev: bool,
     /// The packages the banner can name, as the build's `Cargo.lock` locks them:
     /// `wgpu=30.0.1,naga=30.0.1`.
     packages: &'static str,
@@ -77,11 +81,12 @@ pub struct Program {
 
 impl Program {
     /// A binary from what its build read, as [`program!`](crate::program) gives it: an
-    /// empty build number is none.
+    /// empty build number is none, and an empty `dev` is not a development build.
     pub const fn from_build(
         name: &'static str,
         version: &'static str,
         build_number: &'static str,
+        dev: &'static str,
         packages: &'static str,
         slang: &'static str,
     ) -> Self {
@@ -93,8 +98,29 @@ impl Program {
             name,
             version,
             build_number,
+            dev: !dev.is_empty(),
             packages,
             slang,
+        }
+    }
+
+    /// The app's name, never translated: `Apertrust`, or `Apertrust Dev` for a
+    /// development build. The window's title, and the banner's first word.
+    pub const fn app_name(&self) -> &'static str {
+        if self.dev {
+            "Apertrust Dev"
+        } else {
+            "Apertrust"
+        }
+    }
+
+    /// The app's id, as every package names it (packaging/): a development build's has
+    /// `.Dev` after it.
+    pub const fn app_id(&self) -> &'static str {
+        if self.dev {
+            "org.apertrust.Apertrust.Dev"
+        } else {
+            "org.apertrust.Apertrust"
         }
     }
 
@@ -119,6 +145,7 @@ macro_rules! program {
             env!("CARGO_PKG_NAME"),
             env!("APERTRUST_BUILT_VERSION"),
             env!("APERTRUST_BUILT_NUMBER"),
+            env!("APERTRUST_BUILT_DEV"),
             env!("APERTRUST_BUILT_PACKAGES"),
             env!("APERTRUST_BUILT_SLANG"),
         )
@@ -246,7 +273,7 @@ pub fn banner(program: Program, build: &[Item], command: &str) -> String {
 pub fn about(program: Program, build: &[Item]) -> String {
     let mut text = format!(
         "{} {} [{}]\n{COPYRIGHT}\nLicence: {}\n\nBuild:\n",
-        display_name(program.name),
+        display_name(&program),
         full_version(program),
         platform(),
         env!("CARGO_PKG_LICENSE"),
@@ -262,13 +289,15 @@ pub fn about(program: Program, build: &[Item]) -> String {
 }
 
 /// The program as a person writes it: `Apertrust` for the app, `Apertrust CLI` for
-/// `apertrust-cli`, and `Apertrust golden` for `apertrust-golden`.
-fn display_name(binary: &str) -> String {
-    match binary.strip_prefix("apertrust") {
-        Some("") => "Apertrust".to_owned(),
-        Some("-cli") => "Apertrust CLI".to_owned(),
-        Some(rest) if rest.starts_with('-') => format!("Apertrust {}", &rest[1..]),
-        _ => binary.to_owned(),
+/// `apertrust-cli`, and `Apertrust golden` for `apertrust-golden`; `Apertrust Dev`,
+/// `Apertrust Dev CLI` and so on for a development build.
+fn display_name(program: &Program) -> String {
+    let app = program.app_name();
+    match program.name.strip_prefix("apertrust") {
+        Some("") => app.to_owned(),
+        Some("-cli") => format!("{app} CLI"),
+        Some(rest) if rest.starts_with('-') => format!("{app} {}", &rest[1..]),
+        _ => program.name.to_owned(),
     }
 }
 
@@ -326,14 +355,18 @@ mod tests {
             "apertrust-cli",
             "0.1.0+3~gabc1234",
             "3",
+            "",
             PACKAGES,
             "2026.20",
         );
         assert_eq!(program.build_number, Some(3));
+        assert!(!program.dev);
+        assert_eq!(program.app_name(), "Apertrust");
+        assert_eq!(program.app_id(), "org.apertrust.Apertrust");
         assert_eq!(full_version(program), "0.1.0+3~gabc1234");
         assert_eq!(program.version_of("naga"), Some("30.0.1"));
         assert_eq!(program.version_of("tracing"), None);
-        let packaged = Program::from_build("apertrust", "1.2.3-1.fc43", "", "", "");
+        let packaged = Program::from_build("apertrust", "1.2.3-1.fc43", "", "", "", "");
         assert_eq!(packaged.build_number, None);
         assert_eq!(
             kernels(&packaged),
@@ -343,9 +376,29 @@ mod tests {
         assert_eq!(egui(&packaged), Item::new("eframe / egui", "unknown"));
     }
 
+    /// A development build names itself Apertrust Dev, in the banner as in its id.
+    #[test]
+    fn a_development_build_is_apertrust_dev() {
+        let dev = |name| Program::from_build(name, "0.1.0+3~gabc1234", "3", "1", "", "");
+        assert!(dev("apertrust").dev);
+        assert_eq!(dev("apertrust").app_name(), "Apertrust Dev");
+        assert_eq!(dev("apertrust").app_id(), "org.apertrust.Apertrust.Dev");
+        assert_eq!(display_name(&dev("apertrust")), "Apertrust Dev");
+        assert_eq!(display_name(&dev("apertrust-cli")), "Apertrust Dev CLI");
+        assert_eq!(
+            display_name(&dev("apertrust-golden")),
+            "Apertrust Dev golden"
+        );
+        let text = about(dev("apertrust-cli"), &[]);
+        assert!(
+            text.starts_with("Apertrust Dev CLI 0.1.0+3~gabc1234 ["),
+            "{text}"
+        );
+    }
+
     #[test]
     fn the_banner_names_the_program_its_build_and_where_to_report() {
-        let program = Program::from_build("apertrust-cli", "0.1.0", "", PACKAGES, "2026.20");
+        let program = Program::from_build("apertrust-cli", "0.1.0", "", "", PACKAGES, "2026.20");
         let build = [
             wgpu(&program, "Metal (Vulkan, DX12, GL not built for macOS)"),
             rawler(&program),
@@ -399,6 +452,7 @@ mod tests {
         let program = Program::from_build(
             "apertrust-cli",
             "9.8.7-compare",
+            "",
             "",
             "wgpu=30.0.1,naga=30.0.1,rawler=0.8.0",
             "2026.20",

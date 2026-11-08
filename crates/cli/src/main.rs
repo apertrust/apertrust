@@ -376,7 +376,8 @@ fn main() -> Result<()> {
         flag: user_data_flag(std::env::args_os()),
         folder,
     });
-    let folders = Folders::find_to_read(given).map_err(|e| anyhow!("{e}"))?;
+    let folders =
+        Folders::find_to_read(given, apertrust_base::program!().dev).map_err(|e| anyhow!("{e}"))?;
     // The settings, read only by the commands that run the engine, `--conf`'s over the
     // file's.
     let store = || settings(folders.as_ref()).with_overrides(&overrides);

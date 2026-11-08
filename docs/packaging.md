@@ -37,9 +37,9 @@ In `packaging/`, beside the configuration:
 
 - `background.svg`: the source, in the dark theme's tokens, with the layout in its comment; the logo is linked and the caption outlined, so it renders with no fonts. To change the words, set them as text, outline them with usvg and replace the path.
 - `background.tiff`: the background at 1× (660 × 400, 72 dpi) and 2× (1320 × 800, 144 dpi) in one file, as Finder takes a background for Retina screens; written by `tools/build-dmg-background.sh`, which renders the SVG with resvg through the app's `dmg_background` example and joins the two with macOS's `tiffutil`. Run it on a Mac after the SVG or the logo changes and commit the TIFF.
-- `layout.DS_Store`: Finder's view of the window: its size, icon view with no toolbar, icons of 128 points with labels of 13, the app at (170, 196) and Applications at (490, 196), and the background. `generate.py` writes it from nothing, holding no path, user or disk of the machine that ran it; run it by hand when the layout changes, with `pip install ds_store==1.3.3 mac_alias==2.2.3` (both MIT) in a virtual environment, and commit the file, so packaging never needs Python.
+- `layout.DS_Store`: Finder's view of the window: its size, icon view with no toolbar, icons of 128 points with labels of 13, the app at (170, 196) and Applications at (490, 196), and the background. `layout-dev.DS_Store` is the same for Apertrust Dev's image (below), its volume and its bundle named `Apertrust Dev`. `generate.py` writes both from nothing, holding no path, user or disk of the machine that ran it; run it by hand when the layout changes, with `pip install ds_store==1.3.3 mac_alias==2.2.3` (both MIT) in a virtual environment, and commit the files, so packaging never needs Python.
 
-`tools/package.sh` adds both to each image after cargo-packager makes it, with `hdiutil` alone: the image made writable, attached with no Finder window, given `.background/background.tiff` and `.DS_Store`, compressed again and signed again. The layout finds its background by the volume's name, so the volume is `Apertrust`, with no version, as cargo-packager names it; the script stops on any other.
+`tools/package.sh` adds both to each image after cargo-packager makes it, with `hdiutil` alone: the image made writable, attached with no Finder window, given `.background/background.tiff` and `.DS_Store`, compressed again and signed again. The layout finds its background by the volume's name, so the volume is the product's, `Apertrust` or `Apertrust Dev`, with no version, as cargo-packager names it; the script stops on any other.
 
 **The icons** are rendered from the mark's SVGs by `tools/build-icons.sh` into `crates/app/assets/icons`, beside their sources and the window's icon, which the binary compiles from the same tree: the `.icns`, the `.ico` (16 to 256 px) and the hicolor tree, named after the app id ([its README](../crates/app/assets/icons/README.md)).
 
@@ -51,6 +51,22 @@ In `packaging/`, beside the configuration:
 - **Open With only.** For each raw extension, in `HKCU\Software\Classes`, the installer writes the ProgID `Apertrust.RawImage` (its name, icon and `shell\open\command`), the ProgID's name under `.<ext>\OpenWithProgids`, and the app's own entry, `Applications\apertrust.exe`, with its name, icon, command and the extensions under `SupportedTypes`. It never writes an extension's default value, so Apertrust is offered in Open With and becomes a type's default only when the person chooses it.
 - **The uninstaller** removes exactly those: the ProgID's name from each `OpenWithProgids` (the key, and the extension's, only where nothing else is left in it), the ProgID, the `Applications` entry, the Start menu entry (in the folder chosen at install, which the installer's key keeps), the desktop shortcut, the files it installed with the install folder once empty, the uninstall entry and the installer's own key. The person's settings and edits, elsewhere, stay. A default the person chose for a type is the system's to forget.
 
+## Apertrust Dev
+
+The nightly builds are Apertrust Dev, a development build that installs and runs beside Apertrust: its own name, id, executables, package files and user data folder ([settings.md](settings.md), Development builds), so neither replaces the other.
+
+**Which builds are Dev:** the nightly packages are always Dev; the nightly job says so explicitly. Every other build, from source or `cargo run`, stays Apertrust while no release tag exists, and becomes Dev once one does: a build not on a release tag, when the history has one.
+
+`tools/package.sh --dev` packages it. The binaries are built with `APERTRUST_DEV=1`, which makes them name themselves Apertrust Dev and keep their settings in its folder, and are copied as `apertrust-dev` and `apertrust-dev-cli`: the Windows installer registers Open With and finds a running app by the executable's name, and the tarball's `bin/` shares a prefix with Apertrust's. The packaging files are given the identity `packaging/dev-identity.txt` lists, each line a text and what replaces it; without `--dev` they are used as they are.
+
+| Platform | Apertrust Dev's packages |
+| --- | --- |
+| macOS | `Apertrust-dev_<version>_aarch64.dmg` and `Apertrust-dev_<version>_x64.dmg`, the volume `Apertrust Dev`, laid out by `layout-dev.DS_Store`, holding `Apertrust Dev.app`: the bundle id `org.apertrust.Apertrust.Dev`, its name `Apertrust Dev`, the executables `apertrust-dev` and `apertrust-dev-cli` |
+| Windows | `apertrust-dev_<version>_x64-setup.exe`, installing into `%LOCALAPPDATA%\Programs\Apertrust Dev` with its own uninstall entry, Start menu shortcut `Apertrust Dev`, ProgID `Apertrust.Dev.RawImage` and Open With entry `Applications\apertrust-dev.exe`; `apertrust-dev_<version>_x64-portable.zip`, an `Apertrust Dev` folder |
+| Linux | `apertrust-dev_<version>_x86_64.AppImage` and `apertrust-dev_<version>_x86_64.tar.gz`, with `apertrust-dev` and `apertrust-dev-cli`, the desktop entry `org.apertrust.Apertrust.Dev.desktop` (named Apertrust Dev) and the metadata `org.apertrust.Apertrust.Dev.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
+
+`crates/app/tests/packaging.rs` applies `dev-identity.txt` to the files as the script does, and checks that each line still matches and that every package names Apertrust Dev by its own id.
+
 ## Building one
 
 [packaging/README.md](../packaging/README.md) is the short version: what each platform needs, the command, and how to try each package.
@@ -58,6 +74,7 @@ In `packaging/`, beside the configuration:
 ```sh
 cargo install --locked cargo-packager --version 0.11.8   # once; the script checks the version
 tools/package.sh                 # this platform's packages into target/package/<target>/out
+tools/package.sh --dev           # Apertrust Dev's, as the nightly builds are
 APERTRUST_VERSION=0.2.0 tools/package.sh                  # a packager's version
 ```
 
@@ -82,12 +99,24 @@ The packages are not signed with a developer's certificate yet, so each system w
 - **Windows**: SmartScreen says "Windows protected your PC" for the installer and the executables: More info › Run anyway.
 - **Linux**: neither the AppImage nor the tarball is signed; make the AppImage executable (`chmod +x`) and run it.
 
+Apertrust Dev's are the same, under its names: `/Applications/Apertrust Dev.app`, `apertrust-dev_*_x86_64.AppImage`.
+
+## Nightly builds
+
+`.github/workflows/nightly-builds.yml` builds Apertrust Dev's packages each night at 01:00 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
+
+- **When**: only when main has changed since the commit the `nightly` tag points at. A run by hand from the Actions tab builds the same way, and its `force` input builds and publishes an unchanged main too. One run at a time; a second waits.
+- **The jobs**: `check` compares main with the tag; then three builds, each `tools/package.sh --dev` with cargo-packager 0.11.8, from a full clone so the version is computed: `macos` on `macos-15` (both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin`), `windows` on `windows-2025` (the installer and the zip), `linux` on `ubuntu-24.04` (the AppImage and the tarball). Each uploads its packages as an artifact, kept seven days.
+- **Publishing**: once every build has succeeded, `publish`, the one job that may write, moves the `nightly` tag to the commit built (that tag alone, forced) and replaces the release's files with the night's and `SHA256SUMS.txt`, their SHA-256 sums: the new files are uploaded, then those of the night before removed. The release's notes give the commit and the date, and say that nightlies are untested development builds and unsigned (above). It is a pre-release, never the latest release. A file's version `+` is published as `.` (`apertrust-dev_0.0.0.615_x64-setup.exe`), as GitHub would otherwise rename it after the sums were taken.
+- **On failure**: when any build fails, nothing is published and the last nightly stays. A run from another branch builds but never publishes.
+- **What is not there**: tests, which CI runs on every push to main, and signing (above).
+
 ## Signing and notarisation, planned
 
 - **macOS**: a Developer ID Application certificate (the Apple Developer Program) for `macos.signingIdentity`, and notarisation through `notarytool`, which cargo-packager runs once the certificate and an App Store Connect API key are given as `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_API_ISSUER`, `APPLE_API_KEY` and `APPLE_API_KEY_PATH`; the ticket is then stapled to the disk image.
 - **Windows**: a code-signing certificate (an organisation's, or a cloud signing service's) for the installer and both executables, through `windows.certificateThumbprint` or `windows.signCommand`. An MSIX package for the Microsoft Store is planned beside the installer.
 - **Linux**: Flatpak, through Flathub, with its runtime giving the platform's libraries; the desktop file, the metadata and the icons here are already named after the app id it needs.
-- **CI**: release and nightly workflows that build every package on its own platform come next.
+- **CI**: a release workflow for version tags, building every package on its own platform as the nightly builds do, comes next.
 
 ## Known gaps
 

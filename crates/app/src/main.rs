@@ -257,7 +257,7 @@ fn main() -> eframe::Result {
     };
     // The user data folder, before its settings are read. One given that cannot be used
     // stops the start, never falling back to the platform's (decision 43).
-    let folders = match Folders::find(user_data) {
+    let folders = match Folders::find(user_data, apertrust_base::program!().dev) {
         Ok(folders) => folders,
         Err(error) => {
             eprintln!("apertrust: {error}");
@@ -433,12 +433,14 @@ impl ApplicationHandler<eframe::UserEvent> for Gated<'_> {
     }
 }
 
-/// The app's name, never translated: the window's title. On macOS the app menu's comes
-/// from `Info.plist`, which the build embeds in the binary (`build.rs`).
-const APP_NAME: &str = "Apertrust";
+/// The app's name, never translated: the window's title, Apertrust Dev for a development
+/// build. On macOS the app menu's comes from `Info.plist`, which the build embeds in the
+/// binary (`build.rs`).
+const APP_NAME: &str = apertrust_base::program!().app_name();
 /// The app's id, its desktop file's name on Linux, where a Wayland compositor finds the
-/// window's icon and name through it (packaging/linux).
-const APP_ID: &str = "org.apertrust.Apertrust";
+/// window's icon and name through it (packaging/linux); a development build's ends in
+/// `.Dev`.
+const APP_ID: &str = apertrust_base::program!().app_id();
 
 /// The smallest size the shell takes, in logical pixels; its size at first start is
 /// `window.size`'s default.
@@ -3756,7 +3758,9 @@ mod tests {
             "photo.ARW".into(),
         ];
         let given = arguments(line).expect("read").user_data;
-        let folders = Folders::find(given).expect("usable").expect("a folder");
+        let folders = Folders::find(given, false)
+            .expect("usable")
+            .expect("a folder");
         assert_eq!(folders.user_data(), folder);
         assert!(folder.is_dir());
         let none = settings::overrides(&[]).expect("none");
