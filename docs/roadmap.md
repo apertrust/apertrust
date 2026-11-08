@@ -250,7 +250,7 @@ Goal: the signature features.
 
 Goal: reach and polish.
 
-- [ ] A self-hosted server with sync, after Phase 5's library (decision 71; [library.md](library.md#a-server)): a Docker container on a NAS, amd64 and arm64, that the app optionally connects to; the originals and their sidecars in its folders, the desktop editing local copies and sending back only what changed; server roots in a library beside folders; listing and thumbnails on the server.
+- [ ] A self-hosted server with sync, after Phase 5's library (decision 71; [library.md](library.md#a-server)): a Docker container on a NAS, amd64 and arm64, that the app optionally connects to; the originals and their sidecars in its folders, the desktop editing local copies and sending back only what changed; server roots in a library beside folders; listing from the server's index. The server does no processing: thumbnails are the desktop's.
 - [ ] `apertrust-cli serve` and a web client with frame streaming, editing from a browser on a home server, from the same server.
 - [ ] HDR display, managed by the system.
 - [ ] Signed installers: a notarised macOS app with a Developer ID, a code-signed Windows installer and MSIX, and Flatpak.
@@ -340,7 +340,7 @@ Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed 
 - [ ] **Step 41.** Export as Project…, by copy or reference.
 - [ ] **Step 42.** Project templates, saved into the user data folder and offered by New Project….
 
-**Later:** the module-by-module merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Library tab's Location; presence notes; the server with sync (Phase 7, decision 71); scripting.
+**Later:** the module-by-module merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Library tab's Location; presence notes; the server with sync (Phase 7, decision 71); live sessions for a studio shoot on the server, or on the tethering computer, with changes pushed and merged module by module (decision 71); scripting.
 
 **Spikes:** L1, listing, folded into step 7; L2, the cache's engine, step 21; L3, cloud folders on macOS and Windows, before step 33; L4, two versions, the convergence harness built with step 12.
 

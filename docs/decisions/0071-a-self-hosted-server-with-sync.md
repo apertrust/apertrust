@@ -39,6 +39,14 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 
 **When:** after Phase 5's library, beside Phase 7's server work ([roadmap.md](../roadmap.md#phase-7-remote-hdr-and-packaging)).
 
+**Later, live sessions for a studio shoot,** as commercial raw editors offer: several people in one project at once, on their own computers, each change on every machine within seconds.
+
+- **The host** is the NAS's server, or a desktop app running the same server code: the tethering computer, sharing its project with no NAS.
+- **Changes are pushed:** the server tells every connected machine of a change as it is made, within about 2 s on a good local network, instead of at the next exchange. The local network first; over the Internet later.
+- **Roles per account:** the owner manages the project's structure (import, captures, folders, roles, albums, moves and renames) and the tethering; a collaborator edits, rates, labels, keywords and makes virtual copies.
+- **Merged, never locked:** decision 52's comparison, with its module-by-module merge, planned as a setting, coming in for this, so two people editing one photo's different modules both land and nobody waits on a lock ([0052](0052-comparing-two-copies-of-a-sidecar.md)).
+- **Follow mode** shows the newest capture as it arrives; a sync panel shows who is connected and how far behind each machine is.
+
 **Open questions:**
 
 - **The server's licence.** AGPL-3.0 is common for self-hosted servers, and GPL-3.0's section 13 lets GPL-3.0-or-later code be combined with it. Apertrust is GPL-3.0-or-later ([0064](0064-licences-gplv3-darktables-provenance-and-bundled-fonts.md)).
