@@ -91,7 +91,7 @@ darktable's effect group, with Soften after Vignetting and Bloom after Grain. da
 | Diffuse or sharpen | diffuse or sharpen | `diffuse`, working, between 28.5 and 29 | Yes | Planned (Phase 3) | — |
 
 - **Bloom** blooms every pixel above about L 89.4 even at strength 0, so it has no untouched value; once on it starts at darktable's 20 %, 90 % and 25 %.
-- **Diffuse or sharpen** is one module, darktable's, with darktable's presets (sharpen demosaicing, lens deblur, local contrast, dehaze, bloom and others).
+- **Diffuse or sharpen** is one module, darktable's, with darktable's presets (lens deblur, local contrast, dehaze, bloom and others) but its two "sharpen demosaicing" ones (no AA filter and AA filter). darktable's manual has those used on an instance moved before input colour, and modules keep their place in the pipeline, layers included (decision 34). Demosaic's capture sharpening does that job at that place, as darktable has it.
 
 ### In no group
 
