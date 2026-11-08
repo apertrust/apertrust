@@ -619,6 +619,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Switched modules** (decision 32): a module's reset available only while the session reports it edited, a switched module while it is on, or while a change is pending; a switched module that is off told to screen readers as "Not applied", with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
+- **The ways in** (decision 46): `apertrust FILE` opening one photo alone; `--in-folder FILE…` and macOS's open-documents event, through `apertrust-display`, opening the photo's folder with it active; File › Open… in place of Open Image…; the start window, what was open last reopened at the start, and File › Close ([docs/gui.md](gui.md), The start window).
 
 ## apertrust-ui
 
@@ -1329,6 +1330,7 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
 - The comparison of two copies by their clock vectors.
 - Sidecar version 2: the photo's name and fingerprint, and its virtual copies, each with its history as a log of steps and its end, its snapshots and clocks (decisions 47 and 52).
 - darktable's `.xmp`, read through the XMP layer.
+- The storage interface (decision 54), `storage`: every call into a root's files, the listing and the safe write among them, through one interface, local files first and the server's backend later (decision 71).
 
 ## Planned crates
 
@@ -1337,4 +1339,4 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
   - cloud placeholders' flags, and macOS's materialisation turned off on the library's threads;
   - later, `NSFileVersion`.
   - The safe write, with Windows' retries, is built in `apertrust-base`'s `fs`.
-- **`apertrust-protocol`, `apertrust-server`, `apertrust-mcp`**: the session protocol, the web server and MCP, in later phases. The protocol is a module of the engine until a client must compile it without the engine (decision 59).
+- **`apertrust-protocol`, `apertrust-server`, `apertrust-mcp`**: the session protocol, the server (sync for the desktop app, decision 71, then the engine for the web client) and MCP, in later phases. The protocol is a module of the engine until a client must compile it without the engine (decision 59).

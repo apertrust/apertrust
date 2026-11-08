@@ -1,14 +1,14 @@
 # Library
 
-The library is how Apertrust finds photos and keeps what is known about them: folder mode, the Library and the Project. This document describes its design and its API: what each mode holds, the code's layers, the commands and events clients use, how a folder is listed and indexed, the sidecars, how photos are found again on several computers, the cache and the thumbnails.
+The library is how Apertrust finds photos and keeps what is known about them: one photo, folder mode, the Library and the Project. This document describes its design and its API: what each mode holds, the code's layers, the commands and events clients use, how a folder is listed and indexed, the sidecars, how photos are found again on several computers, the cache and the thumbnails.
 
-[decisions/](decisions/README.md) holds the decisions it rests on, 46 to 55 above all, [architecture.md](architecture.md) the design around it, and [roadmap.md](roadmap.md#the-librarys-steps) the library's steps. How events in general are sent and taken in is [events.md](events.md), and how a client sends commands is the [session protocol](session-protocol.md). The crate's state is in [crates.md](crates.md#apertrust-library).
+[decisions/](decisions/README.md) holds the decisions it rests on, 46 to 55 and 71 above all, [architecture.md](architecture.md) the design around it, and [roadmap.md](roadmap.md#the-librarys-steps) the library's steps. How events in general are sent and taken in is [events.md](events.md), and how a client sends commands is the [session protocol](session-protocol.md). The crate's state is in [crates.md](crates.md#apertrust-library).
 
 **Status.**
 
 - **Built:** folder mode's first part. A folder is listed and its sidecars read into an index in memory, opened through the session as a job, and shown in the Library tab's Folders and the grid panel. The `.apxmp` version 1 and the XMP layer under it are built, as are the safe write and `apertrust-cli library scan`. The code is in `crates/library/src/`: `listing`, `index`, `sidecar`, `xmp` and `ops`.
 - **In progress:** thumbnails ([Thumbnails](#thumbnails)): the camera's embedded pictures are built, the cache and Apertrust's own renders remain.
-- **Planned:** the rest of folder mode in Phases 2 and 3, then the Library and the Project in Phase 5 ([The steps](#the-steps)).
+- **Planned:** one photo, Open With into folder mode and the start window in Phase 2; the rest of folder mode in Phases 2 and 3; the Library and the Project in Phase 5; the server in Phase 7 ([The steps](#the-steps), [A server](#a-server)).
 
 ## What the library is
 
@@ -22,20 +22,25 @@ Decision 46. The library meets five requirements:
 
 **Sidecars are the truth; no database ever is.** The truth is in files that travel: the sidecars and a library's small text files. A photo's edit and metadata live in its `.apxmp`, written whenever they change. Anything else, a library's cache included, is rebuilt from the files. A database is never the truth and never sits on shared storage. darktable's library is ported as far as these allow.
 
-### The three modes
+### The four modes
 
-| | Folder mode | A library | A project |
-| --- | --- | --- | --- |
-| What it is | Any folder you open | Photos managed together, of any size: a client, a trip, a whole archive | A small library for one job: a shoot, a client's day |
-| Made by | File › Open Folder… | File › New Library…, or from the open folder, in place | File › New Project…, from a template or not, or Export as Project… from an album |
-| On disk | Nothing of Apertrust's but sidecars | A folder with `Name.aplibrary` and a hidden `.apertrust/` | A folder with `Name.approject`, `.apertrust/` and its role folders |
-| Its photos | The folder's | Copied into its `Photos/`, or referenced where they are | Copied into its Capture, or referenced where they are |
-| Its edits | Beside the photos | Beside the photos, or in its own folder, mirrored by path | As a library's |
-| Index | In memory while open | Built from its files as it opens; a cache on each machine (decision 55) | As a library's |
-| Albums and smart albums | No | Yes, nested | Yes |
-| Folder roles and the job's settings | No | No | Yes |
-| Photos on a drive that is not connected | Not shown | Browsed, rated and tagged; edited from a local copy | As a library's |
-| State | First part built | Planned, Phase 5 | Planned, Phase 5 |
+A window holds one of them at a time. The first rows are for choosing between them; the rest say how each is made.
+
+| | One photo | Folder mode | A library | A project |
+| --- | --- | --- | --- | --- |
+| Best for | A quick look at one raw, or an edit, from a terminal or a script | Working through a folder as it is: a card just copied, a trip's folder | Everything you keep, of any size: a client, a trip, a whole archive, across drives and computers | One job from capture to delivery: a shoot, a client's day |
+| What it gives | The photo at once, its edit beside it, nothing else touched | The folder's photos in the grid panel, to edit, rate and cull, with nothing to import | Albums and smart albums, nested; search across all its folders; photos on drives that are away, still rated and tagged; its edits beside the photos or in its own folder | What a library gives, and folders with roles (Capture, Selects, Output, Trash), a watched Capture folder and the job's settings |
+| What it lacks | Every other photo: no grid of its folder, and no place in the recents | Albums, smart albums, search beyond the open folder, photos on drives that are not connected | Folder roles and the job's settings | Import library…: a project stays one job |
+| What it leaves on disk | The photo's `.apxmp`, once something changes | Each photo's `.apxmp`, once something about it changes; nothing else of Apertrust's | A folder with `Name.aplibrary` and a hidden `.apertrust/`; the sidecars beside the photos or in it; an id file at the top of each folder added | A folder with `Name.approject`, `.apertrust/` and its role folders |
+| How it opens | `apertrust FILE` from a terminal, and no other way | File › Open Folder… or Open…; Open With or a double-click on a raw; the Library tab's Folders; Open Recent or the start window; `apertrust FOLDER` | File › New Library…, or from the open folder, in place; then Open…, Open Recent, the start window or a double-click on `Name.aplibrary` | File › New Project…, from a template or not, or Export as Project… from an album; then Open…, Open Recent, the start window or a double-click on `Name.approject` |
+| Its photos | The one | The folder's | Copied into its `Photos/`, or referenced where they are | Copied into its Capture, or referenced where they are |
+| Its edits | Beside the photo | Beside the photos | Beside the photos, or in its own folder, mirrored by path | As a library's |
+| Index | None beyond the photo | In memory while open | Built from its files as it opens; a cache on each machine (decision 55) | As a library's |
+| Albums and smart albums | No | No | Yes, nested | Yes |
+| Folder roles and the job's settings | No | No | No | Yes |
+| Photos on a drive that is not connected | — | Not shown | Browsed, rated and tagged; edited from a local copy | As a library's |
+| In the recents, and reopened at the start | No | Yes | Yes | Yes |
+| State | Planned, Phase 2 | First part built | Planned, Phase 5 | Planned, Phase 5 |
 
 ```text
 Folder mode                       A library                          A project
@@ -49,14 +54,28 @@ Mountains/                        Family/                            Wedding/
                                     .apertrust/root.toml  (its id, and where its edits are kept)
 ```
 
+### One photo
+
+Planned, Phase 2. `apertrust FILE` from a terminal opens that one raw alone, for a quick look or an edit from a script. It is the only way into this mode: Open With and a double-click open the photo's folder instead ([Folder mode](#folder-mode)).
+
+- Its edit is found as folder mode finds it, beside the photo or where its root's id file says ([Where edits live](#where-edits-live)).
+- Nothing is listed or indexed beyond the photo, and nothing is written but its `.apxmp`, once something about it changes, and its `.apdata` once the edit has one (decision 49).
+- It is never added to the recents and is never what the next start reopens; that stays what was open before it.
+- The grid panel shows the photo alone. The Library tab's Folders offers its folder first, as Open This Folder, which opens it in folder mode, that photo active, then the recent folders ([In the window](#in-the-window)).
+
+Until it is built, a raw named on the command line opens with its folder, as File › Open Image… does.
+
 ### Folder mode
 
 Built first, and partly built.
 
-- It opens by File › Open Folder…, or from a folder in the Library tab's Folders.
+- It opens by File › Open Folder… or Open…, from a folder in the Library tab's Folders, from Open Recent or the start window ([gui.md](gui.md#the-start-window)), by `apertrust FOLDER`, or by Open With and a double-click on a raw (below).
+- **Open With and a double-click** (planned) open the photo's folder, that photo active. The photo opens at once and the folder lists in the background. Several files opened together from one folder open it with them selected, the first active; files from several folders open the first file's folder, with those from it selected, and a notice says how many were left.
+  - macOS delivers these as an open-documents event, not as arguments, which the app's platform code receives (`apertrust-display`).
+  - On Windows and Linux, the installer's and the desktop entry's registrations pass `--in-folder` before the file (planned, [packaging.md](packaging.md#opening-a-raw-from-the-system)), so the app tells them from a terminal's `apertrust FILE`, which opens [one photo](#one-photo).
 - Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
-- The Library tab shows Folders only: the open folder's tree and the recent folders.
+- The Library tab's Folders is active, with the open folder's tree and the recent folders; Albums and Smart albums are drawn disabled, saying why and offering the way there ([In the window](#in-the-window)).
 - Import… (planned) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it.
 - It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
 
@@ -66,8 +85,8 @@ Planned, Phase 5. A library is a folder with `Name.aplibrary` at its top, a shor
 
 - `.apertrust/` holds one file per root (`roots/`), album (`albums/`) and smart album (`smart-albums/`), each named by its id; `keywords.toml`; `machines/`; and Import library…'s notices. It holds `edits/` only when the library keeps its edits in its folder, and the library holds `Photos/` for photos copied in. There is no database.
 - Photos inside its folder make it self-contained; folders elsewhere are roots, found on each machine by their ids ([Roots](#roots)).
-- It is made by File › New Library… (a name, a place, where its edits live) or from the open folder in place, and opened by Open Library…, Open Recent or a double-click.
-- Several libraries may exist, and a window opens one folder, library or project at a time; they replace darktable's workspaces. A photo in two libraries has one place for its edits, so its edit and ratings agree in both, while albums belong to each.
+- It is made by File › New Library… (a name, a place, where its edits live) or from the open folder in place, and opened by Open…, Open Recent, the start window or a double-click on its file.
+- Several libraries may exist, and a window opens one photo, folder, library or project at a time; they replace darktable's workspaces. A photo in two libraries has one place for its edits, so its edit and ratings agree in both, while albums belong to each.
 
 ### Albums and smart albums
 
@@ -148,9 +167,22 @@ darktable's library is kept feature by feature, with 24 deviations, each for a r
 
 ### In the window
 
-Decisions 37 and 46. The Library tab of the side panel chooses what the grid panel shows: Folders from Phase 2, which is folder mode, and Albums and Smart albums with the library in Phase 5 ([gui.md](gui.md#the-side-panel)). The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
+Decisions 37 and 46. The Library tab of the side panel chooses what the grid panel shows. Its sections are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5 ([gui.md](gui.md#the-side-panel)). The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
 
-- **Built:** File › Open Folder… and the Library tab's Folders (Open Folder…, the open folder's name with its photo count, its subfolders, the recent folders, `library.recent_folders` in settings); the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. Opening a photo through File › Open… also opens its folder, unless that folder is the one shown.
+**The sections by mode:**
+
+| Mode | Folders | Albums | Smart albums |
+| --- | --- | --- | --- |
+| One photo | Active: the photo's own folder first, as Open This Folder (into folder mode), then the recent folders | Drawn disabled | Drawn disabled |
+| Folder mode | Active: the open folder's tree, then the recent folders | Drawn disabled: "Albums need a library", with Make This Folder a Library… | Drawn disabled: "Smart albums need a library", with Make This Folder a Library… |
+| A library | Its roots' trees | Its albums, nested | Its smart albums, over the library or inside an album |
+| A project | Its folders, with their roles marked: Capture, Selects, Output, Trash | Its albums, which group photos without moving them | Its smart albums, saved searches within the project |
+
+- **Disabled, never hidden.** A section a mode lacks is drawn disabled, saying why and offering the way there, so the person learns what exists and what it needs. Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library; Make This Folder a Library… is New Library… on the open folder, in place. Until Phase 5 they say "Coming in a later version", as built.
+- **Folder mode's quick filters** are the grid bar's ([gui.md](gui.md#the-grid-bar)), not smart albums.
+- **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
+
+- **Built:** File › Open Folder… and the Library tab's Folders (Open Folder…, the open folder's name with its photo count, its subfolders, the recent folders, `library.recent_folders` in settings); the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
 - `apertrust-library` owns the folders, their listing and the sidecars' metadata, and the thumbnail cache's files ([Thumbnails](#thumbnails)).
 - Offline, in the cloud, missing and view-only photos, and a project's roles, carry marks of their own ([gui.md](gui.md#the-library-tabs-marks)).
 
@@ -169,22 +201,32 @@ flowchart TB
     index["<b>3. Index</b><br/>index, listing: one Index"]
     model["<b>2. Model</b><br/>model: the open folder, library or project (planned)"]
     files["<b>1. Files</b><br/>sidecar over xmp; files (planned)"]
+    storage["storage (planned)<br/>local files or the server"]
     fs["apertrust_base::fs<br/>the safe write"]
-    clients -->|"session protocol"| ops --> index --> model --> files --> fs
+    server["the server (decision 71)"]
+    clients -->|"session protocol"| ops --> index --> model --> files --> storage
+    storage --> fs
+    storage -.-> server
 ```
 
 | Layer | Its one job | Module | State |
 | --- | --- | --- | --- |
-| 1. Files | Bytes in, values out, and back: the `.apxmp` text layer with the comparison of two copies, over the XMP layer, and the library's TOML files (`Name.aplibrary` or `Name.approject`, and `.apertrust/`'s roots, albums, smart albums and keywords); no folders listed, no threads | `sidecar`, `xmp`; `files`; below them `apertrust_base::fs` | `sidecar` (version 1) and `xmp` built; `files` and the comparison planned |
+| 1. Files | Bytes in, values out, and back: the `.apxmp` text layer with the comparison of two copies, over the XMP layer, and the library's TOML files (`Name.aplibrary` or `Name.approject`, and `.apertrust/`'s roots, albums, smart albums and keywords); no folders listed, no threads; every call into a root's files through the storage interface | `sidecar`, `xmp`; `files`; below them `storage` and `apertrust_base::fs` | `sidecar` (version 1) and `xmp` built; `files`, the comparison and `storage` planned |
 | 2. Model | The open `Library` (a folder, a library or a project), its roots, photos, virtual copies, albums, smart albums and keywords; every change applied here, written through layer 1, reported as events | `model` | Planned |
 | 3. Index | Rules, sorts, pages and full text: one `Index`, in memory for folder mode, saved as a library's cache (decision 55); always rebuilt from the layers below | `index`, `listing` | The folder's listing and its sidecars read, in memory, built; rules, sorts, pages and full text planned |
 | 4. Operations | `LibraryCommand` (about forty in the end) and `LibraryEvent` (about twenty) in the session protocol | `ops` | Opening and closing a folder, and its photos' thumbnails, built |
 
-Layer 1 alone knows file layouts; layer 3 alone the cache's engine. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
+Layer 1 alone knows file layouts; layer 3 alone the cache's engine; the storage interface alone where the bytes are. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
+
+**The storage interface** (decision 54, planned with step 21b) is the library's lowest part, under layer 1 and the listing, so nothing above it assumes a file system. Every call into a root's files goes through it: a folder listed in chunks, a file's facts, a file read whole or a byte range of it (the fingerprint's first and last 64 KiB, an embedded picture), the safe write, rename, move, copy and delete, and a raw fetched into a local copy.
+
+- **Local files:** `std::fs`, bulk listing (step 7), cloud placeholders' flags and `apertrust_base::fs`'s safe write; today's listing and safe write move behind it.
+- **The server** ([A server](#a-server)): a server root's files through the server's protocol, its raws fetched once into local copies by fingerprint.
+- The per-root queues and their deadlines (decision 53) and the comparison before every write (decision 52) sit above it, the same for both backends.
 
 **A new library feature** is a command and its events in layer 4, a change in layer 2, and a file format in layer 1 only if it is stored.
 
-**Left out on purpose:** SQL or any query language beyond darktable's rules; traits for storage, the cache's engine or sync backends, each with one implementation; plug-in points until scripting has a second user; a sync engine; transactions across photos; a second API beside the protocol; undo in the library, which stays the session's.
+**Left out on purpose:** SQL or any query language beyond darktable's rules; a trait for the cache's engine, which has one implementation; plug-in points until scripting has a second user; a sync engine beside decision 52's comparison, the server being one more copy; transactions across photos; a second API beside the protocol; undo in the library, which stays the session's.
 
 ### What depends on what
 
@@ -546,10 +588,41 @@ Decision 52, planned (steps 10 to 13).
   - before every write, the writer reading the file again if it changed since this machine last read it, and writing only if the bytes differ;
   - when a sidecar changes outside Apertrust, the active photo taking a newer edit, a module being dragged staying the person's;
   - for conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp`, and whose `apertrust:photo` and fingerprint match a photo there, is compared, kept in the cache for 30 days and removed, its content deciding, not its name;
+  - for a server root, whenever this machine and the server exchange a sidecar, the server being one more copy ([A server](#a-server));
   - later, silent winners: each machine keeping in its cache the last copy of each sidecar it wrote, and iCloud's hidden versions.
 - **Convergence:** comparing the same copies gives the same bytes on every machine, so after one round nothing is written again; spike L4's harness of simulated machines and syncs holds it.
 - **A library's own files** combine entry by entry, the later clock winning each, so photos added to an album on two machines are all kept. A library or project file of a newer format opens view-only; an album or smart album file holding what this build does not know is shown and never written.
 - **No lock decides anything.** Locks fail across NFS and SMB and do not exist in cloud folders. A presence note may later warn that a library is open on another computer; it blocks nothing.
+
+## A server
+
+Decision 71, planned, after Phase 5's library and beside Phase 7's server work. A self-hosted server that the desktop app optionally connects to, first as a Docker container on a NAS (amd64 and arm64). The app works fully without it, and its accounts are the person's own, on their own server.
+
+```mermaid
+flowchart LR
+    subgraph nas ["NAS: apertrust-cli serve"]
+        folders["Its folders<br/>raws, .apxmp, .apdata: the truth"]
+        sindex["Its index<br/>a disposable cache"]
+        sthumbs["Thumbnails"]
+    end
+    subgraph desk ["Desktop app"]
+        lib["apertrust-library<br/>storage: the server's backend"]
+        cache["Its cache<br/>local copies of raws by fingerprint,<br/>the sidecars read or written"]
+    end
+    lib -->|"changed sidecars, kilobytes"| folders
+    folders -->|"a raw, once"| cache
+    sindex -->|"listings"| lib
+    sthumbs --> lib
+```
+
+- **The files live on the server.** The originals and their sidecars are in the server's folders. The desktop edits local copies and sends back what changed. Raws never change, so only sidecars and `.apdata` files go back, kilobytes a photo. A raw comes down once into a local copy in the cache by its fingerprint, as an offline drive's do ([Shares, offline drives and cloud folders](#shares-offline-drives-and-cloud-folders)).
+- **Away from the server,** the desktop keeps the sidecars of a server root it has read or written in its cache, by root and path, with the changes the server has not taken yet, so a photo is still rated and edited; the changes go back once the server answers.
+- **A server root** is a new kind of root ([Roots](#roots)), found by the server's URL and an account instead of a path, its id kept on the server at its top. The root map holds the URL and the account. A library may mix server roots and folders.
+- **Conflicts** are decision 52's: the server is one more copy, compared by clock vectors and merged as copies from several computers are ([Comparing two copies](#comparing-two-copies)). No lock.
+- **The truth** is still the sidecar files, in the server's folders (decision 46). The server's index of its folders is a disposable cache, as a library's is ([A library's cache](#a-librarys-cache)); no database is the truth.
+- **The code:** the desktop reaches it through the storage interface's server backend ([The code](#the-code)); the server lists and reads its own folders through the same library code with the local-files backend. Sync is the storage backend's protocol, not the session protocol.
+- **One server:** `apertrust-cli serve`, the `apertrust-server` crate (decisions 6 and 58), sync first and later the engine for browser and tablet clients ([session-protocol.md](session-protocol.md#web-tablets-and-remote-access)). Sync and listing need no GPU. TLS and an account, with a VPN still the recommended default in front of a server reached over the Internet (decision 58).
+- **What it gives over a NAS share:** away from home, one protocol made for the network's latency where SMB needs a VPN and pays its latency on every call; listing from the server's index rather than a call per file (21.6 s for 2,825 files over SMB, [Listing in bulk](#listing-in-bulk)); thumbnails made on the server; a place for tablets and browsers.
 
 ## A library's cache
 
@@ -592,5 +665,13 @@ The library is built in steps, each delivering one thing and reviewed before the
 Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, the Library tab's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part). The rest of step 6, the cache and Apertrust's own renders, is in progress.
 
 ## Open questions
+
+- **The server** (decision 71, [A server](#a-server)):
+  - its licence: AGPL-3.0 is common for self-hosted servers, and GPL-3.0's section 13 lets Apertrust's GPL-3.0-or-later code be combined with it;
+  - accounts and sharing between people: one person's server, or a household's, with photos shared between accounts;
+  - how much of the engine runs on a NAS without a GPU: thumbnails from the embedded pictures need none, and renders run on lavapipe;
+  - what the container ships beside the binary (Mesa's lavapipe, the Vulkan loader, a TLS stack), each weighed by decision 5, since Apertrust would ship the image;
+  - where a library whose roots are all on the server keeps its own files;
+  - a hosted service later, which the principles' "no accounts, subscriptions or cloud processing" would have to allow (decision 1).
 
 - **A library's cache's engine** (decision 55): spike L2 builds plain Rust collections with a snapshot file and `tantivy`, the likely choice, beside Turso Database, at 100,000 and 500,000 synthetic photos on the M4, against a query under 50 ms and an open under 1 s at 100,000. `rusqlite` with SQLite compiled in only if both fail, with an exception to decision 5.

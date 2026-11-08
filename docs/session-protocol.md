@@ -92,7 +92,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
 ## Transports
 
 - **In process**, built: the app and the CLI, as above. A second in-process client, the app's MCP endpoint, is to get a receiver of its own from the session's outbox (decision 59).
-- **IPC, WebSocket or WebTransport**, later: `apertrust-cli serve` for web and tablet clients on a home server (`apertrust-server`; [architecture.md](architecture.md#programs)). The engine is the same; only the transport differs.
+- **IPC, WebSocket or WebTransport**, later: `apertrust-cli serve` for web and tablet clients on a home server (`apertrust-server`; [architecture.md](architecture.md#programs)). The engine is the same; only the transport differs. It is the server that first syncs the desktop app's photos (decision 71), whose sync is the library's storage protocol, not this one ([library.md](library.md#a-server)).
 - **MCP**, later: `apertrust-cli mcp` over stdio and the app's endpoint (`apertrust-mcp`, through `rmcp`), a thin adapter over the protocol. Its tools are generated from the modules' definitions and `LibraryCommand`'s schema, off until the person allows them and read-only unless writes are allowed (principle 8; decision 54).
 
 ## Web, tablets and remote access

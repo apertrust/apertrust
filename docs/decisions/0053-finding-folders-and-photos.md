@@ -8,6 +8,8 @@ Photos live on internal disks, external drives, network shares and cloud folders
 
 **Roots** are folders Apertrust tracks as a unit, each carrying its id at its top: a library or project in its file, a plain folder in `.apertrust/root.toml`, written once as it joins a library. Shared files name a photo by its root's id and a path relative to the root, in Unicode NFC with `/`. A root is found by its path relative to the library, then by the same name under each mounted volume with its id file checked, then by Locate…, once per root per machine; the answer goes into a per-machine root map. Never volume UUIDs, drive letters, inodes or absolute paths.
 
+**A server root** (planned, [0071](0071-a-self-hosted-server-with-sync.md)) is found by its server's URL and an account instead of a path, its id kept on the server at its top; the root map holds the URL and the account where a folder root holds a path. A library may mix server roots and folders. Its calls go through the library's storage interface ([0054](0054-four-layers-for-the-librarys-code.md)), on its own queue as a share's do, and its raws come down into local copies by fingerprint, as an offline drive's do.
+
 **The fingerprint** is the file's size plus BLAKE3 over its first and last 64 KiB (`blake3`, pure Rust features only), in `apertrust:fingerprint` and the cache. It re-pairs a sidecar with a raw renamed outside Apertrust, recognises moved photos and duplicates on import, and keys thumbnails. It is computed only when a photo is opened or thumbnailed, when its sidecar is first written, and for a lost sidecar's few candidates; never for a cloud file not on the disk. A whole-file hash would cost 0.36 s for a 30 MB raw over a typical share.
 
 **Names:** a sidecar matches its photo by exact bytes, else in NFC with case folding when one photo matches, the fingerprint confirming. Apertrust never renames the person's files; the names it makes pass Windows' and OneDrive's rules on every system. A rename outside Apertrust is re-paired by size and fingerprint, the activity saying so; Move, Rename and Copy inside Apertrust carry sidecars, `.apdata` and attached files.
@@ -32,4 +34,4 @@ Photos live on internal disks, external drives, network shares and cloud folders
 ## Consequences
 
 - `apertrust-library`'s listing, index and sidecar writes follow these rules; the export's disk writes share the safe write.
-- Planned: bulk listing, the per-root queues, offline and cloud handling.
+- Planned: bulk listing, the per-root queues, offline and cloud handling, server roots.

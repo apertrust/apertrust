@@ -12,7 +12,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 - [docs/engine.md](docs/engine.md): the pipeline: the GPU and its rules, software GPUs, planning, regions, pipes, caching, tiling, the module layer, data files, the Phase 1 build order (decision 12; fusion's mechanism still open).
 - [docs/plugins.md](docs/plugins.md): the operation interface, one crate per operation, manifests and schemas, passes, slots, the image context, third-party plugins (planned).
 - [docs/settings.md](docs/settings.md): the settings schema and store, `--conf`, the user data folders, edits in another folder (decision 43).
-- [docs/library.md](docs/library.md): the library: folder mode, the Library and the Project, the code's four layers, `LibraryCommand` and `LibraryEvent`, listing and the index, sidecars, finding photos on several computers, the cache and thumbnails (decisions 46 to 55).
+- [docs/library.md](docs/library.md): the library: one photo, folder mode, the Library and the Project, the code's four layers, `LibraryCommand` and `LibraryEvent`, listing and the index, sidecars, finding photos on several computers, a server, the cache and thumbnails (decisions 46 to 55 and 71).
 - [docs/events.md](docs/events.md): the event API (decision 59). [docs/session-protocol.md](docs/session-protocol.md): the protocol every client reaches the engine through.
 - [docs/gui.md](docs/gui.md): the GUI's architecture (decision 36): the design system, themes, Fluent, actions, accessibility, settings, UI tests; a dark default theme, British English (the source), American English, Ukrainian and Polish.
 - [docs/layers.md](docs/layers.md): layers and masks as masked module instances, and the scene and display domains (decision 34, planned).
@@ -175,7 +175,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | `apertrust-export` | What an export writes and where, with no GPU (decision 56): settings, size, variables, file-on-disk rules, JPEG and PNG |
 | `apertrust-library` | Folder mode, libraries and projects, with no GPU (decisions 46, 47 and 52 to 55); never depends on the engine, modules, plugin or wgpu |
 | `apertrust-fs` | Planned, only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover (decision 65) |
-| `apertrust-protocol`, `apertrust-server`, `apertrust-mcp` | Session protocol, web server, MCP; later phases |
+| `apertrust-protocol`, `apertrust-server`, `apertrust-mcp` | Session protocol; the server, sync then the engine for browsers (decision 71); MCP; later phases |
 
 - Each crate lives in `crates/<name>`, its package name without `apertrust-`: the app in `crates/app`, operation crates in `crates/op/<id>` (decision 65). A new crate goes into `members` in the root `Cargo.toml`.
 - Add a crate when its first real code lands, and only when a module of an existing crate cannot do: `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary such as an operation's (decision 65). Keep the number of crates small.

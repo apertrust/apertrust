@@ -15,6 +15,8 @@ Apertrust should be usable from the desktop app, the command line, a browser or 
 - **The library's commands are the session's too** ([0054](0054-four-layers-for-the-librarys-code.md)), so a browser client's library lives on the server.
 - **The types stay in the engine** (`apertrust_engine::session`'s `Command` and `Event`) until a client must compile them without it; then they become `apertrust-protocol`.
 
+**One server, planned:** `apertrust-cli serve`, the `apertrust-server` library crate ([0006](0006-two-programs-on-three-desktop-platforms.md)). It first syncs the desktop app's photos with a NAS ([0071](0071-a-self-hosted-server-with-sync.md)), through the library's storage protocol rather than this one, and later serves the engine to browser and tablet clients through this protocol.
+
 **Remote access, planned,** has requirements a local app does not:
 
 - authentication and encrypted transport (HTTPS, secure WebSocket or WebTransport over TLS), a VPN the recommended default over the Internet;
