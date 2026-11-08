@@ -158,6 +158,9 @@ pub enum Trigger {
 }
 
 /// What an action does.
+// A command is far larger than an intent where a path is (a Windows `PathBuf`), but every
+// action lives in the static [`ACTIONS`], where a `Box` cannot be built.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Emit {
     /// A command for the engine's session.
