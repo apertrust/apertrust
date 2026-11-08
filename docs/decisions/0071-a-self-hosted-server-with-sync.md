@@ -2,11 +2,13 @@
 
 ## Context
 
-Many photographers keep their photos on a NAS. A share over SMB lists slowly (21.6 s for 2,825 files with a call per file on macOS, [0053](0053-finding-folders-and-photos.md)), pays the network's latency on every call, needs a VPN away from home, and makes nothing beside the files: no index, no thumbnails, nothing a tablet or a browser can connect to. Sidecars must stay the truth ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), and no lock may decide between copies ([0052](0052-comparing-two-copies-of-a-sidecar.md)). How does Apertrust use a home server for the photos, and later for the engine?
+Many photographers keep their photos on a NAS. A share over SMB lists slowly (21.6 s for 2,825 files with a call per file on macOS, [0053](0053-finding-folders-and-photos.md)), pays the network's latency on every call, needs a VPN away from home, and keeps nothing beside the files: no index of them, nothing a laptop away from home can sync with. Sidecars must stay the truth ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), and no lock may decide between copies ([0052](0052-comparing-two-copies-of-a-sidecar.md)). How does Apertrust use a home server for the photos?
 
 ## Decision
 
 **A self-hosted server, planned, that the desktop app optionally connects to.** It comes first as a Docker container on a NAS, for amd64 and arm64. The app works fully without it. Its accounts are the person's own, on their own server, never an account with Apertrust ([principles.md](../principles.md#what-we-will-not-build)).
+
+**No processing on the server,** in this option: it stores, lists and syncs. It runs no engine, needs no GPU and makes no renders or thumbnails; the desktop makes a server root's thumbnails as it makes any folder's. It is written in Rust, as the app is.
 
 **The originals and their sidecars live in the server's folders.**
 
@@ -25,14 +27,15 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 - The server lists and reads its own folders through the same library code, with the local-files backend, and serves what that code finds.
 - Sync is the storage backend's protocol: listing, reading, writing and fetching by root and path. It is not the session protocol, since the desktop's engine and library stay in its own process.
 
-**One server,** `apertrust-cli serve`, running the `apertrust-server` library crate ([0006](0006-two-programs-on-three-desktop-platforms.md), [0058](0058-a-native-engine-every-client-through-the-session-protocol.md)). It serves sync first, and later the engine for browser and tablet clients through the session protocol. Sync and listing need no GPU. Authentication and encrypted transport are as [0058](0058-a-native-engine-every-client-through-the-session-protocol.md) requires: TLS and an account, with a VPN still the recommended default in front of a server reached over the Internet.
+**One server,** `apertrust-cli serve`, running the `apertrust-server` library crate ([0006](0006-two-programs-on-three-desktop-platforms.md), [0058](0058-a-native-engine-every-client-through-the-session-protocol.md)). It serves sync. The engine for browser and tablet clients through the session protocol ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)) is a separate, later option for the same program, not part of this one. Authentication and encrypted transport are as [0058](0058-a-native-engine-every-client-through-the-session-protocol.md) requires: an account, and TLS by rustls with a crypto provider written in Rust, so nothing compiled in needs an exception to [0005](0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md); a reverse proxy in front (the NAS's own, Traefik, Caddy) may terminate TLS instead, the server then listening only on the container's own network. A VPN is still the recommended default in front of a server reached over the Internet.
+
+**The container's base system counts as the platform,** as a Linux distribution's own libraries do: the C library, the certificates and what else the image's base gives. Only what Apertrust itself compiles into the server follows [0005](0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md).
 
 **What it gives over a NAS share:**
 
 - away from home, one protocol made for the network's latency, a few requests carrying kilobytes, where SMB over the Internet needs a VPN and pays the latency on every call;
 - listing from the server's index, not a share's call per file;
-- thumbnails made on the server, beside the files;
-- a place for tablets and browsers to connect ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
+- a place every machine, and later a mobile app, syncs its ratings and edits with.
 
 **When:** after Phase 5's library, beside Phase 7's server work ([roadmap.md](../roadmap.md#phase-7-remote-hdr-and-packaging)).
 
@@ -40,8 +43,6 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 
 - **The server's licence.** AGPL-3.0 is common for self-hosted servers, and GPL-3.0's section 13 lets GPL-3.0-or-later code be combined with it. Apertrust is GPL-3.0-or-later ([0064](0064-licences-gplv3-darktables-provenance-and-bundled-fonts.md)).
 - **Accounts and sharing between people:** one person's server, or a household's, with photos shared between its accounts.
-- **How much of the engine runs on a NAS without a GPU.** Thumbnails from the embedded pictures need no GPU, and renders run on lavapipe ([0007](0007-a-software-gpu-instead-of-a-cpu-path.md)).
-- **What the container ships beside the binary:** Mesa's lavapipe, the Vulkan loader and a TLS stack. Apertrust would ship the image, so [0005](0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md) weighs each.
 - **Where a library whose roots are all on the server keeps its own files.**
 - **A hosted service later.** The principles leave out accounts, subscriptions and cloud processing, so it would need [0001](0001-what-apertrust-is-the-principles.md) to change.
 
@@ -53,11 +54,12 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 - **Check-out and check-in, with a lock on the server:** against [0052](0052-comparing-two-copies-of-a-sidecar.md). A laptop away with a lock held would block every other machine.
 - **Raws synced both ways:** they never change, so only sidecars need to go back.
 - **Sync as session-protocol commands to a remote library:** it would move the desktop's library out of its process, and its edits would wait on the network.
+- **Processing on the server** (renders, thumbnails, the engine): it needs a GPU, or lavapipe's slowness on a NAS, and more of the engine in the container. Left to [0058](0058-a-native-engine-every-client-through-the-session-protocol.md)'s later option.
 - **A server program of its own:** [0006](0006-two-programs-on-three-desktop-platforms.md) keeps the server a library inside `apertrust-cli`.
 - **A hosted service first:** an account with Apertrust, which the principles leave out. It is kept as an open question.
 
 ## Consequences
 
-- [0053](0053-finding-folders-and-photos.md) gains server roots, and [0054](0054-four-layers-for-the-librarys-code.md) the storage interface, as the library's step 21b, before Phase 5 builds on the file system. [0058](0058-a-native-engine-every-client-through-the-session-protocol.md)'s server is this one. [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md) and [0052](0052-comparing-two-copies-of-a-sidecar.md) hold as they are, and the server is one more copy to them.
+- [0053](0053-finding-folders-and-photos.md) gains server roots, and [0054](0054-four-layers-for-the-librarys-code.md) the storage interface, as the library's step 21b, before Phase 5 builds on the file system. [0058](0058-a-native-engine-every-client-through-the-session-protocol.md)'s server for remote clients, later, is the same program. [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md) and [0052](0052-comparing-two-copies-of-a-sidecar.md) hold as they are, and the server is one more copy to them.
 - [library.md](../library.md#a-server) describes the server, and its open questions are listed with the library's.
 - The roadmap lists it under Phase 7.

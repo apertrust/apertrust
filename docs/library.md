@@ -596,14 +596,13 @@ Decision 52, planned (steps 10 to 13).
 
 ## A server
 
-Decision 71, planned, after Phase 5's library and beside Phase 7's server work. A self-hosted server that the desktop app optionally connects to, first as a Docker container on a NAS (amd64 and arm64). The app works fully without it, and its accounts are the person's own, on their own server.
+Decision 71, planned, after Phase 5's library and beside Phase 7's server work. A self-hosted server that the desktop app optionally connects to, first as a Docker container on a NAS (amd64 and arm64), written in Rust. It stores, lists and syncs, and does no processing: no engine, no GPU, no renders or thumbnails. The app works fully without it, and its accounts are the person's own, on their own server.
 
 ```mermaid
 flowchart LR
     subgraph nas ["NAS: apertrust-cli serve"]
         folders["Its folders<br/>raws, .apxmp, .apdata: the truth"]
         sindex["Its index<br/>a disposable cache"]
-        sthumbs["Thumbnails"]
     end
     subgraph desk ["Desktop app"]
         lib["apertrust-library<br/>storage: the server's backend"]
@@ -612,7 +611,6 @@ flowchart LR
     lib -->|"changed sidecars, kilobytes"| folders
     folders -->|"a raw, once"| cache
     sindex -->|"listings"| lib
-    sthumbs --> lib
 ```
 
 - **The files live on the server.** The originals and their sidecars are in the server's folders. The desktop edits local copies and sends back what changed. Raws never change, so only sidecars and `.apdata` files go back, kilobytes a photo. A raw comes down once into a local copy in the cache by its fingerprint, as an offline drive's do ([Shares, offline drives and cloud folders](#shares-offline-drives-and-cloud-folders)).
@@ -621,8 +619,10 @@ flowchart LR
 - **Conflicts** are decision 52's: the server is one more copy, compared by clock vectors and merged as copies from several computers are ([Comparing two copies](#comparing-two-copies)). No lock.
 - **The truth** is still the sidecar files, in the server's folders (decision 46). The server's index of its folders is a disposable cache, as a library's is ([A library's cache](#a-librarys-cache)); no database is the truth.
 - **The code:** the desktop reaches it through the storage interface's server backend ([The code](#the-code)); the server lists and reads its own folders through the same library code with the local-files backend. Sync is the storage backend's protocol, not the session protocol.
-- **One server:** `apertrust-cli serve`, the `apertrust-server` crate (decisions 6 and 58), sync first and later the engine for browser and tablet clients ([session-protocol.md](session-protocol.md#web-tablets-and-remote-access)). Sync and listing need no GPU. TLS and an account, with a VPN still the recommended default in front of a server reached over the Internet (decision 58).
-- **What it gives over a NAS share:** away from home, one protocol made for the network's latency where SMB needs a VPN and pays its latency on every call; listing from the server's index rather than a call per file (21.6 s for 2,825 files over SMB, [Listing in bulk](#listing-in-bulk)); thumbnails made on the server; a place for tablets and browsers.
+- **One server:** `apertrust-cli serve`, the `apertrust-server` crate (decisions 6 and 58), for sync. The engine for browser and tablet clients is a separate, later option for the same program ([session-protocol.md](session-protocol.md#web-tablets-and-remote-access)). An account, and TLS by rustls with a crypto provider in Rust, or a reverse proxy in front; a VPN is still the recommended default in front of a server reached over the Internet (decision 58).
+- **The container's base system** counts as the platform, as a distribution's libraries do; only what Apertrust compiles into the server follows decision 5.
+- **Thumbnails** of a server root are the desktop's, made from the local copies or the raws as it reads them, as for any folder.
+- **What it gives over a NAS share:** away from home, one protocol made for the network's latency where SMB needs a VPN and pays its latency on every call; listing from the server's index rather than a call per file (21.6 s for 2,825 files over SMB, [Listing in bulk](#listing-in-bulk)); one place every machine, and later a mobile app, syncs with.
 
 ## A library's cache
 
@@ -669,8 +669,6 @@ Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (
 - **The server** (decision 71, [A server](#a-server)):
   - its licence: AGPL-3.0 is common for self-hosted servers, and GPL-3.0's section 13 lets Apertrust's GPL-3.0-or-later code be combined with it;
   - accounts and sharing between people: one person's server, or a household's, with photos shared between accounts;
-  - how much of the engine runs on a NAS without a GPU: thumbnails from the embedded pictures need none, and renders run on lavapipe;
-  - what the container ships beside the binary (Mesa's lavapipe, the Vulkan loader, a TLS stack), each weighed by decision 5, since Apertrust would ship the image;
   - where a library whose roots are all on the server keeps its own files;
   - a hosted service later, which the principles' "no accounts, subscriptions or cloud processing" would have to allow (decision 1).
 
