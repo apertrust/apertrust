@@ -34,7 +34,7 @@ jobs:
     # in release and one test at a time. What it needs is kept here for when it runs again.
     timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 360 || 40 }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Free disk space
         if: runner.os == 'Linux'
         # Toolchains this workflow never uses, about 20 GB.
