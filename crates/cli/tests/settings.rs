@@ -517,9 +517,16 @@ fn a_missing_platform_folder_is_not_created() {
         logged(&stderr, "engine.memory_budget: 2048 MiB, from: default"),
         "{stderr}"
     );
-    // Neither `Library` nor `.config`, nor anything else.
-    let created: Vec<_> = std::fs::read_dir(&home.0).expect("there").collect();
+    // Neither `Library` nor `.config`, nor anything else of Apertrust's. The GPU driver
+    // may keep its shader cache in `.cache` (Mesa's, on Linux), but Apertrust's own cache
+    // folder is not there either.
+    let created: Vec<_> = std::fs::read_dir(&home.0)
+        .expect("there")
+        .map(|entry| entry.expect("read").file_name())
+        .filter(|name| name != ".cache")
+        .collect();
     assert!(created.is_empty(), "{created:?}");
+    assert!(!home.0.join(".cache/apertrust").exists());
 }
 
 /// An adapter the settings name that is not there falls back to wgpu's choice with a

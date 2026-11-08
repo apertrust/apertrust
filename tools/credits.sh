@@ -31,8 +31,8 @@ end='<!-- end of components -->'
 # cargo shows with their path.
 list=$(
     cargo tree --locked --edges normal --target all -p apertrust -p apertrust-cli \
-        --prefix none --format '{p}|{l}' |
-        sed -e 's/ (\*)$//' -e 's/ (proc-macro)//' |
+        --no-dedupe --prefix none --format '{p}|{l}' |
+        sed -e 's/ (proc-macro)//' |
         grep -v ' (/' |
         sort -u |
         awk -F'|' '$1 != "" { split($1, p, " v"); printf "- %s %s: %s\n", p[1], p[2], $2 }'
@@ -47,6 +47,7 @@ new=$(LIST="$list" awk -v begin="$begin" -v end="$end" '
 if [[ ${1:-} == --check ]]; then
     if [[ "$new" != "$(cat "$file")" ]]; then
         echo "$file's components are out of date: run tools/credits.sh" >&2
+        diff <(cat "$file") <(printf '%s\n' "$new") >&2 || true
         exit 1
     fi
     exit 0

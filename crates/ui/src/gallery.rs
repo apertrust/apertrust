@@ -1288,8 +1288,10 @@ fn mask_histogram(overflowing: bool) -> (Vec<f32>, [f32; 2]) {
     let bins: Vec<f32> = (0..256)
         .map(|k| {
             let e = -8.0 + 8.0 * k as f32 / 255.0;
-            // A little grain, as a photo's counts have.
-            let grain = 0.9 + 0.2 * ((k as f32 * 12.9898).sin() * 43758.547).fract().abs();
+            // A little grain, as a photo's counts have, from an integer hash: a sine's last
+            // bit, which each system's maths library rounds its own way, would move it.
+            let hash = (k as u32).wrapping_mul(2_654_435_761) >> 16;
+            let grain = 0.9 + 0.2 * hash as f32 / 65_535.0;
             let counts = if overflowing {
                 if !(2..=253).contains(&k) {
                     return 1.0;

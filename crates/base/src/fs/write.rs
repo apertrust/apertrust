@@ -66,16 +66,18 @@ fn transient(error: &io::Error) -> bool {
 /// Renames `temp` to `path` with `rename` (`NamedTempFile::persist` or
 /// `persist_noclobber`), trying again after `retry.pause` while it fails with a refusal
 /// that passes, up to `retry.attempts` times. The error of the last try comes back with the
-/// temporary file, which the caller may use again or drop.
+/// temporary file, which the caller may use again or drop. `rename` is given `path` in the
+/// form that reaches any length on Windows.
 pub fn persist_retrying(
     mut temp: NamedTempFile,
     path: &Path,
     retry: Retry,
     mut rename: impl FnMut(NamedTempFile, &Path) -> Result<File, PersistError>,
 ) -> Result<File, PersistError> {
+    let path = super::long_path(path);
     let mut attempt = 0;
     loop {
-        match rename(temp, path) {
+        match rename(temp, &path) {
             Err(failed) if attempt < retry.attempts && transient(&failed.error) => {
                 attempt += 1;
                 temp = failed.file;

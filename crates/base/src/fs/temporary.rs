@@ -67,7 +67,8 @@ pub fn create(folder: &Path, name: &str) -> io::Result<NamedTempFile> {
         use std::os::unix::fs::PermissionsExt;
         builder.permissions(fs::Permissions::from_mode(0o666));
     }
-    builder.tempfile_in(folder)
+    // Its path, which the rename hands Windows as it is, reaches any length.
+    builder.tempfile_in(super::long_path(folder))
 }
 
 /// Whether `name` is shaped like a temporary [`create`] makes: `.~`, a name, a dot, six

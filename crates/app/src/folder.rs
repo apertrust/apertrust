@@ -770,9 +770,11 @@ mod tests {
 
     #[test]
     fn a_photo_opened_shows_its_folder_unless_that_is_the_one_shown() {
+        // The folder shown is absolute, so on Windows it takes the current drive.
+        let absolute = |path: &str| std::path::absolute(path).unwrap();
         let mut state = FolderState::default();
         let photo = Path::new("/photos/a/x.ARW");
-        assert_eq!(state.to_show(photo), Some(PathBuf::from("/photos/a")));
+        assert_eq!(state.to_show(photo), Some(absolute("/photos/a")));
         // Being opened counts as shown.
         state.opening(PathBuf::from("/photos/a"), 1);
         assert_eq!(state.to_show(photo), None);
@@ -780,7 +782,7 @@ mod tests {
         assert_eq!(state.to_show(photo), None);
         assert_eq!(
             state.to_show(Path::new("/photos/b/y.ARW")),
-            Some(PathBuf::from("/photos/b"))
+            Some(absolute("/photos/b"))
         );
         // A failed folder is not shown: the photo's own is tried.
         state.opening(PathBuf::from("/photos/gone"), 2);
@@ -788,7 +790,7 @@ mod tests {
             open: 2,
             reason: "gone".to_owned(),
         }));
-        assert_eq!(state.to_show(photo), Some(PathBuf::from("/photos/a")));
+        assert_eq!(state.to_show(photo), Some(absolute("/photos/a")));
     }
 
     #[test]

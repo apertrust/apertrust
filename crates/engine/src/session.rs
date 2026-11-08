@@ -2611,6 +2611,12 @@ impl Open {
     }
 }
 
+/// How long a test waits for any one thing a session does: on WARP, which compiles every
+/// kernel through FXC on a CPU the tests running beside it share, one step can take
+/// minutes.
+#[cfg(test)]
+pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc::Receiver;
@@ -2692,14 +2698,14 @@ mod tests {
         start_with(gpu, modules, decode)
     }
 
-    /// The events up to the first that `last` accepts, waiting at most a minute for each
-    /// wake.
+    /// The events up to the first that `last` accepts, waiting at most [`TEST_WAIT`] for
+    /// each wake.
     fn until(session: &Session, wakes: &Receiver<()>, last: impl Fn(&Event) -> bool) -> Vec<Event> {
         let mut events = Vec::new();
         loop {
             wakes
-                .recv_timeout(Duration::from_secs(60))
-                .expect("the session answers within a minute");
+                .recv_timeout(TEST_WAIT)
+                .expect("the session answers in time");
             events.extend(session.events());
             if events.iter().any(&last) {
                 return events;
@@ -2878,7 +2884,7 @@ mod tests {
             drop(session);
             let _ = ended.send(());
         });
-        done.recv_timeout(Duration::from_secs(60))
+        done.recv_timeout(TEST_WAIT)
             .expect("the session ends with the gate held by the thread dropping it");
     }
 
@@ -5605,10 +5611,7 @@ mod tests {
         session.send(Command::Open(path.clone()));
         let waiting = Instant::now();
         while !SLOW_OPEN.load(Ordering::SeqCst) {
-            assert!(
-                waiting.elapsed() < Duration::from_secs(60),
-                "the open never began"
-            );
+            assert!(waiting.elapsed() < TEST_WAIT, "the open never began");
             std::thread::yield_now();
         }
         session.send(Command::Resize {
@@ -5718,9 +5721,7 @@ mod tests {
             state.pending.insert(p.clone(), 2);
             jobs.send(Order::Write(job(&q, 1, false))).unwrap();
             // Told of q's write, the writer waits for its state.
-            wakes
-                .recv_timeout(Duration::from_secs(60))
-                .expect("q is written");
+            wakes.recv_timeout(TEST_WAIT).expect("q is written");
             jobs.send(Order::Write(job(&p, 2, false))).unwrap();
             jobs.send(Order::Write(job(&p, 3, true))).unwrap();
         }
@@ -5823,7 +5824,7 @@ mod tests {
                 if !self.engine.reading() {
                     return readings;
                 }
-                assert!(start.elapsed() < Duration::from_secs(60), "no reading");
+                assert!(start.elapsed() < TEST_WAIT, "no reading");
                 std::thread::sleep(POLL_INTERVAL);
             }
         }
@@ -6188,12 +6189,9 @@ mod tests {
         /// Waits until `told` has been heard.
         fn until(&mut self, told: &Told) {
             while !self.seen.contains(told) {
-                let next = self
-                    .receiver
-                    .recv_timeout(Duration::from_secs(60))
-                    .unwrap_or_else(|_| {
-                        panic!("still waiting for {told:?}, heard {:?}", self.seen)
-                    });
+                let next = self.receiver.recv_timeout(TEST_WAIT).unwrap_or_else(|_| {
+                    panic!("still waiting for {told:?}, heard {:?}", self.seen)
+                });
                 self.seen.push(next);
             }
         }
@@ -6228,7 +6226,7 @@ mod tests {
             while ends(&self.seen).len() < count {
                 let next = self
                     .receiver
-                    .recv_timeout(Duration::from_secs(60))
+                    .recv_timeout(TEST_WAIT)
                     .unwrap_or_else(|_| panic!("still waiting for {label}, heard {:?}", self.seen));
                 self.seen.push(next);
             }
@@ -6278,8 +6276,8 @@ mod tests {
                 return (job, own);
             }
             wakes
-                .recv_timeout(Duration::from_secs(60))
-                .expect("the session answers within a minute");
+                .recv_timeout(TEST_WAIT)
+                .expect("the session answers in time");
             events.extend(session.events());
         }
     }
@@ -6572,7 +6570,7 @@ mod tests {
         heard.until(&Told::Ended("yielding", Err(TaskError::Cancelled)));
         go.send(()).unwrap();
         heard.until(&Told::Ended("stubborn", Ok(40)));
-        done.recv_timeout(Duration::from_secs(60))
+        done.recv_timeout(TEST_WAIT)
             .expect("the session ends once the job that cannot be cancelled has finished");
         remove(&path);
     }
@@ -6623,7 +6621,7 @@ mod tests {
             let _ = ended.send(panicked);
         });
         let panicked = done
-            .recv_timeout(Duration::from_secs(60))
+            .recv_timeout(TEST_WAIT)
             .expect("the jobs end after the panic");
         assert!(panicked, "the panic goes on once the jobs have ended");
         heard.until(&Told::Ended("waiting", Err(TaskError::Stopped)));
@@ -6958,7 +6956,7 @@ mod tests {
         session.send(Command::HoldFolder(hold));
         let first = session.send(open_folder(&folder));
         begun
-            .recv_timeout(Duration::from_secs(60))
+            .recv_timeout(TEST_WAIT)
             .expect("the first reading begins");
         let second = session.send(open_folder(&folder));
         let (_, own) = follow(&session, &wakes, &mut events, second, ended);
@@ -6996,7 +6994,7 @@ mod tests {
         session.send(Command::HoldFolder(hold));
         let third = session.send(open_folder(&folder));
         begun
-            .recv_timeout(Duration::from_secs(60))
+            .recv_timeout(TEST_WAIT)
             .expect("the third reading begins");
         let close = session.send(Command::Library(LibraryCommand::Close));
         let closed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == close);
@@ -7077,7 +7075,7 @@ mod tests {
         session.send(thumbnails(&held));
         for _ in 0..workers {
             begun
-                .recv_timeout(Duration::from_secs(60))
+                .recv_timeout(TEST_WAIT)
                 .expect("each worker begins a thumbnail");
         }
         session.send(thumbnails(&queued));
@@ -7121,7 +7119,7 @@ mod tests {
         session.send(thumbnails(&every));
         for _ in 0..workers {
             begun
-                .recv_timeout(Duration::from_secs(60))
+                .recv_timeout(TEST_WAIT)
                 .expect("each worker begins a thumbnail");
         }
         let close = session.send(Command::Library(LibraryCommand::Close));

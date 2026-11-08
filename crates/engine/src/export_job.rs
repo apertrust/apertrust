@@ -818,14 +818,21 @@ fn write(
     Ok(())
 }
 
-/// What the tests hold an export with.
+/// What the tests hold an export with, and the paths they send it.
 #[cfg(test)]
 pub(crate) mod testing {
+    use std::path::Path;
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::sync::{Arc, Mutex, PoisonError};
 
     use crate::gpu::GpuContext;
     use crate::jobs::{GpuTask, Step};
+
+    /// An export's path of `rest` in `folder`, its folders written with `/`: a path reads
+    /// `\` as an escape, so Windows' own separator would vanish, as in darktable.
+    pub(crate) fn path_in(folder: &Path, rest: &str) -> String {
+        format!("{}/{rest}", folder.to_string_lossy().replace('\\', "/"))
+    }
 
     /// Holds the first step of an export's render, on the engine thread, as a long step
     /// would: it tells the test it has begun, then waits for the test's permit, or for the
@@ -952,7 +959,6 @@ pub(crate) mod testing {
 mod tests {
     use std::sync::Arc;
     use std::sync::mpsc;
-    use std::time::Duration;
 
     use apertrust_export::png;
     use apertrust_export::settings::OnConflict;
@@ -964,7 +970,7 @@ mod tests {
     use crate::export::export_at;
     use crate::gpu::GpuOptions;
     use crate::jobs::{Argument, JobEvent, JobId, Queue, State};
-    use crate::session::{Command, Session, SessionError};
+    use crate::session::{Command, Session, SessionError, TEST_WAIT};
 
     /// The build the tests' sessions record.
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
@@ -1054,7 +1060,7 @@ mod tests {
         Command::Export {
             photos: photos.iter().map(|p| p.to_path_buf()).collect(),
             settings: ExportSettings {
-                path: format!("{}/$(FILE_NAME)", folder.display()),
+                path: testing::path_in(folder, "$(FILE_NAME)"),
                 on_conflict: OnConflict::CreateUniqueFilename,
                 format: Format::Png(png::Options::default()),
                 size: Request::default(),
@@ -1169,11 +1175,9 @@ mod tests {
         /// Reads events until one of them, of all so far, satisfies `last`.
         fn until(&mut self, last: impl Fn(&Event) -> bool) {
             while !self.events.iter().any(&last) {
-                self.wakes
-                    .recv_timeout(Duration::from_secs(60))
-                    .unwrap_or_else(|_| {
-                        panic!("still waiting, {} events heard", self.events.len())
-                    });
+                self.wakes.recv_timeout(TEST_WAIT).unwrap_or_else(|_| {
+                    panic!("still waiting, {} events heard", self.events.len())
+                });
                 self.events.extend(self.session.events());
             }
         }
@@ -1365,7 +1369,7 @@ mod tests {
             None,
         ];
         for command in between {
-            begun.recv_timeout(Duration::from_secs(60)).unwrap();
+            begun.recv_timeout(TEST_WAIT).unwrap();
             chosen.push(strips.try_recv().expect("chosen as the render was planned"));
             if let Some(command) = command {
                 client.send(command);
@@ -1458,7 +1462,7 @@ mod tests {
         let command = client.send(export(&[&photos[0], &photos[1]], &folder));
         let job = client.job(command);
         // The first photo's render has begun: its file is being written beside its name.
-        begun.recv_timeout(Duration::from_secs(60)).unwrap();
+        begun.recv_timeout(TEST_WAIT).unwrap();
         assert_eq!(temporaries(&folder).len(), 1, "{:?}", listed(&folder));
         client.send(Command::CancelJob { job });
         permit.send(()).unwrap();
@@ -1500,7 +1504,7 @@ mod tests {
         client.send(export(&[&photos[0], &photos[1]], &folder));
         // The first photo's first render step holds the engine thread, its file being
         // written beside its name.
-        begun.recv_timeout(Duration::from_secs(60)).unwrap();
+        begun.recv_timeout(TEST_WAIT).unwrap();
         assert_eq!(temporaries(&folder).len(), 1, "{:?}", listed(&folder));
         let Client { session, .. } = client;
         let (ended, done) = mpsc::channel();
@@ -1510,7 +1514,7 @@ mod tests {
         });
         // The step ends; the session's end cancels the export, which can be cancelled.
         permit.send(()).unwrap();
-        done.recv_timeout(Duration::from_secs(60))
+        done.recv_timeout(TEST_WAIT)
             .expect("the session ends with its export in flight");
         assert!(listed(&folder).is_empty(), "{:?}", listed(&folder));
         let _ = std::fs::remove_dir_all(&folder);
@@ -1526,7 +1530,7 @@ mod tests {
         let first = client.send(export(&[&folder.join("a.ARW")], &folder));
         let second = client.send(export(&[&folder.join("b.ARW")], &folder));
         let (first, second) = (client.job(first), client.job(second));
-        begun.recv_timeout(Duration::from_secs(60)).unwrap();
+        begun.recv_timeout(TEST_WAIT).unwrap();
         client.until(|e| moves(e, second, State::Queued));
         // The first holds the engine thread in its first step: the second has not run.
         assert!(
@@ -1616,7 +1620,7 @@ mod tests {
         let command = client.send(export(&[&live], &out));
         let job = client.job(command);
         // Sent while the export's render is under way, and applied before it ends.
-        begun.recv_timeout(Duration::from_secs(60)).unwrap();
+        begun.recv_timeout(TEST_WAIT).unwrap();
         let after = client.send(brightness(1.5, true));
         permit.send(()).unwrap();
         client.frame(after);

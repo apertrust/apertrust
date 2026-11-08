@@ -32,8 +32,65 @@
 //!
 //! Bulk listing and cloud placeholders' flags, which need foreign calls, are planned.
 
+use std::borrow::Cow;
+use std::path::Path;
+
 mod temporary;
 mod write;
 
 pub use temporary::{STALE_AFTER, create, is_temporary_name, remove_if_stale};
 pub use write::{Retry, Written, persist_retrying, write};
+
+/// `path` as `tempfile` must be given it to reach any length: on Windows absolute, with
+/// `\\?\` before it, since `tempfile` hands its paths to Windows as they are, where a path
+/// of 260 characters or more is not found (std's own calls add the prefix themselves);
+/// elsewhere, or where it cannot be made absolute, `path` as it is.
+fn long_path(path: &Path) -> Cow<'_, Path> {
+    #[cfg(windows)]
+    if let Some(verbatim) = verbatim(path) {
+        return Cow::Owned(verbatim);
+    }
+    Cow::Borrowed(path)
+}
+
+/// `path` made absolute and verbatim, `\\?\C:\…` or `\\?\UNC\server\share\…`; `None` for one
+/// that is verbatim already or cannot be made absolute.
+#[cfg(windows)]
+fn verbatim(path: &Path) -> Option<std::path::PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Component, Prefix};
+    // `absolute` resolves `.`, `..` and `/`, which a verbatim path would take literally.
+    let full = std::path::absolute(path).ok()?;
+    let Some(Component::Prefix(prefix)) = full.components().next() else {
+        return None;
+    };
+    let wide = full.as_os_str().encode_wide();
+    let long: Vec<u16> = match prefix.kind() {
+        Prefix::Disk(_) => r"\\?\".encode_utf16().chain(wide).collect(),
+        // `\\server\share\…` with its first backslash taken by `UNC`.
+        Prefix::UNC(..) => r"\\?\UNC".encode_utf16().chain(wide.skip(1)).collect(),
+        _ => return None,
+    };
+    Some(OsString::from_wide(&long).into())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_windows_path_is_made_verbatim_and_resolved() {
+        let long = |path: &str| long_path(Path::new(path)).into_owned();
+        assert_eq!(long(r"C:\a\..\b/c.jpg"), Path::new(r"\\?\C:\b\c.jpg"));
+        assert_eq!(
+            long(r"\\nas\photos\out\a.jpg"),
+            Path::new(r"\\?\UNC\nas\photos\out\a.jpg")
+        );
+        assert_eq!(long(r"\\?\C:\x\y"), Path::new(r"\\?\C:\x\y"));
+        // A relative path starts in the current folder.
+        let here = std::env::current_dir().expect("the current folder");
+        let expected = format!(r"\\?\{}", here.join("a.jpg").display());
+        assert_eq!(long("a.jpg"), Path::new(&expected));
+    }
+}

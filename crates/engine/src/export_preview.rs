@@ -569,10 +569,10 @@ mod tests {
 
     use super::*;
     use crate::compute::GpuImage;
-    use crate::export_job::testing::Hold;
+    use crate::export_job::testing::{Hold, path_in};
     use crate::gpu::{GpuContext, GpuOptions};
     use crate::pipeline;
-    use crate::session::{Command, Decoded, Session, SessionError};
+    use crate::session::{Command, Decoded, Session, SessionError, TEST_WAIT};
 
     const MODULES: &[&dyn Module] = &[&Sample];
 
@@ -672,7 +672,7 @@ mod tests {
     #[test]
     fn a_photo_is_named_by_the_path_and_the_formats_extension() {
         let out = scratch("one");
-        let path = format!("{}/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(FILE_NAME)");
         let settings = settings(&path, OnConflict::CreateUniqueFilename);
         let run = run(photos(&out, &["IMG_2041.ARW"]), settings, None);
         let preview = preview(&run);
@@ -697,7 +697,7 @@ mod tests {
     fn several_photos_and_no_variable_add_the_sequence_and_say_so() {
         let out = scratch("sequence");
         let raws = photos(&out, &["a.ARW", "b.ARW", "c.ARW"]);
-        let path = format!("{}/final", out.display());
+        let path = path_in(&out, "final");
         let several = run(raws.clone(), settings(&path, OnConflict::Skip), None);
         let said = preview(&several);
         assert!(said.sequence_added);
@@ -712,7 +712,7 @@ mod tests {
         assert_eq!(files(&alone, &out), ["final.png"]);
         // A variable in the path is the person's own way to tell the names apart, and
         // `$(SEQUENCE)` is one: nothing is added to it.
-        let path = format!("{}/$(SEQUENCE)_$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(SEQUENCE)_$(FILE_NAME)");
         let own = run(raws, settings(&path, OnConflict::Skip), None);
         let given = preview(&own);
         assert!(!given.sequence_added);
@@ -730,7 +730,7 @@ mod tests {
             fs::write(out.join(name), b"there").unwrap();
         }
         let raws = photos(&out, &["a.ARW", "b.ARW", "c.ARW"]);
-        let path = format!("{}/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(FILE_NAME)");
         let on = |on_conflict| preview(&run(raws.clone(), settings(&path, on_conflict), None));
         let counts = |exist, numbered, overwritten, skipped| Counts {
             exist,
@@ -790,7 +790,7 @@ mod tests {
             out.join("card1").join("IMG_0001.ARW"),
             out.join("card2").join("IMG_0001.ARW"),
         ];
-        let path = format!("{}/all/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "all/$(FILE_NAME)");
         let on = |on_conflict| preview(&run(raws.clone(), settings(&path, on_conflict), None));
         assert_eq!(
             files(&on(OnConflict::CreateUniqueFilename), &out),
@@ -807,7 +807,7 @@ mod tests {
     fn two_photos_differing_only_in_case_are_one_name_where_the_system_folds_case() {
         let out = scratch("case");
         let raws = photos(&out, &["img.ARW", "IMG.ARW"]);
-        let path = format!("{}/all/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "all/$(FILE_NAME)");
         let preview = preview(&run(
             raws,
             settings(&path, OnConflict::CreateUniqueFilename),
@@ -827,7 +827,7 @@ mod tests {
         let raws = photos(&out, &["a.ARW"]);
         let on = |path: &str| preview(&run(raws.clone(), settings(path, OnConflict::Skip), None));
         // Missing: made by the export, from the nearest folder there.
-        let missing = on(&format!("{}/not/yet/$(FILE_NAME)", out.display()));
+        let missing = on(&path_in(&out, "not/yet/$(FILE_NAME)"));
         assert_eq!(
             missing.folders,
             [FolderCheck {
@@ -837,7 +837,7 @@ mod tests {
         );
         // A file in the way.
         fs::write(out.join("file"), b"x").unwrap();
-        let blocked = on(&format!("{}/file/$(FILE_NAME)", out.display()));
+        let blocked = on(&path_in(&out, "file/$(FILE_NAME)"));
         assert_eq!(
             blocked.folders[0].preflight,
             Preflight::Blocked {
@@ -865,7 +865,7 @@ mod tests {
         let locked = out.join("locked");
         fs::create_dir(&locked).unwrap();
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
-        let path = format!("{}/new/$(FILE_NAME)", locked.display());
+        let path = path_in(&locked, "new/$(FILE_NAME)");
         let raws = photos(&out, &["a.ARW"]);
         let told = preview(&run(raws, settings(&path, OnConflict::Skip), None));
         let made = locked.join("new").exists();
@@ -957,7 +957,7 @@ mod tests {
         assert_eq!(bare.counts().unnamed, 2);
         assert!(bare.folders.is_empty());
         // Ending in a folder, the file name follows it, as darktable's does.
-        let path = format!("{}/$(TITLE)", out.display());
+        let path = path_in(&out, "$(TITLE)");
         let folder = preview(&run(raws, settings(&path, OnConflict::Skip), None));
         assert_eq!(files(&folder, &out), ["a.png", "b.png"]);
         assert_eq!(listed(&out), Vec::<String>::new());
@@ -966,10 +966,7 @@ mod tests {
     #[test]
     fn the_variables_with_no_value_here_are_listed_once() {
         let out = scratch("nothere");
-        let path = format!(
-            "{}/$(STARS)_$(OPENCL.ACTIVATED)_$(STARS)_$(FILE_NAME)",
-            out.display()
-        );
+        let path = path_in(&out, "$(STARS)_$(OPENCL.ACTIVATED)_$(STARS)_$(FILE_NAME)");
         let raws = photos(&out, &["a.ARW"]);
         let preview = preview(&run(raws, settings(&path, OnConflict::Skip), None));
         let names: Vec<_> = preview.not_here.iter().map(|u| u.name).collect();
@@ -982,7 +979,7 @@ mod tests {
     fn a_name_that_needs_the_decode_is_exact_only_for_the_open_photo() {
         let out = scratch("exact");
         let raws = photos(&out, &["a.ARW", "b.ARW"]);
-        let path = format!("{}/$(EXIF.MODEL)_$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(EXIF.MODEL)_$(FILE_NAME)");
         let open = active(&raws[0], false);
         let model = run(raws.clone(), settings(&path, OnConflict::Skip), Some(open));
         let preview_of_model = preview(&model);
@@ -990,7 +987,7 @@ mod tests {
         let exact: Vec<_> = preview_of_model.names.iter().map(|n| n.exact).collect();
         assert_eq!(exact, [true, false]);
         // A path that asks nothing of the decode is exact for all.
-        let path = format!("{}/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(FILE_NAME)");
         let plain = run(raws, settings(&path, OnConflict::Skip), None);
         assert!(preview(&plain).names.iter().all(|n| n.exact));
     }
@@ -1017,7 +1014,7 @@ mod tests {
     fn the_open_photos_size_is_reported_and_a_size_that_leaves_no_image_is_a_problem() {
         let out = scratch("size");
         let raws = photos(&out, &["a.ARW", "b.ARW"]);
-        let path = format!("{}/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(FILE_NAME)");
         let size_of = |request: Request, active: Option<Active>| {
             let mut settings = settings(&path, OnConflict::Skip);
             settings.size = request;
@@ -1078,7 +1075,7 @@ mod tests {
         let out = scratch("changed");
         let raws = photos(&out, &["a.ARW"]);
         fs::write(out.join("a.png"), b"there").unwrap();
-        let path = format!("{}/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(FILE_NAME)");
         let on = |active| {
             let settings = settings(&path, OnConflict::OverwriteIfChanged);
             preview(&run(raws.clone(), settings, active)).counts()
@@ -1092,7 +1089,7 @@ mod tests {
     #[test]
     fn a_cancel_asked_between_photos_ends_the_preview_with_no_answer() {
         let out = scratch("cancel");
-        let path = format!("{}/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "$(FILE_NAME)");
         let raws = photos(&out, &["a.ARW", "b.ARW", "c.ARW"]);
         let run = run(raws, settings(&path, OnConflict::Skip), None);
         let asked = std::cell::Cell::new(0);
@@ -1158,9 +1155,7 @@ mod tests {
     /// Reads events until the session has answered with a preview.
     fn until_answered(session: &Session, wakes: &Receiver<()>, events: &mut Vec<Event>) {
         while previews(events).is_empty() {
-            wakes
-                .recv_timeout(Duration::from_secs(60))
-                .expect("a preview answers");
+            wakes.recv_timeout(TEST_WAIT).expect("a preview answers");
             events.extend(session.events());
         }
     }
@@ -1176,13 +1171,13 @@ mod tests {
         // The first preview is under way, held.
         let (hold, began, permit) = Hold::new();
         session.send(Command::HoldPreview(hold));
-        let old = format!("{}/old/$(FILE_NAME)", out.display());
+        let old = path_in(&out, "old/$(FILE_NAME)");
         let first = session.send(command(&raws, &old));
         began
-            .recv_timeout(Duration::from_secs(60))
+            .recv_timeout(TEST_WAIT)
             .expect("the first preview begins");
         // A newer one cancels it, and is the one answered.
-        let new = format!("{}/new/$(FILE_NAME)", out.display());
+        let new = path_in(&out, "new/$(FILE_NAME)");
         let second = session.send(command(&raws, &new));
         assert!(second > first);
         until_answered(&session, &wakes, &mut events);
@@ -1207,11 +1202,9 @@ mod tests {
         let (session, _wakes) = session(&gpu);
         let (hold, began, permit) = Hold::new();
         session.send(Command::HoldPreview(hold));
-        let path = format!("{}/export/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "export/$(FILE_NAME)");
         session.send(command(&raws, &path));
-        began
-            .recv_timeout(Duration::from_secs(60))
-            .expect("the preview begins");
+        began.recv_timeout(TEST_WAIT).expect("the preview begins");
         // The session ends on a thread of its own, since it waits for the preview (J9).
         let (ended, ends) = mpsc::channel();
         let dropping = std::thread::spawn(move || {
@@ -1224,7 +1217,7 @@ mod tests {
         );
         // Let the preview go on: the session ends, with no hang.
         permit.send(()).unwrap();
-        ends.recv_timeout(Duration::from_secs(60))
+        ends.recv_timeout(TEST_WAIT)
             .expect("the session ends once the preview has");
         dropping.join().expect("the drop does not panic");
         // Nothing was written or made.
@@ -1242,7 +1235,7 @@ mod tests {
             height: 48,
         });
         session.send(Command::Open(raw.clone()));
-        let path = format!("{}/export/$(FILE_NAME)", out.display());
+        let path = path_in(&out, "export/$(FILE_NAME)");
         let sent = session.send(command(&[raw.clone(), out.join("b.ARW")], &path));
         let mut events = Vec::new();
         until_answered(&session, &wakes, &mut events);

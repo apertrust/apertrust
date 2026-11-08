@@ -140,7 +140,9 @@ fn read(path: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(path);
-    fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    // A Windows checkout may end each line with CR LF; the tests match LF alone.
+    text.replace("\r\n", "\n")
 }
 
 /// The extensions rawler decodes, lower case, as the packages name them.
