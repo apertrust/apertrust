@@ -1914,7 +1914,7 @@ Built: the bar, the labels and icons, each built module's tab and place, History
 - **Each module sits in darktable's group** in the scene-referred preset, and a tab lists its modules as darktable's right panel does, in pipeline order with the last module at the top:
   - Base: Local contrast, the edit's tone mapper, Crop, Tone equalizer, Exposure, Orientation, Rotate and perspective, Highlight reconstruction, White balance;
   - Colour: Colour balance RGB, Colour equalizer, RGB primaries, Colour calibration;
-  - Correct: Sharpen, Retouch, Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled);
+  - Correct: Sharpen, Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled), with retouch as layers in Phase 4 ([layers.md](layers.md#retouch-layers));
   - Effect: Vignetting, Grain, Diffuse or sharpen.
 
   [modules/README.md](modules/README.md) keeps the lists, and its sections follow them. The modules the preset puts in no group (Raw black/white point, Demosaic, Input and Output colour profile, RGB curve, RGB levels, Soften, Bloom) each take the tab darktable's other layouts give it (modules/README.md, In no group). darktable's module search can come as work of its own.
