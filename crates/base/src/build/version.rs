@@ -31,6 +31,12 @@ pub struct Version {
     /// How many commits lead to this one: a number that only grows along main, for what
     /// takes numbers only. `None` when a packager gives the version.
     pub build: Option<u32>,
+    /// Whether this is a development build, Apertrust Dev, with a name, an id and a user
+    /// data folder of its own (docs/settings.md, Development builds): once the history has
+    /// a release tag, a build not on one, or with changes. Before the first release tag,
+    /// and for a packager's version, never; a nightly package says so itself
+    /// (`APERTRUST_DEV`, which the `build` module reads).
+    pub dev: bool,
 }
 
 impl Version {
@@ -65,6 +71,7 @@ pub fn read(root: &Path, given: Option<&str>) -> Result<Version, String> {
         return Ok(Version {
             full: given.to_owned(),
             build: None,
+            dev: false,
         });
     }
     // Its own `.git` only, a folder in a worktree: a source archive unpacked inside
@@ -98,6 +105,7 @@ fn from_git(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<Version, 
         "--match",
         "release-[0-9]*",
     ]);
+    let released = described.is_ok();
     let release = match described {
         Ok(described) => from_describe(&described)?,
         // No release yet, as if one were tagged before the first commit. Only then: the
@@ -118,6 +126,8 @@ fn from_git(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<Version, 
     let changes = git(&["status", "--porcelain", "--untracked-files=no"])?;
     let dirty = if changes.is_empty() { "" } else { "-dirty" };
     Ok(Version {
+        // A development build once a release exists: commits after its tag, or changes.
+        dev: released && (release.contains('+') || !dirty.is_empty()),
         full: format!("{release}{dirty}"),
         build: Some(build),
     })
@@ -195,6 +205,7 @@ mod tests {
             Version {
                 full: full.to_owned(),
                 build,
+                dev: false,
             }
             .numbers()
         };
@@ -241,6 +252,7 @@ mod tests {
         let version = from_git(git("")).unwrap();
         assert_eq!(version.full, "0.0.0+5~gabc1234");
         assert_eq!(version.build, Some(5));
+        assert!(!version.dev, "no release yet: no development build");
         assert_eq!(
             from_git(git("release-0.1.0")).err().as_deref(),
             Some("git describe failed"),
@@ -300,6 +312,10 @@ mod tests {
         (version.full, version.build)
     }
 
+    fn dev(dir: &Path) -> bool {
+        read(dir, None).unwrap().dev
+    }
+
     #[test]
     fn the_version_follows_the_repository() {
         let dir = scratch("follows");
@@ -315,6 +331,7 @@ mod tests {
             (format!("0.0.0+1~g{hash}"), Some(1)),
             "no release yet: tags that are no release are ignored"
         );
+        assert!(!dev(&dir), "no release yet: no development build");
         git_in(&dir, &["checkout", "-q", "-b", "other"]);
         commit(&dir, "elsewhere");
         git_in(&dir, &["tag", "release-9.0.0"]);
@@ -324,9 +341,11 @@ mod tests {
             (format!("0.0.0+1~g{hash}"), Some(1)),
             "a release on another branch is not this commit's"
         );
+        assert!(!dev(&dir), "nor does it make this one a development build");
 
         git_in(&dir, &["tag", "release-0.1.0"]);
         assert_eq!(version(&dir), ("0.1.0".into(), Some(1)), "on the tag");
+        assert!(!dev(&dir), "a release");
         commit(&dir, "two");
         let hash = commit(&dir, "three");
         assert_eq!(
@@ -334,6 +353,7 @@ mod tests {
             (format!("0.1.0+2~g{hash}"), Some(3)),
             "two commits after it"
         );
+        assert!(dev(&dir), "after a release: a development build");
 
         git_in(&dir, &["tag", "release-0.2"]);
         let refused = read(&dir, None).unwrap_err();
@@ -359,6 +379,7 @@ mod tests {
             .unwrap();
         fs::write(dir.join("untracked"), "new\n").unwrap();
         assert_eq!(version(&dir).0, "0.1.0", "an untracked file does not count");
+        assert!(!dev(&dir));
         assert_eq!(
             fs::read(&index).unwrap(),
             before,
@@ -367,6 +388,7 @@ mod tests {
 
         fs::write(dir.join("tracked"), "two\n").unwrap();
         assert_eq!(version(&dir).0, "0.1.0-dirty");
+        assert!(dev(&dir), "on the tag with changes: a development build");
         let hash = commit(&dir, "two");
         assert_eq!(version(&dir).0, format!("0.1.0+1~g{hash}-dirty"));
         git_in(&dir, &["add", "tracked"]);
@@ -383,7 +405,12 @@ mod tests {
         assert!(read(&dir, Some("")).is_err(), "empty counts as unset");
 
         repository(&dir);
-        assert_eq!(read(&dir, Some("2.0.0")).unwrap().full, "2.0.0");
+        git_in(&dir, &["tag", "release-0.1.0"]);
+        commit(&dir, "two");
+        assert!(dev(&dir));
+        let given = read(&dir, Some("2.0.0")).unwrap();
+        assert_eq!(given.full, "2.0.0");
+        assert!(!given.dev, "a packager's version is a release");
         assert_eq!(read(&dir, Some("")).unwrap(), read(&dir, None).unwrap());
         let _ = fs::remove_dir_all(&dir);
     }

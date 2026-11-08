@@ -151,7 +151,8 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 ### Installable builds
 
 - [x] Packages built by one tool, cargo-packager, from one config (decision 68; [packaging.md](packaging.md)): an app bundle and a disk image for each architecture on macOS, Apple silicon and Intel, an NSIS installer and a portable zip on Windows, an AppImage and a tarball on Linux, each with the CLI and the licences, and the raw file types on every platform. Built and checked on the Mac; signed ad hoc, not notarised.
-- [ ] Release and nightly workflows that build every package on its own platform, verifying Windows' and Linux's.
+- [ ] Nightly builds of Apertrust Dev, which installs beside Apertrust, each package on its own platform (`nightly-builds.yml`; [packaging.md](packaging.md#nightly-builds)): written, done once a run on main has built and published every package, verifying Windows' and Linux's.
+- [ ] A release workflow for version tags, building every package on its own platform.
 
 ## Phase 3: core editing complete
 

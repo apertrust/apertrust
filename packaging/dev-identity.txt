@@ -1,0 +1,32 @@
+# Apertrust Dev's identity, a development build's, which installs beside Apertrust
+# (docs/packaging.md, Apertrust Dev): `tools/package.sh --dev` replaces each text left
+# of " => " with the text right of it, wherever it occurs, in Packager.toml,
+# macos/Info.plist and the Linux desktop entry and metadata, before filling them in.
+# crates/app/tests/packaging.rs applies these lines to the same files and checks that
+# each one still matches and the result names Apertrust Dev throughout.
+
+# Packager.toml: the name of the files and the binaries, the name shown, the id, the
+# Windows ProgID, and the Linux files the package takes, written by the script.
+name = "apertrust" => name = "apertrust-dev"
+productName = "Apertrust" => productName = "Apertrust Dev"
+identifier = "org.apertrust.Apertrust" => identifier = "org.apertrust.Apertrust.Dev"
+{ path = "apertrust", main = true } => { path = "apertrust-dev", main = true }
+{ path = "apertrust-cli" } => { path = "apertrust-dev-cli" }
+name = "Apertrust.RawImage" => name = "Apertrust.Dev.RawImage"
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop' => '@STAGE@/org.apertrust.Apertrust.Dev.desktop'
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.metainfo.xml" => '@STAGE@/org.apertrust.Apertrust.Dev.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.Dev.metainfo.xml"
+
+# macos/Info.plist: CFBundleName and CFBundleDisplayName.
+<string>Apertrust</string> => <string>Apertrust Dev</string>
+
+# linux/org.apertrust.Apertrust.desktop; its icon stays Apertrust's.
+Name=Apertrust => Name=Apertrust Dev
+Exec=apertrust %f => Exec=apertrust-dev %f
+StartupWMClass=apertrust => StartupWMClass=apertrust-dev
+
+# linux/org.apertrust.Apertrust.metainfo.xml
+<id>org.apertrust.Apertrust</id> => <id>org.apertrust.Apertrust.Dev</id>
+<name>Apertrust</name> => <name>Apertrust Dev</name>
+<launchable type="desktop-id">org.apertrust.Apertrust.desktop</launchable> => <launchable type="desktop-id">org.apertrust.Apertrust.Dev.desktop</launchable>
+<binary>apertrust</binary> => <binary>apertrust-dev</binary>
+<binary>apertrust-cli</binary> => <binary>apertrust-dev-cli</binary>

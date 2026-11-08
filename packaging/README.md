@@ -14,10 +14,11 @@ The first run downloads cargo-packager's own tools: create-dmg on macOS, NSIS on
 
 ```sh
 tools/package.sh                              # this platform's packages
+tools/package.sh --dev                        # Apertrust Dev's, as the nightly builds are
 APERTRUST_VERSION=0.2.0 tools/package.sh      # with a version of your own
 ```
 
-The packages land in `target/package/<target>/out`. The version comes from the newest `release-X.Y.Z` tag, as `0.0.0+N~gHASH` before the first.
+The packages land in `target/package/<target>/out`. The version comes from the newest `release-X.Y.Z` tag, as `0.0.0+N~gHASH` before the first. `--dev` packages Apertrust Dev, which installs beside Apertrust under its own name, id and files, from `dev-identity.txt` ([docs/packaging.md](../docs/packaging.md#apertrust-dev)).
 
 | Platform | Needs | Packages |
 | --- | --- | --- |
@@ -55,8 +56,9 @@ The packages land in `target/package/<target>/out`. The version comes from the n
 | File | What it is |
 | --- | --- |
 | `Packager.toml` | cargo-packager's configuration for every platform |
+| `dev-identity.txt` | Apertrust Dev's name, id and files, replacing Apertrust's for `--dev` |
 | `macos/Info.plist` | The bundle's keys, merged over cargo-packager's |
-| `macos/dmg/` | The disk image's background and Finder layout; `tools/build-dmg-background.sh` writes the background |
+| `macos/dmg/` | The disk image's background and Finder layouts, Apertrust's and Apertrust Dev's; `tools/build-dmg-background.sh` writes the background |
 | `windows/installer.nsi` | The installer's script, with the Open With entries and the uninstaller |
 | `linux/org.apertrust.Apertrust.desktop` | The desktop entry, with every raw format's MIME type |
 | `linux/org.apertrust.Apertrust.metainfo.xml` | The AppStream metadata |

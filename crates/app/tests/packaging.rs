@@ -17,8 +17,9 @@
 //! The packages' metadata in `packaging/` against the app: each platform's file types
 //! hold every extension rawler decodes and no other, so a rawler update that adds one
 //! fails here until the packages open it too, the Windows installer's template in Open
-//! With alone; the app's id is the same everywhere; and the plist the binary embeds
-//! agrees with the bundle's (docs/packaging.md).
+//! With alone; the app's id is the same everywhere, Apertrust's and, as
+//! `packaging/dev-identity.txt` makes the files for `tools/package.sh --dev`, Apertrust
+//! Dev's; and the plist the binary embeds agrees with the bundle's (docs/packaging.md).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -319,6 +320,12 @@ fn the_installer_offers_every_decoded_extension_in_open_with_alone() {
     }
 }
 
+/// The program as a build names it, a development build or not.
+fn program(dev: bool) -> apertrust_base::log::Program {
+    let dev = if dev { "1" } else { "" };
+    apertrust_base::log::Program::from_build("apertrust", "0.0.0", "", dev, "", "")
+}
+
 #[test]
 fn every_package_names_the_app_by_one_id() {
     let config: toml::Table = read("packaging/Packager.toml").parse().expect("TOML");
@@ -330,8 +337,120 @@ fn every_package_names_the_app_by_one_id() {
     assert!(metainfo.contains(&format!(
         "<launchable type=\"desktop-id\">{APP_ID}.desktop</launchable>"
     )));
+    assert_eq!(program(false).app_id(), APP_ID, "the window's");
     let main = read("crates/app/src/main.rs");
-    assert!(main.contains(&format!("const APP_ID: &str = \"{APP_ID}\";")));
+    assert!(main.contains("const APP_ID: &str = apertrust_base::program!().app_id();"));
+}
+
+/// The files `tools/package.sh --dev` gives Apertrust Dev's identity.
+const DEV_FILES: [&str; 4] = [
+    "packaging/Packager.toml",
+    "packaging/macos/Info.plist",
+    "packaging/linux/org.apertrust.Apertrust.desktop",
+    "packaging/linux/org.apertrust.Apertrust.metainfo.xml",
+];
+
+/// `packaging/dev-identity.txt`'s replacements, `FROM => TO`, as the script reads them.
+fn dev_identity() -> Vec<(String, String)> {
+    read("packaging/dev-identity.txt")
+        .lines()
+        .map(|line| line.trim_end_matches('\r'))
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let (from, to) = line.split_once(" => ").expect("FROM => TO");
+            (from.to_owned(), to.to_owned())
+        })
+        .collect()
+}
+
+/// A file of `packaging/` as `tools/package.sh --dev` reads it: each replacement made
+/// wherever its text occurs, in order.
+fn as_dev(path: &str) -> String {
+    let mut text = read(path);
+    for (from, to) in dev_identity() {
+        text = text.replace(&from, &to);
+    }
+    text
+}
+
+#[test]
+fn every_dev_identity_line_still_matches() {
+    let files: Vec<String> = DEV_FILES.iter().map(|path| read(path)).collect();
+    for (from, _) in dev_identity() {
+        assert!(
+            files.iter().any(|text| text.contains(&from)),
+            "{from:?} in none of {DEV_FILES:?}: packaging/dev-identity.txt is stale"
+        );
+    }
+}
+
+/// Apertrust Dev's packages name it by its own id, name, binaries and Open With entry, so
+/// that it installs beside Apertrust; its icon is Apertrust's.
+#[test]
+fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
+    let id = program(true).app_id();
+    assert_eq!(id, format!("{APP_ID}.Dev"));
+    assert_eq!(program(true).app_name(), "Apertrust Dev");
+
+    let config: toml::Table = as_dev("packaging/Packager.toml").parse().expect("TOML");
+    assert_eq!(config["identifier"].as_str(), Some(id));
+    assert_eq!(config["name"].as_str(), Some("apertrust-dev"));
+    assert_eq!(config["productName"].as_str(), Some("Apertrust Dev"));
+    let binaries: Vec<(&str, bool)> = config["binaries"]
+        .as_array()
+        .expect("binaries")
+        .iter()
+        .map(|binary| {
+            let main = binary.get("main").and_then(toml::Value::as_bool);
+            (binary["path"].as_str().expect("a path"), main == Some(true))
+        })
+        .collect();
+    assert_eq!(
+        binaries,
+        [("apertrust-dev", true), ("apertrust-dev-cli", false)]
+    );
+    let associations = config["fileAssociations"].as_array().expect("associations");
+    for association in associations {
+        assert_eq!(association["name"].as_str(), Some("Apertrust.Dev.RawImage"));
+    }
+    assert_eq!(
+        config["deb"]["desktopTemplate"].as_str(),
+        Some(format!("@STAGE@/{id}.desktop").as_str())
+    );
+    let files = config["appimage"]["files"].as_table().expect("files");
+    let metainfo = format!("@STAGE@/{id}.metainfo.xml");
+    assert_eq!(
+        files.get(&metainfo).and_then(toml::Value::as_str),
+        Some(format!("usr/share/metainfo/{id}.metainfo.xml").as_str())
+    );
+
+    let plist = as_dev("packaging/macos/Info.plist");
+    for key in ["CFBundleName", "CFBundleDisplayName"] {
+        let pair = format!("<key>{key}</key>\n\t<string>Apertrust Dev</string>");
+        assert!(plist.contains(&pair), "{key}");
+    }
+
+    let desktop = as_dev("packaging/linux/org.apertrust.Apertrust.desktop");
+    for line in ["Name=Apertrust Dev", "Exec=apertrust-dev %f"] {
+        assert!(
+            desktop.contains(&format!("\n{line}\n")),
+            "{line} in {desktop}"
+        );
+    }
+    assert!(
+        desktop.contains(&format!("\nIcon={APP_ID}\n")),
+        "Apertrust's icon"
+    );
+    let metainfo = as_dev("packaging/linux/org.apertrust.Apertrust.metainfo.xml");
+    for element in [
+        format!("<id>{id}</id>"),
+        "<name>Apertrust Dev</name>".to_owned(),
+        format!("<launchable type=\"desktop-id\">{id}.desktop</launchable>"),
+        "<binary>apertrust-dev</binary>".to_owned(),
+        "<binary>apertrust-dev-cli</binary>".to_owned(),
+    ] {
+        assert!(metainfo.contains(&element), "{element} in {metainfo}");
+    }
 }
 
 #[test]

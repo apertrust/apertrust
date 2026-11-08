@@ -1,0 +1,199 @@
+name: Nightly builds
+
+# Apertrust Dev's packages, built each night from main, each on its own platform, and
+# published as the `nightly` pre-release, whose tag moves to the commit built
+# (docs/packaging.md, Nightly builds). Nothing is built when main has not changed since
+# the last nightly, unless a run by hand forces it; nothing is published when any build
+# fails, or from a branch other than main.
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build and publish even when main has not changed since the last nightly
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One nightly at a time: a second waits for the first.
+concurrency:
+  group: nightly-builds
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PACKAGER: 0.11.8
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.changed.outputs.build }}
+      sha: ${{ github.sha }}
+    steps:
+      - name: Compare with the last nightly
+        id: changed
+        env:
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          last=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" refs/tags/nightly | cut -f1)
+          echo "last nightly: ${last:-none}, this commit: $GITHUB_SHA"
+          if [ "$FORCE" = true ] || [ "$last" != "$GITHUB_SHA" ]; then
+            echo "build=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "main has not changed since the last nightly: nothing to build"
+            echo "build=false" >>"$GITHUB_OUTPUT"
+          fi
+
+  # Both chips' disk images, Apple silicon native and Intel cross-built.
+  macos:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          # The version counts every commit since the last release tag (decision 44).
+          fetch-depth: 0
+          persist-credentials: false
+      # rustup installs the toolchain pinned in rust-toolchain.toml on first use.
+      - run: cargo --version
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: tools/package.sh --dev
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-macos
+          path: target/package/*/out/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The scripts as committed, with LF line ends, which Git Bash needs: the runner's git
+      # would check them out with CRLF.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: cargo --version
+      - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: tools/package.sh --dev
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-windows
+          path: |
+            target/package/*/out/*-setup.exe
+            target/package/*/out/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: cargo --version
+      - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: tools/package.sh --dev
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-linux
+          path: |
+            target/package/*/out/*.AppImage
+            target/package/*/out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # Only after every build succeeded, and only from main.
+  publish:
+    needs: [check, macos, windows, linux]
+    if: needs.check.outputs.build == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ needs.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: packages-*
+          path: downloads
+          merge-multiple: true
+      # The files in one folder (the Mac's come in a folder per chip). GitHub renames an
+      # asset whose name holds other characters than letters, digits, `.`, `-` and `_`:
+      # the version's `+` becomes `.` here, so that each file is published under the
+      # name its checksum gives.
+      - name: Name the files and sum them
+        run: |
+          mkdir dist
+          find downloads -type f -exec mv -t dist -- {} +
+          cd dist
+          for file in *; do
+            safe=$(printf '%s' "$file" | tr -c 'A-Za-z0-9._-' '.')
+            [ "$safe" = "$file" ] || mv -- "$file" "$safe"
+          done
+          sha256sum -- * >SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Move the nightly tag
+        run: git push --force origin "$SHA:refs/tags/nightly"
+      - name: Replace the nightly release
+        run: |
+          cat >notes.md <<EOF
+          Apertrust Dev, built from [\`${SHA:0:7}\`](https://github.com/$GH_REPO/commit/$SHA) on main on $(date -u +%Y-%m-%d).
+
+          Nightly builds are untested development builds, made each night main changes. Apertrust Dev installs beside Apertrust, with its own name and settings, but it reads and writes the same edits beside your photos.
+
+          They are not signed: [how to open an unsigned package](https://github.com/$GH_REPO/blob/main/docs/packaging.md#unsigned-packages). \`SHA256SUMS.txt\` holds each file's SHA-256.
+          EOF
+          if gh release view nightly >/dev/null 2>&1; then
+            old=$(gh release view nightly --json assets --jq '.assets[].name')
+            gh release edit nightly --title "Nightly build" --notes-file notes.md \
+              --prerelease --latest=false
+          else
+            old=
+            gh release create nightly --verify-tag --title "Nightly build" \
+              --notes-file notes.md --prerelease --latest=false
+          fi
+          # The night's files first, then the old ones that no longer are, so the release
+          # is never left empty.
+          gh release upload nightly dist/* --clobber
+          for name in $old; do
+            if [ ! -e "dist/$name" ]; then
+              gh release delete-asset nightly "$name" --yes
+            fi
+          done
+          # Every file under the name it was given.
+          now=$(gh release view nightly --json assets --jq '.assets[].name' | sort)
+          given=$(cd dist && printf '%s\n' * | sort)
+          if [ "$now" != "$given" ]; then
+            printf 'the release holds:\n%s\nnot:\n%s\n' "$now" "$given" >&2
+            exit 1
+          fi

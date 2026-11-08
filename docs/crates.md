@@ -864,6 +864,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - Other tags are ignored. A release tag that is not three numbers, a shallow clone or a folder without git builds as `0.0.0`, with a warning saying why.
 - A packager sets `APERTRUST_VERSION`, used as given.
 - The banner, `--version` and About show it: each binary's `apertrust_base::program!()`, its `version`, with the commit count beside it as `build_number`.
+- A development build, Apertrust Dev, is `program!().dev`: once the history has a release tag, a build not on one (`Version::dev`, beside the version); and whatever the tags, a build with `APERTRUST_DEV=1`, as the nightly packages are. It names itself Apertrust Dev (`Program::app_name`, `app_id`) and finds Apertrust Dev's folder (`Folders::find(given, dev)`; [settings.md](settings.md), Development builds).
 
 ### Settings
 

@@ -2827,7 +2827,7 @@ Ctrl means Cmd on macOS.
 
 - the platform's, found through the `directories` crate: `~/Library/Application Support/Apertrust` on macOS, `%APPDATA%\Apertrust\config` on Windows, `$XDG_CONFIG_HOME/apertrust`, by default `~/.config/apertrust`, on Linux, one whole folder;
 - unless `--user-data-dir` (or `--config-dir`, or darktable's `--configdir`) or `APERTRUST_USER_DATA_DIR` names another. One given that way never falls back to the platform's, and keeps its cache inside it;
-- development builds get a folder of their own by default, Apertrust Dev, from the first release tag.
+- development builds get a folder of their own by default, Apertrust Dev's: the nightly packages always, and once a release tag exists, any build not on one ([settings.md](settings.md), Development builds).
 
 It is versioned (`version = 1`) and migrated as `.apxmp` is. It holds:
 

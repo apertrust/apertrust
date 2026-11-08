@@ -2,7 +2,7 @@
 
 How Apertrust's settings are declared, generated, stored and read, which folders it keeps them in, and how an edit is kept safe from another user data folder or another build (decision 43). What the desktop app keeps in its settings file and how it draws the Settings dialog are [gui.md](gui.md#settings-and-workspace)'s; the crates' state is in [crates.md](crates.md).
 
-**Status.** Built: the schema with the boolean, number, choice, text, list and table kinds, a number's unit and factor, and each setting's page and group, its generator and every owner's registry; the store with the file's rules and the merge-write; `--conf`; the user data folder with its flags and variable; edits a newer Apertrust wrote opened for viewing only; the Settings dialog's pages of rows. Planned: whole numbers, folders and platforms in the schema, each with the first setting that needs one; the cache folder, with the thumbnails; development builds' own folder, from the first release tag; the Settings dialog's hand-built pages, Storage and Shortcuts first.
+**Status.** Built: the schema with the boolean, number, choice, text, list and table kinds, a number's unit and factor, and each setting's page and group, its generator and every owner's registry; the store with the file's rules and the merge-write; `--conf`; the user data folder with its flags and variable; development builds' own folder, Apertrust Dev's; edits a newer Apertrust wrote opened for viewing only; the Settings dialog's pages of rows. Planned: whole numbers, folders and platforms in the schema, each with the first setting that needs one; the cache folder, with the thumbnails; the Settings dialog's hand-built pages, Storage and Shortcuts first.
 
 ## The settings schema
 
@@ -181,11 +181,12 @@ No other platform folder is used, XDG's data and state folders among them, so on
 - Cache entries are keyed by content and written atomically.
 - Two instances, or the app and `apertrust-cli library`, share a library through its files, with no lock: each writes whole files only when their bytes change, reads a file again before writing it if it changed, and sees the other's changes as any outside change (decisions 52 and 54). Each keeps its own cache.
 
-**Development builds,** from the first release tag:
+**Development builds** are Apertrust Dev, which installs and runs beside Apertrust ([packaging.md](packaging.md#apertrust-dev)), as nightly channels of other apps do.
 
-- A build that is not a release (`X.Y.Z+N~gHASH` or `-dirty`, decision 44) uses a folder of its own by default, Apertrust Dev (`apertrust-dev` on Linux), with its own cache, as nightly channels of other apps do.
+- **Which builds are Dev:** the nightly packages are always Dev; the nightly job says so explicitly (`tools/package.sh --dev`, which builds with `APERTRUST_DEV=1`). Every other build, from source or `cargo run`, stays Apertrust while no release tag exists, and becomes Dev once one does: a build not on a release tag, when the history has one (`X.Y.Z+N~gHASH` or `-dirty`, decision 44). The rule is one condition where the version is computed (`crates/base/src/build/version.rs`); a packager's `APERTRUST_VERSION` is a release.
+- **Its folder:** the platform's folder is Apertrust Dev's, `~/Library/Application Support/Apertrust Dev` on macOS, `%APPDATA%\Apertrust Dev\config` on Windows and `$XDG_CONFIG_HOME/apertrust-dev` on Linux, for the app and the CLI alike (`Folders::find(given, dev)`). A folder given by flag or variable is used as given. Its cache will be its own, with the first cache.
+- **Its name:** the window's title, the banner (`Apertrust Dev 0.1.0+12~gabc1234 [...]`, `Apertrust Dev CLI ...`) and the app's id, `org.apertrust.Apertrust.Dev`.
 - It separates a development build's settings only: its edits are the person's sidecars beside the photos, and a development build that understands an edit can still change it (below).
-- Before that release every build is a development build and uses Apertrust's folder.
 
 ## Edits in another user data folder
 
