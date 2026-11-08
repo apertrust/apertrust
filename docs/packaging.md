@@ -26,7 +26,7 @@ One tool builds every package, [cargo-packager](https://github.com/crabnebula-de
 In `packaging/`, beside the configuration:
 
 - `macos/Info.plist`: the bundle's keys, merged over those cargo-packager writes: the name, the version, macOS 11 at least (the oldest that runs on Apple silicon, for both architectures), the photography category, the interface's languages (en-GB, uk, pl), and the raw document types, Apertrust an editor of them at the Alternate rank, so it is offered in Open With and never takes over the raws another app opens. Each type is the system's where macOS declares one; seven formats macOS does not name (ARI, CRM, DCS, KDC, MEF, QTK, X3F) are imported as `org.apertrust.raw-image.<extension>`. The binary embeds `crates/app/assets/macos/Info.plist` for a run without a bundle; its keys agree with these.
-- `linux/org.apertrust.Apertrust.desktop`: the desktop entry, with the MIME types of every raw format; `Icon=` and the window's Wayland app id are the app's id, so the compositor finds the window's icon.
+- `linux/org.apertrust.Apertrust.desktop`: the desktop entry, with the MIME types of every raw format, its `Exec` to pass `--in-folder %F` (planned, [Opening a raw from the system](#opening-a-raw-from-the-system)); `Icon=` and the window's Wayland app id are the app's id, so the compositor finds the window's icon.
 - `linux/org.apertrust.Apertrust.metainfo.xml`: the AppStream metadata: the name, the summary, the GPL-3.0-or-later licence, the homepage and the repository.
 - `linux/org.apertrust.Apertrust.mime.xml`: the MIME types for the five formats shared-mime-info does not name (ARI, CRM, DCS, ORI, QTK), installed as `share/mime/packages/org.apertrust.Apertrust.xml`.
 - **Windows**: the executable's icon and version resource are compiled by the app's `build.rs` through winresource and the SDK's `rc.exe`. `windows/installer.nsi` is the installer's script, cargo-packager's own template at 0.11.8 with Apertrust's changes (below, Windows), which registers every raw extension in `Packager.toml`'s list.
@@ -66,6 +66,16 @@ The nightly builds are Apertrust Dev, a development build that installs and runs
 | Linux | `apertrust-dev_<version>_x86_64.AppImage` and `apertrust-dev_<version>_x86_64.tar.gz`, with `apertrust-dev` and `apertrust-dev-cli`, the desktop entry `org.apertrust.Apertrust.Dev.desktop` (named Apertrust Dev) and the metadata `org.apertrust.Apertrust.Dev.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
 
 `crates/app/tests/packaging.rs` applies `dev-identity.txt` to the files as the script does, and checks that each line still matches and that every package names Apertrust Dev by its own id.
+
+## Opening a raw from the system
+
+Planned (decision 46). A raw opened with Apertrust from the system, by Open With or a double-click, opens its folder with that photo active, where `apertrust FILE` from a terminal opens the photo alone ([library.md](library.md#folder-mode)). The app tells the two apart as each platform delivers them:
+
+- **macOS** sends Open With and a double-click as an open-documents event, not arguments, so the bundle's document types stay as they are.
+- **Windows:** the ProgID's and the `Applications` entry's `shell\open\command` is to pass `--in-folder "%1"` before the file.
+- **Linux:** the desktop entry's `Exec` is to pass `--in-folder %F`, every file chosen.
+
+The registrations change with the app's side of it, the library's step 9b ([roadmap.md](roadmap.md#the-librarys-steps)); `tests/packaging.rs` is to hold each to the flag.
 
 ## Building one
 

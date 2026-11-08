@@ -113,7 +113,7 @@ Details: [session-protocol.md](session-protocol.md) (the commands, their numberi
 Two binaries, built from the same engine crates (decision 6):
 
 - **`apertrust`:** the desktop GUI (egui), with the engine in-process. It can also expose an MCP endpoint, so agents can drive the open editing session.
-- **`apertrust-cli`:** headless, with subcommands: `export` (render edits to files, like `darktable-cli`), `batch` (apply styles or presets to many images), `info` (metadata and edit summary), `serve` (the engine for web and tablet clients on a home server) and `mcp` (MCP over stdio for local agents). It runs without a display, on a software GPU where there is no hardware one (decision 7).
+- **`apertrust-cli`:** headless, with subcommands: `export` (render edits to files, like `darktable-cli`), `batch` (apply styles or presets to many images), `info` (metadata and edit summary), `serve` (the server on a home NAS: sync for the desktop app's photos, then the engine for web and tablet clients; decision 71) and `mcp` (MCP over stdio for local agents). It runs without a display, on a software GPU where there is no hardware one (decision 7).
 
 The server and MCP parts are library crates used by these two executables, not separate programs.
 
@@ -139,7 +139,7 @@ The server and MCP parts are library crates used by these two executables, not s
 | `apertrust-golden` | The golden-image harness: per-operation cases and the whole-pipeline test | Phase 0 |
 | `apertrust-fs` | Planned only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover: bulk listing, cloud placeholders' flags, macOS's materialisation turned off, later `NSFileVersion`; an FFI crate allowed `unsafe` (decisions 53 and 65) | Phase 2, if needed |
 | `apertrust-protocol` | The session's commands and events, once a client must compile them without the engine (decision 58) | When needed |
-| `apertrust-server`, `apertrust-mcp` | Remote and agent access | Phases 6 and 7 |
+| `apertrust-server`, `apertrust-mcp` | The server, sync and then remote access (decision 71), and agent access | Phases 6 and 7 |
 
 Each crate's state, what is built and what is planned, is in [crates.md](crates.md).
 
@@ -183,12 +183,13 @@ Details: [settings.md](settings.md).
 
 ### The library and sidecars
 
-The library's design and API are in [library.md](library.md), decisions 46 to 55. In short:
+The library's design and API are in [library.md](library.md), decisions 46 to 55, 71 and 73. In short:
 
-- **Sidecars are the truth; no database ever is** (decision 46). Folder mode comes first, sidecars only; then the Library, of any size, and the Project, a small library for one job, each a folder with a short TOML file and a hidden `.apertrust/`, with nested albums and smart albums ([library.md](library.md#what-the-library-is)).
+- **Sidecars are the truth; no database ever is** (decision 46). One photo from a terminal and folder mode come first, sidecars only, a raw opened from the system opening its folder; then the Library, of any size, and the Project, a small library for one job, each a folder with a short TOML file and a hidden `.apertrust/`, with nested albums and smart albums ([library.md](library.md#what-the-library-is)).
 - **Edits** live in `.apxmp` beside the photos by default, or in a library's own folder as each root's id file says, with the optional binary `.apdata`; version 2 holds the photo's identity, its virtual copies and its history as a log of steps (decisions 47 to 50; [library.md](library.md#sidecars)).
 - **Several computers** compare two copies of a sidecar by clock vectors, keeping a diverged edit as a second virtual copy and combining metadata, with no locks; roots are found by an id file and photos by root, path and fingerprint (decisions 52 and 53; [library.md](library.md#finding-photos-and-several-computers)).
-- **The code** is `apertrust-library`, in four layers, clients seeing only `LibraryCommand` and `LibraryEvent`, served by the engine's session as jobs (decisions 54 and 57; [library.md](library.md#the-code), [The API](library.md#the-api)); a library's cache is one per machine, rebuilt from the files (decision 55; [library.md](library.md#a-librarys-cache)).
+- **A server,** planned: a self-hosted container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged as several computers' copies are (decision 71; [library.md](library.md#a-server)).
+- **The code** is `apertrust-library`, in four layers over a storage interface for local files and the server, clients seeing only `LibraryCommand` and `LibraryEvent`, served by the engine's session as jobs (decisions 54 and 57; [library.md](library.md#the-code), [The API](library.md#the-api)); a library's cache is one per machine, rebuilt from the files (decision 55; [library.md](library.md#a-librarys-cache)).
 
 The library is built in steps, folder mode first ([roadmap.md, The library's steps](roadmap.md#the-librarys-steps)).
 
@@ -218,7 +219,7 @@ Details: [testing.md](testing.md), the `golden-tests` skill.
 
 ### Web, tablets and remote access
 
-The engine always runs natively; browsers and tablets are to be remote clients over the network, on a home server or the user's machine (decision 58).
+The engine always runs natively; browsers and tablets are to be remote clients over the network, on a home server or the user's machine (decision 58). The same server, `apertrust-cli serve`, first syncs the desktop app's photos (decision 71).
 
 Details: [session-protocol.md, Web, tablets and remote access](session-protocol.md#web-tablets-and-remote-access).
 

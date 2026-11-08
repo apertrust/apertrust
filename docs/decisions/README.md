@@ -56,17 +56,19 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Settings and folders | One schema, `data/settings.schema.toml`, generating typed statics per owner; `apertrust-base`; the user data folder (43) | Settings declared in Rust; XDG's split by kind |
 | Diagnostics | tracing with darktable-style `-d` domains, short lines and a startup banner; puffin for frames (44) | Tracy, a C++ client |
 | Data files | A top-level `data/`, each file embedded at build time by the crate that parses it (45) | Files read from an installed folder |
-| Library | Folder mode first; the Library and the Project; nested albums and smart albums (46) | A database as the truth |
+| Library | One photo from a terminal, folder mode first, the Library and the Project; nested albums and smart albums; Open With into folder mode (46) | A database as the truth |
 | Edits and sidecars | `.apxmp` and the optional `.apdata` beside the photos, or in a library's folder; version 2 holds the history as a log of steps (47, 48, 49) | A central folder of edits; history in memory only |
 | Metadata | Apertrust's own XMP layer on quick-xml; EXIF read by rawler (50) | exiv2, exiftool-rs |
 | darktable edits | Imported once every module they use is ported; ratings, labels and keywords read either way (51) | A partial import |
 | Several computers | Two copies of a sidecar compared by clock vectors; diverged edits kept as a second virtual copy; metadata combined field by field; no locks (52) | Keeping one side by modified time; locks |
 | Finding folders and photos | Roots by an id file; photos by root, path and fingerprint; listing in bulk; safe writes; a queue per root (53) | Volume UUIDs or absolute paths; a whole-file hash |
-| Library API | Four layers, each calling only the one below; clients see only `LibraryCommand` and `LibraryEvent` (54) | An SQL API; a second API beside the protocol |
+| Library API | Four layers, each calling only the one below, over a storage interface for local files and the server; clients see only `LibraryCommand` and `LibraryEvent` (54) | An SQL API; a second API beside the protocol |
+| Library tab | Library pinned, Filters, Keywords, Metadata, then Styles; Filters over the open folder's index in folder mode from Phase 3; one Keywords module, folder mode's keyword list in the user data folder; Metadata the file's facts and darktable's fields in one (73) | Filters only with the library's cache; a keyword list module of its own |
 | Library cache | One per library per machine, rebuilt from the files, its engine chosen by spike L2 (55) | A database in the library's folder |
+| Server and sync | A self-hosted server, planned: a container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged by clock vectors; server roots; one server, `apertrust-cli serve` (71) | A NAS share alone; a database on the server as the truth; locks |
 | Export | A job of the engine's session; darktable's sizes, resample, formats, variables and disk storage; `apertrust-export` with no GPU (56) | A job thread or a second device; writing in place |
 | Jobs | darktable's control jobs, in `apertrust-base`'s `jobs` module (57) | A crate of its own; GPU jobs as state machines |
-| Clients | The engine always native; every client through the session protocol; browsers and tablets remote (58) | In-browser processing |
+| Clients | The engine always native; every client through the session protocol; browsers and tablets remote; one server, `apertrust-cli serve`, for sync and later the engine (58, 71) | In-browser processing |
 | Events | One event system: each event a fact or a notice, numbered against commands, sent through one outbox, taken in by one reducer per client (59) | A global bus of signals |
 | AI inference | ONNX Runtime, the WebGPU execution provider by default, vendor providers as optional packs; copies between devices for now (60) | Burn on wgpu; bundled vendor providers |
 | Agents | MCP through rmcp, a thin client of the session protocol; assistants a core capability, not the headline (1, 58) | MCP with its own logic |
@@ -188,6 +190,8 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0053](0053-finding-folders-and-photos.md) | Finding folders and photos |
 | [0054](0054-four-layers-for-the-librarys-code.md) | Four layers for the library's code |
 | [0055](0055-the-librarys-cache.md) | The library's cache |
+| [0071](0071-a-self-hosted-server-with-sync.md) | A self-hosted server with sync |
+| [0073](0073-the-library-tabs-modules-filters-in-folder-mode.md) | The Library tab's modules, filters in folder mode |
 
 ## Export and jobs
 
