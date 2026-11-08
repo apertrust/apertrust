@@ -54,9 +54,7 @@ jobs:
       # tests run one at a time: in release, several tests each opening a Direct3D 12 device
       # on WARP at once crash the binary (STATUS_ACCESS_VIOLATION), while one at a time the
       # same tests pass.
-      - run: cargo test --workspace --no-fail-fast ${{ runner.os == 'Windows' && '--release' || '' }}
-        env:
-          RUST_TEST_THREADS: ${{ runner.os == 'Windows' && '1' || '' }}
+      - run: cargo test --workspace --no-fail-fast ${{ runner.os == 'Windows' && '--release -- --test-threads=1' || '' }}
       # A snapshot that fails leaves its new image and its difference beside it: keep them
       # to look at.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
