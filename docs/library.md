@@ -623,7 +623,7 @@ flowchart LR
 - **The container's base system** counts as the platform, as a distribution's libraries do; only what Apertrust compiles into the server follows decision 5.
 - **Thumbnails** of a server root are the desktop's, made from the local copies or the raws as it reads them, as for any folder.
 - **What it gives over a NAS share:** away from home, one protocol made for the network's latency where SMB needs a VPN and pays its latency on every call; listing from the server's index rather than a call per file (21.6 s for 2,825 files over SMB, [Listing in bulk](#listing-in-bulk)); one place every machine, and later a mobile app, syncs with.
-- **Later, live sessions** for a studio shoot (decision 71): several people in one project at once, the host the NAS or a desktop running the same server, changes pushed to every machine within about 2 s on a local network, the owner managing the structure and the collaborators editing and culling, merged module by module and never locked, with a follow mode and a sync panel.
+- **Later, Shared Project** for a studio shoot (decision 71), by File › Share Project… and Join Shared Project…: several people in one project at once, the host the NAS or a desktop running the same server, changes pushed to every machine within about 2 s on a local network, the owner managing the structure and the collaborators editing and culling, merged module by module and never locked, with a follow mode and a sync panel.
 
 ## A library's cache
 

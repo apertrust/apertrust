@@ -39,7 +39,7 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 
 **When:** after Phase 5's library, beside Phase 7's server work ([roadmap.md](../roadmap.md#phase-7-remote-hdr-and-packaging)).
 
-**Later, live sessions for a studio shoot,** as commercial raw editors offer: several people in one project at once, on their own computers, each change on every machine within seconds.
+**Later, Shared Project, for a studio shoot,** as commercial raw editors offer: several people in one project at once, on their own computers, each change on every machine within seconds. File › Share Project… starts it and Join Shared Project… joins one; a library may be shared the same way after it. ("Session" stays the engine's word, [0058](0058-a-native-engine-every-client-through-the-session-protocol.md).)
 
 - **The host** is the NAS's server, or a desktop app running the same server code: the tethering computer, sharing its project with no NAS.
 - **Changes are pushed:** the server tells every connected machine of a change as it is made, within about 2 s on a good local network, instead of at the next exchange. The local network first; over the Internet later.
