@@ -4,7 +4,9 @@ name: CI
 # on Linux, and clippy on Windows and macOS, which compiles the tests and each platform's
 # code without running them. A pull request that changes a path in
 # .github/windows-paths.txt runs the tests on Windows too, and one labelled `full-ci` on
-# Windows and macOS. nightly-tests.yml runs them on all three every night.
+# Windows and macOS. nightly-tests.yml runs them on all three every night. A pull request
+# that changes only the documentation in .github/docs-only-paths.txt skips lint, clippy
+# and the tests: they report as skipped, so the workflow still ends.
 on:
   push:
     branches: [main]
@@ -26,6 +28,8 @@ env:
 
 jobs:
   lint:
+    needs: platforms
+    if: needs.platforms.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -33,6 +37,7 @@ jobs:
       - run: tools/check-license-headers.sh
       - run: tools/check-ui-strings.sh
       - run: tools/check-windows-paths.sh
+      - run: tools/check-docs-paths.sh
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # rustup installs the toolchain pinned in rust-toolchain.toml on first use.
       - run: cargo fmt --all --check
@@ -51,6 +56,8 @@ jobs:
   # Windows' and macOS's code and tests compiled, not run.
   clippy:
     name: clippy (${{ matrix.os }})
+    needs: platforms
+    if: needs.platforms.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -62,25 +69,36 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  # The runners the tests run on: Linux always; Windows for a pull request that changes
-  # a path in .github/windows-paths.txt; Windows and macOS for one labelled `full-ci`.
+  # Whether the code's checks run, and the runners the tests run on. The checks run on
+  # main, and for a pull request that changes a file outside .github/docs-only-paths.txt
+  # or is labelled `full-ci`. The tests run on Linux always; on Windows too for a pull
+  # request that changes a path in .github/windows-paths.txt; on Windows and macOS for
+  # one labelled `full-ci`.
   platforms:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
-      os: ${{ steps.os.outputs.os }}
+      code: ${{ steps.platforms.outputs.code }}
+      os: ${{ steps.platforms.outputs.os }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
-      - id: os
+      - id: platforms
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
         run: |
+          code=true
+          if [ "$EVENT" = pull_request ] && [ "$FULL_CI" != true ] &&
+            [ -z "$(tools/check-docs-paths.sh --code "$BASE...$HEAD")" ]; then
+            echo "Documentation only: lint, clippy and the tests are skipped."
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
           os='"ubuntu-24.04"'
           if [ "$FULL_CI" = true ]; then
             echo "Labelled full-ci: the tests run on Windows and macOS too."
@@ -97,6 +115,7 @@ jobs:
 
   test:
     needs: platforms
+    if: needs.platforms.outputs.code == 'true'
     uses: ./.github/workflows/tests.yml
     with:
       os: ${{ needs.platforms.outputs.os }}

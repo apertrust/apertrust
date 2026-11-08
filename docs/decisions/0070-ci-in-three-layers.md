@@ -14,6 +14,8 @@ Apertrust runs on Windows, macOS and Linux ([0006](0006-two-programs-on-three-de
 
 **A guard keeps the list current.** `tools/check-windows-paths.sh`, run in `lint` and locally, fails when a Rust source or Cargo manifest with a platform cfg (`cfg(windows)`, `cfg!(target_os = …)`, `cfg_attr(unix, …)`, inside `any()` or `not()` too) is not covered by the list. With `--changed REVS` it prints the files a diff changes that the list covers, which is how CI matches.
 
+**A pull request that changes only documentation skips the code's checks:** when every file it changes is matched by `.github/docs-only-paths.txt` (`docs/` and the top-level Markdown, the issue forms and the pull request template, less `CREDITS.md` and `docs/engine.md`, which code reads), the `platforms` job skips `lint`, `clippy` and the tests, which report as skipped; `tools/check-docs-paths.sh`, in `lint`, fails when a file the list matches is named by code in `crates/` or `tools/`, and main and a pull request labelled `full-ci` always run everything.
+
 **Every job has a timeout**: tests 40 minutes on Linux and macOS and 60 on Windows, the rest what they need. CI, CodeQL and the DCO check cancel a pull request's run in progress when a new push arrives; main's runs all finish. The tests are one reusable workflow, `.github/workflows/tests.yml`, which CI and the nightly call with their runners, so both test the same way.
 
 ## Options considered

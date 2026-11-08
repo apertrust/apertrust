@@ -1,0 +1,21 @@
+# The documentation a pull request may change and still skip the code's checks (decision
+# 70): when every file it changes is matched here, CI's lint, clippy and tests are
+# skipped. CI's `platforms` job and tools/check-docs-paths.sh both read this file.
+#
+# One glob a line, matched as git's glob pathspecs, from the repository's root: `*` stays
+# within a folder, `**` crosses folders. A `!` line takes files out again. A `#` starts
+# a comment.
+#
+# Never the Markdown that code or tests read (tools/check-docs-paths.sh fails on it),
+# nor anything under crates/, nor LICENSE, data/, the locales or images: they are the
+# code's inputs.
+
+docs/**
+*.md
+.github/ISSUE_TEMPLATE/**
+.github/pull_request_template.md
+
+# Embedded in the About box, and checked by the icons' test.
+!CREDITS.md
+# Read by crates/operations/tests/order.rs.
+!docs/engine.md
