@@ -30,8 +30,10 @@ jobs:
         # macOS uses the Apple paravirtual Metal device.
         os: ${{ fromJSON(inputs.os) }}
     runs-on: ${{ matrix.os }}
-    # WARP is the slowest: the engine's tests alone take half an hour on it.
-    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 60 || 40 }}
+    # WARP is the slowest: in debug the whole suite took 4 to 6 hours on it, the engine's
+    # tiling and geometry tests most of that. Windows tests in release; its limit is
+    # GitHub's 6 hours until a release run is timed.
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 360 || 40 }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Free disk space
@@ -44,8 +46,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo run -p apertrust-cli -- gpu
-      - run: cargo test --workspace
+      # Windows builds in release: the engine's tests make thousands of pipeline runs on
+      # WARP, and wgpu's and naga's own work for each is far slower in debug. Linux and
+      # macOS stay in debug, which checks for overflow.
+      - run: cargo run ${{ runner.os == 'Windows' && '--release' || '' }} -p apertrust-cli -- gpu
+      - run: cargo test --workspace ${{ runner.os == 'Windows' && '--release' || '' }}
       # A snapshot that fails leaves its new image and its difference beside it: keep them
       # to look at.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
