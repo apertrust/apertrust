@@ -9,7 +9,7 @@ Every operation runs on the GPU ([0008](0008-a-gpu-resident-fp32-pipeline-on-wgp
 **There is no CPU code path.** Without a hardware GPU, wgpu runs the same WGSL on a software GPU: lavapipe, Mesa's Vulkan driver, on Linux, and WARP, the software Direct3D built into Windows. Every Mac with a current macOS has Metal.
 
 - The engine takes a hardware adapter when there is one and the software one otherwise, in the app and the CLI alike, so kernels, buffers and plans stay the same and the image matches within fp32 rounding.
-- CI runs every GPU test on lavapipe and WARP, so the golden tests cover the fallback.
+- CI runs every GPU test on lavapipe and WARP, lavapipe on every pull request and WARP every night ([0070](0070-ci-in-three-layers.md)), so the golden tests cover the fallback.
 - Interactive editing needs Vulkan, Metal or DX12 on real hardware. The app tells the user when its adapter reports `DeviceType::Cpu`, and points to the CLI for batch work if editing is too slow.
 
 **Row strips and tiles carry large images onto a small binding** ([0013](0013-tiled-exports-equal-to-untiled-ones.md), [0014](0014-row-strips-for-images-over-one-binding.md)). **What still does not fit is refused, naming the pass and the sizes.** These refusals are accepted limits of software GPUs. On lavapipe's 128 MiB binding:

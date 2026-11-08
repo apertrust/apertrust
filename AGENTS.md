@@ -74,6 +74,7 @@ tools/build-api-docs.sh [--open]           # API docs into target/doc; a rustdoc
 cargo deny check                           # licences, advisories; before adding a dependency
                                            # (install: cargo install --locked cargo-deny)
 tools/check-ui-strings.sh                  # fails on an English literal in interface code (CI)
+tools/check-windows-paths.sh [--changed REVS]   # a platform cfg missing from .github/windows-paths.txt (CI)
 tools/credits.sh [--check]                 # CREDITS.md from Cargo.lock; --check fails when stale (CI)
 tools/package.sh [--finder-layout]         # this platform's packages into target/package/<target>/out
                                            # (install: cargo install --locked cargo-packager --version 0.11.8)
@@ -115,7 +116,7 @@ cargo test --release -p apertrust-raw -- --ignored             # compare with te
 APERTRUST_BLESS=1 cargo test --release -p apertrust-raw -- --ignored   # accept a change, then review the diff
 ```
 
-**CI.** `ci.yml` runs lint, cargo-deny and tests on Linux (lavapipe), Windows (WARP) and macOS (Metal). `timing.yml`, run by hand, times a 61 MP export and exposure changes on lavapipe and WARP. `codeql.yml`, `scorecard.yml` (OpenSSF), `dco.yml` (fails a pull request with a commit lacking its author's `Signed-off-by:`) and `sonarcloud.yml` (coverage and clippy, once the `SONAR_TOKEN` secret exists) run too. Actions are pinned by commit SHA, the version in a comment; Dependabot updates cargo and the actions weekly. Issue forms and the pull request template are in `.github/`.
+**CI** runs in three layers (decision 70). `ci.yml`, on every pull request and push to main: lint, cargo-deny, the tests on Linux (lavapipe) and macOS (Metal), and clippy on Windows and macOS. Windows' tests (WARP) are off for now: they ran past two hours. A pull request labelled `full-ci` runs every check even when it changes only docs. `nightly-tests.yml` runs them on Linux and macOS every night, opening an issue labelled `nightly-tests-failed` when they fail and closing it when they pass; both call `tests.yml`. `tools/check-windows-paths.sh`, in lint, fails when a file with a platform cfg is not in the list; add it there. A pull request whose every file is in `.github/docs-only-paths.txt` skips lint, clippy and the tests, and `tools/check-docs-paths.sh` fails when code reads a file that list matches. macOS is tested locally on every change. Every job has a timeout, and a new push cancels a pull request's run in progress. `timing.yml`, run by hand, times a 61 MP export and exposure changes on lavapipe and WARP. `codeql.yml`, `scorecard.yml` (OpenSSF), `dco.yml` (fails a pull request with a commit lacking its author's `Signed-off-by:`) and `sonarcloud.yml` (coverage and clippy, once the `SONAR_TOKEN` secret exists) run too. Actions are pinned by commit SHA, the version in a comment; Dependabot updates cargo and the actions weekly. Issue forms and the pull request template are in `.github/`.
 
 ### Golden-image harness
 

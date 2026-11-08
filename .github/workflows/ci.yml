@@ -1,27 +1,44 @@
 name: CI
 
+# Three layers (decision 70). Every pull request and push to main: lint, deny, the tests
+# on Linux and macOS, and clippy on Windows and macOS, which compiles the tests and each
+# platform's code. nightly-tests.yml runs the tests on Linux and macOS every night, and a
+# pull request labelled `full-ci` runs everything even when it changes only docs.
+# Windows' tests are off for now: on WARP they ran past two hours. A pull request
+# that changes only the documentation in .github/docs-only-paths.txt skips lint, clippy
+# and the tests: they report as skipped, so the workflow still ends.
 on:
   push:
     branches: [main]
   pull_request:
+    # `labeled`, so that adding `full-ci` runs the checks it asks for. Any label runs the
+    # workflow again.
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels its run in progress; main's runs all finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
-  # Line tables keep panics' file and line but a fraction of the debug info: the full
-  # debug info of the workspace's test binaries filled the Linux runner's disk, and the
-  # linker died of it (signal 7).
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   lint:
+    name: Lint and repository checks
+    needs: platforms
+    if: needs.platforms.outputs.code == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - run: tools/check-license-headers.sh
       - run: tools/check-ui-strings.sh
+      - run: tools/check-windows-paths.sh
+      - run: tools/check-docs-paths.sh
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # rustup installs the toolchain pinned in rust-toolchain.toml on first use.
       - run: cargo fmt --all --check
@@ -31,42 +48,86 @@ jobs:
       - run: tools/build-api-docs.sh
 
   deny:
+    name: Licences and advisories
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
-  test:
-    name: test (${{ matrix.os }})
+  # Windows' and macOS's code and tests compiled, not run.
+  clippy:
+    name: ${{ startsWith(matrix.os, 'windows') && 'Clippy, Windows' || 'Clippy, macOS' }}
+    needs: platforms
+    if: needs.platforms.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        # Runners have no hardware GPU: Linux uses lavapipe, Windows uses WARP,
-        # macOS uses the Apple paravirtual Metal device.
-        os: [ubuntu-24.04, windows-2025, macos-15]
+        os: [windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: Free disk space
-        if: runner.os == 'Linux'
-        # Toolchains this workflow never uses, about 20 GB.
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
-      - name: Install lavapipe
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo run -p apertrust-cli -- gpu
-      - run: cargo test --workspace
-      # A snapshot that fails leaves its new image and its difference beside it: keep them
-      # to look at.
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Whether the code's checks run, and the runners the tests run on. The checks run on
+  # main, and for a pull request that changes a file outside .github/docs-only-paths.txt
+  # or is labelled `full-ci`. The tests run on Linux and macOS. Windows' tests are off for
+  # now; .github/windows-paths.txt and its guard stay, for when they run again.
+  platforms:
+    name: Choose what runs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      code: ${{ steps.platforms.outputs.code }}
+      os: ${{ steps.platforms.outputs.os }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          name: snapshot-diffs-${{ matrix.os }}
-          path: |
-            crates/**/tests/snapshots/*.new.png
-            crates/**/tests/snapshots/*.diff.png
-          if-no-files-found: ignore
-          retention-days: 7
+          fetch-depth: 0
+          persist-credentials: false
+      - id: platforms
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ] && [ "$FULL_CI" != true ] &&
+            [ -z "$(tools/check-docs-paths.sh --code "$BASE...$HEAD")" ]; then
+            echo "Documentation only: lint, clippy and the tests are skipped."
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo 'os=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Tests
+    needs: platforms
+    if: needs.platforms.outputs.code == 'true'
+    uses: ./.github/workflows/tests.yml
+    with:
+      os: ${{ needs.platforms.outputs.os }}
+
+  # The one check of this workflow a ruleset requires: it passes when every job above
+  # passed or was skipped, as on a pull request that changes only docs.
+  ci-passed:
+    needs: [platforms, lint, deny, clippy, test]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          failed=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key) \(.value.result)"' <<< "$NEEDS")
+          if [ -n "$failed" ]; then
+            while read -r job result; do
+              echo "::error::$job: $result"
+            done <<< "$failed"
+            exit 1
+          fi

@@ -1,0 +1,52 @@
+# The paths whose change runs a pull request's tests on Windows (decision 70): CI's
+# `platforms` job and tools/check-windows-paths.sh both read this file.
+#
+# One glob a line, matched as git's glob pathspecs, from the repository's root: `*` stays
+# within a folder, `**` crosses folders. A `#` starts a comment.
+#
+# Wider than the files with a platform cfg: Windows fails in code without one too, on
+# Unix paths in tests and on CR LF in fixtures. tools/check-windows-paths.sh fails when
+# a file with a platform cfg is not covered here.
+
+# The window's platform code, and the packages.
+crates/display/**
+packaging/**
+
+# Paths, files and folders.
+crates/base/src/fs.rs
+crates/base/src/fs/**
+crates/base/src/folders.rs
+crates/base/src/settings/**
+crates/export/**
+crates/library/**
+crates/cli/**
+crates/engine/src/sidecar.rs
+crates/engine/src/names.rs
+crates/engine/src/export_preview.rs
+crates/engine/src/export_job.rs
+crates/app/build.rs
+crates/app/src/main.rs
+crates/app/src/dialogs.rs
+crates/app/src/dialog_host.rs
+crates/app/src/dialog_host/**
+crates/app/src/paths.rs
+crates/app/src/folder.rs
+crates/app/tests/packaging.rs
+
+# Other files with a platform cfg.
+crates/app/src/jobs.rs
+crates/app/src/jobs/**
+crates/app/src/menus.rs
+crates/app/src/popups.rs
+crates/engine/src/gpu.rs
+crates/ui/src/components/alert.rs
+
+# Dependencies, the toolchain, the checkout and CI.
+**/Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+.cargo/**
+.gitattributes
+.github/windows-paths.txt
+.github/workflows/**
+kittest.toml

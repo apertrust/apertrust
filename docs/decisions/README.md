@@ -75,6 +75,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Names and crates | Apertrust, its parts prefixed `apertrust-`; few crates (65) | — |
 | Decision records | One file per decision, with its options and reasons (66) | — |
 | Repository | `github.com/apertrust/apertrust` and apertrust.org; every commit signed off (DCO); AI help disclosed once, in the README and the AI policy; the agent kit in `apertrust/agent-kit`, the hooks in the main repository (67) | An `Assisted-by:` trailer on every commit |
+| CI | Every pull request: lint, cargo-deny and the tests on Linux (lavapipe), clippy on Windows and macOS; Windows' tests when a listed Windows path changes, Windows' and macOS's with the `full-ci` label; every platform's tests each night, a failure opening an issue; a guard keeping the path list current (70) | Every platform's tests on every pull request; building only; paid GPU runners |
 
 ## Foundations and principles
 
@@ -219,3 +220,4 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0065](0065-names-and-crates.md) | Names and crates |
 | [0066](0066-one-record-for-each-decision.md) | One record for each decision |
 | [0067](0067-going-public.md) | Going public |
+| [0070](0070-ci-in-three-layers.md) | CI in three layers |

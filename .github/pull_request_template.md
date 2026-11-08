@@ -13,6 +13,7 @@
 - [ ] `cargo test --workspace`
 - [ ] `tools/check-license-headers.sh`
 - [ ] `tools/check-ui-strings.sh`
+- [ ] `tools/check-windows-paths.sh`, when a file gained a platform cfg
 - [ ] `tools/build-kernels.sh --check`, when a Slang file changed (the generated WGSL is committed)
 - [ ] `tools/build-api-docs.sh`
 - [ ] `cargo deny check` and `tools/credits.sh --check`, when a dependency changed

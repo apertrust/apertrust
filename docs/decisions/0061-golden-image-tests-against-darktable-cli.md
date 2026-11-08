@@ -16,7 +16,7 @@ Image quality must be judged by measurement, never by eye (principle 1). During 
 
 **The golden suite runs locally,** where darktable-cli and the images are; the `golden-tests` skill says how. Self-hosted runners may run it later.
 
-**CI on GitHub runs the rest** (`.github/workflows/ci.yml`): formatting, clippy, cargo-deny, licence headers, the UI-string check, and the tests on Linux (lavapipe), Windows (WARP) and macOS (Metal), the synthetic gradient check among them. `timing.yml`, run by hand, times a 61 MP export and exposure changes on lavapipe and WARP.
+**CI on GitHub runs the rest** (`.github/workflows/ci.yml`): formatting, clippy, cargo-deny, licence headers, the UI-string check, and the tests, the synthetic gradient check among them: on Linux (lavapipe) for every pull request, on Windows (WARP) and macOS (Metal) every night and when a pull request needs them ([0070](0070-ci-in-three-layers.md)). `timing.yml`, run by hand, times a 61 MP export and exposure changes on lavapipe and WARP.
 
 **Baselines that are not darktable's:** the raw decoder's output is pinned by a corpus of 40 raw.pixls.us samples (`crates/raw/tests/corpus/expected.txt`), blessed only on purpose ([0023](0023-rawler-its-camera-data-fixed-upstream.md)); the design system's gallery snapshots allow 2/255 a channel and 2 pixels between GPUs ([0036](0036-the-design-system.md)).
 
