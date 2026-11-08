@@ -13,6 +13,7 @@ crates/display/**
 packaging/**
 
 # Paths, files and folders.
+crates/base/src/fs.rs
 crates/base/src/fs/**
 crates/base/src/folders.rs
 crates/base/src/settings/**
