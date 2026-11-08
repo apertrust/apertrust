@@ -15,7 +15,7 @@ On Windows, wgpu compiles shaders for Direct3D 12 with FXC or DXC. wgpu's defaul
 - A workgroup array's element and anything in a storage buffer, which naga writes at a computed offset, are allowed.
 - `add_at` and `set_at` in `crates/plugin/slang/components.slang` write component c by comparing c with every component's index at once and selecting, so the others keep their values exactly, infinities included.
 
-**Enforcement:** only CI's Windows job runs FXC, so the engine's naga test (`no_kernel_writes_a_local_at_a_run_time_index`) walks naga's IR of every kernel, the engine's and every operation's, on every machine. When third-party plugins arrive, the engine runs the same check on their kernels at load.
+**Enforcement:** only CI's Windows tests run FXC, every night and on pull requests that change a Windows path ([0070](0070-ci-in-three-layers.md)), so the engine's naga test (`no_kernel_writes_a_local_at_a_run_time_index`) walks naga's IR of every kernel, the engine's and every operation's, on every machine. When third-party plugins arrive, the engine runs the same check on their kernels at load.
 
 ## Options considered
 

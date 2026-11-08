@@ -30,5 +30,5 @@ A native mobile app is a later phase ([0001](0001-what-apertrust-is-the-principl
 ## Consequences
 
 - The engine stays free of UI code, so both programs drive the same session.
-- CI tests on all three platforms: Linux on lavapipe, Windows on WARP, macOS on Metal ([0061](0061-golden-image-tests-against-darktable-cli.md)).
+- CI tests on all three platforms: Linux on lavapipe for every pull request, Windows on WARP and macOS on Metal every night and on pull requests that need them ([0070](0070-ci-in-three-layers.md)).
 - Each binary computes its own version in its own build, so a commit rebuilds no library ([0044](0044-logging-the-banner-and-versions.md)).

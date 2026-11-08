@@ -16,7 +16,7 @@ Thank you for your interest. Apertrust is in early development, so the way to co
 
 ## Checks
 
-Run these before you open a pull request. CI runs most of them on Linux, Windows and macOS:
+Run these before you open a pull request. CI runs most of them, the tests on Linux:
 
 ```sh
 cargo fmt --all
@@ -24,11 +24,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 tools/check-license-headers.sh
 tools/check-ui-strings.sh
+tools/check-windows-paths.sh
 tools/build-kernels.sh --check
 tools/build-api-docs.sh
 ```
 
 - **A kernel:** `tools/build-kernels.sh --check` needs the pinned Slang compiler, which `tools/fetch-slang.sh` downloads.
+- **Windows and macOS:** a pull request runs clippy on both, which compiles their code and tests, and the tests on Windows when it changes a path listed in `.github/windows-paths.txt`. Every platform's tests run each night. If your change needs Windows or macOS tested before it is merged, ask for the `full-ci` label, which runs the tests on both. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
 - **A new dependency:** run `cargo deny check`, and follow [docs/dependencies.md](docs/dependencies.md).
 - **A kernel or a port:** CI cannot run darktable-cli, so run the golden checks locally and paste their results in the pull request: `apertrust-golden run CASE` for the ΔE2000 results and `apertrust-golden gradient CASE` for the derivatives. AGENTS.md's Golden-image harness section says what they need.
 
