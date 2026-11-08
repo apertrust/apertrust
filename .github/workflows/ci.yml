@@ -1,27 +1,38 @@
 name: CI
 
+# Three layers (decision 70). Every pull request and push to main: lint, deny, the tests
+# on Linux, and clippy on Windows and macOS, which compiles the tests and each platform's
+# code without running them. A pull request that changes a path in
+# .github/windows-paths.txt runs the tests on Windows too, and one labelled `full-ci` on
+# Windows and macOS. nightly-tests.yml runs them on all three every night.
 on:
   push:
     branches: [main]
   pull_request:
+    # `labeled`, so that adding `full-ci` runs the tests it asks for. Any label runs the
+    # workflow again.
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels its run in progress; main's runs all finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
-  # Line tables keep panics' file and line but a fraction of the debug info: the full
-  # debug info of the workspace's test binaries filled the Linux runner's disk, and the
-  # linker died of it (signal 7).
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - run: tools/check-license-headers.sh
       - run: tools/check-ui-strings.sh
+      - run: tools/check-windows-paths.sh
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # rustup installs the toolchain pinned in rust-toolchain.toml on first use.
       - run: cargo fmt --all --check
@@ -32,41 +43,60 @@ jobs:
 
   deny:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
-  test:
-    name: test (${{ matrix.os }})
+  # Windows' and macOS's code and tests compiled, not run.
+  clippy:
+    name: clippy (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        # Runners have no hardware GPU: Linux uses lavapipe, Windows uses WARP,
-        # macOS uses the Apple paravirtual Metal device.
-        os: [ubuntu-24.04, windows-2025, macos-15]
+        os: [windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: Free disk space
-        if: runner.os == 'Linux'
-        # Toolchains this workflow never uses, about 20 GB.
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
-      - name: Install lavapipe
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo run -p apertrust-cli -- gpu
-      - run: cargo test --workspace
-      # A snapshot that fails leaves its new image and its difference beside it: keep them
-      # to look at.
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The runners the tests run on: Linux always; Windows for a pull request that changes
+  # a path in .github/windows-paths.txt; Windows and macOS for one labelled `full-ci`.
+  platforms:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      os: ${{ steps.os.outputs.os }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          name: snapshot-diffs-${{ matrix.os }}
-          path: |
-            crates/**/tests/snapshots/*.new.png
-            crates/**/tests/snapshots/*.diff.png
-          if-no-files-found: ignore
-          retention-days: 7
+          fetch-depth: 0
+          persist-credentials: false
+      - id: os
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          os='"ubuntu-24.04"'
+          if [ "$FULL_CI" = true ]; then
+            echo "Labelled full-ci: the tests run on Windows and macOS too."
+            os="$os, \"windows-2025\", \"macos-15\""
+          elif [ "$EVENT" = pull_request ]; then
+            changed=$(tools/check-windows-paths.sh --changed "$BASE...$HEAD")
+            if [ -n "$changed" ]; then
+              echo "The tests run on Windows too, for these files:"
+              echo "$changed"
+              os="$os, \"windows-2025\""
+            fi
+          fi
+          echo "os=[$os]" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: platforms
+    uses: ./.github/workflows/tests.yml
+    with:
+      os: ${{ needs.platforms.outputs.os }}

@@ -20,6 +20,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2025]
     runs-on: ${{ matrix.os }}
+    # A release build, three 61 MP exports and ten changes, WARP the slowest.
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -47,7 +49,7 @@ jobs:
       # alone.
       - name: Export
         run: |
-          for run in 1 2 3; do
+          for _ in 1 2 3; do
             cargo run --release -p apertrust-cli -- -d perf --conf export.disk.on_conflict=overwrite export sample.arw -o sample.png --runs 1
           done
       # The viewport pipe demosaics and downscales in tiles where the GPU binds less

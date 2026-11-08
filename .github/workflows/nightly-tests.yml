@@ -1,0 +1,54 @@
+name: Nightly tests
+
+# The test suite on Linux, Windows and macOS every night (decision 70): pull requests run
+# it on Linux alone unless they change a Windows path or are labelled `full-ci`. A failed
+# night opens an issue labelled `nightly-tests-failed`, or comments on the one open; a
+# night that passes closes it.
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/tests.yml
+    with:
+      os: '["ubuntu-24.04", "windows-2025", "macos-15"]'
+
+  report:
+    needs: test
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RESULT: ${{ needs.test.result }}
+      RUN_ID: ${{ github.run_id }}
+      ATTEMPT: ${{ github.run_attempt }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open, comment on or close the issue
+        run: |
+          label=nightly-tests-failed
+          issue=$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ "$RESULT" = success ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment "The nightly tests pass again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          failed=$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/attempts/$ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled") | "- \(.name)"')
+          body=$(printf 'The nightly tests failed on %s: %s\n\n%s\n' "$(date -u +%F)" "$RUN_URL" "$failed")
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+          else
+            gh issue create --title "Nightly tests failed" --label "$label" --body "$body"
+          fi

@@ -1,0 +1,59 @@
+name: Tests
+
+# The test suite on the runners it is given, called by ci.yml and nightly-tests.yml
+# (decision 70).
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: The runners to test on, as a JSON list
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Line tables keep panics' file and line but a fraction of the debug info: the full
+  # debug info of the workspace's test binaries filled the Linux runner's disk, and the
+  # linker died of it (signal 7).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Runners have no hardware GPU: Linux uses lavapipe, Windows uses WARP,
+        # macOS uses the Apple paravirtual Metal device.
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os }}
+    # WARP is the slowest: the engine's tests alone take half an hour on it.
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 60 || 40 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        # Toolchains this workflow never uses, about 20 GB.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo run -p apertrust-cli -- gpu
+      - run: cargo test --workspace
+      # A snapshot that fails leaves its new image and its difference beside it: keep them
+      # to look at.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: snapshot-diffs-${{ matrix.os }}
+          path: |
+            crates/**/tests/snapshots/*.new.png
+            crates/**/tests/snapshots/*.diff.png
+          if-no-files-found: ignore
+          retention-days: 7
