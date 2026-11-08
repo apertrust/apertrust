@@ -34,7 +34,7 @@ while IFS= read -r glob; do
   pathspecs+=(":(glob)$glob")
 done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$list")
 
-if [ "${1:-}" = --changed ]; then
+if [[ "${1:-}" == --changed ]]; then
   shift
   git diff --name-only "$@" -- "${pathspecs[@]}"
   exit 0
@@ -48,7 +48,7 @@ missing=$(comm -23 \
   <(git grep -l --untracked -E "$platform" -- '*.rs' '*.toml' | sort) \
   <(git ls-files --cached --others --exclude-standard -- "${pathspecs[@]}" | sort))
 
-if [ -n "$missing" ]; then
+if [[ -n "$missing" ]]; then
   echo "$missing"
   echo "These files have a platform cfg but are not in $list: add them, so a pull request that changes them runs the tests on Windows."
   exit 1

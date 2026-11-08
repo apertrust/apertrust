@@ -38,7 +38,7 @@ while IFS= read -r glob; do
   esac
 done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$list")
 
-if [ "${1:-}" = --code ]; then
+if [[ "${1:-}" == --code ]]; then
   shift
   # Both sides of a rename, so a file moved out of the code counts.
   comm -23 \
@@ -64,7 +64,7 @@ read_by_code=$(awk '
   { for (n in named) if ($0 == n || substr($0, length($0) - length(n)) == "/" n) print $0 " (code names \"" n "\")" }
 ' <(echo "$named") <(echo "$docs"))
 
-if [ -n "$read_by_code" ]; then
+if [[ -n "$read_by_code" ]]; then
   echo "$read_by_code"
   echo "Code reads these files, so a change to them must run the checks: take them out of $list with a ! line."
   exit 1
