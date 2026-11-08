@@ -902,12 +902,8 @@ fn gradient(rect: Rect, across: bool) -> Mesh {
     mesh
 }
 
-/// The histogram as darktable fills it: from the graph's foot up to the line through each
-/// bin at its exposure, the tallest at 0.96 of the graph, within the graph. It is filled a
-/// column of pixels at a time, each up to the line's height at its centre, in whole pixels:
-/// the bins are narrower than a pixel, and their steep edges pass so near pixel centres
-/// that GPUs fill them differently, where rectangles on the pixel grid every GPU fills
-/// alike.
+/// The histogram as darktable fills it: from the graph's foot through each bin at its
+/// exposure, the tallest at 0.96 of the graph.
 fn draw_histogram(painter: &Painter, plot: &Plot, histogram: MaskHistogram, colour: Color32) {
     let bins = histogram.bins;
     let tallest = bins
@@ -915,43 +911,39 @@ fn draw_histogram(painter: &Painter, plot: &Plot, histogram: MaskHistogram, colo
         .copied()
         .filter(|v| v.is_finite())
         .fold(0.0, f32::max);
-    let [low, high] = histogram.range;
-    let (first, last) = (plot.x_at(low), plot.x_at(high));
-    if bins.len() < 2 || tallest <= 0.0 || last <= first {
+    if bins.len() < 2 || tallest <= 0.0 {
         return;
     }
-    let count = |k: usize| {
-        if bins[k].is_finite() {
+    let [low, high] = histogram.range;
+    let foot = plot.area.bottom();
+    let at = |k: usize| {
+        let exposure = low + (high - low) * k as f32 / (bins.len() - 1) as f32;
+        let count = if bins[k].is_finite() {
             bins[k].max(0.0)
         } else {
             0.0
-        }
+        };
+        let x = plot
+            .x_at(exposure)
+            .clamp(plot.area.left(), plot.area.right());
+        pos2(
+            x,
+            foot - count / tallest * HISTOGRAM_TOP * plot.area.height(),
+        )
     };
-    // The line's height above the foot at `x`, between the bins either side of it.
-    let height_at = |x: f32| {
-        let at = (x - first) / (last - first) * (bins.len() - 1) as f32;
-        let k = (at as usize).min(bins.len() - 2);
-        let level = count(k) + (count(k + 1) - count(k)) * (at - k as f32);
-        level / tallest * HISTOGRAM_TOP * plot.area.height()
-    };
-    let ppp = painter.pixels_per_point();
-    // The pixel grid's line above the first row whose centre is at or below `y`, in pixels:
-    // where a GPU's fill from an edge at `y` starts.
-    let row = |y: f32| (y * ppp - 0.5).ceil();
-    let foot = row(plot.area.bottom());
     let mut mesh = Mesh::default();
-    let columns = (plot.area.left() * ppp).floor() as i32..(plot.area.right() * ppp).ceil() as i32;
-    for column in columns {
-        let centre = (column as f32 + 0.5) / ppp;
-        if !plot.area.x_range().contains(centre) || !(first..=last).contains(&centre) {
-            continue;
+    for k in 0..bins.len() - 1 {
+        let (a, b) = (at(k), at(k + 1));
+        let base = mesh.vertices.len() as u32;
+        for pos in [a, b, pos2(b.x, foot), pos2(a.x, foot)] {
+            mesh.vertices.push(Vertex {
+                pos,
+                uv: WHITE_UV,
+                color: colour,
+            });
         }
-        let top = row(plot.area.bottom() - height_at(centre));
-        if top < foot {
-            let (left, right) = (column as f32 / ppp, (column + 1) as f32 / ppp);
-            let rect = Rect::from_x_y_ranges(left..=right, top / ppp..=foot / ppp);
-            mesh.add_colored_rect(rect, colour);
-        }
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base, base + 2, base + 3);
     }
     painter.add(Shape::mesh(mesh));
 }
