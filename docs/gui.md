@@ -1230,10 +1230,10 @@ sequenceDiagram
     end
     A->>S: Command::Export { photos, settings }
     Note over D: the dialog closes
-    S-->>A: Event::Job added (UserExport)
+    S-->>A: Event::Job Added (UserExport): title, total, destination
     A->>J: Show::Open
-    S-->>A: Event::Job progress, Event::Export per photo
-    A->>J: rows: bar, "3 of 12 done", Cancel
+    S-->>A: Event::Job Title, Detail, Progress, Destination
+    A->>J: the row: bar, "3 of 12 done · now …", ✕
 ```
 
 ### Its form
@@ -1355,12 +1355,12 @@ The lines under the rows come from the session (`PreviewExport`, [engine.md](eng
 | W10 alert | `NSAlert`: "Update the out-of-date AI erase before exporting?": **Update and Export** (default), Cancel, Export as Shown; "filling" and "not filled" alike |
 | Overwrite alert | "Export in overwrite mode?", "Don't ask again" (darktable's "ask before exporting in overwrite mode"), [Overwrite] (destructive) [Cancel] (default) |
 | Delete or update a preset | darktable's "delete preset?" and "update preset?" as alerts |
-| Running | The dialog closed; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar, "3 of 12 done · now IMG_2044.ARW", the folder, Show in Finder, Cancel export |
-| Finished | The export's row, "12 exported" ✓, with the folder, Show in Finder, Dismiss |
-| Failed | "11 of 12 exported" ⚠ in the warning colour; the reason in `error` ("could not write … the disk is full"); Try again, Show in Finder, Dismiss |
-| Cancelled | "3 of 12 photos were exported before it stopped; they stay." |
+| Running | The dialog closed; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar and ✕, "3 of 12 done · now IMG_2044.ARW", "To" the folder, Show in Finder |
+| Finished | The export's row, "Exported 12 photos", "To" the folder and the time, Show in Finder; cleared by Clear Finished |
+| Failed | "Export failed: 11 of 12 exported", its icon the warning sign; the reason in `error` ("IMG_2051.ARW: the disk is full"); Try again, Show in Finder, Dismiss |
+| Cancelled | "Export cancelled: 3 of 12 photos exported", the files written kept; cleared by Clear Finished |
 
-- **A failure** (decision 56): a photo's own failure, such as a raw that cannot be read, is that photo's, and the export goes on, as darktable-cli's loop does. A failure of the destination, a folder that cannot be created or written or a disk that is full or gone, stops it, as darktable's export job stops, since every later photo would fail the same way. Try again exports the photos that failed and those it did not reach, with the same settings, each photo's edit as it is when Try again is pressed.
+- **A failure** (decision 56): a photo's own failure, such as a raw that cannot be read, is that photo's, and the export goes on, as darktable-cli's loop does. A failure of the destination, a folder that cannot be created or written or a disk that is full or gone, stops it, as darktable's export job stops, since every later photo would fail the same way. Try again exports the photos that failed and those it did not reach, with the same settings, each photo's edit as it is when Try again is pressed: the export offers it, and the session keeps what it runs (`RetryJob`, decision 72).
 - **On pressing Export,** in order: the overwrite alert, when On conflict is Overwrite and "ask before exporting in overwrite mode" is on ([The alerts](#the-alerts)); then W10; then the dialog closes and the export starts, each photo's edit taken as it is at that moment (D12).
 
 ### Keyboard
@@ -1389,63 +1389,91 @@ File › Export Again (`export-again`, no key) is darktable's export with the la
 
 ### The jobs window
 
-How background jobs are shown (decision 57; [engine.md](engine.md), Jobs): after darktable's background jobs panel (`libs/backgroundjobs.c`), whose rows it keeps, each job's message, its bar and a cancel button where it is cancellable, but as one spinner in the top panel and a modeless window of progress bars. It shows every job, an export's and the library's alike.
+How background jobs are shown (decisions 57 and 72; [engine.md](engine.md), Jobs). darktable's background jobs panel (`libs/backgroundjobs.c`) gives each job its message, a bar and a cancel button where it is cancellable. Apertrust keeps those three and shows them as one spinner in the top panel and a modeless window of stacked rows. Its other parts are Apertrust's shell, which decision 2 does not mirror. It shows every job with a progress, an export's and the library's alike.
 
-- **One spinner** at the top panel's end, beside Saved, while any job with a progress is queued or running; never one per job. It is a button in the top panel's Tab order, named "Jobs" with the count in its value ("2 running"), so its name stays as jobs come and go, with a polite live region at a job's start and end. It sits where Saved's widest leaves it, so a save never moves it, and, having no words, it never folds.
-- **A click on it** opens the jobs window; a click while the window is open brings it to the front.
-- **The jobs window** is a modeless window of the dialog host (decision 41), beside the main window as Settings is on the Mac, never blocking it, restored where the user last left it. One row per job, newest first, as darktable's: its message (darktable's, translated, "exporting 3 / 12 to file on disk"), a bar, its details and its buttons. An export's row says "3 of 12 done · now IMG_2044.ARW", with the folder, a failure's photo, file and cause, Show in Finder (Explorer, Files), Cancel export, Try again and Dismiss; a queued job says so.
-- **It opens itself when a job the user started starts,** one of darktable's user queues: an export, an import, a copy, a move, a rename or a delete. Closing it never stops a job. System jobs, thumbnails and a folder's listing and rescans, turn the spinner and show in the window, newest on top with the others, but never open it.
-- **When a job ends,** its row stays, finished, failed or cancelled: a failure stays until dismissed. While one is left and nothing runs, the spinner's place shows the tick or the warning sign, which opens the window.
-- **Cancel** sends `CancelJob { job }`; a job that cannot be cancelled has no button, as darktable's delete has none.
+- **One spinner** at the top panel's end, beside Saved, only while a job with a progress is queued or running; never one per job. It is a button in the top panel's Tab order, named "Jobs" with the count in its value ("2 running"), so its name stays as jobs come and go, with a polite live region at a job's start and end. It sits where Saved's widest leaves it, so a save never moves it, and, having no words, it never folds.
+- **At rest** the spinner's place is empty, with no tick: the finished rows wait in the window. After a failure the warning sign stays in its place until the failed row is dismissed or tried again.
+- **A click on it** (or on the warning sign) opens the jobs window; a click while the window is open brings it to the front.
+- **The jobs window** is a modeless window of the dialog host (decision 41), beside the main window as Settings is on the Mac, never blocking it, restored where the user last left it. One row per job, newest first, each part told by the job itself ([A row](#a-row-and-where-each-part-comes-from)).
+- **It opens itself when a job the user started starts:** an export, an import, a copy, a move, a rename or a delete, darktable's `UserForeground` and `UserExport` queues. Closing it never stops a job. Other jobs, a folder's reading and rescans, turn the spinner and show in the window, newest on top with the others, but never open it.
+- **Thumbnails never show.** Each is a job of its own on `SystemForeground`, with no progress or message, so neither the spinner nor the window knows of it.
+- **When a job ends,** its row stays, finished, failed or cancelled, until it is cleared: finished and cancelled rows together by Clear Finished, a failed row only by its own Dismiss, so a failure is never cleared unseen.
+- **Cancel** sends `CancelJob { job }`; a job that cannot be cancelled has no ✕, as darktable's delete has none.
+- **Try again** sends `RetryJob { job }`, for a failed job that offers it; the new job's row takes the failed one's place.
 - **Quitting:** Quit or Close Window while a user job runs asks first, with an alert of its own; confirmed, cancellable jobs stop as Cancel stops them, and the rest finish ([The alerts](#the-alerts)).
 - **No progress bar while editing:** no edit ever waits on a job.
 - **Windows and Linux:** the window is the same there; showing it without taking the focus waits for their modality.
 - **Notices that are not jobs,** which the library sends (a diverged photo's second virtual copy, a rename re-paired, an album's move resolved), are shown as darktable shows `dt_control_log`'s messages: a short message over the photo, for 5 s and 1 s more for every 40 characters, and a history of them behind a button with an unread dot, as darktable's log history button (`libs/tools/log_history.c`). The event, `Event::Notice` with a message id and arguments, is planned with the library's diverged copies (decision 59).
 
+#### A row, and where each part comes from
+
+Decision 72, planned: each part of a row comes from one of the job's own events ([events.md](events.md#a-jobs-events)), so the row is the same for every kind of job and every client.
+
+| Part | Shown | From |
+| --- | --- | --- |
+| Icon | A small icon on a 28-point tile at the row's start; the warning sign, in `warning`, once it failed | `Added`'s `kind`, by the design system's table, a generic icon for a kind it does not list; `Ended`'s `failure` |
+| Title | Medium text: "Exporting 3 / 12 to file on disk", "Reading 2026-10 Lisbon"; once ended, "Export failed: 10 of 12 exported", "Exported 8 photos" | `Added`'s `title`, then each `Title`; once ended, `Ended`'s `outcome`, or without one the title with the state's word ("Finished: …") |
+| Bar | While it is queued or running: filled at `done / total`, empty while it waits; a moving segment where there is no total, as a folder's reading has none | `Added`'s `progress`, then each `Progress` |
+| ✕ | Cancel, at the bar's end, only while a cancellable job is queued or running; gone once a cancel is asked | `Added`'s `cancellable`, while `State` is `Queued` or `Running` |
+| Detail | One small line under the bar: "3 of 12 done · now IMG_2044.ARW"; while queued, "Next in line: 5 photos, to …", or "Waiting for other jobs" where the job gives none; none once ended | `Added`'s `detail`, then each `Detail` |
+| To | "To ~/Pictures/Exports/2026-10 Lisbon", a file's folder; once finished or cancelled, the time after it, "· 14:02"; not while queued, whose detail names the place | `Added`'s `destination`, then each `Destination`; `Ended`'s `at` |
+| Failure | One line in `error`, in place of To: "IMG_2051.ARW: the folder ~/Pictures/out is read-only" | `Ended`'s `failure`: its item and file named, its cause worded by Fluent as `job-cause-<cause>`, its `reason` where this build has no words for the code |
+| Show in Finder | Explorer, Files: reveals the destination, a file selected in its folder | any destination, while it runs and after |
+| Try again | On a failed row | `Ended`'s `offers`, `Retry` |
+| Dismiss | On a failed row, after Try again and Show in Finder | `Ended` with a `failure` |
+
+- **The look,** as the wireframe's "Jobs window · stacked rows, spinner only while running":
+  - The rows are stacked on a `sunken` list, parted by a faint line, newest first.
+  - The bar is 8 points tall and fully rounded, `accent` on a track a step darker than `sunken` with a faint edge. A waiting job's is empty. No percentage is written: screen readers hear the bar's value.
+  - The ✕ is centred on the bar, 8 points after its end, the bar shortened for it: it stops what the bar shows. It only ever cancels; no ended row has one.
+  - Details are small text in `text_secondary`, a failure in `error`; the row's buttons are ordinary buttons under them, in the Tab order.
+  - The footer holds **Clear Finished**, enabled while there is a finished or cancelled row, which takes all of them away. It never takes a failed row.
+- **The window** is as tall as its rows, up to five. With a sixth the list scrolls at the height of its first five, with the app's quiet scroll bar (`quiet_scroll`), and the footer stays in view.
+
 #### In the design system
 
-`crates/ui/src/components/jobs.rs`, `Jobs`, tested in `tests/jobs.rs`. Its job data is a row of any job, `Job`, with an export's `ExportDetails` and `ExportFailure`; its strings `activity-*` for the export row's details; its actions `ActivityAction` and `FileManager`.
+`crates/ui/src/components/jobs.rs`, `Jobs`, tested in `tests/jobs.rs`. Its job data is a row of any job, `Job`; its actions `ActivityAction` and `FileManager`.
 
-- **The spinner,** `Jobs::spinner` through `TopPanel::jobs`: a 30-point icon button, the same at every fold, drawn while the list holds any job.
-  - It turns while one is queued or running, a ring with an arc of 1.6 radians at 0.9 turns a second, repainting every 16 ms. egui has no reduced-motion setting, so it holds still where the theme's motion tokens have zeroed `animation_time`.
-  - With only ended jobs left it shows the tick, or the warning sign in `warning` where one failed; a cancelled job counts as ended without failure.
-  - It is named "Jobs" and its value says "2 running", "1 running, 1 waiting", "1 waiting", "Finished" or "1 failed" (Ukrainian and Polish say "Виконується: 2", "Uruchomione: 2", avoiding plural forms), so the name is stable and the count is in the value. The tooltip is "Jobs: 2 running".
+- **Built:** `Job { id, phase, message, fraction, cancellable, error, export }`, an export's `ExportDetails` and `ExportFailure` adding its lines, strings `activity-*` for them; the bar while it runs, buttons in a row at its end (Cancel, Show, Try again, Dismiss); the spinner's tick at rest.
+- **Planned (decision 72):** `Job` holds the row's parts, each as the job sent it: `kind`, `phase`, `title` (`JobMessage`, the outcome once ended), `progress` (`done`, `total`), `cancellable`, `detail`, `destination` (the folder as the app wants it read), `failure` (item, file and cause, worded), `ended_at` (the time as the app formats it) and `retry`. `ExportDetails` and `ExportFailure` go, and the window draws every job alike, with the look above. `ActivityAction` gains `ClearFinished`. The spinner, the live region and the window below are as planned; where the built ones differ, the Built line says how.
+- **The spinner,** `Jobs::spinner` through `TopPanel::jobs`: a 30-point icon button, the same at every fold, drawn while a job is queued or running or a failed one is left.
+  - It turns while one is queued or running, a ring with an arc of 1.6 radians at 0.9 turns a second, repainting every 16 ms. egui has no reduced-motion setting, so it holds still where the theme's motion tokens have zeroed `animation_time`; so does an indeterminate bar's segment.
+  - With nothing queued or running, it shows the warning sign in `warning` while a failed row is left, and nothing otherwise.
+  - It is named "Jobs" and its value says "2 running", "1 running, 1 waiting", "1 waiting" or "1 failed" (Ukrainian and Polish say "Виконується: 2", "Uruchomione: 2", avoiding plural forms), so the name is stable and the count is in the value. The tooltip is "Jobs: 2 running".
   - A press is `TopPanelAction::Jobs`, also while the window is open, for the app to bring it forward.
-- **The live region** is in the tree whenever the top panel has the spinner, empty while there is no job. It remembers each job's phase in egui's memory and, as a job is first seen or leaves queued or running, says its start (an export "Exporting 12 photos", another job "Started: Creating thumbnails") or its end ("Export finished: 12 photos exported", "Failed: Creating thumbnails"). Never as progress moves; cleared when the last job is dismissed. It says the start of a job that comes back under an id it ended with.
-- **The window's content,** `Jobs::window(&mut Ui) -> Option<ActivityAction>`: a group named "Jobs", a row per job, newest first by id whatever order they come in.
-  - Each row is a group named by its translated message, with a bar (a progress indicator named by the message, its percentage as the value) while it runs, its lines, and its buttons at the row's end, wrapping from its start when they do not fit.
-  - A job that is not an export says Waiting for other jobs, Finished, Failed or Cancelled and, if it failed, its `error` in `error`.
-  - An export has its own lines: "Next in line: 5 photos, to …" while queued, "3 of 12 done · now …", the outcome, a failure's photo, file and cause, what a cancel kept, "To folder".
-  - Buttons: Cancel ("Cancel export" for an export) only where `Job::cancellable` and the job is queued or running; Show in Finder, Explorer or Files and Try again only for an export, Show not while queued; Dismiss on a finished, failed or cancelled row. They are ordinary buttons in the Tab order, in reading order, newest row first.
-- **Messages** are `JobMessage { id, args }`, translated with Fluent from `crates/ui/locales`: `job-export` ("Exporting { $done } / { $total } to { $target }"), `job-import`, `job-delete` and `job-thumbnails`; the library's and the app's jobs add theirs. The window knows no engine type and no platform: the app names the file manager.
+- **The live region** is in the tree whenever the top panel has the spinner, empty while there is no job. It remembers each job's phase in egui's memory and, as a job is first seen or leaves queued or running, says its start ("Started: Exporting 0 / 12 to file on disk", "Started: Reading 2026-10 Lisbon") or its end, by the row's title once ended ("Exported 12 photos", "Failed: Reading 2026-10 Lisbon"). Never as progress moves; cleared when the last job is cleared. It says the start of a job that takes an ended one's place.
+- **The window's content,** `Jobs::window(&mut Ui) -> Option<ActivityAction>`: a group named "Jobs", a row per job, newest first by id whatever order they come in, and the footer.
+  - Each row is a group named by its translated title, with its bar while queued or running (a progress indicator named by the title, its percentage as the value, none while indeterminate), its lines and its buttons.
+  - The ✕, the row's buttons and Clear Finished are in the Tab order, in reading order, newest row first, the ✕ named "Cancel" ("Cancel export" for an export, by its kind's words).
+- **Messages** are `JobMessage { id, args }`, translated with Fluent from `crates/ui/locales`: each job's title, detail and outcome ids (`job-export…`, `job-folder`, `job-import`, `job-delete`), and `job-cause-<cause>` for a failure. The window knows no engine type and no platform: the app names the file manager.
 
 #### In the app
 
 `crates/app/src/jobs.rs`, `crates/app/src/dialog_host.rs`, `crates/app/src/main.rs`.
 
-- **The mirror,** `jobs::Mirror`, is a part of the app's mirror (`mirror.rs`, decision 59's reducer), which folds `Event::Job` and `Event::Export` into the design system's `Job` rows, built each frame (`Mirror::view`) in the language then.
+- **The mirror,** `jobs::Mirror`, is a part of the app's mirror (`mirror.rs`, decision 59's reducer), which folds `Event::Job` into the design system's `Job` rows, built each frame (`Mirror::view`) in the language then.
   - It starts empty and holds only what this run's events named, so the window is seeded with no old jobs; an event of a job it never saw changes nothing.
-  - An export keeps the request that started it (`Mirror::sent`, noted as the app sends `Command::Export`, matched to its job by the number `Event::Job { command }` carries), the result of each photo, the folder of the first file written and the first photo's failure. Its message is rebuilt from the counts ("Exporting 2 / 3 to file on disk", `job-target-disk`), done counting the photos written and those left out by On conflict.
-  - Its phase: queued, running, finished, cancelled, or failed where the job ended with a failure or a photo failed (Try again offers only then). A running job asked to stop loses its Cancel until it ends; a job discarded unrun leaves no row.
-  - The cause of a failure is the engine's code (`Cause::id`), worded by Fluent as `job-cause-<code>` in the three languages, the engine's own `reason` where a build has no words for a code. A failure with no photo or no file (a path that is not valid) is told without them (`activity-failure-photo`, `activity-failure-cause`).
-- **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport`, or to `UserBackground` when a command the app sent started it. A system job answers `Show::Update` and only shows in the window if it is open. The spinner's click is `Show::Front`: it opens the window or brings it to the front, with the focus.
+  - **The fold (planned, decision 72):** each event sets its part of its job's row ([A row](#a-row-and-where-each-part-comes-from)), with no code for any kind of job. `Added` makes the row, in the place of the job it `retries`; `Ended` with `Discarded` takes it away; `State` `Cancelled` takes the ✕ away until the end. Its phase is queued, running, finished, cancelled, or failed where `Ended` carries a failure.
+  - **Built today:** the mirror keeps each export's request (`Mirror::sent`, matched to its job by `Event::Job { command }`) and folds `Event::Export` into an export row, rebuilding its message from the counts; Try again rebuilds the export from the request; other jobs show their message and their failure's words. The fold replaces all three.
+  - **When the engine stops** under its jobs, every row still queued or running ends failed, cause `engine`, so quitting waits for nothing.
+- **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport` whose `Added` names a command the app sent. Every other job answers `Show::Update` and only shows in the window if it is open. The spinner's click is `Show::Front`: it opens the window or brings it to the front, with the focus.
   - An automatic open does not take the focus from the window the user is working in: on the Mac the host shows it with `apertrust_display::show_without_focus` (`orderFront:`), since winit's `set_visible(true)` is `makeKeyAndOrderFront:`. Windows and Linux show it as winit does until their modality is in.
   - An open asked twice before the window is made keeps the stronger focus.
 - **The window** is `jobs::Window`, a `Dialog` of the dialog host, a modeless window in a slot of its own beside the dialog's (`Slot::Jobs`). So it stays open while Settings or the Export sheet open, closes alone and has its own repaints, AccessKit tree and place; at most one dialog and one jobs window at a time.
-  - It is 440 points wide and as tall as its rows up to 480, then the rows scroll (`quiet_scroll`). It follows the main window's theme, language and interface scale while it stays open.
+  - It is 440 points wide inside its margin and as tall as its rows up to five, then the list scrolls (`quiet_scroll`) above a footer that stays in view. It follows the main window's theme, language and interface scale while it stays open.
   - Its place is kept as its own, `jobs_window.position` and `jobs_window.scale_factor` in settings, the host reporting `Output::JobsPlaced` as it closes; centred over the main window the first time. Where Quit closes the window, its place reaches the keeper before the app leaves (`settle`).
   - Closing it, with its close button, Cmd+W while it has the focus or Quit, stops no job. Close Window closes the window with the focus; Quit and the main window's close close both, and the app leaves once they have gone.
   - `AppDialogs::shown` reports the dialog's form with the focus of either window, so the view's keys rest while the jobs window has it.
 - **The buttons** come back as `Output::Jobs(ActivityAction)`, and `Mirror::act` says what to do:
-  - Cancel sends `CancelJob`;
-  - Show in Finder reveals the first file the export wrote (`open -R` on the Mac, `explorer /select,` on Windows, the folder through `xdg-open` elsewhere), or, before one is written, the folder its path names where that holds no variable;
-  - Try again sends the photos that failed and those not reached with the same settings and, once the new job is added, takes the failed row's place;
-  - Dismiss takes an ended row away.
-- **Not built:** a finished row clearing by itself after a while (an ended row stays until dismissed, and the spinner shows the tick or the warning sign meanwhile); a Window menu item or a key for the jobs window; the folder of an export before its first file, which the session could carry in the job's message; Windows' and Linux's focus handling.
+  - the ✕ sends `CancelJob`;
+  - Show in Finder reveals the destination: a file with `open -R` on the Mac, `explorer /select,` on Windows, its folder through `xdg-open` elsewhere, or a folder opened;
+  - Try again sends `RetryJob { job }`;
+  - Dismiss takes a failed row away, and Clear Finished every finished and cancelled row.
+- **Not built:** a Window menu item or a key for the jobs window, the way back to finished rows once the window is closed, since the spinner is gone at rest; Windows' and Linux's focus handling.
 
 ### What a script sees
 
-- **Commands:** `Export { photos, settings }`, with the settings the dialog edits, and `CancelJob { job }` (decision 57). The job's progress comes as `Job` events and each photo's result as `Export` events ([engine.md](engine.md), Export jobs).
+- **Commands:** `Export { photos, settings }`, with the settings the dialog edits, `CancelJob { job }` (decision 57) and, planned, `RetryJob { job }` (decision 72). Everything the jobs window shows comes as `Job` events, and each photo's result, its file and size, as `Export` events ([engine.md](engine.md), Export jobs).
 - **A preset** is named by the client, which reads it and sends its settings, since the engine reads no file (decision 43): `apertrust-cli export --preset NAME` will, and the server and MCP too.
 - **Presets** live in the user data folder, `presets/export.toml`, so the CLI reads the ones the dialog stores (decision 56).
 - **The dialog's last settings** are the `export.*` settings in `settings.toml`, kept as darktable keeps its conf. `apertrust-cli export` takes its format's options and On conflict from them, as darktable-cli takes them from darktablerc, `--conf export.…` over them for one run.
