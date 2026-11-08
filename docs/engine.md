@@ -1103,12 +1103,13 @@ Behind a `jobs` feature, as `log`, `build`, `folders` and `codegen` are, turned 
 - **`schedule`,** darktable's `dt_control_add_job` and `_control_schedule_job` restated as pure functions over the queues, held by tables of cases worked through darktable's code:
   - adding to `SystemForeground`: a job equal to a running one is discarded; one equal to a queued one moves that one to the top and the new is discarded; past 30 the bottom one is discarded. Equal as `_control_job_equal`: the same kind and queue, then the same key, darktable's params compared by bytes, or the same description where there is no key;
   - picking: each queue's head in queue order, `UserExport` skipped while an export runs; the head of strictly highest priority wins, so a tie goes to the earlier queue; every other queue's head gains one priority.
-- **`Job`:** `Job::new(kind, description, body)`, `kind` a `&'static str` standing for darktable's execute function; `.dedup(key)`; `.progress(message, cancellable)`, darktable's `dt_control_job_add_progress`, so the job shows from the moment it is added, queued.
+- **`Job`:** `Job::new(kind, description, body)`, `kind` a `&'static str` standing for darktable's execute function; `.dedup(key)`; `.progress(message, cancellable)`, darktable's `dt_control_job_add_progress`, so the job shows from the moment it is added, queued. Planned (decision 72): `.destination(destination)`, `.detail(message)`, `.total(total)` and `.retries(job)`, which its `Added` carries.
 - **`State`:** `Initialized`, `Queued`, `Running`, `Finished`, `Cancelled`, `Discarded`; darktable's `Disposed` is the drop.
-- **`Context`,** what the body is handed: `cancelled()`, darktable's `_job_cancelled`; `set_fraction(f64)`, clamped to 0 to 1; `set_message(Message)`; `wait(&Receiver<T>) -> Result<T, Interrupted>`, which waits for another thread's answer and returns at cancel, or when the other side hangs up: the engine's GPU steps, a root's queue (decision 53).
-- **The body** returns `Ok(())` or `Err(Message)`, a failure in plain words; a panic in it is caught and ends the job as failed. What it produced travels in its caller's own events (an export's photos, a listing's chunks), as darktable's jobs raise signals.
+- **`Context`,** what the body is handed: `cancelled()`, darktable's `_job_cancelled`; `set_fraction(f64)`, clamped to 0 to 1; `set_message(Message)`; `wait(&Receiver<T>) -> Result<T, Interrupted>`, which waits for another thread's answer and returns at cancel, or when the other side hangs up: the engine's GPU steps, a root's queue (decision 53). Planned (decision 72): `set_progress(done, total)` in `set_fraction`'s place, `set_title` in `set_message`'s, and `set_detail`, `set_destination`, `set_outcome` and `offer`, everything its row shows.
+- **The body** returns `Ok(())` or `Err(Message)`, a failure in plain words; a panic in it is caught and ends the job as failed. Planned (decision 72): `Err(Failure)`, its cause code, item, file and reason, a panic `panicked`. What it produced for a script travels in its caller's own events (an export's files, a listing's chunks), as darktable's jobs raise signals.
 - **`Message`:** an id and named arguments (numbers, text, paths), which the client translates with Fluent (`job-…`, decision 36); base writes no English.
 - **`JobEvent`,** darktable's proxy (`added`, `updated`, `message_updated`, `cancellable`, `destroyed`) as plain events to the observer, for jobs with a progress: `Added { job, kind, queue, message, cancellable, command }`, `Progress { job, fraction }`, `Message { job, message }`, `State { job, state }`, `Ended { job, state, failure }`. A fraction or message goes out at most every 0.5 s, darktable's `PROGRESS_UPDATE_INTERVAL`, the first and the last always.
+  - Planned (decision 72), everything a job's row shows: `Added` with its `title`, `destination`, `detail`, first `progress` and the job it `retries`; `Progress { done, total }`; `Title`; `Detail`; `Destination`; `State`; and `Ended` with its `outcome`, `failure`, the time it ended (`at`, stamped by the control as it ends the job) and its `offers`. The four values go through the throttle; the fields are in [events.md](events.md#a-jobs-events).
 - **Workers:** `worker 0` to `worker N`, 7 where `available_parallelism` is at least 4, else 4, as `dt_worker_threads` without its memory term.
 - **`-d control`:** darktable's lines, `add_job`, `run_job+`, `run_job-` and discards, with the queue and priority, as `_control_job_print`.
 - **`shutdown`:** cancellable jobs cancelled, queued ones discarded, running ones that cannot be cancelled finished, the workers joined.
@@ -1151,6 +1152,7 @@ flowchart TD
 - **One step on the GPU at a time.** After a step the engine waits for its work, and all submitted before it, to finish on the GPU (`on_submitted_work_done`, polled without waiting) before it steps any task again. So at most one step's work is ever on the GPU, and a frame waits for one step at most. A turn sends its events first and steps last, so a frame never waits for the step after it.
 - **Cancel and failure.** Before each step the tasks of jobs no longer running are dropped, a cancelled job's among them, so its task never steps again. A step's panic and the GPU's errors for it, caught in error scopes of its own, fail its task alone.
 - **The protocol.** `Event::Job { event, command }`: base's `JobEvent`, and on `Added` the number `Session::send` gave the command that started the job, so a client knows its own. The observer reads it from what `Jobs::add` sets around `Control::add`, the job's `Added` coming on the engine thread inside it. The observer keeps the jobs shown, from `Added` to `Ended`, with whether each can be cancelled. `Command::CancelJob { job }` refuses one that cannot be (`SessionError::NotCancellable`), and a job not shown, ended or never with a progress, changes nothing.
+  - **Try again, planned (decision 72):** `Command::RetryJob { job }`. A job that offers `Retry` leaves the session, before its body returns, the command its retry runs, an export's `Command::Export` of the photos that failed and those not reached. The session keeps the latest 64, runs one as if it were sent with `RetryJob`'s number, its job built with `.retries(job)`, and refuses one not kept, or used already, with `SessionError::NotRetryable`.
 - **The edit writer** stays the session's thread (decision 28), never a job, so a save never waits for a worker and D12's reads stay in order with its writes.
 - **Quitting:** dropping the session shuts its control down; the app asks first while a user job runs ([gui.md](gui.md), The jobs window).
 - **The session's end.** The edit is saved, then `Control::shutdown` runs on a short-lived thread of its own while the engine thread keeps stepping the tasks the workers hand it until every worker has ended. So a body that cannot be cancelled and still waits for the engine thread finishes, and the drop never hangs.
@@ -1171,7 +1173,7 @@ flowchart TD
 | J7 | Each job throttles its progress | The API, at darktable's 0.5 s | Every caller gets darktable's rate |
 | J8 | Progress without a job (Lua) | Every progress a job's | Lua is its one caller; a script's task is a job |
 | J9 | Quit waits 5 s, then each running job finishes | Asks first; cancellable jobs stop, others finish, queued ones go | Decision 56's quit alert; a move never stops halfway |
-| J10 | A failed store cancels the export | A body ends failed, in plain words | The jobs window says why |
+| J10 | A failed store cancels the export | A body ends failed, with its cause as a code, its item, its file and the error in plain words (the code planned, decision 72) | The jobs window says why |
 | J11 | The sidecar writer a never-ending `SYSTEM_FG` job | The session's edit writer thread | A save never queues behind a worker |
 | J12 | The background jobs panel | One spinner and a modeless jobs window | The app's design ([gui.md](gui.md), The jobs window) |
 | J13 | The Unity launcher's progress, Linux only | No, on any platform | The spinner and the jobs window are enough |
@@ -1179,6 +1181,8 @@ flowchart TD
 | J15 | A priority is an `unsigned char` that wraps past 255 to 0 | It saturates at 255 | A head that has waited longest would lose to every other |
 | J16 | A job added once control has stopped runs on the caller's thread | It is discarded, ending `Discarded` with its queue reported; `run_now` is the synchronous path | A job added while quitting must not block its caller or outlive the session |
 | J17 | Past 30 the stack discards its bottom job, never one that has started, since a running job leaves its queue | A GPU task that has stepped waits in the stack again, so past 30 the oldest task that has not stepped is dropped in place of the bottom, or the new one if every other has stepped; the 30 counts the stepped ones too | A still half rendered must not be thrown away for a newer one |
+| J18 | A progress is a fraction, 0 to 1 | Done and an optional total, the fraction their ratio, no total an indeterminate bar (planned, decision 72) | A row says "3 of 12" from the same numbers, and a job that cannot count ahead shows so |
+| J19 | The panel shows a message, a bar and cancel | Each job also reports its detail line, its destination, its outcome, its failure's cause, item and file, when it ended and what it offers, Try again a command of the session's (planned, decision 72) | The shell is Apertrust's (decision 2): every client draws a job's row from its events, with no code for its kind |
 
 ### Tests
 
@@ -1193,6 +1197,7 @@ flowchart TD
   - the session ends with a job that cannot be cancelled in flight, its task handed and stepped during the shutdown, and refuses `CancelJob` for it;
   - a `SystemForeground` task that has stepped outlasts 31 newer ones, the two oldest that had not stepped dropped (J17);
   - a panic as the jobs end still lets every body hear `Stopped` and the session end.
+- Planned with decision 72: the throttle over `Progress`, `Title`, `Detail` and `Destination` on its own clock, the last of each before `Ended`; `Ended` carrying the outcome, failure, time and offers the body set, a panic as `panicked`; `RetryJob` running the kept command once, its `Added` naming `retries`, and refused a second time and for a job that offered none.
 
 ## The module layer
 
@@ -1712,7 +1717,7 @@ The rest is planned.
 
 ### The job
 
-- **A `UserExport` job of the session's control** ([Jobs](#jobs), decision 57), darktable's `dt_control_export`: its progress "export images", cancellable, its message "exporting N / M to" the storage per photo, its fraction per photo. Its body runs on a job worker, and its renders are `GpuTask`s that the engine thread steps as background work, decision 37's scheduler, built first for exports.
+- **A `UserExport` job of the session's control** ([Jobs](#jobs), decision 57), darktable's `dt_control_export`: its progress "export images", cancellable, its message "exporting N / M to" the storage per photo, its fraction per photo. Planned (decision 72), it reports its whole row: its title darktable's message from 0 as it is added, its photos as its total and done, a detail naming the photo under way, its folder and then its first file as its destination, and at its end its outcome, its first failure and Try again. Its body runs on a job worker, and its renders are `GpuTask`s that the engine thread steps as background work, decision 37's scheduler, built first for exports.
   - The thread takes the commands that have arrived, renders the live photo's frame if it changed, then makes one submission of the export's work, then looks for commands again, polling every 0.25 ms while that submission runs or a readback is on its way, as it does for the scopes (decision 19).
   - A frame never waits behind more than one export submission, and an edit never waits for an export to end.
   - With several photos on screen, stills take the same turn (decision 37), the waiting tasks taking it by darktable's order and ageing ([Jobs](#jobs)): a still's `SystemForeground` step before an export's, the export's gaining a priority each turn it waits.
@@ -1737,6 +1742,12 @@ The rest is planned.
 **How it is built** (`crates/engine/src/export_job.rs`):
 
 - **darktable's job:** kind `export`, its progress `job-export` and cancellable, a `job-export-photo` message per photo (`number`, `total`, `storage` "disk", `photo`), a fraction per photo done. Its failure, ending it, is `job-export-failed` with `cause`, `reason` and, where they are known, `photo` and `file`.
+- **What it reports, planned (decision 72):**
+  - `Added`: kind `export`, cancellable; its title `job-export-photo` at `number` 0; `total` its photos; its destination the path's folder where the pattern holds no variable there, `~` the person's home; its detail `job-export-queued` with the `count` and the `folder` as typed.
+  - For each photo: its `Title` as now, `Detail` `job-export-now` (`done`, `total`, `photo`), and `Progress` with the photos done, written, skipped or failed; between photos `job-export-between`.
+  - `Destination`: the first file written or left by On conflict, once there is one.
+  - At its end: the outcome by its counts and state (`job-export-finished`, `job-export-failed-outcome`, `job-export-cancelled`, with `written`, `skipped`, `failed` and `total`); the failure of the first photo that failed, or the one that ended the job, with the photo as its item, the file and `Cause::id` as its cause, which makes the job a failed one; and `Offer::Retry` with the photos that failed or were not reached, unless it was cancelled, the session handed `Command::Export` of them with the same settings and places.
+  - `Event::Export` stays the record for scripts and the CLI, each photo's start and file and the counts; the app reads none of it.
 - **D12's snapshot.** As `Export` is handled, and only where one of its photos is the open one, the open photo's edit, image context, uploaded raw and `Shot` (what the variables read of the raw, kept with the photo) are taken from memory, its change time now where the edit is unsaved.
   - The edit writer is handed a read of every photo's sidecar, which it makes after the writes handed to it before: writes and reads go to it in one queue, consecutive writes of a file still coalesced. The body waits for it through `Context::wait`.
   - The open photo's edit is the one the session holds, so a gesture's value in progress, a drag not yet done, is exported as it stands.
@@ -1790,9 +1801,10 @@ Plain data, as the session's other commands are, moving into `apertrust-protocol
 ```text
 Command::Export { photos: Vec<PathBuf>, settings: ExportSettings, places: Places }   its job's Added names this command's number
 Command::CancelJob { job }                                          any cancellable job (Jobs)
+Command::RetryJob { job }                                           a failed job's offer, its photos left (planned, decision 72)
 Command::PreviewExport { photos: Vec<PathBuf>, settings: ExportSettings, places: Places }
 
-Event::Job { event, command }               the job: added, queued, running, its fraction and message, its end (Jobs)
+Event::Job { event, command }               the job: added, queued, running, its fraction and message, its end (Jobs); its whole row (planned, decision 72)
 Event::Export { job, status }
   Started { index, source }                 a photo begins
   Done { index, result }                    Written { path, width, height }

@@ -5,7 +5,7 @@ The engine answers its clients with events: a photo opened, the values after a c
 **Status.** [Decision 59](decisions/0059-one-event-system.md) records the design, with the options considered.
 
 - **Built:** the session's side, in `crates/engine/src/session.rs` and `crates/engine/src/session/outbox.rs`; the app's reducer, in `crates/app/src/mirror.rs`; and the library's first events, a folder opened and listed and its photos' thumbnails, in `crates/library/src/ops.rs`, the session and `crates/app/src/folder.rs`.
-- **Planned:** `CollectionChanged`, notices for the user and the remote protocol ([What is planned](#what-is-planned)).
+- **Planned:** each job reporting its whole row (decision 72, [A job's events](#a-jobs-events)), `CollectionChanged`, notices for the user and the remote protocol ([What is planned](#what-is-planned)).
 
 ## The idea
 
@@ -41,10 +41,12 @@ The topics, `Fact`, as built:
 | `Scopes` | `Event::Scopes` |
 | `ExportPreview` | `Event::ExportPreview`, the latest answer kept |
 | `Progress(job)` | a job's `JobEvent::Progress`, by job |
-| `Message(job)` | a job's `JobEvent::Message`, by job |
+| `Message(job)` | a job's `JobEvent::Message`, by job; `Title(job)` once decision 72 is built |
+| `Detail(job)` | a job's `JobEvent::Detail`, by job (planned, decision 72) |
+| `Destination(job)` | a job's `JobEvent::Destination`, by job (planned, decision 72) |
 | `State(job)` | a job's `JobEvent::State`, by job |
 
-A job's fraction, message and state are three topics, since each event carries only its own.
+Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
 
 Planned facts: a readout, by module (decision 19); the selection and the active photo (decision 37); and a page of the collection shown, by page.
 
@@ -59,8 +61,8 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 | `Frame(Frame)` | fact | `through` | engine thread | the display buffer to show (decision 17), its size, the GPU timings and the latency from the first command it answers |
 | `Scopes(Reading)` | fact | `through`, the frame's | engine thread | what the frame holds, counted for the scopes, about a frame after it (decision 19; [engine.md](engine.md#scopes)) |
 | `Saved { path, through }` | notice | `through` | edit writer | the file written, as the edit stood after `through` commands |
-| `Job { event, command }` | fact or notice by `event` | `command` on `Added` | job control's observer | a job with a progress (decision 57; [engine.md](engine.md#jobs)): `Added` (notice: its kind, queue, message, whether it can be cancelled), `Progress`, `Message` and `State` (facts by job), `Ended` (notice: its last state and failure) |
-| `Export { job, status }` | notice | `job` | the export job's body | each photo's `Started` and `Done` with its result, then `Finished` with the counts ([engine.md](engine.md#export-jobs)) |
+| `Job { event, command }` | fact or notice by `event` | `command` on `Added` | job control's observer | a job with a progress (decision 57; [engine.md](engine.md#jobs)): `Added` (notice), its values as facts by job, `Ended` (notice), everything its row in the jobs window shows ([A job's events](#a-jobs-events)) |
+| `Export { job, status }` | notice | `job` | the export job's body | the export's record for scripts and the CLI: each photo's `Started` and `Done` with its result, then `Finished` with the counts ([engine.md](engine.md#export-jobs)); no client draws a row from it (decision 72) |
 | `ExportPreview { through, preview }` | fact | `through`, the `PreviewExport`'s | the preview job's body | the Export dialog's lines: each photo's file and what On conflict would do, the pattern's errors, the active photo's size, each folder's preflight |
 | `Library(LibraryEvent)` | notice | `open`, the number of the `Library` command that opened or closed the folder | the folder's job body and each thumbnail's, through the library's observer; `Closed` the engine thread | `Opened { name, folder }`; `Subfolders { names }`, once, before the photos; `Listed { photos, done }`, chunks of at most 256 photos, the last `done`; `Taken { times }`, the photos' capture times, after the last chunk; `Failed { reason }`; `Closed`; `Thumbnail { photo, size, image }`, one for each thumbnail asked for ([below](#the-librarys-events)) |
 | `Failed(SessionError)` | notice | `open` or `command` where it answers one | any | an error, in plain words ([Failures](#failures)) |
@@ -79,14 +81,45 @@ Jobs with no progress, the export preview among them, send no `Job` events.
 
 Planned events: `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
+## A job's events
+
+Decision 72, planned: each job reports everything its row in the jobs window shows, so a client folds its events into the row with no code for any kind of job ([gui.md](gui.md#the-jobs-window)). The events are base's `JobEvent` (`apertrust_base::jobs::progress`), which the session sends as `Event::Job { event, command }`; their API for a job's body is in [engine.md](engine.md#bases-part-apertrust_basejobs). Built today: `Added { job, kind, queue, message, cancellable }`, `Progress { job, fraction }`, `Message`, `State` and `Ended { job, state, failure }`, the failure a message.
+
+| Event | Field | What it is |
+| --- | --- | --- |
+| `Added` (notice) | `job` | The job's number, from 1 within the session, never reused |
+| | `kind` | What it does, `export`, `folder`, `import`: the row's icon, by the design system's table |
+| | `queue` | darktable's queue, `None` for `run_now` |
+| | `title` | Its title, a `Message`, darktable's message: "Exporting 0 / 5 to file on disk", "Reading 2026-10 Lisbon" |
+| | `cancellable` | Whether `CancelJob` stops it, darktable's `cancellable` |
+| | `destination` | Where its results go, if it says: `Destination::Folder(path)` or `File(path)` |
+| | `detail` | The line under the bar while it waits, if it gives one: "Next in line: 5 photos, to ~/Pictures/Exports" |
+| | `progress` | `Progress { done, total }` as it starts: `done` 0, `total` where it knows it |
+| | `retries` | The ended job it tries again, for one a `RetryJob` started |
+| `Progress` (fact) | `done`, `total` | Items done, and of how many (`Option<u64>`): the bar fills at `done / total`, `done` clamped to `total`; with no total the bar is indeterminate |
+| `Title` (fact) | `title` | Its new title, darktable's `message_updated`: "Exporting 3 / 12 to file on disk" |
+| `Detail` (fact) | `detail` | The one line under the bar, `Option<Message>`, `None` clearing it: "3 of 12 done · now IMG_2044.ARW" |
+| `Destination` (fact) | `destination` | Where its results go now: an export's first file written |
+| `State` (fact) | `state` | `Queued`, `Running`, or `Cancelled` while a running job stops |
+| `Ended` (notice) | `state` | `Finished`, `Cancelled` or `Discarded`; a discarded job leaves no row |
+| | `outcome` | The ended row's title, `Option<Message>`: "10 of 12 exported"; without it the client words the title with the state |
+| | `failure` | `Option<Failure>`; set exactly when the job failed |
+| | `at` | When it ended, the wall clock as the control ended it (`SystemTime`; milliseconds since the Unix epoch in the remote protocol) |
+| | `offers` | `Vec<Offer>`, what it can do once ended: `Retry { items }`, sent back as `Command::RetryJob { job }` |
+
+- **`Failure`** is `{ cause, item, file, reason }`: `cause` a code a client words with Fluent as `job-cause-<cause>` (the export's are `Cause::id`'s, `panicked` for a panic); `item` the photo or file it failed on, `file` the file it could not write, each `Option<PathBuf>`; `reason` the error in plain words, for the log and a client with no words for the code.
+- **`Message`** is an id and named arguments, numbers, text or paths, worded by the client with Fluent (decision 36), as now.
+- **The throttle** is darktable's 0.5 s for each of `Progress`, `Title`, `Detail` and `Destination`, the first and the last always; the outcome and the offers go out in `Ended`, after the last of them.
+- **Try again.** A job that offers `Retry` has left the session what it runs, an export the photos that failed and those not reached with the same settings. The session keeps the latest 64. `RetryJob { job }` runs it as if sent then; its job's `Added` names `retries: Some(job)`, and a client puts its row in the old one's place. A retry is used once; one not kept is refused, `NotRetryable`.
+
 ## Numbers
 
 Every command has a number, which `Session::send` returns: 1 for the first, then up by one each. An event that includes or answers commands names them, so a client knows which of its commands an event reflects and never compares arrival times:
 
 - `through` on `Values`, `Frame`, `Scopes`, `Saved` and `ExportPreview`: how many commands it includes. It never decreases on each of `Values`, `Frame` and `Scopes`, nor on `Saved` for one file. A client shows a value it has just sent until a `Values` includes that command, so a slider never jumps back (decision 17).
 - `open` on `Opened` and on `SessionError::Open`, the `Open` command's number, so a client drops what an earlier open sent. On every `LibraryEvent`, the number of the `Command::Library` it answers: an open's for what that open found, a close's on its `Closed`, so a client keeps the number of its latest library open or close and drops the rest.
-- `command` on a job's `Added`: the number of the command that started the job, so a client knows its own job. The rest of a job's events name the job.
-- A refused command names itself: `SessionError::Refused { command, error }`. It changed nothing. An edit refused, a change on a photo open for viewing only and a job that cannot be cancelled are refusals.
+- `command` on a job's `Added`: the number of the command that started the job, so a client knows its own job; for a job a `RetryJob` started, that command's, with `retries` naming the job it tries again (planned, decision 72). The rest of a job's events name the job.
+- A refused command names itself: `SessionError::Refused { command, error }`. It changed nothing. An edit refused, a change on a photo open for viewing only, a job that cannot be cancelled and, planned, a job with no retry kept are refusals.
 
 ## One outbox per session
 
@@ -123,14 +156,14 @@ A job that needs the person's answer is to send a notice naming its question, an
 
 A command on many photos sends one notice naming them; a listing sends chunks; progress comes at most every 0.5 s.
 
-An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes its reason and property. It carries what a client shows (the values, a job's fraction, the changed photos' ratings), so no client asks again for each item. The one exception is planned: a collection's photos, which a client reads by page after `CollectionChanged`.
+An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes its reason and property. It carries what a client shows (the values, a job's progress and detail, the changed photos' ratings), so no client asks again for each item. The one exception is planned: a collection's photos, which a client reads by page after `CollectionChanged`.
 
 ## Failures
 
 `Failed(SessionError)` carries errors in plain words, which the app shows and the CLI logs. Those that answer a command are wrapped with its number:
 
 - `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open.
-- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly` or `NotCancellable`.
+- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable` or, planned, `NotRetryable`.
 
 The others stand alone:
 
@@ -192,7 +225,7 @@ Built ([gui.md](gui.md#a-frame)). Events enter the app in one place, `Mirror::ap
 
 - **Draining.** `App::drain`, first in `App::logic`, takes the session's events and applies each. eframe runs it while the window is minimised too, so a save or a job's end is taken in while nothing is drawn.
 - **Drawing.** Panels draw from the mirror each frame. A cache derived from it compares a generation number the mirror raises: the grid panel's thumbnails' textures compare the folder's (`FolderState::generation`), raised with every change of the folder or its thumbnails.
-- **Reactions.** What must happen once in reply to an event, the reducer returns as a `Reaction`, which `App::drain` carries out: `Reaction::Jobs(Show)`, the jobs window opening as the person's own job starts or updating; `Reaction::Preview { through, preview }`, an export preview handed to the Export dialog; and `Reaction::FolderOpened` and `Reaction::FolderFailed`, for the recent folders. Later a notice's toast or a live region's announcement.
+- **Reactions.** What must happen once in reply to an event, the reducer returns as a `Reaction`, which `App::drain` carries out: `Reaction::Jobs(Show)`, the jobs window opening as the person's own job starts or updating, its rows a fold of `Event::Job` alone once decision 72 is built ([gui.md](gui.md#in-the-app)); `Reaction::Preview { through, preview }`, an export preview handed to the Export dialog; and `Reaction::FolderOpened` and `Reaction::FolderFailed`, for the recent folders. Later a notice's toast or a live region's announcement.
 - **Refusals.** A refusal's command number drops that command's pending value and the save it would have waited for. `Saving` keeps the set of unsaved command numbers, so a refused change never leaves "Not saved yet" behind.
 - **Stale events.** The mirror drops what an earlier open left on its way (`PhotoState::stale`).
 - **The app's own state.** The app's own changes, a theme, a setting, a tab, are its state, with no event.
@@ -245,10 +278,12 @@ Kept from darktable:
 - **The session, built.** In `session.rs`: `every_event_states_whether_it_is_a_fact_or_a_notice`, every variant's kind through an exhaustive match, so a new variant must state its kind; `a_batch_s_refusal_comes_before_its_values_and_its_values_before_its_frame`; `through_never_decreases_over_a_drag`, over the values, frames, scopes readings and saves; `a_job_s_events_reach_the_client_in_order_its_added_naming_its_command`; and the refused cancel numbered in `a_session_ends_with_a_gpu_job_that_cannot_be_cancelled_in_flight`. In `outbox.rs`: `no_event_is_lost_while_three_threads_send_and_a_fourth_drains`, `a_burst_wakes_the_client_once_and_a_send_after_a_drain_again`, `nothing_is_sent_once_the_client_drops_its_handle` and `a_drain_s_kinds_count_runs`.
 - **The app's reducer, built:** event sequences in, the mirror and its reactions out, with no egui (`crates/app/src/mirror.rs`'s tests: a drag, a frame replacing the last and clearing a failure, refusals with and without an earlier unsaved change, a failed save, a failed open with stale events dropped, a scopes failure, a job from added to ended, the engine stopping, the preview floor, opening another photo).
 - **The library, built.** In `crates/library/src/ops.rs`: `an_open_reports_the_folder_its_subfolders_and_every_photo_with_its_edit` (every edit state, subfolders sorted with the hidden one left out, chunks in order, done once), `an_empty_folder_sends_one_empty_chunk_done`, `a_missing_folder_or_a_file_fails_without_opening`, `a_cancel_between_chunks_ends_the_open_with_no_chunk_done`, `a_cancel_while_the_folder_is_read_sends_nothing` and `a_cancel_returns_at_once_while_a_call_into_the_folder_is_stuck` (a listing held by `listing::stall`, a test hook); `listing::tests::names_sort_as_a_file_browser_lists_them`. In `session.rs`: `a_folder_opens_as_a_job_whose_events_name_the_open` and `a_second_open_cancels_the_first_and_a_close_the_second`, and each `LibraryEvent`'s kind in `every_event_states_whether_it_is_a_fact_or_a_notice`. In `crates/app/src/folder.rs`: the reducer's side, among them `a_second_open_drops_the_first_one_s_late_events`, `a_close_empties_the_folder_and_drops_what_the_reading_still_sends` and `a_reading_cancelled_through_its_job_ends_the_open_with_no_reason`. Planned: one `CollectionChanged` per change.
+- **A job's events, planned with decision 72:** base's `Control` sending each value through the throttle and the end's outcome, failure, time and offers (`crates/base/src/jobs/tests.rs`); the export's events in order, from `Added` with its total and destination to `Ended` with its counts and `Retry` (`an_export_s_events_come_in_order`); `RetryJob` exporting the photos left, refused a second time; and the app's fold, every row's part from one event, with no export in its code.
 - **The remote protocol, planned:** [session-protocol.md](session-protocol.md#tests).
 
 ## What is planned
 
+- **A job's whole row in its events** (decision 72), in the steps of [roadmap.md](roadmap.md#the-jobs-window-and-the-job-api) ([A job's events](#a-jobs-events)).
 - **`CollectionChanged`**, with darktable's reason and property, with the first change to a collection ([Lower crates report through an observer](#lower-crates-report-through-an-observer)).
 - **Notices for the user**, `Event::Notice { message, photo }` and its place in the app, with the library's step 12 ([Notices for the user](#notices-for-the-user)).
 - **The remote protocol**, with the server or MCP, whichever comes first ([session-protocol.md](session-protocol.md#remote-clients)).
