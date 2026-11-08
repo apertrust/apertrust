@@ -51,7 +51,7 @@ export MACOSX_DEPLOYMENT_TARGET=11.0
 finder_layout=false
 dev=false
 only=
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
     --finder-layout) finder_layout=true ;;
     --dev) dev=true ;;
@@ -68,7 +68,7 @@ while [ $# -gt 0 ]; do
 done
 
 # The package's identity: its files' and binaries' name, the name it shows, its id.
-if [ "$dev" = true ]; then
+if [[ "$dev" = true ]]; then
     # Read by apertrust-base's build script: the binaries name themselves Apertrust Dev
     # and keep their settings in its folder.
     export APERTRUST_DEV=1
@@ -84,7 +84,7 @@ fi
 # The file $1 with the package's identity: as it is, or for --dev with each
 # `FROM => TO` of packaging/dev-identity.txt replaced wherever it occurs.
 with_identity() {
-    if [ "$dev" = false ]; then
+    if [[ "$dev" = false ]]; then
         cat "$1"
         return
     fi
@@ -102,7 +102,7 @@ with_identity() {
 }
 
 installed=$(cargo packager --version 2>/dev/null | awk '{ print $2 }') || true
-if [ "$installed" != "$PACKAGER" ]; then
+if [[ "$installed" != "$PACKAGER" ]]; then
     echo "error: cargo-packager $PACKAGER is needed (found: ${installed:-none}):" >&2
     echo "  cargo install --locked cargo-packager --version $PACKAGER" >&2
     exit 1
@@ -128,14 +128,14 @@ build() {
 }
 
 exe=
-if [ "$platform" = windows ]; then
+if [[ "$platform" = windows ]]; then
     exe=.exe
 fi
 # The targets to package: on macOS each Apple target installed, one image each; elsewhere
 # the host's.
-if [ -n "$only" ]; then
+if [[ -n "$only" ]]; then
     triples=$only
-elif [ "$platform" = macos ]; then
+elif [[ "$platform" = macos ]]; then
     installed_targets=$(rustup target list --installed 2>/dev/null || true)
     triples=
     for arch in aarch64 x86_64; do
@@ -165,13 +165,13 @@ dress_dmg() {
     hdiutil convert -quiet "$dmg" -format UDRW -o "$rw"
     hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint "$mount" "$rw"
     volume=$(diskutil info "$mount" | sed -n 's/^ *Volume Name: *//p')
-    if [ "$volume" != "$product" ]; then
+    if [[ "$volume" != "$product" ]]; then
         hdiutil detach -quiet "$mount"
         echo "error: $dmg's volume is \"$volume\", not $product, which its layout needs" >&2
         exit 1
     fi
     layout=layout.DS_Store
-    [ "$dev" = true ] && layout="layout-dev.DS_Store"
+    [[ "$dev" = true ]] && layout="layout-dev.DS_Store"
     mkdir -p "$mount/.background"
     cp packaging/macos/dmg/background.tiff "$mount/.background/background.tiff"
     cp "packaging/macos/dmg/$layout" "$mount/.DS_Store"
@@ -186,7 +186,7 @@ dress_dmg() {
 
 package() {
     triple=$1
-    if [ "$platform" = macos ] || [ -n "$only" ]; then
+    if [[ "$platform" = macos ]] || [[ -n "$only" ]]; then
         build --target "$triple"
         bin_dir=$target_dir/$triple/release
     else
@@ -199,7 +199,7 @@ package() {
     # own build, since another architecture's binary may not run here (Intel's on Apple
     # silicon without Rosetta), and it is the same for every target.
     cli=$bin_dir/apertrust-cli$exe
-    if [ "$triple" != "$host" ]; then
+    if [[ "$triple" != "$host" ]]; then
         cargo build --release --locked -p apertrust-cli --target "$host"
         cli=$target_dir/$host/release/apertrust-cli$exe
     fi
@@ -211,7 +211,7 @@ package() {
         echo "error: the version $full does not start with X.Y.Z, which packages need" >&2
         exit 1
     fi
-    if [ -n "${APERTRUST_VERSION:-}" ]; then
+    if [[ -n "${APERTRUST_VERSION:-}" ]]; then
         version=$short
         build_number=$short
     else
@@ -226,7 +226,7 @@ package() {
     mkdir -p "$out"
     # Apertrust Dev's binaries under their own names, so that its installer and tarball
     # never take Apertrust's place (Windows registers Open With by the executable's name).
-    if [ "$dev" = true ]; then
+    if [[ "$dev" = true ]]; then
         mkdir -p "$stage/bin"
         cp "$bin_dir/apertrust$exe" "$stage/bin/$package$exe"
         cp "$bin_dir/apertrust-cli$exe" "$stage/bin/$package-cli$exe"
@@ -252,7 +252,7 @@ package() {
     linux) formats=appimage ;;
     esac
     # create-dmg drives Finder to lay out the image's window unless CI is set.
-    if [ "$platform" = macos ] && [ "$finder_layout" = false ]; then
+    if [[ "$platform" = macos ]] && [[ "$finder_layout" = false ]]; then
         export CI=true
     fi
     cargo packager --config "$stage/Packager.toml" --formats "$formats" --target "$triple" \
@@ -273,7 +273,7 @@ package() {
             codesign --verify --strict "$dmg"
             # cargo-packager names the image after the product, "Apertrust Dev_…": the
             # file's name has no space, and -dev as the other packages' have.
-            if [ "$dev" = true ]; then
+            if [[ "$dev" = true ]]; then
                 mv "$dmg" "$out/Apertrust-dev_${dmg##*/Apertrust Dev_}"
             fi
         done
@@ -300,7 +300,7 @@ package() {
         # A portable zip: the two executables and the licences in one folder, named for the
         # architecture as the installer is.
         arch=${triple%%-*}
-        [ "$arch" = x86_64 ] && arch=x64
+        [[ "$arch" = x86_64 ]] && arch=x64
         name=${package}_${version}_$arch-portable
         tree=$stage/zip/$product
         rm -rf "$stage/zip"
