@@ -75,7 +75,8 @@ Built first, and partly built.
   - On Windows and Linux, the installer's and the desktop entry's registrations pass `--in-folder` before the file (planned, [packaging.md](packaging.md#opening-a-raw-from-the-system)), so the app tells them from a terminal's `apertrust FILE`, which opens [one photo](#one-photo).
 - Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
-- The Library tab's Library module has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in the module's options ([In the window](#in-the-window)).
+- The Library tab's Library module has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in the module's options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
+- Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, of the same form as a library's (planned, decision 73).
 - Import… (planned) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it.
 - It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
 
@@ -167,7 +168,7 @@ darktable's library is kept feature by feature, with 24 deviations, each for a r
 
 ### In the window
 
-Decisions 37 and 46. The Library tab of the side panel chooses what the grid panel shows. Its sections are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5 ([gui.md](gui.md#the-side-panel)). The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
+Decisions 37, 46 and 73. The Library tab of the side panel chooses what the grid panel shows and describes the photos in it. Its modules are Library, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Library's groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
 
 **The sections by mode:**
 
@@ -179,7 +180,8 @@ Decisions 37 and 46. The Library tab of the side panel chooses what the grid pan
 | A project | Its folders, with their roles marked: Capture, Selects, Output, Trash | Its albums, which group photos without moving them | Its smart albums, saved searches within the project |
 
 - **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in the Library module's options: Make This Folder a Library…, New Library… on the open folder, in place. The module's top, what is open with its recents and ＋, is the same in every mode.
-- **Folder mode's quick filters** are the grid bar's ([gui.md](gui.md#the-grid-bar)), not smart albums.
+- **Filters in folder mode** (decision 73, Phase 3, planned) run over the open folder's index in memory, not smart albums: nothing is written beside the photos, and Save as Smart Album leads to Make This Folder a Library…. A filter that hides selected photos leaves only the shown ones selected.
+- **Keywords** are one module, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
 - **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
 
 - **Built:** File › Open Folder… and the Library tab's Folders (Open Folder…, the open folder's name with its photo count, its subfolders, the recent folders, `library.recent_folders` in settings); the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
@@ -368,7 +370,7 @@ sequenceDiagram
 From decision 54 and the steps; none of these names exist in the code yet.
 
 - **What clients see:** `PhotoRef`, a root id or a folder path, a relative path and an optional virtual copy id (`5b0c7d0e/Photos/Wedding/DSCF0001.RAF#7c0e9a14`); `Target`, photos, the selection or a query; `Rules`, darktable's collect rules, filters and sort, with "in album". Undo and Redo stay the session's.
-- **Commands,** about forty, in five groups: open and organise; bring in and take out (`Import`, `ImportLibrary`, `ExportAsProject`); browse (`Show` and `Page`, while today the client keeps the photos listed); describe photos, ratings to snapshots and groups; files (Move to `MakeAvailableOffline`).
+- **Commands,** about forty, in five groups: open and organise; bring in and take out (`Import`, `ImportLibrary`, `ExportAsProject`); browse (`Show` and `Page`, while today the client keeps the photos listed); describe photos, ratings to snapshots and groups, and the keyword list's rename, move, delete and edit, each a cancellable job writing every sidecar that holds the keyword, one undo step (decision 73); files (Move to `MakeAvailableOffline`).
 - **Events,** about twenty, reporting every change whoever made it: `PhotosChanged`, `Diverged`, `RootOffline`, `InCloud` and `ViewOnly` among them; `CollectionChanged` first, one per change with darktable's reason and property, a fact or a notice by its kind (decision 59, step 5's later part).
 - **Notices for the user,** `Event::Notice`, with step 12 ([events.md](events.md#notices-for-the-user)).
 - **The whole of `LibraryCommand` and `LibraryEvent`** in the session protocol with step 35; MCP's tools generated from `LibraryCommand`'s schema, read and write apart, off until the person allows them and read-only unless writes are allowed (principle 8), in Phase 6.
@@ -417,7 +419,7 @@ Decisions 47 and 53, layer 3 in memory, `crates/library/src/index.rs`. `Index::b
 - **`Index::counts`:** the photos with an edit, those that open view-only and the unreadable sidecars, as `Counts`.
 - **Cancelling** is a closure the build asks between calls into the folder, from the calling thread and the readers', and while it waits for the listing. A cancelled build returns at once, never waiting for a listing stuck in a call, says so, and marks the sidecars it had not reached `NotRead`. A reader that panics makes that photo's sidecar unreadable, and the thread goes on with its share.
 
-Ratings and other metadata in the index, and changes made outside, are planned.
+Ratings and other metadata in the index, and changes made outside, are planned. So are its **rules** (decision 73): the Filters module's groups with their counts, darktable's collect rules and filters, over the open folder in Phase 3 and reused by smart albums and the library's cache in Phase 5. Camera, lens and exposure come with the capture times, in the same read.
 
 ### Edit states
 

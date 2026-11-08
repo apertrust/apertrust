@@ -63,6 +63,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Several computers | Two copies of a sidecar compared by clock vectors; diverged edits kept as a second virtual copy; metadata combined field by field; no locks (52) | Keeping one side by modified time; locks |
 | Finding folders and photos | Roots by an id file; photos by root, path and fingerprint; listing in bulk; safe writes; a queue per root (53) | Volume UUIDs or absolute paths; a whole-file hash |
 | Library API | Four layers, each calling only the one below, over a storage interface for local files and the server; clients see only `LibraryCommand` and `LibraryEvent` (54) | An SQL API; a second API beside the protocol |
+| Library tab | Library pinned, Filters, Keywords, Metadata, then Styles; Filters over the open folder's index in folder mode from Phase 3; one Keywords module, folder mode's keyword list in the user data folder; Metadata the file's facts and darktable's fields in one (73) | Filters only with the library's cache; a keyword list module of its own |
 | Library cache | One per library per machine, rebuilt from the files, its engine chosen by spike L2 (55) | A database in the library's folder |
 | Server and sync | A self-hosted server, planned: a container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged by clock vectors; server roots; one server, `apertrust-cli serve` (71) | A NAS share alone; a database on the server as the truth; locks |
 | Export | A job of the engine's session; darktable's sizes, resample, formats, variables and disk storage; `apertrust-export` with no GPU (56) | A job thread or a second device; writing in place |
@@ -190,6 +191,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0054](0054-four-layers-for-the-librarys-code.md) | Four layers for the library's code |
 | [0055](0055-the-librarys-cache.md) | The library's cache |
 | [0071](0071-a-self-hosted-server-with-sync.md) | A self-hosted server with sync |
+| [0073](0073-the-library-tabs-modules-filters-in-folder-mode.md) | The Library tab's modules, filters in folder mode |
 
 ## Export and jobs
 

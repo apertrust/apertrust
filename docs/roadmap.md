@@ -190,10 +190,11 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 
 ### Culling, metadata and several computers, in folder mode
 
-The library's steps 10 to 20, [listed below](#the-librarys-steps) (decisions 46, 47, 52 and 53), and metadata through the XMP layer (decision 50).
+The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decisions 46, 47, 52 and 53), and metadata through the XMP layer (decision 50).
 
 - [ ] Ratings, a reject and colour labels, set from the caption under the photo and its keys and written to the `.apxmp`, so photos can be culled in folder mode before the Library ([gui.md](gui.md#the-caption-under-the-photo)).
-- [ ] Keywords and darktable's metadata fields; darktable's ratings, labels and keywords read from its XMP files.
+- [ ] Keywords and darktable's metadata fields, in the Keywords and Metadata modules; darktable's ratings, labels and keywords read from its XMP files.
+- [ ] Filters over the open folder, by rating, label, date, camera, keywords and the rest (decision 73).
 - [ ] Culling in the Photo layout with the grid panel and the caption's ratings, with no Grid layout; the selected photos side by side, up to 11 and a 12th cell for the rest (decision 37).
 - [ ] Rating, Apply edit and Export on every selected photo, with one undo.
 - [ ] Changes made outside Apertrust noticed; nothing overwritten without reading it first.
@@ -304,7 +305,8 @@ Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed 
 - [ ] **Step 12.** Two virtual copies on divergence, named after the computer and time; spike L4's harness. Notices that are not jobs (`Event::Notice`) come with it, shown as darktable's `dt_control_log` shows its messages ([gui.md](gui.md#the-jobs-window)).
 - [ ] **Step 13.** Conflict copies found by content, handled by step 12's rule, kept 30 days in the cache, then removed.
 - [ ] **Step 14.** Ratings, the reject and colour labels as history steps, combining field by field, written as darktable writes them, its labels and reject beside the standard XMP rating, so they read both ways; their details are settled as it is built.
-- [ ] **Step 15.** Keywords and darktable's metadata fields, combining likewise; darktable's XMP read for ratings, labels and keywords while a photo has no `.apxmp` (decision 51).
+- [ ] **Step 15.** Keywords and darktable's metadata fields, combining likewise; darktable's XMP read for ratings, labels and keywords while a photo has no `.apxmp` (decision 51); the Keywords module, its list the folder's keywords with their properties and Recent in the user data folder's `keywords.toml`, and the Metadata module, darktable's image information and metadata editor in one (decision 73).
+- [ ] **Step 15b.** Filters in folder mode (decision 73): the index's rules and counts over the open folder, the Filters module; first file name, rating, colour label, history, date taken and file type, then camera, lens and exposure read with the capture times, then keywords and the metadata fields.
 - [ ] **Step 16.** Snapshots saved in the sidecar, each its edit whole, with History's Snapshots section.
 - [ ] **Step 17.** Photo groups: raw and JPEG by base name, groups made by hand by id in the sidecars, the G toggle.
 - [ ] **Step 18.** Renames outside Apertrust: orphan sidecars re-paired by fingerprint; Edits without a photo.
@@ -318,8 +320,8 @@ Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed 
 - [ ] **Step 22.** The library file: New Library…, Open… of its file, Open Recent and the start window, a double-click; `.apertrust/`; a library made from the open folder in place; its model built from its files; a newer format view-only.
 - [ ] **Step 23.** Roots: Add Folder… with the root's id file, the root map per machine, finding by relative path then mounted volumes, Locate…; every root's tree in Folders, offline roots marked.
 - [ ] **Step 24.** Albums: one file each, nested, combining entry by entry, cycles resolved; the Albums section; Add to Album.
-- [ ] **Step 25.** Smart albums: darktable's collect rules, filters and sorts, and "in album"; the Smart albums section.
-- [ ] **Step 26.** The library's keyword list: darktable's hierarchy, synonyms and flags in `keywords.toml`, merging by path.
+- [ ] **Step 25.** Smart albums: darktable's collect rules, filters and sorts, and "in album"; the Smart albums section; Filters' Save as Smart Album.
+- [ ] **Step 26.** The library's keyword list: darktable's hierarchy, synonyms and flags in `keywords.toml`, merging by path, used inside the library in place of the user data folder's.
 - [ ] **Step 27.** The per-machine cache, by spike L2: the `Index` saved and reopened, background rescans, Rebuild Cache, roots away browsed with their marks.
 - [ ] **Step 28.** Full-text search.
 - [ ] **Step 29.** Import… into a library: in place as a root, or by copy into `Photos/`.

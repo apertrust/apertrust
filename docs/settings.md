@@ -162,6 +162,7 @@ Where edits are kept is not a setting: each library and each root's id file deci
 **What it holds:** the person's settings and personal resources.
 
 - `settings.toml` and `state.toml`;
+- `keywords.toml`, folder mode's keyword properties and Recent, of the same form as a library's (planned, decision 73);
 - `themes/` (decision 36);
 - later scripts and similar personal resources, `styles/`, `presets/` and `reports/` (crash reports and the log file; planned with the crash report, which replaces the home folder with `~` and photo and folder names with placeholders, keeping file extensions and camera models, while the local log file keeps full paths, decision 44). Export presets come first: `presets/export.toml`, a table per preset keyed by its name and holding the `export.*` settings' keys, read with the settings' rules, written by the app through the store's merge-write and read by `apertrust-cli export --preset NAME` (decision 56, planned).
 

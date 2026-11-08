@@ -183,7 +183,7 @@ Details: [settings.md](settings.md).
 
 ### The library and sidecars
 
-The library's design and API are in [library.md](library.md), decisions 46 to 55 and 71. In short:
+The library's design and API are in [library.md](library.md), decisions 46 to 55, 71 and 73. In short:
 
 - **Sidecars are the truth; no database ever is** (decision 46). One photo from a terminal and folder mode come first, sidecars only, a raw opened from the system opening its folder; then the Library, of any size, and the Project, a small library for one job, each a folder with a short TOML file and a hidden `.apertrust/`, with nested albums and smart albums ([library.md](library.md#what-the-library-is)).
 - **Edits** live in `.apxmp` beside the photos by default, or in a library's own folder as each root's id file says, with the optional binary `.apdata`; version 2 holds the photo's identity, its virtual copies and its history as a log of steps (decisions 47 to 50; [library.md](library.md#sidecars)).
