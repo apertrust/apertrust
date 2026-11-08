@@ -1777,9 +1777,9 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
   - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Folders (pressed again, nothing).
   - The sixth, History in Edit, has no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, which would zoom out.
   - With six tabs, more of them fold into » at 320 points than with five.
-- **The Library tab** chooses what the grid panel shows: a folder, an album or a smart album. Its sections are Folders, Albums and Smart albums (decision 46), each always shown, what a mode lacks drawn disabled, saying why and offering the way there ([library.md](library.md#in-the-window) has the table):
-  - **One photo:** Folders active, the photo's own folder first as Open This Folder, which opens it in folder mode, then the recent folders; Albums and Smart albums drawn disabled.
-  - **Folder mode:** Folders active; Albums and Smart albums drawn disabled, never hidden, each saying why with the way there: "Albums need a library" and "Smart albums need a library", with Make This Folder a Library…. Its quick filters are the grid bar's ([The grid bar](#the-grid-bar)).
+- **The Library tab** chooses what the grid panel shows: a folder, an album or a smart album. Its first module, Library, pinned, holds Folders, Albums and Smart albums as its groups (decision 46), with what is open and its recents at its top and ＋ beside them; a group a mode has not is not shown (the wireframe's "Library module" frame; [library.md](library.md#in-the-window) has the table):
+  - **One photo:** Folders alone, the photo's own folder first as Open This Folder, which opens it in folder mode.
+  - **Folder mode:** Folders alone, the open folder's tree; Make This Folder a Library… in the module's options (⋯). Its quick filters are the grid bar's ([The grid bar](#the-grid-bar)).
   - **A project:** all three, Folders with its roles marked (Capture, Selects, Output, Trash).
   - **A library:** all three, Folders its roots.
   - **Folders** (Phase 2, with folder mode, decision 37): the open folder, its subfolders, a click opening one; the recent folders, Open Recent's list ([File](#file)); Open Folder…; Show in Folder. In a library or project (Phase 5), every root's tree, darktable's film roll being a folder, with Add Folder… and Locate…; a project's folder roles marked each with its icon ([below](#the-library-tabs-marks)).
@@ -1791,7 +1791,7 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
   - The tab is chosen by Ctrl+1 or a click like the others. Folders shows alone, open by default (kept in settings with the other sections).
   - It holds Open Folder…; the open folder's name with its photo count ("Wedding · 120 photos", "Reading Wedding…" until its last chunk); its subfolders in the listing's order (the file browser's); and the last ten recent folders (`library.recent_folders`, newest first, a folder opened moving to the top).
   - A recent folder whose opening failed this run is drawn disabled with the reason in its tooltip, since a folder's existence is never asked as the list is drawn (a share can be slow).
-  - Albums and Smart albums are drawn disabled, "Coming in a later version", until the library, then saying why with the way there (above).
+  - Albums and Smart albums appear with libraries and projects, in Phase 5; folder mode never shows them.
   - There is no way up to the parent folder yet, nor Show in Folder.
 - **Names.** The interface has no word for a folder and an album together. The grid bar does not name the one shown: screen readers hear the folder's name and count as the thumbnails' list's name, and on screen Folders marks the open folder with its count. Names shorten in their middle at 320 points, the tree indents 12 points a level, and the panel's width serves a deep tree.
 - **The editing tabs' states,** as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab:

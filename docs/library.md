@@ -75,7 +75,7 @@ Built first, and partly built.
   - On Windows and Linux, the installer's and the desktop entry's registrations pass `--in-folder` before the file (planned, [packaging.md](packaging.md#opening-a-raw-from-the-system)), so the app tells them from a terminal's `apertrust FILE`, which opens [one photo](#one-photo).
 - Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
-- The Library tab's Folders is active, with the open folder's tree and the recent folders; Albums and Smart albums are drawn disabled, saying why and offering the way there ([In the window](#in-the-window)).
+- The Library tab's Library module has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in the module's options ([In the window](#in-the-window)).
 - Import… (planned) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it.
 - It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
 
@@ -173,12 +173,12 @@ Decisions 37 and 46. The Library tab of the side panel chooses what the grid pan
 
 | Mode | Folders | Albums | Smart albums |
 | --- | --- | --- | --- |
-| One photo | Active: the photo's own folder first, as Open This Folder (into folder mode), then the recent folders | Drawn disabled | Drawn disabled |
-| Folder mode | Active: the open folder's tree, then the recent folders | Drawn disabled: "Albums need a library", with Make This Folder a Library… | Drawn disabled: "Smart albums need a library", with Make This Folder a Library… |
+| One photo | The photo's own folder, as Open This Folder (into folder mode) | Not shown | Not shown |
+| Folder mode | The open folder's tree | Not shown | Not shown |
 | A library | Its roots' trees | Its albums, nested | Its smart albums, over the library or inside an album |
 | A project | Its folders, with their roles marked: Capture, Selects, Output, Trash | Its albums, which group photos without moving them | Its smart albums, saved searches within the project |
 
-- **Disabled, never hidden.** A section a mode lacks is drawn disabled, saying why and offering the way there, so the person learns what exists and what it needs. Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library; Make This Folder a Library… is New Library… on the open folder, in place. Until Phase 5 they say "Coming in a later version", as built.
+- **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in the Library module's options: Make This Folder a Library…, New Library… on the open folder, in place. The module's top, what is open with its recents and ＋, is the same in every mode.
 - **Folder mode's quick filters** are the grid bar's ([gui.md](gui.md#the-grid-bar)), not smart albums.
 - **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
 
