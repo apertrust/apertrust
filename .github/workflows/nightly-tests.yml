@@ -1,8 +1,8 @@
 name: Nightly tests
 
-# The test suite on Linux and macOS every night (decision 70): pull requests run it on
-# Linux alone unless they are labelled `full-ci`. Windows' tests are off for now: on WARP
-# they ran past two hours. A failed
+# The test suite on Linux and macOS every night (decision 70), as on every pull request,
+# so a night catches what changed on main from elsewhere: runner images, toolchains, the
+# cache. Windows' tests are off for now: on WARP they ran past two hours. A failed
 # night opens an issue labelled `nightly-tests-failed`, or comments on the one open; a
 # night that passes closes it.
 on:

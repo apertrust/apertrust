@@ -1,17 +1,17 @@
 name: CI
 
 # Three layers (decision 70). Every pull request and push to main: lint, deny, the tests
-# on Linux, and clippy on Windows and macOS, which compiles the tests and each platform's
-# code without running them. A pull request labelled `full-ci` runs the tests on macOS
-# too, and nightly-tests.yml runs them on Linux and macOS every night. Windows' tests are
-# off for now: on WARP they ran past two hours. A pull request
+# on Linux and macOS, and clippy on Windows and macOS, which compiles the tests and each
+# platform's code. nightly-tests.yml runs the tests on Linux and macOS every night, and a
+# pull request labelled `full-ci` runs everything even when it changes only docs.
+# Windows' tests are off for now: on WARP they ran past two hours. A pull request
 # that changes only the documentation in .github/docs-only-paths.txt skips lint, clippy
 # and the tests: they report as skipped, so the workflow still ends.
 on:
   push:
     branches: [main]
   pull_request:
-    # `labeled`, so that adding `full-ci` runs the tests it asks for. Any label runs the
+    # `labeled`, so that adding `full-ci` runs the checks it asks for. Any label runs the
     # workflow again.
     types: [opened, synchronize, reopened, labeled]
 
@@ -73,9 +73,8 @@ jobs:
 
   # Whether the code's checks run, and the runners the tests run on. The checks run on
   # main, and for a pull request that changes a file outside .github/docs-only-paths.txt
-  # or is labelled `full-ci`. The tests run on Linux always, and on macOS too for a pull
-  # request labelled `full-ci`. Windows' tests are off for now; .github/windows-paths.txt
-  # and its guard stay, for when they run again.
+  # or is labelled `full-ci`. The tests run on Linux and macOS. Windows' tests are off for
+  # now; .github/windows-paths.txt and its guard stay, for when they run again.
   platforms:
     name: Choose what runs
     runs-on: ubuntu-24.04
@@ -102,12 +101,7 @@ jobs:
             code=false
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
-          os='"ubuntu-24.04"'
-          if [ "$FULL_CI" = true ]; then
-            echo "Labelled full-ci: the tests run on macOS too."
-            os="$os, \"macos-15\""
-          fi
-          echo "os=[$os]" >> "$GITHUB_OUTPUT"
+          echo 'os=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
 
   test:
     name: Tests
