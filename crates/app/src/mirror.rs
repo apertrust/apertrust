@@ -1030,7 +1030,8 @@ pub(crate) mod tests {
         let progress = Event::Job {
             event: JobEvent::Progress {
                 job: id,
-                fraction: 0.5,
+                done: 1,
+                total: Some(2),
             },
             command: None,
         };
@@ -1312,8 +1313,12 @@ pub(crate) mod tests {
                 job,
                 kind: "folder",
                 queue: Some(Queue::UserBackground),
-                message: Message::new("job-folder"),
+                title: Message::new("job-folder"),
                 cancellable: true,
+                destination: None,
+                detail: None,
+                progress: Default::default(),
+                retries: None,
             },
             command: Some(7),
         };
@@ -1325,7 +1330,10 @@ pub(crate) mod tests {
             event: JobEvent::Ended {
                 job,
                 state: State::Cancelled,
+                outcome: None,
                 failure: None,
+                at: std::time::SystemTime::UNIX_EPOCH,
+                offers: Vec::new(),
             },
             command: None,
         };

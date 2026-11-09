@@ -33,7 +33,8 @@ use std::time::{Duration, Instant};
 use apertrust_base::jobs::Control;
 use apertrust_base::jobs::schedule::{self, Added, Identity, Queues, Scheduled};
 pub use apertrust_base::jobs::{
-    Argument, Context, Interrupted, Job, JobEvent, JobId, Message, Outcome, Queue, State,
+    Argument, Context, Destination, Failure, Interrupted, Job, JobEvent, JobId, Message, Offer,
+    Progress, Queue, State,
 };
 use thiserror::Error;
 
@@ -557,7 +558,7 @@ pub(crate) mod testing {
                         return Ok(());
                     }
                 }
-                context.set_message(Message::new("job-synthetic-steps").with("steps", self.steps));
+                context.set_title(Message::new("job-synthetic-steps").with("steps", self.steps));
                 let handed: Vec<_> = (0..self.tasks)
                     .map(|_| {
                         let task = Steps {
@@ -585,13 +586,11 @@ pub(crate) mod testing {
                 }
                 match failed {
                     None if !context.cancelled() => {
-                        context.set_fraction(1.0);
+                        context.set_progress(1, Some(1));
                         Ok(())
                     }
                     None => Ok(()),
-                    Some(error) => {
-                        Err(Message::new("job-synthetic-failed").with("reason", error.to_string()))
-                    }
+                    Some(error) => Err(Failure::new("synthetic", error.to_string())),
                 }
             })
             .progress(progress.0, progress.1)

@@ -196,7 +196,9 @@ fn kind(event: &Event) -> &'static str {
         Event::Job { event, .. } => match event {
             JobEvent::Added { .. } => "Job Added",
             JobEvent::Progress { .. } => "Job Progress",
-            JobEvent::Message { .. } => "Job Message",
+            JobEvent::Title { .. } => "Job Title",
+            JobEvent::Detail { .. } => "Job Detail",
+            JobEvent::Destination { .. } => "Job Destination",
             JobEvent::State { .. } => "Job State",
             JobEvent::Ended { .. } => "Job Ended",
         },
@@ -235,7 +237,7 @@ impl fmt::Display for Line<'_> {
                 write!(f, ", through {through}")?
             }
             Event::Job { event, command } => {
-                write!(f, ", job {}", job_of(event))?;
+                write!(f, ", job {}", event.job())?;
                 if let Some(command) = command {
                     write!(f, ", command {command}")?;
                 }
@@ -252,16 +254,6 @@ impl fmt::Display for Line<'_> {
             Topic::Fact(_) => f.write_str(", a fact"),
             Topic::Notice => f.write_str(", a notice"),
         }
-    }
-}
-
-fn job_of(event: &JobEvent) -> crate::jobs::JobId {
-    match *event {
-        JobEvent::Added { job, .. }
-        | JobEvent::Progress { job, .. }
-        | JobEvent::Message { job, .. }
-        | JobEvent::State { job, .. }
-        | JobEvent::Ended { job, .. } => job,
     }
 }
 

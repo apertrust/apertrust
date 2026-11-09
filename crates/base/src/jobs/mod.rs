@@ -25,11 +25,12 @@
 //! ([`workers`]), from five [`Queue`]s in darktable's order with its priorities and
 //! ageing ([`schedule`]): the user's actions, thumbnails in a deduplicated stack of 30, a
 //! folder's reading, exports one at a time, and crawlers. A job's body is handed a
-//! [`Context`] to check for cancel, report its fraction and message, and wait for
-//! another thread's answer; it returns a failure in plain words, or panics, which ends it
-//! failed too. A job with a progress shows from the moment it is added: the control
-//! tells its observer as [`JobEvent`]s, at most every 0.5 s. `-d control` logs each job
-//! added, run and discarded, as darktable's `_control_job_print`.
+//! [`Context`] to check for cancel, report everything its row shows (its progress,
+//! title, detail, destination, outcome and offers; decision 72), and wait for another
+//! thread's answer; it returns a [`Failure`], or panics, which ends it failed too, cause
+//! `panicked`. A job with a progress shows from the moment it is added: the control tells
+//! its observer as [`JobEvent`]s, each of the four values at most every 0.5 s. `-d
+//! control` logs each job added, run and discarded, as darktable's `_control_job_print`.
 //!
 //! Differences from darktable, each forced (decision 57's J1 to J13): no reserved
 //! workers (J2); plain events, not a proxy into the toolkit (J3); message ids, not
@@ -37,7 +38,9 @@
 //! (J6); the throttle in the API (J7); every progress a job's (J8); [`Control::shutdown`]
 //! cancelling what can be cancelled and finishing the rest (J9); a failure a failure, not
 //! a cancel (J10); a job cancelled while queued leaving its queue at once (J14); a
-//! priority that saturates at 255 (J15); a job added after shutdown discarded (J16). A job's GPU work, stepped by the engine thread (J1), is the engine's.
+//! priority that saturates at 255 (J15); a job added after shutdown discarded (J16);
+//! done and a total in place of a fraction (J18); and the rest of its row in its events
+//! (J19). A job's GPU work, stepped by the engine thread (J1), is the engine's.
 
 pub mod progress;
 pub mod schedule;
@@ -54,11 +57,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
-pub use progress::{Argument, JobEvent, Message};
+pub use progress::{Argument, Destination, Failure, JobEvent, Message, Offer, Progress};
 
-use progress::Throttle;
+use progress::Throttles;
 use schedule::{Added, Identity, Queues, Scheduled};
 
 /// darktable's five job queues, `dt_job_queue_t`, in its order, which breaks ties
@@ -164,17 +167,20 @@ impl fmt::Display for JobId {
     }
 }
 
-/// What a job's body returns: `Ok(())`, cancelled or not, or the failure that ended it
-/// in plain words.
-pub type Outcome = Result<(), Message>;
-
-type Body = Box<dyn FnOnce(&Context<'_>) -> Outcome + Send>;
+/// What a job's body is: it returns `Ok(())`, cancelled or not, or the failure that ended
+/// it.
+type Body = Box<dyn FnOnce(&Context<'_>) -> Result<(), Failure> + Send>;
 
 /// A job, darktable's `dt_job_t`: its kind, a description for `-d control` and its
-/// deduplication, an optional key and progress, and its body.
+/// deduplication, an optional key and progress, what its `Added` says beyond them, and
+/// its body.
 pub struct Job {
     identity: Identity,
     progress: Option<(Message, bool)>,
+    destination: Option<Destination>,
+    detail: Option<Message>,
+    total: Option<u64>,
+    retries: Option<JobId>,
     body: Body,
 }
 
@@ -185,7 +191,7 @@ impl Job {
     pub fn new(
         kind: &'static str,
         description: impl Into<String>,
-        body: impl FnOnce(&Context<'_>) -> Outcome + Send + 'static,
+        body: impl FnOnce(&Context<'_>) -> Result<(), Failure> + Send + 'static,
     ) -> Self {
         Self {
             identity: Identity {
@@ -194,6 +200,10 @@ impl Job {
                 description: description.into(),
             },
             progress: None,
+            destination: None,
+            detail: None,
+            total: None,
+            retries: None,
             body: Box::new(body),
         }
     }
@@ -205,10 +215,35 @@ impl Job {
         self
     }
 
-    /// darktable's `dt_control_job_add_progress`: the job shows, with its message, from
-    /// the moment it is added, queued, and can be cancelled from it when `cancellable`.
-    pub fn progress(mut self, message: Message, cancellable: bool) -> Self {
-        self.progress = Some((message, cancellable));
+    /// darktable's `dt_control_job_add_progress`: the job shows, with its title,
+    /// darktable's message, from the moment it is added, queued, and can be cancelled from
+    /// it when `cancellable`.
+    pub fn progress(mut self, title: Message, cancellable: bool) -> Self {
+        self.progress = Some((title, cancellable));
+        self
+    }
+
+    /// Where its results go, as its `Added` says.
+    pub fn destination(mut self, destination: Destination) -> Self {
+        self.destination = Some(destination);
+        self
+    }
+
+    /// The line under its bar while it waits, as its `Added` says.
+    pub fn detail(mut self, detail: Message) -> Self {
+        self.detail = Some(detail);
+        self
+    }
+
+    /// How many items it will do, its `Added`'s progress the total, where it knows it.
+    pub fn total(mut self, total: u64) -> Self {
+        self.total = Some(total);
+        self
+    }
+
+    /// The ended job it tries again, as its `Added` says.
+    pub fn retries(mut self, job: JobId) -> Self {
+        self.retries = Some(job);
         self
     }
 }
@@ -218,6 +253,10 @@ impl fmt::Debug for Job {
         f.debug_struct("Job")
             .field("identity", &self.identity)
             .field("progress", &self.progress)
+            .field("destination", &self.destination)
+            .field("detail", &self.detail)
+            .field("total", &self.total)
+            .field("retries", &self.retries)
             .finish_non_exhaustive()
     }
 }
@@ -232,7 +271,7 @@ pub enum Interrupted {
 }
 
 /// How often [`Context::wait`] looks for a cancel while it waits, and sends a held
-/// fraction or message that has come due.
+/// value that has come due.
 const WAIT_POLL: Duration = Duration::from_millis(5);
 
 /// darktable's `dt_worker_threads` without its memory term (difference J5): 7 workers
@@ -259,37 +298,59 @@ impl Context<'_> {
         self.record.cancel.load(Ordering::Acquire)
     }
 
-    /// darktable's `dt_control_job_set_progress`, clamped to 0 to 1; nothing without a
-    /// progress.
-    pub fn set_fraction(&self, fraction: f64) {
-        let fraction = fraction.clamp(0.0, 1.0);
-        self.shared.with_progress(self.record.id, |progress, now| {
-            progress
-                .fraction
-                .offer(fraction, now)
-                .map(|fraction| JobEvent::Progress {
-                    job: self.record.id,
-                    fraction,
-                })
+    /// darktable's `dt_control_job_set_progress`, as `done` items of `total`, where it
+    /// knows it (difference J18), through the throttle; nothing without a progress.
+    pub fn set_progress(&self, done: u64, total: Option<u64>) {
+        let progress = Progress { done, total };
+        self.shared.with_shown(self.record.id, |shown, now| {
+            shown.throttles.progress(progress, now)
         });
     }
 
-    /// darktable's `dt_control_job_set_progress_message`; nothing without a progress.
-    pub fn set_message(&self, message: Message) {
-        self.shared.with_progress(self.record.id, |progress, now| {
-            progress
-                .message
-                .offer(message, now)
-                .map(|message| JobEvent::Message {
-                    job: self.record.id,
-                    message,
-                })
+    /// darktable's `dt_control_job_set_progress_message`, the row's title, through the
+    /// throttle; nothing without a progress.
+    pub fn set_title(&self, title: Message) {
+        self.shared.with_shown(self.record.id, |shown, now| {
+            shown.throttles.title(title, now)
+        });
+    }
+
+    /// The one line under its bar, `None` clearing it, through the throttle; nothing
+    /// without a progress.
+    pub fn set_detail(&self, detail: Option<Message>) {
+        self.shared.with_shown(self.record.id, |shown, now| {
+            shown.throttles.detail(detail, now)
+        });
+    }
+
+    /// Where its results go now, through the throttle; nothing without a progress.
+    pub fn set_destination(&self, destination: Destination) {
+        self.shared.with_shown(self.record.id, |shown, now| {
+            shown.throttles.destination(destination, now)
+        });
+    }
+
+    /// The ended row's title, held until its `Ended`, the last set kept; nothing without a
+    /// progress.
+    pub fn set_outcome(&self, outcome: Message) {
+        self.shared.with_shown(self.record.id, |shown, _| {
+            shown.outcome = Some(outcome);
+            None
+        });
+    }
+
+    /// What it can do once ended, held until its `Ended` with the others it offered;
+    /// nothing without a progress.
+    pub fn offer(&self, offer: Offer) {
+        self.shared.with_shown(self.record.id, |shown, _| {
+            shown.offers.push(offer);
+            None
         });
     }
 
     /// Waits for another thread's answer, the engine's GPU step or a root's queue
     /// (decision 53), and returns at cancel, so a body never waits past it. Meanwhile a
-    /// held fraction or message goes out once it is due.
+    /// held progress, title, detail or destination goes out once it is due.
     pub fn wait<T>(&self, answer: &Receiver<T>) -> Result<T, Interrupted> {
         loop {
             if self.cancelled() {
@@ -323,11 +384,13 @@ impl Scheduled for Arc<Record> {
     }
 }
 
-/// A job's progress as the control keeps it.
-struct Progress {
+/// What the control keeps of a job with a progress, which is shown: whether it can be
+/// cancelled, its values through the throttle, and what its body set for its `Ended`.
+struct Shown {
     cancellable: bool,
-    fraction: Throttle<f64>,
-    message: Throttle<Message>,
+    throttles: Throttles,
+    outcome: Option<Message>,
+    offers: Vec<Offer>,
 }
 
 /// A job the control knows, from its add to its end.
@@ -336,7 +399,7 @@ struct Live {
     /// `None` for a job [`Control::run_now`] runs.
     queue: Option<Queue>,
     state: State,
-    progress: Option<Progress>,
+    shown: Option<Shown>,
     body: Option<Body>,
 }
 
@@ -402,60 +465,48 @@ impl Shared {
         }
     }
 
-    /// Runs `update` on the job's progress under the lock, and sends what it returns.
-    fn with_progress(
-        &self,
-        job: JobId,
-        update: impl FnOnce(&mut Progress, Instant) -> Option<JobEvent>,
-    ) {
+    /// Runs `update` on the job's shown part under the lock, and sends what it returns.
+    fn with_shown(&self, job: JobId, update: impl FnOnce(&mut Shown, Instant) -> Option<JobEvent>) {
         let mut inner = self.lock();
-        let Some(live) = inner.jobs.get_mut(&job) else {
+        let Some(shown) = inner.jobs.get_mut(&job).and_then(|l| l.shown.as_mut()) else {
             return;
         };
-        let Some(progress) = live.progress.as_mut() else {
-            return;
-        };
-        if let Some(event) = update(progress, Instant::now()) {
+        if let Some(event) = update(shown, Instant::now()) {
             self.notify(event);
         }
     }
 
-    /// Sends a job's held fraction and message once they are due.
+    /// Sends a job's held values once they are due.
     fn send_due(&self, job: JobId) {
         let mut inner = self.lock();
-        let Some(progress) = inner.jobs.get_mut(&job).and_then(|l| l.progress.as_mut()) else {
+        let Some(shown) = inner.jobs.get_mut(&job).and_then(|l| l.shown.as_mut()) else {
             return;
         };
-        let now = Instant::now();
-        if let Some(fraction) = progress.fraction.due(now) {
-            self.notify(JobEvent::Progress { job, fraction });
-        }
-        if let Some(message) = progress.message.due(now) {
-            self.notify(JobEvent::Message { job, message });
+        for event in shown.throttles.held(Some(Instant::now())) {
+            self.notify(event);
         }
     }
 
-    /// Ends a job the control knows: its held fraction and message, then `Ended`.
-    fn end(&self, inner: &mut Inner, job: JobId, state: State, failure: Option<Message>) {
-        let Some(mut live) = inner.jobs.remove(&job) else {
+    /// Ends a job the control knows: its held values, then `Ended` with what its body set
+    /// for it, `failure` and the time now.
+    fn end(&self, inner: &mut Inner, job: JobId, state: State, failure: Option<Failure>) {
+        let Some(live) = inner.jobs.remove(&job) else {
             return;
         };
-        if let Some(progress) = live.progress.as_mut() {
-            if let Some(fraction) = progress.fraction.flush() {
-                self.notify(JobEvent::Progress { job, fraction });
-            }
-            if let Some(message) = progress.message.flush() {
-                self.notify(JobEvent::Message { job, message });
-            }
+        let Some(mut shown) = live.shown else {
+            return;
+        };
+        for event in shown.throttles.held(None) {
+            self.notify(event);
         }
-        self.emit(
-            &live.record,
-            JobEvent::Ended {
-                job,
-                state,
-                failure,
-            },
-        );
+        self.notify(JobEvent::Ended {
+            job,
+            state,
+            outcome: shown.outcome,
+            failure,
+            at: SystemTime::now(),
+            offers: shown.offers,
+        });
     }
 
     /// Registers a job and sends `Added`.
@@ -467,18 +518,26 @@ impl Shared {
             progress: job.progress.is_some(),
             cancel: AtomicBool::new(false),
         });
-        let progress = job.progress.map(|(message, cancellable)| {
+        let shown = job.progress.map(|(title, cancellable)| {
             self.notify(JobEvent::Added {
                 job: id,
                 kind: record.identity.kind,
                 queue,
-                message,
+                title,
                 cancellable,
+                destination: job.destination,
+                detail: job.detail,
+                progress: Progress {
+                    done: 0,
+                    total: job.total,
+                },
+                retries: job.retries,
             });
-            Progress {
+            Shown {
                 cancellable,
-                fraction: Throttle::default(),
-                message: Throttle::default(),
+                throttles: Throttles::new(id),
+                outcome: None,
+                offers: Vec::new(),
             }
         });
         inner.jobs.insert(
@@ -487,7 +546,7 @@ impl Shared {
                 record: record.clone(),
                 queue,
                 state: State::Initialized,
-                progress,
+                shown,
                 body: Some(job.body),
             },
         );
@@ -503,8 +562,8 @@ impl Shared {
     }
 
     /// Runs a job's body on this thread, outside the lock: its failure, a panic caught as
-    /// one, `job-panicked` with its reason.
-    fn call(&self, record: &Arc<Record>, body: Body) -> Option<Message> {
+    /// one, cause [`Failure::PANICKED`] with its text the reason.
+    fn call(&self, record: &Arc<Record>, body: Body) -> Option<Failure> {
         let context = Context {
             shared: self,
             record,
@@ -519,7 +578,7 @@ impl Shared {
                     "job {} panicked: {reason}",
                     record.identity.description
                 );
-                Some(Message::new("job-panicked").with("reason", reason))
+                Some(Failure::new(Failure::PANICKED, reason))
             }
         }
     }
@@ -531,7 +590,7 @@ impl Shared {
         inner: &mut Inner,
         record: &Record,
         worker: &str,
-        failure: Option<Message>,
+        failure: Option<Failure>,
     ) -> State {
         let state = if record.cancel.load(Ordering::Acquire) {
             State::Cancelled
@@ -644,7 +703,7 @@ impl Control {
 
     /// darktable's `DT_JOB_QUEUE_SYNCHRONOUS`: runs the job on this thread, now, and
     /// returns the state it ended in, finished or cancelled, or its failure.
-    pub fn run_now(&self, job: Job) -> Result<State, Message> {
+    pub fn run_now(&self, job: Job) -> Result<State, Failure> {
         let (_, state, failure) = self.run(job);
         match failure {
             Some(failure) => Err(failure),
@@ -653,7 +712,7 @@ impl Control {
     }
 
     /// Runs a job on this thread: its number, the state it ended in and its failure.
-    fn run(&self, job: Job) -> (JobId, State, Option<Message>) {
+    fn run(&self, job: Job) -> (JobId, State, Option<Failure>) {
         let shared = &*self.shared;
         let (record, body) = {
             let mut inner = shared.lock();
@@ -746,7 +805,7 @@ impl Control {
                     .values()
                     .filter(|live| {
                         live.state == State::Running
-                            && live.progress.as_ref().is_some_and(|p| p.cancellable)
+                            && live.shown.as_ref().is_some_and(|p| p.cancellable)
                     })
                     .map(|live| live.record.id)
                     .collect();

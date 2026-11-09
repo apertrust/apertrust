@@ -5,7 +5,8 @@ The engine answers its clients with events: a photo opened, the values after a c
 **Status.** [Decision 59](decisions/0059-one-event-system.md) records the design, with the options considered.
 
 - **Built:** the session's side, in `crates/engine/src/session.rs` and `crates/engine/src/session/outbox.rs`; the app's reducer, in `crates/app/src/mirror.rs`; and the library's first events, a folder opened and listed and its photos' thumbnails, in `crates/library/src/ops.rs`, the session and `crates/app/src/folder.rs`.
-- **Planned:** each job reporting its whole row (decision 72, [A job's events](#a-jobs-events)), `CollectionChanged`, notices for the user and the remote protocol ([What is planned](#what-is-planned)).
+- **Built for decision 72:** base's job events, every field of a job's row, and their throttle ([A job's events](#a-jobs-events)).
+- **Planned:** each job reporting its whole row through them (decision 72), `CollectionChanged`, notices for the user and the remote protocol ([What is planned](#what-is-planned)).
 
 ## The idea
 
@@ -41,9 +42,9 @@ The topics, `Fact`, as built:
 | `Scopes` | `Event::Scopes` |
 | `ExportPreview` | `Event::ExportPreview`, the latest answer kept |
 | `Progress(job)` | a job's `JobEvent::Progress`, by job |
-| `Message(job)` | a job's `JobEvent::Message`, by job; `Title(job)` once decision 72 is built |
-| `Detail(job)` | a job's `JobEvent::Detail`, by job (planned, decision 72) |
-| `Destination(job)` | a job's `JobEvent::Destination`, by job (planned, decision 72) |
+| `Message(job)` | a job's `JobEvent::Title`, by job; named `Title(job)` with the session's step of decision 72 |
+| `Detail(job)` | a job's `JobEvent::Detail`, by job (planned, decision 72; a notice until then) |
+| `Destination(job)` | a job's `JobEvent::Destination`, by job (planned, decision 72; a notice until then) |
 | `State(job)` | a job's `JobEvent::State`, by job |
 
 Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
@@ -83,7 +84,10 @@ Planned events: `Readout`, what an operation measured for its module's panel, af
 
 ## A job's events
 
-Decision 72, planned: each job reports everything its row in the jobs window shows, so a client folds its events into the row with no code for any kind of job ([gui.md](gui.md#the-jobs-window)). The events are base's `JobEvent` (`apertrust_base::jobs::progress`), which the session sends as `Event::Job { event, command }`; their API for a job's body is in [engine.md](engine.md#bases-part-apertrust_basejobs). Built today: `Added { job, kind, queue, message, cancellable }`, `Progress { job, fraction }`, `Message`, `State` and `Ended { job, state, failure }`, the failure a message.
+Decision 72: each job reports everything its row in the jobs window shows, so a client folds its events into the row with no code for any kind of job ([gui.md](gui.md#the-jobs-window)). The events are base's `JobEvent` (`apertrust_base::jobs::progress`), which the session sends as `Event::Job { event, command }`; their API for a job's body is in [engine.md](engine.md#bases-part-apertrust_basejobs).
+
+- **Built:** every event and field below, in base, with the throttle and the end's time.
+- **What each job reports today:** its title and progress, the export's title per photo and the photos done of their total, and its failure; no job sets a total, detail, destination, outcome or offer yet, and the session sends `Detail` and `Destination` as notices. The export's reporting, the session's facts, the app's fold and Try again are planned, in the steps of [roadmap.md](roadmap.md#the-jobs-window-and-the-job-api).
 
 | Event | Field | What it is |
 | --- | --- | --- |
@@ -109,7 +113,8 @@ Decision 72, planned: each job reports everything its row in the jobs window sho
 
 - **`Failure`** is `{ cause, item, file, reason }`: `cause` a code a client words with Fluent as `job-cause-<cause>` (the export's are `Cause::id`'s, `panicked` for a panic); `item` the photo or file it failed on, `file` the file it could not write, each `Option<PathBuf>`; `reason` the error in plain words, for the log and a client with no words for the code.
 - **`Message`** is an id and named arguments, numbers, text or paths, worded by the client with Fluent (decision 36), as now.
-- **The throttle** is darktable's 0.5 s for each of `Progress`, `Title`, `Detail` and `Destination`, the first and the last always; the outcome and the offers go out in `Ended`, after the last of them.
+- **The throttle** is darktable's 0.5 s for each of `Progress`, `Title`, `Detail` and `Destination`, each on its own, the first and the last always; the outcome and the offers go out in `Ended`, after the last of them.
+- **`Progress::fraction()`** is the bar's fill for a client: `done / total`, `done` clamped to `total`, an empty bar for a total of 0, `None` with no total.
 - **Try again.** A job that offers `Retry` has left the session what it runs, an export the photos that failed and those not reached with the same settings. The session keeps the latest 64. `RetryJob { job }` runs it as if sent then; its job's `Added` names `retries: Some(job)`, and a client puts its row in the old one's place. A retry is used once; one not kept is refused, `NotRetryable`.
 
 ## Numbers
@@ -278,7 +283,7 @@ Kept from darktable:
 - **The session, built.** In `session.rs`: `every_event_states_whether_it_is_a_fact_or_a_notice`, every variant's kind through an exhaustive match, so a new variant must state its kind; `a_batch_s_refusal_comes_before_its_values_and_its_values_before_its_frame`; `through_never_decreases_over_a_drag`, over the values, frames, scopes readings and saves; `a_job_s_events_reach_the_client_in_order_its_added_naming_its_command`; and the refused cancel numbered in `a_session_ends_with_a_gpu_job_that_cannot_be_cancelled_in_flight`. In `outbox.rs`: `no_event_is_lost_while_three_threads_send_and_a_fourth_drains`, `a_burst_wakes_the_client_once_and_a_send_after_a_drain_again`, `nothing_is_sent_once_the_client_drops_its_handle` and `a_drain_s_kinds_count_runs`.
 - **The app's reducer, built:** event sequences in, the mirror and its reactions out, with no egui (`crates/app/src/mirror.rs`'s tests: a drag, a frame replacing the last and clearing a failure, refusals with and without an earlier unsaved change, a failed save, a failed open with stale events dropped, a scopes failure, a job from added to ended, the engine stopping, the preview floor, opening another photo).
 - **The library, built.** In `crates/library/src/ops.rs`: `an_open_reports_the_folder_its_subfolders_and_every_photo_with_its_edit` (every edit state, subfolders sorted with the hidden one left out, chunks in order, done once), `an_empty_folder_sends_one_empty_chunk_done`, `a_missing_folder_or_a_file_fails_without_opening`, `a_cancel_between_chunks_ends_the_open_with_no_chunk_done`, `a_cancel_while_the_folder_is_read_sends_nothing` and `a_cancel_returns_at_once_while_a_call_into_the_folder_is_stuck` (a listing held by `listing::stall`, a test hook); `listing::tests::names_sort_as_a_file_browser_lists_them`. In `session.rs`: `a_folder_opens_as_a_job_whose_events_name_the_open` and `a_second_open_cancels_the_first_and_a_close_the_second`, and each `LibraryEvent`'s kind in `every_event_states_whether_it_is_a_fact_or_a_notice`. In `crates/app/src/folder.rs`: the reducer's side, among them `a_second_open_drops_the_first_one_s_late_events`, `a_close_empties_the_folder_and_drops_what_the_reading_still_sends` and `a_reading_cancelled_through_its_job_ends_the_open_with_no_reason`. Planned: one `CollectionChanged` per change.
-- **A job's events, planned with decision 72:** base's `Control` sending each value through the throttle and the end's outcome, failure, time and offers (`crates/base/src/jobs/tests.rs`); the export's events in order, from `Added` with its total and destination to `Ended` with its counts and `Retry` (`an_export_s_events_come_in_order`); `RetryJob` exporting the photos left, refused a second time; and the app's fold, every row's part from one event, with no export in its code.
+- **A job's events, built in base (decision 72):** the throttle's table for each of the four values and the four on one clock (`crates/base/src/jobs/progress.rs`); the control sending the first and last of each before `Ended`, `Ended` carrying the outcome, offers, failure and time, and a panic as `panicked` (`crates/base/src/jobs/tests.rs`). Planned: the export's events in order, from `Added` with its total and destination to `Ended` with its counts and `Retry` (`an_export_s_events_come_in_order`); `RetryJob` exporting the photos left, refused a second time; and the app's fold, every row's part from one event, with no export in its code.
 - **The remote protocol, planned:** [session-protocol.md](session-protocol.md#tests).
 
 ## What is planned
