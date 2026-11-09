@@ -189,6 +189,51 @@ job-folder = Reading { $folder }
 # The storage an export goes to, in the export's message.
 job-target-disk = file on disk
 
+## What an export job reports of itself for its row. $number is the photo under way,
+## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
+## File on disk; $photo a raw; $done the photos done; $count the photos waiting; $folder
+## where they go, as typed; $written, $skipped and $failed the photos written, left as On
+## conflict says, and failed. A single photo is the exact number 1, never the plural
+## category one, which Ukrainian also gives 21.
+
+# Its title, darktable's message.
+job-export-photo =
+    Exporting { $number } / { $total } to { $storage ->
+       *[disk] file on disk
+    }
+# The line under its bar while it waits, while a photo is under way and between photos.
+job-export-queued = Next in line: { photo-count }, to { $folder }
+job-export-now =
+    { $total ->
+        [1] Exporting { $photo }
+       *[other] { $done } of { $total } done · now { $photo }
+    }
+job-export-between = { $done } of { $total } done
+# Its title once it has ended.
+job-export-finished =
+    { $skipped ->
+        [0]
+            { $written ->
+                [1] 1 photo exported
+               *[other] { $written } photos exported
+            }
+       *[other]
+            { $total ->
+                [1] The photo was skipped
+               *[other] { $written } of { $total } photos exported, { $skipped } skipped
+            }
+    }
+job-export-failed-outcome =
+    { $total ->
+        [1] The photo could not be exported
+       *[other] { $written } of { $total } photos exported
+    }
+job-export-cancelled =
+    { $total ->
+        [1] Export cancelled
+       *[other] Export cancelled: { $written } of { $total } photos exported
+    }
+
 ## Why a job failed, in words, without a full stop: a code the engine sends. They end a
 ## line such as "IMG_2047.ARW: could not write IMG_2047.jpg: the disk is full."
 

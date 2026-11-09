@@ -18,6 +18,11 @@ window-maximise = Maximize
 jobs-value-cancelled = Canceled
 jobs-cancelled = Canceled
 jobs-live-cancelled = Canceled: { $message }
+job-export-cancelled =
+    { $total ->
+        [1] Export canceled
+       *[other] Export canceled: { $written } of { $total } photos exported
+    }
 
 ## An export's row in the jobs window
 

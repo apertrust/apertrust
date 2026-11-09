@@ -49,7 +49,7 @@ darktable's background jobs panel (`libs/backgroundjobs.c` at the reference rele
 - `Added`: the title darktable's per-photo message at 0 ("Exporting 0 / 5 to file on disk"), the total its photos, the destination the path's folder where it holds no variable, and the detail `job-export-queued` with the count and the folder as typed.
 - For each photo: its `Title`, a `Detail` naming it with the counts, and `Progress` with the photos done.
 - Its `Destination`: the first file written, once there is one.
-- At its end: the outcome by its counts; the failure of the first photo that failed, or the one that ended the job; and `Retry` where a photo failed or was not reached, but not after a cancel.
+- At its end: the outcome by its counts; the failure that ended the job, or else the first photo's that failed; and `Retry` where a photo failed or was not reached, but not after a cancel, nor when the export was refused.
 - **`Event::Export` stays** as the export's record for scripts and the CLI: each photo's start and its file with its size and tiles, then the counts. No client draws a row from it.
 
 **The app's mirror is a fold:** one row per job, each part from one event ([gui.md](../gui.md#the-jobs-window)). Its `sent` requests, export rows and the app's clock go. The window opens itself for a job on `UserForeground` or `UserExport` whose `Added` names this client's command, and for no other.

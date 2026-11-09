@@ -172,7 +172,7 @@ The groundwork for orientation:
 - The operations before the tiles (the raw stage, on a default edit) take a step per pass, in row strips of about 8 MP, a step per strip (`export_job::STRIP_BINDING`). Highlights' dilation, which binds only scratch, runs in bands of its rows too.
 - Each new buffer is touched in a step of its own first (`Pipeline::parts`).
 - It steps beside a live frame only, or one step at a time where no photo is open or no viewport sized, as in the CLI (`Run::live_frame`).
-- Its progress is sent as `Event::Job`, and its photos as `Event::Export`. Planned (decision 72): everything its row shows as `Event::Job` (its total and done, the photo under way, its destination, its outcome, its first failure and Try again, handed to the session for `RetryJob`), `Event::Export` staying the record for scripts and the CLI.
+- Everything its row shows is sent as `Event::Job` (decision 72): its total and done, the photo under way, its folder then its first file as its destination, its outcome, the failure that ended it or else its first photo's, and `Retry` unless cancelled or refused; its photos as `Event::Export`, the record for scripts and the CLI. Planned: its retry handed to the session for `RetryJob`.
 - `names` gives darktable's variables their values; the client passes the person's folders and name (`Places`).
 
 ### The export preview
@@ -940,7 +940,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - Its five queues, and `jobs::schedule`'s pure `add` and `pick`: priorities with ageing, `SystemForeground`'s deduplicated stack of 30, one export at a time. Tables worked through darktable's code hold them.
 - `Job` (`dedup`, `progress`, and for its `Added` `destination`, `detail`, `total` and `retries`); `Context` (`cancelled`, `set_progress`, `set_title`, `set_detail`, `set_destination`, `set_outcome`, `offer`, `wait`); a `Message` id with arguments; `Progress` (done and an optional total), `Destination`, `Failure` (cause, item, file, reason) and `Offer` (decision 72).
 - `JobEvent`s, everything a job's row shows: the progress, title, detail and destination each at most every 0.5 s, the last of each before `Ended`, which carries the outcome, failure, time and offers; a failure or a panic (cause `panicked`) ends a job failed; 7 or 4 workers; `-d control`.
-- Planned (decision 72): the export reporting its whole row, the app's mirror as a fold of these events, and Try again ([roadmap.md](roadmap.md#the-jobs-window-and-the-job-api)).
+- The engine's export reports its whole row through them. Planned (decision 72): the app's mirror as a fold of these events, and Try again ([roadmap.md](roadmap.md#the-jobs-window-and-the-job-api)).
 - Tested with a counting job.
 
 ### Planned

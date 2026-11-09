@@ -556,8 +556,9 @@ fn file_name(path: &Path) -> Option<&str> {
 }
 
 /// `text` with a leading `~` the home folder, as `dt_util_fix_path`: `~` alone or `~/…`
-/// (and `~\…` on Windows); `~name` and a system with no home are left as they are.
-fn home_for_tilde(text: &str, home: Option<&Path>) -> String {
+/// (and `~\…` on Windows); `~name` and a system with no home are left as they are. Public
+/// for the folder an export job names as its destination, read as [`Disk::new`] reads it.
+pub fn home_for_tilde(text: &str, home: Option<&Path>) -> String {
     let (Some(rest), Some(home)) = (text.strip_prefix('~'), home) else {
         return text.to_owned();
     };
