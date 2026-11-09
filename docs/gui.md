@@ -1076,6 +1076,7 @@ Where winit cannot:
 
 - **One dialog at a time.** The view's items rest. So does every action that opens a dialog, a file dialog or About, so one dialog is open at a time, as Apple asks of sheets, while a modal one is up: a sheet, a modal window of the host's (Settings' on Windows and Linux), About over the window, or the open dialog asking (`State::modal`).
 - **View › Jobs stays:** the jobs window is modeless beside any dialog, so the jobs stay in reach under a sheet or the quit alert that waits for them.
+- **Help › Show Log stays:** the log window is modeless beside any dialog, so the log is in reach under a sheet or an alert.
 - **Close Window** rests then too, as AppKit's does under a sheet, unless a dialog's own window has the focus: it acts on the key window.
 - **A modeless Settings window** leaves them all to run, as Apple's apps do: Open Image… and About open over the main window beside it.
 - **Quit while the open dialog asks** waits for its answer: AppKit's panel hangs on the main window as a sheet, and a Quit under it would take the panel away and leave the window open, the app running on.

@@ -932,6 +932,35 @@ mod tests {
         assert_eq!(words.text(action.message), "Show Log");
     }
 
+    /// Help › Show Log stays enabled under a modal dialog on every platform, as the log
+    /// window opens beside any dialog: under a sheet or an alert, the log is in reach.
+    #[test]
+    fn show_log_stays_enabled_under_a_modal_dialog() {
+        for os in PLATFORMS {
+            let keymap = Keymap::defaults(os);
+            let mut state = everything();
+            state.dialog = true;
+            state.modal = true;
+            assert!(
+                actions::action(ActionId::SHOW_LOG)
+                    .expect("declared")
+                    .enabled(&state),
+                "{os:?}"
+            );
+            let holding: Vec<_> = menus(os)
+                .filter(|menu| {
+                    let mut ids = Vec::new();
+                    placed_in(menu, os, &mut ids);
+                    ids.contains(&ActionId::SHOW_LOG)
+                })
+                .map(|menu| menu.title)
+                .collect();
+            assert_eq!(holding, ["menu-help"], "{os:?}");
+            let item = shown(ActionId::SHOW_LOG, &keymap, &state, Focus::None);
+            assert!(item.enabled, "{os:?}");
+        }
+    }
+
     /// View › Jobs on every platform, never in the Mac's Window menu, with Ctrl+Shift+J as
     /// each platform spells it, and enabled whatever is open, as the jobs window opens
     /// beside any dialog.

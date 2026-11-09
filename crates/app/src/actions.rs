@@ -460,14 +460,15 @@ pub static ACTIONS: [Action; 58] = [
         available: no_modal_dialog,
         emits: Emit::Intent(Intent::About),
     },
-    // Help › Show Log, logging on or off: off, the window says where to turn it on.
+    // Help › Show Log, logging on or off: off, the window says where to turn it on. Never
+    // disabled, as the log window opens beside any dialog.
     Action {
         id: ActionId::SHOW_LOG,
         message: "action-show-log",
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: no_modal_dialog,
+        available: always,
         emits: Emit::Intent(Intent::ShowLog),
     },
     // View › Jobs, finished rows too: never disabled, as the jobs window opens beside any
