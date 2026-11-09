@@ -238,9 +238,14 @@ photo-new-layer = Nowa warstwa
 photo-values = Wartości pod kursorem
 photo-values-read = Czerwony { $red }, zielony { $green }, niebieski { $blue }, szary { $grey }
 photo-zoom = Powiększenie
+photo-zoom-small = Mały
 photo-zoom-fit = Dopasuj
+photo-zoom-fill = Wypełnij
 photo-zoom-in = Powiększ
 photo-zoom-out = Pomniejsz
+photo-zoom-tip = Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
+photo-zoom-tip-exact = Przy 100% ekran pokazuje dokładnie to, czym będzie eksport. Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
+photo-zoom-later = Powiększenie pojawi się wraz z widokiem 100%
 layer-image = Obraz
 
 ## Panel centralny
@@ -472,6 +477,10 @@ action-quit = Zakończ
 action-peek = Pokaż zdjęcie bez sekcji pod wskaźnikiem
 action-next-photo = Następne zdjęcie
 action-previous-photo = Poprzednie zdjęcie
+action-zoom-in = Powiększ
+action-zoom-out = Pomniejsz
+action-zoom-fit = Dopasuj
+action-zoom-100 = Powiększenie 100%
 action-sort-capture-time = Data wykonania
 action-sort-file-name = Nazwa pliku
 action-sort-edited = Edytowane

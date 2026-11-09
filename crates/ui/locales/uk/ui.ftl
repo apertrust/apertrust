@@ -233,9 +233,14 @@ photo-new-layer = Новий шар
 photo-values = Значення під курсором
 photo-values-read = Червоний { $red }, зелений { $green }, синій { $blue }, сірий { $grey }
 photo-zoom = Масштаб
+photo-zoom-small = Малий
 photo-zoom-fit = За розміром
+photo-zoom-fill = Заповнити
 photo-zoom-in = Збільшити
 photo-zoom-out = Зменшити
+photo-zoom-tip = Масштаб: зведення пальців або { $command }+прокручування; Z — 100%. Прокручування рухає збільшений знімок, Shift+прокручування — убік
+photo-zoom-tip-exact = На 100% екран показує саме те, яким буде експорт. Масштаб: зведення пальців або { $command }+прокручування; Z — 100%. Прокручування рухає збільшений знімок, Shift+прокручування — убік
+photo-zoom-later = Масштаб з'явиться разом із переглядом 100%
 layer-image = Знімок
 
 ## Центральна панель
@@ -467,6 +472,10 @@ action-quit = Вийти
 action-peek = Показати знімок без розділу під вказівником
 action-next-photo = Наступний знімок
 action-previous-photo = Попередній знімок
+action-zoom-in = Збільшити
+action-zoom-out = Зменшити
+action-zoom-fit = За розміром
+action-zoom-100 = Масштаб 100%
 action-sort-capture-time = Час зйомки
 action-sort-file-name = Назва файлу
 action-sort-edited = Оброблені

@@ -280,9 +280,17 @@ photo-new-layer = New layer
 photo-values = Values under the cursor
 photo-values-read = Red { $red }, green { $green }, blue { $blue }, grey { $grey }
 photo-zoom = Zoom
+photo-zoom-small = Small
 photo-zoom-fit = Fit
+photo-zoom-fill = Fill
 photo-zoom-in = Zoom in
 photo-zoom-out = Zoom out
+# The zoom's tooltip. $command is the pointer's modifier as shortcuts spell it: "Cmd" on
+# the Mac, "Ctrl" elsewhere.
+photo-zoom-tip = Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
+photo-zoom-tip-exact = At 100% the screen shows exactly what the export will be. Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
+# While the viewport can only fit the photo.
+photo-zoom-later = Zoom comes with the 100% view
 layer-image = Image
 
 ## The central panel
@@ -582,6 +590,10 @@ action-quit = Quit
 action-peek = See the photo without the section under the pointer
 action-next-photo = Next photo
 action-previous-photo = Previous photo
+action-zoom-in = Zoom in
+action-zoom-out = Zoom out
+action-zoom-fit = Zoom to fit
+action-zoom-100 = Zoom to 100%
 # The grid bar's menus, and View › Sort By and Thumbnail Size: the sort's key and
 # direction, and the thumbnails' size.
 action-sort-capture-time = Capture time

@@ -597,7 +597,7 @@ struct Demo {
     open_menu: bool,
     guides: bool,
     proof: bool,
-    zoom: Option<f64>,
+    zoom: Zoom,
     active: usize,
     selected: Vec<usize>,
     /// The slider markers' rows: Exposure at its minimum, its default, its maximum, and
@@ -688,7 +688,7 @@ impl Default for Demo {
             open_menu: false,
             guides: false,
             proof: false,
-            zoom: Some(400.0),
+            zoom: Zoom::Percent(400.0),
             active: 5,
             selected: vec![5, 6],
             markers: [-4.0, 0.0, 4.0, 1.28],
@@ -1899,12 +1899,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     }
     ui.add_space(t.spacing.s);
     let image = crate::tr(&ctx, "layer-image");
-    let zoom = Zoom {
-        fit: 23.0,
-        scale: demo.zoom,
-        enabled: true,
-    };
-    if let Some(action) = CentralBar::new(&image, zoom)
+    if let Some(action) = CentralBar::new(&image, demo.zoom)
         .toggles(
             Toggle::new(false, true),
             Toggle::new(demo.proof, true),
@@ -1913,12 +1908,18 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         )
         .layers(true)
         .values(Some([142, 128, 113]))
+        .zoom_enabled(true)
+        .zoomable(true)
+        .shortcut(CentralBarAction::Zoom(Zoom::Fit), "Ctrl+0")
+        .shortcut(CentralBarAction::Zoom(Zoom::Percent(100.0)), "Z")
+        .shortcut(CentralBarAction::ZoomIn, "Ctrl+=")
+        .shortcut(CentralBarAction::ZoomOut, "Ctrl+−")
         .show(ui)
     {
         match action {
             CentralBarAction::Guides => demo.guides = !demo.guides,
             CentralBarAction::ProofMargin => demo.proof = !demo.proof,
-            CentralBarAction::Zoom(scale) => demo.zoom = scale,
+            CentralBarAction::Zoom(zoom) => demo.zoom = zoom,
             other => demo.last = format!("Central bar: {other:?}"),
         }
     }

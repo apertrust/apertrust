@@ -99,6 +99,12 @@ impl ActionId {
     pub const PEEK: ActionId = ActionId("peek");
     pub const NEXT_PHOTO: ActionId = ActionId("next-photo");
     pub const PREVIOUS_PHOTO: ActionId = ActionId("previous-photo");
+    /// The photo's zoom, View's items and the central bar's zoom menu's: in, out, Fit and
+    /// 100%.
+    pub const ZOOM_IN: ActionId = ActionId("zoom-in");
+    pub const ZOOM_OUT: ActionId = ActionId("zoom-out");
+    pub const ZOOM_FIT: ActionId = ActionId("zoom-fit");
+    pub const ZOOM_100: ActionId = ActionId("zoom-100");
     /// The grid bar's Sort menu and View › Sort By: the key, then the direction.
     pub const SORT: [ActionId; 4] = [
         ActionId("sort-capture-time"),
@@ -438,7 +444,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 53] = [
+pub static ACTIONS: [Action; 57] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -755,6 +761,45 @@ pub static ACTIONS: [Action; 53] = [
         scope: Scope::View(View::Edit),
         trigger: Trigger::Repeat,
         available: |s| s.photos > 1,
+        emits: Emit::Later,
+    },
+    // The photo's zoom, not built until the viewport can zoom. Then Fit, in and out take
+    // Ctrl+0, Ctrl+= and Ctrl+− from the interface's size (`docs/gui.md`, The default
+    // keyboard map); until then those keys stay the size's.
+    Action {
+        id: ActionId::ZOOM_IN,
+        message: "action-zoom-in",
+        keys: &[],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Repeat,
+        available: |s| s.photo,
+        emits: Emit::Later,
+    },
+    Action {
+        id: ActionId::ZOOM_OUT,
+        message: "action-zoom-out",
+        keys: &[],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Repeat,
+        available: |s| s.photo,
+        emits: Emit::Later,
+    },
+    Action {
+        id: ActionId::ZOOM_FIT,
+        message: "action-zoom-fit",
+        keys: &[],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Press,
+        available: |s| s.photo,
+        emits: Emit::Later,
+    },
+    Action {
+        id: ActionId::ZOOM_100,
+        message: "action-zoom-100",
+        keys: &[plain(Key::Z)],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Press,
+        available: |s| s.photo,
         emits: Emit::Later,
     },
     // The grid bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The grid
@@ -1812,7 +1857,6 @@ mod tests {
     #[test]
     fn the_keys_kept_for_later_features_are_free() {
         let kept = [
-            Key::Z,
             Key::Backslash,
             Key::J,
             Key::O,

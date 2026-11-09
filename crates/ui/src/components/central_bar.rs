@@ -18,18 +18,19 @@
 //!
 //! On the left: the view toggles (every selected photo, the proof margin, before and
 //! after, the guides), then the layer being edited and + for a new one. In the middle: the
-//! values under the cursor. On the right: the scale, Fit or a percentage, with − a slider
-//! and +. The slider is logarithmic, from Fit to 1600%, and the buttons step through 50,
-//! 100, 200, 400, 800 and 1600%.
+//! values under the cursor. On the right: the zoom, one button showing the scale, which
+//! opens darktable's zoom menu (`src/libs/navigation.c`): Small, Fit and Fill, the stops
+//! from 50 to 1600%, then Zoom in and Zoom out.
 
-use egui::accesskit::{Action, ActionData};
+use egui::accesskit::HasPopup;
+use egui::os::OperatingSystem;
 use egui::{
-    Align, Color32, FontId, Layout, Rect, Role, Sense, Stroke, Ui, UiBuilder, Vec2, WidgetInfo,
-    pos2, vec2,
+    Align, FontId, Layout, Rect, Role, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
-use super::{IconButton, focus_ring, icon_colour, icon_lit};
+use super::{IconButton, focus_ring, icon_colour, icon_lit, pull_down};
 use crate::i18n::Args;
+use crate::popup::{self, Entry, Item};
 use crate::{Icon, theme, tr, translator};
 
 /// A view toggle's state.
@@ -45,15 +46,17 @@ impl Toggle {
     }
 }
 
-/// The scale the photo is shown at.
+/// The scale the photo is shown at, as darktable's zoom menu names it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Zoom {
-    /// The percentage that fits the photo in the view.
-    pub fit: f64,
-    /// `None` at Fit; otherwise the percentage, 100 being one pixel per physical pixel.
-    pub scale: Option<f64>,
-    /// Whether the scale can change: a viewport that only fits cannot zoom.
-    pub enabled: bool,
+pub enum Zoom {
+    /// Half of Fit.
+    Small,
+    /// The whole photo in the view.
+    Fit,
+    /// The view filled, the photo cut where it is longer than the view.
+    Fill,
+    /// A percentage, 100 being one photo pixel per physical pixel.
+    Percent(f64),
 }
 
 /// What the user did to the central bar this frame.
@@ -66,8 +69,12 @@ pub enum CentralBarAction {
     /// Open the layer menu.
     Layers,
     NewLayer,
-    /// A new scale: `None` is Fit.
-    Zoom(Option<f64>),
+    /// A scale chosen in the zoom menu.
+    Zoom(Zoom),
+    /// The zoom menu's Zoom in: the next scale up its list.
+    ZoomIn,
+    /// The zoom menu's Zoom out: the next scale down its list.
+    ZoomOut,
 }
 
 pub struct CentralBar<'a> {
@@ -79,14 +86,43 @@ pub struct CentralBar<'a> {
     layers: bool,
     values: Option<[u8; 3]>,
     zoom: Zoom,
+    zoom_enabled: bool,
+    zoomable: bool,
+    shortcuts: Vec<(CentralBarAction, &'a str)>,
 }
 
-const STOPS: [f64; 6] = [50.0, 100.0, 200.0, 400.0, 800.0, 1600.0];
-const MOST: f64 = 1600.0;
 const BUTTON: f32 = 28.0;
 
+/// The zoom menu, a separator where `None`: darktable's list, then the two steps.
+const ZOOM_MENU: [Option<CentralBarAction>; 13] = [
+    Some(CentralBarAction::Zoom(Zoom::Small)),
+    Some(CentralBarAction::Zoom(Zoom::Fit)),
+    Some(CentralBarAction::Zoom(Zoom::Fill)),
+    None,
+    Some(CentralBarAction::Zoom(Zoom::Percent(50.0))),
+    Some(CentralBarAction::Zoom(Zoom::Percent(100.0))),
+    Some(CentralBarAction::Zoom(Zoom::Percent(200.0))),
+    Some(CentralBarAction::Zoom(Zoom::Percent(400.0))),
+    Some(CentralBarAction::Zoom(Zoom::Percent(800.0))),
+    Some(CentralBarAction::Zoom(Zoom::Percent(1600.0))),
+    None,
+    Some(CentralBarAction::ZoomIn),
+    Some(CentralBarAction::ZoomOut),
+];
+
+/// The largest scale in the menu, past which Zoom in has nowhere to go.
+const MOST: f64 = 1600.0;
+
+/// The zoom's button, as the wireframe draws it: the scale and the chevron at its end, 8
+/// points before the scale, 4 between them and 6 after the chevron, at least 64 wide.
+const ZOOM_LEAST: f32 = 64.0;
+const ZOOM_START: f32 = 8.0;
+const ZOOM_GAP: f32 = 4.0;
+const ZOOM_END: f32 = 6.0;
+const CHEVRON: f32 = 10.0;
+
 impl<'a> CentralBar<'a> {
-    /// `layer` is the translated name of the layer being edited.
+    /// `layer` is the translated name of the layer being edited, `zoom` the scale shown.
     pub fn new(layer: &'a str, zoom: Zoom) -> Self {
         CentralBar {
             show_selected: Toggle::default(),
@@ -97,7 +133,30 @@ impl<'a> CentralBar<'a> {
             layers: false,
             values: None,
             zoom,
+            zoom_enabled: false,
+            zoomable: false,
+            shortcuts: Vec::new(),
         }
+    }
+
+    /// Whether the zoom's button can be used: while a photo is shown.
+    pub fn zoom_enabled(mut self, enabled: bool) -> Self {
+        self.zoom_enabled = enabled;
+        self
+    }
+
+    /// Whether the scale can change. A viewport that only fits cannot zoom, so its menu
+    /// offers Fit alone, the rest drawn disabled.
+    pub fn zoomable(mut self, zoomable: bool) -> Self {
+        self.zoomable = zoomable;
+        self
+    }
+
+    /// The keys that run one of the zoom menu's entries, in the platform's spelling
+    /// (`Ctrl+0`), shown at its end; the app's keymap handles them.
+    pub fn shortcut(mut self, entry: CentralBarAction, keys: &'a str) -> Self {
+        self.shortcuts.push((entry, keys));
+        self
     }
 
     pub fn toggles(
@@ -213,65 +272,16 @@ impl<'a> CentralBar<'a> {
             )
             .inner;
 
-        // The scale, on the right.
+        // The zoom, on the right.
         let right_start = ui
             .scope_builder(
                 UiBuilder::new()
                     .max_rect(inner)
                     .layout(Layout::right_to_left(Align::Center)),
                 |ui| {
-                    ui.spacing_mut().item_spacing.x = t.spacing.xxs;
-                    let z = self.zoom;
-                    let current = z.scale.unwrap_or(z.fit);
-                    if IconButton::new(Icon::ZoomIn, &tr(&ctx, "photo-zoom-in"))
-                        .enabled(z.enabled && current < MOST)
-                        .size(BUTTON)
-                        .show(ui)
-                        .clicked()
-                    {
-                        let next = STOPS
-                            .iter()
-                            .copied()
-                            .find(|&s| s > current + 1e-6 && s > z.fit);
-                        action = Some(CentralBarAction::Zoom(next.or(Some(MOST))));
+                    if let Some(chosen) = self.zoom_button(ui) {
+                        action = Some(chosen);
                     }
-                    if let Some(scale) = zoom_slider(ui, z) {
-                        action = Some(CentralBarAction::Zoom(scale));
-                    }
-                    if IconButton::new(Icon::ZoomOut, &tr(&ctx, "photo-zoom-out"))
-                        .enabled(z.enabled && z.scale.is_some())
-                        .size(BUTTON)
-                        .show(ui)
-                        .clicked()
-                    {
-                        let previous = STOPS
-                            .iter()
-                            .rev()
-                            .copied()
-                            .find(|&s| s < current - 1e-6 && s > z.fit);
-                        action = Some(CentralBarAction::Zoom(previous));
-                    }
-                    let text = match z.scale {
-                        None => tr(&ctx, "photo-zoom-fit"),
-                        Some(s) => format!("{}%", translator(&ctx).format_number(s, 0, false)),
-                    };
-                    let galley = ui.painter().layout_no_wrap(
-                        text,
-                        FontId::proportional(t.text.body),
-                        t.colors.text,
-                    );
-                    let (r, _) = ui.allocate_exact_size(
-                        vec2(galley.size().x.max(52.0), BUTTON),
-                        Sense::hover(),
-                    );
-                    ui.painter().galley(
-                        pos2(
-                            r.right() - galley.size().x,
-                            r.center().y - galley.size().y / 2.0,
-                        ),
-                        galley,
-                        t.colors.text,
-                    );
                     ui.min_rect().left()
                 },
             )
@@ -289,6 +299,150 @@ impl<'a> CentralBar<'a> {
         }
         action
     }
+
+    /// The zoom's button: the scale and ⌄, opening the zoom menu under it through the
+    /// popup service. Returns the entry chosen.
+    fn zoom_button(&self, ui: &mut Ui) -> Option<CentralBarAction> {
+        let t = theme(ui.ctx());
+        let ctx = ui.ctx().clone();
+        let enabled = self.zoom_enabled;
+        let scale = zoom_words(&ctx, CentralBarAction::Zoom(self.zoom));
+        let colour = if enabled {
+            t.colors.text
+        } else {
+            t.colors.text_disabled
+        };
+        let galley =
+            ui.painter()
+                .layout_no_wrap(scale.clone(), FontId::proportional(t.text.body), colour);
+        let width = ZOOM_START + galley.size().x + ZOOM_GAP + CHEVRON + ZOOM_END;
+        let sense = if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        let (rect, response) = ui.allocate_exact_size(vec2(width.max(ZOOM_LEAST), BUTTON), sense);
+        let open = popup::is_open(&ctx, popup::button_menu(response.id));
+        if enabled && (response.hovered() || open) {
+            ui.painter()
+                .rect_filled(rect, t.shape.radius, t.colors.hover);
+        }
+        // The scale and the chevron at the button's end, so a longer scale grows it
+        // towards the bar's middle.
+        let chevron = Rect::from_center_size(
+            pos2(rect.right() - ZOOM_END - CHEVRON / 2.0, rect.center().y),
+            vec2(CHEVRON, CHEVRON),
+        );
+        let text_at = pos2(
+            chevron.left() - ZOOM_GAP - galley.size().x,
+            rect.center().y - galley.size().y / 2.0,
+        );
+        ui.painter().galley(text_at, galley, colour);
+        Icon::ChevronDown.paint(
+            ui.painter(),
+            chevron,
+            icon_colour(&t, enabled, icon_lit(&ctx, &response)),
+        );
+        if response.has_focus() {
+            focus_ring(ui.painter(), rect, &t);
+        }
+        let name = tr(&ctx, "photo-zoom");
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, &name));
+        ctx.accesskit_node_builder(response.id, |node| {
+            node.set_value(scale.clone());
+            node.set_has_popup(HasPopup::Menu);
+        });
+        let later = tr(&ctx, "photo-zoom-later");
+        let tip = if self.zoomable {
+            let mut args = Args::new();
+            // The pointer's modifier as the app spells its shortcuts.
+            let mac = ctx.os() == OperatingSystem::Mac;
+            args.set("command", if mac { "Cmd" } else { "Ctrl" });
+            let exact = self.zoom == Zoom::Percent(100.0);
+            let id = if exact {
+                "photo-zoom-tip-exact"
+            } else {
+                "photo-zoom-tip"
+            };
+            translator(&ctx).text_with(id, Some(&args))
+        } else {
+            later.clone()
+        };
+        let response = response.on_hover_text(tip);
+        let picked = pull_down(ui, &response, &name, || {
+            ZOOM_MENU
+                .iter()
+                .map(|entry| match entry {
+                    None => Entry::Separator,
+                    Some(entry) => {
+                        let can = self.can_choose(*entry);
+                        let mut item =
+                            Item::new(zoom_id(*entry), zoom_words(&ctx, *entry)).enabled(can);
+                        // The scales are a set, the one shown checked; an in-between
+                        // scale checks none. Zoom in and out are commands.
+                        if let CentralBarAction::Zoom(zoom) = entry {
+                            item = item.checked(*zoom == self.zoom);
+                        }
+                        if let Some((_, keys)) = self.shortcuts.iter().find(|(e, _)| e == entry) {
+                            item = item.shortcut(*keys);
+                        }
+                        if !can && !self.zoomable {
+                            item = item.tip(later.clone());
+                        }
+                        item.into()
+                    }
+                })
+                .collect()
+        });
+        picked.and_then(|id| {
+            ZOOM_MENU
+                .into_iter()
+                .flatten()
+                .find(|entry| zoom_id(*entry) == id)
+        })
+    }
+
+    /// Whether the zoom menu's `entry` can be chosen: Fit always, the rest only while the
+    /// scale can change, Zoom in short of the largest scale and Zoom out above Small.
+    fn can_choose(&self, entry: CentralBarAction) -> bool {
+        match entry {
+            CentralBarAction::Zoom(Zoom::Fit) => true,
+            _ if !self.zoomable => false,
+            CentralBarAction::ZoomIn => !matches!(self.zoom, Zoom::Percent(p) if p >= MOST),
+            CentralBarAction::ZoomOut => self.zoom != Zoom::Small,
+            _ => true,
+        }
+    }
+}
+
+/// A zoom menu entry's id in the popup's request; the bar's other actions have none.
+fn zoom_id(entry: CentralBarAction) -> String {
+    match entry {
+        CentralBarAction::Zoom(Zoom::Small) => "zoom-small".to_owned(),
+        CentralBarAction::Zoom(Zoom::Fit) => "zoom-fit".to_owned(),
+        CentralBarAction::Zoom(Zoom::Fill) => "zoom-fill".to_owned(),
+        CentralBarAction::Zoom(Zoom::Percent(p)) => format!("zoom-{p}"),
+        CentralBarAction::ZoomIn => "zoom-in".to_owned(),
+        CentralBarAction::ZoomOut => "zoom-out".to_owned(),
+        _ => String::new(),
+    }
+}
+
+/// A zoom menu entry's words, translated: a scale as the button shows it, a percentage
+/// rounded to a whole number. The bar's other actions have none.
+fn zoom_words(ctx: &egui::Context, entry: CentralBarAction) -> String {
+    let id = match entry {
+        CentralBarAction::Zoom(Zoom::Percent(p)) => {
+            return format!("{}%", translator(ctx).format_number(p, 0, false));
+        }
+        CentralBarAction::Zoom(Zoom::Small) => "photo-zoom-small",
+        CentralBarAction::Zoom(Zoom::Fit) => "photo-zoom-fit",
+        CentralBarAction::Zoom(Zoom::Fill) => "photo-zoom-fill",
+        CentralBarAction::ZoomIn => "photo-zoom-in",
+        CentralBarAction::ZoomOut => "photo-zoom-out",
+        _ => return String::new(),
+    };
+    tr(ctx, id)
 }
 
 /// The layer menu's button: the layer's name and ⌄.
@@ -386,82 +540,4 @@ fn values(ui: &mut Ui, bar: Rect, [r, g, b]: [u8; 3]) {
         info.current_text_value = Some(value.clone());
         info
     });
-}
-
-/// The zoom slider's size, its track's height and its handle's, as the wireframe draws
-/// them: a rounded track with a pill for a handle, not a module slider's marker.
-const ZOOM_WIDTH: f32 = 130.0;
-const ZOOM_TRACK: f32 = 8.0;
-const ZOOM_HANDLE: Vec2 = vec2(24.0, 10.0);
-
-/// A small slider for the scale, logarithmic from Fit to 1600%.
-fn zoom_slider(ui: &mut Ui, z: Zoom) -> Option<Option<f64>> {
-    let t = theme(ui.ctx());
-    let span = (MOST / z.fit.max(1.0)).ln().max(f64::EPSILON);
-    let fraction =
-        |scale: Option<f64>| scale.map_or(0.0, |s| ((s / z.fit).ln() / span).clamp(0.0, 1.0));
-    let scale_at = |f: f64| {
-        let s = z.fit * (f * span).exp();
-        // Near Fit snaps to Fit.
-        (f > 0.02).then_some(s.round())
-    };
-    let sense = if z.enabled {
-        Sense::click_and_drag()
-    } else {
-        Sense::hover()
-    };
-    let (rect, response) = ui.allocate_exact_size(vec2(ZOOM_WIDTH, BUTTON), sense);
-    // Where the handle's centre runs, so the pill stays over the track at both ends.
-    let track = rect.shrink2(vec2(ZOOM_HANDLE.x / 2.0, 0.0));
-    let mut chosen = None;
-    if z.enabled
-        && let Some(p) = response.interact_pointer_pos()
-        && response.is_pointer_button_down_on()
-    {
-        let f = f64::from(((p.x - track.left()) / track.width()).clamp(0.0, 1.0));
-        let scale = scale_at(f);
-        if scale != z.scale {
-            chosen = Some(scale);
-        }
-    }
-    let shown = chosen.unwrap_or(z.scale);
-    let id = response.id;
-    let requested = ui.input(|i| {
-        i.accesskit_action_requests(id, Action::SetValue)
-            .filter_map(|r| match r.data {
-                Some(ActionData::NumericValue(v)) => Some(v),
-                _ => None,
-            })
-            .last()
-    });
-    if z.enabled
-        && let Some(v) = requested
-    {
-        chosen = Some((v > z.fit + 0.5).then_some(v.min(MOST)));
-    }
-    let painter = ui.painter();
-    let fade = |c: Color32| if z.enabled { c } else { c.gamma_multiply(0.5) };
-    let line = Rect::from_center_size(rect.center(), vec2(rect.width(), ZOOM_TRACK));
-    painter.rect_filled(line, ZOOM_TRACK / 2.0, fade(t.colors.slider_track));
-    let x = track.left() + fraction(shown) as f32 * track.width();
-    let pill = Rect::from_center_size(pos2(x, line.center().y), ZOOM_HANDLE);
-    let lit = z.enabled && (response.hovered() || response.dragged());
-    let fill = if lit {
-        t.colors.slider_handle_hover
-    } else {
-        t.colors.slider_handle
-    };
-    painter.rect_filled(pill, ZOOM_HANDLE.y / 2.0, fade(fill));
-    if response.has_focus() {
-        focus_ring(painter, line.expand2(vec2(3.0, 7.0)), &t);
-    }
-    let name = tr(ui.ctx(), "photo-zoom");
-    let value = shown.unwrap_or(z.fit);
-    response.widget_info(|| WidgetInfo::slider(z.enabled, value, &name));
-    ui.ctx().accesskit_node_builder(id, |node| {
-        node.set_min_numeric_value(z.fit);
-        node.set_max_numeric_value(MOST);
-        node.add_action(Action::SetValue);
-    });
-    chosen
 }
