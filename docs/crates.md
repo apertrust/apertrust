@@ -644,7 +644,7 @@ The design system ([docs/gui.md](gui.md), decision 36): tokens and themes, fonts
 
 - Tokens by role; the dark (default), light and high-contrast themes in `crates/ui/themes`, checked for WCAG AA contrast and a neutral photo surround.
 - User theme files that extend a theme.
-- IBM Plex Sans.
+- IBM Plex Sans, and IBM Plex Mono Regular for the log window's lines.
 - SVG icons rendered by resvg, their lines 1.25 points wide at every size (`STROKE`): Apertrust's own files, derived from Lucide's (release 1.70.0, each naming its source, `LICENSE-Lucide` beside them) or drawn in Lucide's style where it has none, mapped by `Icon::file`; and `Picture`, an SVG in its own colours, as About's logo.
 - The gallery, photographed in every theme and in the pseudo-locale by `egui_kittest`.
 

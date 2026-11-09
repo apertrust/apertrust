@@ -21,14 +21,14 @@
 //!
 //! - **Logging off**, it says no log is kept and offers Settings' Diagnostics: the menu
 //!   item is never disabled without a reason.
-//! - **Logging on**, it shows the lines as the terminal writes them, in columns: the
-//!   seconds right-aligned, the domain, the line; warnings in `warning` and errors in
-//!   `error`, on a faint band of their colour. Its checkboxes filter what is shown among
-//!   what is kept and change no setting; a domain not kept is drawn disabled, its tooltip
-//!   saying where to turn it on. The lines are drawn row by row, only those in view; the
-//!   view follows the end while it is there, and scrolled up it stays put, a pill offering
-//!   the newer lines. Copy to clipboard and Save to file… take the lines shown as plain
-//!   text, as the terminal writes them.
+//! - **Logging on**, it shows the lines as the terminal writes them, in IBM Plex Mono and
+//!   in columns: the seconds right-aligned, the domain, the line; warnings in `warning`
+//!   and errors in `error`, on a faint band of their colour. Its checkboxes filter what is
+//!   shown among what is kept and change no setting; a domain not kept is drawn disabled,
+//!   its tooltip saying where to turn it on. The lines are drawn row by row, only those in
+//!   view; the view follows the end while it is there, and scrolled up it stays put, a pill
+//!   offering the newer lines. Copy to clipboard and Save to file… take the lines shown as
+//!   plain text, as the terminal writes them.
 //! - It reads the lines kept since its last frame into a copy of its own, so it never holds
 //!   the log while it draws, and a line logged meanwhile waits for nothing. A line kept
 //!   wakes its window ([`Dialog::wake_with`]); nothing else draws it again.
@@ -41,12 +41,12 @@ use apertrust_base::log::{CAPACITY, Cursor, Domain, Kept, Line, Severity, Switch
 use apertrust_base::settings::Choice;
 use apertrust_export::variables::DateTime;
 use apertrust_ui::components::{ToggleRow, quiet_scroll_rows};
-use apertrust_ui::{Theme, theme, tr, translator};
+use apertrust_ui::{Theme, fonts, theme, tr, translator};
 use eframe::egui::os::OperatingSystem;
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
 use eframe::egui::{
-    self, Align, Align2, FontId, Layout, Rect, Role, ScrollArea, Sense, Ui, UiBuilder, WidgetInfo,
-    pos2, vec2,
+    self, Align, Align2, FontFamily, FontId, Layout, Rect, Role, ScrollArea, Sense, Ui, UiBuilder,
+    WidgetInfo, pos2, vec2,
 };
 
 use crate::dialog_host::{Asks, Dialog, Form, Keys, Look, Output, Resize};
@@ -64,9 +64,11 @@ const OFF_WIDTH: f32 = 416.0;
 const FEWEST: f32 = 3.0;
 /// A line's row.
 const ROW: f32 = 20.0;
-/// The seconds' column, right-aligned, and the domain's after it.
-const SECONDS: f32 = 64.0;
-const DOMAIN: f32 = 92.0;
+/// The seconds' column in characters of the lines' font, right-aligned, as wide as the
+/// terminal writes them (`{:10.4}`); the domain's after it, as wide as the longest domain
+/// in its brackets, `[settings]`.
+const SECONDS: usize = 10;
+const DOMAIN: usize = 10;
 /// `log.domains`' options, each a filter: the domains, then `verbose`.
 const OPTIONS: usize = <Domain as Choice>::OPTIONS.len();
 
@@ -538,10 +540,10 @@ fn draw_line(ui: &Ui, t: &Theme, rect: Rect, line: &Line) {
     if let Some(colour) = marked {
         painter.rect_filled(rect, 0.0, colour.gamma_multiply(0.09));
     }
-    let font = FontId::proportional(t.text.small);
+    let (font, seconds, domain) = line_font(ui, t);
     let quiet = marked.unwrap_or(t.colors.text_secondary);
     let y = rect.center().y;
-    let seconds_end = rect.left() + t.spacing.xl + SECONDS;
+    let seconds_end = rect.left() + t.spacing.xl + seconds;
     painter.text(
         pos2(seconds_end, y),
         Align2::RIGHT_CENTER,
@@ -557,7 +559,7 @@ fn draw_line(ui: &Ui, t: &Theme, rect: Rect, line: &Line) {
         font.clone(),
         quiet,
     );
-    let message_at = domain_at + DOMAIN + t.spacing.l;
+    let message_at = domain_at + domain + t.spacing.l;
     let width = rect.right() - t.spacing.xl - message_at;
     let colour = marked.unwrap_or(t.colors.text);
     let mut job =
@@ -571,7 +573,8 @@ fn draw_line(ui: &Ui, t: &Theme, rect: Rect, line: &Line) {
 /// The note in the first row once the oldest lines have gone.
 fn draw_note(ui: &Ui, t: &Theme, rect: Rect, said: &str) {
     let painter = ui.painter_at(rect);
-    let at = rect.left() + t.spacing.xl + SECONDS + t.spacing.l + DOMAIN + t.spacing.l;
+    let (_, seconds, domain) = line_font(ui, t);
+    let at = rect.left() + t.spacing.xl + seconds + t.spacing.l + domain + t.spacing.l;
     painter.text(
         pos2(at, rect.center().y),
         Align2::LEFT_CENTER,
@@ -579,6 +582,14 @@ fn draw_note(ui: &Ui, t: &Theme, rect: Rect, said: &str) {
         FontId::proportional(t.text.small),
         t.colors.text_secondary,
     );
+}
+
+/// The lines' font, IBM Plex Mono at `text.small`, and the widths of the seconds' and the
+/// domain's columns in it.
+fn line_font(ui: &Ui, t: &Theme) -> (FontId, f32, f32) {
+    let font = FontId::new(t.text.small, FontFamily::Name(fonts::MONO.into()));
+    let advance = ui.ctx().fonts_mut(|f| f.glyph_width(&font, '0'));
+    (font, SECONDS as f32 * advance, DOMAIN as f32 * advance)
 }
 
 /// A rule between the window's parts, across it.

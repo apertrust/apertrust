@@ -16,7 +16,7 @@ This software is based in part on the work of the Independent JPEG Group: Apertr
 
 ## Fonts
 
-- IBM Plex Sans, copyright © 2017 IBM Corp. with Reserved Font Name "Plex", under the SIL Open Font License 1.1.
+- IBM Plex Sans and IBM Plex Mono, copyright © 2017 IBM Corp. with Reserved Font Name "Plex", under the SIL Open Font License 1.1.
 
 ## Icons
 
