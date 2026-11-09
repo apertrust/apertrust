@@ -32,5 +32,5 @@ Apertrust runs on Windows, macOS and Linux ([0006](0006-two-programs-on-three-de
 
 - While Windows' tests are off, a Windows-only bug, or a kernel FXC refuses, can reach main and shows only on a Windows machine. The engine's naga test still catches a kernel's write at a run-time index on every machine ([0010](0010-fxc-on-direct3d-12-and-no-writes-at-run-time-indices.md)).
 - A file that gains a platform cfg fails `lint` until it is added to the list.
-- A contributor who wants every check on a pull request that changes only docs asks for the `full-ci` label ([CONTRIBUTING.md](../../CONTRIBUTING.md)). Any label added to a pull request runs its CI again.
+- A contributor who wants every check on a pull request that changes only docs asks for the `full-ci` label ([CONTRIBUTING.md](../../CONTRIBUTING.md)). A label starts no run of its own, since such a run would cancel the one in progress: after adding `full-ci`, re-running the jobs picks it up, as CI reads the pull request's labels when it runs.
 - The `full-ci` and `nightly-tests-failed` labels exist in the repository. `nightly` is kept for the nightly builds, planned ([packaging.md](../packaging.md)).

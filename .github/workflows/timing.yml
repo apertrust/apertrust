@@ -36,10 +36,10 @@ jobs:
           name="Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW"
           digest=$(grep -F "  $name" crates/raw/tests/corpus/files.sha256 | cut -d' ' -f1)
           test -n "$digest"
-          curl -fsSL --globoff -o sample.arw "https://raw.pixls.us/data/${name// /%20}"
+          curl --proto '=https' -fsSL --globoff -o sample.arw "https://raw.pixls.us/data/${name// /%20}"
           echo "$digest  sample.arw" | sha256sum -c -
-      - run: cargo build --release -p apertrust-cli
-      - run: cargo run --release -p apertrust-cli -- gpu
+      - run: cargo build --locked --release -p apertrust-cli
+      - run: cargo run --locked --release -p apertrust-cli -- gpu
       # Three exports, each tiled as it needs. Each run is a new process, so each one
       # compiles the kernels again. `--runs 1` renders directly, outside the session's
       # export job, whose renders are untimed, as before the job: the same renders, timed.
@@ -50,10 +50,10 @@ jobs:
       - name: Export
         run: |
           for _ in 1 2 3; do
-            cargo run --release -p apertrust-cli -- -d perf --conf export.disk.on_conflict=overwrite export sample.arw -o sample.png --runs 1
+            cargo run --locked --release -p apertrust-cli -- -d perf --conf export.disk.on_conflict=overwrite export sample.arw -o sample.png --runs 1
           done
       # The viewport pipe demosaics and downscales in tiles where the GPU binds less
       # than demosaic's 963 MB image at once, as lavapipe's 128 MiB does, and whole where
       # it binds it, as WARP does (decision 14); the first render's line says which.
       - name: Exposure changes at viewport size
-        run: cargo run --release -p apertrust-cli -- preview sample.arw --changes 10
+        run: cargo run --locked --release -p apertrust-cli -- preview sample.arw --changes 10

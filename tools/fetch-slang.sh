@@ -40,7 +40,7 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 archive="$tmp/slang.tar.gz"
-curl -fsSL -o "$archive" \
+curl --proto '=https' -fsSL -o "$archive" \
   "https://github.com/shader-slang/slang/releases/download/v$VERSION/slang-$VERSION-$asset.tar.gz"
 
 if command -v sha256sum > /dev/null; then

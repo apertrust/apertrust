@@ -35,13 +35,13 @@ found=0
 while IFS= read -r file; do
   [[ "$file" =~ $allowed ]] && continue
   hits=$(awk '/^ *#\[cfg\(test\)\]/ { exit } { print FILENAME ":" FNR ": " $0 }' "$file" | grep -E "$pattern" || true)
-  if [ -n "$hits" ]; then
+  if [[ -n "$hits" ]]; then
     echo "$hits"
     found=1
   fi
 done < <(git ls-files --cached --others --exclude-standard 'crates/ui/src/*.rs' 'crates/app/src/*.rs')
 
-if [ "$found" -ne 0 ]; then
+if [[ "$found" -ne 0 ]]; then
   echo "Interface text must be a message id: tr(ctx, \"…\") or Translator::text (crates/ui/locales)."
 fi
 exit "$found"
