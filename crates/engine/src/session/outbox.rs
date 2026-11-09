@@ -221,6 +221,12 @@ fn kind(event: &Event) -> &'static str {
     }
 }
 
+/// An event as `-d event` writes it, for the session's tests.
+#[cfg(test)]
+pub(super) fn line(event: &Event) -> String {
+    Line(event).to_string()
+}
+
 /// An event as `-d event` writes it: its kind, its numbers and its topic.
 struct Line<'a>(&'a Event);
 
