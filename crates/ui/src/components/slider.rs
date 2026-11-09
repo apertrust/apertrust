@@ -19,8 +19,11 @@
 //! track the row's full width under them.
 //!
 //! - The track is one line, plain or a colour band; the part moved from the default is
-//!   drawn on it at the same thickness. Its triangle handle points at the value and is
-//!   cut off at the track's ends.
+//!   drawn on it at the same thickness. Its handle, the marker Settings chooses
+//!   ([`super::Marker`], decision 75), points at the value and stays whole at the track's
+//!   ends: its travel, and the fill's, stop short of each end by the marker's stop, and a
+//!   press anywhere on the strip maps onto that travel, so one at the very end gives the
+//!   track's end.
 //! - The marker, beside the label, shows ● on a slider you have kept, ○ under the pointer
 //!   or focus (a click keeps it), and "A" with a tick at the old value while a Match
 //!   proposal waits.
@@ -62,14 +65,14 @@ use egui::accesskit::{Action, ActionData};
 use egui::epaint::Mesh;
 use egui::os::OperatingSystem;
 use egui::{
-    Align2, Color32, CursorIcon, Event, EventFilter, FontId, Key, Modifiers, Pos2, Rect, Role,
-    Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
+    Align2, Color32, CursorIcon, Event, EventFilter, FontId, Key, Modifiers, Pos2, Rangef, Rect,
+    Role, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
 use super::value_field::number_char;
 use super::{
-    IconButton, ValueField, field_inset, focus_ring, focus_ring_centred, paint_handle,
-    paint_keep_marker, truncated,
+    IconButton, ValueField, field_inset, focus_ring, focus_ring_centred, marker, paint_keep_marker,
+    truncated,
 };
 use crate::{Icon, Theme, theme, translator};
 
@@ -305,6 +308,9 @@ impl<'a> SliderRow<'a> {
         // spans zero, zero included.
         let signed = min < 0.0 && max > 0.0;
         let strip = Places::strip(row, &t);
+        // Where the marker's centre runs: the strip less the marker's stop at each end.
+        let handle = marker(ui.ctx());
+        let travel = handle.travel(strip.x_range());
         // What the track spans, darktable's visible range: the soft range at rest, widened
         // to reach each value shown since the row was last reset, never beyond the range,
         // as darktable's `dt_bauhaus_slider_set` widens it. Kept in memory while widened,
@@ -370,7 +376,7 @@ impl<'a> SliderRow<'a> {
                 } else if let Some(at) = pointer.interact_pointer_pos() {
                     let done = pointer.drag_stopped() || pointer.clicked();
                     if pointer.is_pointer_button_down_on() || done {
-                        let x = ((at.x - strip.left()) / strip.width()).clamp(0.0, 1.0);
+                        let x = fraction_at(travel, at.x);
                         let value = round(low + f64::from(x) * span).clamp(low, high);
                         if value != self.value || done {
                             shown = value;
@@ -635,7 +641,7 @@ impl<'a> SliderRow<'a> {
         });
         let span = (high - low).max(f64::EPSILON);
         let fraction = |v: f64| ((v - low) / span).clamp(0.0, 1.0) as f32;
-        let x_of = |v: f64| places.track.left() + fraction(v) * places.track.width();
+        let x_of = |v: f64| x_at(travel, fraction(v));
 
         // The track, last in the row's focus order. Screen readers hear the value as the
         // row writes it, with its unit, and the key that opens its field.
@@ -739,18 +745,11 @@ impl<'a> SliderRow<'a> {
                     Rect::from_center_size(pos2(x_of(before), line.center().y), vec2(2.0, 14.0));
                 painter.rect_filled(tick, 0.0, fade(t.colors.accent_text));
             }
-            // The handle points at the value, its tip and base 5.5 points each way of the
-            // track's middle as the wireframe draws it, inside the strip, which cuts it off
-            // at the track's ends.
-            let x = x_of(shown);
-            let y = line.center().y;
-            let handle = [
-                pos2(x, y - HANDLE_HALF_HEIGHT),
-                pos2(x + 6.5, y + HANDLE_HALF_HEIGHT),
-                pos2(x - 6.5, y + HANDLE_HALF_HEIGHT),
-            ];
+            // The marker points at the value, centred on the track's middle, inside the
+            // strip, whose ends its stop keeps it within where it crosses the track.
+            let centre = pos2(x_of(shown), line.center().y);
             let clipped = painter.with_clip_rect(places.track.intersect(painter.clip_rect()));
-            paint_handle(&clipped, handle, &track, &t, fade);
+            handle.paint(&clipped, centre, &track, &t, fade);
             // Around the whole row, as far out as a dropdown row's hover band, so it runs
             // into neither the top line nor the next row.
             if track.has_focus() {
@@ -842,12 +841,24 @@ fn written(
     }
 }
 
-/// How far the track's line starts under its 16-point strip's top, and how far the handle's
-/// tip and base sit each way of the line's middle, as the wireframe draws them
-/// (`docs/gui.md`, How the rows are laid out): the handle, with its outline, then stays
-/// inside the strip.
+/// How far the track's line starts under its 16-point strip's top, as the wireframe draws
+/// it (`docs/gui.md`, How the rows are laid out): the marker, 5.5 points each way of the
+/// line's middle with its outline, then stays inside the strip.
 const TRACK_TOP: f32 = 6.0;
-const HANDLE_HALF_HEIGHT: f32 = 5.5;
+
+/// The x a fraction `f` of the track's span puts the marker at, along its `travel`.
+fn x_at(travel: Rangef, f: f32) -> f32 {
+    travel.min + f * travel.span()
+}
+
+/// The fraction of the track's span a pointer at `x` sets: along the marker's `travel`, so
+/// a press at or past either end of the strip gives that end.
+fn fraction_at(travel: Rangef, x: f32) -> f32 {
+    if travel.span() <= 0.0 {
+        return 0.5;
+    }
+    ((x - travel.min) / travel.span()).clamp(0.0, 1.0)
+}
 
 /// Where the row's parts go, from the theme's sizes. The top line, a field high, holds
 /// the label and its marker at the start and the quad and the value at the end; under it
@@ -942,4 +953,62 @@ fn gradient(rect: Rect, stops: &[(f32, Color32)], enabled: bool) -> Mesh {
         }
     }
     mesh
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::Rangef;
+
+    use super::{fraction_at, x_at};
+    use crate::components::Marker;
+
+    /// A 300-point track, as a 320-point side panel's rows have.
+    const TRACK: Rangef = Rangef {
+        min: 10.0,
+        max: 310.0,
+    };
+
+    #[test]
+    fn the_ends_put_each_marker_flush_with_the_track_s_ends() {
+        for marker in Marker::ALL {
+            let travel = marker.travel(TRACK);
+            assert_eq!(x_at(travel, 0.0), TRACK.min + marker.stop());
+            assert_eq!(x_at(travel, 1.0), TRACK.max - marker.stop());
+        }
+    }
+
+    #[test]
+    fn the_default_and_the_fill_s_start_follow_the_same_travel() {
+        // Exposure's default, 0 on −4 to +4, half way along: the track's middle for every
+        // marker, since each stops alike at both ends.
+        for marker in Marker::ALL {
+            let travel = marker.travel(TRACK);
+            assert_eq!(x_at(travel, 0.5), 160.0);
+        }
+        // A quarter of the way, inside the square's travel, not the track's.
+        let travel = Marker::Square.travel(TRACK);
+        assert_eq!(x_at(travel, 0.25), 15.75 + 0.25 * 288.5);
+    }
+
+    #[test]
+    fn a_pointer_at_the_track_s_very_end_gives_its_end() {
+        for marker in Marker::ALL {
+            let travel = marker.travel(TRACK);
+            assert_eq!(fraction_at(travel, TRACK.min), 0.0);
+            assert_eq!(fraction_at(travel, TRACK.max), 1.0);
+            // Anywhere inside the stop is the end too, and past it.
+            assert_eq!(fraction_at(travel, TRACK.min + marker.stop() / 2.0), 0.0);
+            assert_eq!(fraction_at(travel, TRACK.max + 20.0), 1.0);
+            // The marker's own place maps back to its fraction.
+            assert!((fraction_at(travel, x_at(travel, 0.3)) - 0.3).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn a_track_too_short_for_the_stops_keeps_the_marker_in_its_middle() {
+        let travel = Marker::Circle.travel(Rangef::new(0.0, 10.0));
+        assert_eq!(x_at(travel, 0.0), 5.0);
+        assert_eq!(x_at(travel, 1.0), 5.0);
+        assert_eq!(fraction_at(travel, 0.0), 0.5);
+    }
 }

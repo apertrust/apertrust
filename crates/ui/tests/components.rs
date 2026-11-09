@@ -19,7 +19,7 @@
 //! (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    ActionRow, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton, Mark, Quad,
+    ActionRow, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton, Mark, Marker, Quad,
     Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, ToggleRow,
 };
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
@@ -90,6 +90,13 @@ fn slider(
         )
 }
 
+/// The point `at` of the way along a slider's `track`, as the marker travels it: short of
+/// each end by the marker's stop (decision 75).
+fn along(track: egui::Rect, at: f32) -> egui::Pos2 {
+    let travel = Marker::default().travel(track.x_range());
+    pos2(travel.min + travel.span() * at, track.center().y)
+}
+
 fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
 }
@@ -101,7 +108,7 @@ fn dragging_the_track_sets_the_value_and_marks_the_release_done() {
     let track = harness
         .get_by_role_and_label(Role::Slider, "Exposure")
         .rect();
-    let three_quarters = pos2(track.left() + track.width() * 0.75, track.center().y);
+    let three_quarters = along(track, 0.75);
     harness.drag_at(three_quarters);
     // One frame: the press reports its value in the frame it lands, not the next.
     harness.step();
@@ -164,7 +171,7 @@ fn drag_to(harness: &mut Harness<'_, Exposure>, at: f32) {
     let track = harness
         .get_by_role_and_label(Role::Slider, "Exposure")
         .rect();
-    let at = pos2(track.left() + track.width() * at, track.center().y);
+    let at = along(track, at);
     harness.drag_at(at);
     harness.run();
     harness.drop_at(at);
@@ -1449,23 +1456,22 @@ fn a_slider_row_s_parts_sit_where_the_design_puts_them() {
         })
         .expect("the track is drawn");
     assert_eq!((line.top() - strip.top(), line.height()), (6.0, 4.0));
-    // The handle, tip and base 5.5 each way of the track's middle, outline included,
-    // inside the strip.
+    // The handle, the default marker, a 10 × 11 square centred on the track's middle,
+    // outline included inside the strip.
     let handle = shapes
         .iter()
         .find_map(|clipped| match &clipped.shape {
-            egui::Shape::Path(path)
-                if path.fill == t.colors.slider_handle
-                    && strip.intersects(path.visual_bounding_rect()) =>
+            egui::Shape::Rect(shape)
+                if shape.fill == t.colors.slider_handle
+                    && strip.intersects(shape.visual_bounding_rect()) =>
             {
-                Some(path)
+                Some(shape)
             }
             _ => None,
         })
         .expect("the handle is drawn");
-    let ys = handle.points.iter().map(|p| p.y - line.center().y);
-    let (top, bottom) = ys.fold((0.0_f32, 0.0_f32), |(a, b), y| (a.min(y), b.max(y)));
-    assert_eq!((top, bottom), (-5.5, 5.5));
+    assert_eq!((handle.rect.width(), handle.rect.height()), (10.0, 11.0));
+    assert_eq!(handle.rect.center().y, line.center().y);
     assert!(
         strip.contains_rect(handle.visual_bounding_rect()),
         "{handle:?} in {strip:?}"
@@ -1952,7 +1958,7 @@ fn nothing_in_a_value_field_turns_the_accent_while_its_value_is_edited() {
         .rect();
     let neutral = |drawn: &[Color32]| !drawn.iter().any(|colour| accent.contains(colour));
     // Dragged: the value follows in the text colour.
-    let at = pos2(track.left() + track.width() * 0.75, track.center().y);
+    let at = along(track, 0.75);
     harness.drag_at(at);
     harness.step();
     let drawn = colours_in(&harness, value);

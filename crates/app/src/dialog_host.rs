@@ -1838,6 +1838,7 @@ fn context(
 ) -> egui::Context {
     let ctx = egui::Context::default();
     apertrust_ui::install(&ctx, (*apertrust_ui::theme(from)).clone());
+    apertrust_ui::components::set_marker(&ctx, apertrust_ui::components::marker(from));
     apertrust_ui::set_locale(&ctx, apertrust_ui::translator(from).locale());
     ctx.options_mut(|o| {
         o.zoom_factor = from.zoom_factor();

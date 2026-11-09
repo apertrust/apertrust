@@ -29,7 +29,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 /// The gallery's page, at a fixed size that holds all of it, on the panel's colour.
-const PAGE: egui::Vec2 = egui::vec2(600.0, 7800.0);
+const PAGE: egui::Vec2 = egui::vec2(600.0, 8050.0);
 
 fn photograph(which: Builtin, locale: Locale, name: &str) {
     let mut gallery = Gallery::new(which).with_menu_open();

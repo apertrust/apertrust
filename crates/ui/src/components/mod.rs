@@ -39,6 +39,7 @@ mod grid_panel;
 mod histogram;
 mod icon_button;
 mod jobs;
+mod marker;
 mod photo_frame;
 mod section;
 mod segmented;
@@ -77,6 +78,7 @@ pub use jobs::{
     ActivityAction, ExportDetails, ExportFailure, FileManager, Job, JobArg, JobId, JobMessage,
     JobPhase, Jobs,
 };
+pub use marker::{Marker, marker, set_marker};
 pub use photo_frame::{
     CAPTION_GAP, CAPTION_HEIGHT, CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption,
     PhotoFrame, Placed,
@@ -97,8 +99,8 @@ pub use value_field::ValueField;
 
 use egui::text::LayoutJob;
 use egui::{
-    Align, Color32, FocusDirection, FontId, Key, Modifiers, Painter, Pos2, Rect, Response, Shape,
-    Stroke, StrokeKind,
+    Align, Color32, FocusDirection, FontId, Key, Modifiers, Painter, Pos2, Rect, Response, Stroke,
+    StrokeKind,
 };
 
 use crate::Theme;
@@ -199,43 +201,6 @@ impl egui::plugin::Plugin for FocusVisible {
     }
 }
 
-/// The width of a slider handle's outline, and of its border while dragged.
-const HANDLE_OUTLINE: f32 = 1.5;
-
-/// Paints a slider handle, the triangle `points`, for `response`, the control that moves
-/// it: brighter under the pointer, and while dragged with an accent border just inside its
-/// edge, so it never grows. `fade` dims it on a disabled row. A handle that can't move
-/// looks as it always does.
-fn paint_handle(
-    painter: &Painter,
-    points: [Pos2; 3],
-    response: &Response,
-    t: &Theme,
-    fade: impl Fn(Color32) -> Color32,
-) {
-    let movable = response.sense.senses_drag();
-    let dragged = movable && response.is_pointer_button_down_on();
-    let hovered = movable && (dragged || response.hovered());
-    let fill = if hovered {
-        t.colors.slider_handle_hover
-    } else {
-        t.colors.slider_handle
-    };
-    painter.add(Shape::convex_polygon(
-        points.to_vec(),
-        fade(fill),
-        Stroke::new(HANDLE_OUTLINE, t.colors.slider_handle_outline),
-    ));
-    if dragged {
-        // The outline's inner half covers the fill's edge; the border starts where it ends.
-        let border = inset(points, HANDLE_OUTLINE);
-        painter.add(Shape::closed_line(
-            border.to_vec(),
-            Stroke::new(HANDLE_OUTLINE, fade(t.colors.slider_handle_active)),
-        ));
-    }
-}
-
 /// The kept marker beside a row's label, as slider and choice rows draw it: ● while
 /// `kept`, ○ while `hinted`, under the pointer or focus on a row that takes input, and
 /// nothing otherwise. `fade` dims ● on a disabled row.
@@ -252,19 +217,6 @@ fn paint_keep_marker(
     } else if hinted {
         painter.circle_stroke(centre, 3.6, Stroke::new(1.2, t.colors.text_secondary));
     }
-}
-
-/// The triangle `points` with every edge moved `by` inwards: scaled about its incentre.
-fn inset(points: [Pos2; 3], by: f32) -> [Pos2; 3] {
-    let [a, b, c] = points;
-    let sides = [(b - c).length(), (c - a).length(), (a - b).length()];
-    let perimeter: f32 = sides.iter().sum();
-    let centre =
-        (a.to_vec2() * sides[0] + b.to_vec2() * sides[1] + c.to_vec2() * sides[2]) / perimeter;
-    let area = (b - a).x * (c - a).y - (b - a).y * (c - a).x;
-    let radius = area.abs() / perimeter;
-    let scale = ((radius - by) / radius).max(0.0);
-    points.map(|p| (centre + (p.to_vec2() - centre) * scale).to_pos2())
 }
 
 /// The colour of an icon in a button: `text_secondary` at rest, a step quieter than the
@@ -323,7 +275,7 @@ mod tests {
     use egui::plugin::Plugin;
     use egui::{Event, Key, Modifiers, PointerButton, RawInput, pos2};
 
-    use super::{FocusVisible, inset};
+    use super::FocusVisible;
 
     fn after(focus: &mut FocusVisible, event: Event) -> bool {
         let mut input = RawInput {
@@ -355,21 +307,5 @@ mod tests {
         assert!(after(&mut focus, tab));
         // Moving the pointer alone changes nothing.
         assert!(after(&mut focus, Event::PointerMoved(pos2(5.0, 5.0))));
-    }
-
-    #[test]
-    fn an_inset_handle_keeps_its_edges_parallel_at_the_distance() {
-        let triangle = [pos2(0.0, -6.5), pos2(6.5, 4.5), pos2(-6.5, 4.5)];
-        let inner = inset(triangle, 1.5);
-        // Each inner corner lies 1.5 from both edges it sits between.
-        let distance = |p: egui::Pos2, from: egui::Pos2, to: egui::Pos2| {
-            let edge = to - from;
-            ((p - from).x * edge.y - (p - from).y * edge.x).abs() / edge.length()
-        };
-        for i in 0..3 {
-            let (prev, next) = (triangle[(i + 2) % 3], triangle[(i + 1) % 3]);
-            assert!((distance(inner[i], triangle[i], prev) - 1.5).abs() < 1e-4);
-            assert!((distance(inner[i], triangle[i], next) - 1.5).abs() < 1e-4);
-        }
     }
 }

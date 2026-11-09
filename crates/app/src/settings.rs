@@ -50,6 +50,9 @@
 //! size = [960, 466]
 //! folder = "/Users/you/Downloads"
 //!
+//! [sliders]
+//! marker = "triangle"
+//!
 //! [side_panel]
 //! tab_names = false
 //! width = 480
@@ -140,7 +143,7 @@ use apertrust_base::settings::{
 };
 use apertrust_engine::settings as engine;
 use apertrust_ui::components::{
-    Channel, GridBarAction, GridPosition, ScopeView, Sort, ThumbnailSize,
+    Channel, GridBarAction, GridPosition, Marker, ScopeView, Sort, ThumbnailSize,
 };
 use apertrust_ui::{Builtin, Locale};
 
@@ -190,6 +193,8 @@ pub struct Settings {
     pub locale: Option<Locale>,
     /// The interface's scale, egui's zoom factor on top of the system's.
     pub scale: f32,
+    /// The marker on the sliders' tracks and the curve's handles (decision 75).
+    pub marker: Marker,
     pub window: Window,
     /// Where Settings' own window was last left, on the Mac; None opens it centred over
     /// the main window.
@@ -235,6 +240,7 @@ impl Default for Settings {
             theme: THEME.default(),
             locale: None,
             scale: SCALE.default(),
+            marker: SLIDERS_MARKER.default(),
             window: Window {
                 size: None,
                 position: None,
@@ -292,6 +298,7 @@ impl Settings {
             theme: store.get(&THEME),
             locale: store.kept(&LOCALE),
             scale: store.get(&SCALE),
+            marker: store.get(&SLIDERS_MARKER),
             window: Window {
                 size: store.kept(&WINDOW_SIZE),
                 position: window,
@@ -363,6 +370,9 @@ impl Settings {
         }
         if s.scale != was.scale {
             store.set(&SCALE, s.scale);
+        }
+        if s.marker != was.marker {
+            store.set(&SLIDERS_MARKER, s.marker);
         }
         if s.window.size != was.window.size {
             keep(store, &WINDOW_SIZE, s.window.size);
@@ -926,6 +936,7 @@ mod tests {
             theme: Builtin::HighContrast,
             locale: Some(Locale::Pl),
             scale: 1.3,
+            marker: Marker::Triangle,
             window: Window {
                 size: Some([1280.0, 800.0]),
                 position: Some(Position {
@@ -1059,6 +1070,7 @@ mod tests {
                 theme: Builtin::Dark,
                 locale: None,
                 scale: 1.0,
+                marker: Marker::Square,
                 window: Window {
                     size: None,
                     position: None,
@@ -1269,6 +1281,9 @@ scale_factor = 2.0
 [side_panel]
 tab_names = false
 width = 480
+
+[sliders]
+marker = \"triangle\"
 
 [window]
 maximized = true

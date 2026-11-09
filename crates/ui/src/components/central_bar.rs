@@ -389,7 +389,7 @@ fn values(ui: &mut Ui, bar: Rect, [r, g, b]: [u8; 3]) {
 }
 
 /// The zoom slider's size, its track's height and its handle's, as the wireframe draws
-/// them: a rounded track with a pill for a handle, not a module slider's triangle.
+/// them: a rounded track with a pill for a handle, not a module slider's marker.
 const ZOOM_WIDTH: f32 = 130.0;
 const ZOOM_TRACK: f32 = 8.0;
 const ZOOM_HANDLE: Vec2 = vec2(24.0, 10.0);
