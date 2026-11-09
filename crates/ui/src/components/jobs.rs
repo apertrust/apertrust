@@ -18,8 +18,9 @@
 //! (`docs/gui.md`, The jobs window; decision 57, which replaces the export activity's chip
 //! and popover).
 //!
-//! - **The spinner** ([`Jobs::spinner`]) is one icon button beside Saved while there is any
-//!   job to show, never one per job and with no words, so the top panel never folds it.
+//! - **The spinner** ([`Jobs::spinner`]) is one icon button beside the save state while
+//!   there is any job to show, never one per job and with no words, so the top panel never
+//!   folds it.
 //!   While a job is queued or running it turns; with only ended jobs left it shows the
 //!   tick, or the warning sign where one failed. It is named "Jobs", with the count in its
 //!   value ("2 running"), so its name stays the same as jobs come and go; a click or Enter
@@ -316,12 +317,6 @@ impl<'a> Jobs<'a> {
 
     fn count(&self, phase: JobPhase) -> usize {
         self.jobs.iter().filter(|j| j.phase == phase).count()
-    }
-
-    /// The spinner's width, for the top panel to place it by: zero when there is no job
-    /// to show. Constant, whatever the jobs are doing, so nothing moves as they change.
-    pub(crate) fn spinner_width(&self) -> f32 {
-        if self.jobs.is_empty() { 0.0 } else { BUTTON }
     }
 
     /// The spinner's value, for screen readers and its tooltip, in the current language:

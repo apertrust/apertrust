@@ -165,7 +165,12 @@ Events enter the app through the mirror (decision 59; [engine.md](engine.md), Ev
 
 The app hands the session `apertrust_modules::MODULES` with the operations (decision 28). It mirrors each module's controls with their values, defaults and marks beside the parameters no module owns yet.
 
-- **Saved or Not saved yet** shows in the top panel as the session saves the edit by itself. Saved shows only once a write of the open photo's edit includes every change sent; a failed write's message stays over the photo until one succeeds.
+- **The save state** at the top panel's end shows only when a save goes wrong, as the session saves the edit by itself. While saving works it shows nothing: no Saved, no tick.
+  - **Saving…,** in `text_secondary`, only while a write of the open photo's edit is still unconfirmed about two seconds after it started (`mirror::SAVING_AFTER`), as on a slow network folder. A write starts with a change that completes (a `done` value, a reset, a keep, a preset's option); a gesture's changes wait for it. The two seconds come from a repaint the app asks for, never a thread. A completed change the values report shows changed nothing writes nothing, so none is waited for.
+  - **A failed write** shows the warning sign and "Not saved" in `warning`, a focusable button, until a write succeeds. Its tooltip and its description say why ("Not saved: …"). A click asks the system's alert, "The edit isn’t saved", with the reason, Try Again, the default, and Cancel; Try Again sends `RetrySave`, which writes the edit again after a failed write and does nothing otherwise. The message over the photo stays until a write succeeds.
+  - **A photo open for viewing only** shows nothing there: its caption says so (decision 43).
+  - **Screen readers** hear an assertive live region: "Not saved: <reason>" when a write fails, and "Saved" when one succeeds after a failure. Nothing is announced on every save, nor for a photo left whose write failed, which the central panel tells.
+  - **Quitting** waits for a write of the edit under way (`alerts::Guard`, Quit's own wait, the window's close button held meanwhile). If that write, or the last one, failed, the open photo's or the photo left's, the quit alert asks: "Quit without your last changes?", "Your last changes couldn’t be saved: <reason>", followed by what a yes does to any job running, with Quit Anyway and Cancel, the default.
 - **Pending values.** `App::set_control` sends a control's value and shows it, kept, until a report includes it; a reset, a keep or a module's reset shows at once in the same way. The module renderer calls them.
 - A parameter a module owns is the module's alone: `Set` on it is refused.
 
@@ -324,7 +329,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 - **`TopPanel` stays platform-free.** It is told its leading inset, whether to draw caption buttons and whether the window is maximised. It reports a drag starting, a double-click or a right-click on its empty areas, and the caption buttons' clicks, which the app turns into viewport commands (`StartDrag`, `Maximized`, `Minimized`, `Close`, and winit's `show_window_menu` through the window eframe hands over). On Windows it will also report the rectangles the hit map needs.
 - **The window never moves by its background** (`with_movable_by_background(false)`), so dragging a slider never moves it.
 - **A move starts when a drag does,** not on the press, so a double-click on the top panel stays a double-click. The drag must go egui's click distance, 6 points, or the press be held 0.8 s; the window then trails the pointer by that much (a 40-point drag moved it 31 to 32 points on the M4).
-- **What counts as empty** is read from the pointer, not from a widget under the bar, which would take from each control egui's 5-point margin, within which a near press goes to the closest control. The top panel's controls with that margin, disabled ones included, are not empty areas: a drag or a double-click on a greyed-out Undo does nothing. Its title and Saved are empty areas; nothing under a popup over the bar is. Each new press may move the window again, since the system's window drag can swallow the last release.
+- **What counts as empty** is read from the pointer, not from a widget under the bar, which would take from each control egui's 5-point margin, within which a near press goes to the closest control. The top panel's controls with that margin, disabled ones included, are not empty areas: a drag or a double-click on a greyed-out Undo does nothing. Its title and the status slots at its end, while they show nothing or Saving…, are empty areas; the save warning and the jobs spinner are not, and nothing under a popup over the bar is. Each new press may move the window again, since the system's window drag can swallow the last release.
 - **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers.
 - **Scale.** Everything the frame draws is in points, so it follows a monitor's scale; on Windows winit applies the system's suggested rectangle on `WM_DPICHANGED`.
 - **The minimum window size** is 500 by 600 points on every platform, so Windows 11's half and third snap zones take the window (Microsoft asks for 500 effective pixels or less), and macOS's and the Linux desktops' tiling gain too. The quarter zones need a height of about 520 on a 1080-pixel screen, which 600 keeps out.
@@ -1145,7 +1150,7 @@ The first two confirmations: Export's overwrite question and the quit alert.
   - a button that is both the default and the cancel, as the overwrite question's Cancel, takes Return as its key equivalent and Escape from a helper: a button of no size in the alert's window, whose key equivalent is Escape and whose action clicks the cancel (`escape_too`), since a button has one key equivalent. The helper is a hand check;
   - shown as a sheet from the run loop, as `begin_sheet` is, on the dialog's own sheet while one is up (a window with a sheet already would queue the alert behind it) and else on the main window. It calls back on the main thread with the index pressed, or none if the response is none of the buttons'. Elsewhere it returns false and asks nothing.
   - The host (`Dialogs::ask`, `Dialogs::answer`) keeps the answer for the app, which takes it before the next frame, `App::logic`.
-- **The words** are Fluent messages in three languages (`alert-*`): the overwrite question ("Export in overwrite mode?", Overwrite, destructive and with no key, and Cancel, the default, which Return and Escape both press) and the quit alert ("Quit while a job is running?", Quit and Cancel), whose message says what a yes does: only stoppable jobs stop, or some stop and the app waits for the rest, or it only waits.
+- **The words** are Fluent messages in three languages (`alert-*`): the overwrite question ("Export in overwrite mode?", Overwrite, destructive and with no key, and Cancel, the default, which Return and Escape both press) and the quit alert ("Quit while a job is running?", Quit and Cancel), whose message says what a yes does: only stoppable jobs stop, or some stop and the app waits for the rest, or it only waits. After a failed write of the edit it is "Quit without your last changes?", Quit Anyway and Cancel, the default ([The edit, saved](#the-edit-saved)).
 - **The overwrite question.** With On conflict Overwrite, Export pressed (the button, Return or Cmd+Return) does not start: `Asked::confirm`, the dialog stays open, and the app asks from the Export sheet. A yes sends the export and closes the dialog; a no or an alert taken away leaves the dialog as it was.
   - **When it asks is darktable's rule** (`disk.c`, `ask_user_confirmation`): On conflict Overwrite and the setting on, whether or not a file is there, and never for Overwrite if changed (`export::asks_before` is the whole rule).
   - The preview's count of files that would be replaced (`Counts::overwritten`) does not decide; it draws the line under On conflict.
@@ -1158,8 +1163,9 @@ The first two confirmations: Export's overwrite question and the quit alert.
   - With `--conf` giving the setting, the alert shows no box (`overwrite_request(ctx, held)`), since ticking it would do nothing: the run keeps asking, and the file is not written (`Overwrite::new(.., held)`, from `Keeper::overridden`; the store refuses the write anyway).
   - **Turning it back on:** Settings has no page or group for it yet (it holds the theme and the language), so for now it is `--conf export.ask_before_overwrite=true` for a run or the file's `[export] ask_before_overwrite = true`. Which page shows it, as darktable's preferences do under security, is still to be designed.
   - The drawn body (`AlertBody`) does not draw the box yet: it comes with Windows' and Linux's alerts.
-- **The quit alert.** `alerts::Guard` decides for Quit, Close Window on the main window and the window's close button, held while a job the user started runs.
-  - With no such job, the app leaves at once. Such a job is one of the mirror's `Running`: queued or running jobs of darktable's user queues, or a background job a command of the user's started; a system job never counts.
+- **The quit alert.** `alerts::Guard` decides for Quit, Close Window on the main window and the window's close button, held while a job the user started runs or the edit is not on disk.
+  - A write of the edit under way is waited for first; Quit runs again once it is confirmed or has failed. A failed write asks, as a job does ([The edit, saved](#the-edit-saved)).
+  - With no such job and the edit saved, the app leaves at once. Such a job is one of the mirror's `Running`: queued or running jobs of darktable's user queues, or a background job a command of the user's started; a system job never counts.
   - With one, it closes any dialog first, then asks once, and holds while the alert is up. A yes cancels the jobs that can be stopped (`CancelJob`, as Cancel does) and the app leaves once none of the user's jobs runs, waiting for those that cannot be stopped and those asked to stop. A no or a dismissal stays, and the next Quit asks again.
   - Where the platform shows no alert, quitting asks nothing.
 - **Checks:** unit and kittest tests for the request, the body, the strings in every language, the guard's phases, `Mirror::running`, the Export dialog's decisions and the app's, with a host that records the alerts and is answered as a person would. The native alert cannot be shown in a unit test: it needs a window, the main thread and a run loop, so its look, keys and placement are hand checks on the Mac.
@@ -1391,7 +1397,7 @@ File › Export Again (`export-again`, no key) is darktable's export with the la
 
 How background jobs are shown (decisions 57 and 72; [engine.md](engine.md), Jobs). darktable's background jobs panel (`libs/backgroundjobs.c`) gives each job its message, a bar and a cancel button where it is cancellable. Apertrust keeps those three and shows them as one spinner in the top panel and a modeless window of stacked rows. Its other parts are Apertrust's shell, which decision 2 does not mirror. It shows every job with a progress, an export's and the library's alike.
 
-- **One spinner** at the top panel's end, beside Saved, only while a job with a progress is queued or running; never one per job. It is a button in the top panel's Tab order, named "Jobs" with the count in its value ("2 running"), so its name stays as jobs come and go, with a polite live region at a job's start and end. It sits where Saved's widest leaves it, so a save never moves it, and, having no words, it never folds.
+- **One spinner** at the top panel's end, before the save state, only while a job with a progress is queued or running; never one per job. It is a button in the top panel's Tab order, named "Jobs" with the count in its value ("2 running"), so its name stays as jobs come and go, with a polite live region at a job's start and end. It has a slot of its own, one button wide and a group's gap (`spacing.m`) before the save state's, kept whether it shows or not, so neither a job coming and going nor a save moves it or anything else, and, having no words, it never folds.
 - **At rest** the spinner's place is empty, with no tick: the finished rows wait in the window. After a failure the warning sign stays in its place until the failed row is dismissed or tried again.
 - **A click on it** (or on the warning sign) opens the jobs window; a click while the window is open brings it to the front.
 - **The jobs window** is a modeless window of the dialog host (decision 41), beside the main window as Settings is on the Mac, never blocking it, restored where the user last left it. One row per job, newest first, each part told by the job itself ([A row](#a-row-and-where-each-part-comes-from)).
@@ -1592,7 +1598,7 @@ So neither the side panel's tabs nor what a key or a button acts on changes with
 
 ```mermaid
 flowchart TB
-    top["Top panel: ☰ (Windows, Linux) · mark · common actions · … · jobs · Saved"]
+    top["Top panel: ☰ (Windows, Linux) · mark · common actions · … · jobs · save state"]
     subgraph middle [" "]
         direction LR
         subgraph centre ["Central panel"]
@@ -1634,7 +1640,7 @@ The model's words:
 
 | Region | Holds |
 | --- | --- |
-| Top panel | The window's title bar, from its top edge ([The window frame and menus](#the-window-frame-and-menus)). At its start: the traffic lights' place on the Mac; the menu button, ☰, on Windows and Linux; Apertrust's mark; the common actions (Import, Export, Cull, Reset, Undo, Redo, Copy, Apply). At its end: the jobs spinner, an assistant's connection and Saved; the caption buttons on Windows and Linux. No layout switcher and no Settings button ([below](#the-top-panel)) |
+| Top panel | The window's title bar, from its top edge ([The window frame and menus](#the-window-frame-and-menus)). At its start: the traffic lights' place on the Mac; the menu button, ☰, on Windows and Linux; Apertrust's mark; the common actions (Import, Export, Cull, Reset, Undo, Redo, Copy, Apply). At its end: the jobs spinner, an assistant's connection and the save state; the caption buttons on Windows and Linux. No layout switcher and no Settings button ([below](#the-top-panel)) |
 | Central panel | The current layout ([below](#the-central-panels-layouts)): in Photo, the active photo or the selected photos side by side; later in Map, the photos on a map. "No photo selected" when no photo is active |
 | Central bar | The thin bar along the central panel's top ([below](#the-central-bar)). In Photo: the photo's toggles, ending with Guides; immediately after Guides the Map toggle (later); the layer menu, the values under the cursor, the scale. In Map: the photo's toggles where they are, drawn disabled, the Map toggle where it is, then Map's own controls |
 | Caption | One line under the photo, on the surround, as wide as the photo and part of its block in the central panel's slot ([below](#the-photo-frame)): the file name with its marks at its start; the photo's reject, rating and colour labels in its middle; the exposure at its end ([below](#the-caption-under-the-photo)) |
@@ -1788,9 +1794,10 @@ Export is a dialog, Print a full-window sheet, the slideshow an action, and Impo
 `TopPanel` in `apertrust-ui`, drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s board for the top panel, whose tweaks show both platforms, both themes and the narrow widths. Built: the order, the groups and the narrowing's steps; the mark at its start, which never folds, and before it the ☰ where the app asks for it (`menu_button`, drawn on Linux), which never folds either.
 
 - **Order.**
-  - macOS: the traffic lights and the mark; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit, as icons; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and Saved.
+  - macOS: the traffic lights and the mark; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit, as icons; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
   - Windows and Linux: the menu button, ☰, and the mark, with no menu titles (decision 39); the same actions; the empty strip and the same end; minimise, maximise or restore, close.
-  - The common actions sit at the start, right after the mark; at the end stand only Saved, the jobs and an assistant's connection, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)).
+  - The common actions sit at the start, right after the mark; at the end stand only the save state, the jobs and an assistant's connection, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)).
+  - **Fixed slots.** The jobs spinner and the save state each keep a slot of fixed width, the width of its widest form at the current fold step (the save state's: Saving… or the warning with its word, folded "…" or the sign alone; the spinner's: one button), in that order, reserved whether it shows anything or not. So the spinner coming or going, or the save state changing between nothing, Saving… and Not saved, moves neither the other nor anything else in the panel. While a slot shows nothing it is part of the strip that moves the window.
   - Slideshow and Copy or Apply Parts are not in the top panel: they are in View › Slideshow and Edit › Copy or Apply Parts…. Cull arrives with culling in Phase 3, where what it opens is still to be designed; until then it is drawn on the wireframe only.
 - **No layout switcher:** the central bar's Map toggle switches the central panel between Photo and the map ([The central bar](#the-central-bar)).
 - **No Settings button:** Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the ☰'s menu ([the menu bar](#the-menu-bar)).
@@ -1809,22 +1816,22 @@ The top panel measures its parts at the current scale and language each frame an
 
 1. the actions' words go: Import, Export, Cull and Reset become icons, like the rest;
 2. every action but Undo and Redo moves into ⋯ More actions, which lists them with their keys;
-3. Saved and the assistant's connection lose their words (the jobs spinner has none);
+3. the save warning and Saving… lose their words, to the sign and "…", and the assistant's connection its (the jobs spinner has none);
 4. Undo and Redo join ⋯, and the assistant's connection becomes one button whose menu holds Disconnect.
 
 On Windows and Linux the ☰ holds the menus at every width.
 
-Where each step starts is measured by a test in every language. While a photo is open, its status measured at its widest so a save never moves the fold:
+Where each step starts is measured by a test in every language. The status slots are measured at their widest at each step, shown or not, so neither a save nor a job moves the fold:
 
 | Step starts below | Mac, English | Linux, English | Mac, Ukrainian | Mac, Polish |
 | --- | --- | --- | --- | --- |
-| The words fold | 613 points | 727 | 668 | 687 |
-| The actions go under ⋯ | 458 | 572 | 484 | 493 |
-| Undo and Redo go under ⋯ | 254 | 368 | 254 | 254 |
+| The words fold | 676 points | 790 | 730 | 729 |
+| The actions go under ⋯ | 520 | 634 | 547 | 535 |
+| Undo and Redo go under ⋯ | 320 | 434 | 320 | 320 |
 
 Linux needs 38 points more for the ☰, its 30 points and the 8-point gap after it. The narrowing test checks at every width, in every language, that 24 points of empty panel are left, the ☰ included.
 
-Never folded: the ☰ on Windows and Linux, the mark, Saved's tick, an assistant's connection, the caption buttons, and 24 points of empty panel to move the window by.
+Never folded: the ☰ on Windows and Linux, the mark, the save warning's sign, an assistant's connection, the caption buttons, and 24 points of empty panel to move the window by.
 
 ### The side panel
 

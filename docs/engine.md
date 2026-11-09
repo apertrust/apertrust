@@ -2069,7 +2069,7 @@ Decision 28. The session saves the edit after each completed change (a `done` va
 - **A writer thread of its own** takes the edit and writes only the latest edit it has, so a slow disk or a network share never delays a frame.
 - **The safe write** (decision 53): a hidden, unique temporary beside the file, `apertrust_base::fs`'s `.~NAME.XXXXXX.tmp`, flushed and synced, then renamed into place, a rename Windows refuses retried ten times 100 ms apart. Nothing is written when the bytes are the same.
 - **A cancelled gesture** (`CancelGesture`, decision 42) is handed to the writer as a completed change. The writer writes nothing when the file already holds the edit it puts back, as after any gesture that followed a completed change, and reports it saved.
-- A written edit is reported saved. A failed write is reported as `Failed`, the edit stays in memory and the next change tries again.
+- A written edit is reported saved. A failed write is reported as `Failed`, the edit stays in memory and the next change tries again, or **`RetrySave`**, a client's Try again, which writes it again after a failed write and does nothing otherwise, leaving a gesture under way.
 - **Planned:** the writer reads the file again first when it changed since this machine read it, comparing the two copies by decision 52's rule.
 - Saving by itself, the saved marks and dropping version 0's owned parameters are the module layer's product choices (decision 28).
 

@@ -17,6 +17,7 @@ action-copy-edit = Copy edit
 action-apply-edit = Apply edit
 action-copy-apply-parts = Copy or apply parts
 action-settings = Settings
+# Heard once the edit is saved again after a failed write (the top panel's save state).
 status-saved = Saved
 
 ## The side panel's tabs
@@ -133,8 +134,16 @@ top-panel = Top panel
 top-panel-menu = Menu
 # ⋯, holding the common actions a narrow top panel has no room for.
 top-panel-more = More actions
-status-unsaved = Not saved yet
-# Where Saved sits, while the photo open is open for viewing only: a newer Apertrust
+# The save state at the top panel's end, which shows only when a save goes wrong:
+# Saving… while a write is still unconfirmed about two seconds after it started, as on a
+# slow network folder.
+status-saving = Saving…
+status-saving-tip = Still writing this photo’s edit beside it
+# A button in the warning colour while the last write failed; $error is why, in the
+# system's words: its tooltip, and what screen readers hear as it fails.
+status-not-saved = Not saved
+status-not-saved-reason = Not saved: { $error }
+# In the caption, while the photo open is open for viewing only: a newer Apertrust
 # wrote its edit, which this one never saves.
 status-view-only = View only
 # The window's caption buttons at the end of the top panel, where the app draws them.
@@ -869,3 +878,12 @@ alert-quit-message =
             }
     }
 alert-quit-button = Quit
+# The top panel's save warning pressed: why the edit isn't saved, and Try Again, which
+# writes it again. $name is the photo's file name, $error why, in the system's words.
+alert-save-title = The edit isn’t saved
+alert-save-message = The edit of { $name } couldn’t be written beside it: { $error }
+alert-save-button = Try Again
+# Quit after the edit's last write failed, Cancel the default; $error is why.
+alert-quit-save-title = Quit without your last changes?
+alert-quit-save-message = Your last changes couldn’t be saved: { $error }
+alert-quit-anyway = Quit Anyway

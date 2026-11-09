@@ -108,7 +108,10 @@ unit-iso-value = { $value } ISO
 top-panel = Panel górny
 top-panel-menu = Menu
 top-panel-more = Więcej działań
-status-unsaved = Jeszcze niezapisane
+status-saving = Zapisywanie…
+status-saving-tip = Edycja tego zdjęcia wciąż jest zapisywana obok niego
+status-not-saved = Nie zapisano
+status-not-saved-reason = Nie zapisano: { $error }
 status-view-only = Tylko podgląd
 window-minimise = Minimalizuj
 window-maximise = Maksymalizuj
@@ -729,3 +732,9 @@ alert-quit-message =
             }
     }
 alert-quit-button = Zakończ
+alert-save-title = Edycja nie jest zapisana
+alert-save-message = Nie udało się zapisać edycji { $name } obok zdjęcia: { $error }
+alert-save-button = Spróbuj ponownie
+alert-quit-save-title = Zakończyć bez ostatnich zmian?
+alert-quit-save-message = Nie udało się zapisać ostatnich zmian: { $error }
+alert-quit-anyway = Zakończ mimo to

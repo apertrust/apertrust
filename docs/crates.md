@@ -127,6 +127,7 @@ The groundwork for orientation:
 - `SetControl`, `ResetControl`, `ResetModule` and `Keep`.
 - `ApplyPreset`, for a preset row's option: each control it writes is kept, with no follow writes, as in darktable's `_preset_tune_callback`.
 - `Reset`, and `Set` only for parameters no module owns.
+- `RetrySave`, a client's Try again: the edit written again after a failed write, nothing otherwise.
 - `SetControl`, `ResetControl` and `Keep` also take a lossless view's coordinate. They write the view's controls, with the other coordinates held through a gesture (`edit::Held`); all coordinates back at their defaults reset the controls exactly.
 - `SetControl` and `ResetControl` carry the module's follow writes in the same change (`Edit::follow`). A wrong one refuses the change whole (`EditError::FollowFailed`, decision 27).
 - `CancelGesture { module }`, a slider popup's cancel (decision 42). It puts the module back as it was before the gesture's first `done: false` change: values, marks, follow writes, clamps and the held coordinates (and `enabled`, once switched modules are built). It adds no history step and writes nothing while the file holds that edit, and `Saved` is reported with the cancel's number. Any other command on the edit, refused or not, ends a gesture; a resize, the scopes and a cancel naming another module do not.

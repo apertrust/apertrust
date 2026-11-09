@@ -78,7 +78,7 @@ fn other(id: u64, phase: JobPhase, cancellable: bool) -> Job {
 /// the panel reported.
 struct Run {
     jobs: Vec<Job>,
-    saved: SaveState,
+    saved: SaveState<'static>,
     actions: Vec<TopPanelAction>,
 }
 
@@ -429,24 +429,90 @@ fn the_spinner_stops_turning_and_shows_a_tick_or_a_warning_when_jobs_end() {
     assert_ne!(ended[0], ended[1], "the tick and the warning look alike");
 }
 
+/// The save states, from no photo to a failed write.
+const SAVE_STATES: [SaveState<'static>; 4] = [
+    SaveState::None,
+    SaveState::Saved,
+    SaveState::Saving,
+    SaveState::Failed("disk full"),
+];
+
 #[test]
 fn saving_never_moves_the_spinner() {
     let mut harness = panel(vec![export(1, JobPhase::Running)]);
     harness.run();
     let at = spinner(&harness).rect();
-    for saved in [SaveState::Unsaved, SaveState::Saved, SaveState::ViewOnly] {
+    for saved in SAVE_STATES {
         harness.state_mut().saved = saved;
         harness.run();
-        // View only is a word of its own, never Saved's widest, which the spinner is placed
-        // by, so it may sit elsewhere; it never changes while a photo is open.
-        if saved != SaveState::ViewOnly {
-            assert_eq!(spinner(&harness).rect(), at, "{saved:?}");
-        }
+        assert_eq!(spinner(&harness).rect(), at, "{saved:?}");
     }
-    // Without a status it takes the panel's end.
-    harness.state_mut().saved = SaveState::None;
-    harness.run();
-    assert!(spinner(&harness).rect().right() > at.right());
+}
+
+/// What the panel shows of the status items and everything else: the spinner's rectangle,
+/// the save state's, and every other control's by name.
+type Placed = (
+    Option<egui::Rect>,
+    Option<egui::Rect>,
+    Vec<(String, egui::Rect)>,
+);
+
+fn placed(harness: &Harness<'_, Run>) -> Placed {
+    let spinner = harness
+        .query_by_role_and_label(Role::Button, "Jobs")
+        .map(|n| n.rect());
+    let save = (harness.query_by_label("Saving…"))
+        .or_else(|| harness.query_by_role_and_label(Role::Button, "Not saved"))
+        .map(|n| n.rect());
+    let others = harness
+        .query_all_by_role(Role::Button)
+        .filter_map(|n| {
+            let name = n.accesskit_node().label()?.to_string();
+            (name != "Jobs" && name != "Not saved").then(|| (name, n.rect()))
+        })
+        .collect();
+    (spinner, save, others)
+}
+
+/// The two status items at the panel's end each keep a slot of their own, as wide as their
+/// widest form at the fold, shown or not: neither a job coming and going nor the save state
+/// changing moves the other, or anything else, at any fold step.
+#[test]
+fn the_status_slots_never_move_anything() {
+    let mut harness = panel(Vec::new());
+    let mut folds = std::collections::BTreeSet::new();
+    for width in (150..=1400).rev().step_by(10) {
+        harness.set_size(vec2(width as f32, 400.0));
+        let mut spinner_at = None;
+        let mut others_at = None;
+        let mut save_at = std::collections::HashMap::new();
+        for jobs in [Vec::new(), vec![export(1, JobPhase::Running)]] {
+            for saved in SAVE_STATES {
+                harness.state_mut().jobs = jobs.clone();
+                harness.state_mut().saved = saved;
+                harness.run();
+                folds.insert(fold(&harness));
+                let (spinner, save, others) = placed(&harness);
+                let at = format!("{width} points, {} jobs, {saved:?}", jobs.len());
+                assert_eq!(spinner.is_some(), !jobs.is_empty(), "{at}");
+                if let Some(spinner) = spinner {
+                    assert_eq!(*spinner_at.get_or_insert(spinner), spinner, "{at}");
+                }
+                let shows = matches!(saved, SaveState::Saving | SaveState::Failed(_));
+                assert_eq!(save.is_some(), shows, "{at}");
+                if let Some(save) = save {
+                    let key = format!("{saved:?}");
+                    assert_eq!(*save_at.entry(key).or_insert(save), save, "{at}");
+                }
+                assert_eq!(*others_at.get_or_insert(others.clone()), others, "{at}");
+            }
+        }
+        // Saving… and the warning end where the slot ends.
+        let ends: Vec<f32> = save_at.values().map(|r| r.right()).collect();
+        assert!(ends.windows(2).all(|w| w[0] == w[1]), "{width}: {ends:?}");
+    }
+    // Every fold step was driven: words, icons, ⋯, and Undo under ⋯.
+    assert_eq!(folds.len(), 4, "{folds:?}");
 }
 
 /// Whether the panel at `width` shows Import's words, ⋯, and Undo.
@@ -490,7 +556,7 @@ fn the_spinner_has_no_words_so_it_never_folds_and_leaves_room_to_move_the_window
                     other(2, JobPhase::Running, true),
                 ],
             ] {
-                for saved in [SaveState::Saved, SaveState::Unsaved] {
+                for saved in SAVE_STATES {
                     harness.state_mut().jobs = jobs.clone();
                     harness.state_mut().saved = saved;
                     harness.run();
