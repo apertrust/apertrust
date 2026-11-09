@@ -22,7 +22,7 @@ A major part of Apertrust is built on darktable's trusted colour science. How cl
 
 **The migration ends once, for the whole project,** at the end of Phase 3, when:
 
-- every first-pass module is in the app and passes its comparisons, and
+- every first-pass module is in the app and passes its comparisons (darktable's retouch is not one: it is ported as retouch layers in Phase 4, [0034](0034-layers-masked-module-instances-in-a-fixed-order.md)), and
 - darktable's edits that use only ported modules import and render as in darktable ([0051](0051-importing-darktables-edits.md)).
 
 **Until then** image quality is judged against darktable-cli at the reference release ([0003](0003-the-reference-is-darktables-latest-stable-release.md)): golden ΔE2000 comparisons with per-case tolerances ([0061](0061-golden-image-tests-against-darktable-cli.md)) and the whole-pipeline comparison ([0062](0062-the-whole-pipeline-comparison.md)).

@@ -183,7 +183,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [ ] Local contrast, Colour equalizer and Bloom (their processing is ported).
 - [ ] Sigmoid and Filmic RGB as tone mappers, one per edit (their processing is ported; decision 33).
 - [ ] Lens correction (from the corrections the raw carries, then Lensfun's), chromatic aberrations, rotate and perspective, orientation and crop.
-- [ ] Denoise (profiled), retouch, diffuse or sharpen, and sharpen.
+- [ ] Denoise (profiled), diffuse or sharpen, and sharpen.
 - [ ] darktable's presets and styles; copy and apply an edit.
 - [ ] Before and after, and warnings.
 - [ ] Colour calibration's colour checker, darktable's, with its chart data and fit.
@@ -236,9 +236,12 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 
 Goal: local editing.
 
-- [ ] Layers as masked instances of modules (decision 34, [layers.md](layers.md)); a slider works the same on the whole photo and on a layer.
-- [ ] Brush, gradient and range masks, and a mask overlay.
-- [ ] AI masks for subject and sky, run locally through ONNX Runtime's WebGPU provider (decision 60).
+- [ ] Spikes first: the layer graph (15 layers, 100 brush strokes and 5 AI parts at 60 MP), masks on the GPU, shapes through the geometry, AI parts through ONNX Runtime (decision 34).
+- [ ] Layers as masked instances of modules (decision 34, [layers.md](layers.md)): filled layers and opacity first, a slider scaled in its own unit; darktable's blend modes.
+- [ ] Gradients and shapes, then Feather and Edge, range parts, the brush, paths and a mask overlay, combined top to bottom, ported from darktable's master (decision 74).
+- [ ] Colour calibration's adaptation on a masked layer, for mixed light.
+- [ ] Retouch layers, heal and clone, darktable's retouch ported from its master (decision 74), then AI erase.
+- [ ] AI masks for subject, sky, background, people and a clicked object, and a depth part, run locally through ONNX Runtime's WebGPU provider (decision 60), recomputed once per photo when copied.
 - [ ] The binary sidecar, `.apdata` (decision 49).
 
 ## Phase 5: the library and projects
@@ -394,7 +397,6 @@ What the migration brings over from darktable, one module each. "Processing" is 
 | orientation | [x] | [x] | 3 |
 | crop | [ ] | [ ] | 3 |
 | denoise (profiled) | [ ] | [ ] | 3 |
-| retouch | [ ] | [ ] | 3 |
 | diffuse or sharpen | [ ] | [ ] | 3 |
 | sharpen | [ ] | [ ] | 3 |
 

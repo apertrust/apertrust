@@ -69,14 +69,13 @@ darktable's correct group. darktable's raw chromatic aberrations (`cacorrect`) i
 | Module | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Sharpen | sharpen | `sharpen`, working 35 | Yes | Planned (Phase 3), switched | — |
-| Retouch | retouch | `retouch`, camera RGB 20 | Inherently local | Planned (Phase 3) | — |
 | Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built; to be switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
 | Chromatic aberrations | chromatic aberrations | `cacorrectrgb`, camera RGB 13.5 | Background only | Planned (Phase 3) | — |
 | Lens correction | lens correction | `lens`, camera RGB 13 | Background only | Planned (Phase 3), switched; the embedded-metadata method specified (decision 25), Lensfun's later | [port](../ports/lens.md) |
 | Denoise (profiled) | denoise (profiled) | `denoiseprofile`, camera RGB 9 | Yes | Planned (Phase 3), switched | [port](../ports/denoiseprofile.md) |
 
 - **Sharpen,** once on, starts at darktable's radius 2, amount 0.5 and threshold 0.5.
-- **Retouch's** shapes are Apertrust's, as layers' masks are.
+- **darktable's retouch** is not a module of the first pass: it is ported as retouch layers, heal and clone, with layers in Phase 4 ([layers.md](../layers.md#retouch-layers), decisions 34 and 74).
 - **Chromatic aberrations** keeps darktable's advanced parameters on its main page, under a group label (decision 29).
 
 ### Effect
@@ -92,7 +91,7 @@ darktable's effect group, with Soften after Vignetting and Bloom after Grain. da
 | Diffuse or sharpen | diffuse or sharpen | `diffuse`, working, between 28.5 and 29 | Yes | Planned (Phase 3) | — |
 
 - **Bloom** blooms every pixel above about L 89.4 even at strength 0, so it has no untouched value; once on it starts at darktable's 20 %, 90 % and 25 %.
-- **Diffuse or sharpen** is one module, darktable's, with darktable's presets (sharpen demosaicing, lens deblur, local contrast, dehaze, bloom and others).
+- **Diffuse or sharpen** is one module, darktable's, with darktable's presets (lens deblur, local contrast, dehaze, bloom and others) but its two "sharpen demosaicing" ones (no AA filter and AA filter). darktable's manual has those used on an instance moved before input colour, and modules keep their place in the pipeline, layers included (decision 34). Demosaic's capture sharpening does that job at that place, as darktable has it.
 
 ### In no group
 

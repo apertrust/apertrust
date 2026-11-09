@@ -14,7 +14,7 @@ During the migration ([0002](0002-rewrite-darktable-first-then-apertrusts-own-wa
 2. Each operation manifest's provenance (`release`, `commit`): the release its port was written from.
 3. darktable's own file paths, blob ids, checksums and commit ids.
 
-**A port reads darktable's source at the reference release's tag,** never a newer checkout.
+**A port reads darktable's source at the reference release's tag,** never a newer checkout. Masks and retouch are the one exception: they are ported from darktable's master, at a commit their port spec names ([0074](0074-masks-ported-from-darktables-master.md)).
 
 **Following a new release is its own piece of work:**
 

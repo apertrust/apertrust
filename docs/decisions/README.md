@@ -44,7 +44,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Module pages and controls | darktable's page: its tabs and collapsible groups, no Advanced toggle (29); darktable's sliders (hard and soft ranges, factor, digits, step) and the options it lists per photo, Exposure darktable's slider, `exposure.exposure` itself over darktable's −18 to +18 EV, its default the photo's (30); lossless views, preset rows and curves of the same stored values (31) | Sliders narrower than darktable's; every option on every photo |
 | Switched modules | A module darktable leaves off on a new photo stays off until touched, then takes darktable's defaults; its reset turns it off (32, planned) | A power button; darktable's defaults as a preset |
 | Tone mapping | One tone mapper on the background per edit, a module of its own: AgX now, sigmoid and filmic rgb to come; a layer's own tone mapper replacing it within the layer's mask, planned with layers (33) | A fixed AgX; stacked tone mappers |
-| Layers | Masked module instances at their pipeline positions, in a fixed order (34, Phase 4) | Compositing at the end of the pipe |
+| Layers | Masked module instances at their pipeline positions, in a fixed order; each slider scaled in its own unit; a mask's parts combined top to bottom, an empty mask changing nothing; retouch as layers listed between the adjustment layers and Image, applied first; darktable's blend modes; masks and retouch ported from darktable's master (34, 74, Phase 4) | Compositing at the end of the pipe; darktable's linear mix for every slider |
 | UI toolkit | egui, one interface for the desktop and a desktop browser (35) | Iced, Slint, GPUI, Tauri with web panels |
 | Design system | `apertrust-ui`: tokens and themes in TOML, IBM Plex Sans, Fluent and ICU4X; British and American English, Ukrainian and Polish; AccessKit on (36); the slider's marker a setting, Triangle, Circle or Square, Square by default, whole at the track's ends (75) | egui's default look; gettext; darktable's triangle alone, cut off at the ends |
 | One view | No separate views: the Library tab chooses photos, the centre shows the Photo layout and later Map, the grid panel always shown (37) | darktable's views; a Grid layout |
@@ -86,6 +86,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0001](0001-what-apertrust-is-the-principles.md) | What Apertrust is: the principles |
 | [0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md) | Rewrite darktable first, then Apertrust's own way |
 | [0003](0003-the-reference-is-darktables-latest-stable-release.md) | The reference is darktable's latest stable release |
+| [0074](0074-masks-ported-from-darktables-master.md) | Masks ported from darktable's master |
 | [0004](0004-modules-for-users-operations-for-algorithms.md) | Modules for users, operations for algorithms |
 
 ## Language and platforms
