@@ -86,9 +86,10 @@ use apertrust_engine::session::{
 use apertrust_modules::Module;
 use apertrust_ui::components::{
     ActivityAction, Available, CellRating, CentralBar, CentralBarAction, GridEdge, GridEdgeAction,
-    GridPanel, GridPanelAction, GridPosition, Jobs, Margin, PanelBody, PanelEdge, PanelEdgeAction,
-    PanelTab, PhotoCaption, PhotoFrame, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb,
-    Toggle, TopPanel, TopPanelAction, Zoom, grid_panel_lines, grid_panel_thickness,
+    GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody, PanelEdge,
+    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, Placed, SaveState, ScopeView, TabBar,
+    TabBarAction, Thumb, Toggle, TopPanel, TopPanelAction, Zoom, grid_panel_lines,
+    grid_panel_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Icon, Locale, Theme, Translator, popup, theme, tr, translator,
@@ -1148,6 +1149,8 @@ struct Shell {
     /// ([`Shell::close_menu`]).
     close_menu: bool,
     theme: Builtin,
+    /// The marker on the sliders' tracks and the curve's handles (decision 75).
+    marker: Marker,
     /// The interface's language: the user's choice, or the system's.
     locale: Locale,
     /// The language settings keep: none until the user chooses one, so the interface
@@ -1226,6 +1229,7 @@ impl Shell {
             menu: false,
             close_menu: false,
             theme: settings.theme,
+            marker: settings.marker,
             locale,
             kept_locale: settings.locale,
             system_locale: system,
@@ -1253,6 +1257,7 @@ impl Shell {
             theme: self.theme,
             locale: self.kept_locale,
             scale: ctx.zoom_factor(),
+            marker: self.marker,
             window: self.window,
             settings_window: self.settings_window,
             jobs_window: self.jobs_window,
@@ -1739,9 +1744,9 @@ impl Shell {
     }
 
     /// Takes in what the Settings dialog's rows show of `settings` and shows it in the main
-    /// window, `ctx`'s: the theme, the language, the interface's size, the tab names,
-    /// square thumbnails and whether Export asks before overwriting. The engine's settings
-    /// are the session's at its next start, and nothing of the shell's.
+    /// window, `ctx`'s: the theme, the language, the interface's size, the sliders' marker,
+    /// the tab names, square thumbnails and whether Export asks before overwriting. The
+    /// engine's settings are the session's at its next start, and nothing of the shell's.
     fn follow(&mut self, settings: &Settings, ctx: &egui::Context) {
         if settings.theme != self.theme {
             self.theme = settings.theme;
@@ -1758,6 +1763,8 @@ impl Shell {
         if settings.scale != ctx.zoom_factor() {
             ctx.set_zoom_factor(settings.scale);
         }
+        self.marker = settings.marker;
+        apertrust_ui::components::set_marker(ctx, self.marker);
         self.tab_names = settings.tab_names;
         self.grid.square_thumbnails = settings.grid.square_thumbnails;
         self.log.keep = settings.log.keep;
@@ -3296,6 +3303,7 @@ fn panel_body(
 /// would be laid out at the wrong scale.
 fn prepare(ctx: &egui::Context, shell: &Shell, scale: f32) {
     apertrust_ui::install(ctx, shell.look());
+    apertrust_ui::components::set_marker(ctx, shell.marker);
     registry_keys_only(ctx);
     apertrust_ui::set_locale(ctx, shell.locale);
     ctx.options_mut(|o| o.zoom_factor = scale);
@@ -6721,6 +6729,7 @@ mod tests {
         assert_eq!(shell.settings_window, Some(left));
     }
 
+    /// The theme, the language and the sliders' marker reach the main window at once.
     #[test]
     fn what_the_settings_window_changes_reaches_the_shell_and_the_main_window() {
         use settings_dialog::Change;
@@ -6731,10 +6740,16 @@ mod tests {
         host.0.borrow_mut().outputs = vec![
             dialog_host::Output::Settings(Change::Set("theme", "light".into())),
             dialog_host::Output::Settings(Change::Set("locale", "uk".into())),
+            dialog_host::Output::Settings(Change::Set("sliders.marker", "circle".into())),
         ];
         harness.step();
         let shell = &harness.state().shell;
         assert_eq!(shell.theme, Builtin::Light);
+        assert_eq!(shell.marker, Marker::Circle);
+        assert_eq!(
+            apertrust_ui::components::marker(&harness.ctx),
+            Marker::Circle
+        );
         assert_eq!(
             (shell.locale, shell.kept_locale),
             (Locale::Uk, Some(Locale::Uk))

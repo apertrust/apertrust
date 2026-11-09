@@ -1558,6 +1558,7 @@ mod tests {
     use apertrust_modules::tone_curve::{self, ToneCurve};
     use apertrust_modules::tone_equalizer::{self, ToneEqualizer};
     use apertrust_modules::vignetting::Vignetting;
+    use apertrust_ui::components::Marker;
     use apertrust_ui::{Builtin, Locale, Theme, theme};
     use egui::accesskit::{Role, Toggled};
     use egui::{Key, Modifiers, pos2};
@@ -1565,6 +1566,13 @@ mod tests {
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
     use super::*;
+
+    /// The point `at` of the way along a slider's `track`, as the marker travels it: short of
+    /// each end by the marker's stop (decision 75).
+    fn along(track: egui::Rect, at: f32) -> egui::Pos2 {
+        let travel = Marker::default().travel(track.x_range());
+        pos2(travel.min + travel.span() * at, track.center().y)
+    }
 
     /// A module's controls at their definition's defaults, as the session reports them
     /// for an untouched photo, the sample photo.
@@ -1765,7 +1773,7 @@ mod tests {
             .get_by_role_and_label(Role::Slider, "Exposure")
             .rect();
         // The track spans darktable's soft range, −3 to +4 EV.
-        let at = pos2(track.left() + track.width() * 0.75, track.center().y);
+        let at = along(track, 0.75);
         harness.drag_at(at);
         harness.run();
         harness.drop_at(at);
@@ -1786,7 +1794,7 @@ mod tests {
     /// sent on release.
     fn drag_to(harness: &mut Harness<'static, Panel>, name: &str, at: f32) -> ControlValue {
         let track = harness.get_by_role_and_label(Role::Slider, name).rect();
-        let at = pos2(track.left() + track.width() * at, track.center().y);
+        let at = along(track, at);
         harness.drag_at(at);
         harness.run();
         harness.drop_at(at);
@@ -2759,7 +2767,7 @@ mod tests {
     /// Drags the slider `name` to `at` of its track's width and lets go.
     fn drag(harness: &mut Harness<'_, Panel>, name: &str, at: f32) {
         let track = harness.get_by_role_and_label(Role::Slider, name).rect();
-        let at = pos2(track.left() + track.width() * at, track.center().y);
+        let at = along(track, at);
         harness.drag_at(at);
         harness.run();
         harness.drop_at(at);
@@ -3381,7 +3389,7 @@ mod tests {
         let track = harness
             .get_by_role_and_label(Role::Slider, highlights)
             .rect();
-        let at = pos2(track.left() + track.width() * 0.75, track.center().y);
+        let at = along(track, 0.75);
         harness.drag_at(at);
         harness.run();
         harness.drop_at(at);

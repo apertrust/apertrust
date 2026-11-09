@@ -28,7 +28,7 @@ use crate::components::{
     Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup, ColourLabel, ColourLabels, Curve,
     CurveAction, Equalizer, EqualizerAction, ExportDetails, ExportFailure, FileManager, GridCell,
     GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job, JobMessage, JobPhase,
-    Jobs, Margin, Mark, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab,
+    Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab,
     PhotoCaption, PhotoFrame, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction,
     Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb,
     Toggle, ToggleRow, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
@@ -80,6 +80,12 @@ impl Gallery {
         side_panel(ui, &t, &mut self.demo);
     }
 
+    /// Draws the Slider markers section alone, as the snapshot tests photograph each shape:
+    /// Exposure at its minimum, its default and its maximum, and a row they drag.
+    pub fn show_markers(&mut self, ui: &mut Ui) {
+        slider_markers(ui, &mut self.demo);
+    }
+
     /// Draws the gallery on the panel's colour, as a page of its own.
     pub fn show(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
@@ -115,10 +121,22 @@ impl Gallery {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Marker");
+            let current = crate::components::marker(ui.ctx());
+            for (which, id) in <Marker as apertrust_base::settings::Choice>::OPTIONS {
+                if ui.selectable_label(current == *which, *id).clicked() {
+                    crate::components::set_marker(ui.ctx(), *which);
+                }
+            }
+        });
         checks(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Controls");
         controls(ui, &t, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Slider markers");
+        slider_markers(ui, &mut self.demo);
         ui.add_space(t.spacing.l);
         heading(ui, "Side panel");
         side_panel(ui, &t, &mut self.demo);
@@ -149,6 +167,31 @@ impl Gallery {
         heading(ui, "Spacing");
         spacing(ui, &t);
     }
+}
+
+/// Exposure, −4 to +4 EV, at its minimum, its default and its maximum, the marker in use
+/// whole and flush at the track's ends, and once more for the tests to drag.
+fn slider_markers(ui: &mut Ui, demo: &mut Demo) {
+    let names = [
+        "Exposure, at its minimum",
+        "Exposure, at its default",
+        "Exposure, at its maximum",
+        "Exposure, dragged",
+    ];
+    // Ids of their own, apart from the controls' Exposure.
+    ui.push_id("slider markers", |ui| {
+        for (value, name) in demo.markers.iter_mut().zip(names) {
+            let action = SliderRow::new("Exposure", *value, -4.0..=4.0)
+                .name(name)
+                .step(0.01)
+                .decimals(2)
+                .unit(EV)
+                .show(ui);
+            if let Some(SliderAction::Set { value: set, .. }) = action {
+                *value = set;
+            }
+        }
+    });
 }
 
 /// The grid cell's states, as it draws them at rest, with a sample picture or with none:
@@ -557,6 +600,9 @@ struct Demo {
     zoom: Option<f64>,
     active: usize,
     selected: Vec<usize>,
+    /// The slider markers' rows: Exposure at its minimum, its default, its maximum, and
+    /// one for the snapshot tests to drag.
+    markers: [f64; 4],
 }
 
 impl Default for Demo {
@@ -645,6 +691,7 @@ impl Default for Demo {
             zoom: Some(400.0),
             active: 5,
             selected: vec![5, 6],
+            markers: [-4.0, 0.0, 4.0, 1.28],
         }
     }
 }

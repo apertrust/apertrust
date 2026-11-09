@@ -2666,13 +2666,12 @@ Against darktable's combobox and the wireframe's `Controls` and `ModulePanel` bo
 
 ### Slider values: the build, in cards
 
-Each card one deliverable, reviewed before the next, one after another, since each touches the popup's files, `slider.rs`, the renderer and the gallery, whose snapshots photograph every component. Cards 1 to 6 are built (the value at rest, the calculator, the number field, the session's cancel, the Blended style, the drawn dropdown) and described above. What is left:
+Each card one deliverable, reviewed before the next, one after another, since each touches the popup's files, `slider.rs`, the renderer and the gallery, whose snapshots photograph every component. Cards 1 to 6 and 11 are built (the value at rest, the calculator, the number field, the session's cancel, the Blended style, the drawn dropdown, the marker's shapes and ends) and described above. What is left:
 
 - **7. The popup's pointer and its cancel.** A new `crates/ui/src/popup/slider.rs` with `Kind::Slider` in `popup.rs`: its request and answers, the geometry, the fan, the pick-up rule, the precision curve, the press and the release, the 50 and 400 point tolerances, a press outside and a right-click inside. `slider.rs`: opening on a right-click, a Control-click on the Mac, Enter, Shift+F10, the Menu key and ShowContextMenu, Enter no longer opening the field; `SliderAction::Cancel`. `crates/app/src/actions.rs`: Shift+F10 and the Menu key kept by a focused slider. `crates/app/src/modules.rs` and `main.rs`: `Change::Cancel` sent as `CancelGesture`, the pending display showing the module as reported when the gesture began. Tests in a new `crates/ui/tests/slider_popup.rs` and the app's. Out of scope: typing and the keys inside (card 8), the zoom (card 9), the colour wheel (card 10).
 - **8. The popup's keys, typing and screen readers.** `popup/slider.rs`: the key table, the typed number drawn large, taking what the value field takes (`value_field.rs`'s `number_char` and `takes`, shared), the cursor, Paste taken whole or not at all, Enter setting the number, or the current value with no digit typed; the plugin giving the popup Alt with the arrows and Paste, and an app key cancelling it before it runs; the SpinButton, its description and the live region. The locales: `slider-popup-keys`, saying "Type a value." Out of scope: the zoom; darktable's characters, Enter through the calculator and the error text, which wait with the expressions.
 - **9. The zoom and the middle click.** `popup/slider.rs`: the wheel's √2 zoom and the wait for the line; `slider.rs`: the row keeping a zoomed span narrower than the soft range until reset, the middle click on the row and in the popup. Out of scope: Ctrl+Shift's steps.
 - **10. The colour wheel.** `popup/slider.rs`: darktable's wheel for a ° slider whose span shown is 360°, its angles, the inner quarter, the ticks without a gradient, the wheel's notches ignored over it.
-- **11. The marker's shapes and ends** (decision 75). `slider.rs` and `components/mod.rs`'s `paint_handle`: the triangle, the circle and the square, their hover and dragged looks, the circle's and the square's centre line while dragged, and each shape's travel stopping flush at the track's ends, the fill following it; the central bar's scale and the curve's handles drawing the same marker. `data/settings.schema.toml`: `sliders.marker`, Triangle, Circle or Square, Square by default, on Settings › General with each shape's picture. The gallery's snapshots of each shape in both themes, at the ends and dragged. Out of scope: anything of the popup's.
 
 ## Painted widgets
 
@@ -2987,7 +2986,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 
 | Page | Group | Rows |
 | --- | --- | --- |
-| General | Interface | Theme, Language, Interface size (`scale`, in per cent) |
+| General | Interface | Theme, Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75) |
 | General | Confirmations | Ask before overwriting an exported file (`export.ask_before_overwrite`) |
 | General | Diagnostics | Keep a log of this session (`log.keep`, off), Log (`log.domains`, a list of the `-d` domains and Verbose, all but Memory and Verbose ticked); each with its help in its tooltip ([The log window](#the-log-window)) |
 | Library | Thumbnails | Square thumbnails (`grid_panel.square_thumbnails`) |

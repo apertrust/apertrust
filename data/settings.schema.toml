@@ -82,6 +82,17 @@ applies = "at-once"
 page = "general"
 group = "interface"
 
+# The marker on every slider's track and the curve's handles (decision 75): a shape of
+# its own, the user's, not a theme's.
+[sliders.marker]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::Marker"
+default = "square"
+applies = "at-once"
+page = "general"
+group = "interface"
+
 # The window's inner size in logical pixels, as it last stood while neither maximised nor
 # full screen, kept in whole pixels; each part more than 0, and never under the shell's
 # smallest, 960 by 600. The default is the size at the first start.

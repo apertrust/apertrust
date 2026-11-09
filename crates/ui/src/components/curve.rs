@@ -51,7 +51,7 @@ use egui::{
     Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 
-use super::{focus_ring, focus_shows, paint_handle};
+use super::{focus_ring, focus_shows, marker};
 use crate::i18n::Args;
 use crate::{Translator, theme, translator};
 
@@ -69,10 +69,10 @@ const POINT_RADIUS: f32 = 4.5;
 /// How far from a point, or from the curve, a press still takes it.
 const HIT: f32 = 8.0;
 const CURVE_WIDTH: f32 = 1.5;
-/// The strip under the plot that holds the handles, and their triangle: the slider row's.
+/// The strip under the plot that holds the handles, and how far their centre sits under
+/// its top: the marker, the slider row's, 5.5 points each way of it, starts a point down.
 const HANDLE_STRIP: f32 = 14.0;
-const HANDLE_HALF_WIDTH: f32 = 6.5;
-const HANDLE_HEIGHT: f32 = 11.0;
+const HANDLE_CENTRE: f32 = 6.5;
 /// How faint the histogram is: a share of the secondary text's colour.
 const HISTOGRAM_OPACITY: f32 = 0.12;
 /// The readout's backing, translucent so the curve and histogram show through it.
@@ -718,16 +718,12 @@ impl<'a> Curve<'a> {
                 focus_ring(painter, frame, &t);
             }
 
-            // The handles point up at their inputs, as the slider row's handle does.
+            // The handles mark their inputs with the slider row's marker. The plot sits
+            // inside its frame, so they stay whole at its ends.
+            let shape = marker(ui.ctx());
             for (value, handle) in &handles {
-                let x = plot.x_at(*value);
-                let tip = strip.top() + 1.0;
-                let points = [
-                    pos2(x, tip),
-                    pos2(x + HANDLE_HALF_WIDTH, tip + HANDLE_HEIGHT),
-                    pos2(x - HANDLE_HALF_WIDTH, tip + HANDLE_HEIGHT),
-                ];
-                paint_handle(painter, points, handle, &t, fade);
+                let centre = pos2(plot.x_at(*value), strip.top() + HANDLE_CENTRE);
+                shape.paint(painter, centre, handle, &t, fade);
                 if handle.has_focus() {
                     focus_ring(painter, handle.rect.shrink2(vec2(1.0, 0.0)), &t);
                 }
