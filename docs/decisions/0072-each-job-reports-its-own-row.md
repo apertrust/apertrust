@@ -8,7 +8,7 @@ darktable's background jobs panel (`libs/backgroundjobs.c` at the reference rele
 
 ## Decision
 
-**Each job reports everything its row shows in its own events, and a client's mirror folds them into the row with no code for any kind of job.** Planned, built in the steps of the roadmap's jobs window ([roadmap.md](../roadmap.md#the-jobs-window-and-the-job-api)).
+**Each job reports everything its row shows in its own events, and a client's mirror folds them into the row with no code for any kind of job.** Built in the steps of the roadmap's jobs window ([roadmap.md](../roadmap.md#the-jobs-window-and-the-job-api)).
 
 **The events,** base's `JobEvent`, which the session sends as `Event::Job` ([events.md](../events.md#a-jobs-events)):
 

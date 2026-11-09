@@ -2136,25 +2136,34 @@ impl App {
     /// Does what a button of the jobs window asked ([`jobs::Mirror::act`]). Closing the
     /// window stops nothing.
     fn jobs_action(&mut self, action: ActivityAction, ctx: &egui::Context) {
-        match self.mirror.jobs.act(action) {
-            jobs::Do::Nothing => {}
+        let changed = match self.mirror.jobs.act(action) {
+            jobs::Do::Nothing => false,
             jobs::Do::Send(command) => {
                 self.session.send(command);
+                false
             }
-            jobs::Do::Reveal(what) => jobs::reveal(&what),
-            jobs::Do::Changed => {
-                self.jobs_view = self.mirror.jobs.view(&translator(ctx));
-                let place = self.shell.jobs_window;
-                let view = &self.jobs_view;
-                jobs::refresh(
-                    view,
-                    Vec::new(),
-                    &mut self.dialogs,
-                    jobs::Show::Update,
-                    place,
-                    ctx,
-                );
+            jobs::Do::Start(command) => {
+                self.send_job(command);
+                true
             }
+            jobs::Do::Reveal(what) => {
+                jobs::reveal(&what);
+                false
+            }
+            jobs::Do::Changed => true,
+        };
+        if changed {
+            self.jobs_view = self.mirror.jobs.view(&translator(ctx));
+            let place = self.shell.jobs_window;
+            let view = &self.jobs_view;
+            jobs::refresh(
+                view,
+                Vec::new(),
+                &mut self.dialogs,
+                jobs::Show::Update,
+                place,
+                ctx,
+            );
         }
     }
 

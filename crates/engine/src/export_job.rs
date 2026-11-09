@@ -41,7 +41,8 @@
 //!   title, a detail naming it and the photos done; the first file written as its
 //!   destination; at its end its outcome by its counts, the failure that ended it or else
 //!   the first photo's, and Try again for the photos not written, unless it was cancelled
-//!   or refused. Each photo's start and result, and the job's counts, also come as
+//!   or refused, its retry, the same export of those photos, left with the session for
+//!   `Command::RetryJob`. Each photo's start and result, and the job's counts, also come as
 //!   `Event::Export` ([`ExportStatus`]), the record for scripts and the CLI.
 //! - **Failures:** a photo's own fails that photo, and the job goes on; a failure of the
 //!   destination, or the engine stopping under it ([`Failure::ends_job`]), ends the job
@@ -76,7 +77,7 @@ use crate::gpu::GpuContext;
 use crate::jobs::{self, Context, Destination, Interrupted, Job, Message, Offer, TaskError, Tasks};
 use crate::names::{self, Shot, Sizes};
 use crate::pipeline::{self, Instance, Limits, Pipe, PlanError, Resample};
-use crate::session::{Decoded, Event, Load, Outbox};
+use crate::session::{Command, Decoded, Event, Load, Outbox, Retries};
 use crate::sidecar;
 
 /// What the session reports of an export job's photos, as `Event::Export`, in order: each
@@ -405,6 +406,8 @@ pub(crate) struct Run {
     /// The photos' sidecars, in their order, as the edit writer reads them.
     pub snapshot: Receiver<Vec<Snapshot>>,
     pub outbox: Outbox,
+    /// Where the job leaves the session its retry, as it offers Try again (decision 72).
+    pub retries: Retries,
     /// Holds the job's first render step for a test.
     #[cfg(test)]
     pub hold: Option<testing::Hold>,
@@ -569,19 +572,26 @@ impl Run {
             &self.build,
             self.places.clone(),
         );
-        // The counts, then the outcome and, where `retryable`, Try again for the photos not
-        // written, unless it was cancelled, a cancel too late to stop a photo included;
-        // `failure`, what ended it or else the first photo's, makes it a failed job.
-        let end = |summary: Summary, failure: Option<jobs::Failure>, retryable: bool| {
+        // The counts, then the outcome and Try again for the photos `left`, those that
+        // failed and those not reached, unless it was cancelled, a cancel too late to stop a
+        // photo included; `failure`, what ended it or else the first photo's, makes it a
+        // failed job. Its retry, the same export of those photos, is left with the session
+        // before the body returns, so it is kept before the offer reaches a client.
+        let end = |summary: Summary, failure: Option<jobs::Failure>, left: Vec<PathBuf>| {
             report(ExportStatus::Finished(summary));
             let cancelled = summary.cancelled || context.cancelled();
             let failed = failure.is_some();
             context.set_outcome(outcome(&summary, total, cancelled, failed));
-            let items = summary.failed + summary.not_reached;
-            if retryable && !cancelled && items > 0 {
+            if !cancelled && !left.is_empty() {
                 context.offer(Offer::Retry {
-                    items: items as u64,
+                    items: left.len() as u64,
                 });
+                let retry = Command::Export {
+                    photos: left,
+                    settings: settings.clone(),
+                    places: self.places.clone(),
+                };
+                self.retries.keep(job, retry);
             }
             failure.map_or(Ok(()), Err)
         };
@@ -590,7 +600,7 @@ impl Run {
         let refused = |failure: Failure, mut summary: Summary| {
             tracing::debug!(target: "pipe", "export refused: {}", failure.message);
             summary.not_reached = total;
-            end(summary, Some(failure.ended(None)), false)
+            end(summary, Some(failure.ended(None)), Vec::new())
         };
         // The path and its pattern before any photo (D8).
         let home = names.home();
@@ -604,7 +614,7 @@ impl Run {
             Err(Interrupted::Cancelled) => {
                 summary.not_reached = total;
                 summary.cancelled = true;
-                return end(summary, None, true);
+                return end(summary, None, Vec::new());
             }
             Err(Interrupted::Disconnected) => {
                 let failure = Failure::new(Cause::Engine, None, "the edit writer stopped");
@@ -613,6 +623,8 @@ impl Run {
         };
         // The first photo's failure, which the job ends with where nothing ended it.
         let mut first_failure = None;
+        // The photos that failed, which Try again exports with those not reached.
+        let mut failed_photos = Vec::new();
         let mut first_file = true;
         for (index, (path, snapshot)) in self.photos.iter().zip(snapshot).enumerate() {
             if context.cancelled() {
@@ -647,6 +659,7 @@ impl Run {
                     let number = index + 1;
                     tracing::debug!(target: "pipe", "export: photo {number} failed: {}", failure.message);
                     let ended = failure.ended(Some(path));
+                    failed_photos.push(path.clone());
                     if failure.ends_job() {
                         stop = Some(ended);
                     } else {
@@ -674,13 +687,15 @@ impl Run {
                 summary.not_reached = total - done;
                 let rest = summary.not_reached;
                 tracing::debug!(target: "pipe", "export: ended by its failure, {rest} not reached");
-                return end(summary, Some(failure), true);
+                failed_photos.extend_from_slice(&self.photos[done..]);
+                return end(summary, Some(failure), failed_photos);
             }
         }
         let ms = start.elapsed().as_secs_f64() * 1e3;
         let photos = if total == 1 { "photo" } else { "photos" };
         tracing::debug!(target: "perf", "exported {total} {photos} in {ms:.0} ms");
-        end(summary, first_failure, true)
+        // A cancel offers no Try again, so the photos it left need not be named.
+        end(summary, first_failure, failed_photos)
     }
 
     /// Photo `index` of the job, the raw at `path` with the edit `snapshot` holds, or the
@@ -1824,6 +1839,135 @@ mod tests {
         assert_eq!(destination.file, Some(out.join("a.png")));
         assert_eq!(failure.cause, destination.cause.id());
         assert_eq!(listed(&folder), ["blocker"]);
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Whether `event` refuses the command numbered `command` as [`Command::RetryJob`] of
+    /// `job`, with no retry kept.
+    fn not_retryable(event: &Event, command: u64, job: JobId) -> bool {
+        matches!(
+            event,
+            Event::Failed(SessionError::Refused { command: refused, error })
+                if *refused == command
+                    && matches!(**error, SessionError::NotRetryable { job: named } if named == job)
+        )
+    }
+
+    /// Try again exports the photo that failed alone, with the same settings and its edit
+    /// as it is when Try again is sent (D12): its job's `Added` names the `RetryJob` and the
+    /// job it tries again. A retry is used once, and a job that offered none has none.
+    #[test]
+    fn a_failed_photo_tried_again_exports_alone_once() {
+        let gpu = gpu();
+        let folder = scratch("retry");
+        let [a, b] = ["a.ARW", "b.ARW"].map(|name| folder.join(name));
+        // `b`'s edit cannot be read, which fails that photo alone.
+        let sidecar = sidecar::path_for(&b);
+        std::fs::write(&sidecar, "not an edit").unwrap();
+        let out = folder.join("out");
+        let mut client = Client::start(&gpu);
+        let command = client.send(export(&[&a, &b], &out));
+        let failed = client.job(command);
+        let own = client.ended(failed);
+        let Some(JobEvent::Ended {
+            failure: Some(failure),
+            offers,
+            ..
+        }) = own.last()
+        else {
+            panic!("it did not end failed: {own:?}");
+        };
+        assert_eq!(
+            (failure.cause.as_str(), failure.item.as_ref()),
+            ("edit", Some(&b))
+        );
+        assert_eq!(offers, &[Offer::Retry { items: 1 }]);
+        assert_eq!(listed(&out), ["a.png"]);
+
+        // The edit is mended before Try again, which takes it as it is now.
+        std::fs::remove_file(&sidecar).unwrap();
+        let retry = client.send(Command::RetryJob { job: failed });
+        let again = client.job(retry);
+        let added = client.of_job(again);
+        assert!(
+            matches!(
+                added.first(),
+                Some(JobEvent::Added { retries: Some(old), progress, .. })
+                    if *old == failed && progress.total == Some(1)
+            ),
+            "{added:?}"
+        );
+        let own = client.ended(again);
+        assert!(
+            matches!(
+                own.last(),
+                Some(JobEvent::Ended { failure: None, offers, .. }) if offers.is_empty()
+            ),
+            "{own:?}"
+        );
+        let statuses = client.exported(again);
+        assert_eq!(
+            statuses.first(),
+            Some(&ExportStatus::Started {
+                index: 0,
+                source: b.clone()
+            })
+        );
+        let written = Summary {
+            written: 1,
+            ..Summary::default()
+        };
+        assert_eq!(summary(&statuses), written);
+        assert_eq!(listed(&out), ["a.png", "b.png"]);
+        assert!(std::fs::read(out.join("b.png")).unwrap() == expected(&gpu, None));
+
+        // Used once: a second Try again is refused, as is one for a job that offered none.
+        let twice = client.send(Command::RetryJob { job: failed });
+        client.until(|e| not_retryable(e, twice, failed));
+        let never = client.send(Command::RetryJob { job: again });
+        client.until(|e| not_retryable(e, never, again));
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The retry of a job its destination ended takes the photos that failed, its own
+    /// failure's and the destination's, and those not reached, in their order.
+    #[test]
+    fn the_retry_of_a_job_its_destination_ended_takes_the_photos_failed_and_not_reached() {
+        let gpu = gpu();
+        let folder = scratch("retry-destination");
+        // A file where the export's folder would be made, so no photo can be written.
+        let blocker = folder.join("blocker");
+        std::fs::write(&blocker, b"").unwrap();
+        let photos = ["broken.ARW", "a.ARW", "b.ARW"].map(|name| folder.join(name));
+        let mut client = Client::start(&gpu);
+        let out = blocker.join("out");
+        let command = client.send(export(&[&photos[0], &photos[1], &photos[2]], &out));
+        let failed = client.job(command);
+        client.ended(failed);
+        // The folder can be made now: the raw that cannot be read fails again, the rest
+        // are written.
+        std::fs::remove_file(&blocker).unwrap();
+        let retry = client.send(Command::RetryJob { job: failed });
+        let again = client.job(retry);
+        client.ended(again);
+        let statuses = client.exported(again);
+        let started: Vec<&Path> = statuses
+            .iter()
+            .filter_map(|status| match status {
+                ExportStatus::Started { source, .. } => Some(source.as_path()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started, photos.each_ref().map(PathBuf::as_path));
+        let counts = Summary {
+            written: 2,
+            failed: 1,
+            ..Summary::default()
+        };
+        assert_eq!(summary(&statuses), counts);
+        assert_eq!(listed(&out), ["a.png", "b.png"]);
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
     }

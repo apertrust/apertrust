@@ -63,9 +63,10 @@
 //! body runs on a worker and hands its GPU work to the engine thread ([`crate::jobs`]).
 //! After the commands and the live frame, the thread steps one waiting task a turn, so a
 //! change waits for one step at most. Jobs with a progress are reported as [`Event::Job`],
-//! and [`Command::CancelJob`] cancels one that can be cancelled. Dropping the handle shuts
-//! the control down: cancellable jobs stop, the rest finish, their GPU tasks still
-//! stepped until they do.
+//! and [`Command::CancelJob`] cancels one that can be cancelled; one that failed and
+//! offers it is tried again by [`Command::RetryJob`], which runs what the job left the
+//! session (decision 72). Dropping the handle shuts the control down: cancellable jobs
+//! stop, the rest finish, their GPU tasks still stepped until they do.
 //!
 //! Every thread of the session tells the client through one outbox (decision 59),
 //! which wakes it once for each burst of events. Each event is a fact, the whole current
@@ -78,7 +79,7 @@
 
 mod outbox;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -196,6 +197,13 @@ pub enum Command {
     /// before its next step. Refused for a job that cannot be cancelled
     /// ([`SessionError::NotCancellable`]); one that has ended changes nothing.
     CancelJob { job: JobId },
+    /// Try a failed job again, as its row's Try again does (decision 72): runs the command
+    /// the job left the session as it offered [`jobs::Offer::Retry`], as if it were sent
+    /// now, so an export takes each photo's edit as it is at this moment (D12). Its job's
+    /// `Added` names this command and `retries: Some(job)`. A retry is used once; one not
+    /// kept, used already or older than the latest [`RETRIES_KEPT`], is refused
+    /// ([`SessionError::NotRetryable`]).
+    RetryJob { job: JobId },
     /// Export `photos` with `settings` (decision 56): a job, darktable's "export images",
     /// one at a time, a later one queued behind it, its `Added` naming this command. Each
     /// photo's edit is taken as this command is handled (D12): the open photo's as the
@@ -263,6 +271,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::Resize { .. }
         | Command::Scopes(_)
         | Command::CancelJob { .. }
+        | Command::RetryJob { .. }
         | Command::Export { .. }
         | Command::PreviewExport { .. }
         | Command::Library(_) => false,
@@ -611,6 +620,10 @@ pub enum SessionError {
     /// [`Command::CancelJob`] named a job that cannot be cancelled: it goes on.
     #[error("job {job} cannot be cancelled")]
     NotCancellable { job: JobId },
+    /// [`Command::RetryJob`] named a job with no retry kept: one that offered none, whose
+    /// retry was used already, or one older than the latest [`RETRIES_KEPT`].
+    #[error("job {job} cannot be tried again")]
+    NotRetryable { job: JobId },
     /// A bug in the engine: what it was doing is dropped, the photo with it.
     #[error("the engine failed: {0}")]
     Panicked(String),
@@ -1205,6 +1218,8 @@ struct Jobs {
     /// The jobs shown, those with a progress, from their `Added` to their end, and
     /// whether each can be cancelled.
     shown: Arc<Mutex<BTreeMap<JobId, bool>>>,
+    /// What the jobs that offer Try again left to run for it (decision 72).
+    retries: Retries,
     /// Makes [`Jobs::finish`]'s stepping panic, for the test of what follows.
     #[cfg(test)]
     panic_in_finish: bool,
@@ -1247,6 +1262,7 @@ impl Jobs {
             outbox,
             starting,
             shown,
+            retries: Retries::default(),
             #[cfg(test)]
             panic_in_finish: false,
         }
@@ -1334,6 +1350,40 @@ impl Jobs {
         if let Some(panic) = panicked {
             std::panic::resume_unwind(panic);
         }
+    }
+}
+
+/// How many retries the session keeps: the latest jobs' that offered Try again, for its
+/// life (decision 72).
+pub const RETRIES_KEPT: usize = 64;
+
+/// What the session's jobs leave it to run for Try again (decision 72): each job that
+/// offers [`jobs::Offer::Retry`] keeps, before its body returns, the command its retry
+/// runs, so the command is kept before its `Ended` reaches a client. The latest
+/// [`RETRIES_KEPT`], for the session's life; [`Command::RetryJob`] takes one, so each is
+/// used once.
+#[derive(Clone, Default)]
+pub(crate) struct Retries(Arc<Mutex<VecDeque<(JobId, Command)>>>);
+
+impl Retries {
+    /// Keeps `command` as what trying `job` again runs, the oldest kept dropped past
+    /// [`RETRIES_KEPT`].
+    pub(crate) fn keep(&self, job: JobId, command: Command) {
+        let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if kept.len() == RETRIES_KEPT
+            && let Some((old, _)) = kept.pop_front()
+        {
+            tracing::debug!(target: "control", "dropped the retry of job {old}, past {RETRIES_KEPT}");
+        }
+        kept.push_back((job, command));
+        tracing::debug!(target: "control", "kept the retry of job {job}");
+    }
+
+    /// What trying `job` again runs, taken: none where none is kept.
+    fn take(&self, job: JobId) -> Option<Command> {
+        let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let at = kept.iter().position(|(own, _)| *own == job)?;
+        kept.remove(at).map(|(_, command)| command)
     }
 }
 
@@ -1649,12 +1699,13 @@ impl Engine {
                     Ok(())
                 }
                 Command::CancelJob { job } => self.jobs.cancel(job),
+                Command::RetryJob { job } => self.retry(job),
                 Command::Export {
                     photos,
                     settings,
                     places,
                 } => {
-                    self.export(photos, settings, places);
+                    self.export(photos, settings, places, None);
                     Ok(())
                 }
                 #[cfg(test)]
@@ -1894,6 +1945,7 @@ impl Engine {
             | Command::Resize { .. }
             | Command::Scopes(_)
             | Command::CancelJob { .. }
+            | Command::RetryJob { .. }
             | Command::Export { .. }
             | Command::PreviewExport { .. }
             | Command::Library(_) => {
@@ -2093,10 +2145,17 @@ impl Engine {
     }
 
     /// [`Command::Export`], the command numbered [`Self::applied`]: a `UserExport` job of
-    /// the session's control. Each photo's edit is taken now (D12): the open photo's from
-    /// memory, and every other's read by the edit writer after the writes handed to it so
-    /// far, the job waiting for them on its worker, so nothing here waits for a disk.
-    fn export(&mut self, photos: Vec<PathBuf>, settings: ExportSettings, places: Places) {
+    /// the session's control, its `Added` naming the job it `retries` where it is one's
+    /// retry. Each photo's edit is taken now (D12): the open photo's from memory, and every
+    /// other's read by the edit writer after the writes handed to it so far, the job
+    /// waiting for them on its worker, so nothing here waits for a disk.
+    fn export(
+        &mut self,
+        photos: Vec<PathBuf>,
+        settings: ExportSettings,
+        places: Places,
+        retries: Option<JobId>,
+    ) {
         let live = self.live_among(&photos);
         let sidecars = photos.iter().map(|path| sidecar::path_for(path)).collect();
         let run = export_job::Run {
@@ -2115,13 +2174,38 @@ impl Engine {
             live_frame: Arc::clone(&self.live_frame),
             snapshot: self.writer.read(sidecars),
             outbox: self.jobs.outbox.clone(),
+            retries: self.jobs.retries.clone(),
             #[cfg(test)]
             hold: self.export_hold.take(),
         };
         let command = self.applied;
         self.jobs.add(command, Queue::UserExport, |tasks| {
-            export_job::job(run, tasks)
+            let job = export_job::job(run, tasks);
+            match retries {
+                Some(old) => job.retries(old),
+                None => job,
+            }
         });
+    }
+
+    /// [`Command::RetryJob`], the command numbered [`Self::applied`]: the command `job`
+    /// left, taken, so it runs once, and run as if it were sent now; refused where none is
+    /// kept.
+    fn retry(&mut self, job: JobId) -> Result<(), SessionError> {
+        match self.jobs.retries.take(job) {
+            Some(Command::Export {
+                photos,
+                settings,
+                places,
+            }) => {
+                let count = photos.len();
+                tracing::debug!(target: "control", "trying job {job} again: {count} photos");
+                self.export(photos, settings, places, Some(job));
+                Ok(())
+            }
+            // Only an export leaves a retry.
+            _ => Err(SessionError::NotRetryable { job }),
+        }
     }
 
     /// The open photo as an export of `photos` takes it, if it is one of them: the raw is
@@ -6473,6 +6557,29 @@ mod tests {
             ("bg", 3),
         ];
         assert_eq!(heard.steps(), expected);
+    }
+
+    /// The session keeps the latest [`RETRIES_KEPT`] retries, the oldest dropped past
+    /// them, and each is taken once (decision 72).
+    #[test]
+    fn the_latest_64_retries_are_kept_and_each_is_taken_once() {
+        // Job numbers come only from a control.
+        let control = apertrust_base::jobs::Control::start(|_| {});
+        let ids: Vec<JobId> = (0..=RETRIES_KEPT)
+            .map(|_| {
+                let job = jobs::Job::new("test", "a job to number", |_| Ok(()));
+                control.add(Queue::SystemBackground, job)
+            })
+            .collect();
+        let retries = Retries::default();
+        for &job in &ids {
+            retries.keep(job, Command::Reset);
+        }
+        assert_eq!(RETRIES_KEPT, 64);
+        assert_eq!(retries.take(ids[0]), None, "the oldest is dropped");
+        assert_eq!(retries.take(ids[1]), Some(Command::Reset));
+        assert_eq!(retries.take(ids[1]), None, "used once");
+        assert_eq!(retries.take(ids[RETRIES_KEPT]), Some(Command::Reset));
     }
 
     #[test]
