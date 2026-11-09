@@ -28,7 +28,7 @@
 use std::fmt::{self, Write as _};
 use std::ops::Range;
 
-use toml_edit::{ImDocument, InlineTable, Item, Key, Table, TableLike, Value};
+use toml_edit::{Document, InlineTable, Item, Key, Table, TableLike, Value};
 
 /// The schema, in the top-level `data/` (decision 45), embedded, so that a change to it
 /// rebuilds this crate and so reruns every owner's build script. The workspace publishes
@@ -149,7 +149,7 @@ enum Check {
 /// Reads and checks a schema; `path` names it in the generated code.
 pub fn parse(text: &str, path: &str) -> Result<Schema, Vec<Error>> {
     let reader = Reader { text, path };
-    let document = ImDocument::parse(text).map_err(|e| {
+    let document = Document::parse(text).map_err(|e| {
         let (line, message) = (
             reader.line(e.span(), 1),
             e.message().lines().collect::<Vec<_>>(),
