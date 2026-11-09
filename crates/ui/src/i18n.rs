@@ -792,7 +792,8 @@ mod tests {
                 args.set("waiting", 1);
                 args.set("value", "2 running");
                 args.set("message", "Exporting 3 / 12 to file on disk");
-                args.set("target", "file on disk");
+                // A job's end on the local clock, after its destination.
+                args.set("time", "14:02");
                 // The export job's own.
                 args.set("number", 3);
                 args.set("storage", "disk");

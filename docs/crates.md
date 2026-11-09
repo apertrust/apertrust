@@ -541,8 +541,9 @@ File › Open Image… (`open`, Ctrl+O, first in File; `src/dialogs.rs`):
 
 - It opens from the top panel's spinner, and by itself for a job on `UserForeground` or `UserExport` whose `Added` names a command the app sent (`Mirror::apply`'s `Show::Open`), never for another job.
 - It is kept at `jobs_window.position`. Closing it stops no job.
+- Opened by itself, it closes itself about 2 seconds after the jobs it opened for (`Mirror::opened`) have finished, unless one failed or was cancelled, or the person touched it (`Window::opened_for`; [gui.md](gui.md#in-the-app)).
 - It is fed by `App::receive`'s mirror, `jobs::Mirror`, a fold of `Event::Job` alone: each event sets its part of its job's row, with no code for any kind of job (decision 72). An export sent is noted by its number until its job is added (`Mirror::starting`), so quitting waits for it.
-- Its buttons: Cancel (sent as `CancelJob`), Show in Finder (the job's destination, a file selected in its folder, through the platform), and Dismiss; the rows keep a job's retry offer, but the window draws no Try again yet. Planned: the ✕ to cancel, Try again sent as `RetryJob`, Dismiss on a failed row and Clear Finished for the rest.
+- Its buttons: the ✕ (sent as `CancelJob`), Show in Finder (the job's destination, a file selected in its folder, through the platform), Dismiss on a failed row and Clear Finished for the finished and cancelled ones; the rows keep a job's retry offer, but the window draws no Try again yet. Planned: Try again sent as `RetryJob`.
 
 ### The log window
 
@@ -705,8 +706,8 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 **The jobs** (decision 57), `Jobs` through `TopPanel::jobs`:
 
-- `spinner`: one icon button beside Saved while any job is shown, never one per job. It turns while a job is queued or running (still where the theme's motion is zero) and at rest shows the tick, or the warning sign where one failed; planned (decision 72), nothing at rest but the warning sign after a failure. It is named "Jobs", with the count in its value ("2 running"), sits in the Tab order, and is a polite live region speaking at a job's start and end only. It has no words, so it never folds. It reports `TopPanelAction::Jobs`.
-- `window`: the jobs window's content, as a function of `&mut Ui`, which the app hosts. One row per `Job`, newest first, every row drawn alike from the parts its job reports (decision 72): its title translated (`job-…`), a bar while it runs, its detail, outcome, failure (`JobFailure`) and destination, and the buttons its state and parts allow. Cancel is only for a job that can be cancelled, in its kind's words. It returns `ActivityAction`s. Planned: the look in [gui.md](gui.md#a-row-and-where-each-part-comes-from).
+- `spinner`: one icon button beside Saved, never one per job. It turns while a job is queued or running (still where the theme's motion is zero); with none, it shows the warning sign while a failed job is left, and nothing otherwise, no tick (decision 72). It is named "Jobs", with the count in its value ("2 running"), sits in the Tab order, and is a polite live region speaking at a job's start and end only. It has no words, so it never folds. It reports `TopPanelAction::Jobs`.
+- `window`: the jobs window's content, as a function of `&mut Ui`, which the app hosts. One row per `Job`, newest first, stacked on a sunken list that scrolls past five, every row drawn alike from the parts its job reports (decision 72), as [gui.md](gui.md#a-row-and-where-each-part-comes-from) shows them: its kind's icon (`kind_icon`, a generic one for a kind not listed), its title translated (`job-…`), once ended its outcome, a bar while it is queued or running, indeterminate with no total, with the ✕ where it can be cancelled, its detail, destination with the time it ended, or failure (`JobFailure`), and the buttons its state and parts allow; then Clear Finished in the footer. It returns `ActivityAction`s.
 
 ### Popups
 

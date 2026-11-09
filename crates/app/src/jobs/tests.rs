@@ -215,6 +215,7 @@ fn an_exports_events_fold_into_its_row() {
         .text("folder", "~/out");
     let expected = Job::new(id.get(), JobPhase::Queued, title_row(0, 3))
         .kind("export")
+        .progress(0, Some(3))
         .cancellable(true)
         .detail(queued)
         .destination("~/out");
@@ -244,7 +245,7 @@ fn an_exports_events_fold_into_its_row() {
     fold(&mut mirror, photo_done(id, 1, 3, true));
     let row = only(&mirror);
     assert_eq!(row.destination.as_deref(), Some("~/out"));
-    assert!((row.fraction - 1.0 / 3.0).abs() < 1e-6);
+    assert_eq!((row.done, row.total), (1, Some(3)));
     assert_eq!(
         row.detail,
         Some(
@@ -257,7 +258,7 @@ fn an_exports_events_fold_into_its_row() {
         fold(&mut mirror, photo_starts(id, number, 3));
         fold(&mut mirror, photo_done(id, number, 3, false));
     }
-    assert_eq!(only(&mirror).fraction, 1.0);
+    assert_eq!(only(&mirror).fraction(), Some(1.0));
 
     // Ended: finished, its outcome and time, no detail line, nothing to cancel.
     let outcome = Message::new("job-export-finished")
@@ -285,7 +286,7 @@ fn an_exports_events_fold_into_its_row() {
         title_row(3, 3).text("photo", "IMG_0003.ARW"),
     )
     .kind("export")
-    .fraction(1.0)
+    .progress(3, Some(3))
     .destination("~/out")
     .outcome(outcome)
     .ended_at(at(60));
@@ -321,8 +322,9 @@ fn a_folders_reading_folds_through_the_same_code_and_never_opens_the_window() {
     let reading = JobMessage::new("job-folder").text("folder", "2026-10 Lisbon");
     let expected = Job::new(id.get(), JobPhase::Running, reading.clone())
         .kind("folder")
+        .progress(120, None)
         .cancellable(true);
-    // With no total its bar has no fraction, however much is done.
+    // With no total its bar has no fraction, however much is done: it is indeterminate.
     let events = [
         state(id, State::Running),
         job(JobEvent::Progress {
@@ -344,6 +346,7 @@ fn a_folders_reading_folds_through_the_same_code_and_never_opens_the_window() {
     }));
     let expected = Job::new(id.get(), JobPhase::Finished, reading)
         .kind("folder")
+        .progress(120, None)
         .ended_at(at(5));
     assert_eq!(only(&mirror), expected);
     // No destination: Show in Finder has nothing to reveal.
@@ -691,20 +694,19 @@ fn many(count: usize) -> Vec<Job> {
 }
 
 #[test]
-fn the_window_is_named_jobs_and_grows_with_its_rows_until_they_scroll() {
-    let one = window(many(1));
-    one.get_by_role_and_label(Role::Dialog, "Jobs");
-    let small = one.state().asked.last().expect("drawn").size;
-    assert!(small.y < MAX_HEIGHT, "{small:?}");
-
-    let lots = window(many(40));
-    let tall = lots.state().asked.last().expect("drawn").size;
-    // Capped: the rows past it scroll, within the window's margin.
-    let margin = theme(&lots.ctx).spacing.l;
-    assert!(tall.y <= MAX_HEIGHT + 2.0 * margin + 1.0, "{tall:?}");
-    assert!(tall.y > small.y);
-    assert_eq!(tall.x, small.x);
-    assert!(tall.x >= WIDTH, "{tall:?}");
+fn the_window_is_named_jobs_and_grows_with_its_rows_up_to_five_then_they_scroll() {
+    let size = |count| {
+        let harness = window(many(count));
+        harness.get_by_role_and_label(Role::Dialog, "Jobs");
+        harness.state().asked.last().expect("drawn").size
+    };
+    let (one, five, six, lots) = (size(1), size(5), size(6), size(40));
+    assert!(one.y < five.y, "{one:?} {five:?}");
+    // Capped at five rows: the rest scroll, the footer below them.
+    assert_eq!(six, five);
+    assert_eq!(lots, five);
+    assert_eq!(one.x, five.x);
+    assert!(five.x >= WIDTH, "{five:?}");
 }
 
 #[test]
@@ -742,6 +744,205 @@ fn the_window_draws_no_try_again_until_the_session_takes_retry_job() {
     let harness = window(vec![failed]);
     assert!(harness.query_by_label("Try again").is_none());
     assert!(harness.query_by_label("Dismiss").is_some());
+}
+
+// When the window closes itself.
+
+/// A job of the window's, numbered `id`, in `phase`.
+fn job_in(id: u64, phase: JobPhase) -> Job {
+    Job::new(id, phase, JobMessage::new("job-thumbnails"))
+}
+
+/// The window as an export the person started opens it, for jobs 1 and 2, drawn every half
+/// second, on the Mac without the focus as the host shows it there.
+fn opened(jobs: Vec<Job>) -> Harness<'static, Bench> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(480.0, 900.0))
+        .with_os(egui::os::OperatingSystem::Mac)
+        .with_step_dt(0.5)
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark));
+        })
+        .build_ui_state(
+            |ui, bench: &mut Bench| {
+                let drawn = dialog_host::draw(ui, &mut bench.content);
+                bench.asked.push(drawn);
+            },
+            Bench {
+                content: Window::new(Vec::new()),
+                asked: Vec::new(),
+            },
+        );
+    // Opened once the harness's own first frames, which have the focus, are drawn.
+    harness.input_mut().focused = false;
+    harness.state_mut().content = Window::new(jobs).opened_for(vec![1, 2]);
+    harness.run();
+    harness
+}
+
+/// Whether any frame drawn so far asked to close.
+fn closed(harness: &Harness<'_, Bench>) -> bool {
+    harness.state().asked.iter().any(|drawn| drawn.close)
+}
+
+/// The jobs given to the window, as the app gives them as they change.
+fn give(harness: &mut Harness<'_, Bench>, jobs: Vec<Job>) {
+    harness.state_mut().content.set(jobs);
+}
+
+#[test]
+fn a_window_that_opened_itself_closes_about_two_seconds_after_its_jobs_end_well() {
+    let running = vec![
+        job_in(1, JobPhase::Running),
+        job_in(2, JobPhase::Queued),
+        job_in(3, JobPhase::Running),
+    ];
+    let mut harness = opened(running);
+    harness.run_steps(8);
+    assert!(!closed(&harness), "closed while its jobs run");
+    // One of its jobs ends; the other still waits.
+    give(
+        &mut harness,
+        vec![
+            job_in(1, JobPhase::Finished),
+            job_in(2, JobPhase::Running),
+            job_in(3, JobPhase::Running),
+        ],
+    );
+    harness.run_steps(8);
+    assert!(!closed(&harness), "closed before all its jobs ended");
+    // Both end well; a job it did not open for, a folder's reading, goes on, and does not
+    // hold it.
+    give(
+        &mut harness,
+        vec![
+            job_in(1, JobPhase::Finished),
+            job_in(2, JobPhase::Finished),
+            job_in(3, JobPhase::Running),
+        ],
+    );
+    harness.run_steps(3);
+    assert!(!closed(&harness), "closed before its outcome could be read");
+    harness.run_steps(2);
+    assert!(
+        closed(&harness),
+        "still open two seconds after its jobs ended"
+    );
+}
+
+#[test]
+fn a_failure_a_cancel_a_click_a_key_or_the_focus_keeps_it_open() {
+    let ended = |second| vec![job_in(1, JobPhase::Finished), job_in(2, second)];
+    // One of its jobs failed or was cancelled: it stays, for the person to see.
+    for phase in [JobPhase::Failed, JobPhase::Cancelled] {
+        let mut harness = opened(ended(phase));
+        harness.run_steps(10);
+        assert!(!closed(&harness), "{phase:?}");
+    }
+    // Touched: a click in it, a key typed in it, or on the Mac the focus, which a click, a
+    // move by its title bar or bringing it to the front gives it.
+    let touches: [fn(&mut Harness<'_, Bench>); 3] = [
+        |harness| {
+            // A click on an empty part of it, the pointer then leaving: it stays all the same.
+            let pos = egui::pos2(40.0, 40.0);
+            let events = &mut harness.input_mut().events;
+            for pressed in [true, false] {
+                events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        },
+        |harness| harness.key_press(egui::Key::Tab),
+        |harness| harness.input_mut().focused = true,
+    ];
+    for (i, touch) in touches.into_iter().enumerate() {
+        let mut harness = opened(vec![job_in(1, JobPhase::Running)]);
+        touch(&mut harness);
+        harness.step();
+        harness.input_mut().events.push(egui::Event::PointerGone);
+        give(&mut harness, ended(JobPhase::Finished));
+        harness.run_steps(10);
+        assert!(!closed(&harness), "touch {i}");
+    }
+    // Untouched, the same window closes.
+    let mut harness = opened(vec![job_in(1, JobPhase::Running)]);
+    harness.step();
+    harness.input_mut().events.push(egui::Event::PointerGone);
+    give(&mut harness, ended(JobPhase::Finished));
+    harness.run_steps(10);
+    assert!(closed(&harness), "untouched");
+}
+
+#[test]
+fn the_pointer_over_it_holds_the_close_until_it_leaves() {
+    let mut harness = opened(vec![job_in(1, JobPhase::Finished)]);
+    harness.hover_at(egui::pos2(40.0, 40.0));
+    harness.run_steps(10);
+    assert!(!closed(&harness), "closed under the pointer");
+    harness.input_mut().events.push(egui::Event::PointerGone);
+    harness.run_steps(3);
+    assert!(!closed(&harness), "closed at once as the pointer left");
+    harness.run_steps(3);
+    assert!(closed(&harness), "never closed after the pointer left");
+}
+
+#[test]
+fn opened_from_the_spinner_or_brought_to_the_front_it_stays_and_a_new_job_is_waited_for() {
+    let finished = || vec![job_in(1, JobPhase::Finished), job_in(2, JobPhase::Finished)];
+    // Opened by the person: it never closes itself.
+    let mut window = Window::new(finished());
+    assert_eq!(window.close(0.0, false, false), Close::Stay);
+    assert_eq!(window.close(10.0, false, false), Close::Stay);
+    // Opened by itself, then brought to the front by the spinner: it stays.
+    let mut window = Window::new(finished()).opened_for(vec![1]);
+    window.again(Window::new(finished()), true);
+    assert_eq!(window.close(10.0, false, false), Close::Stay);
+    // Opened by itself, then another export starts: it waits for that one too.
+    let mut window = Window::new(finished()).opened_for(vec![1]);
+    assert_eq!(window.close(0.0, false, false), Close::After(CLOSE_AFTER));
+    let later = vec![job_in(1, JobPhase::Finished), job_in(2, JobPhase::Running)];
+    window.again(Window::new(later).opened_for(vec![2]), false);
+    assert_eq!(window.close(3.0, false, false), Close::Stay);
+    window.set(finished());
+    assert_eq!(window.close(4.0, false, false), Close::After(CLOSE_AFTER));
+    assert_eq!(window.close(6.0, false, false), Close::Now);
+    // A window the person opened is not made to close by an automatic open after it.
+    let mut window = Window::new(finished());
+    window.again(Window::new(finished()).opened_for(vec![2]), false);
+    assert_eq!(window.close(10.0, false, false), Close::Stay);
+}
+
+#[test]
+fn the_jobs_that_open_the_window_are_kept_for_it_to_wait_for() {
+    let ids = ids(3);
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&added(ids[0], Queue::UserExport, Some(1)));
+    mirror.apply(&added(ids[1], Queue::SystemBackground, None));
+    mirror.apply(&added(ids[2], Queue::UserForeground, Some(2)));
+    assert_eq!(mirror.opened(), [ids[0].get(), ids[2].get()]);
+    // Taken once.
+    assert!(mirror.opened().is_empty());
+}
+
+#[test]
+fn clear_finished_takes_every_finished_and_cancelled_row_and_leaves_a_failed_or_running_one() {
+    let ids = ids(4);
+    let mut mirror = Mirror::new(None);
+    for id in &ids {
+        mirror.apply(&added(*id, Queue::UserExport, None));
+    }
+    mirror.apply(&ended(ids[0], State::Finished, None));
+    mirror.apply(&ended(ids[1], State::Cancelled, None));
+    let failure = Failure::new("write", "cannot write");
+    mirror.apply(&ended(ids[2], State::Finished, Some(failure)));
+    assert_eq!(mirror.act(ActivityAction::ClearFinished), Do::Changed);
+    let left: Vec<u64> = mirror.view(&english()).iter().map(|job| job.id).collect();
+    assert_eq!(left, [ids[2].get(), ids[3].get()]);
+    // Nothing more to clear.
+    assert_eq!(mirror.act(ActivityAction::ClearFinished), Do::Nothing);
 }
 
 // What quitting asks about.

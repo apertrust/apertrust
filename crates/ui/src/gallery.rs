@@ -1740,22 +1740,14 @@ fn sample_menu(anchor: egui::Rect) -> Request {
     Request::pull_down(anchor, "Menu", entries)
 }
 
-/// The jobs spinner's states, as the top panel draws them: turning while jobs run, and at
-/// rest the tick, or the warning sign where one failed; then the jobs window's content with
-/// several jobs, newest first, an export's row among them.
+/// The jobs spinner's states, as the top panel draws them: turning while jobs run, and with
+/// none running the warning sign where one failed, nothing where none did; then the jobs
+/// window's content, newest first, a row in each state the wireframe draws.
 fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
-    let mut at_rest = sample_jobs();
-    at_rest.retain(|job| !matches!(job.phase, JobPhase::Queued | JobPhase::Running));
-    let finished: Vec<Job> = at_rest
-        .iter()
-        .filter(|job| job.phase == JobPhase::Finished)
-        .cloned()
-        .collect();
+    let mut failed = sample_jobs();
+    failed.retain(|job| !job.phase.active());
     ui.horizontal(|ui| {
-        for (i, jobs) in [sample_jobs(), at_rest.clone(), finished]
-            .iter()
-            .enumerate()
-        {
+        for (i, jobs) in [sample_jobs(), failed].iter().enumerate() {
             ui.push_id(("spinner", i), |ui| {
                 if let Some(spinner) = Jobs::new(jobs).spinner(ui)
                     && spinner.clicked()
@@ -1770,7 +1762,8 @@ fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let jobs = sample_jobs();
     let mut asked = None;
     Frame::popup(ui.style())
-        .inner_margin(t.spacing.l)
+        .fill(t.colors.raised)
+        .inner_margin(t.spacing.m)
         .show(ui, |ui| {
             ui.set_width(380.0);
             asked = Jobs::new(&jobs)
@@ -1782,28 +1775,39 @@ fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     }
 }
 
-/// Sample jobs, as the app would mirror them from the session: the oldest first, a failed
-/// export, a finished import, a delete that cannot be cancelled, a running export with
-/// another waiting, and thumbnails.
+/// Sample jobs, as the app would mirror them from the session: the oldest first, a
+/// finished export, a failed one, a folder being read with no total, a running export with
+/// another waiting.
 fn sample_jobs() -> Vec<Job> {
     let folder = "~/Pictures/apertrust_exported";
     let wedding = "~/Pictures/Wedding/apertrust_exported";
-    let message = |id: &str, done: f64, total: f64| {
-        JobMessage::new(id)
-            .number("done", done)
+    let title = |number: f64, total: f64| {
+        JobMessage::new("job-export-photo")
+            .number("number", number)
             .number("total", total)
+            .text("storage", "disk")
     };
-    let export = |id, phase, done| {
-        Job::new(
-            id,
-            phase,
-            message("job-export", done, 12.0).text("target", "file on disk"),
-        )
-        .kind("export")
+    let export = |id, phase, done: u64, total: u64| {
+        Job::new(id, phase, title(done as f64, total as f64))
+            .kind("export")
+            .progress(done, Some(total))
     };
+    // 14:02 on the local clock, whatever the time zone the gallery is drawn in.
+    let two = chrono::NaiveDate::from_ymd_opt(2026, 10, 14)
+        .and_then(|day| day.and_hms_opt(14, 2, 0))
+        .and_then(|at| at.and_local_timezone(chrono::Local).single())
+        .map_or(std::time::SystemTime::UNIX_EPOCH, Into::into);
     vec![
-        export(1, JobPhase::Failed, 11.0)
-            .fraction(1.0)
+        export(1, JobPhase::Finished, 8, 8)
+            .destination(folder)
+            .outcome(
+                JobMessage::new("job-export-finished")
+                    .number("written", 8.0)
+                    .number("skipped", 0.0)
+                    .number("total", 8.0),
+            )
+            .ended_at(two),
+        export(2, JobPhase::Failed, 11, 12)
             .destination(folder)
             .outcome(
                 JobMessage::new("job-export-failed-outcome")
@@ -1816,30 +1820,31 @@ fn sample_jobs() -> Vec<Job> {
                 cause: "the disk is full".to_owned(),
             })
             .retry(true),
-        Job::new(2, JobPhase::Finished, message("job-import", 212.0, 212.0)).fraction(1.0),
-        Job::new(3, JobPhase::Running, message("job-delete", 4.0, 9.0)).fraction(0.44),
-        export(4, JobPhase::Running, 3.0)
-            .fraction(0.25)
-            .cancellable(true)
-            .detail(message("job-export-now", 3.0, 12.0).text("photo", "IMG_2044.ARW"))
-            .destination(folder),
         Job::new(
-            5,
-            JobPhase::Queued,
-            message("job-export", 0.0, 5.0).text("target", "file on disk"),
+            3,
+            JobPhase::Running,
+            JobMessage::new("job-folder").text("folder", "2026-10 Lisbon"),
         )
-        .kind("export")
-        .cancellable(true)
-        .detail(
-            JobMessage::new("job-export-queued")
-                .number("count", 5.0)
-                .text("folder", wedding),
-        )
-        .destination(wedding),
-        Job::new(6, JobPhase::Running, JobMessage::new("job-thumbnails"))
-            .kind("thumbnails")
-            .fraction(0.6)
-            .cancellable(true),
+        .kind("folder")
+        .progress(120, None)
+        .cancellable(true),
+        export(4, JobPhase::Running, 3, 12)
+            .cancellable(true)
+            .detail(
+                JobMessage::new("job-export-now")
+                    .number("done", 3.0)
+                    .number("total", 12.0)
+                    .text("photo", "IMG_2044.ARW"),
+            )
+            .destination(folder),
+        export(5, JobPhase::Queued, 0, 5)
+            .cancellable(true)
+            .detail(
+                JobMessage::new("job-export-queued")
+                    .number("count", 5.0)
+                    .text("folder", wedding),
+            )
+            .destination(wedding),
     ]
 }
 

@@ -125,24 +125,19 @@ jobs-tip = Завдання: { $value }
 jobs-value-running = Виконується: { $running }
 jobs-value-waiting = Очікують: { $waiting }
 jobs-value-running-waiting = Виконується: { $running }, очікують: { $waiting }
-jobs-value-finished = Завершено
-jobs-value-cancelled = Скасовано
 jobs-value-failed = Помилки: { $failed }
 jobs-empty = Завдань немає.
 jobs-queued = Очікує на інші завдання
-jobs-finished = Завершено
-jobs-failed = Не вдалося
-jobs-cancelled = Скасовано
+jobs-finished = Завершено: { $message }
+jobs-failed = Не вдалося: { $message }
+jobs-cancelled = Скасовано: { $message }
 jobs-cancel = Скасувати
 jobs-cancel-tip = Зупинити це завдання
+jobs-clear-finished = Прибрати завершені
 jobs-live-started = Почато: { $message }
-jobs-live-finished = Завершено: { $message }
-jobs-live-failed = Не вдалося: { $message }
-jobs-live-cancelled = Скасовано: { $message }
 
 ## Повідомлення самих завдань
 
-job-export = Експортування { $done } / { $total } до { $target }
 job-import = Імпортування { $done } / { $total }
 job-delete = Видалення { $done } / { $total }
 job-thumbnails = Створення мініатюр
@@ -175,7 +170,7 @@ job-export-finished =
 job-export-failed-outcome =
     { $total ->
         [1] Не вдалося експортувати знімок
-       *[other] Експортовано знімків: { $written } із { $total }
+       *[other] Експорт не вдався. Експортовано { $written } із { $total }
     }
 job-export-cancelled =
     { $total ->
@@ -201,6 +196,7 @@ job-cause-engine = рушій несподівано зупинився
 ## Рядок завдання у вікні завдань: рядки і кнопки
 
 activity-folder = Папка: { $folder }
+activity-folder-at = Папка: { $folder } · { $time }
 activity-failure = { $photo }: не вдалося записати { $file }: { $cause }.
 activity-failure-photo = { $photo }: { $cause }.
 activity-failure-cause = { $cause }.
@@ -208,8 +204,6 @@ activity-show-finder = Показати у Finder
 activity-show-explorer = Показати у Провіднику
 activity-show-files = Показати у Файлах
 activity-show-tip = Відкрити папку експорту
-activity-cancel = Скасувати експорт
-activity-cancel-tip = Зупинитися після знімка, що записується; записані файли залишаються
 activity-try-again = Повторити
 activity-try-again-tip = Експортувати знімки, які не вдалося експортувати, ще раз з тими самими параметрами
 activity-dismiss = Закрити

@@ -1258,24 +1258,30 @@ impl Dialogs for Host {
     ) {
         let mut inner = self.0.borrow_mut();
         let slot = Slot::Jobs.index();
-        match &inner.open[slot] {
-            Some(open) => {
-                if focus {
-                    platform::activate(&open.window);
-                }
+        // Open, or asked twice before it is made: the window takes the new ask
+        // (`jobs::Window::again`), a click keeping it open and an automatic open adding the
+        // jobs it waits for to close itself; the stronger focus stays, so a click's is never
+        // lost to an automatic open after it.
+        if let Some(open) = inner.open[slot].as_mut() {
+            if let Some(shown) = dialog_mut::<jobs::Window>(&mut open.dialog) {
+                shown.again(window, focus);
             }
-            None => {
-                // Asked twice before it is made, the stronger ask stays: a click's focus
-                // is never lost to an automatic open after it.
-                let focus = focus || inner.asked[slot].as_ref().is_some_and(|a| a.focus);
-                inner.asked[slot] = Some(Asked {
-                    dialog: Box::new(window),
-                    focus,
-                    place,
-                    main: main.clone(),
-                    at: Instant::now(),
-                });
+            if focus {
+                platform::activate(&open.window);
             }
+        } else if let Some(asked) = inner.asked[slot].as_mut() {
+            if let Some(shown) = dialog_mut::<jobs::Window>(&mut asked.dialog) {
+                shown.again(window, focus);
+            }
+            asked.focus |= focus;
+        } else {
+            inner.asked[slot] = Some(Asked {
+                dialog: Box::new(window),
+                focus,
+                place,
+                main: main.clone(),
+                at: Instant::now(),
+            });
         }
     }
 

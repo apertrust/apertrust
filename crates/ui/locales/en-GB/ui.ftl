@@ -152,35 +152,33 @@ window-maximise = Maximise
 window-restore = Restore
 window-close = Close
 
-## The jobs: the spinner at the top panel's end and the window it opens. An export's row keeps
-## the activity's words below. $running, $waiting and $failed count jobs, $value is the
-## spinner's value, $message a job's own message, $done and $total its numbers and $target
-## where an export goes. The spinner's value avoids plural forms: "2 running".
+## The jobs: the spinner at the top panel's end and the window it opens. A row's lines and
+## buttons are the activity's words below. $running, $waiting and $failed count jobs, $value
+## is the spinner's value and $message a job's own message. The spinner's value avoids
+## plural forms: "2 running".
 
 jobs-name = Jobs
 jobs-tip = Jobs: { $value }
 jobs-value-running = { $running } running
 jobs-value-waiting = { $waiting } waiting
 jobs-value-running-waiting = { $running } running, { $waiting } waiting
-jobs-value-finished = Finished
-jobs-value-cancelled = Cancelled
 jobs-value-failed = { $failed } failed
 jobs-empty = No jobs.
 jobs-queued = Waiting for other jobs
-jobs-finished = Finished
-jobs-failed = Failed
-jobs-cancelled = Cancelled
+# An ended row's title where the job gives no outcome, which the live region also says.
+jobs-finished = Finished: { $message }
+jobs-failed = Failed: { $message }
+jobs-cancelled = Cancelled: { $message }
+# The ✕ at the end of a row's bar.
 jobs-cancel = Cancel
 jobs-cancel-tip = Stop this job
-# What the live region says as a job starts or ends.
+# The footer's button, which takes away every finished and cancelled row.
+jobs-clear-finished = Clear Finished
+# What the live region says as a job starts.
 jobs-live-started = Started: { $message }
-jobs-live-finished = Finished: { $message }
-jobs-live-failed = Failed: { $message }
-jobs-live-cancelled = Cancelled: { $message }
 
 ## The jobs' own messages, as darktable words its jobs
 
-job-export = Exporting { $done } / { $total } to { $target }
 job-import = Importing { $done } / { $total }
 job-delete = Deleting { $done } / { $total }
 job-thumbnails = Creating thumbnails
@@ -207,7 +205,7 @@ job-export-now =
        *[other] { $done } of { $total } done · now { $photo }
     }
 job-export-between = { $done } of { $total } done
-# Its title once it has ended.
+# Its title once it has ended, which says how it went.
 job-export-finished =
     { $skipped ->
         [0]
@@ -224,7 +222,7 @@ job-export-finished =
 job-export-failed-outcome =
     { $total ->
         [1] The photo could not be exported
-       *[other] { $written } of { $total } photos exported
+       *[other] Export failed: { $written } of { $total } photos exported
     }
 job-export-cancelled =
     { $total ->
@@ -251,11 +249,12 @@ job-cause-write = the file could not be written
 job-cause-engine = the engine stopped unexpectedly
 
 ## A job's row in the jobs window: its lines and buttons. $folder is where its results go,
-## $photo the item it failed on, $file the file it could not write, and $cause why, as the
-## app words it.
+## $time when it ended on the local clock ("14:02"), $photo the item it failed on, $file the
+## file it could not write, and $cause why, as the app words it.
 
 # A row's lines.
 activity-folder = To { $folder }
+activity-folder-at = To { $folder } · { $time }
 activity-failure = { $photo }: could not write { $file }: { $cause }.
 activity-failure-photo = { $photo }: { $cause }.
 activity-failure-cause = { $cause }.
@@ -264,8 +263,6 @@ activity-show-finder = Show in Finder
 activity-show-explorer = Show in Explorer
 activity-show-files = Show in Files
 activity-show-tip = Open the export folder
-activity-cancel = Cancel export
-activity-cancel-tip = Stop after the photo being written; the files written stay
 activity-try-again = Try again
 activity-try-again-tip = Export the photos that failed again, with the same settings
 activity-dismiss = Dismiss
