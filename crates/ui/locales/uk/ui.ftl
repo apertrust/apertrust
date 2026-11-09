@@ -108,7 +108,10 @@ unit-iso-value = { $value } ISO
 top-panel = Верхня панель
 top-panel-menu = Меню
 top-panel-more = Інші дії
-status-unsaved = Ще не збережено
+status-saving = Збереження…
+status-saving-tip = Обробку цього фото ще записують поруч із ним
+status-not-saved = Не збережено
+status-not-saved-reason = Не збережено: { $error }
 status-view-only = Лише перегляд
 window-minimise = Згорнути
 window-maximise = Розгорнути
@@ -723,3 +726,9 @@ alert-quit-message =
             }
     }
 alert-quit-button = Вийти
+alert-save-title = Обробку не збережено
+alert-save-message = Не вдалося записати обробку { $name } поруч із фото: { $error }
+alert-save-button = Спробувати ще раз
+alert-quit-save-title = Вийти без останніх змін?
+alert-quit-save-message = Не вдалося зберегти останні зміни: { $error }
+alert-quit-anyway = Однаково вийти

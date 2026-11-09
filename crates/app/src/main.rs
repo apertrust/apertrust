@@ -813,6 +813,8 @@ enum FromTopPanel {
     Window(TitleBar),
     /// The jobs spinner was pressed: the jobs window opens, or comes to the front.
     Jobs,
+    /// The save warning was pressed: why the edit is not saved shows, with Try Again.
+    NotSaved,
 }
 
 /// What the top panel's empty areas, and its caption buttons where it draws them, ask of
@@ -1592,7 +1594,7 @@ impl Shell {
         &self,
         ui: &mut egui::Ui,
         state: &State,
-        saved: SaveState,
+        saved: SaveState<'_>,
         title_bar: Option<f32>,
         caption: Option<bool>,
         jobs: &[apertrust_ui::components::Job],
@@ -1637,6 +1639,7 @@ impl Shell {
             // Closing the window quits, through the app's way out.
             TopPanelAction::Close => Some(FromTopPanel::Action(ActionId::QUIT)),
             TopPanelAction::Jobs => Some(FromTopPanel::Jobs),
+            TopPanelAction::NotSaved => Some(FromTopPanel::NotSaved),
             clicked => TOP_PANEL
                 .iter()
                 .find(|(button, _)| *button == clicked)
@@ -2017,7 +2020,7 @@ impl App {
     /// the export, Export Again's if it asked, else the Export dialog's, which closes
     /// with it; anything else leaves the dialog as it was and drops Export Again. Quit: a yes stops the jobs that can be stopped and goes on
     /// quitting, which waits for the others; anything else stays, and the next Quit asks
-    /// again.
+    /// again. Save: Try Again writes the edit again.
     fn alert_answered(&mut self, purpose: alerts::Purpose, answer: dialog_host::Answer) {
         self.shell.overwrite.answered(purpose, answer);
         match alerts::then(purpose, answer, &mut self.quit, &self.mirror.jobs) {
@@ -2028,6 +2031,9 @@ impl App {
                     self.session.send(Command::CancelJob { job });
                 }
                 self.quit_again = true;
+            }
+            alerts::Then::RetrySave => {
+                self.send_edit(Command::RetrySave);
             }
         }
     }
@@ -2306,12 +2312,30 @@ impl App {
         self.pend(number, pending);
     }
 
-    /// Sends a command that changes the edit: the top panel says it is not saved until the
-    /// session reports a write that includes it.
+    /// Sends a command that changes the edit: the top panel's save state waits for the
+    /// session to report a write that includes it, one that completes a change at once.
     fn send_edit(&mut self, command: Command) -> u64 {
+        // A gesture's change is saved with the one that ends it, and `Set` with the next.
+        let completes = !matches!(
+            command,
+            Command::SetControl { done: false, .. } | Command::Set { .. }
+        );
         let number = self.session.send(command);
-        self.mirror.saving.sent(number);
+        self.mirror.saving.sent(number, completes, Instant::now());
         number
+    }
+
+    /// The save warning pressed: why the edit's last write failed, with Try Again, which
+    /// writes it again. Nothing while another alert is up.
+    fn ask_why_not_saved(&mut self, ctx: &egui::Context) {
+        let (Some(why), PhotoState::Open(photo)) =
+            (&self.mirror.saving.failure, &self.mirror.photo)
+        else {
+            return;
+        };
+        let request = alerts::save_request(ctx, &file_name(&photo.path), why);
+        self.alerts
+            .ask(&mut self.dialogs, alerts::Purpose::Save, &request, ctx);
     }
 
     /// What the actions' availability depends on, for the keys and the menus: the shell's,
@@ -2372,7 +2396,8 @@ impl App {
             }
             let state = self.state(ctx);
             let running = self.mirror.jobs.running();
-            let mut leave = alerts::Leave::new(&mut self.quit, running);
+            let edit = quit_edit(&self.mirror.saving);
+            let mut leave = alerts::Leave::new(&mut self.quit, running, edit);
             let (shell, dialogs, keeper) = (&mut self.shell, &mut self.dialogs, &self.keeper);
             let command = run_action(
                 shell,
@@ -2386,7 +2411,8 @@ impl App {
             );
             if leave.ask {
                 let (alerts, quit) = (&mut self.alerts, &mut self.quit);
-                self.quit_again |= alerts::ask_quit(alerts, &mut self.dialogs, quit, running, ctx);
+                let dialogs = &mut self.dialogs;
+                self.quit_again |= alerts::ask_quit(alerts, dialogs, quit, running, edit, ctx);
             }
             if std::mem::take(&mut self.shell.export_again) {
                 self.export_again(ctx);
@@ -2845,7 +2871,15 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
-                let saved = self.mirror.saving.state;
+                // Saving… shows once a write is unconfirmed long enough, from a repaint asked
+                // for then.
+                let now = Instant::now();
+                if let Some(from) = self.mirror.saving.saving_from()
+                    && from > now
+                {
+                    ui.ctx().request_repaint_after(from - now);
+                }
+                let saved = self.mirror.saving.state(now);
                 self.shell
                     .top_panel(ui, &drawn, saved, title_bar, caption, &self.jobs_view)
             });
@@ -2858,6 +2892,7 @@ impl eframe::App for App {
                 let view = &self.jobs_view;
                 jobs::refresh(view, &mut self.dialogs, jobs::Show::Front, place, &ctx);
             }
+            Some(FromTopPanel::NotSaved) => self.ask_why_not_saved(&ctx),
             None => {}
         }
         // The side panel is as wide as its edge was dragged, a drag in progress included.
@@ -2986,9 +3021,11 @@ impl eframe::App for App {
         if let Some((purpose, answer)) = self.alerts.answered(&mut self.dialogs) {
             self.alert_answered(purpose, answer);
         }
-        // The main window's close button, held while a job the user started runs, for Quit
-        // to ask.
-        let jobs_hold = hold_close_for_jobs(ctx, self.quit.holds_close(self.mirror.jobs.running()));
+        // The main window's close button, held while a job the user started runs or the edit
+        // is not on disk, for Quit to wait or ask.
+        let edit = quit_edit(&self.mirror.saving);
+        let holds = self.quit.holds_close(self.mirror.jobs.running(), edit);
+        let jobs_hold = hold_close_for_jobs(ctx, holds);
         // Before the frame, so it shows what Settings' window changed.
         let state = self.state(ctx);
         let taken = take_dialogs(&mut self.shell, &mut self.dialogs, &state, ctx);
@@ -3009,10 +3046,12 @@ impl eframe::App for App {
         // The app's keys pressed in a dialog's own window, Quit among them.
         self.run_actions(taken.actions, ctx, &[]);
         settle(taken.quit, &mut self.shell, &mut self.keeper, ctx);
-        // Quit again: a dialog it closed has gone, the person said yes to the quit alert, or
-        // the jobs that were left to finish have.
+        // Quit again: a dialog it closed has gone, the person said yes to the quit alert, the
+        // jobs that were left to finish have, or the write it waited for is confirmed or
+        // has failed.
         let finished = self.quit.confirmed() && self.mirror.jobs.running().none();
-        if taken.quit || jobs_hold || std::mem::take(&mut self.quit_again) || finished {
+        let written = self.quit.waits_for_write() && !self.mirror.saving.writing();
+        if taken.quit || jobs_hold || std::mem::take(&mut self.quit_again) || finished || written {
             self.run_actions([ActionId::QUIT], ctx, &[]);
         }
     }
@@ -3202,9 +3241,19 @@ fn with_dialogs(mut state: State, asking: bool, shown: Option<dialog_host::Shown
     state
 }
 
+/// The open photo's edit as Quit finds it: a write under way, which it waits for, or the last
+/// write failed, the open photo's or the photo left's, which it asks about.
+fn quit_edit(saving: &mirror::Saving) -> alerts::Edit<'_> {
+    match saving.failed() {
+        _ if saving.writing() => alerts::Edit::Writing,
+        Some(why) => alerts::Edit::Failed(why),
+        None => alerts::Edit::Saved,
+    }
+}
+
 /// Whether the main window's close, asked by its close button this frame, is held because a
-/// job the user started runs (`holds`): then it is cancelled, for Quit to ask whether to
-/// stop it.
+/// job the user started runs or the edit is not on disk (`holds`): then it is cancelled,
+/// for Quit to wait or to ask.
 fn hold_close_for_jobs(ctx: &egui::Context, holds: bool) -> bool {
     let held = holds && ctx.input(|i| i.viewport().close_requested());
     if held {
@@ -5516,7 +5565,7 @@ mod tests {
                     match top.inner {
                         Some(FromTopPanel::Action(id)) => run.push(id),
                         Some(FromTopPanel::Window(gesture)) => window = Some(gesture),
-                        Some(FromTopPanel::Jobs) | None => {}
+                        Some(FromTopPanel::Jobs | FromTopPanel::NotSaved) | None => {}
                     }
                     let name = tr(&ctx, "panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
@@ -6190,6 +6239,26 @@ mod tests {
         sent: Vec<Command>,
         /// Quit waits for the overwrite question's answer, as `App::quit_held` does.
         quit_held: bool,
+        /// The open photo's edit as Quit finds it.
+        edit: TestEdit,
+    }
+
+    /// The open photo's edit, as `quit_edit` reads the mirror.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum TestEdit {
+        Saved,
+        Writing,
+        Failed(String),
+    }
+
+    impl TestEdit {
+        fn edit(&self) -> alerts::Edit<'_> {
+            match self {
+                TestEdit::Saved => alerts::Edit::Saved,
+                TestEdit::Writing => alerts::Edit::Writing,
+                TestEdit::Failed(why) => alerts::Edit::Failed(why),
+            }
+        }
     }
 
     /// As `App::overwrite_confirmed`: the export is sent, Export Again's if it was waiting,
@@ -6254,7 +6323,8 @@ mod tests {
                         let asking = d.alerts.pending().is_some();
                         let state = with_dialogs(state, asking, d.dialogs.shown());
                         let running = d.jobs.running();
-                        let mut leave = alerts::Leave::new(&mut d.quit, running);
+                        let edit = d.edit.edit();
+                        let mut leave = alerts::Leave::new(&mut d.quit, running, edit);
                         let (shell, dialogs, keeper) = (&mut d.shell, &mut d.dialogs, &d.keeper);
                         let command =
                             run_action(shell, dialogs, keeper, id, &state, &ctx, &[], &mut || {
@@ -6262,8 +6332,9 @@ mod tests {
                             });
                         if leave.ask {
                             let (alerts, quit) = (&mut d.alerts, &mut d.quit);
+                            let dialogs = &mut d.dialogs;
                             d.quit_again |=
-                                alerts::ask_quit(alerts, &mut d.dialogs, quit, running, &ctx);
+                                alerts::ask_quit(alerts, dialogs, quit, running, edit, &ctx);
                         }
                         if std::mem::take(&mut d.shell.export_again) {
                             export_again(d, &ctx);
@@ -6280,13 +6351,15 @@ mod tests {
                                 d.stopped.extend(jobs);
                                 d.quit_again = true;
                             }
+                            alerts::Then::RetrySave => d.sent.push(Command::RetrySave),
                         }
                     }
                     if d.quit_held && d.alerts.pending() != Some(alerts::Purpose::Overwrite) {
                         d.quit_held = false;
                         run(d, ActionId::QUIT);
                     }
-                    let jobs_hold = hold_close_for_jobs(&ctx, d.quit.holds_close(d.jobs.running()));
+                    let holds = d.quit.holds_close(d.jobs.running(), d.edit.edit());
+                    let jobs_hold = hold_close_for_jobs(&ctx, holds);
                     let asking = d.alerts.pending().is_some();
                     let state =
                         with_dialogs(d.shell.state(&ctx, true, true), asking, d.dialogs.shown());
@@ -6296,7 +6369,9 @@ mod tests {
                         run(d, id);
                     }
                     let finished = d.quit.confirmed() && d.jobs.running().none();
-                    if taken.quit || jobs_hold || std::mem::take(&mut d.quit_again) || finished {
+                    let written = d.quit.waits_for_write() && d.edit != TestEdit::Writing;
+                    let again = std::mem::take(&mut d.quit_again);
+                    if taken.quit || jobs_hold || again || finished || written {
                         run(d, ActionId::QUIT);
                     }
                     d.button = Some(ui.button("Opener").id);
@@ -6319,6 +6394,7 @@ mod tests {
                     again: export_again::Again::default(),
                     sent: Vec::new(),
                     quit_held: false,
+                    edit: TestEdit::Saved,
                 },
             )
     }
@@ -6910,6 +6986,54 @@ mod tests {
         press_action(&mut harness, ActionId::QUIT);
         assert!(closing(&harness));
         assert_eq!(asked_alerts(&host), 0);
+    }
+
+    #[test]
+    fn quit_waits_for_the_edit_s_write_and_leaves_once_it_is_saved() {
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        harness.state_mut().edit = TestEdit::Writing;
+        press_action(&mut harness, ActionId::QUIT);
+        harness.step();
+        assert!(!closing(&harness));
+        assert_eq!(asked_alerts(&host), 0);
+        // Confirmed: Quit runs again by itself, and leaves.
+        harness.state_mut().edit = TestEdit::Saved;
+        harness.step();
+        assert!(closing(&harness));
+        assert_eq!(asked_alerts(&host), 0);
+    }
+
+    #[test]
+    fn quit_after_a_failed_write_asks_with_cancel_the_default_and_quit_anyway() {
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        // The last write is under way, then fails: Quit asks once it knows.
+        harness.state_mut().edit = TestEdit::Writing;
+        press_action(&mut harness, ActionId::QUIT);
+        harness.state_mut().edit = TestEdit::Failed("disk full".to_owned());
+        harness.step();
+        assert!(!closing(&harness));
+        assert_eq!(asked_alerts(&host), 1);
+        let request = host.0.borrow().alerts[0].clone();
+        assert_eq!(request.title, "Quit without your last changes?");
+        assert_eq!(
+            request.message,
+            "Your last changes couldn’t be saved: disk full"
+        );
+        assert_eq!(request.buttons[0].label, "Quit Anyway");
+        assert_eq!((request.default, request.cancel()), (1, Some(1)));
+        // Cancel stays; the next Quit asks again, and Quit Anyway leaves.
+        answer_alert(&host, dialog_host::Answer::Pressed(1));
+        harness.step();
+        assert!(!closing(&harness));
+        press_action(&mut harness, ActionId::QUIT);
+        assert_eq!(asked_alerts(&host), 2);
+        answer_alert(&host, dialog_host::Answer::Pressed(0));
+        harness.step();
+        assert!(closing(&harness));
     }
 
     #[test]

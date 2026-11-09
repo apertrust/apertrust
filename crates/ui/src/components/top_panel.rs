@@ -18,8 +18,10 @@
 //! menu button, ☰, which opens the menus ([`TopPanel::menu_button`], decision 39), then the
 //! mark, a button that opens About, and the common actions, Import, Export, Reset, Undo
 //! and Redo, then after a gap Copy edit and Apply edit; at its end, when the app asks, the
-//! jobs spinner ([`TopPanel::jobs`]), then whether the edit is saved. Each
-//! tooltip carries its action's keys, which the app's actions registry gives.
+//! jobs spinner ([`TopPanel::jobs`]), then the edit's save state ([`SaveState`]), which
+//! shows only when a save goes wrong. Each sits in a slot of its own, as wide as its widest
+//! form at the fold, kept whether it shows anything or not, so neither ever moves anything.
+//! Each tooltip carries its action's keys, which the app's actions registry gives.
 //! As it narrows it gives way one step at a time ([`Fold`]), always keeping empty panel to
 //! move the window by.
 //!
@@ -34,14 +36,15 @@
 //! platforms: the app says whether it is the title bar, how much room the system's
 //! buttons take, whether to draw its own and whether the window is maximised.
 
-use egui::accesskit::HasPopup;
+use egui::accesskit::{HasPopup, Live};
 use egui::{
     Align, FocusDirection, FontId, Id, Key, Layout, Modifiers, Pos2, Rect, Role, Sense, Stroke, Ui,
     UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 
 use super::{IconButton, Jobs, ToolButton, focus_ring, pull_down, report_shortcut};
-use crate::{Icon, popup, theme, tr};
+use crate::i18n::Args;
+use crate::{Icon, popup, theme, tr, translator};
 
 /// What the user did to the top panel this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +74,9 @@ pub enum TopPanelAction {
     /// The jobs spinner ([`TopPanel::jobs`]): the jobs window should open, or come to the
     /// front.
     Jobs,
+    /// The save warning ([`SaveState::Failed`]): why the edit is not saved should show,
+    /// with Try again.
+    NotSaved,
     /// The caption buttons ([`TopPanel::caption_buttons`]): minimise the window.
     Minimise,
     /// Maximise the window, or restore it where it is maximised.
@@ -105,23 +111,28 @@ impl Default for Available {
     }
 }
 
-/// Whether the edit is saved, for the status at the panel's end.
+/// Where saving the edit stands, for the save state at the panel's end (`docs/gui.md`,
+/// The edit, saved). Only a save going wrong shows: nothing while saving works.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SaveState {
-    /// No photo open: no status.
+pub enum SaveState<'a> {
+    /// No edit to save: no photo open, one opening, or one open for viewing only, whose
+    /// caption says so (decision 43).
     #[default]
     None,
+    /// Saving works: nothing shows.
     Saved,
-    Unsaved,
-    /// A photo open for viewing only, whose edit is never saved: a newer Apertrust wrote
-    /// it (decision 43).
-    ViewOnly,
+    /// A write of the open photo's edit still unconfirmed about two seconds after it
+    /// started, as on a slow network folder: "Saving…".
+    Saving,
+    /// The last write failed, for this reason, in the system's words: the warning sign and
+    /// "Not saved", a button, until a write succeeds.
+    Failed(&'a str),
 }
 
 #[derive(Default)]
 pub struct TopPanel<'a> {
     available: Available,
-    saved: SaveState,
+    saved: SaveState<'a>,
     jobs: Option<Jobs<'a>>,
     undo_tip: Option<&'a str>,
     shortcuts: Vec<(TopPanelAction, &'a str)>,
@@ -135,8 +146,8 @@ pub struct TopPanel<'a> {
 const BUTTON: f32 = 30.0;
 /// A caption button's width, as Windows 11's; it is as tall as the panel.
 const CAPTION_BUTTON: f32 = 46.0;
-/// Saved's tick.
-const TICK: f32 = 12.0;
+/// What the folded "Saving…" shows.
+const ELLIPSIS: &str = "…";
 /// The empty panel always left to move the window by, however narrow.
 const EMPTY: f32 = 24.0;
 /// The room beyond its own width a step needs to be undone, so a resize never flickers.
@@ -152,7 +163,7 @@ enum Fold {
     Words,
     /// Every action but Undo and Redo is under ⋯.
     Actions,
-    /// Saved loses its word.
+    /// The save state loses its word.
     Status,
     /// Undo and Redo join ⋯.
     Undo,
@@ -236,7 +247,8 @@ impl<'a> TopPanel<'a> {
     /// Makes the panel the window's title bar: a drag that starts on an empty part of it
     /// reports [`TopPanelAction::MoveWindow`] once it has moved, never on the press, so a
     /// double-click stays one and reports [`TopPanelAction::TitleBarDoubleClick`]. Its
-    /// buttons, the mark among them, take their presses as before; Saved counts as empty.
+    /// buttons, the mark among them, take their presses as before; the status slots count
+    /// as empty but for the save warning and the spinner.
     /// A right-click on an empty part reports [`TopPanelAction::WindowMenu`].
     pub fn title_bar(mut self, on: bool) -> Self {
         self.title_bar = on;
@@ -265,15 +277,19 @@ impl<'a> TopPanel<'a> {
         self
     }
 
-    pub fn saved(mut self, saved: SaveState) -> Self {
+    /// The save state, at the panel's very end. Its slot is kept at its widest at every
+    /// state, so it never moves the fold or the spinner. A press of the save warning comes
+    /// back as [`TopPanelAction::NotSaved`].
+    pub fn saved(mut self, saved: SaveState<'a>) -> Self {
         self.saved = saved;
         self
     }
 
-    /// Draws the jobs spinner before Saved while there are jobs to show, and keeps its live
-    /// region in the tree, empty while there are none. Its press comes back as
-    /// [`TopPanelAction::Jobs`]. The spinner has no words, so it never folds, and it sits
-    /// where Saved's widest leaves it, so a save never moves it. Off by default.
+    /// Draws the jobs spinner before the save state while there are jobs to show, and keeps
+    /// its live region in the tree, empty while there are none. Its press comes back as
+    /// [`TopPanelAction::Jobs`]. Its slot is kept with or without jobs, a group's gap before
+    /// the save state's, so neither moves the other or anything else. The spinner has no
+    /// words, so it never folds. Off by default.
     pub fn jobs(mut self, jobs: Jobs<'a>) -> Self {
         self.jobs = Some(jobs);
         self
@@ -373,19 +389,6 @@ impl<'a> TopPanel<'a> {
             action,
         });
         let tool = |c| tool_button(c, keys(c.action));
-        let status = match self.saved {
-            SaveState::None => None,
-            SaveState::Saved => Some(tr(&ctx, "status-saved")),
-            SaveState::Unsaved => Some(tr(&ctx, "status-unsaved")),
-            SaveState::ViewOnly => Some(tr(&ctx, "status-view-only")),
-        };
-        let word = status.as_ref().map(|status| {
-            ui.painter().layout_no_wrap(
-                status.clone(),
-                FontId::proportional(t.text.small),
-                t.colors.text_secondary,
-            )
-        });
 
         // How far to fold: the first step whose parts leave the empty panel, measured at
         // the current scale and language as egui lays them out, `gap` apart.
@@ -407,39 +410,16 @@ impl<'a> TopPanel<'a> {
             }
             parts.iter().sum::<f32>() + gap * (parts.len() as f32 - 1.0) + spaces
         };
-        // While a photo is open the status is measured at its widest, Saved's tick and word
-        // or Not saved yet, so a save never moves the fold; View only, which never
-        // changes, at its own word.
-        let status_word = |id| {
-            ui.painter()
-                .layout_no_wrap(
-                    tr(&ctx, id),
-                    FontId::proportional(t.text.small),
-                    t.colors.text_secondary,
-                )
-                .size()
-                .x
-        };
-        let widest = match self.saved {
-            SaveState::None => None,
-            SaveState::ViewOnly => Some(status_word("status-view-only")),
-            SaveState::Saved | SaveState::Unsaved => {
-                Some((TICK + gap + status_word("status-saved")).max(status_word("status-unsaved")))
-            }
-        };
-        let status_end = |fold: Fold| match widest {
-            None => 0.0,
-            Some(_) if fold >= Fold::Status => TICK,
-            Some(widest) => widest,
-        };
-        // The jobs spinner, a group's gap before Saved where there is a status. It has no
-        // words, so it is the same at every fold, and its place is the status's widest, so
-        // a save never moves it.
-        let spinner = self.jobs.map_or(0.0, |jobs| jobs.spinner_width());
-        let spinner_end = if spinner > 0.0 && widest.is_some() {
-            spinner + t.spacing.m
+        // The save state's slot, at its widest form at each fold, Saving… or the warning,
+        // whatever it shows, so a save never moves the fold, the spinner or anything else.
+        let saving = SaveSlot::measure(ui);
+        let status_end = |fold: Fold| saving.width(fold >= Fold::Status);
+        // The jobs spinner's slot, a group's gap before the save state's, kept with or
+        // without jobs. It has no words, so it is the same at every fold.
+        let spinner_end = if self.jobs.is_some() {
+            BUTTON + t.spacing.m
         } else {
-            spinner
+            0.0
         };
         let end = |fold: Fold| status_end(fold) + spinner_end;
         let id = response.id.with("fold");
@@ -526,55 +506,28 @@ impl<'a> TopPanel<'a> {
             },
         );
 
-        // At the end: whether the edit is saved.
-        let status_id = response.id.with("status");
-        ui.scope_builder(
+        // At the end: the save state, in its slot, right-aligned.
+        let folded = fold >= Fold::Status;
+        let mut slot = inner;
+        slot.min.x = inner.max.x - status_end(fold);
+        let save = ui.scope_builder(
             UiBuilder::new()
-                .max_rect(inner)
+                .id_salt("save state")
+                .max_rect(slot)
                 .layout(Layout::right_to_left(Align::Center)),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                let word = word.filter(|_| fold < Fold::Status);
-                let saved = self.saved == SaveState::Saved;
-                if let Some(status) = status {
-                    // What the tick's tooltip says.
-                    let tip = status.as_str();
-                    // Where it is drawn: its word and Saved's tick, as many as the fold
-                    // leaves; Not saved yet folded is not drawn.
-                    let mut drawn: Option<Rect> = None;
-                    if let Some(word) = word {
-                        let (r, _) = ui.allocate_exact_size(word.size(), Sense::hover());
-                        ui.painter().galley(r.min, word, t.colors.text_secondary);
-                        drawn = Some(r);
-                    }
-                    if saved {
-                        let (r, response) =
-                            ui.allocate_exact_size(vec2(TICK, TICK), Sense::hover());
-                        Icon::Check.paint(ui.painter(), r, t.colors.text_secondary);
-                        response.on_hover_text(tip);
-                        drawn = Some(drawn.map_or(r, |word| word.union(r)));
-                    }
-                    // Screen readers hear it with its word folded away too, named by the
-                    // status, with the tooltip's words as its value only where they say
-                    // more, so it is never read twice: a status, not a label, whose name
-                    // egui would make its value.
-                    let rect = drawn.unwrap_or_else(|| {
-                        Rect::from_min_size(ui.next_widget_position(), Vec2::ZERO)
-                    });
-                    ui.interact(rect, status_id, Sense::hover())
-                        .widget_info(|| {
-                            let mut info = WidgetInfo::labeled(Role::Status, true, &status);
-                            info.current_text_value = (tip != status).then(|| tip.to_owned());
-                            info
-                        });
-                }
-            },
+            |ui| saving.show(ui, self.saved, folded),
         );
+        if let Some(button) = save.inner
+            && pressed(button)
+        {
+            action = Some(TopPanelAction::NotSaved);
+        }
 
-        // Before Saved: the jobs spinner, at the place Saved's widest leaves it.
+        // Before it: the jobs spinner, in its own slot, a group's gap before.
         if let Some(jobs) = self.jobs {
             let mut room = inner;
-            room.max.x -= status_end(fold) + if widest.is_some() { t.spacing.m } else { 0.0 };
+            room.max.x = slot.min.x - t.spacing.m;
+            room.min.x = room.max.x - BUTTON;
             ui.scope_builder(
                 UiBuilder::new()
                     .id_salt("jobs")
@@ -624,8 +577,151 @@ impl<'a> TopPanel<'a> {
         if self.title_bar {
             action = action.or_else(|| title_bar_gesture(ui, bar, response.id, &controls));
         }
+        // What follows starts under the panel, whatever its last part left.
+        ui.advance_cursor_after_rect(bar);
         action
     }
+}
+
+/// The save state's slot at the panel's end, measured at the current scale and language:
+/// "Saving…" or the save warning, whichever is wider, with its word or, folded, without.
+struct SaveSlot {
+    full: f32,
+    folded: f32,
+}
+
+/// What the save state's live region last heard of, kept in egui's memory.
+#[derive(Clone, Default)]
+struct SaveHeard {
+    /// Why the last write failed, while it is the open photo's.
+    failed: Option<String>,
+    said: String,
+}
+
+impl SaveSlot {
+    fn measure(ui: &Ui) -> SaveSlot {
+        let t = theme(ui.ctx());
+        let word = |text: String| {
+            let font = FontId::proportional(t.text.small);
+            (ui.painter())
+                .layout_no_wrap(text, font, t.colors.text_secondary)
+                .size()
+                .x
+        };
+        let sign = 2.0 * t.spacing.s + Icon::Warning.size();
+        let warning = sign + t.spacing.xs + word(tr(ui.ctx(), "status-not-saved"));
+        SaveSlot {
+            full: word(tr(ui.ctx(), "status-saving")).max(warning),
+            folded: word(ELLIPSIS.to_owned()).max(sign),
+        }
+    }
+
+    fn width(&self, folded: bool) -> f32 {
+        if folded { self.folded } else { self.full }
+    }
+
+    /// Draws `state` at the right of `ui`, its word left out where `folded`, and keeps the
+    /// live region in the tree. Returns the save warning's response, where it shows.
+    fn show(&self, ui: &mut Ui, state: SaveState<'_>, folded: bool) -> Option<egui::Response> {
+        let ctx = ui.ctx().clone();
+        let t = theme(&ctx);
+        let words = translator(&ctx);
+        let font = FontId::proportional(t.text.small);
+        let because = |why: &str| {
+            let mut args = Args::new();
+            args.set("error", why);
+            words.text_with("status-not-saved-reason", Some(&args))
+        };
+        let said = announce(ui, state, &because);
+        let at = ui.next_widget_position();
+        let button = match state {
+            SaveState::None | SaveState::Saved => None,
+            SaveState::Saving => {
+                let name = words.text("status-saving");
+                let shown = if folded {
+                    ELLIPSIS.to_owned()
+                } else {
+                    name.clone()
+                };
+                let galley = (ui.painter()).layout_no_wrap(shown, font, t.colors.text_secondary);
+                let (rect, response) = ui.allocate_exact_size(galley.size(), Sense::hover());
+                ui.painter()
+                    .galley(rect.min, galley, t.colors.text_secondary);
+                response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &name));
+                response.on_hover_text(words.text("status-saving-tip"));
+                None
+            }
+            SaveState::Failed(why) => {
+                let name = words.text("status-not-saved");
+                let galley = (!folded)
+                    .then(|| (ui.painter()).layout_no_wrap(name.clone(), font, t.colors.warning));
+                let sign = Icon::Warning.size();
+                let word = galley.as_ref().map_or(0.0, |g| t.spacing.xs + g.size().x);
+                let width = 2.0 * t.spacing.s + sign + word;
+                let (rect, response) = ui.allocate_exact_size(vec2(width, BUTTON), Sense::click());
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter();
+                    if response.hovered() || response.is_pointer_button_down_on() {
+                        painter.rect_filled(rect, t.shape.radius, t.colors.hover);
+                    }
+                    let icon = Rect::from_min_size(
+                        pos2(rect.left() + t.spacing.s, rect.center().y - sign / 2.0),
+                        Vec2::splat(sign),
+                    );
+                    Icon::Warning.paint(painter, icon, t.colors.warning);
+                    if let Some(galley) = galley {
+                        let at = pos2(
+                            icon.right() + t.spacing.xs,
+                            rect.center().y - galley.size().y / 2.0,
+                        );
+                        painter.galley(at, galley, t.colors.warning);
+                    }
+                    if response.has_focus() {
+                        focus_ring(painter, rect, &t);
+                    }
+                }
+                // Heard as a button named Not saved, the reason its description; its
+                // tooltip says both.
+                response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &name));
+                ctx.accesskit_node_builder(response.id, |node| node.set_description(why));
+                Some(response.on_hover_text(because(why)))
+            }
+        };
+        // An assertive live region that takes no room, saying what `announce` keeps.
+        let live = ui.interact(
+            Rect::from_min_size(at, Vec2::ZERO),
+            ui.scope_id().with("save live region"),
+            Sense::hover(),
+        );
+        live.widget_info(|| WidgetInfo::labeled(Role::Status, true, &said));
+        ctx.accesskit_node_builder(live.id, |node| node.set_live(Live::Assertive));
+        button
+    }
+}
+
+/// What the save state's live region says now: "Not saved: …" with the reason once a write
+/// fails, "Saved" once one succeeds after a failure, kept until the next, so nothing is
+/// heard on every save. A photo left with its write failed is the central panel's to tell.
+fn announce(ui: &Ui, state: SaveState<'_>, because: &dyn Fn(&str) -> String) -> String {
+    let id = ui.scope_id().with("save heard");
+    let mut heard: SaveHeard = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    match state {
+        SaveState::Failed(why) => {
+            if heard.failed.as_deref() != Some(why) {
+                heard.said = because(why);
+                heard.failed = Some(why.to_owned());
+            }
+        }
+        SaveState::Saved | SaveState::Saving => {
+            if heard.failed.take().is_some() {
+                heard.said = tr(ui.ctx(), "status-saved");
+            }
+        }
+        SaveState::None => heard.failed = None,
+    }
+    let said = heard.said.clone();
+    ui.data_mut(|d| d.insert_temp(id, heard));
+    said
 }
 
 /// What a press of the ☰ asks for.

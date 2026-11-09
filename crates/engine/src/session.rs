@@ -183,6 +183,10 @@ pub enum Command {
     },
     /// The whole edit back to nothing.
     Reset,
+    /// Write the open photo's edit again after its last write failed, as a client's Try
+    /// again does; otherwise nothing. It changes no value and leaves a gesture under way,
+    /// and is reported [`Event::Saved`] or failed as any write is.
+    RetrySave,
     /// Count each frame for the scopes, the totals and these graphs, or, with `None`, as
     /// until a client first asks, count nothing. Asking for what the frame shown was not
     /// counted for counts that frame again, without rendering.
@@ -1859,6 +1863,16 @@ impl Engine {
                 })?;
                 (changed, false)
             }
+            Command::RetrySave => {
+                // Only an edit whose last write failed is written again.
+                let failed =
+                    (self.open.as_ref()).is_some_and(|open| self.writer.failed(&open.sidecar));
+                return Ok(Effect {
+                    render: false,
+                    save: failed,
+                    cancelled: false,
+                });
+            }
             Command::Reset => {
                 let changed = self.change(|edit, _, _, _| {
                     *edit = Edit::default();
@@ -2333,7 +2347,7 @@ impl Open {
                     });
                 }
             }
-            Command::CancelGesture { .. } => {}
+            Command::CancelGesture { .. } | Command::RetrySave => {}
             _ => self.gesture = None,
         }
     }
@@ -5667,6 +5681,42 @@ mod tests {
         );
         std::fs::remove_dir_all(folder.parent().unwrap()).unwrap();
         remove(&scratch("missing-other"));
+    }
+
+    /// Try again (`RetrySave`) writes the edit again after a failed write, and nothing
+    /// otherwise; a gesture under way goes on.
+    #[test]
+    fn retry_save_writes_again_only_after_a_failed_write() {
+        let folder = scratch("retry").with_file_name("not yet");
+        let path = folder.join("synthetic.ARW");
+        let sidecar = sidecar::path_for(&path);
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        driven.run([set("brightness", ControlValue::Number(0.4), true)]);
+        assert!(matches!(
+            &driven.writes()[..],
+            [Event::Failed(SessionError::Save { .. })]
+        ));
+        // Still failing, it fails again; once the folder exists, it is written.
+        driven.run([Command::RetrySave]);
+        assert!(matches!(
+            &driven.writes()[..],
+            [Event::Failed(SessionError::Save { .. })]
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        driven.run([Command::RetrySave]);
+        let through = driven.engine.applied;
+        assert!(
+            matches!(&driven.writes()[..], [Event::Saved { path, through: t }] if *path == sidecar && *t == through)
+        );
+        // Written, it writes nothing more, and leaves a gesture under way.
+        driven.run([
+            set("brightness", ControlValue::Number(0.6), false),
+            Command::RetrySave,
+        ]);
+        assert!(driven.writes().is_empty());
+        assert!(driven.engine.open.as_ref().unwrap().gesture.is_some());
+        std::fs::remove_dir_all(folder.parent().unwrap()).unwrap();
     }
 
     /// What the writer tests write: the writer writes whatever it is given.

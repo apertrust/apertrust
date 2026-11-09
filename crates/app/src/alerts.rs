@@ -15,14 +15,17 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
-//! alerts, asked through the dialog host and answered on a later frame. Two so far:
+//! alerts, asked through the dialog host and answered on a later frame. Three so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
 //!   replaces files, as darktable does, from the Export dialog's own sheet.
 //! - **The quit alert** ([`Purpose::Quit`]): Quit or Close Window while a job the user
-//!   started runs. The decision is [`Guard`], a small machine the tests drive: it asks
-//!   once, lets the app leave when nothing runs, and after a yes waits for the jobs that
-//!   cannot be stopped.
+//!   started runs, or after the edit's last write failed. The decision is [`Guard`], a
+//!   small machine the tests drive: it waits for a write of the edit under way, asks once,
+//!   lets the app leave when nothing runs and the edit is saved, and after a yes waits for
+//!   the jobs that cannot be stopped.
+//! - **Why the edit is not saved** ([`Purpose::Save`]): the top panel's save warning
+//!   pressed, with Try Again.
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
@@ -42,9 +45,23 @@ use crate::jobs::{Mirror, Running};
 pub enum Purpose {
     /// Export would replace files already there: yes sends the export.
     Overwrite,
-    /// A job the user started runs: yes stops those that can be stopped and quits once
-    /// the others have finished.
+    /// A job the user started runs, or the edit's last write failed: yes stops the jobs
+    /// that can be stopped and quits once the others have finished.
     Quit,
+    /// The edit's last write failed: yes writes it again.
+    Save,
+}
+
+/// The open photo's edit as Quit finds it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Edit<'a> {
+    /// On disk, or nothing to save.
+    #[default]
+    Saved,
+    /// A write the session was handed is not yet confirmed: Quit waits for it.
+    Writing,
+    /// The last write failed, for this reason: Quit asks.
+    Failed(&'a str),
 }
 
 /// The alert asked and not yet answered, if one.
@@ -156,13 +173,40 @@ impl Overwrite {
 }
 
 /// "Quit while a job is running?": its message says what a yes does to the `running` jobs.
-pub fn quit_request(ctx: &egui::Context, running: Running) -> Request {
+/// Where the edit's last write failed, "Quit without your last changes?", saying why, then
+/// what a yes does to any jobs running, with Quit Anyway and Cancel, the default.
+pub fn quit_request(ctx: &egui::Context, running: Running, edit: Edit<'_>) -> Request {
+    let words = translator(ctx);
     let mut args = Args::new();
     args.set("stoppable", running.stoppable as f64);
     args.set("waiting", running.waiting as f64);
-    let message = translator(ctx).text_with("alert-quit-message", Some(&args));
-    Request::new(tr(ctx, "alert-quit-title"), message)
-        .button(tr(ctx, "alert-quit-button"), Role::Destructive)
+    let jobs = words.text_with("alert-quit-message", Some(&args));
+    let Edit::Failed(why) = edit else {
+        return Request::new(tr(ctx, "alert-quit-title"), jobs)
+            .button(tr(ctx, "alert-quit-button"), Role::Destructive)
+            .button(tr(ctx, "alert-cancel"), Role::Cancel);
+    };
+    let mut args = Args::new();
+    args.set("error", why);
+    let mut message = words.text_with("alert-quit-save-message", Some(&args));
+    if !running.none() {
+        message = format!("{message}\n\n{jobs}");
+    }
+    Request::new(tr(ctx, "alert-quit-save-title"), message)
+        .button(tr(ctx, "alert-quit-anyway"), Role::Destructive)
+        .button(tr(ctx, "alert-cancel"), Role::Cancel)
+        .default_button(1)
+}
+
+/// "The edit isn't saved": why the write of the edit of the photo named `name` failed,
+/// with Try Again, the default, and Cancel.
+pub fn save_request(ctx: &egui::Context, name: &str, why: &str) -> Request {
+    let mut args = Args::new();
+    args.set("name", name);
+    args.set("error", why);
+    let message = translator(ctx).text_with("alert-save-message", Some(&args));
+    Request::new(tr(ctx, "alert-save-title"), message)
+        .button(tr(ctx, "alert-save-button"), Role::Default)
         .button(tr(ctx, "alert-cancel"), Role::Cancel)
 }
 
@@ -172,22 +216,24 @@ pub fn quit_request(ctx: &egui::Context, running: Running) -> Request {
 pub struct Leave<'a> {
     guard: &'a mut Guard,
     running: Running,
+    edit: Edit<'a>,
     /// The quit alert is to be asked.
     pub ask: bool,
 }
 
 impl<'a> Leave<'a> {
-    pub fn new(guard: &'a mut Guard, running: Running) -> Leave<'a> {
+    pub fn new(guard: &'a mut Guard, running: Running, edit: Edit<'a>) -> Leave<'a> {
         Leave {
             guard,
             running,
+            edit,
             ask: false,
         }
     }
 
     /// Whether the app leaves now ([`Guard::attempt`]).
     pub fn may(&mut self) -> bool {
-        match self.guard.attempt(self.running) {
+        match self.guard.attempt(self.running, self.edit) {
             Attempt::Leave => true,
             Attempt::Hold => false,
             Attempt::Ask => {
@@ -198,7 +244,8 @@ impl<'a> Leave<'a> {
     }
 }
 
-/// Asks the quit alert for the `running` jobs. Returns whether to quit again at once:
+/// Asks the quit alert for the `running` jobs and the `edit`. Returns whether to quit again
+/// at once:
 /// - where the platform shows no alert, quitting asks nothing from now on, as it did before
 ///   the alerts;
 /// - where showing it failed, this one Quit leaves, and the next asks again;
@@ -208,9 +255,10 @@ pub fn ask_quit(
     dialogs: &mut AppDialogs,
     guard: &mut Guard,
     running: Running,
+    edit: Edit<'_>,
     ctx: &egui::Context,
 ) -> bool {
-    let request = quit_request(ctx, running);
+    let request = quit_request(ctx, running, edit);
     match alerts.ask(dialogs, Purpose::Quit, &request, ctx) {
         Ask::Shown => false,
         Ask::Busy => {
@@ -237,6 +285,8 @@ pub enum Then {
     Export,
     /// Stop these jobs, and go on quitting: the app leaves once none runs.
     Stop(Vec<JobId>),
+    /// Write the edit again.
+    RetrySave,
 }
 
 /// The decision an answer makes: only a yes (the first button, the default) does anything.
@@ -255,6 +305,8 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
                 Then::Nothing
             }
         }
+        Purpose::Save if confirmed => Then::RetrySave,
+        Purpose::Save => Then::Nothing,
     }
 }
 
@@ -263,6 +315,8 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
 enum Phase {
     #[default]
     Idle,
+    /// Quit waits for a write of the edit under way, to know whether it failed.
+    Writing,
     /// The alert is up.
     Asking,
     /// The person said yes: the jobs that can be stopped are cancelled, and the app leaves
@@ -292,10 +346,11 @@ pub struct Guard {
 }
 
 impl Guard {
-    /// Quit, or Close Window on the main window, once no dialog is open: with nothing
-    /// running the app leaves; with a job running it asks, once; after a yes it waits for
-    /// the jobs to end; while the alert is up it waits for the answer.
-    pub fn attempt(&mut self, running: Running) -> Attempt {
+    /// Quit, or Close Window on the main window, once no dialog is open: while a write of
+    /// the edit is under way it waits for it; then with nothing running and the edit saved
+    /// the app leaves; with a job running or the last write failed it asks, once; after a
+    /// yes it waits for the jobs to end; while the alert is up it waits for the answer.
+    pub fn attempt(&mut self, running: Running, edit: Edit<'_>) -> Attempt {
         match self.phase {
             Phase::Skipped => Attempt::Leave,
             Phase::LeaveOnce => {
@@ -305,12 +360,25 @@ impl Guard {
             Phase::Asking => Attempt::Hold,
             Phase::Confirmed if running.none() => Attempt::Leave,
             Phase::Confirmed => Attempt::Hold,
-            Phase::Idle if running.none() => Attempt::Leave,
-            Phase::Idle => {
+            Phase::Idle | Phase::Writing if edit == Edit::Writing => {
+                self.phase = Phase::Writing;
+                Attempt::Hold
+            }
+            Phase::Idle | Phase::Writing if running.none() && edit == Edit::Saved => {
+                self.phase = Phase::Idle;
+                Attempt::Leave
+            }
+            Phase::Idle | Phase::Writing => {
                 self.phase = Phase::Asking;
                 Attempt::Ask
             }
         }
+    }
+
+    /// Whether Quit waits for a write of the edit: once it is confirmed or has failed,
+    /// Quit is to run again.
+    pub fn waits_for_write(&self) -> bool {
+        self.phase == Phase::Writing
     }
 
     /// The alert's answer: yes keeps quitting, waiting for the jobs; anything else drops
@@ -346,9 +414,10 @@ impl Guard {
     }
 
     /// Whether the main window's close button is held, for Quit to decide: while a job
-    /// runs, unless the platform shows no alert.
-    pub fn holds_close(&self, running: Running) -> bool {
-        !matches!(self.phase, Phase::Skipped | Phase::LeaveOnce) && !running.none()
+    /// runs or the edit is not on disk, unless the platform shows no alert.
+    pub fn holds_close(&self, running: Running, edit: Edit<'_>) -> bool {
+        !matches!(self.phase, Phase::Skipped | Phase::LeaveOnce)
+            && (!running.none() || edit != Edit::Saved)
     }
 }
 
@@ -370,63 +439,64 @@ mod tests {
         stoppable: 0,
         waiting: 1,
     };
+    const SAVED: Edit<'static> = Edit::Saved;
 
     #[test]
     fn quitting_with_nothing_running_asks_nothing() {
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(NONE), Attempt::Leave);
-        assert!(!guard.holds_close(NONE));
+        assert_eq!(guard.attempt(NONE, SAVED), Attempt::Leave);
+        assert!(!guard.holds_close(NONE, SAVED));
     }
 
     #[test]
     fn quitting_with_a_job_running_asks_once_and_waits_for_the_answer() {
         let mut guard = Guard::default();
-        assert!(guard.holds_close(EXPORT));
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert!(guard.holds_close(EXPORT, SAVED));
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
         // Quit again, or the window's close, while the alert is up: no second alert.
-        assert_eq!(guard.attempt(EXPORT), Attempt::Hold);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Hold);
         // Even if the job ends meanwhile, the alert is the person's to answer.
-        assert_eq!(guard.attempt(NONE), Attempt::Hold);
+        assert_eq!(guard.attempt(NONE, SAVED), Attempt::Hold);
     }
 
     #[test]
     fn cancelling_the_alert_stays_and_the_next_quit_asks_again() {
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
         guard.answered(false);
         assert!(!guard.confirmed());
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
     }
 
     #[test]
     fn confirming_waits_for_the_jobs_that_cannot_stop_and_then_leaves() {
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
         guard.answered(true);
         assert!(guard.confirmed());
         // The export was cancelled and has not ended yet; a job that cannot stop runs.
-        assert_eq!(guard.attempt(STUCK), Attempt::Hold);
-        assert_eq!(guard.attempt(EXPORT), Attempt::Hold);
-        assert_eq!(guard.attempt(NONE), Attempt::Leave);
+        assert_eq!(guard.attempt(STUCK, SAVED), Attempt::Hold);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Hold);
+        assert_eq!(guard.attempt(NONE, SAVED), Attempt::Leave);
     }
 
     #[test]
     fn when_the_alert_cannot_be_shown_one_quit_leaves_and_the_next_asks_again() {
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
         guard.leave_once();
-        assert!(!guard.holds_close(EXPORT));
-        assert_eq!(guard.attempt(EXPORT), Attempt::Leave);
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert!(!guard.holds_close(EXPORT, SAVED));
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Leave);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
     }
 
     #[test]
     fn where_the_platform_shows_no_alert_quitting_leaves_as_before() {
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(EXPORT), Attempt::Ask);
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Ask);
         guard.skip();
-        assert_eq!(guard.attempt(EXPORT), Attempt::Leave);
-        assert!(!guard.holds_close(EXPORT));
+        assert_eq!(guard.attempt(EXPORT, SAVED), Attempt::Leave);
+        assert!(!guard.holds_close(EXPORT, SAVED));
     }
 
     fn context(locale: Locale) -> egui::Context {
@@ -462,7 +532,7 @@ mod tests {
         let held = overwrite_request(&context(Locale::EnGb), true);
         assert_eq!((held.buttons.len(), held.default), (2, 1));
         assert_eq!(request.suppression.as_deref(), Some("Don’t ask again"));
-        let quit = quit_request(&context(Locale::EnGb), EXPORT);
+        let quit = quit_request(&context(Locale::EnGb), EXPORT, SAVED);
         assert_eq!(quit.suppression, None);
         let suppression = |locale| overwrite_request(&context(locale), false).suppression;
         assert_eq!(suppression(Locale::Uk).as_deref(), Some("Більше не питати"));
@@ -525,33 +595,33 @@ mod tests {
     fn a_yes_to_the_quit_alert_stops_the_jobs_that_can_be_stopped_and_a_no_stops_none() {
         let (mirror, job) = exporting();
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(mirror.running()), Attempt::Ask);
+        assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
         let stop = then(Purpose::Quit, Answer::Pressed(0), &mut guard, &mirror);
         assert_eq!(stop, Then::Stop(vec![job]));
         assert!(guard.confirmed());
 
         let mut guard = Guard::default();
-        assert_eq!(guard.attempt(mirror.running()), Attempt::Ask);
+        assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
         for answer in [Answer::Pressed(1), Answer::Dismissed] {
             let nothing = then(Purpose::Quit, answer, &mut guard, &mirror);
             assert_eq!(nothing, Then::Nothing);
             assert!(!guard.confirmed());
             // Back to asking: the next Quit asks again.
-            assert_eq!(guard.attempt(mirror.running()), Attempt::Ask);
+            assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
         }
     }
 
     #[test]
     fn leaving_asks_through_the_alert_only_once_and_says_so() {
         let mut guard = Guard::default();
-        let mut leave = Leave::new(&mut guard, EXPORT);
+        let mut leave = Leave::new(&mut guard, EXPORT, SAVED);
         assert!(!leave.may());
         assert!(leave.ask);
-        let mut leave = Leave::new(&mut guard, EXPORT);
+        let mut leave = Leave::new(&mut guard, EXPORT, SAVED);
         assert!(!leave.may());
         assert!(!leave.ask, "the alert is up");
         let mut guard = Guard::default();
-        let mut leave = Leave::new(&mut guard, NONE);
+        let mut leave = Leave::new(&mut guard, NONE, SAVED);
         assert!(leave.may());
         assert!(!leave.ask);
     }
@@ -559,7 +629,8 @@ mod tests {
     #[test]
     fn the_quit_message_says_what_a_yes_does_to_the_jobs_running() {
         let ctx = context(Locale::EnGb);
-        let message = |stoppable, waiting| quit_request(&ctx, Running { stoppable, waiting });
+        let message =
+            |stoppable, waiting| quit_request(&ctx, Running { stoppable, waiting }, SAVED);
         let stops = message(2, 0);
         assert_eq!(stops.title, "Quit while a job is running?");
         assert!(
@@ -583,5 +654,84 @@ mod tests {
         assert_eq!(waits.buttons[0].label, "Quit");
         assert_eq!(waits.buttons[0].role, Role::Destructive);
         assert_eq!(waits.buttons[1].role, Role::Cancel);
+    }
+
+    #[test]
+    fn quitting_waits_for_a_write_under_way_and_leaves_once_it_is_saved() {
+        let mut guard = Guard::default();
+        assert!(guard.holds_close(NONE, Edit::Writing));
+        assert_eq!(guard.attempt(NONE, Edit::Writing), Attempt::Hold);
+        assert!(guard.waits_for_write());
+        assert_eq!(guard.attempt(NONE, Edit::Writing), Attempt::Hold);
+        // Written: Quit runs again and leaves.
+        assert_eq!(guard.attempt(NONE, SAVED), Attempt::Leave);
+        assert!(!guard.waits_for_write());
+    }
+
+    #[test]
+    fn quitting_after_a_failed_write_asks_and_a_yes_leaves() {
+        let mut guard = Guard::default();
+        let failed = Edit::Failed("disk full");
+        assert!(guard.holds_close(NONE, failed));
+        // The write under way fails: Quit asks.
+        assert_eq!(guard.attempt(NONE, Edit::Writing), Attempt::Hold);
+        assert_eq!(guard.attempt(NONE, failed), Attempt::Ask);
+        assert_eq!(guard.attempt(NONE, failed), Attempt::Hold);
+        // Cancel stays, and the next Quit asks again; Quit Anyway leaves.
+        guard.answered(false);
+        assert_eq!(guard.attempt(NONE, failed), Attempt::Ask);
+        guard.answered(true);
+        assert_eq!(guard.attempt(NONE, failed), Attempt::Leave);
+    }
+
+    #[test]
+    fn the_quit_alert_says_why_the_last_changes_were_not_saved_cancel_the_default() {
+        for locale in Locale::ALL {
+            let ctx = context(locale);
+            let words = apertrust_ui::Translator::new(locale);
+            let request = quit_request(&ctx, NONE, Edit::Failed("disk full"));
+            let mut args = Args::new();
+            args.set("error", "disk full");
+            let said = words.text_with("alert-quit-save-message", Some(&args));
+            assert_eq!(request.title, words.text("alert-quit-save-title"));
+            assert_eq!(request.message, said, "{locale:?}");
+            assert_eq!(request.check(), Ok(()));
+            let buttons: Vec<_> = request.buttons.iter().map(|b| b.role).collect();
+            assert_eq!(buttons, [Role::Destructive, Role::Cancel]);
+            assert_eq!(request.buttons[0].label, words.text("alert-quit-anyway"));
+            // Cancel is the default, which Return presses, and Escape's too.
+            assert_eq!((request.default, request.cancel()), (1, Some(1)));
+            // With a job running too, what a yes does to it follows.
+            let both = quit_request(&ctx, EXPORT, Edit::Failed("disk full"));
+            assert!(both.message.starts_with(&said), "{locale:?}");
+            assert!(both.message.len() > said.len() + 2, "{locale:?}");
+        }
+        let english = quit_request(&context(Locale::EnGb), NONE, Edit::Failed("disk full"));
+        assert_eq!(english.title, "Quit without your last changes?");
+        assert_eq!(
+            english.message,
+            "Your last changes couldn’t be saved: disk full"
+        );
+        assert_eq!(english.buttons[0].label, "Quit Anyway");
+    }
+
+    #[test]
+    fn the_save_warning_s_alert_says_why_and_try_again_writes_again() {
+        let request = save_request(&context(Locale::EnGb), "IMG_2041.ARW", "disk full");
+        assert_eq!(request.title, "The edit isn’t saved");
+        assert_eq!(
+            request.message,
+            "The edit of IMG_2041.ARW couldn’t be written beside it: disk full"
+        );
+        assert_eq!(request.check(), Ok(()));
+        assert_eq!(request.buttons[0].label, "Try Again");
+        assert_eq!((request.default, request.cancel()), (0, Some(1)));
+        let (mirror, _) = exporting();
+        let mut guard = Guard::default();
+        let then = |answer, guard: &mut Guard| then(Purpose::Save, answer, guard, &mirror);
+        assert_eq!(then(Answer::Pressed(0), &mut guard), Then::RetrySave);
+        assert_eq!(then(Answer::Pressed(1), &mut guard), Then::Nothing);
+        assert_eq!(then(Answer::Dismissed, &mut guard), Then::Nothing);
+        assert!(!guard.confirmed());
     }
 }

@@ -42,6 +42,7 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use apertrust_engine::session::{
     ControlState, CoordinateState, Event, ExportPreview, Frame, ModuleState, Photo, PresetState,
@@ -238,6 +239,7 @@ impl Mirror {
                     // The photo's cell and the Edited sort follow its edit at once.
                     self.folder.edited(&photo.path, values.edited);
                     let editable = photo.view_only.is_none();
+                    self.saving.reported(&values);
                     let image = self.photo.image();
                     self.values = reported(values, &mut self.pending, self.modules, &image);
                     self.shown = Shown::Photo { editable };
@@ -267,8 +269,13 @@ impl Mirror {
             Event::Library(_) => {}
             // The session logs a failed save, a module left out and the scopes turned off as
             // they happen; the rest only reach the app.
-            Event::Failed(SessionError::Save { path, source, .. }) => {
-                self.saving.failed(&path, &source.to_string());
+            Event::Failed(SessionError::Save {
+                path,
+                through,
+                source,
+            }) => {
+                self.saving
+                    .write_failed(&path, through, &source.to_string());
             }
             Event::Failed(error) => self.failed(error, &mut reactions),
         }
@@ -300,6 +307,7 @@ impl Mirror {
         );
         // No job the engine ran will report again: they end as failed.
         if matches!(error, SessionError::Panicked(_) | SessionError::Stopped) {
+            self.saving.stopped();
             let show = self.jobs.engine_stopped();
             jobs_reaction(show, reactions);
         }
@@ -455,19 +463,28 @@ impl PhotoState {
     }
 }
 
+/// How long a write of the open photo's edit may go unconfirmed before the top panel says
+/// Saving… (`docs/gui.md`, The edit, saved).
+pub const SAVING_AFTER: Duration = Duration::from_secs(2);
+
 /// Whether the open photo's edit is on disk as it stands, from what the app sent and the
-/// session reported: Saved only once a write includes every change sent, and a failed
-/// write's message kept until one succeeds. Once another photo is asked for, the photo
-/// left is another photo's: its last write's success changes nothing, and its failure is
-/// kept apart ([`Saving::left`]), since that edit is then lost.
+/// session reported, for the top panel's save state: nothing while saving works, Saving…
+/// while a write is unconfirmed [`SAVING_AFTER`] it started, and a failed write's reason
+/// kept until one succeeds. Once another photo is asked for, the photo left is another
+/// photo's: its last write's success changes nothing, and its failure is kept apart
+/// ([`Saving::left`]), since that edit is then lost.
 #[derive(Debug, Default)]
 pub struct Saving {
-    pub state: SaveState,
     /// The open photo's edit file; none while another photo opens.
     sidecar: Option<PathBuf>,
-    /// The numbers of the commands sent that change the edit and that no write includes
-    /// yet; a refused command is taken out ([`Saving::refused`]).
-    unsaved: Vec<u64>,
+    /// Whether the photo open is open for viewing only: its edit is never saved.
+    view_only: bool,
+    /// The commands sent that change the edit and that no write includes yet; a refused
+    /// command is taken out ([`Saving::refused`]), and so is a completed change that
+    /// changed nothing, which no write follows ([`Saving::reported`]).
+    unsaved: Vec<Sent>,
+    /// The session's last values report, which tells a change that changed nothing.
+    report: Option<Values>,
     /// Why the last write of the open photo's edit failed, until one succeeds.
     pub failure: Option<String>,
     /// The edit file of a photo no longer open whose last write failed, and why: that
@@ -476,34 +493,94 @@ pub struct Saving {
     pub left: Option<(PathBuf, String)>,
 }
 
+/// A command sent that changes the edit.
+#[derive(Debug)]
+struct Sent {
+    number: u64,
+    /// When it was sent, where it completes a change, which the session saves at once: a
+    /// write starts with it. A gesture's change waits for the one that ends it.
+    writes: Option<Instant>,
+}
+
 impl Saving {
     /// Another photo is asked for: the open one's reports are now another photo's.
     fn leaving(&mut self) {
         self.unsaved.clear();
-        self.state = SaveState::None;
+        self.report = None;
         self.sidecar = None;
+        self.view_only = false;
         self.failure = None;
         self.left = None;
     }
 
-    /// `photo` opened, for viewing only where `view_only` says so: View only, which no
-    /// change or write follows, in place of Saved.
+    /// `photo` opened, for viewing only where `view_only` says so: then no change or
+    /// write follows, and the save state says nothing.
     fn opened(&mut self, photo: &Path, view_only: bool) {
         self.unsaved.clear();
-        self.state = if view_only {
-            SaveState::ViewOnly
-        } else {
-            SaveState::Saved
-        };
+        self.report = None;
+        self.view_only = view_only;
         self.sidecar = Some(sidecar::path_for(photo));
         self.failure = None;
     }
 
-    pub fn sent(&mut self, number: u64) {
-        self.unsaved.push(number);
-        if self.sidecar.is_some() && self.state != SaveState::ViewOnly {
-            self.state = SaveState::Unsaved;
+    /// What the top panel's save state shows at `now`.
+    pub fn state(&self, now: Instant) -> SaveState<'_> {
+        if self.sidecar.is_none() || self.view_only {
+            return SaveState::None;
         }
+        if let Some(why) = &self.failure {
+            return SaveState::Failed(why);
+        }
+        match self.saving_from() {
+            Some(from) if from <= now => SaveState::Saving,
+            _ => SaveState::Saved,
+        }
+    }
+
+    /// When Saving… is to show, while it is still to come: the app asks for a repaint
+    /// then.
+    pub fn saving_from(&self) -> Option<Instant> {
+        let started = self.unsaved.iter().filter_map(|sent| sent.writes).min()?;
+        (self.failure.is_none()).then_some(started + SAVING_AFTER)
+    }
+
+    /// Whether a write the session was handed for the open photo is still unconfirmed:
+    /// Quit waits for it, to know whether it failed.
+    pub fn writing(&self) -> bool {
+        self.unsaved.iter().any(|sent| sent.writes.is_some())
+    }
+
+    /// Why the last write failed, the open photo's or, else, that of the photo left.
+    pub fn failed(&self) -> Option<&str> {
+        (self.failure.as_deref()).or(self.left.as_ref().map(|(_, why)| why.as_str()))
+    }
+
+    /// The command numbered `number`, which changes the edit, was sent at `now`;
+    /// `completes` where it completes a change, which the session saves at once.
+    pub fn sent(&mut self, number: u64, completes: bool, now: Instant) {
+        if self.sidecar.is_some() && !self.view_only {
+            let writes = completes.then_some(now);
+            self.unsaved.push(Sent { number, writes });
+        }
+    }
+
+    /// The session reported the open photo's values, `values`. Where the commands it adds
+    /// changed nothing, the session hands over no write for them, unless a change before
+    /// them is still to write (a gesture's, written with the change that completes it):
+    /// no write is waited for them.
+    fn reported(&mut self, values: &Values) {
+        let before = self.report.as_ref().map_or(0, |report| report.through);
+        let same = self.report.as_ref().is_some_and(|report| {
+            (report.modules == values.modules)
+                && (report.settings == values.settings)
+                && (report.edited, report.extent) == (values.edited, values.extent)
+        });
+        let earlier = self.unsaved.iter().rfind(|sent| sent.number <= before);
+        if same && earlier.is_none_or(|sent| sent.writes.is_some()) {
+            let added = |sent: &Sent| sent.number > before && sent.number <= values.through;
+            self.unsaved.retain(|sent| !added(sent));
+        }
+        self.report = Some(values.clone());
     }
 
     fn saved(&mut self, path: &Path, through: u64) {
@@ -514,28 +591,27 @@ impl Saving {
             return;
         }
         self.failure = None;
-        self.unsaved.retain(|&number| number > through);
-        if self.unsaved.is_empty() {
-            self.state = SaveState::Saved;
-        }
+        self.unsaved.retain(|sent| sent.number > through);
     }
 
     /// The command numbered `number` was refused: it changed nothing, so no write follows
-    /// it. Saved again if it was the last the edit waited for, and no failed write is
-    /// still to be told.
+    /// it.
     fn refused(&mut self, number: u64) {
-        self.unsaved.retain(|&sent| sent != number);
-        if self.unsaved.is_empty() && self.failure.is_none() && self.state == SaveState::Unsaved {
-            self.state = SaveState::Saved;
-        }
+        self.unsaved.retain(|sent| sent.number != number);
     }
 
-    fn failed(&mut self, path: &Path, why: &str) {
+    /// The engine has ended: nothing sent will be written or reported.
+    fn stopped(&mut self) {
+        self.unsaved.clear();
+    }
+
+    fn write_failed(&mut self, path: &Path, through: u64, why: &str) {
         if self.sidecar.as_deref() != Some(path) {
             self.left = Some((path.to_owned(), why.to_owned()));
             return;
         }
-        self.state = SaveState::Unsaved;
+        // The write tried is over; a later change, or Try again, writes again.
+        self.unsaved.retain(|sent| sent.number > through);
         self.failure = Some(why.to_owned());
     }
 }
@@ -577,77 +653,164 @@ pub(crate) mod tests {
     use super::*;
     use apertrust_engine::session::{ControlValue, Mark};
 
+    /// The save state at `t` plus `seconds`.
+    fn at(saving: &Saving, t: Instant, seconds: f32) -> SaveState<'_> {
+        saving.state(t + Duration::from_secs_f32(seconds))
+    }
+
     #[test]
-    fn saved_shows_only_once_a_write_includes_every_change_sent() {
+    fn nothing_shows_at_rest_and_saving_only_once_a_write_is_two_seconds_unconfirmed() {
         let (photo, other) = (Path::new("/photos/a.ARW"), Path::new("/photos/b.ARW"));
         let (edit, other_edit) = (sidecar::path_for(photo), sidecar::path_for(other));
+        let t = Instant::now();
         let mut saving = Saving::default();
-        assert_eq!(saving.state, SaveState::None);
+        assert_eq!(at(&saving, t, 0.0), SaveState::None);
         saving.opened(photo, false);
-        assert_eq!(saving.state, SaveState::Saved);
-        // Commands 3 and 5 change the edit; the write of command 3 arrives late.
-        saving.sent(3);
-        saving.sent(5);
-        assert_eq!(saving.state, SaveState::Unsaved);
+        assert_eq!(at(&saving, t, 9.0), SaveState::Saved);
+        // A drag's changes start no write: nothing shows, however long it lasts.
+        saving.sent(2, false, t);
+        assert_eq!(
+            (at(&saving, t, 9.0), saving.writing()),
+            (SaveState::Saved, false)
+        );
+        assert_eq!(saving.saving_from(), None);
+        // Its end, and a change after it, start writes; the first is confirmed late.
+        saving.sent(3, true, t);
+        saving.sent(5, true, t + Duration::from_secs(1));
+        assert!(saving.writing());
+        assert_eq!(saving.saving_from(), Some(t + SAVING_AFTER));
+        assert_eq!(at(&saving, t, 1.9), SaveState::Saved);
+        assert_eq!(at(&saving, t, 2.0), SaveState::Saving);
+        // Command 3's write: command 5's is still unconfirmed, since t + 1 s.
         saving.saved(&edit, 3);
-        assert_eq!(saving.state, SaveState::Unsaved);
+        assert_eq!(at(&saving, t, 2.5), SaveState::Saved);
+        assert_eq!(at(&saving, t, 3.0), SaveState::Saving);
         // Another photo's write changes nothing, nor does its failure the open photo's.
         saving.saved(&other_edit, 9);
-        saving.failed(&other_edit, "disk full");
-        assert_eq!((saving.state, &saving.failure), (SaveState::Unsaved, &None));
-        saving.failed(&edit, "disk full");
-        assert_eq!(saving.failure.as_deref(), Some("disk full"));
+        saving.write_failed(&other_edit, 9, "disk full");
+        assert_eq!(at(&saving, t, 3.0), SaveState::Saving);
         saving.saved(&edit, 5);
-        assert_eq!((saving.state, &saving.failure), (SaveState::Saved, &None));
+        assert_eq!(
+            (at(&saving, t, 9.0), saving.writing()),
+            (SaveState::Saved, false)
+        );
         // The old photo's last write, after the next one opens, changes nothing either.
         saving.leaving();
         saving.opened(other, false);
-        saving.sent(7);
+        saving.sent(7, true, t);
         saving.saved(&edit, 7);
-        assert_eq!(saving.state, SaveState::Unsaved);
+        assert_eq!(at(&saving, t, 9.0), SaveState::Saving);
+    }
+
+    #[test]
+    fn a_failed_write_shows_until_a_later_one_succeeds() {
+        let photo = Path::new("/photos/a.ARW");
+        let edit = sidecar::path_for(photo);
+        let t = Instant::now();
+        let mut saving = Saving::default();
+        saving.opened(photo, false);
+        saving.sent(3, true, t);
+        saving.write_failed(&edit, 3, "disk full");
+        // The write is over: Quit waits for nothing, and Saving… never shows over it.
+        assert_eq!(at(&saving, t, 0.0), SaveState::Failed("disk full"));
+        assert!(!saving.writing());
+        assert_eq!(saving.failed(), Some("disk full"));
+        // A later change's write: the warning stays until it succeeds, with no Saving….
+        saving.sent(4, true, t);
+        assert_eq!(saving.saving_from(), None);
+        assert_eq!(at(&saving, t, 9.0), SaveState::Failed("disk full"));
+        saving.saved(&edit, 4);
+        assert_eq!(at(&saving, t, 9.0), SaveState::Saved);
+        assert_eq!(saving.failed(), None);
     }
 
     #[test]
     fn a_failed_last_write_of_the_photo_left_is_kept_over_the_next_one() {
         let (a, b) = (Path::new("/photos/a.ARW"), Path::new("/photos/b.ARW"));
+        let t = Instant::now();
         let mut saving = Saving::default();
         saving.opened(a, false);
-        saving.sent(3);
+        saving.sent(3, true, t);
         // B is asked for, and A's last write fails before B opens: kept as A's, not
         // cleared as B opens, and B's own state is untouched.
         saving.leaving();
-        saving.failed(&sidecar::path_for(a), "disk full");
+        saving.write_failed(&sidecar::path_for(a), 3, "disk full");
         saving.opened(b, false);
         let left = (sidecar::path_for(a), "disk full".to_owned());
         assert_eq!(saving.left.as_ref(), Some(&left));
-        assert_eq!((saving.state, &saving.failure), (SaveState::Saved, &None));
+        assert_eq!(
+            (at(&saving, t, 9.0), &saving.failure),
+            (SaveState::Saved, &None)
+        );
+        // Quit asks about it all the same.
+        assert_eq!(saving.failed(), Some("disk full"));
         // Or after B opens.
         saving.left = None;
-        saving.failed(&sidecar::path_for(a), "disk full");
+        saving.write_failed(&sidecar::path_for(a), 3, "disk full");
         assert_eq!(saving.left.as_ref(), Some(&left));
         // A later write of that file, or another photo asked for, puts it away.
         saving.saved(&sidecar::path_for(b), 9);
         assert!(saving.left.is_some());
         saving.saved(&sidecar::path_for(a), 9);
         assert!(saving.left.is_none());
-        saving.failed(&sidecar::path_for(a), "disk full");
+        saving.write_failed(&sidecar::path_for(a), 3, "disk full");
         saving.leaving();
         assert!(saving.left.is_none());
     }
 
     #[test]
-    fn a_photo_open_for_viewing_only_shows_view_only_where_saved_sits() {
+    fn a_photo_open_for_viewing_only_shows_nothing() {
         let photo = Path::new("/photos/a.ARW");
+        let t = Instant::now();
         let mut saving = Saving::default();
         saving.opened(photo, true);
-        assert_eq!(saving.state, SaveState::ViewOnly);
-        // Nothing it could be sent turns it into Not saved yet.
-        saving.sent(3);
-        assert_eq!(saving.state, SaveState::ViewOnly);
-        // The next photo, editable, is Saved again.
+        assert_eq!(at(&saving, t, 9.0), SaveState::None);
+        // Nothing it could be sent is waited for.
+        saving.sent(3, true, t);
+        assert_eq!(
+            (at(&saving, t, 9.0), saving.writing()),
+            (SaveState::None, false)
+        );
+        // The next photo, editable, is saved.
         saving.leaving();
         saving.opened(Path::new("/photos/b.ARW"), false);
-        assert_eq!(saving.state, SaveState::Saved);
+        assert_eq!(at(&saving, t, 9.0), SaveState::Saved);
+    }
+
+    #[test]
+    fn a_completed_change_that_changed_nothing_waits_for_no_write() {
+        let photo = Path::new("/photos/a.ARW");
+        let edit = sidecar::path_for(photo);
+        let t = Instant::now();
+        let mut saving = Saving::default();
+        saving.opened(photo, false);
+        saving.reported(&report(0.5, 1));
+        // A reset of what is already at its default: the values stay as they were.
+        saving.sent(2, true, t);
+        saving.reported(&report(0.5, 2));
+        assert!(!saving.writing());
+        assert_eq!(at(&saving, t, 9.0), SaveState::Saved);
+        // A drag's last value, done, the same as the one before it: the drag's change is
+        // still to write, and is written with it.
+        saving.sent(3, false, t);
+        saving.reported(&report(0.8, 3));
+        saving.sent(4, true, t);
+        saving.reported(&report(0.8, 4));
+        assert!(saving.writing());
+        saving.saved(&edit, 4);
+        assert!(!saving.writing());
+        // A write under way, then a change that changes nothing: only the write is
+        // waited for.
+        saving.sent(5, true, t);
+        saving.reported(&report(1.0, 5));
+        saving.sent(6, true, t);
+        saving.reported(&report(1.0, 6));
+        saving.saved(&edit, 5);
+        assert!(!saving.writing());
+        // The engine ending, nothing is waited for.
+        saving.sent(7, true, t);
+        saving.stopped();
+        assert!(!saving.writing());
     }
 
     #[test]
@@ -848,7 +1011,7 @@ pub(crate) mod tests {
     /// saved until a write includes it.
     fn send(mirror: &mut Mirror, number: u64, value: f32) {
         mirror.pend(number, set_exposure(value));
-        mirror.saving.sent(number);
+        mirror.saving.sent(number, true, Instant::now());
     }
 
     fn refused(command: u64, why: &str) -> Event {
@@ -863,14 +1026,14 @@ pub(crate) mod tests {
         let mut m = mirror();
         let edit = sidecar::path_for(&photo(1).path);
         assert_eq!(m.apply(Event::Opened(photo(1))), []);
-        assert_eq!(m.saving.state, SaveState::Saved);
+        assert!(!m.saving.writing());
         assert_eq!(m.apply(Event::Values(report(0.0, 1))), []);
         // A drag sends commands 2 to 4; each is shown at once.
         for (number, value) in [(2, 0.5), (3, 1.0), (4, 1.5)] {
             send(&mut m, number, value);
         }
         assert_eq!(shown(&m), ControlValue::Number(1.5));
-        assert_eq!(m.saving.state, SaveState::Unsaved);
+        assert!(m.saving.writing());
         // The engine reports command 2 only: the later two still show over it.
         assert_eq!(m.apply(Event::Values(report(0.5, 2))), []);
         assert_eq!(shown(&m), ControlValue::Number(1.5));
@@ -881,12 +1044,12 @@ pub(crate) mod tests {
             through,
         };
         assert_eq!(m.apply(saved(3)), []);
-        assert_eq!(m.saving.state, SaveState::Unsaved);
+        assert!(m.saving.writing());
         assert_eq!(m.apply(Event::Values(report(1.5, 4))), []);
         assert!(m.pending.is_empty());
         assert_eq!(shown(&m), ControlValue::Number(1.5));
         assert_eq!(m.apply(saved(4)), []);
-        assert_eq!(m.saving.state, SaveState::Saved);
+        assert!(!m.saving.writing());
     }
 
     #[test]
@@ -938,21 +1101,21 @@ pub(crate) mod tests {
         assert_eq!(m.failure.as_deref(), Some("the GPU: out of range"));
         assert_eq!(m.pending.len(), 1);
         // Command 2 is still waited for.
-        assert_eq!(m.saving.state, SaveState::Unsaved);
+        assert!(m.saving.writing());
         m.apply(Event::Values(report(1.0, 3)));
         assert_eq!(shown(&m), ControlValue::Number(1.0));
         m.apply(Event::Saved {
             path: edit,
             through: 2,
         });
-        assert_eq!(m.saving.state, SaveState::Saved);
+        assert!(!m.saving.writing());
 
         // A refusal of the only change the edit waited for leaves it saved: no write
         // follows a change that changed nothing.
         send(&mut m, 4, 7.0);
-        assert_eq!(m.saving.state, SaveState::Unsaved);
+        assert!(m.saving.writing());
         m.apply(refused(4, "no"));
-        assert_eq!((m.saving.state, m.pending.len()), (SaveState::Saved, 0));
+        assert_eq!((m.saving.writing(), m.pending.len()), (false, 0));
     }
 
     #[test]
@@ -968,19 +1131,19 @@ pub(crate) mod tests {
             source: std::io::Error::other("disk full"),
         };
         assert_eq!(m.apply(Event::Failed(failed)), []);
-        assert_eq!(m.saving.state, SaveState::Unsaved);
+        assert!(!m.saving.writing());
         let why = m.saving.failure.as_deref();
         assert!(why.is_some_and(|why| why.contains("disk full")));
         // The failed save is the saving's, not the central panel's failure.
         assert_eq!(m.failure, None);
         // A refusal does not hide it.
         m.apply(refused(2, "no"));
-        assert_eq!(m.saving.state, SaveState::Unsaved);
+        assert!(m.saving.failure.is_some());
         m.apply(Event::Saved {
             path: edit,
             through: 2,
         });
-        let saving = (m.saving.state, m.saving.failure.as_ref());
+        let saving = (m.saving.state(Instant::now()), m.saving.failure.as_ref());
         assert_eq!(saving, (SaveState::Saved, None));
     }
 
@@ -1224,11 +1387,11 @@ pub(crate) mod tests {
         m.opening(PathBuf::from("/photos/b.ARW"), 2);
         assert_eq!(m.failure, None);
         assert!(m.frame.is_none());
-        assert_eq!(m.saving.state, SaveState::None);
+        assert_eq!(m.saving.state(Instant::now()), SaveState::None);
         assert!(matches!(m.photo, PhotoState::Opening { open: 2, .. }));
         assert_eq!(m.apply(Event::Opened(photo(2))), []);
         assert!(matches!(m.photo, PhotoState::Open(_)));
-        assert_eq!(m.saving.state, SaveState::Saved);
+        assert!(!m.saving.writing());
     }
 
     use apertrust_engine::jobs::{JobEvent, Message, Queue, State};

@@ -111,10 +111,12 @@ fn the_actions_come_first_in_order_and_saved_last() {
     assert_eq!(rect("Copy edit").left() - rect("Redo").right(), 16.0);
     assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
     assert_eq!(rect("Reset").left() - rect("Export…").right(), 2.0);
-    // The empty strip that moves the window, then the end.
+    // The empty strip that moves the window, then the end, where the save state shows
+    // nothing while saving works: no word, no tick.
     assert!(rect("Apply edit").right() < bar.center().x);
-    let saved = harness.get_by_role(Role::Status).rect();
-    assert_eq!(saved.right(), bar.right() - 8.0);
+    for word in ["Saved", "Saving…", "Not saved"] {
+        assert!(harness.query_by_label(word).is_none(), "{word}");
+    }
 }
 
 #[test]
@@ -131,12 +133,12 @@ fn unavailable_actions_do_nothing() {
     assert!(harness.state().is_empty());
 }
 
-/// The top panel `width` points wide, with Saved, and as on the Mac, the window's buttons'
+/// The top panel `width` points wide, with the save state `saved`, and as on the Mac, the window's buttons'
 /// room at its start, or as on Windows and Linux, the ☰ at its start and the caption
 /// buttons at its end; and Export's keys.
 fn narrow(
     width: f32,
-    saved: SaveState,
+    saved: SaveState<'static>,
     inset: f32,
     caption: bool,
 ) -> Harness<'static, Vec<TopPanelAction>> {
@@ -147,7 +149,7 @@ fn narrow(
 fn narrow_in(
     locale: Locale,
     width: f32,
-    saved: SaveState,
+    saved: SaveState<'static>,
     inset: f32,
     caption: bool,
 ) -> Harness<'static, Vec<TopPanelAction>> {
@@ -325,8 +327,9 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
 #[test]
 fn a_narrowing_top_panel_always_leaves_room_to_move_the_window() {
     // In every language; as on the Mac, with the traffic lights' room, and as on Linux,
-    // with the caption buttons; with and without Saved; down to the window's minimum width
-    // (`docs/gui.md`, The window frame and menus).
+    // with the caption buttons; with Saving… and the save warning, the save state's two
+    // forms, whose slot is the same when it shows nothing; down to the window's minimum
+    // width (`docs/gui.md`, The window frame and menus).
     for locale in Locale::ALL {
         let words = Translator::new(locale);
         let parts = [
@@ -342,7 +345,7 @@ fn a_narrowing_top_panel_always_leaves_room_to_move_the_window() {
         .map(|id| words.text(id));
         let minimise = words.text("window-minimise");
         for (inset, caption) in [(78.0, false), (0.0, true)] {
-            for saved in [SaveState::None, SaveState::Saved, SaveState::Unsaved] {
+            for saved in [SaveState::Saving, SaveState::Failed("disk full")] {
                 let mut harness = narrow_in(locale, 1400.0, saved, inset, caption);
                 for width in (500..=1400).rev().step_by(5) {
                     harness.set_size(egui::vec2(width as f32, 120.0));
@@ -352,19 +355,16 @@ fn a_narrowing_top_panel_always_leaves_room_to_move_the_window() {
                         .filter_map(|name| harness.query_by_label(name))
                         .map(|node| node.rect().right())
                         .fold(0.0, f32::max);
-                    // The status at the end, where Not saved yet folded takes no room;
-                    // without one, the end itself, before the caption buttons' gap or the
+                    // The save state at the end, before the caption buttons' gap or the
                     // margin.
-                    let end = harness.query_by_role(Role::Status).map_or_else(
-                        || {
-                            if caption {
-                                harness.get_by_label(&minimise).rect().left() - 16.0
-                            } else {
-                                width as f32 - 8.0
-                            }
-                        },
-                        |status| status.rect().left(),
-                    );
+                    let status = save_state_in(&harness, &words);
+                    let edge = if caption {
+                        harness.get_by_label(&minimise).rect().left() - 16.0
+                    } else {
+                        harness.get_by_role(Role::Toolbar).rect().right() - 8.0
+                    };
+                    assert_eq!(status.right(), edge, "{locale:?}, {width}, {saved:?}");
+                    let end = status.left();
                     assert!(
                         end - last >= 24.0,
                         "{locale:?}, {width} points, {saved:?}, inset {inset}: {last} to {end}"
@@ -375,19 +375,41 @@ fn a_narrowing_top_panel_always_leaves_room_to_move_the_window() {
     }
 }
 
+/// Where Saving…, or the save warning, whichever shows, is drawn.
+fn save_state<T>(harness: &Harness<'_, T>) -> egui::Rect {
+    save_state_in(harness, &Translator::new(Locale::EnGb))
+}
+
+/// [`save_state`] in the language of `words`.
+fn save_state_in<T>(harness: &Harness<'_, T>, words: &Translator) -> egui::Rect {
+    let (saving, failed) = (words.text("status-saving"), words.text("status-not-saved"));
+    (harness.query_by_role_and_label(Role::Label, &saving))
+        .or_else(|| harness.query_by_role_and_label(Role::Button, &failed))
+        .expect("no save state shown")
+        .rect()
+}
+
+/// The save states, from no photo to a failed write.
+const SAVE_STATES: [SaveState<'static>; 4] = [
+    SaveState::None,
+    SaveState::Saved,
+    SaveState::Saving,
+    SaveState::Failed("disk full"),
+];
+
 #[test]
 fn saving_never_moves_the_fold() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(900.0, 120.0))
         .with_context_setup(install)
         .build_ui_state(
-            |ui, saved: &mut SaveState| {
+            |ui, saved: &mut SaveState<'static>| {
                 TopPanel::new().saved(*saved).show(ui);
             },
             SaveState::Saved,
         );
     // Whether Import has its words, whether ⋯ shows, and whether Undo is out of it.
-    let fold = |h: &Harness<'_, SaveState>| {
+    let fold = |h: &Harness<'_, SaveState<'static>>| {
         (
             h.query_by_label("Import…")
                 .is_some_and(|node| node.rect().width() > 30.0),
@@ -395,13 +417,13 @@ fn saving_never_moves_the_fold() {
             h.query_by_label("Undo").is_some(),
         )
     };
-    // An edit, then its save, at every width as the window narrows.
+    // An edit, its slow save, its failure, at every width as the window narrows.
     for width in (150..=900).rev() {
         harness.set_size(egui::vec2(width as f32, 120.0));
         *harness.state_mut() = SaveState::Saved;
         harness.run();
         let saved = fold(&harness);
-        for state in [SaveState::Unsaved, SaveState::Saved] {
+        for state in SAVE_STATES {
             *harness.state_mut() = state;
             harness.run();
             assert_eq!(fold(&harness), saved, "{width} points, {state:?}");
@@ -409,8 +431,115 @@ fn saving_never_moves_the_fold() {
     }
 }
 
+/// What the save state test harness holds: the state drawn and what the panel reported.
+type Saving = (SaveState<'static>, Vec<TopPanelAction>);
+
+/// The save state as the app draws it, in a panel `width` points wide that is the title bar.
+fn saving(width: f32) -> Harness<'static, Saving> {
+    Harness::builder()
+        .with_size(egui::vec2(width, 120.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(install)
+        .build_ui_state(
+            |ui, (saved, actions): &mut Saving| {
+                let action = TopPanel::new().saved(*saved).title_bar(true).show(ui);
+                actions.extend(action);
+            },
+            (SaveState::Saved, Vec::new()),
+        )
+}
+
 #[test]
-fn screen_readers_hear_whether_the_edit_is_saved() {
+fn nothing_shows_at_rest_and_the_slot_moves_the_window() {
+    let mut harness = saving(1200.0);
+    harness.run();
+    for word in ["Saved", "Saving…", "Not saved"] {
+        assert!(harness.query_by_label(word).is_none(), "{word}");
+    }
+    // Where the warning would be, the strip moves the window.
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    let slot = egui::pos2(bar.right() - 20.0, bar.center().y);
+    harness.hover_at(slot);
+    harness.event(egui::Event::PointerButton {
+        pos: slot,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    for step in 1..=3 {
+        harness.hover_at(slot - egui::vec2(10.0 * step as f32, 0.0));
+        harness.step();
+    }
+    harness.drop_at(slot - egui::vec2(30.0, 0.0));
+    harness.run();
+    assert_eq!(harness.state().1, vec![TopPanelAction::MoveWindow]);
+}
+
+#[test]
+fn saving_shows_in_words_that_fold_to_an_ellipsis() {
+    let mut harness = saving(1200.0);
+    harness.state_mut().0 = SaveState::Saving;
+    harness.run();
+    let words = save_state(&harness);
+    // Not a control.
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Saving…")
+            .is_none()
+    );
+    harness.set_size(egui::vec2(150.0, 120.0));
+    harness.run();
+    let folded = save_state(&harness);
+    assert!(folded.width() < words.width() / 3.0, "{folded:?} {words:?}");
+}
+
+#[test]
+fn a_failed_write_shows_a_warning_button_that_asks_for_the_reason() {
+    for width in [1200.0, 150.0] {
+        let mut harness = saving(width);
+        harness.state_mut().0 = SaveState::Failed("Permission denied");
+        harness.run();
+        let warning = harness.get_by_role_and_label(Role::Button, "Not saved");
+        // The reason is its description, and its tooltip.
+        assert_eq!(
+            warning.accesskit_node().description().as_deref(),
+            Some("Permission denied"),
+        );
+        // Folded, the sign alone, which never folds away.
+        let rect = warning.rect();
+        if width < 200.0 {
+            assert_eq!(rect.width(), 24.0, "{rect:?}");
+        } else {
+            assert!(rect.width() > 40.0, "{rect:?}");
+        }
+        // Focusable from the keyboard; pressed, it asks for the reason.
+        warning.focus();
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Button, "Not saved")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().1, vec![TopPanelAction::NotSaved; 2]);
+    }
+}
+
+/// What the save state's live region, an assertive status, says.
+fn said<T>(harness: &Harness<'_, T>) -> String {
+    let live = harness
+        .query_all_by_role(Role::Status)
+        .find(|n| n.accesskit_node().data().live() == Some(egui::accesskit::Live::Assertive))
+        .expect("no live region");
+    live.accesskit_node()
+        .label()
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[test]
+fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else() {
     for locale in Locale::ALL {
         let words = Translator::new(locale);
         let mut harness = Harness::builder()
@@ -420,42 +549,59 @@ fn screen_readers_hear_whether_the_edit_is_saved() {
                 apertrust_ui::set_locale(ctx, locale);
             })
             .build_ui_state(
-                |ui, saved: &mut SaveState| {
+                |ui, saved: &mut SaveState<'static>| {
                     TopPanel::new().saved(*saved).show(ui);
                 },
                 SaveState::Saved,
             );
-        harness.run();
-        // With the words shown, and at the narrowest, folded to Saved's tick or to nothing.
-        for (width, folded) in [(1200.0, false), (150.0, true)] {
-            harness.set_size(egui::vec2(width, 120.0));
-            for (state, id) in [
-                (SaveState::Unsaved, "status-unsaved"),
-                (SaveState::Saved, "status-saved"),
-            ] {
-                // Heard on the frame the status changes.
-                *harness.state_mut() = state;
-                harness.step();
-                let status = harness.get_by_role(Role::Status);
-                let node = status.accesskit_node();
-                let name = words.text(id);
-                assert_eq!(node.label(), Some(name), "{locale:?}, {width}");
-                // The tooltip says only that, so it has no value to be read twice.
-                assert_eq!(node.value(), None, "{locale:?}, {width}");
-                // Where it is drawn: its word and Saved's tick, the tick alone, or nothing.
-                let drawn = status.rect().width();
-                match (state, folded) {
-                    (SaveState::Saved, true) => assert_eq!(drawn, 12.0, "{locale:?}"),
-                    (_, true) => assert_eq!(drawn, 0.0, "{locale:?}"),
-                    _ => assert!(drawn > 12.0, "{locale:?}, {state:?}: {drawn}"),
-                }
-            }
-        }
-        // No photo, no status.
-        *harness.state_mut() = SaveState::None;
-        harness.step();
-        assert!(harness.query_by_role(Role::Status).is_none());
+        let mut step = |state| {
+            *harness.state_mut() = state;
+            harness.step();
+            said(&harness)
+        };
+        // Saves, slow or not, say nothing.
+        assert_eq!(step(SaveState::Saved), "", "{locale:?}");
+        assert_eq!(step(SaveState::Saving), "", "{locale:?}");
+        assert_eq!(step(SaveState::Saved), "", "{locale:?}");
+        // A failure says why, on the frame it comes.
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("error", "disk full");
+        let failed = words.text_with("status-not-saved-reason", Some(&args));
+        assert_eq!(step(SaveState::Failed("disk full")), failed, "{locale:?}");
+        assert_eq!(step(SaveState::Failed("disk full")), failed, "{locale:?}");
+        // A write that succeeds says Saved, kept as later saves come.
+        let saved = words.text("status-saved");
+        assert_eq!(step(SaveState::Saved), saved, "{locale:?}");
+        assert_eq!(step(SaveState::Saving), saved, "{locale:?}");
+        // A photo left with its write failed is the central panel's to tell: no Saved.
+        step(SaveState::Failed("gone"));
+        assert_ne!(step(SaveState::None), saved, "{locale:?}");
+        assert_ne!(step(SaveState::Saved), saved, "{locale:?}");
     }
+}
+
+/// The save warning, then Saving…, at the end of a top panel in the dark theme.
+#[test]
+fn the_save_warning_and_saving() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(700.0, 100.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui(|ui| {
+            let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
+            ui.painter()
+                .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.push_id("failed", |ui| {
+                TopPanel::new()
+                    .saved(SaveState::Failed("Permission denied"))
+                    .show(ui);
+            });
+            ui.push_id("saving", |ui| {
+                TopPanel::new().saved(SaveState::Saving).show(ui);
+            });
+        });
+    harness.run();
+    harness.snapshot("top-panel-save-state");
 }
 
 #[test]
@@ -553,14 +699,11 @@ fn title_bar_with(
         )
 }
 
-/// An empty point of the panel: after the last action at its start, before Saved or, with
-/// no status, the panel's end.
+/// An empty point of the panel: after the last action at its start, well before its end,
+/// where the save state's slot shows nothing at rest.
 fn empty_point<T>(harness: &Harness<'_, T>) -> egui::Pos2 {
     let apply = harness.get_by_label("Apply edit").rect();
-    let end = harness.query_by_role(Role::Status).map_or_else(
-        || harness.get_by_role(Role::Toolbar).rect().right(),
-        |saved| saved.rect().left(),
-    );
+    let end = harness.get_by_role(Role::Toolbar).rect().right() - 100.0;
     egui::pos2((apply.right() + end) / 2.0, apply.center().y)
 }
 
@@ -811,10 +954,6 @@ fn without_the_option_there_are_no_caption_buttons() {
     for name in ["Minimise", "Maximise", "Restore", "Close"] {
         assert!(harness.query_by_label(name).is_none(), "{name}");
     }
-    // Saved ends the panel, before its margin, as before.
-    let bar = harness.get_by_role(Role::Toolbar).rect();
-    let saved = harness.get_by_role(Role::Status).rect();
-    assert_eq!(saved.right(), bar.right() - 8.0);
 }
 
 /// The end of a top panel with caption buttons, in the dark theme, for its snapshots.
