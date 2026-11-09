@@ -13,7 +13,7 @@ A slider row's marker, the handle on its track, was darktable's triangle, cut of
 - **Each is drawn alike:** centred on the track's middle, filled in `slider_handle` with a 1.5-point outline in `slider_handle_outline`, `slider_handle_hover` under the pointer, and while dragged an accent border just inside the outline (`slider_handle_active`), as the triangle has it.
 - **The circle and the square gain a short centre line while dragged:** 1 point wide and 3.5 points long, in `slider_handle_active`, so they point at the value as a fader's cap does while it moves. At rest they are plain.
 - **The marker stays whole at the track's ends.** The track still runs the content's full width; the marker's travel stops short of each end by half the shape's width where it crosses the track plus half its outline, so it sits flush with the end: 5 points for the triangle, 6.25 for the circle, 5.75 for the square. The fill from the default follows the same travel, so the marker always sits where the fill ends, and the track reads full at the maximum and empty at the minimum.
-- **One marker everywhere a value is set on a track:** the slider rows, the central bar's scale and the curve's handles.
+- **One marker for the editing controls:** the slider rows and the curve's handles.
 - **Values, keys, scripts and what is stored do not change:** only where the marker is drawn moves.
 
 ## Options considered
