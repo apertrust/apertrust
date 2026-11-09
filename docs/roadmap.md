@@ -236,11 +236,11 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 Goal: local editing.
 
 - [ ] Spikes first: the layer graph (15 layers, 100 brush strokes and 5 AI parts at 60 MP), masks on the GPU, shapes through the geometry, AI parts through ONNX Runtime (decision 34).
-- [ ] Layers as masked instances of modules (decision 34, [layers.md](layers.md)): filled layers and opacity first, a slider scaled in its own unit; lightness and colour blend modes.
-- [ ] Gradients and shapes, then Feather and Edge, range parts, the brush and a mask overlay, combined top to bottom, ported from darktable's master (decision 74).
+- [ ] Layers as masked instances of modules (decision 34, [layers.md](layers.md)): filled layers and opacity first, a slider scaled in its own unit; darktable's blend modes.
+- [ ] Gradients and shapes, then Feather and Edge, range parts, the brush, paths and a mask overlay, combined top to bottom, ported from darktable's master (decision 74).
 - [ ] Colour calibration's adaptation on a masked layer, for mixed light.
 - [ ] Retouch layers, heal and clone, darktable's retouch ported from its master (decision 74), then AI erase.
-- [ ] AI masks for subject, sky, background and a clicked object, run locally through ONNX Runtime's WebGPU provider (decision 60), recomputed once per photo when copied.
+- [ ] AI masks for subject, sky, background, people and a clicked object, and a depth part, run locally through ONNX Runtime's WebGPU provider (decision 60), recomputed once per photo when copied.
 - [ ] The binary sidecar, `.apdata` (decision 49).
 
 ## Phase 5: the library and projects

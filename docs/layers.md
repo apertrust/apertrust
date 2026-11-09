@@ -12,7 +12,7 @@ Masking uses layers, and a layer is masked operation instances at their normal p
 - **Order** matters only where two layers adjust the same operation. The layers panel shows this, rather than implying a stack.
 - **Image** is the whole photo's edit, the layer under all others: no mask, no opacity, always on.
 - **How much applies:** each instance applies by the mask times the opacity, in each slider's own unit. At 50%, Exposure and the tone equalizer give half the stops (−2 EV gives −1 EV, where darktable's linear mix would give −0.68 EV), a curve goes halfway to straight, and the rest is mixed halfway in linear light, as darktable mixes. Each layer-capable operation declares which of the three it uses. A slider on a layer starts at zero.
-- **Blend modes:** normal, lightness and colour.
+- **Blend modes:** darktable's for scene-referred work: normal and the arithmetic ones, the red, green and blue channels, lightness and chromaticity.
 - **Global modules** (profile, lens, geometry, raw, grain, black and white) stay on Image, as in commercial layer-based editors, shown unavailable on a layer with the reason.
 - **Colour calibration's adaptation** works on a layer only with a mask, stacked after Image's: it corrects what remains inside the mask, starting at no change, as darktable's second, masked colour calibration does for mixed light.
 - **Limits:** a notice past the count where editing slows, and a hard limit only where the engine can no longer render within its memory budget, counting brush strokes and AI parts as well as layers.
@@ -22,7 +22,7 @@ Masking uses layers, and a layer is masked operation instances at their normal p
 
 A mask is a list of **parts**, darktable's Flexi model underneath, ported from darktable's master (decision 74).
 
-- **Parts:** brush with optional edge-aware auto-masking, linear and radial gradients, luminance and colour ranges, AI selections (subject, sky, background, people, a clicked object), **Fill** (the whole photo), and another layer's mask.
+- **Parts:** brush with optional edge-aware auto-masking, linear and radial gradients, paths, luminance and colour ranges, depth (by distance from the camera), AI selections (subject, sky, background, people, a clicked object), **Fill** (the whole photo), and another layer's mask.
 - **Top to bottom:** each part changes the mask the parts above it made, from an empty mask. Add is the maximum, Intersect the minimum, Subtract the mask times one minus the part; each part can be inverted, and parts are dragged to reorder. So a brush can paint back what a range cut out.
 - **An empty mask changes nothing.** New Filled Layer and Fill Mask give a layer a Fill part, from which other parts can be subtracted.
 - **Feather and Edge** refine the whole mask after its parts: a blur and a guided filter. An overlay shows the mask on the photo, and the layer's row a thumbnail of it.
@@ -32,13 +32,13 @@ A mask is a list of **parts**, darktable's Flexi model underneath, ported from d
 
 ## Retouch layers
 
-Heal, clone and AI erase are layers, each holding many spots, in a band of their own under Image, marked as applied first: retouch runs at camera RGB 20, before exposure and every colour and tone edit. They have opacity, hide, rename and delete as any layer and move only within the band. darktable's retouch module is ported as these layers in Phase 4, from darktable's master (decision 74), not in the first pass.
+Heal, clone and AI erase are layers, each holding many spots, listed between the adjustment layers and Image, past a thin divider, and applied first whatever their place: retouch runs at camera RGB 20, before exposure and every colour and tone edit. They have opacity, hide, rename and delete as any layer and move only among the retouch layers. darktable's retouch module is ported as these layers in Phase 4, from darktable's master (decision 74), not in the first pass.
 
 ## Instances and order
 
 Users get one instance of each module, in a fixed pipeline order: no reordering, and no extra instances outside layers. The engine still creates operation instances internally, one per adjusted operation per layer.
 
-- **Filled layers** (one Fill part) cover unmasked duplicates such as a second sharpening pass, two blended colour looks, or luminance and colour noise reduction blended by lightness and by colour, with opacity as a bonus.
+- **Filled layers** (one Fill part) cover unmasked duplicates such as a second sharpening pass, two blended colour looks, or luminance and colour noise reduction blended by lightness and by chromaticity, with opacity as a bonus.
 - **One instance of each module per layer,** keeping one owning module per parameter within each layer; the operation instances a module adds are its own.
 
 ## Sequencing
@@ -61,7 +61,7 @@ flowchart LR
     rawstage["Raw processing,<br/>lens correction"] --> e0["Exposure<br/>background"] --> ea["Exposure<br/>layer A"] --> eb["Exposure<br/>layer B"] --> cc["Colour calibration"] --> b0["Colour balance rgb<br/>background"] --> ba["Colour balance rgb<br/>layer A"] --> c0["RGB curve<br/>background"] --> cb["RGB curve<br/>layer B"] --> tm["Tone mapper<br/>background only"] --> out["Output"]
 ```
 
-Layer A's brighter face flows into everything downstream, the tone mapper included, so it is tone-mapped as genuinely brighter light rather than lightened on top. The background tone mapper's parameters are global; neither layer chooses a tone mapper of its own (decision 33).
+Layer A's brighter face flows into everything downstream, the tone mapper included, so it is tone-mapped as genuinely brighter light rather than lightened on top. Both layers here use the background's tone mapper; a layer may choose its own, which replaces the background's within its mask, never stacked on it (decisions 33 and 34).
 
 ## Scene and display domains
 

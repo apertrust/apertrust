@@ -20,12 +20,12 @@ Local edits need masks. darktable gives each module instance its own mask and le
 
 **How much of a layer applies:** each instance applies by the layer's mask times its opacity, **in each slider's own unit**. At 50%, Exposure and the tone equalizer give half the stops (−2 EV gives −1 EV), a curve goes halfway to straight, and every other change is mixed halfway in linear light, as darktable mixes. Each layer-capable operation declares which of the three it uses. A slider on a layer starts at zero and moves the photo from what Image and the layers under it give.
 
-**Blend modes:** normal, lightness and colour. Lightness and colour carry darktable's two-instance recipe for luminance and colour noise as two filled layers.
+**Blend modes:** darktable's for scene-referred work, in its order and sections: normal, average, difference, multiply, divide, addition, subtract, geometric mean and harmonic mean; the red, green and blue channels; lightness and chromaticity, with darktable's fulcrum where it uses one. Lightness and chromaticity carry darktable's two-instance recipe for luminance and colour noise as two filled layers.
 
 **A mask is a list of parts,** Flexi's tree underneath ([0074](0074-masks-ported-from-darktables-master.md)):
 
-- **Parts:** brush with optional edge-aware auto-masking, linear and radial gradients, luminance and colour ranges, AI selections (subject, sky, background, people, a clicked object), **Fill** (the whole photo), and another layer's mask.
-- **Combined top to bottom,** each part changing the mask the parts above it made, starting from an empty mask: Add as the maximum, Intersect as the minimum, Subtract as the mask times one minus the part. Parts can be dragged to reorder. Each part can be inverted.
+- **Parts:** brush with optional edge-aware auto-masking, linear and radial gradients, paths, luminance and colour ranges, depth (by distance from the camera, from a depth model), AI selections (subject, sky, background, people, a clicked object), **Fill** (the whole photo), and another layer's mask.
+- **Combined top to bottom,** each part changing the mask the parts above it made, starting from an empty mask: Add as the maximum, Intersect as the minimum, Subtract as the mask times one minus the part. These three are the only operations. Whether Add and Intersect keep the maximum and minimum or take darktable's screen and product, which blend more softly where feathered parts overlap, the masks-on-the-GPU spike settles, behind the same names. Parts can be dragged to reorder. Each part can be inverted.
 - **A mask with no parts changes nothing.** New Filled Layer and Fill Mask give a layer a Fill part, which other parts can be subtracted from. Deleting a part only ever shrinks where a layer acts.
 - **Feather and Edge** refine the layer's whole mask after its parts: a blur and a guided filter.
 - **Range parts are read once per layer** on the photo with Image's edits and no layer's, at a reference point, scene-linear after colour calibration. The result serves every instance in the layer, so the mask looks the same whatever modules the layer holds and no layer's mask depends on another layer's edits. Per-module evaluation stays as an advanced option.
@@ -38,7 +38,9 @@ Local edits need masks. darktable gives each module instance its own mask and le
 - never by itself on opening, after an update or on another computer: a raster that no longer matches is marked, with Update;
 - a brush that fixes an AI part is a part of its own, so a recompute replaces only the AI part.
 
-**Retouch layers,** heal, clone and AI erase, each holding many spots, sit in a band of their own under Image, marked as applied first, since retouch runs before the adjustments. They have opacity, hide, rename and delete as any layer, and move only within the band. darktable's retouch module is ported as these layers in Phase 4, not in the first pass.
+**The list,** top to bottom: the adjustment layers, then the retouch layers, then Image, a thin divider between the two kinds of layer and no headings; a new layer goes at the top of its kind.
+
+**Retouch layers,** heal, clone and AI erase, each holding many spots, apply first whatever their place in the list, since retouch runs before the adjustments; their type icon's tooltip says so. They have opacity, hide, rename and delete as any layer, and move only among the retouch layers. darktable's retouch module is ported as these layers in Phase 4, not in the first pass.
 
 **Global modules stay on Image:** the raw stage, lens correction, geometry and the others a module's page marks background only, shown unavailable on a layer with the reason. A tone mapper on a layer replaces Image's within the layer's mask, never stacked on it ([0033](0033-one-tone-mapper-per-edit.md)).
 
@@ -57,7 +59,10 @@ Local edits need masks. darktable gives each module instance its own mask and le
 - Parts combined whatever their order (every Add, then every Intersect and Subtract): a brush could not paint back what a range cut out without a visible group.
 - An empty mask covering the whole photo, as darktable's empty Flexi mask does: a slip, or deleting the last part, would turn a local edit global.
 - A layer's colour calibration replacing Image's adaptation inside the mask: cleaner colour, but confusing after Image has been adapted.
-- Retouch as a module with a spot list, as darktable's, or retouch layers anywhere in the list: a second way of marking areas, or a list whose order misleads, since retouch runs first wherever it sits.
+- Retouch as a module with a spot list, as darktable's, or retouch layers mixed with the adjustment layers: a second way of marking areas, or a list whose order misleads, since retouch runs first wherever it sits.
+- Retouch layers in a band under Image, headed: their place would follow the pipeline, but the headings take room in a pinned section, and commercial raw editors list retouch above the image.
+- Normal, lightness and colour alone as blend modes: fewer to learn, but darktable's users know its set.
+- More mask operations, as Flexi's seven: rarely needed by photographers, and hard to predict where soft edges overlap.
 - Fixed hard limits on layers and parts: simpler, but the right numbers depend on the machine, and the principles rule out removing capability to simplify.
 - AI parts recomputed mask by mask, or automatically everywhere: repeated prompts, or results that drift between GPUs and model versions.
 - darktable's styles as they are: tied to instances and order.
