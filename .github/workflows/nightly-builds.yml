@@ -1,7 +1,7 @@
 name: Nightly builds
 
 # Apertrust Dev's packages, built each night from main, each on its own platform, and
-# published as the `nightly` pre-release, whose tag moves to the commit built
+# published as the `nightly` pre-release, made again on the commit built
 # (docs/packaging.md, Nightly builds). Nothing is built when main has not changed since
 # the last nightly, unless a run by hand forces it; nothing is published when any build
 # fails, or from a branch other than main.
@@ -162,8 +162,8 @@ jobs:
           done
           sha256sum -- * >SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Move the nightly tag
-        run: git push --force origin "$SHA:refs/tags/nightly"
+      # The release is made again, its tag with it, through the Releases API: GitHub
+      # refuses the job's token a `git push` of a tag whose commit changes workflow files.
       - name: Replace the nightly release
         run: |
           cat >notes.md <<EOF
@@ -173,23 +173,9 @@ jobs:
 
           They are not signed: [how to open an unsigned package](https://github.com/$GH_REPO/blob/main/docs/packaging.md#unsigned-packages). \`SHA256SUMS.txt\` holds each file's SHA-256.
           EOF
-          if gh release view nightly >/dev/null 2>&1; then
-            old=$(gh release view nightly --json assets --jq '.assets[].name')
-            gh release edit nightly --title "Nightly build" --notes-file notes.md \
-              --prerelease --latest=false
-          else
-            old=
-            gh release create nightly --verify-tag --title "Nightly build" \
-              --notes-file notes.md --prerelease --latest=false
-          fi
-          # The night's files first, then the old ones that no longer are, so the release
-          # is never left empty.
-          gh release upload nightly dist/* --clobber
-          for name in $old; do
-            if [ ! -e "dist/$name" ]; then
-              gh release delete-asset nightly "$name" --yes
-            fi
-          done
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly dist/* --target "$SHA" --title "Nightly build" \
+            --notes-file notes.md --prerelease --latest=false
           # Every file under the name it was given.
           now=$(gh release view nightly --json assets --jq '.assets[].name' | sort)
           given=$(cd dist && printf '%s\n' * | sort)
