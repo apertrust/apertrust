@@ -32,11 +32,10 @@
 //!   it stops no job. Opened by itself, it closes itself about two seconds after the jobs
 //!   it opened for have ended well, unless one failed or was cancelled, or the person
 //!   touched it ([`Window::opened_for`]).
-//! - **What its buttons do** is the app's: the ✕ sends `CancelJob`, Dismiss and Clear
-//!   Finished change the mirror, and Show in Finder reveals the job's destination through
-//!   the platform ([`reveal`]), a file selected in its folder. The rows keep a job's retry
-//!   offer, but the window draws no Try again until the session takes `Command::RetryJob`
-//!   (decision 72's step 6).
+//! - **What its buttons do** is the app's: the ✕ sends `CancelJob`, Try again on a failed
+//!   row that offers it sends `RetryJob`, its job's row taking the failed one's place,
+//!   Dismiss and Clear Finished change the mirror, and Show in Finder reveals the job's
+//!   destination through the platform ([`reveal`]), a file selected in its folder.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -127,6 +126,9 @@ pub enum Do {
     Nothing,
     /// Send the session a command.
     Send(Command),
+    /// Send the session a command that starts a job of the user's, which quitting waits
+    /// for until its job is added; the mirror changed with it.
+    Start(Command),
     /// Show something in the platform's file manager.
     Reveal(Reveal),
     /// The mirror changed: the window shows it.
@@ -157,6 +159,12 @@ impl Mirror {
     /// waits for it.
     pub fn starting(&mut self, number: u64) {
         self.starting.push(number);
+    }
+
+    /// The session refused the command numbered `number`: it starts no job, so quitting
+    /// no longer waits for it.
+    pub fn refused(&mut self, number: u64) {
+        self.starting.retain(|starting| *starting != number);
     }
 
     /// Folds `event` in, and says what the window is to do about it.
@@ -309,9 +317,10 @@ impl Mirror {
     }
 
     /// What a button of the window asks of the app: the ✕ is the session's `CancelJob`;
-    /// Show in Finder reveals the job's destination; Dismiss takes an ended row away, and
-    /// Clear Finished every finished and cancelled one. Try again asks nothing until the
-    /// session takes `RetryJob` (decision 72's step 6).
+    /// Try again, on a failed row that offers it, the session's `RetryJob`, the offer taken
+    /// from the row as it is sent, so it is asked once, and the row stays failed should the
+    /// session refuse it; Show in Finder reveals the job's destination; Dismiss takes an
+    /// ended row away, and Clear Finished every finished and cancelled one.
     pub fn act(&mut self, action: ActivityAction) -> Do {
         match action {
             ActivityAction::Cancel(job) => match self.rows.iter().find(|r| r.id.get() == job) {
@@ -319,7 +328,7 @@ impl Mirror {
                 None => Do::Nothing,
             },
             ActivityAction::ShowFolder(job) => self.reveal(job).map_or(Do::Nothing, Do::Reveal),
-            ActivityAction::TryAgain(_) => Do::Nothing,
+            ActivityAction::TryAgain(job) => self.try_again(job),
             ActivityAction::Dismiss(job) => self.remove(|row| row.id.get() == job),
             ActivityAction::ClearFinished => self.remove(|row| row.phase.cleared()),
         }
@@ -362,6 +371,21 @@ impl Mirror {
             .iter()
             .map(|row| row.view(words, self.home.as_deref()))
             .collect()
+    }
+
+    /// Try again on the row of job `job`: its retry offer taken, and the session asked for
+    /// the retry; nothing for a row that is not a failed one offering it.
+    fn try_again(&mut self, job: u64) -> Do {
+        let offers = |row: &Row| row.offers.iter().any(|o| matches!(o, Offer::Retry { .. }));
+        let Some(row) = self
+            .rows
+            .iter_mut()
+            .find(|row| row.id.get() == job && row.phase == JobPhase::Failed && offers(row))
+        else {
+            return Do::Nothing;
+        };
+        row.offers.retain(|o| !matches!(o, Offer::Retry { .. }));
+        Do::Start(Command::RetryJob { job: row.id })
     }
 
     /// Takes away the ended rows `which` names: Dismiss's, Clear Finished's.
@@ -720,15 +744,7 @@ impl Window {
     /// user pressed.
     fn rows(&mut self, ui: &mut egui::Ui) -> Option<ActivityAction> {
         ui.set_width(WIDTH);
-        // Try again is not drawn until the session takes `RetryJob` (decision 72's step 6):
-        // the rows keep the offer, but the button would ask nothing.
-        let jobs: Vec<Job> = self
-            .jobs
-            .iter()
-            .cloned()
-            .map(|job| job.retry(false))
-            .collect();
-        Jobs::new(&jobs).file_manager(FILE_MANAGER).window(ui)
+        Jobs::new(&self.jobs).file_manager(FILE_MANAGER).window(ui)
     }
 }
 

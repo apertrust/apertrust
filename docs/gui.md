@@ -1414,7 +1414,7 @@ How background jobs are shown (decisions 57 and 72; [engine.md](engine.md), Jobs
 - **Thumbnails never show.** Each is a job of its own on `SystemForeground`, with no progress or message, so neither the spinner nor the window knows of it.
 - **When a job ends,** its row stays, finished, failed or cancelled, until it is cleared: finished and cancelled rows together by Clear Finished, a failed row only by its own Dismiss, so a failure is never cleared unseen.
 - **Cancel** sends `CancelJob { job }`; a job that cannot be cancelled has no ✕, as darktable's delete has none.
-- **Try again** sends `RetryJob { job }`, for a failed job that offers it; the new job's row takes the failed one's place (planned with step 6 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api)).
+- **Try again** sends `RetryJob { job }`, for a failed job that offers it, and goes from the row as it is sent, so it is asked once; the new job's row takes the failed one's place. Should the session refuse it (`NotRetryable`, a retry older than the latest 64), the row stays failed, with no Try again, and the refusal is logged as any refused command.
 - **Quitting:** Quit or Close Window while a user job runs asks first, with an alert of its own; confirmed, cancellable jobs stop as Cancel stops them, and the rest finish ([The alerts](#the-alerts)).
 - **No progress bar while editing:** no edit ever waits on a job.
 - **Windows and Linux:** the window is the same there; showing it without taking the focus waits for their modality.
@@ -1474,8 +1474,8 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
 - **The mirror,** `jobs::Mirror`, is a part of the app's mirror (`mirror.rs`, decision 59's reducer), which folds `Event::Job` into the design system's `Job` rows, built each frame (`Mirror::view`) in the language then.
   - It starts empty and holds only what this run's events named, so the window is seeded with no old jobs; an event of a job it never saw changes nothing.
   - **The fold** (decision 72): each event sets its part of its job's row ([A row](#a-row-and-where-each-part-comes-from)), with no code for any kind of job, an export and a folder's reading through the same code. `Added` makes the row, in the place of the job it `retries`; `Progress`, `Title`, `Detail` and `Destination` each set theirs; `State` `Cancelled` takes the ✕ away until the end; `Ended` sets the outcome, the failure, the time and the offers and drops the detail line, and with `Discarded` takes the row away. Its phase is queued, running, finished, cancelled, or failed where `Ended` carries a failure, cancelled or not. `Event::Export` is not read.
-  - **A command awaiting its job:** an export the app sends is noted by its number (`Mirror::starting`) until the `Added` that names it, so quitting waits for it; nothing else of the command is kept.
-  - **Try again:** the rows keep a job's retry offer (`Job::retry`), but the app's window (`jobs::Window`) draws no Try again until the session takes `RetryJob` (planned with step 6 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api)).
+  - **A command awaiting its job:** an export or a `RetryJob` the app sends is noted by its number (`Mirror::starting`) until the `Added` that names it, or its refusal (`Mirror::refused`), so quitting waits for it; nothing else of the command is kept.
+  - **Try again:** a row keeps its job's retry offer (`Job::retry`), and the window draws Try again on a failed row that has one.
   - **When the engine stops** under its jobs, every row still queued or running ends failed, cause `engine`, so quitting waits for nothing.
 - **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport` whose `Added` names a command the app sent. Every other job answers `Show::Update` and only shows in the window if it is open. The spinner's click and View › Jobs are `Show::Front`: it opens the window or brings it to the front, with the focus. View › Jobs, the registry's `show-jobs`, sets a flag of the shell's that `run_action` hands to `jobs::refresh` with the rows as they stand, as Settings goes to the host.
   - An automatic open does not take the focus from the window the user is working in: on the Mac the host shows it with `apertrust_display::show_without_focus` (`orderFront:`), since winit's `set_visible(true)` is `makeKeyAndOrderFront:`. Windows and Linux show it as winit does until their modality is in.
@@ -1489,13 +1489,13 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
 - **The buttons** come back as `Output::Jobs(ActivityAction)`, and `Mirror::act` says what to do:
   - the ✕ sends `CancelJob`;
   - Show in Finder reveals the destination: a file with `open -R` on the Mac, `explorer /select,` on Windows, its folder through `xdg-open` elsewhere, or a folder opened;
-  - Try again asks nothing yet: the window draws none until the session takes `RetryJob` (step 6);
+  - Try again sends `RetryJob` (`Do::Start`, so quitting waits for its job), the row's offer taken as it is sent;
   - Dismiss takes a failed row away, and Clear Finished every finished and cancelled row.
 - **Not built:** Windows' and Linux's focus handling.
 
 ### What a script sees
 
-- **Commands:** `Export { photos, settings }`, with the settings the dialog edits, `CancelJob { job }` (decision 57) and, planned, `RetryJob { job }` (decision 72). Everything the jobs window shows comes as `Job` events, and each photo's result, its file and size, as `Export` events ([engine.md](engine.md), Export jobs).
+- **Commands:** `Export { photos, settings }`, with the settings the dialog edits, `CancelJob { job }` (decision 57) and `RetryJob { job }` (decision 72). Everything the jobs window shows comes as `Job` events, and each photo's result, its file and size, as `Export` events ([engine.md](engine.md), Export jobs).
 - **A preset** is named by the client, which reads it and sends its settings, since the engine reads no file (decision 43): `apertrust-cli export --preset NAME` will, and the server and MCP too.
 - **Presets** live in the user data folder, `presets/export.toml`, so the CLI reads the ones the dialog stores (decision 56).
 - **The dialog's last settings** are the `export.*` settings in `settings.toml`, kept as darktable keeps its conf. `apertrust-cli export` takes its format's options and On conflict from them, as darktable-cli takes them from darktablerc, `--conf export.…` over them for one run.

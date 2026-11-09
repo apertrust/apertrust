@@ -8,7 +8,7 @@ darktable's background jobs panel (`libs/backgroundjobs.c` at the reference rele
 
 ## Decision
 
-**Each job reports everything its row shows in its own events, and a client's mirror folds them into the row with no code for any kind of job.** Planned, built in the steps of the roadmap's jobs window ([roadmap.md](../roadmap.md#the-jobs-window-and-the-job-api)).
+**Each job reports everything its row shows in its own events, and a client's mirror folds them into the row with no code for any kind of job.** Built in the steps of the roadmap's jobs window ([roadmap.md](../roadmap.md#the-jobs-window-and-the-job-api)).
 
 **The events,** base's `JobEvent`, which the session sends as `Event::Job` ([events.md](../events.md#a-jobs-events)):
 
@@ -40,7 +40,7 @@ darktable's background jobs panel (`libs/backgroundjobs.c` at the reference rele
 
 **Try again is `Command::RetryJob { job }`,** answered by the session:
 
-- A job that can be tried again offers `Offer::Retry` and, before its body returns, leaves the session what the retry runs: for an export, `Command::Export` of the photos that failed and those not reached, with the same settings and places.
+- A job that can be tried again offers `Offer::Retry` and, before its body returns, leaves the session what the retry runs: for an export, `Command::Export` of the photos that failed and those not reached, with the same settings and places, and beside it, the engine's own, each photo's `$(SEQUENCE)` and the first export's count of photos, so the retry writes the files that export would have.
 - The session keeps the latest 64 for its life. `RetryJob` runs the kept command as if it were sent then, so an export takes each photo's edit as it is at that moment (decision 56's D12). Its job's `Added` names `retries: Some(job)`, and its `command` is the `RetryJob`'s number.
 - A retry is used once. One not kept is refused, `SessionError::NotRetryable { job }`.
 

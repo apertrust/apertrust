@@ -159,7 +159,7 @@ The groundwork for orientation:
 
 - A job's body hands the engine thread `GpuTask`s through its `Tasks`. They are stepped one a turn, after the live frame, by darktable's queue order and ageing, with one step's work on the GPU at a time.
 - A cancelled job's task is dropped before its next step.
-- `Event::Job` (`Added` naming its command) and `Command::CancelJob`.
+- `Event::Job` (`Added` naming its command), `Command::CancelJob`, and `Command::RetryJob`, which runs what a failed job left the session, the latest 64 kept (decision 72).
 - Dropping the session steps tasks until the control has shut down.
 
 ### The export job
@@ -172,7 +172,7 @@ The groundwork for orientation:
 - The operations before the tiles (the raw stage, on a default edit) take a step per pass, in row strips of about 8 MP, a step per strip (`export_job::STRIP_BINDING`). Highlights' dilation, which binds only scratch, runs in bands of its rows too.
 - Each new buffer is touched in a step of its own first (`Pipeline::parts`).
 - It steps beside a live frame only, or one step at a time where no photo is open or no viewport sized, as in the CLI (`Run::live_frame`).
-- Everything its row shows is sent as `Event::Job` (decision 72): its total and done, the photo under way, its folder then its first file as its destination, its outcome, the failure that ended it or else its first photo's, and `Retry` unless cancelled or refused; its photos as `Event::Export`, the record for scripts and the CLI. Planned: its retry handed to the session for `RetryJob`.
+- Everything its row shows is sent as `Event::Job` (decision 72): its total and done, the photo under way, its folder then its first file as its destination, its outcome, the failure that ended it or else its first photo's, and `Retry` unless cancelled or refused, its retry, the same export of the photos that failed and those not reached, left with the session for `RetryJob`; its photos as `Event::Export`, the record for scripts and the CLI.
 - `names` gives darktable's variables their values; the client passes the person's folders and name (`Places`).
 
 ### The export preview
@@ -543,7 +543,7 @@ File › Open Image… (`open`, Ctrl+O, first in File; `src/dialogs.rs`):
 - It is kept at `jobs_window.position`. Closing it stops no job.
 - Opened by itself, it closes itself about 2 seconds after the jobs it opened for (`Mirror::opened`) have finished, unless one failed or was cancelled, or the person touched it (`Window::opened_for`; [gui.md](gui.md#in-the-app)).
 - It is fed by `App::receive`'s mirror, `jobs::Mirror`, a fold of `Event::Job` alone: each event sets its part of its job's row, with no code for any kind of job (decision 72). An export sent is noted by its number until its job is added (`Mirror::starting`), so quitting waits for it.
-- Its buttons: the ✕ (sent as `CancelJob`), Show in Finder (the job's destination, a file selected in its folder, through the platform), Dismiss on a failed row and Clear Finished for the finished and cancelled ones; the rows keep a job's retry offer, but the window draws no Try again yet. Planned: Try again sent as `RetryJob`.
+- Its buttons: the ✕ (sent as `CancelJob`), Show in Finder (the job's destination, a file selected in its folder, through the platform), Try again on a failed row that offers it (sent as `RetryJob`, the new job's row taking the failed one's place), Dismiss on a failed row and Clear Finished for the finished and cancelled ones.
 
 ### The log window
 
@@ -942,7 +942,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - Its five queues, and `jobs::schedule`'s pure `add` and `pick`: priorities with ageing, `SystemForeground`'s deduplicated stack of 30, one export at a time. Tables worked through darktable's code hold them.
 - `Job` (`dedup`, `progress`, and for its `Added` `destination`, `detail`, `total` and `retries`); `Context` (`cancelled`, `set_progress`, `set_title`, `set_detail`, `set_destination`, `set_outcome`, `offer`, `wait`); a `Message` id with arguments; `Progress` (done and an optional total), `Destination`, `Failure` (cause, item, file, reason) and `Offer` (decision 72).
 - `JobEvent`s, everything a job's row shows: the progress, title, detail and destination each at most every 0.5 s, the last of each before `Ended`, which carries the outcome, failure, time and offers; a failure or a panic (cause `panicked`) ends a job failed; 7 or 4 workers; `-d control`.
-- The engine's export reports its whole row through them, and the app's mirror folds them into its rows. Planned (decision 72): Try again ([roadmap.md](roadmap.md#the-jobs-window-and-the-job-api)).
+- The engine's export reports its whole row through them, and the app's mirror folds them into its rows; Try again is the session's `RetryJob` (decision 72).
 - Tested with a counting job.
 
 ### Planned

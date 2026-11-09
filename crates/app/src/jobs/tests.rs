@@ -551,7 +551,7 @@ fn the_buttons_ask_for_cancel_the_reveal_and_the_dismissal() {
         mirror.act(ActivityAction::ShowFolder(number)),
         Do::Reveal(Reveal::Folder(PathBuf::from(OUT)))
     );
-    // A running job is not dismissed, and Try again waits for the session's RetryJob.
+    // A running job is neither dismissed nor tried again.
     assert_eq!(mirror.act(ActivityAction::Dismiss(number)), Do::Nothing);
     assert_eq!(mirror.act(ActivityAction::TryAgain(number)), Do::Nothing);
     // A job the mirror does not hold asks nothing.
@@ -595,6 +595,92 @@ fn a_retry_takes_the_place_of_the_job_it_tries_again() {
     mirror.apply(&ended(second, State::Finished, None));
     mirror.apply(&added(second, Queue::UserExport, None));
     assert_eq!(only(&mirror).phase, JobPhase::Queued);
+}
+
+/// Try again on a failed row that offers it sends `RetryJob` once, quitting waits for it
+/// until its job is added, and the new job's row takes the failed one's place.
+#[test]
+fn try_again_sends_retry_job_and_its_row_takes_the_failed_one_s_place() {
+    let ids = ids(2);
+    let (first, second) = (ids[0], ids[1]);
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(first, 2));
+    let failure = Failure::new("unreadable", "cannot decode").item(raw(1));
+    mirror.apply(&job(JobEvent::Ended {
+        job: first,
+        state: State::Finished,
+        outcome: None,
+        failure: Some(failure),
+        at: at(9),
+        offers: vec![Offer::Retry { items: 1 }],
+    }));
+    assert!(only(&mirror).retry);
+
+    assert_eq!(
+        mirror.act(ActivityAction::TryAgain(first.get())),
+        Do::Start(Command::RetryJob { job: first })
+    );
+    // Asked once: the button goes as it is sent, the row still failed.
+    let row = only(&mirror);
+    assert_eq!((row.phase, row.retry), (JobPhase::Failed, false));
+    assert_eq!(
+        mirror.act(ActivityAction::TryAgain(first.get())),
+        Do::Nothing
+    );
+
+    // The app sent it as command 9, which quitting waits for until its job is added.
+    mirror.starting(9);
+    assert_eq!(mirror.running().waiting, 1);
+    let retry = Event::Job {
+        event: JobEvent::Added {
+            job: second,
+            kind: "export",
+            queue: Some(Queue::UserExport),
+            title: title(0, 1),
+            cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: Some(first),
+        },
+        command: Some(9),
+    };
+    assert_eq!(mirror.apply(&retry), Show::Open);
+    let row = only(&mirror);
+    assert_eq!((row.id, row.phase), (second.get(), JobPhase::Queued));
+    assert_eq!(
+        mirror.running(),
+        Running {
+            stoppable: 1,
+            waiting: 0
+        }
+    );
+}
+
+/// A Try again the session refuses starts no job: quitting does not wait for it, and the
+/// failed row stays, its button gone.
+#[test]
+fn a_refused_try_again_leaves_the_row_failed_and_is_not_waited_for() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 1));
+    mirror.apply(&job(JobEvent::Ended {
+        job: id,
+        state: State::Finished,
+        outcome: None,
+        failure: Some(Failure::new("unreadable", "cannot decode")),
+        at: at(9),
+        offers: vec![Offer::Retry { items: 1 }],
+    }));
+    assert!(matches!(
+        mirror.act(ActivityAction::TryAgain(id.get())),
+        Do::Start(_)
+    ));
+    mirror.starting(4);
+    mirror.refused(4);
+    assert!(mirror.running().none());
+    let row = only(&mirror);
+    assert_eq!((row.phase, row.retry), (JobPhase::Failed, false));
 }
 
 #[test]
@@ -733,17 +819,32 @@ fn what_is_pressed_in_the_window_reaches_the_app_as_an_output() {
 }
 
 #[test]
-fn the_window_draws_no_try_again_until_the_session_takes_retry_job() {
-    let failed = Job::new(5, JobPhase::Failed, JobMessage::new("job-thumbnails"))
-        .failure(JobFailure {
+fn a_failed_row_that_offers_it_draws_try_again_which_reaches_the_app() {
+    let failed =
+        Job::new(5, JobPhase::Failed, JobMessage::new("job-thumbnails")).failure(JobFailure {
             item: String::new(),
             file: String::new(),
             cause: "the disk is full".to_owned(),
-        })
-        .retry(true);
-    let harness = window(vec![failed]);
+        });
+    let harness = window(vec![failed.clone()]);
     assert!(harness.query_by_label("Try again").is_none());
     assert!(harness.query_by_label("Dismiss").is_some());
+
+    let mut harness = window(vec![failed.retry(true)]);
+    harness
+        .get_by_role_and_label(Role::Button, "Try again")
+        .click();
+    harness.run();
+    let outputs: Vec<_> = harness
+        .state()
+        .asked
+        .iter()
+        .filter_map(|drawn| drawn.output.clone())
+        .collect();
+    assert_eq!(
+        outputs,
+        [dialog_host::Output::Jobs(ActivityAction::TryAgain(5))]
+    );
 }
 
 // When the window closes itself.

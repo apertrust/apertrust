@@ -37,8 +37,9 @@
 //!   ([`PhotoState::stale`]); a library event naming a command other than the latest open or
 //!   close is dropped by the folder ([`folder::FolderState::apply`]).
 //! - **A refused command** ([`SessionError::Refused`]) names its number: its pending change
-//!   stops showing and a save it would have waited for is not waited for. The values report
-//!   that follows a refusal in the same batch says what the edit holds.
+//!   stops showing, a save it would have waited for is not waited for, and a job it would
+//!   have started is not waited for by quitting. The values report that follows a refusal
+//!   in the same batch says what the edit holds.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -292,6 +293,7 @@ impl Mirror {
             let command = *command;
             self.pending.retain(|(number, _)| *number != command);
             self.saving.refused(command);
+            self.jobs.refused(command);
         }
         if !matches!(error, SessionError::Module { .. } | SessionError::Scopes(_)) {
             tracing::error!(target: "pipe", "{error}");
@@ -1225,6 +1227,20 @@ pub(crate) mod tests {
         assert_eq!(m.jobs.view(&words)[0].phase, JobPhase::Failed);
         // No job left to end: nothing more to show.
         assert_eq!(m.apply(Event::Failed(SessionError::Stopped)), []);
+    }
+
+    #[test]
+    fn a_refused_try_again_leaves_nothing_for_quitting_to_wait_for() {
+        let id = jobs::tests::ids(1)[0];
+        let mut m = mirror();
+        // Try again sent as command 5, which quitting waits for until its job is added.
+        m.jobs.starting(5);
+        assert!(!m.jobs.running().none());
+        m.apply(Event::Failed(SessionError::Refused {
+            command: 5,
+            error: Box::new(SessionError::NotRetryable { job: id }),
+        }));
+        assert!(m.jobs.running().none());
     }
 
     #[test]
