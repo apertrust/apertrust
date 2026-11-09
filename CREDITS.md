@@ -176,7 +176,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - fdeflate 0.3.7: MIT OR Apache-2.0
 - fearless_simd 0.4.1: Apache-2.0 OR MIT
 - fixed_decimal 0.7.3: Unicode-3.0
-- flate2 1.1.10: MIT OR Apache-2.0
+- flate2 1.1.11: MIT OR Apache-2.0
 - float-cmp 0.9.0: MIT
 - fluent-bundle 0.16.0: Apache-2.0 OR MIT
 - fluent-langneg 0.13.1: Apache-2.0 OR MIT
@@ -419,11 +419,11 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - tinystr 0.8.5: Unicode-3.0
 - tokio 1.54.1: MIT
 - toml 0.8.23: MIT OR Apache-2.0
-- toml 1.1.8+spec-1.1.0: MIT OR Apache-2.0
+- toml 1.2.0+spec-1.1.0: MIT OR Apache-2.0
 - toml_datetime 0.6.11: MIT OR Apache-2.0
 - toml_datetime 1.1.2+spec-1.1.0: MIT OR Apache-2.0
 - toml_edit 0.22.27: MIT OR Apache-2.0
-- toml_edit 0.25.17+spec-1.1.0: MIT OR Apache-2.0
+- toml_edit 0.25.18+spec-1.1.0: MIT OR Apache-2.0
 - toml_parser 1.1.5+spec-1.1.0: MIT OR Apache-2.0
 - toml_write 0.1.2: MIT OR Apache-2.0
 - toml_writer 1.2.0+spec-1.1.0: MIT OR Apache-2.0
