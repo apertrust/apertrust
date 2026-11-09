@@ -1123,7 +1123,7 @@ Behind a `jobs` feature, as `log`, `build`, `folders` and `codegen` are, turned 
 - a running job cancelled ends `Cancelled`, its body's failure kept beside it; darktable sets `FINISHED` after every body, cancelled or not;
 - a head skipped while an export runs ages too, as darktable's loop raises every head but the winner queue's;
 - "cancellable" at shutdown is the progress's: a job without a progress finishes, as darktable's every job does;
-- the title, detail and destination are throttled as the progress is, each on its own; darktable throttles only fractions. A held value goes out once due while the body waits in `Context::wait`, which polls every 5 ms for a cancel;
+- the title, detail and destination are throttled as the progress is, each on its own; darktable throttles only fractions. A held value goes out once due as the body sets any value, or while it waits in `Context::wait`, which polls every 5 ms for a cancel;
 - `Context::wait` returns `Err(Interrupted::Cancelled)` at cancel and `Err(Interrupted::Disconnected)` when the other side hangs up;
 - `run_now` returns how the job ended, its `Added` with no queue; `Added`'s `command` is the session's (below);
 - the observer runs under the control's lock, so the events of each job come in order. It must be quick and never block or call the control, as darktable's proxy runs under its progress lock. A call of the control from it panics rather than deadlocks, and a panic in it is logged under `-d control` and drops that event, never killing a worker or failing the job that sent it.
@@ -1192,7 +1192,7 @@ flowchart TD
 
 - `schedule` against tables worked through darktable's code: priorities and ageing over mixed queues, ties, one export at a time, the stack's dedup and its limit of 30.
 - `Control`: cancel queued and running, `run_now`, a failure or a panic ending a job failed, a panic as `panicked`, shutdown with a job that cannot be cancelled; a counting job as the test caller.
-- The throttle (decision 72): its table for each of the progress, title, detail and destination on a clock of its own, the four on one clock each its own; through the control, the first of each at once and the last of each before `Ended`; `Added` carrying what the builder set, and `Ended` the outcome, offers and failure the body set and the time the control ended it.
+- The throttle (decision 72): its table for each of the progress, title, detail and destination on a clock of its own, the four on one clock each its own; through the control, the first of each at once and the last of each before `Ended`, and a held value sent once due as the body sets another and while it waits; `Added` carrying what the builder set, and `Ended` the outcome, offers and failure the body set and the time the control ended it.
 - The session, its caller a test-only GPU job of synthetic submissions, `jobs::testing::Synthetic`, beside a live viewport, a step held where a test needs it by the test's permit:
   - a change waits for one step at most;
   - a cancel takes effect before the task's next step, and a cancel of a job that ended changes nothing;
@@ -1722,7 +1722,7 @@ The rest is planned.
 
 ### The job
 
-- **A `UserExport` job of the session's control** ([Jobs](#jobs), decision 57), darktable's `dt_control_export`: its progress "export images", cancellable, its message "exporting N / M to" the storage per photo, its fraction per photo. Planned (decision 72), it reports its whole row: its title darktable's message from 0 as it is added, its photos as its total and done, a detail naming the photo under way, its folder and then its first file as its destination, and at its end its outcome, its first failure and Try again. Its body runs on a job worker, and its renders are `GpuTask`s that the engine thread steps as background work, decision 37's scheduler, built first for exports.
+- **A `UserExport` job of the session's control** ([Jobs](#jobs), decision 57), darktable's `dt_control_export`: its progress "export images", cancellable, its title "exporting N / M to" the storage per photo, its progress the photos done of their total. Planned (decision 72), it reports its whole row: its title darktable's message from 0 as it is added, its photos as its total and done, a detail naming the photo under way, its folder and then its first file as its destination, and at its end its outcome, its first failure and Try again. Its body runs on a job worker, and its renders are `GpuTask`s that the engine thread steps as background work, decision 37's scheduler, built first for exports.
   - The thread takes the commands that have arrived, renders the live photo's frame if it changed, then makes one submission of the export's work, then looks for commands again, polling every 0.25 ms while that submission runs or a readback is on its way, as it does for the scopes (decision 19).
   - A frame never waits behind more than one export submission, and an edit never waits for an export to end.
   - With several photos on screen, stills take the same turn (decision 37), the waiting tasks taking it by darktable's order and ageing ([Jobs](#jobs)): a still's `SystemForeground` step before an export's, the export's gaining a priority each turn it waits.
@@ -1746,7 +1746,7 @@ The rest is planned.
 
 **How it is built** (`crates/engine/src/export_job.rs`):
 
-- **darktable's job:** kind `export`, its progress `job-export` and cancellable, a `job-export-photo` message per photo (`number`, `total`, `storage` "disk", `photo`), a fraction per photo done. Its failure, ending it, is `job-export-failed` with `cause`, `reason` and, where they are known, `photo` and `file`.
+- **darktable's job:** kind `export`, its progress `job-export` and cancellable, a `job-export-photo` title per photo (`number`, `total`, `storage` "disk", `photo`), and `Progress { done, total }` per photo done, `done` the photos done and `total` its photos. Its failure, ending it, is a `Failure { cause, item, file, reason }`: `Cause::id` as its cause, the photo as its item and the file where they are known, the error in plain words as its reason.
 - **What it reports, planned (decision 72):**
   - `Added`: kind `export`, cancellable; its title `job-export-photo` at `number` 0; `total` its photos; its destination the path's folder where the pattern holds no variable there, `~` the person's home; its detail `job-export-queued` with the `count` and the `folder` as typed.
   - For each photo: its `Title` as now, `Detail` `job-export-now` (`done`, `total`, `photo`), and `Progress` with the photos done, written, skipped or failed; between photos `job-export-between`.
@@ -1809,7 +1809,7 @@ Command::CancelJob { job }                                          any cancella
 Command::RetryJob { job }                                           a failed job's offer, its photos left (planned, decision 72)
 Command::PreviewExport { photos: Vec<PathBuf>, settings: ExportSettings, places: Places }
 
-Event::Job { event, command }               the job: added, queued, running, its fraction and message, its end (Jobs); its whole row (planned, decision 72)
+Event::Job { event, command }               the job: added, queued, running, its progress and title, its end (Jobs); its whole row (planned, decision 72)
 Event::Export { job, status }
   Started { index, source }                 a photo begins
   Done { index, result }                    Written { path, width, height }

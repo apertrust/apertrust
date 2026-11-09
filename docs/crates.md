@@ -199,7 +199,7 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 
 The session's events (decision 59, [docs/events.md](events.md)):
 
-- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's fraction, message and state are a fact each, by job; the Export dialog's preview is a fact.
+- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title and state are a fact each, by job; the Export dialog's preview is a fact.
 - A refused command names its number (`SessionError::Refused { command, error }`), its words the error's.
 - Every thread of the session sends through one `Outbox` (`session/outbox.rs`): the engine thread, the edit writer, the jobs' observer, and the export's and the preview's bodies.
 - The outbox calls `wake` once per burst, through a flag that `events()` clears as it drains with one loop of `try_recv`. Nothing is sent once the handle drops.
@@ -937,8 +937,9 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 - `Control`: `start`, `add`, `run_now`, `cancel`, `state`, `pending`, `shutdown`.
 - Its five queues, and `jobs::schedule`'s pure `add` and `pick`: priorities with ageing, `SystemForeground`'s deduplicated stack of 30, one export at a time. Tables worked through darktable's code hold them.
-- `Job` (`dedup`, `progress`); `Context` (`cancelled`, `set_fraction`, `set_message`, `wait`); a `Message` id with arguments. Planned (decision 72): a job's whole row in its events, done and total in place of the fraction, a detail, a destination, and an end with its outcome, failure, time and offers.
-- `JobEvent`s at most every 0.5 s; a failure or a panic ends a job failed; 7 or 4 workers; `-d control`.
+- `Job` (`dedup`, `progress`, and for its `Added` `destination`, `detail`, `total` and `retries`); `Context` (`cancelled`, `set_progress`, `set_title`, `set_detail`, `set_destination`, `set_outcome`, `offer`, `wait`); a `Message` id with arguments; `Progress` (done and an optional total), `Destination`, `Failure` (cause, item, file, reason) and `Offer` (decision 72).
+- `JobEvent`s, everything a job's row shows: the progress, title, detail and destination each at most every 0.5 s, the last of each before `Ended`, which carries the outcome, failure, time and offers; a failure or a panic (cause `panicked`) ends a job failed; 7 or 4 workers; `-d control`.
+- Planned (decision 72): the export reporting its whole row, the app's mirror as a fold of these events, and Try again ([roadmap.md](roadmap.md#the-jobs-window-and-the-job-api)).
 - Tested with a counting job.
 
 ### Planned

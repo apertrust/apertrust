@@ -465,13 +465,18 @@ impl Shared {
         }
     }
 
-    /// Runs `update` on the job's shown part under the lock, and sends what it returns.
+    /// Runs `update` on the job's shown part under the lock, and sends what it returns,
+    /// then whatever else held has come due, so a value held earlier goes out once due
+    /// while the body sets the others.
     fn with_shown(&self, job: JobId, update: impl FnOnce(&mut Shown, Instant) -> Option<JobEvent>) {
         let mut inner = self.lock();
         let Some(shown) = inner.jobs.get_mut(&job).and_then(|l| l.shown.as_mut()) else {
             return;
         };
-        if let Some(event) = update(shown, Instant::now()) {
+        let now = Instant::now();
+        let sent = update(shown, now);
+        let due = shown.throttles.held(Some(now));
+        for event in sent.into_iter().chain(due) {
             self.notify(event);
         }
     }

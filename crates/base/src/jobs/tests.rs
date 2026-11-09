@@ -14,11 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The control on real workers, its test caller a counting job. Nothing here sleeps or
-//! races: a job that must hold a worker waits for the test's go through [`Context::wait`],
-//! and the test waits for what a job or the observer tells it, with a generous deadline
-//! that only a failure reaches. The order of picks is [`schedule`]'s tables', so these hold
-//! the control to them.
+//! The control on real workers, its test caller a counting job. Nothing here races: a job
+//! that must hold a worker waits for the test's go through [`Context::wait`], and the test
+//! waits for what a job or the observer tells it, with a generous deadline that only a
+//! failure reaches. One body sleeps past the throttle's interval, a time that can only be
+//! longer, never shorter. The order of picks is [`schedule`]'s tables', so these hold the
+//! control to them.
 
 use std::fmt::Debug;
 use std::path::PathBuf;
@@ -501,6 +502,79 @@ fn each_value_is_throttled_the_first_and_last_always_sent() {
     }
     // The last of each before the end.
     assert_eq!(of.last(), Some(&ended(x, State::Finished)));
+}
+
+/// The titles a job sent, in order.
+fn titles(events: &[JobEvent]) -> Vec<String> {
+    let title = |event: &JobEvent| match event {
+        JobEvent::Title { title, .. } => Some(title.id.clone()),
+        _ => None,
+    };
+    events.iter().filter_map(title).collect()
+}
+
+/// A title held while the body sets another value goes out with that setter once due:
+/// `job-b`, held behind `job-a`, is sent as the progress is set past the interval, so
+/// `job-c` after it holds again instead of replacing it.
+#[test]
+fn a_held_value_goes_out_once_due_as_the_body_sets_another() {
+    let (control, mut events) = control(1);
+    let job = Job::new("count", "busy", |context| {
+        context.set_title(Message::new("job-a"));
+        context.set_title(Message::new("job-b"));
+        thread::sleep(progress::INTERVAL + Duration::from_millis(50));
+        context.set_progress(1, Some(1));
+        context.set_title(Message::new("job-c"));
+        Ok(())
+    })
+    .progress(Message::new("job-test"), false);
+    let x = control.add(UserBackground, job);
+    events.ended(x);
+    let of = events.of(x);
+    assert_eq!(titles(&of), ["job-a", "job-b", "job-c"], "{of:?}");
+    let at = |wanted: &JobEvent| of.iter().position(|event| event == wanted);
+    let progress = JobEvent::Progress {
+        job: x,
+        done: 1,
+        total: Some(1),
+    };
+    let b = JobEvent::Title {
+        job: x,
+        title: Message::new("job-b"),
+    };
+    assert!(
+        at(&progress) < at(&b),
+        "with the setter, after its own value"
+    );
+}
+
+/// A title held while the body waits goes out once due, before the wait ends: the test
+/// lets the body go only once it has heard `job-b`.
+#[test]
+fn a_held_value_goes_out_once_due_while_the_body_waits() {
+    let (control, mut events) = control(1);
+    let (go, wait) = mpsc::channel::<()>();
+    let job = Job::new("count", "waiting", move |context| {
+        context.set_title(Message::new("job-a"));
+        context.set_title(Message::new("job-b"));
+        let _ = context.wait(&wait);
+        Ok(())
+    })
+    .progress(Message::new("job-test"), false);
+    let x = control.add(UserBackground, job);
+    events.until(
+        |event| matches!(event, JobEvent::Title { job, title } if *job == x && title.id == "job-b"),
+    );
+    assert!(
+        !events
+            .seen
+            .iter()
+            .any(|event| matches!(event, JobEvent::Ended { job, .. } if *job == x)),
+        "sent while the body waits, not as it ends"
+    );
+    go.send(()).unwrap();
+    events.ended(x);
+    assert_eq!(titles(&events.of(x)), ["job-a", "job-b"]);
 }
 
 /// A job's `Added` carries what its builder set, and its `Ended` the outcome and offers
