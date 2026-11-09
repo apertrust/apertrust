@@ -427,7 +427,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
   - File with Open Image…, Open Folder…, Import, Export…, Export Again and Close Window;
   - Edit with Undo and Redo, Copy Edit, Apply Edit and Copy or Apply Parts, then Reset Edit;
   - Photo with Next Photo and Previous Photo;
-  - View with Library, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size) and Full Screen;
+  - View with Library, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
   - Window; Help, with AppKit's search.
 
   Disabled until built: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo, Previous Photo and Library. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions and H's peek. An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Side-panel tab 1"; the `.menu` and `.mac` attributes, title case and the tabs' own names, check marks and Undo naming its step come later.
@@ -679,6 +679,8 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Side Panel on the Right, Side Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built; its keys go |
 | — | | | |
+| Jobs | `show-jobs`: the jobs window with its rows, finished ones too, or brought to the front ([The jobs window](#the-jobs-window)) | Ctrl+Shift+J | Built, every platform |
+| — | | | |
 | Enter Full Screen and Exit Full Screen on macOS; Full Screen, checked, on Windows and Linux | `full-screen` | Ctrl+Cmd+F on macOS; F11 | Built |
 
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo, every cell together when several are shown.
@@ -784,7 +786,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 
 **With no photo open,** every menu is there.
 
-- Enabled: Open, Open Folder, Open Recent, Settings, About, Quit, Close Window, Library, Side Panel Tab, Workspace, Panels, Interface Size, Full Screen, Keyboard Shortcuts and the platform's items.
+- Enabled: Open, Open Folder, Open Recent, Settings, About, Quit, Close Window, Library, Side Panel Tab, Workspace, Panels, Interface Size, Jobs, Full Screen, Keyboard Shortcuts and the platform's items.
 - Disabled: what acts on a photo, which is Export, Export Again, Show in Folder, Undo and Redo, the edit's items, the whole Photo menu, the zoom, the overlays and the grid bar's items.
 - The empty central panel offers Open… and Open Folder… with their keys, as the platform writes them (Cmd+O on the Mac) and as the person has set them; without a key, the sentence stops after the item ([The central panel's states](#the-central-panels-states)).
 
@@ -869,7 +871,7 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo, and View's zoom items |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the side panel's tabs; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; Auto › Exposure, drawn disabled; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
 | Later in Phase 2 | Open… (Open Image… becoming it), Open Recent, Close and Show in Folder, with folder mode and the start window; Library, with its tab (decision 37); Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
@@ -1073,6 +1075,7 @@ Where winit cannot:
 #### The menus while a dialog is open
 
 - **One dialog at a time.** The view's items rest. So does every action that opens a dialog, a file dialog or About, so one dialog is open at a time, as Apple asks of sheets, while a modal one is up: a sheet, a modal window of the host's (Settings' on Windows and Linux), About over the window, or the open dialog asking (`State::modal`).
+- **View › Jobs stays:** the jobs window is modeless beside any dialog, so the jobs stay in reach under a sheet or the quit alert that waits for them.
 - **Close Window** rests then too, as AppKit's does under a sheet, unless a dialog's own window has the focus: it acts on the key window.
 - **A modeless Settings window** leaves them all to run, as Apple's apps do: Open Image… and About open over the main window beside it.
 - **Quit while the open dialog asks** waits for its answer: AppKit's panel hangs on the main window as a sheet, and a Quit under it would take the panel away and leave the window open, the app running on.
@@ -1364,8 +1367,8 @@ The lines under the rows come from the session (`PreviewExport`, [engine.md](eng
 | Overwrite alert | "Export in overwrite mode?", "Don't ask again" (darktable's "ask before exporting in overwrite mode"), [Overwrite] (destructive) [Cancel] (default) |
 | Delete or update a preset | darktable's "delete preset?" and "update preset?" as alerts |
 | Running | The dialog closed; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar and ✕, "3 of 12 done · now IMG_2044.ARW", "To" the folder, Show in Finder |
-| Finished | The export's row, "Exported 12 photos", "To" the folder and the time, Show in Finder; cleared by Clear Finished |
-| Failed | "Export failed: 11 of 12 exported", its icon the warning sign; the reason in `error` ("IMG_2051.ARW: the disk is full"); Try again, Show in Finder, Dismiss |
+| Finished | The export's row, "12 photos exported", "To" the folder and the time, Show in Finder; cleared by Clear Finished |
+| Failed | "Export failed: 11 of 12 photos exported", its icon the warning sign; the reason in `error` ("IMG_2051.ARW: the disk is full"); Try again, Show in Finder, Dismiss |
 | Cancelled | "Export cancelled: 3 of 12 photos exported", the files written kept; cleared by Clear Finished |
 
 - **A failure** (decision 56): a photo's own failure, such as a raw that cannot be read, is that photo's, and the export goes on, as darktable-cli's loop does. A failure of the destination, a folder that cannot be created or written or a disk that is full or gone, stops it, as darktable's export job stops, since every later photo would fail the same way. Try again exports the photos that failed and those it did not reach, with the same settings, each photo's edit as it is when Try again is pressed: the export offers it, and the session keeps what it runs (`RetryJob`, decision 72).
@@ -1401,15 +1404,15 @@ How background jobs are shown (decisions 57 and 72; [engine.md](engine.md), Jobs
 
 - **One spinner** at the top panel's end, before the save state, only while a job with a progress is queued or running; never one per job. It is a button in the top panel's Tab order, named "Jobs" with the count in its value ("2 running"), so its name stays as jobs come and go, with a polite live region at a job's start and end. It has a slot of its own, one button wide and a group's gap (`spacing.m`) before the save state's, kept whether it shows or not, so neither a job coming and going nor a save moves it or anything else, and, having no words, it never folds.
 - **At rest** the spinner's place is empty, with no tick: the finished rows wait in the window. After a failure the warning sign stays in its place until the failed row is dismissed or tried again.
-- **A click on it** (or on the warning sign) opens the jobs window; a click while the window is open brings it to the front.
+- **A click on it** (or on the warning sign) opens the jobs window; a click while the window is open brings it to the front. View › Jobs (`show-jobs`, Ctrl+Shift+J) does the same at any time, the spinner shown or not, so the finished rows are always a key away.
 - **The jobs window** is a modeless window of the dialog host (decision 41), beside the main window as Settings is on the Mac, never blocking it, restored where the user last left it. One row per job, newest first, each part told by the job itself ([A row](#a-row-and-where-each-part-comes-from)).
 - **It opens itself when a job the user started starts:** an export, an import, a copy, a move, a rename or a delete, darktable's `UserForeground` and `UserExport` queues. Closing it never stops a job.
-- **It closes itself when it opened itself and those jobs end well** (planned with step 5 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api)): about 2 seconds after the last job it opened for finishes, so its Done is seen, unless any of them failed or was cancelled, the user clicked it, moved it or brought it to the front, or the pointer is over it. Opened from the spinner, it stays until closed. Its finished rows stay for the next time it opens.
+- **It closes itself when it opened itself and those jobs end well:** about 2 seconds after the last job it opened for finishes, so its outcome is seen, unless any of them failed or was cancelled, or the user touched it: clicked in it, typed in it, or brought it to the front with the spinner or View › Jobs. While the pointer is over it, it waits, and the 2 seconds start again once the pointer leaves. On the Mac, where it opens without the focus, its taking the focus is a touch too, which a click, a move by its title bar or Cmd+` gives it. Opened from the spinner or View › Jobs, it stays until closed. Its finished rows stay for the next time it opens.
 - Other jobs, a folder's reading and rescans, turn the spinner and show in the window, newest on top with the others, but never open it.
 - **Thumbnails never show.** Each is a job of its own on `SystemForeground`, with no progress or message, so neither the spinner nor the window knows of it.
 - **When a job ends,** its row stays, finished, failed or cancelled, until it is cleared: finished and cancelled rows together by Clear Finished, a failed row only by its own Dismiss, so a failure is never cleared unseen.
 - **Cancel** sends `CancelJob { job }`; a job that cannot be cancelled has no ✕, as darktable's delete has none.
-- **Try again** sends `RetryJob { job }`, for a failed job that offers it; the new job's row takes the failed one's place.
+- **Try again** sends `RetryJob { job }`, for a failed job that offers it; the new job's row takes the failed one's place (planned with step 6 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api)).
 - **Quitting:** Quit or Close Window while a user job runs asks first, with an alert of its own; confirmed, cancellable jobs stop as Cancel stops them, and the rest finish ([The alerts](#the-alerts)).
 - **No progress bar while editing:** no edit ever waits on a job.
 - **Windows and Linux:** the window is the same there; showing it without taking the focus waits for their modality.
@@ -1417,12 +1420,12 @@ How background jobs are shown (decisions 57 and 72; [engine.md](engine.md), Jobs
 
 #### A row, and where each part comes from
 
-Decision 72: each part of a row comes from one of the job's own events ([events.md](events.md#a-jobs-events)), so the row is the same for every kind of job and every client. The app's fold of them is built ([In the app](#in-the-app)); the look below is planned with step 5 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api), and the window draws the parts as the design system's Built line says until then.
+Decision 72: each part of a row comes from one of the job's own events ([events.md](events.md#a-jobs-events)), so the row is the same for every kind of job and every client. The app's fold of them and the look below are built ([In the design system](#in-the-design-system), [In the app](#in-the-app)).
 
 | Part | Shown | From |
 | --- | --- | --- |
 | Icon | A small icon on a 28-point tile at the row's start; the warning sign, in `warning`, once it failed | `Added`'s `kind`, by the design system's table, a generic icon for a kind it does not list; `Ended`'s `failure` |
-| Title | Medium text: "Exporting 3 / 12 to file on disk", "Reading 2026-10 Lisbon"; once ended, "Export failed: 10 of 12 exported", "Exported 8 photos" | `Added`'s `title`, then each `Title`; once ended, `Ended`'s `outcome`, or without one the title with the state's word ("Finished: …") |
+| Title | Medium text: "Exporting 3 / 12 to file on disk", "Reading 2026-10 Lisbon"; once ended, "Export failed: 11 of 12 photos exported", "12 photos exported" | `Added`'s `title`, then each `Title`; once ended, `Ended`'s `outcome`, or without one the title with the state's word ("Finished: …") |
 | Bar | While it is queued or running: filled at `done / total`, empty while it waits; a moving segment where there is no total, as a folder's reading has none | `Added`'s `progress`, then each `Progress` |
 | ✕ | Cancel, at the bar's end, only while a cancellable job is queued or running; gone once a cancel is asked | `Added`'s `cancellable`, while `State` is `Queued` or `Running` |
 | Detail | One small line under the bar: "3 of 12 done · now IMG_2044.ARW"; while queued, "Next in line: 5 photos, to …", or "Waiting for other jobs" where the job gives none; none once ended | `Added`'s `detail`, then each `Detail` |
@@ -1444,22 +1447,22 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
 
 `crates/ui/src/components/jobs.rs`, `Jobs`, tested in `tests/jobs.rs`. Its job data is a row of any job, `Job`; its actions `ActivityAction` and `FileManager`.
 
-- **Built:** `Job` holds the row's parts, each as the job sent it: `kind`, `phase`, `title` (`JobMessage`), `fraction`, `cancellable`, `detail`, `destination` (the folder as the app wants it read), `outcome`, `failure` (`JobFailure`: item, file and cause, worded), `retry` and `ended_at`. Every row is drawn alike from them, in a bordered frame on `raised`:
-  - its title; a bar while it runs; under it the detail, in `text_secondary` while it is queued ("Waiting for other jobs" where it gives none), in `text` while it runs;
-  - once ended, the outcome, or without one the state's word ("Finished"), then the failure in `error` (`activity-failure…`, naming the item and file where it has them);
-  - "To" its destination, except while queued;
-  - buttons in a row at its end: Show in Finder where it has a destination, Cancel ("Cancel export" for an export, by its kind's words), Try again where it offers a retry, and Dismiss once it has ended;
-  - the spinner's tick at rest. `ended_at` is not drawn.
-- **Planned (decision 72):** the look above: the outcome as the ended row's title, `progress` (`done`, `total`) in place of `fraction` for the indeterminate bar, `ended_at` as the time after To, the icon and the ✕. `ActivityAction` gains `ClearFinished`. The spinner, the live region and the window below are as planned; where the built ones differ, the Built line says how.
+- **`Job`** holds the row's parts, each as the job sent it: `kind`, `phase`, `title` (`JobMessage`), `done` and `total` (`Job::progress`; `Job::fraction` is their ratio, none with no total), `cancellable`, `detail`, `destination` (the folder as the app wants it read), `outcome`, `failure` (`JobFailure`: item, file and cause, worded), `retry` and `ended_at`. Every row is drawn alike from them, the look above ([A row](#a-row-and-where-each-part-comes-from)):
+  - the tile, 28 points on `surface`, with the kind's icon in `text` at 16 points from the design system's table, `kind_icon`: `export`, `import` and `folder` have their own (Export, Import, Library), and any other kind the generic one, Settings' gear, so a new kind shows with no client code; once failed, the warning sign in `warning`;
+  - the title in Medium `text_strong`: once ended, the outcome, or without one the title with the state's word (`jobs-finished`, `jobs-failed`, `jobs-cancelled`: "Finished: …"); an export's failed outcome says so ("Export failed: 11 of 12 photos exported"), as its cancelled one does;
+  - while queued or running, the bar line, a control high (22): the bar, 8 points, fully rounded, `accent` on a `separator` track with a `divider` hairline edge, and the ✕, `IconButton` with the `Close` icon, a control square, 8 points after the bar's end where the job can be cancelled, named "Cancel" (`jobs-cancel`) for every kind, its tooltip "Stop this job"; with no total, an indeterminate segment, 30% of the bar, crossing it 0.6 times a second;
+  - the detail, the "To" line with the time it ended once finished or cancelled (`activity-folder-at`, "· 14:02" on the local clock), or the failure in `error` (`activity-failure…`, naming the item and file where it has them), all small in `text_secondary` but the failure;
+  - the buttons, left-aligned under the lines, egui's own on the window's `raised` at rest so they stand out of the list: Show in Finder where it has a destination and is not queued; on a failed row, Try again where it offers a retry, before it, and Dismiss after it.
+- **The list** is a `sunken` frame (`radius_large`), rows parted by a `divider` hairline, inside `quiet_scroll`; with more than five rows it is as tall as the first five measured on the frame before (a row not measured yet draws the frame again at once, `request_discard`). The footer under it holds Clear Finished at its end, reporting `ActivityAction::ClearFinished`, enabled while a row is finished or cancelled (`JobPhase::cleared`).
 - **The spinner,** `Jobs::spinner` through `TopPanel::jobs`: a 30-point icon button, the same at every fold, drawn while a job is queued or running or a failed one is left.
   - It turns while one is queued or running, a ring with an arc of 1.6 radians at 0.9 turns a second, repainting every 16 ms. egui has no reduced-motion setting, so it holds still where the theme's motion tokens have zeroed `animation_time`; so does an indeterminate bar's segment.
   - With nothing queued or running, it shows the warning sign in `warning` while a failed row is left, and nothing otherwise.
   - It is named "Jobs" and its value says "2 running", "1 running, 1 waiting", "1 waiting" or "1 failed" (Ukrainian and Polish say "Виконується: 2", "Uruchomione: 2", avoiding plural forms), so the name is stable and the count is in the value. The tooltip is "Jobs: 2 running".
   - A press is `TopPanelAction::Jobs`, also while the window is open, for the app to bring it forward.
-- **The live region** is in the tree whenever the top panel has the spinner, empty while there is no job. It remembers each job's phase in egui's memory and, as a job is first seen or leaves queued or running, says its start ("Started: Exporting 0 / 12 to file on disk", "Started: Reading 2026-10 Lisbon") or its end, by the row's title once ended ("Exported 12 photos", "Failed: Reading 2026-10 Lisbon"). Never as progress moves; cleared when the last job is cleared. It says the start of a job that takes an ended one's place.
+- **The live region** is in the tree whenever the top panel has the spinner, empty while there is no job. It remembers each job's phase in egui's memory and, as a job is first seen or leaves queued or running, says its start ("Started: Exporting 0 / 12 to file on disk", "Started: Reading 2026-10 Lisbon") or its end, by the row's title once ended ("12 photos exported", "Failed: Reading 2026-10 Lisbon"). Never as progress moves; cleared when the last job is cleared. It says the start of a job that takes an ended one's place.
 - **The window's content,** `Jobs::window(&mut Ui) -> Option<ActivityAction>`: a group named "Jobs", a row per job, newest first by id whatever order they come in, and the footer.
   - Each row is a group named by its translated title, with its bar while queued or running (a progress indicator named by the title, its percentage as the value, none while indeterminate), its lines and its buttons.
-  - The ✕, the row's buttons and Clear Finished are in the Tab order, in reading order, newest row first, the ✕ named "Cancel" ("Cancel export" for an export, by its kind's words).
+  - The ✕, the row's buttons and Clear Finished are in the Tab order, in reading order, newest row first, each row's ✕ before its buttons, Clear Finished last while it is enabled. The ✕ is named "Cancel" for every kind of job; the row's group names the job.
 - **Messages** are `JobMessage { id, args }`, translated with Fluent from `crates/ui/locales`: each job's title, detail and outcome ids (`job-export…`, `job-folder`, `job-import`, `job-delete`), and `job-cause-<cause>` for a failure. The window knows no engine type and no platform: the app names the file manager.
 
 #### In the app
@@ -1472,20 +1475,21 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
   - **A command awaiting its job:** an export the app sends is noted by its number (`Mirror::starting`) until the `Added` that names it, so quitting waits for it; nothing else of the command is kept.
   - **Try again:** the rows keep a job's retry offer (`Job::retry`), but the app's window (`jobs::Window`) draws no Try again until the session takes `RetryJob` (planned with step 6 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api)).
   - **When the engine stops** under its jobs, every row still queued or running ends failed, cause `engine`, so quitting waits for nothing.
-- **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport` whose `Added` names a command the app sent. Every other job answers `Show::Update` and only shows in the window if it is open. The spinner's click is `Show::Front`: it opens the window or brings it to the front, with the focus. The close is `Show::Close` (planned): once every job of an automatic open has finished, none failed or cancelled and the window untouched since, the app closes it after about 2 seconds, the time counted by a repaint it asks for, never a thread.
+- **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport` whose `Added` names a command the app sent. Every other job answers `Show::Update` and only shows in the window if it is open. The spinner's click and View › Jobs are `Show::Front`: it opens the window or brings it to the front, with the focus. View › Jobs, the registry's `show-jobs`, sets a flag of the shell's that `run_action` hands to `jobs::refresh` with the rows as they stand, as Settings goes to the host.
   - An automatic open does not take the focus from the window the user is working in: on the Mac the host shows it with `apertrust_display::show_without_focus` (`orderFront:`), since winit's `set_visible(true)` is `makeKeyAndOrderFront:`. Windows and Linux show it as winit does until their modality is in.
-  - An open asked twice before the window is made keeps the stronger focus.
+  - An open asked twice before the window is made keeps the stronger focus. An open asked while the window is open, or asked and not yet made, goes to the window (`jobs::Window::again`): a click on the spinner keeps it open, and another automatic open adds the jobs it opened for to those it waits for.
+- **The close** is the window's own: `Mirror::apply` notes each job that answers `Show::Open`, which `Mirror::opened` hands to `jobs::refresh`, and the window opened for them (`Window::opened_for`) asks the host to close it (`Asks::close`) `CLOSE_AFTER`, 2 seconds, after it first sees them all finished, the time counted by a repaint it asks for (`request_repaint_after`), never a thread. A job of them failed or cancelled, a press or a key in it, or, on the Mac, its focus, keeps it open for good; the pointer over it holds the count until it leaves. A job it did not open for, a folder's reading, never holds it.
 - **The window** is `jobs::Window`, a `Dialog` of the dialog host, a modeless window in a slot of its own beside the dialog's (`Slot::Jobs`). So it stays open while Settings or the Export sheet open, closes alone and has its own repaints, AccessKit tree and place; at most one dialog and one jobs window at a time.
-  - It is 440 points wide inside its margin and as tall as its rows up to five, then the list scrolls (`quiet_scroll`) above a footer that stays in view. It follows the main window's theme, language and interface scale while it stays open.
+  - It is 440 points wide inside its margin (`spacing.m`) and as tall as its rows up to five, then the list scrolls above a footer that stays in view, both drawn by `Jobs::window`. It follows the main window's theme, language and interface scale while it stays open.
   - Its place is kept as its own, `jobs_window.position` and `jobs_window.scale_factor` in settings, the host reporting `Output::JobsPlaced` as it closes; centred over the main window the first time. Where Quit closes the window, its place reaches the keeper before the app leaves (`settle`).
   - Closing it, with its close button, Cmd+W while it has the focus or Quit, stops no job. Close Window closes the window with the focus; Quit and the main window's close close both, and the app leaves once they have gone.
   - `AppDialogs::shown` reports the dialog's form with the focus of either window, so the view's keys rest while the jobs window has it.
 - **The buttons** come back as `Output::Jobs(ActivityAction)`, and `Mirror::act` says what to do:
   - the ✕ sends `CancelJob`;
   - Show in Finder reveals the destination: a file with `open -R` on the Mac, `explorer /select,` on Windows, its folder through `xdg-open` elsewhere, or a folder opened;
-  - Try again sends `RetryJob { job }`;
+  - Try again asks nothing yet: the window draws none until the session takes `RetryJob` (step 6);
   - Dismiss takes a failed row away, and Clear Finished every finished and cancelled row.
-- **Not built:** a Window menu item or a key for the jobs window, the way back to finished rows once the window is closed, since the spinner is gone at rest; Windows' and Linux's focus handling.
+- **Not built:** Windows' and Linux's focus handling.
 
 ### What a script sees
 
@@ -2914,6 +2918,7 @@ Ctrl means Cmd on macOS.
 | App | Side-panel tabs 1 to 5 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold. With the Library's tab first, the sixth has no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types − |
 | App | Interface scale | None by default: View › Interface Size and Settings set it, and a user may give it keys | egui's zoom factor, from 50% to 300% in steps of 10%. egui's own zoom keys are off, so the registry owns them. `actions.rs` still gives it Ctrl+=, Ctrl+− and Ctrl+0 until the photo's zoom is built, when they move to it |
 | App | Next and previous pane | F6, Shift+F6 | Between the regions, as above |
+| App | Jobs | Ctrl+Shift+J | Opens the jobs window, or brings it to the front; never disabled, as the window opens beside any dialog |
 | App | Full screen | F11; on macOS Control+Cmd+F first (spelt Ctrl+Cmd+F), since macOS keeps F11 for showing the desktop | The window's full-screen command |
 | App | Close | Ctrl+W, Windows and Linux | New, with the start window: closes what is open and shows the start window |
 | App | Close Window | Cmd+W, macOS only | Closes the key window: a dialog's own window when it has the focus, else the main window, which quits as Quit does until the start window, and then does what Close does. Rests under a modal dialog over the main window, unless a dialog's own window has the focus |

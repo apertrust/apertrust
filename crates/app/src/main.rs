@@ -1152,6 +1152,8 @@ struct Shell {
     settings: bool,
     /// Whether Show Log ran, for the app to open the log window after the action.
     show_log: bool,
+    /// Whether View › Jobs ran, for the app to open the jobs window after the action.
+    show_jobs: bool,
     about: about::About,
     /// Whether Open Image… ran, for the app to show the open dialog after the frame.
     open: bool,
@@ -1247,6 +1249,7 @@ impl Shell {
             central_panel: settings.central_panel,
             settings: false,
             show_log: false,
+            show_jobs: false,
             about: about::About::default(),
             open: false,
             open_folder: false,
@@ -1724,6 +1727,7 @@ impl Shell {
         match intent {
             Intent::About => self.about.open(ctx),
             Intent::ShowLog => self.show_log = true,
+            Intent::ShowJobs => self.show_jobs = true,
             Intent::Settings => self.settings = true,
             Intent::Open => self.open = true,
             Intent::OpenFolder => self.open_folder = true,
@@ -2142,7 +2146,14 @@ impl App {
                 self.jobs_view = self.mirror.jobs.view(&translator(ctx));
                 let place = self.shell.jobs_window;
                 let view = &self.jobs_view;
-                jobs::refresh(view, &mut self.dialogs, jobs::Show::Update, place, ctx);
+                jobs::refresh(
+                    view,
+                    Vec::new(),
+                    &mut self.dialogs,
+                    jobs::Show::Update,
+                    place,
+                    ctx,
+                );
             }
         }
     }
@@ -2196,7 +2207,10 @@ impl App {
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
-        jobs::refresh(&self.jobs_view, &mut self.dialogs, show, place, ctx);
+        // The jobs that opened the window, for it to close itself once they end well.
+        let opened = self.mirror.jobs.opened();
+        let view = &self.jobs_view;
+        jobs::refresh(view, opened, &mut self.dialogs, show, place, ctx);
     }
 
     /// Sends a module control's new value and shows it at once, kept, until the engine
@@ -2423,6 +2437,7 @@ impl App {
                 shell,
                 dialogs,
                 keeper,
+                &self.jobs_view,
                 id,
                 &state,
                 ctx,
@@ -2910,7 +2925,14 @@ impl eframe::App for App {
             Some(FromTopPanel::Jobs) => {
                 let place = self.shell.jobs_window;
                 let view = &self.jobs_view;
-                jobs::refresh(view, &mut self.dialogs, jobs::Show::Front, place, &ctx);
+                jobs::refresh(
+                    view,
+                    Vec::new(),
+                    &mut self.dialogs,
+                    jobs::Show::Front,
+                    place,
+                    &ctx,
+                );
             }
             Some(FromTopPanel::NotSaved) => self.ask_why_not_saved(&ctx),
             None => {}
@@ -3109,12 +3131,15 @@ impl eframe::App for App {
 /// own, Settings' on the Mac, else the main window. Quit, and Close Window on the main
 /// window, close the dialog open first, as its Cancel, and leave once it has gone
 /// ([`take_dialogs`]). Settings and Export asked for go to the dialog host, which opens
-/// them in their platform's form, or brings Settings' modeless window to the front.
+/// them in their platform's form, or brings Settings' modeless window to the front. View ›
+/// Jobs opens the jobs window with `jobs`, the rows as they stand, or brings it to the
+/// front, as the spinner's click does.
 #[allow(clippy::too_many_arguments)]
 fn run_action(
     shell: &mut Shell,
     dialogs: &mut dialog_host::AppDialogs,
     keeper: &Keeper,
+    jobs: &[apertrust_ui::components::Job],
     id: ActionId,
     state: &State,
     ctx: &egui::Context,
@@ -3143,6 +3168,10 @@ fn run_action(
         let export = export::Export::new(shell.export.clone())
             .alerts(dialog_host::platform::shows_alerts(ctx.os()));
         dialogs.open(export, None, ctx);
+    }
+    if std::mem::take(&mut shell.show_jobs) {
+        let show = jobs::Show::Front;
+        jobs::refresh(jobs, Vec::new(), dialogs, show, shell.jobs_window, ctx);
     }
     command
 }
@@ -6059,6 +6088,8 @@ mod tests {
         jobs: Option<dialog_host::Shown>,
         jobs_opened: Vec<(Option<settings::Position>, bool)>,
         jobs_fronted: usize,
+        /// The window open, as the host holds it: a later open goes to it (`again`).
+        jobs_window: Option<jobs::Window>,
         /// The jobs the window was last given, and whether it was asked to close.
         jobs_shown: Vec<apertrust_ui::components::Job>,
         jobs_closing: bool,
@@ -6173,10 +6204,14 @@ mod tests {
                         shown.focused = true;
                         hosted.jobs_fronted += 1;
                     }
+                    if let Some(open) = &mut hosted.jobs_window {
+                        open.again(window, focus);
+                    }
                 }
                 None => {
                     hosted.jobs_opened.push((place, focus));
                     hosted.jobs_shown = window.jobs().to_vec();
+                    hosted.jobs_window = Some(window);
                     let form = dialog_host::Form::Modeless;
                     hosted.jobs = Some(dialog_host::Shown {
                         form,
@@ -6193,6 +6228,9 @@ mod tests {
         fn set_jobs(&mut self, jobs: Vec<apertrust_ui::components::Job>) {
             let mut hosted = self.0.borrow_mut();
             if hosted.jobs.is_some() {
+                if let Some(open) = &mut hosted.jobs_window {
+                    open.set(jobs.clone());
+                }
                 hosted.jobs_shown = jobs;
             }
         }
@@ -6383,11 +6421,20 @@ mod tests {
                         let running = d.jobs.running();
                         let edit = d.edit.edit();
                         let mut leave = alerts::Leave::new(&mut d.quit, running, edit);
+                        // The rows as the app's `jobs_view` holds them after its drain.
+                        let view = d.jobs.view(&translator(&ctx));
                         let (shell, dialogs, keeper) = (&mut d.shell, &mut d.dialogs, &d.keeper);
-                        let command =
-                            run_action(shell, dialogs, keeper, id, &state, &ctx, &[], &mut || {
-                                leave.may()
-                            });
+                        let command = run_action(
+                            shell,
+                            dialogs,
+                            keeper,
+                            &view,
+                            id,
+                            &state,
+                            &ctx,
+                            &[],
+                            &mut || leave.may(),
+                        );
                         if leave.ask {
                             let (alerts, quit) = (&mut d.alerts, &mut d.quit);
                             let dialogs = &mut d.dialogs;
@@ -6502,7 +6549,7 @@ mod tests {
         // nothing.
         let thumbnails = jobs::tests::added(ids[0], Queue::SystemBackground, None);
         let (show, view) = jobs_after(&mut mirror, &[thumbnails]);
-        jobs::refresh(&view, &mut dialogs, show, None, &ctx);
+        jobs::refresh(&view, Vec::new(), &mut dialogs, show, None, &ctx);
         assert_eq!(view.len(), 1);
         assert!(host.0.borrow().jobs.is_none() && host.0.borrow().jobs_opened.is_empty());
 
@@ -6514,7 +6561,7 @@ mod tests {
         });
         let export = jobs::tests::added(ids[1], Queue::UserExport, Some(1));
         let (show, view) = jobs_after(&mut mirror, &[export]);
-        jobs::refresh(&view, &mut dialogs, show, None, &ctx);
+        jobs::refresh(&view, Vec::new(), &mut dialogs, show, None, &ctx);
         let hosted = host.0.borrow();
         assert_eq!(hosted.jobs_opened, [(None, false)]);
         assert_eq!(hosted.jobs_shown.len(), 2, "every job is listed");
@@ -6524,7 +6571,7 @@ mod tests {
         // Another system job while it is open shows in it, and does not bring it forward.
         let later = jobs::tests::added(ids[2], Queue::SystemForeground, None);
         let (show, view) = jobs_after(&mut mirror, &[later]);
-        jobs::refresh(&view, &mut dialogs, show, None, &ctx);
+        jobs::refresh(&view, Vec::new(), &mut dialogs, show, None, &ctx);
         let hosted = host.0.borrow();
         assert_eq!(hosted.jobs_opened.len(), 1);
         assert_eq!(hosted.jobs_shown.len(), 3);
@@ -6543,18 +6590,112 @@ mod tests {
         let (_, view) = jobs_after(&mut mirror, &[thumbnails]);
 
         // Closed: a click opens it and it takes the focus.
-        jobs::refresh(&view, &mut dialogs, jobs::Show::Front, None, &ctx);
+        jobs::refresh(
+            &view,
+            Vec::new(),
+            &mut dialogs,
+            jobs::Show::Front,
+            None,
+            &ctx,
+        );
         assert_eq!(host.0.borrow().jobs_opened, [(None, true)]);
         // Open but behind the main window: a click brings it forward.
         host.0.borrow_mut().jobs = Some(dialog_host::Shown {
             form: dialog_host::Form::Modeless,
             focused: false,
         });
-        jobs::refresh(&view, &mut dialogs, jobs::Show::Front, None, &ctx);
+        jobs::refresh(
+            &view,
+            Vec::new(),
+            &mut dialogs,
+            jobs::Show::Front,
+            None,
+            &ctx,
+        );
         let hosted = host.0.borrow();
         assert_eq!(hosted.jobs_opened.len(), 1, "not opened twice");
         assert_eq!(hosted.jobs_fronted, 1);
         assert!(hosted.jobs.is_some_and(|s| s.focused));
+    }
+
+    /// Whether `window` closes itself, drawn as the host draws it every half second for
+    /// five seconds, on the Mac without the focus and with no pointer over it, so nothing
+    /// the person does keeps it open.
+    fn closes_itself(window: jobs::Window) -> bool {
+        let mut harness = Harness::builder()
+            .with_os(OperatingSystem::Mac)
+            .with_step_dt(0.5)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, (window, closed): &mut (jobs::Window, bool)| {
+                    *closed |= dialog_host::draw(ui, window).close;
+                },
+                (jobs::Window::new(Vec::new()), false),
+            );
+        harness.run();
+        harness.input_mut().focused = false;
+        harness.input_mut().events.push(egui::Event::PointerGone);
+        harness.state_mut().0 = window;
+        harness.run_steps(10);
+        harness.state().1
+    }
+
+    #[test]
+    fn view_jobs_opens_the_jobs_window_or_brings_it_forward_and_it_never_closes_itself() {
+        use apertrust_engine::jobs::{Queue, State};
+        let host = FakeHost::default();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let ids = jobs::tests::ids(2);
+        // An export that has finished: its row waits in the window, which is closed.
+        let mirror = &mut harness.state_mut().jobs;
+        mirror.apply(&jobs::tests::added(ids[0], Queue::UserExport, Some(1)));
+        mirror.apply(&jobs::tests::ended(ids[0], State::Finished, None));
+
+        // Closed: View › Jobs opens it with the focus, the finished row in it.
+        press_action(&mut harness, ActionId::SHOW_JOBS);
+        let opened = host.0.borrow().jobs_window.clone().expect("opened");
+        {
+            let hosted = host.0.borrow();
+            assert_eq!(hosted.jobs_opened, [(None, true)]);
+            assert_eq!(hosted.jobs_shown.len(), 1);
+            let finished = apertrust_ui::components::JobPhase::Finished;
+            assert_eq!(hosted.jobs_shown[0].phase, finished);
+        }
+        // Its jobs have all ended, and still it stays: the person opened it.
+        assert!(!closes_itself(opened));
+
+        // Open but behind the main window: it comes to the front, not opened twice.
+        host.0.borrow_mut().jobs.as_mut().expect("open").focused = false;
+        press_action(&mut harness, ActionId::SHOW_JOBS);
+        {
+            let hosted = host.0.borrow();
+            assert_eq!(hosted.jobs_opened.len(), 1);
+            assert_eq!(hosted.jobs_fronted, 1);
+            assert!(hosted.jobs.is_some_and(|s| s.focused));
+        }
+
+        // Closed again, a new export opens it by itself, to close once that export ends...
+        host.0.borrow_mut().jobs = None;
+        let mirror = &mut harness.state_mut().jobs;
+        let show = mirror.apply(&jobs::tests::added(ids[1], Queue::UserExport, Some(2)));
+        assert_eq!(show, jobs::Show::Open);
+        let view = mirror.view(&Translator::new(Locale::EnGb));
+        let opened = mirror.opened();
+        let dialogs = &mut harness.state_mut().dialogs;
+        jobs::refresh(&view, opened, dialogs, show, None, &ctx);
+        let mirror = &mut harness.state_mut().jobs;
+        mirror.apply(&jobs::tests::ended(ids[1], State::Finished, None));
+        let view = mirror.view(&Translator::new(Locale::EnGb));
+        let dialogs = &mut harness.state_mut().dialogs;
+        jobs::refresh(&view, Vec::new(), dialogs, jobs::Show::Update, None, &ctx);
+        let by_itself = host.0.borrow().jobs_window.clone().expect("opened");
+        assert!(closes_itself(by_itself));
+        // ...but brought to the front by View › Jobs, it stays.
+        press_action(&mut harness, ActionId::SHOW_JOBS);
+        let fronted = host.0.borrow().jobs_window.clone().expect("open");
+        assert!(!closes_itself(fronted));
     }
 
     #[test]
@@ -6568,7 +6709,14 @@ mod tests {
         let ids = jobs::tests::ids(2);
         let export = jobs::tests::added(ids[0], Queue::UserExport, Some(1));
         let (show, view) = jobs_after(&mut mirror, &[export]);
-        jobs::refresh(&view, &mut harness.state_mut().dialogs, show, None, &ctx);
+        jobs::refresh(
+            &view,
+            Vec::new(),
+            &mut harness.state_mut().dialogs,
+            show,
+            None,
+            &ctx,
+        );
         assert!(host.0.borrow().jobs.is_some());
 
         // The user closes the window: the host reports it gone.
@@ -6594,7 +6742,14 @@ mod tests {
         assert_eq!(mirror.apply(&progress), jobs::Show::Update);
         let import = jobs::tests::added(ids[1], Queue::UserForeground, Some(2));
         let (show, view) = jobs_after(&mut mirror, &[import]);
-        jobs::refresh(&view, &mut harness.state_mut().dialogs, show, None, &ctx);
+        jobs::refresh(
+            &view,
+            Vec::new(),
+            &mut harness.state_mut().dialogs,
+            show,
+            None,
+            &ctx,
+        );
         assert_eq!(host.0.borrow().jobs_opened.len(), 2);
     }
 
@@ -6623,7 +6778,14 @@ mod tests {
         let export = jobs::tests::added(id, Queue::UserExport, Some(1));
         let (show, view) = jobs_after(&mut mirror, &[export]);
         let place = harness.state().shell.jobs_window;
-        jobs::refresh(&view, &mut harness.state_mut().dialogs, show, place, &ctx);
+        jobs::refresh(
+            &view,
+            Vec::new(),
+            &mut harness.state_mut().dialogs,
+            show,
+            place,
+            &ctx,
+        );
         assert_eq!(host.0.borrow().jobs_opened, [(Some(left), false)]);
 
         // And on the next start, from the settings.

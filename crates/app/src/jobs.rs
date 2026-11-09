@@ -28,25 +28,27 @@
 //!   names a command this app sent. Every other job turns the spinner and shows in the
 //!   window, but never opens it.
 //! - **The window** ([`Window`]) is the content of a window of the dialog host, modeless and
-//!   beside the main window, whose rows `Jobs::window` draws; it scrolls when they are too
-//!   many to show. Closing it stops no job.
-//! - **What its buttons do** is the app's: Cancel sends `CancelJob`, Dismiss changes the
-//!   mirror, and Show in Finder reveals the job's destination through the platform
-//!   ([`reveal`]), a file selected in its folder. The rows keep a job's retry offer, but
-//!   the window draws no Try again until the session takes `Command::RetryJob` (decision
-//!   72's step 6).
+//!   beside the main window, whose rows `Jobs::window` draws, scrolling past five. Closing
+//!   it stops no job. Opened by itself, it closes itself about two seconds after the jobs
+//!   it opened for have ended well, unless one failed or was cancelled, or the person
+//!   touched it ([`Window::opened_for`]).
+//! - **What its buttons do** is the app's: the ✕ sends `CancelJob`, Dismiss and Clear
+//!   Finished change the mirror, and Show in Finder reveals the job's destination through
+//!   the platform ([`reveal`]), a file selected in its folder. The rows keep a job's retry
+//!   offer, but the window draws no Try again until the session takes `Command::RetryJob`
+//!   (decision 72's step 6).
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use apertrust_engine::jobs::{
     Argument, Destination, Failure, JobEvent, JobId, Message, Offer, Progress, Queue, State,
 };
 use apertrust_engine::session::{Command, Event};
 use apertrust_ui::components::{
-    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, quiet_scroll,
+    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs,
 };
-use apertrust_ui::{Theme, Translator, theme, tr};
+use apertrust_ui::{Theme, Translator, tr};
 use eframe::egui;
 use eframe::egui::os::OperatingSystem;
 
@@ -111,6 +113,9 @@ pub struct Mirror {
     /// The commands the app sent that start a job of the user's, by their numbers, until
     /// the job's `Added` names them: quitting waits for them.
     starting: Vec<u64>,
+    /// The jobs that opened the window ([`Show::Open`]) since the app last took them
+    /// ([`Mirror::opened`]), for it to wait for before it closes itself.
+    opened: Vec<u64>,
     /// The person's home, which folders are shown relative to as `~`.
     home: Option<PathBuf>,
 }
@@ -142,6 +147,7 @@ impl Mirror {
         Mirror {
             rows: Vec::new(),
             starting: Vec::new(),
+            opened: Vec::new(),
             home,
         }
     }
@@ -222,6 +228,7 @@ impl Mirror {
                 // Only this app's commands open the window: another client's export shows
                 // in it, but never opens it.
                 if user && command.is_some() {
+                    self.opened.push(job.get());
                     Show::Open
                 } else {
                     Show::Update
@@ -295,9 +302,16 @@ impl Mirror {
         }
     }
 
-    /// What a button of the window asks of the app: Cancel is the session's `CancelJob`;
-    /// Show in Finder reveals the job's destination; Dismiss takes an ended row away. Try
-    /// again asks nothing until the session takes `RetryJob` (decision 72's step 6).
+    /// The jobs that have opened the window since this was last asked, for the window to
+    /// wait for before it closes itself ([`Window::opened_for`]).
+    pub fn opened(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.opened)
+    }
+
+    /// What a button of the window asks of the app: the ✕ is the session's `CancelJob`;
+    /// Show in Finder reveals the job's destination; Dismiss takes an ended row away, and
+    /// Clear Finished every finished and cancelled one. Try again asks nothing until the
+    /// session takes `RetryJob` (decision 72's step 6).
     pub fn act(&mut self, action: ActivityAction) -> Do {
         match action {
             ActivityAction::Cancel(job) => match self.rows.iter().find(|r| r.id.get() == job) {
@@ -306,10 +320,8 @@ impl Mirror {
             },
             ActivityAction::ShowFolder(job) => self.reveal(job).map_or(Do::Nothing, Do::Reveal),
             ActivityAction::TryAgain(_) => Do::Nothing,
-            ActivityAction::Dismiss(job) => match self.dismiss(job) {
-                Show::Nothing => Do::Nothing,
-                _ => Do::Changed,
-            },
+            ActivityAction::Dismiss(job) => self.remove(|row| row.id.get() == job),
+            ActivityAction::ClearFinished => self.remove(|row| row.phase.cleared()),
         }
     }
 
@@ -352,15 +364,14 @@ impl Mirror {
             .collect()
     }
 
-    /// Takes the job's row away, if it has ended: Dismiss.
-    fn dismiss(&mut self, job: u64) -> Show {
+    /// Takes away the ended rows `which` names: Dismiss's, Clear Finished's.
+    fn remove(&mut self, which: impl Fn(&Row) -> bool) -> Do {
         let before = self.rows.len();
-        self.rows
-            .retain(|row| row.id.get() != job || row.phase.active());
+        self.rows.retain(|row| row.phase.active() || !which(row));
         if self.rows.len() == before {
-            Show::Nothing
+            Do::Nothing
         } else {
-            Show::Update
+            Do::Changed
         }
     }
 
@@ -376,10 +387,9 @@ impl Mirror {
 
 impl Row {
     fn view(&self, words: &Translator, home: Option<&Path>) -> Job {
-        let fraction = self.progress.fraction().unwrap_or(0.0) as f32;
         let mut job = Job::new(self.id.get(), self.phase, job_message(&self.title))
             .kind(self.kind)
-            .fraction(fraction)
+            .progress(self.progress.done, self.progress.total)
             .cancellable(self.cancellable && self.phase.active())
             .retry(self.offers.iter().any(|o| matches!(o, Offer::Retry { .. })));
         job.detail = self.detail.as_ref().map(job_message);
@@ -504,31 +514,61 @@ pub const FILE_MANAGER: FileManager = if cfg!(target_os = "macos") {
 };
 
 /// What `show` asks of the jobs window, after the session's events are taken in: it opens,
-/// if the event is a user job's, or comes forward; and, open, shows `jobs` as the mirror
-/// holds them now, in the language of `ctx`.
+/// if the event is a user job's, waiting for `opened`, the jobs that opened it, to close
+/// itself, or comes forward; and, open, shows `jobs` as the mirror holds them now, in the
+/// language of `ctx`.
 pub fn refresh(
     jobs: &[Job],
+    opened: Vec<u64>,
     dialogs: &mut AppDialogs,
     show: Show,
     place: Option<Position>,
     ctx: &egui::Context,
 ) {
-    if matches!(show, Show::Open | Show::Front) {
-        let window = Window::new(jobs.to_vec());
-        dialogs.open_jobs(window, place, ctx, show == Show::Front);
+    match show {
+        Show::Open => {
+            let window = Window::new(jobs.to_vec()).opened_for(opened);
+            dialogs.open_jobs(window, place, ctx, false);
+        }
+        Show::Front => dialogs.open_jobs(Window::new(jobs.to_vec()), place, ctx, true),
+        Show::Nothing | Show::Update => {}
     }
     dialogs.set_jobs(jobs.to_vec());
 }
 
 /// The window's width, in points, inside its margin.
 pub const WIDTH: f32 = 440.0;
-/// The most it grows to before the rows scroll, in points.
-pub const MAX_HEIGHT: f32 = 480.0;
+/// How long a window that opened itself waits, once the jobs it opened for have ended
+/// well, before it closes itself: long enough for their outcome to be seen.
+pub const CLOSE_AFTER: Duration = Duration::from_secs(2);
 
 /// The jobs window's content: the rows as the mirror last gave them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Window {
     jobs: Vec<Job>,
+    /// What it waits for to close itself, where it opened itself; none where the person
+    /// opened it or touched it, or a job it opened for failed or was cancelled.
+    closing: Option<Closing>,
+}
+
+/// What a window that opened itself waits for before it closes itself.
+#[derive(Clone, Debug, PartialEq)]
+struct Closing {
+    /// The jobs it opened for.
+    jobs: Vec<u64>,
+    /// When it saw them all ended well, by its clock, in seconds; none while one is queued
+    /// or running or the pointer is over the window.
+    since: Option<f64>,
+}
+
+/// Whether the window closes itself, as a frame of it asks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Close {
+    /// Not now; looked at again as it is next drawn.
+    Stay,
+    /// Once this long has gone by, unless anything changes first.
+    After(Duration),
+    Now,
 }
 
 /// The jobs window in the dialog host, the host's second slot: modeless on every platform,
@@ -550,7 +590,7 @@ impl Dialog for Window {
     fn look(&self, t: &Theme) -> Look {
         Look {
             background: t.colors.raised,
-            margin: t.spacing.l,
+            margin: t.spacing.m,
         }
     }
 
@@ -559,8 +599,21 @@ impl Dialog for Window {
     }
 
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
+        let output = self.rows(ui).map(Output::Jobs);
+        let ctx = ui.ctx().clone();
+        let os = ctx.os();
+        let (now, touched, over) = ctx.input(|i| (i.time, touched(i, os), i.pointer.has_pointer()));
+        let close = match self.close(now, touched, over) {
+            Close::Now => true,
+            Close::After(left) => {
+                ctx.request_repaint_after(left);
+                false
+            }
+            Close::Stay => false,
+        };
         Asks {
-            output: self.rows(ui).map(Output::Jobs),
+            output,
+            close,
             ..Asks::default()
         }
     }
@@ -570,9 +623,83 @@ impl Dialog for Window {
     }
 }
 
+/// Whether the person touched the window in this frame: pressed in it or typed in it, or,
+/// on the Mac, where a window that opens itself does so without the focus, gave it the
+/// focus, by a click, a move by its title bar or bringing it to the front. Elsewhere it
+/// takes the focus as it opens, so having it says nothing.
+fn touched(input: &egui::InputState, os: OperatingSystem) -> bool {
+    let typed = input
+        .events
+        .iter()
+        .any(|event| matches!(event, egui::Event::Key { pressed: true, .. }));
+    input.pointer.any_pressed() || typed || (os == OperatingSystem::Mac && input.focused)
+}
+
 impl Window {
     pub fn new(jobs: Vec<Job>) -> Window {
-        Window { jobs }
+        Window {
+            jobs,
+            closing: None,
+        }
+    }
+
+    /// The window as a job the person started opens it: it closes itself about
+    /// [`CLOSE_AFTER`] after `opened`, the jobs it opened for, have all ended well, unless
+    /// one failed or was cancelled, or the person touched it.
+    pub fn opened_for(mut self, opened: Vec<u64>) -> Window {
+        self.closing = Some(Closing {
+            jobs: opened,
+            since: None,
+        });
+        self
+    }
+
+    /// Asked to open again while it is open, or asked for and not yet made, as `asked`: a
+    /// click on the spinner (`focus`) brings it to the front, a touch, so it stays open;
+    /// another automatic open adds the jobs it opened for to those it waits for. A window
+    /// the person opened stays open. Its rows are the newer.
+    pub fn again(&mut self, asked: Window, focus: bool) {
+        self.jobs = asked.jobs;
+        if focus {
+            self.closing = None;
+        } else if let (Some(closing), Some(more)) = (&mut self.closing, asked.closing) {
+            closing.jobs.extend(more.jobs);
+            closing.since = None;
+        }
+    }
+
+    /// Whether a window that opened itself closes now, at `now` seconds by its clock: once
+    /// a job it opened for failed or was cancelled, or the person `touched` it, it stays
+    /// open for good; while one is queued or running, or the pointer is `over` it, it
+    /// waits; otherwise it closes [`CLOSE_AFTER`] after it first saw them all ended.
+    fn close(&mut self, now: f64, touched: bool, over: bool) -> Close {
+        let Some(closing) = &mut self.closing else {
+            return Close::Stay;
+        };
+        let phases: Vec<JobPhase> = self
+            .jobs
+            .iter()
+            .filter(|job| closing.jobs.contains(&job.id))
+            .map(|job| job.phase)
+            .collect();
+        let ended_badly = phases
+            .iter()
+            .any(|phase| matches!(phase, JobPhase::Failed | JobPhase::Cancelled));
+        if ended_badly || touched {
+            self.closing = None;
+            return Close::Stay;
+        }
+        if over || phases.iter().any(|phase| phase.active()) {
+            closing.since = None;
+            return Close::Stay;
+        }
+        let since = *closing.since.get_or_insert(now);
+        let left = CLOSE_AFTER.as_secs_f64() - (now - since);
+        if left > 0.0 {
+            Close::After(Duration::from_secs_f64(left))
+        } else {
+            Close::Now
+        }
     }
 
     /// The rows it shows.
@@ -589,15 +716,10 @@ impl Window {
         changed
     }
 
-    /// Draws the rows in `ui`, scrolling where they are more than fit. Returns what the
+    /// Draws the rows in `ui`, which scroll past five, and the footer. Returns what the
     /// user pressed.
     fn rows(&mut self, ui: &mut egui::Ui) -> Option<ActivityAction> {
-        let t = theme(ui.ctx());
         ui.set_width(WIDTH);
-        ui.spacing_mut().item_spacing = egui::vec2(t.spacing.m, t.spacing.m);
-        let area = egui::ScrollArea::vertical()
-            .max_height(MAX_HEIGHT)
-            .auto_shrink([false, true]);
         // Try again is not drawn until the session takes `RetryJob` (decision 72's step 6):
         // the rows keep the offer, but the button would ask nothing.
         let jobs: Vec<Job> = self
@@ -606,9 +728,7 @@ impl Window {
             .cloned()
             .map(|job| job.retry(false))
             .collect();
-        quiet_scroll(ui, area, |ui| {
-            Jobs::new(&jobs).file_manager(FILE_MANAGER).window(ui)
-        })
+        Jobs::new(&jobs).file_manager(FILE_MANAGER).window(ui)
     }
 }
 

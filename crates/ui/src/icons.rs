@@ -87,9 +87,10 @@ pub enum Icon {
     /// and wide to narrow over an arrow down.
     SortAscending,
     SortDescending,
-    /// A small check: an edited photo in the grid panel, a finished export.
+    /// A small check: a menu item that is checked.
     Check,
-    /// A triangle with a mark: something went wrong, as the jobs spinner says of a failed job.
+    /// A triangle with a mark: something went wrong, as the jobs spinner and a job's row say
+    /// of a failed job.
     Warning,
     /// A lock: a photo open for viewing only, in the caption under it.
     Lock,

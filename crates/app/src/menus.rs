@@ -278,6 +278,9 @@ pub static MENUS: [Menu; 7] = [
                 Entry::Submenu(&INTERFACE_SIZE),
                 Entry::Submenu(&BACKGROUND),
             ],
+            // The jobs window, here on every platform: the Mac's Window menu keeps the
+            // system's items alone.
+            &[item(ActionId::SHOW_JOBS)],
             &[item(ActionId::FULL_SCREEN)],
         ],
     },
@@ -927,6 +930,62 @@ mod tests {
         );
         let words = apertrust_ui::Translator::new(apertrust_ui::Locale::EnGb);
         assert_eq!(words.text(action.message), "Show Log");
+    }
+
+    /// View › Jobs on every platform, never in the Mac's Window menu, with Ctrl+Shift+J as
+    /// each platform spells it, and enabled whatever is open, as the jobs window opens
+    /// beside any dialog.
+    #[test]
+    fn view_jobs_is_in_view_on_every_platform_with_its_key_and_always_enabled() {
+        for os in PLATFORMS {
+            let holding: Vec<_> = menus(os)
+                .filter(|menu| {
+                    let mut ids = Vec::new();
+                    placed_in(menu, os, &mut ids);
+                    ids.contains(&ActionId::SHOW_JOBS)
+                })
+                .map(|m| m.title)
+                .collect();
+            assert_eq!(holding, ["menu-view"], "{os:?}");
+            let keymap = Keymap::defaults(os);
+            let mut state = everything();
+            state.dialog = true;
+            state.modal = true;
+            state.dialog_window = true;
+            let item = shown(ActionId::SHOW_JOBS, &keymap, &state, Focus::None);
+            assert!(item.enabled, "{os:?}");
+            let words = Translator::new(Locale::EnGb);
+            let key = item.key.map(|k| k.spell(os, &words));
+            let spelt = if os == OperatingSystem::Mac {
+                "Shift+Cmd+J"
+            } else {
+                "Ctrl+Shift+J"
+            };
+            assert_eq!(key.as_deref(), Some(spelt), "{os:?}");
+        }
+        let action = actions::action(ActionId::SHOW_JOBS).expect("declared");
+        assert_eq!(
+            action.emits,
+            actions::Emit::Intent(actions::Intent::ShowJobs)
+        );
+        // In the ☰'s menu, under View, with its words in every language.
+        for locale in Locale::ALL {
+            let menu = drawn_menu(locale, &everything());
+            let view = tops(&menu)
+                .into_iter()
+                .find(|s| s.id == "menu-view")
+                .expect("View");
+            let item = items(&view.entries)
+                .into_iter()
+                .find(|item| item.id == ActionId::SHOW_JOBS.0)
+                .unwrap_or_else(|| panic!("{}: not under View", locale.id()));
+            let words = Translator::new(locale);
+            assert_eq!(item.text, words.text("action-show-jobs"));
+            assert!(item.enabled);
+            assert_eq!(item.shortcut.as_deref(), Some("Ctrl+Shift+J"));
+        }
+        let en = Translator::new(Locale::EnGb);
+        assert_eq!(en.text(action.message), "Jobs");
     }
 
     #[test]

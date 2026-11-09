@@ -18,11 +18,13 @@
 //! the actions they report, what screen readers hear and how the panel keeps the spinner
 //! in place (`docs/gui.md`, The jobs window; decision 57), driven through AccessKit.
 
+use std::time::SystemTime;
+
 use apertrust_ui::components::{
     ActivityAction, Available, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, SaveState,
-    TopPanel, TopPanelAction,
+    TopPanel, TopPanelAction, kind_icon,
 };
-use apertrust_ui::{Locale, Theme, Translator};
+use apertrust_ui::{Icon, Locale, Theme, Translator};
 use egui::accesskit::{Live, Role};
 use egui::{Key, vec2};
 use egui_kittest::Harness;
@@ -30,11 +32,20 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 const FOLDER: &str = "~/Pictures/apertrust_exported";
 
+/// 14:02 on the local clock, whatever the time zone the tests run in.
+fn two() -> SystemTime {
+    chrono::NaiveDate::from_ymd_opt(2026, 10, 14)
+        .and_then(|day| day.and_hms_opt(14, 2, 0))
+        .and_then(|at| at.and_local_timezone(chrono::Local).single())
+        .expect("a local time")
+        .into()
+}
+
 fn export_message(done: usize, total: usize) -> JobMessage {
-    JobMessage::new("job-export")
-        .number("done", done as f64)
+    JobMessage::new("job-export-photo")
+        .number("number", done as f64)
         .number("total", total as f64)
-        .text("target", "file on disk")
+        .text("storage", "disk")
 }
 
 /// What an export's outcome counts: `written` of 12.
@@ -56,7 +67,7 @@ fn export(id: u64, phase: JobPhase) -> Job {
     };
     let job = Job::new(id, phase, export_message(done, 12))
         .kind("export")
-        .fraction(done as f32 / 12.0)
+        .progress(done as u64, Some(12))
         .destination(FOLDER);
     match phase {
         JobPhase::Queued => job.cancellable(true).detail(
@@ -87,7 +98,7 @@ fn export(id: u64, phase: JobPhase) -> Job {
 fn other(id: u64, phase: JobPhase, cancellable: bool) -> Job {
     Job::new(id, phase, JobMessage::new("job-thumbnails"))
         .kind("thumbnails")
-        .fraction(0.6)
+        .progress(6, Some(10))
         .cancellable(cancellable)
 }
 
@@ -157,7 +168,7 @@ fn value(node: &egui_kittest::Node<'_>) -> Option<String> {
 
 #[test]
 fn the_spinner_is_one_button_named_jobs_with_the_count_in_its_value() {
-    let cases: [(&str, Vec<Job>, &str); 8] = [
+    let cases: [(&str, Vec<Job>, &str); 5] = [
         (
             "two running",
             vec![
@@ -176,27 +187,6 @@ fn the_spinner_is_one_button_named_jobs_with_the_count_in_its_value() {
             "1 running, 1 waiting",
         ),
         ("waiting", vec![export(1, JobPhase::Queued)], "1 waiting"),
-        (
-            "finished",
-            vec![
-                export(1, JobPhase::Finished),
-                export(2, JobPhase::Cancelled),
-            ],
-            "Finished",
-        ),
-        (
-            "cancelled",
-            vec![export(1, JobPhase::Cancelled)],
-            "Cancelled",
-        ),
-        (
-            "cancelled and finished",
-            vec![
-                export(1, JobPhase::Cancelled),
-                export(2, JobPhase::Finished),
-            ],
-            "Finished",
-        ),
         (
             "failed",
             vec![export(1, JobPhase::Failed), export(2, JobPhase::Finished)],
@@ -305,7 +295,7 @@ fn a_polite_live_region_speaks_when_a_job_starts_and_ends_not_as_it_progresses()
                 .number("total", 12.0)
                 .text("photo", format!("IMG_{}.ARW", 2040 + done)),
         );
-        running.fraction = done as f32 / 12.0;
+        running.done = done as u64;
         harness.state_mut().jobs = vec![running];
         harness.run();
         assert_eq!(said(&harness), start, "{done}");
@@ -319,10 +309,11 @@ fn a_polite_live_region_speaks_when_a_job_starts_and_ends_not_as_it_progresses()
     harness.run();
     assert_eq!(said(&harness), "Started: Creating thumbnails");
 
-    // A job ends while another runs, and the end is said, by its outcome.
+    // A job ends while another runs, and the end is said, by its outcome, the row's title,
+    // which says how it went.
     for (phase, text) in [
         (JobPhase::Finished, "12 photos exported"),
-        (JobPhase::Failed, "Failed: 11 of 12 photos exported"),
+        (JobPhase::Failed, "Export failed: 11 of 12 photos exported"),
         (
             JobPhase::Cancelled,
             "Export cancelled: 3 of 12 photos exported",
@@ -362,7 +353,7 @@ fn a_job_that_starts_again_under_the_id_it_ended_with_is_heard_to_start() {
     harness.run();
     harness.state_mut().jobs = vec![export(1, JobPhase::Failed)];
     harness.run();
-    assert_eq!(said(&harness), "Failed: 11 of 12 photos exported");
+    assert_eq!(said(&harness), "Export failed: 11 of 12 photos exported");
     // Try again, with the same id: the start is said, not left unsaid because the id
     // was heard before.
     harness.state_mut().jobs = vec![export(1, JobPhase::Running)];
@@ -371,18 +362,26 @@ fn a_job_that_starts_again_under_the_id_it_ended_with_is_heard_to_start() {
 }
 
 #[test]
-fn what_is_left_when_jobs_end_shows_a_tick_or_a_warning_in_the_spinners_place() {
+fn when_jobs_end_the_spinner_goes_but_a_failure_leaves_the_warning_in_its_place() {
     let mut harness = panel(vec![export(1, JobPhase::Running)]);
     harness.run();
     let at = spinner(&harness).rect();
-    for jobs in [
-        vec![export(1, JobPhase::Finished)],
-        vec![export(1, JobPhase::Failed)],
-        vec![export(1, JobPhase::Cancelled)],
+    for (jobs, shows) in [
+        (vec![export(1, JobPhase::Finished)], false),
+        (vec![export(1, JobPhase::Failed)], true),
+        (vec![export(1, JobPhase::Cancelled)], false),
+        (
+            vec![export(1, JobPhase::Cancelled), export(2, JobPhase::Failed)],
+            true,
+        ),
     ] {
         harness.state_mut().jobs = jobs;
         harness.run();
-        assert_eq!(spinner(&harness).rect(), at);
+        assert_eq!(spinners(&harness), usize::from(shows));
+        if shows {
+            assert_eq!(spinner(&harness).rect(), at);
+            assert_eq!(value(&spinner(&harness)).as_deref(), Some("1 failed"));
+        }
     }
 }
 
@@ -401,10 +400,10 @@ macro_rules! pixels_near {
     };
 }
 
-/// Which symbol is drawn: the ring turns while a job runs and stops when they have ended,
-/// leaving the tick or, where one failed, the warning sign in `warning`.
+/// Which symbol is drawn: the ring turns while a job runs, and when they have ended it goes,
+/// leaving nothing, no tick, or where one failed the warning sign in `warning`.
 #[test]
-fn the_spinner_stops_turning_and_shows_a_tick_or_a_warning_when_jobs_end() {
+fn the_spinner_stops_turning_and_leaves_nothing_or_the_warning_when_jobs_end() {
     struct Spin {
         jobs: Vec<Job>,
     }
@@ -431,6 +430,8 @@ fn the_spinner_stops_turning_and_shows_a_tick_or_a_warning_when_jobs_end() {
     assert_ne!(a, b, "the ring does not turn while a job runs");
     assert_eq!(pixels_near!(a, warning), 0);
 
+    harness.state_mut().jobs = Vec::new();
+    let nothing = frame(&mut harness);
     let mut ended = Vec::new();
     for (phase, warns) in [(JobPhase::Finished, false), (JobPhase::Failed, true)] {
         harness.state_mut().jobs = vec![export(1, phase)];
@@ -440,7 +441,8 @@ fn the_spinner_stops_turning_and_shows_a_tick_or_a_warning_when_jobs_end() {
         assert_eq!(pixels_near!(c, warning) > 0, warns, "{phase:?}");
         ended.push(c);
     }
-    assert_ne!(ended[0], ended[1], "the tick and the warning look alike");
+    assert_eq!(ended[0], nothing, "something is left where all finished");
+    assert_ne!(ended[1], nothing, "no warning after a failure");
 }
 
 /// The save states, from no photo to a failed write.
@@ -640,8 +642,15 @@ fn window_in(locale: Locale, width: f32, jobs: Vec<Job>) -> Harness<'static, Win
         .build_ui_state(
             |ui, win: &mut Win| {
                 let jobs = win.jobs.clone();
-                ui.add_space(8.0);
-                if let Some(action) = Jobs::new(&jobs).file_manager(win.file_manager).window(ui) {
+                // On the window's surface, inside its margin, as the app's window draws it.
+                let t = apertrust_ui::theme(ui.ctx());
+                let frame = egui::Frame::new()
+                    .fill(t.colors.raised)
+                    .inner_margin(t.spacing.m);
+                let asked = frame.show(ui, |ui| {
+                    Jobs::new(&jobs).file_manager(win.file_manager).window(ui)
+                });
+                if let Some(action) = asked.inner {
                     win.actions.push(action);
                 }
             },
@@ -673,59 +682,57 @@ fn has_in(row: &egui_kittest::Node<'_>, label: &str) -> bool {
 
 #[test]
 fn each_export_state_says_its_words_and_offers_the_buttons_it_allows() {
-    // The row's lines, and its buttons in order.
-    type Case<'a> = (JobPhase, &'a [&'a str], &'a [&'a str]);
+    // The row's title, its lines, and its buttons in order, the ✕ first.
+    type Case<'a> = (JobPhase, &'a str, &'a [&'a str], &'a [&'a str]);
+    let to = format!("To {FOLDER}");
     let cases: [Case; 5] = [
         (
             JobPhase::Running,
-            &["3 of 12 done · now IMG_2044.ARW"],
-            &["Show in Finder", "Cancel export"],
+            "Exporting 3 / 12 to file on disk",
+            &["3 of 12 done · now IMG_2044.ARW", &to],
+            &["Cancel", "Show in Finder"],
         ),
         (
             JobPhase::Finished,
-            &["12 photos exported"],
-            &["Show in Finder", "Dismiss"],
+            "12 photos exported",
+            &[&to],
+            &["Show in Finder"],
         ),
         (
             JobPhase::Failed,
-            &[
-                "11 of 12 photos exported",
-                "IMG_2047.ARW: could not write IMG_2047.jpg: the disk is full.",
-            ],
+            "Export failed: 11 of 12 photos exported",
+            &["IMG_2047.ARW: could not write IMG_2047.jpg: the disk is full."],
             &["Try again", "Show in Finder", "Dismiss"],
         ),
         (
             JobPhase::Cancelled,
-            &["Export cancelled: 3 of 12 photos exported"],
-            &["Show in Finder", "Dismiss"],
+            "Export cancelled: 3 of 12 photos exported",
+            &[&to],
+            &["Show in Finder"],
         ),
         (
             JobPhase::Queued,
+            "Exporting 0 / 12 to file on disk",
             &["Next in line: 12 photos, to ~/Pictures/apertrust_exported"],
-            &["Cancel export"],
+            &["Cancel"],
         ),
     ];
-    let all = ["Show in Finder", "Cancel export", "Try again", "Dismiss"];
-    for (phase, lines, buttons) in cases {
-        let done = match phase {
-            JobPhase::Queued => 0,
-            JobPhase::Running | JobPhase::Cancelled => 3,
-            JobPhase::Finished => 12,
-            JobPhase::Failed => 11,
-        };
-        let title = format!("Exporting {done} / 12 to file on disk");
+    let all = ["Show in Finder", "Cancel", "Try again", "Dismiss"];
+    for (phase, title, lines, buttons) in cases {
         let mut harness = window(vec![export(7, phase)]);
         harness.run();
-        assert!(has(&harness, &title), "{phase:?}: {title}");
+        // The row is a group named by its title, once ended its outcome.
+        row(&harness, title);
         for line in lines {
             assert!(has(&harness, line), "{phase:?}: {line}");
         }
-        // The destination, once the job does not wait: a queued one's detail names it.
-        assert_eq!(
-            has(&harness, &format!("To {FOLDER}")),
-            phase != JobPhase::Queued,
-            "{phase:?}: the folder"
+        // The destination, while it runs and once it finished or was cancelled: a queued
+        // one's detail names it, and a failure takes its place.
+        let shown = matches!(
+            phase,
+            JobPhase::Running | JobPhase::Finished | JobPhase::Cancelled
         );
+        assert_eq!(has(&harness, &to), shown, "{phase:?}: the folder");
         for button in all {
             assert_eq!(
                 has(&harness, button),
@@ -739,7 +746,7 @@ fn each_export_state_says_its_words_and_offers_the_buttons_it_allows() {
             harness.run();
             let expected = match *button {
                 "Show in Finder" => ActivityAction::ShowFolder(7),
-                "Cancel export" => ActivityAction::Cancel(7),
+                "Cancel" => ActivityAction::Cancel(7),
                 "Try again" => ActivityAction::TryAgain(7),
                 _ => ActivityAction::Dismiss(7),
             };
@@ -749,17 +756,125 @@ fn each_export_state_says_its_words_and_offers_the_buttons_it_allows() {
                 "{phase:?}: {button}"
             );
         }
-        // A running export's row has a bar, named by its message, with its percentage.
+        // A queued or running export's row has a bar, named by its title, with its
+        // percentage, empty while it waits.
         let bar = harness.query_by_role(Role::ProgressIndicator);
-        assert_eq!(bar.is_some(), phase == JobPhase::Running, "{phase:?}");
+        assert_eq!(bar.is_some(), phase.active(), "{phase:?}");
         if let Some(bar) = bar {
-            assert_eq!(bar.accesskit_node().numeric_value(), Some(25.0));
-            assert_eq!(
-                bar.accesskit_node().label().as_deref(),
-                Some(title.as_str())
-            );
+            let percent = if phase == JobPhase::Queued { 0.0 } else { 25.0 };
+            assert_eq!(bar.accesskit_node().numeric_value(), Some(percent));
+            assert_eq!(bar.accesskit_node().label().as_deref(), Some(title));
         }
+        // Clear Finished, in the footer, takes a finished or cancelled row, never another.
+        let clear = harness.get_by_role_and_label(Role::Button, "Clear Finished");
+        let enabled = matches!(phase, JobPhase::Finished | JobPhase::Cancelled);
+        assert_eq!(!clear.accesskit_node().is_disabled(), enabled, "{phase:?}");
     }
+}
+
+#[test]
+fn clear_finished_asks_for_every_finished_and_cancelled_row_to_go() {
+    let mut harness = window(vec![
+        export(3, JobPhase::Failed),
+        export(2, JobPhase::Cancelled),
+        export(1, JobPhase::Finished),
+    ]);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Clear Finished")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().actions, vec![ActivityAction::ClearFinished]);
+}
+
+#[test]
+fn a_finished_or_cancelled_row_says_when_it_ended_after_its_destination() {
+    let mut harness = window(vec![
+        export(3, JobPhase::Failed).ended_at(two()),
+        export(2, JobPhase::Cancelled).ended_at(two()),
+        export(1, JobPhase::Finished).ended_at(two()),
+    ]);
+    harness.run();
+    let at = format!("To {FOLDER} · 14:02");
+    assert_eq!(harness.query_all_by_label(&at).count(), 2);
+    // A failed row's failure takes the place of its destination and its time.
+    let failed = row(&harness, "Export failed: 11 of 12 photos exported");
+    assert!(!has_in(&failed, &at));
+}
+
+#[test]
+fn a_job_with_no_total_has_a_bar_with_no_value_that_holds_still_without_motion() {
+    let reading = |id| {
+        Job::new(
+            id,
+            JobPhase::Running,
+            JobMessage::new("job-folder").text("folder", "2026-10 Lisbon"),
+        )
+        .kind("folder")
+        .progress(120, None)
+        .cancellable(true)
+    };
+    let mut harness = window(vec![reading(1)]);
+    harness.run();
+    let bar = harness.get_by_role(Role::ProgressIndicator);
+    assert_eq!(
+        bar.accesskit_node().label().as_deref(),
+        Some("Reading 2026-10 Lisbon")
+    );
+    assert_eq!(bar.accesskit_node().numeric_value(), None);
+    // Its segment moves while the theme has motion, and holds still where it has none.
+    for (animation, moves) in [(0.12, true), (0.0, false)] {
+        let mut harness = Harness::builder()
+            .with_size(vec2(420.0, 200.0))
+            .with_step_dt(0.1)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(move |ui| {
+                // The harness zeroes the animation time after the setup; the theme sets it.
+                ui.ctx().all_styles_mut(|s| s.animation_time = animation);
+                let jobs = [reading(1)];
+                Jobs::new(&jobs).window(ui);
+            });
+        harness.run_steps(2);
+        let before = harness.render().expect("render");
+        harness.run_steps(3);
+        let after = harness.render().expect("render");
+        assert_eq!(before != after, moves, "animation time {animation}");
+    }
+}
+
+#[test]
+fn each_kind_has_its_icon_and_a_kind_not_listed_a_generic_one() {
+    assert_eq!(kind_icon("export"), Icon::Export);
+    assert_eq!(kind_icon("import"), Icon::Import);
+    assert_eq!(kind_icon("folder"), Icon::Library);
+    let generic = kind_icon("a kind from a later release");
+    assert_eq!(kind_icon(""), generic);
+    assert!(![Icon::Export, Icon::Import, Icon::Library].contains(&generic));
+}
+
+/// The rows' list: as tall as its rows up to five, and with more, as tall as the first five,
+/// the rest scrolling, with the footer in view below it.
+#[test]
+fn the_list_shows_five_rows_and_scrolls_past_them_with_the_footer_in_view() {
+    let rows = |count: u64| {
+        (1..=count)
+            .map(|id| other(id, JobPhase::Running, true))
+            .collect::<Vec<_>>()
+    };
+    // Where the footer ends, the window's height: in view, below every row shown.
+    let height = |count| {
+        let mut harness = window(rows(count));
+        harness.run();
+        let clear = harness
+            .get_by_role_and_label(Role::Button, "Clear Finished")
+            .rect();
+        assert!(clear.bottom() <= 700.0, "{count}: {clear:?}");
+        clear.bottom()
+    };
+    let (four, five, six, twelve) = (height(4), height(5), height(6), height(12));
+    assert!(four < five, "{four} {five}");
+    assert!((five - six).abs() < 0.5, "{five} {six}");
+    assert!((six - twelve).abs() < 0.5, "{six} {twelve}");
 }
 
 #[test]
@@ -805,7 +920,7 @@ fn counted(id: u64, phase: JobPhase, message: &str, done: f64, total: f64) -> Jo
     let message = JobMessage::new(message)
         .number("done", done)
         .number("total", total);
-    Job::new(id, phase, message).fraction((done / total) as f32)
+    Job::new(id, phase, message).progress(done as u64, Some(total as u64))
 }
 
 #[test]
@@ -830,7 +945,7 @@ fn jobs_are_listed_newest_first_whatever_order_they_come_in() {
         top("Creating thumbnails"),
         top("Exporting 0 / 12 to file on disk"),
         top("Importing 5 / 9"),
-        top("Deleting 9 / 9"),
+        top("Finished: Deleting 9 / 9"),
     ];
     assert!(
         order.windows(2).all(|w| w[0] < w[1]),
@@ -848,7 +963,12 @@ fn a_queued_job_says_so_and_one_that_cannot_be_cancelled_has_no_cancel() {
     harness.run();
     let waiting = row(&harness, "Importing 0 / 9");
     assert!(has_in(&waiting, "Waiting for other jobs"));
-    assert!(waiting.query_by_role(Role::ProgressIndicator).is_none());
+    // Its bar is empty while it waits.
+    let bar = waiting.query_by_role(Role::ProgressIndicator);
+    assert_eq!(
+        bar.and_then(|b| b.accesskit_node().numeric_value()),
+        Some(0.0)
+    );
     let thumbnails = row(&harness, "Creating thumbnails");
     assert!(!has_in(&thumbnails, "Waiting for other jobs"));
     // The import is not cancellable here; the thumbnails are, and say so.
@@ -879,7 +999,7 @@ fn a_queued_job_says_so_and_one_that_cannot_be_cancelled_has_no_cancel() {
         cause: "the folder is not readable".to_owned(),
     })];
     harness.run();
-    assert!(has(&harness, "Failed"));
+    row(&harness, "Failed: Creating thumbnails");
     assert!(has(&harness, "the folder is not readable."));
     assert!(has(&harness, "Dismiss"));
     assert!(!has(&harness, "Cancel") && !has(&harness, "Try again"));
@@ -901,20 +1021,23 @@ fn no_job_says_so() {
 #[test]
 fn a_keyboard_user_reaches_every_rows_buttons_and_presses_them() {
     let mut harness = window(vec![
-        export(3, JobPhase::Failed),
-        export(2, JobPhase::Running),
-        other(1, JobPhase::Running, true),
+        export(4, JobPhase::Failed),
+        export(3, JobPhase::Running),
+        other(2, JobPhase::Running, true),
+        export(1, JobPhase::Finished),
     ]);
     harness.run();
-    // Failed: Try again, Show, Dismiss; running export: Show, Cancel export; thumbnails:
-    // Cancel. Newest first, in reading order.
+    // Failed: Try again, Show, Dismiss; running export: its ✕, Show; thumbnails: its ✕;
+    // finished: Show; then the footer's Clear Finished. Newest first, in reading order.
     let expected = [
-        ("Try again", ActivityAction::TryAgain(3)),
+        ("Try again", ActivityAction::TryAgain(4)),
+        ("Show in Finder", ActivityAction::ShowFolder(4)),
+        ("Dismiss", ActivityAction::Dismiss(4)),
+        ("Cancel", ActivityAction::Cancel(3)),
         ("Show in Finder", ActivityAction::ShowFolder(3)),
-        ("Dismiss", ActivityAction::Dismiss(3)),
-        ("Show in Finder", ActivityAction::ShowFolder(2)),
-        ("Cancel export", ActivityAction::Cancel(2)),
-        ("Cancel", ActivityAction::Cancel(1)),
+        ("Cancel", ActivityAction::Cancel(2)),
+        ("Show in Finder", ActivityAction::ShowFolder(1)),
+        ("Clear Finished", ActivityAction::ClearFinished),
     ];
     assert_eq!(
         harness.query_all_by_role(Role::Button).count(),
@@ -950,10 +1073,10 @@ fn the_window_says_its_words_in_every_language() {
         harness.run();
         let title = {
             let mut args = apertrust_ui::i18n::Args::new();
-            args.set("done", 11);
+            args.set("written", 11);
+            args.set("skipped", 0);
             args.set("total", 12);
-            args.set("target", "file on disk");
-            words.text_with("job-export", Some(&args))
+            words.text_with("job-export-failed-outcome", Some(&args))
         };
         assert!(has(&harness, &title), "{locale:?}: {title}");
         for id in [
@@ -962,6 +1085,7 @@ fn the_window_says_its_words_in_every_language() {
             "activity-dismiss",
             "jobs-queued",
             "jobs-cancel",
+            "jobs-clear-finished",
             "job-thumbnails",
         ] {
             assert!(
@@ -983,8 +1107,9 @@ fn the_window_stays_inside_a_narrow_window_in_every_language() {
             vec![export(2, JobPhase::Failed), export(1, JobPhase::Running)],
         );
         harness.run();
+        // Try again, Show and Dismiss; the ✕ and Show; Clear Finished.
         let buttons: Vec<_> = harness.query_all_by_role(Role::Button).collect();
-        assert_eq!(buttons.len(), 5);
+        assert_eq!(buttons.len(), 6);
         for button in buttons {
             let rect = button.rect();
             assert!(
@@ -1006,28 +1131,23 @@ fn snapshot(name: &str, locale: Locale, width: f32, jobs: Vec<Job>) {
     harness.snapshot(name);
 }
 
+/// A row in each state the wireframe draws, the oldest first: a finished export with the
+/// time it ended, a failed one, a folder being read with no total, a running export and a
+/// waiting one.
 fn several() -> Vec<Job> {
     vec![
-        export(1, JobPhase::Failed),
-        Job::new(
-            2,
-            JobPhase::Finished,
-            JobMessage::new("job-import")
-                .number("done", 212.0)
-                .number("total", 212.0),
-        )
-        .fraction(1.0),
+        export(1, JobPhase::Finished).ended_at(two()),
+        export(2, JobPhase::Failed),
         Job::new(
             3,
             JobPhase::Running,
-            JobMessage::new("job-delete")
-                .number("done", 4.0)
-                .number("total", 9.0),
+            JobMessage::new("job-folder").text("folder", "2026-10 Lisbon"),
         )
-        .fraction(0.44),
+        .kind("folder")
+        .progress(120, None)
+        .cancellable(true),
         export(4, JobPhase::Running),
         export(5, JobPhase::Queued),
-        other(6, JobPhase::Running, true),
     ]
 }
 

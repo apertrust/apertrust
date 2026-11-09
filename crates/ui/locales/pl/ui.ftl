@@ -121,28 +121,24 @@ window-close = Zamknij
 ## Zadania: wskaźnik na końcu górnego paska i okno, które otwiera
 
 jobs-name = Zadania
+action-show-jobs = Zadania
 jobs-tip = Zadania: { $value }
 jobs-value-running = Uruchomione: { $running }
 jobs-value-waiting = Oczekujące: { $waiting }
 jobs-value-running-waiting = Uruchomione: { $running }, oczekujące: { $waiting }
-jobs-value-finished = Zakończone
-jobs-value-cancelled = Anulowane
 jobs-value-failed = Błędy: { $failed }
 jobs-empty = Brak zadań.
 jobs-queued = Czeka na inne zadania
-jobs-finished = Zakończone
-jobs-failed = Niepowodzenie
-jobs-cancelled = Anulowane
+jobs-finished = Zakończono: { $message }
+jobs-failed = Niepowodzenie: { $message }
+jobs-cancelled = Anulowano: { $message }
 jobs-cancel = Anuluj
 jobs-cancel-tip = Zatrzymaj to zadanie
+jobs-clear-finished = Wyczyść zakończone
 jobs-live-started = Rozpoczęto: { $message }
-jobs-live-finished = Zakończono: { $message }
-jobs-live-failed = Niepowodzenie: { $message }
-jobs-live-cancelled = Anulowano: { $message }
 
 ## Komunikaty samych zadań
 
-job-export = Eksportowanie { $done } / { $total } do { $target }
 job-import = Importowanie { $done } / { $total }
 job-delete = Usuwanie { $done } / { $total }
 job-thumbnails = Tworzenie miniatur
@@ -177,7 +173,7 @@ job-export-finished =
 job-export-failed-outcome =
     { $total ->
         [1] Nie udało się wyeksportować zdjęcia
-       *[other] Wyeksportowano { $written } z { $total } zdjęć
+       *[other] Eksport nieudany. Wyeksportowano { $written } z { $total } zdjęć
     }
 job-export-cancelled =
     { $total ->
@@ -203,6 +199,7 @@ job-cause-engine = silnik nieoczekiwanie się zatrzymał
 ## Wiersz zadania w oknie zadań: wiersze i przyciski
 
 activity-folder = Folder: { $folder }
+activity-folder-at = Folder: { $folder } · { $time }
 activity-failure = { $photo }: nie udało się zapisać { $file }: { $cause }.
 activity-failure-photo = { $photo }: { $cause }.
 activity-failure-cause = { $cause }.
@@ -210,8 +207,6 @@ activity-show-finder = Pokaż w Finderze
 activity-show-explorer = Pokaż w Eksploratorze
 activity-show-files = Pokaż w Plikach
 activity-show-tip = Otwórz folder eksportu
-activity-cancel = Anuluj eksport
-activity-cancel-tip = Zatrzymaj po zdjęciu, które jest zapisywane; zapisane pliki zostają
 activity-try-again = Ponów
 activity-try-again-tip = Wyeksportuj ponownie zdjęcia, które się nie powiodły, z tymi samymi ustawieniami
 activity-dismiss = Zamknij

@@ -72,7 +72,7 @@ blake3 = { version = "1.8.7", default-features = false, features = ["pure"] }
 base64 = "0.23.1"
 bytemuck = "1.25.2"
 # The export's start as local time, for darktable's variables (apertrust-engine's
-# names); rawler builds it already.
+# names), and a job's end in the jobs window (apertrust-ui); rawler builds it already.
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4.6.7", features = ["derive"] }
 # The platform's folders: apertrust-base's user data folder and home folder

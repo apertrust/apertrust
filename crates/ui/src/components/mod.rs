@@ -76,6 +76,7 @@ pub use histogram::{
 pub use icon_button::{IconButton, ToolButton};
 pub use jobs::{
     ActivityAction, FileManager, Job, JobArg, JobFailure, JobId, JobMessage, JobPhase, Jobs,
+    kind_icon,
 };
 pub use marker::{Marker, marker, set_marker};
 pub use photo_frame::{

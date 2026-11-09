@@ -15,9 +15,7 @@ window-maximise = Maximize
 
 ## The jobs
 
-jobs-value-cancelled = Canceled
-jobs-cancelled = Canceled
-jobs-live-cancelled = Canceled: { $message }
+jobs-cancelled = Canceled: { $message }
 job-export-cancelled =
     { $total ->
         [1] Export canceled
