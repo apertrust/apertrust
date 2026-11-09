@@ -288,7 +288,7 @@ dependencies = [
  "pollster 1.0.1",
  "resvg",
  "rfd",
- "toml 1.1.8+spec-1.1.0",
+ "toml 1.2.0+spec-1.1.0",
  "tracing",
  "winresource",
 ]
@@ -300,8 +300,8 @@ dependencies = [
  "directories",
  "tempfile",
  "thiserror 2.0.21",
- "toml 1.1.8+spec-1.1.0",
- "toml_edit 0.25.17+spec-1.1.0",
+ "toml 1.2.0+spec-1.1.0",
+ "toml_edit 0.25.18+spec-1.1.0",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -665,7 +665,7 @@ version = "0.0.0"
 dependencies = [
  "rawler",
  "thiserror 2.0.21",
- "toml 1.1.8+spec-1.1.0",
+ "toml 1.2.0+spec-1.1.0",
  "tracing",
 ]
 
@@ -685,7 +685,7 @@ dependencies = [
  "resvg",
  "serde",
  "thiserror 2.0.21",
- "toml 1.1.8+spec-1.1.0",
+ "toml 1.2.0+spec-1.1.0",
  "unic-langid",
 ]
 
@@ -1641,7 +1641,7 @@ dependencies = [
  "pollster 1.0.1",
  "serde",
  "tempfile",
- "toml 1.1.8+spec-1.1.0",
+ "toml 1.2.0+spec-1.1.0",
  "wgpu",
 ]
 
@@ -1846,9 +1846,9 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
-version = "1.1.10"
+version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+checksum = "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
 dependencies = [
  "crc32fast",
  "miniz_oxide 0.9.1",
@@ -3903,7 +3903,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
- "toml_edit 0.25.17+spec-1.1.0",
+ "toml_edit 0.25.18+spec-1.1.0",
 ]
 
 [[package]]
@@ -4712,9 +4712,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.1.8+spec-1.1.0"
+version = "1.2.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d"
+checksum = "c5ffcdf8f50436dbbfd675c1fe1b8e0854f42b7defea8584bdebe1aee900e561"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -4759,9 +4759,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.25.17+spec-1.1.0"
+version = "0.25.18+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3641d5bbb5349a79e1020a242d251efbc546ad8048d133958323ce9c40a9c9c"
+checksum = "1ec6e78bd70db9420d8d212fa9dc97f116448a1ceff5d00eabb991d407e21396"
 dependencies = [
  "indexmap",
  "toml_datetime 1.1.2+spec-1.1.0",
