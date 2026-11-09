@@ -16,8 +16,8 @@
 
 //! The system's alert (`docs/gui.md`, Dialogs and alerts; decision 41): on macOS an
 //! `NSAlert` shown as a sheet on the window it rises from, the main window or a dialog's
-//! sheet. Elsewhere there is none yet: Windows' task dialog and Linux's own are planned,
-//! and [`begin_alert`] says so.
+//! sheet. Windows' task dialog is planned, and Linux's drawn alert lives in the app's
+//! dialog host instead; elsewhere [`begin_alert`] says there is none.
 //!
 //! The sheet is started from the run loop, as [`crate::begin_sheet`] is, since AppKit
 //! animates it in a loop of its own, and the answer comes back through a call that runs on

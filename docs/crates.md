@@ -791,12 +791,13 @@ The window's platform code, an FFI crate that may use `unsafe`. On macOS:
   - `keep_out_of_tabs` keeps a dialog's window out of other windows' tabs.
   - `show_without_focus` shows the jobs window in front without making it the key window.
   - `begin_alert` shows the system's alert, `NSAlert`, as a sheet on the window it rises from, with its keys set on each button. The answer is called back on the main thread, with whether the suppression box was ticked.
+- **On Linux:** `set_parent` parents a Wayland dialog with `xdg_toplevel.set_parent`. It does not use xdg-dialog's modal hint, which Mutter uses to attach the dialog to its parent; the app supplies modality instead.
 - **Popup menus** (`pop_up_menu`, decision 40): the popup service's plain lists as AppKit's menus.
   - An `NSMenu` built from `PopUpMenu`, plain data of its own: titles, enabled and on states, tips, separators, submenus, key equivalents (shown only), the anchor, the item over a dropdown's control, Aqua or Dark Aqua, and the interface's scale.
   - `autoenablesItems` is off, and every item's target is an object of its own class that notes the tag chosen, so the menu runs nothing.
   - It is shown with `popUpMenuPositioningItem:atLocation:inView:` from the main run loop, outside winit's handler, and calls back with the id chosen once AppKit's call has returned.
 
-**Planned** (decision 41): Windows' task dialog; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`; Wayland's `xdg_toplevel.set_parent` and xdg-dialog's modal hint.
+**Planned** (decision 41): Windows' task dialog and owner disabling; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`.
 
 ## Operation crates
 

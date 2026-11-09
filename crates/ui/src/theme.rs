@@ -159,8 +159,8 @@ pub struct Colors {
     /// Menus, popovers and dialogs.
     #[serde(with = "hex")]
     pub raised: Color32,
-    /// Over the window under a modal dialog: translucent, so the window shows through,
-    /// dimmed.
+    /// Over the window under About, Apertrust's own modal: translucent, so the window shows
+    /// through, dimmed. Also the drop shadow round the dialog host's windows on Wayland.
     #[serde(with = "hex")]
     pub scrim: Color32,
     /// Value fields, choice lists and other wells.

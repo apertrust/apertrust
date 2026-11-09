@@ -26,7 +26,7 @@ use apertrust_ui::{Locale, Theme, Translator};
 use egui::accesskit::Role as Access;
 use egui::vec2;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable as _;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 fn overwrite() -> Request {
     Request::new("Export in overwrite mode?", "The old files go.")
@@ -47,7 +47,9 @@ fn plain() -> Request {
 struct Run {
     request: Request,
     order: ButtonOrder,
+    ticked: bool,
     answers: Vec<usize>,
+    ticked_answers: Vec<bool>,
 }
 
 fn body(request: Request, order: ButtonOrder) -> Harness<'static, Run> {
@@ -56,14 +58,20 @@ fn body(request: Request, order: ButtonOrder) -> Harness<'static, Run> {
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
         .build_ui_state(
             |ui, run: &mut Run| {
-                if let Some(answer) = AlertBody::new(&run.request).order(run.order).show(ui) {
-                    run.answers.push(answer);
+                let answer = AlertBody::new(&run.request, &mut run.ticked)
+                    .order(run.order)
+                    .show(ui);
+                if let Some(answer) = answer {
+                    run.answers.push(answer.pressed);
+                    run.ticked_answers.push(answer.ticked);
                 }
             },
             Run {
                 request,
                 order,
+                ticked: false,
                 answers: Vec::new(),
+                ticked_answers: Vec::new(),
             },
         )
 }
@@ -76,6 +84,107 @@ fn the_body_is_an_alert_dialog_named_by_its_title_with_the_message_and_the_butto
     harness.get_by_label("The old files go.");
     harness.get_by_role_and_label(Access::Button, "Overwrite");
     harness.get_by_role_and_label(Access::Button, "Cancel");
+}
+
+#[test]
+fn in_an_alert_window_the_body_leaves_the_node_to_the_window() {
+    let request = overwrite();
+    let mut ticked = false;
+    let mut harness = Harness::builder()
+        .with_size(vec2(480.0, 200.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(move |ui| {
+            AlertBody::new(&request, &mut ticked)
+                .in_alert_window()
+                .show(ui);
+        });
+    harness.run();
+    assert_eq!(harness.query_all_by_role(Access::AlertDialog).count(), 0);
+    harness.get_by_role_and_label(Access::Button, "Overwrite");
+}
+
+#[test]
+fn the_suppression_box_is_unticked_and_its_answer_keeps_the_choice() {
+    let request = cancelling().suppression("Don't ask again");
+    let mut harness = body(request, ButtonOrder::DefaultLast);
+    harness.run();
+    let checkbox = harness.get_by_role_and_label(Access::CheckBox, "Don't ask again");
+    assert_eq!(
+        checkbox.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+    checkbox.click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Access::Button, "Overwrite")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().answers, [0]);
+    assert_eq!(harness.state().ticked_answers, [true]);
+}
+
+#[test]
+fn with_the_box_focused_space_ticks_it_and_return_presses_the_default() {
+    let request = cancelling().suppression("Don't ask again");
+    let mut harness = body(request, ButtonOrder::DefaultLast);
+    harness.run();
+    // The box comes first in the focus order.
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    assert!(
+        harness
+            .get_by_role_and_label(Access::CheckBox, "Don't ask again")
+            .is_focused()
+    );
+    harness.key_press(egui::Key::Space);
+    harness.run();
+    assert!(harness.state().answers.is_empty());
+    assert!(harness.state().ticked);
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    // Cancel, the default, with the box as it was left.
+    assert_eq!(harness.state().answers, [1]);
+    assert_eq!(harness.state().ticked_answers, [true]);
+}
+
+#[test]
+fn a_focused_control_after_the_body_takes_return_itself() {
+    // As the dialog host's frame draws its close after the alert.
+    struct Outside {
+        request: Request,
+        ticked: bool,
+        answers: Vec<usize>,
+        clicked: usize,
+    }
+    let mut harness = Harness::builder()
+        .with_size(vec2(480.0, 240.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, run: &mut Outside| {
+                let answer = AlertBody::new(&run.request, &mut run.ticked).show(ui);
+                run.answers.extend(answer.map(|answer| answer.pressed));
+                if ui.button("Close").clicked() {
+                    run.clicked += 1;
+                }
+            },
+            Outside {
+                request: plain(),
+                ticked: false,
+                answers: Vec::new(),
+                clicked: 0,
+            },
+        );
+    harness.run();
+    // Tab meets OK, then the close after the body.
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    assert!(harness.get_by_label("Close").is_focused());
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().clicked, 1);
+    assert!(harness.state().answers.is_empty());
 }
 
 #[test]

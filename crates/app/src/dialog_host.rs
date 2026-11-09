@@ -45,8 +45,9 @@
 //! The jobs window (`docs/gui.md`, The jobs window) is a second, modeless window beside the
 //! dialog's: it has a slot of its own ([`Slot`]), so it stays open while Settings or Export
 //! open, closes alone and keeps its own place. The log window (`docs/gui.md`, The log
-//! window) is a third, in a slot of its own the same way. At most one dialog, one jobs
-//! window and one log window are open at a time.
+//! window) is a third, in a slot of its own the same way. On Linux the drawn alert is a
+//! fourth, modal over the window it rises from. At most one dialog, one jobs window, one
+//! log window and one alert are open at a time.
 //!
 //! A modeless window ([`Form::Modeless`]: Settings on the Mac, and the jobs window) leaves
 //! both windows taking input, and a second request brings it to the front. A modal one
@@ -91,6 +92,7 @@ use crate::log_window;
 use crate::settings::Position;
 use crate::settings_dialog;
 
+mod alert_dialog;
 pub mod platform;
 
 /// The viewport id the dialogs' repaints are asked under, which `Gated` routes to the
@@ -111,19 +113,25 @@ fn log_viewport() -> ViewportId {
     ViewportId::from_hash_of("apertrust dialog host log window")
 }
 
-/// Which of the host's three windows: the dialog, or the jobs or the log window beside it.
+/// The viewport id a drawn alert's repaints are asked under.
+fn alert_viewport() -> ViewportId {
+    ViewportId::from_hash_of("apertrust dialog host alert window")
+}
+
+/// Which of the host's windows: the dialog, a drawn alert, or the jobs or log window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Slot {
     Dialog,
     Jobs,
     Log,
+    Alert,
 }
 
 /// How many windows the host may have open at once, one per [`Slot`].
-const SLOTS: usize = 3;
+const SLOTS: usize = 4;
 
 impl Slot {
-    const ALL: [Slot; SLOTS] = [Slot::Dialog, Slot::Jobs, Slot::Log];
+    const ALL: [Slot; SLOTS] = [Slot::Dialog, Slot::Jobs, Slot::Log, Slot::Alert];
 
     fn index(self) -> usize {
         self as usize
@@ -135,6 +143,7 @@ impl Slot {
             Slot::Dialog => viewport(),
             Slot::Jobs => jobs_viewport(),
             Slot::Log => log_viewport(),
+            Slot::Alert => alert_viewport(),
         }
     }
 
@@ -227,6 +236,11 @@ pub trait Dialog: Any + std::fmt::Debug {
     fn form(&self, os: OperatingSystem) -> Form;
     /// Its look in the theme `t`.
     fn look(&self, t: &apertrust_ui::Theme) -> Look;
+    /// The role of its window's node for screen readers, named by its title: a dialog, or
+    /// an alert dialog for an alert the host draws.
+    fn role(&self) -> Role {
+        Role::Dialog
+    }
     /// What its keys do on `os`.
     fn keys(&self, os: OperatingSystem) -> Keys;
     /// Draws one frame of its content in `ui` and says what it asked for.
@@ -335,13 +349,55 @@ pub enum Gesture {
 /// points: its close button and the space a drag moves the window from.
 const FRAME: f32 = 32.0;
 
-/// The room the frame the host draws on `os` takes above a dialog's content, in points.
-fn frame_strip(os: OperatingSystem) -> egui::Vec2 {
-    if platform::draws_frame(os) {
-        egui::vec2(0.0, FRAME)
+/// The transparent margin round a shadowed dialog's card ([`platform::shadowed`]), in
+/// points, on each side, where its shadow is drawn.
+const MARGIN: f32 = 12.0;
+
+/// Where a dialog's context keeps whether its window is shadowed.
+fn shadow_id() -> egui::Id {
+    egui::Id::unique("dialog host shadowed")
+}
+
+/// Whether the dialog drawn in `ctx` has the border and drop shadow the host draws
+/// ([`platform::shadowed`]), as the host decided it from the main window as it made the
+/// dialog's ([`set_shadow`]); none where nothing set it, as in a test's harness.
+fn shadow(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp(shadow_id())).unwrap_or(false)
+}
+
+/// Says whether the dialog drawn in `ctx` is shadowed ([`shadow`]).
+fn set_shadow(ctx: &egui::Context, shadowed: bool) {
+    ctx.data_mut(|d| d.insert_temp(shadow_id(), shadowed));
+}
+
+/// How far a dialog's card sits inside its window drawn in `ctx`, in points, on each side:
+/// a shadowed one's margin and its border, a hairline of the theme's; none elsewhere.
+fn card_inset(ctx: &egui::Context) -> f32 {
+    if shadow(ctx) {
+        MARGIN + theme(ctx).shape.hairline
     } else {
-        egui::Vec2::ZERO
+        0.0
     }
+}
+
+/// The room a dialog's window drawn in `ctx` takes beyond its content, in points: the frame
+/// the host draws above it ([`platform::draws_frame`]), and on each side the card's inset
+/// ([`card_inset`]). A window the person resizes holds its content's least and kept sizes
+/// ([`Resize`]) with this room added.
+fn chrome(ctx: &egui::Context) -> egui::Vec2 {
+    let frame = if platform::draws_frame(ctx.os()) {
+        FRAME
+    } else {
+        0.0
+    };
+    egui::vec2(0.0, frame) + egui::Vec2::splat(2.0 * card_inset(ctx))
+}
+
+/// The width of the bands a window the person resizes resizes from, in points, from the
+/// window's edge: through the card's inset ([`card_inset`]) and the main window's band
+/// inside the card's edge, so the person resizes from the card they see.
+fn resize_band(ctx: &egui::Context) -> f32 {
+    card_inset(ctx) + crate::RESIZE_BAND
 }
 
 /// egui's way to resize a window as winit's.
@@ -380,43 +436,62 @@ pub fn typing(ctx: &egui::Context) -> bool {
 }
 
 /// Draws `dialog` in `ui`, its window's whole area, as the host does each frame: inside its
-/// margin, under a node of role Dialog named by its title, since egui's root node has none
+/// margin, under a node of its role ([`Dialog::role`]) named by its title, since egui's root node has none
 /// (egui issue #8785), then its keys as `ui`'s platform has them ([`Dialog::keys`]).
 /// Returns what it asked for, and the size it took with its margin, which its window is
 /// given.
 pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
     let ctx = ui.ctx().clone();
     let title = dialog.title(&ctx);
-    let look = dialog.look(&theme(&ctx));
+    let role = dialog.role();
+    let t = theme(&ctx);
+    let look = dialog.look(&t);
     let typing = typing(&ctx);
     let focus = Focus::of(&ctx);
     let mut asks = Asks::default();
     let framed = platform::draws_frame(ctx.os());
+    let shadowed = shadow(&ctx);
+    let margin = if shadowed { MARGIN } else { 0.0 };
+    let mut card = egui::Frame::NONE;
+    if shadowed {
+        card = card
+            .fill(look.background)
+            .stroke(egui::Stroke::new(t.shape.hairline, t.colors.border))
+            .shadow(egui::Shadow {
+                offset: [0, 2],
+                blur: 12,
+                spread: 1,
+                color: t.colors.scrim.gamma_multiply(0.6),
+            });
+    }
     let (mut gesture, mut closed) = (None, false);
-    let scope = ui.scope_builder(UiBuilder::new(), |ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        let top = ui.cursor().min;
-        if framed {
-            ui.add_space(FRAME);
-        }
-        let content = egui::Frame::NONE
-            .inner_margin(look.margin)
-            .show(ui, |ui| asks = dialog.show(ui));
-        if framed {
-            // As wide as the content, but never past the window's edge, so its close is
-            // always there to press, a window not at its size yet included.
-            let width = content
-                .response
-                .rect
-                .width()
-                .min(ui.clip_rect().right() - top.x);
-            let strip = egui::Rect::from_min_size(top, egui::vec2(width, FRAME));
-            (gesture, closed) = frame(ui, strip);
-        }
+    let max_rect = ui.available_rect_before_wrap().shrink(margin);
+    let scope = ui.scope_builder(UiBuilder::new().max_rect(max_rect), |ui| {
+        card.show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let top = ui.cursor().min;
+            if framed {
+                ui.add_space(FRAME);
+            }
+            let content = egui::Frame::NONE
+                .inner_margin(look.margin)
+                .show(ui, |ui| asks = dialog.show(ui));
+            if framed {
+                // As wide as the content, but never past the window's edge, so its close is
+                // always there to press, a window not at its size yet included.
+                let width = content
+                    .response
+                    .rect
+                    .width()
+                    .min(ui.clip_rect().right() - top.x);
+                let strip = egui::Rect::from_min_size(top, egui::vec2(width, FRAME));
+                (gesture, closed) = frame(ui, strip);
+            }
+        });
     });
     scope
         .response
-        .widget_info(|| WidgetInfo::labeled(Role::Dialog, true, &title));
+        .widget_info(|| WidgetInfo::labeled(role, true, &title));
     // After the content, so a field or a list of its own has seen the key first.
     let keys = dialog.keys(ctx.os());
     let pressed = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
@@ -432,7 +507,7 @@ pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
     Drawn {
         output: asks.output,
         close,
-        size: scope.response.rect.size(),
+        size: scope.response.rect.size() + egui::Vec2::splat(2.0 * margin),
         unread: (!events.is_empty()).then(|| Unread {
             events,
             focus,
@@ -521,6 +596,9 @@ pub enum Answer {
     Ticked(usize),
     /// It ended without one: the system took it away.
     Dismissed,
+    /// It was shown, but its window could not be made, as Linux's drawn alert's may not
+    /// be: as an alert that could not be shown ([`Ask::Failed`]); the cause is logged.
+    Failed,
 }
 
 impl Answer {
@@ -579,18 +657,24 @@ pub trait Dialogs {
     /// window comes to the front; while any other is open, nothing opens, one dialog at a
     /// time.
     fn open(&mut self, dialog: Box<dyn Dialog>, place: Option<Position>, main: &egui::Context);
-    /// The dialog open, if one is: a sheet until AppKit has animated it away.
+    /// The dialog open, if one is: a sheet until AppKit has animated it away. An alert the
+    /// host draws ([`platform::draws_alerts`]) comes first while it is open, a modal window
+    /// over the dialog or the main window; the system's alerts are not the host's.
     fn shown(&self) -> Option<Shown>;
-    /// Brings the dialog open to the front with the focus, if it is a modal window, as a
-    /// click on the main window does under a system's modal window; AppKit keeps a sheet's
-    /// itself, and a modeless window stays behind the window clicked.
+    /// Whether an alert the host draws is open or asked; never the system's.
+    fn alert_shown(&self) -> bool;
+    /// Brings the alert the host draws to the front with the focus, if one is open, else
+    /// the dialog open if it is a modal window, as a click on the main window does under a
+    /// system's modal window; AppKit keeps a sheet's itself, and a modeless window stays
+    /// behind the window clicked.
     fn raise(&mut self);
     /// The last dialog gone, once.
     fn closed(&mut self) -> Option<Closed>;
     /// What the dialog open asked of the app since the last call, in order.
     fn outputs(&mut self) -> Vec<Output>;
-    /// Closes the dialog open as its Cancel would, as Quit and Close Window do: a window at
-    /// once, a sheet once AppKit has animated it away.
+    /// Closes the dialog open as its Cancel would, as Close Window does: a window at once, a
+    /// sheet once AppKit has animated it away. While an alert the host draws is open or
+    /// asked, that alert closes instead, answering dismissed, and the dialog under it stays.
     fn close(&mut self);
     /// Hands the Export dialog open the session's answer to the preview numbered `through`;
     /// any other dialog, or none, takes nothing.
@@ -742,8 +826,13 @@ impl AppDialogs {
 
     /// Whether Quit, or a close of the main window, may run now. Not while a dialog is
     /// open: the dialog closes as its Cancel, and Quit waits for it to go
-    /// ([`AppDialogs::frame`]), since AppKit closes no window a sheet hangs on.
+    /// ([`AppDialogs::frame`]), since AppKit closes no window a sheet hangs on. While an
+    /// alert the host draws asks, nothing happens, as under the Mac's `NSAlert`: the alert
+    /// is the person's to answer, and the dialog under it stays.
     pub fn quit(&mut self) -> bool {
+        if self.host.alert_shown() {
+            return false;
+        }
         if self.shown().is_none() {
             return true;
         }
@@ -931,6 +1020,17 @@ impl Host {
         let Some(slot) = inner.slot_of(window) else {
             return;
         };
+        // The window an alert rose from takes no input while it asks, and a press on it
+        // brings the alert forward, as the main window does under a modal one.
+        if inner.held_by_alert() == Some(slot) {
+            let under = under_alert(event);
+            if under.raises {
+                inner.raise_alert();
+            }
+            if !under.handled {
+                return;
+            }
+        }
         let Some(open) = inner.open[slot.index()].as_mut() else {
             return;
         };
@@ -1001,10 +1101,14 @@ impl Host {
                 let Some(slot) = inner.slot_of(request.window_id) else {
                     return Some(eframe::UserEvent::AccessKitActionRequest(request));
                 };
+                // A screen reader's actions are input too, which the window an alert rose
+                // from takes none of.
+                let held = inner.held_by_alert() == Some(slot);
                 let open = inner.open[slot.index()].as_mut()?;
                 use egui_winit::accesskit_winit::WindowEvent as Access;
                 match request.window_event {
                     Access::InitialTreeRequested => open.ctx.enable_accesskit(),
+                    Access::ActionRequested(_) if held => {}
                     Access::ActionRequested(request) => {
                         open.state.on_accesskit_action_request(request);
                     }
@@ -1071,7 +1175,7 @@ impl Dialogs for Host {
         let slot = Slot::Dialog.index();
         match &inner.open[slot] {
             Some(open) if open.form == Form::Modeless && open.dialog.id() == dialog.id() => {
-                open.window.focus_window();
+                platform::activate(&open.window);
             }
             Some(_) => {}
             None => {
@@ -1088,19 +1192,31 @@ impl Dialogs for Host {
 
     fn shown(&self) -> Option<Shown> {
         let inner = self.0.borrow();
-        inner.open[Slot::Dialog.index()].as_ref().map(|open| Shown {
-            form: open.form,
-            focused: open.focused,
-        })
+        inner.open[Slot::Alert.index()]
+            .as_ref()
+            .or(inner.open[Slot::Dialog.index()].as_ref())
+            .map(|open| Shown {
+                form: open.form,
+                focused: open.focused,
+            })
+    }
+
+    fn alert_shown(&self) -> bool {
+        let inner = self.0.borrow();
+        let alert = Slot::Alert.index();
+        inner.open[alert].is_some() || inner.asked[alert].is_some()
     }
 
     fn raise(&mut self) {
         let inner = self.0.borrow();
-        if let Some(open) = &inner.open[Slot::Dialog.index()]
+        let open = inner.open[Slot::Alert.index()]
+            .as_ref()
+            .or(inner.open[Slot::Dialog.index()].as_ref());
+        if let Some(open) = open
             && open.form == Form::Modal
             && !open.focused
         {
-            open.window.focus_window();
+            platform::activate(&open.window);
         }
     }
 
@@ -1113,7 +1229,14 @@ impl Dialogs for Host {
     }
 
     fn close(&mut self) {
-        self.0.borrow_mut().close[Slot::Dialog.index()] = true;
+        let mut inner = self.0.borrow_mut();
+        let alert = Slot::Alert.index();
+        if inner.open[alert].is_some() || inner.asked[alert].is_some() {
+            inner.asked[alert] = None;
+            inner.close[alert] = true;
+        } else {
+            inner.close[Slot::Dialog.index()] = true;
+        }
     }
 
     fn preview(&mut self, through: u64, preview: ExportPreview) {
@@ -1138,7 +1261,7 @@ impl Dialogs for Host {
         match &inner.open[slot] {
             Some(open) => {
                 if focus {
-                    open.window.focus_window();
+                    platform::activate(&open.window);
                 }
             }
             None => {
@@ -1191,7 +1314,7 @@ impl Dialogs for Host {
         let mut inner = self.0.borrow_mut();
         let slot = Slot::Log.index();
         match &inner.open[slot] {
-            Some(open) => open.window.focus_window(),
+            Some(open) => platform::activate(&open.window),
             None => {
                 inner.asked[slot] = Some(Asked {
                     dialog: Box::new(window),
@@ -1217,7 +1340,23 @@ impl Dialogs for Host {
     }
 
     fn ask(&mut self, request: &alert::Request, main: &egui::Context) -> Ask {
-        let inner = self.0.borrow();
+        let mut inner = self.0.borrow_mut();
+        if platform::draws_alerts(main.os()) {
+            let Inner {
+                asked,
+                open,
+                answer,
+                ..
+            } = &mut *inner;
+            let slot = Slot::Alert.index();
+            return ask_drawn(
+                &mut asked[slot],
+                open[slot].is_some(),
+                request,
+                answer,
+                main,
+            );
+        }
         // The modal dialog's window if one is up, else the main window: a window with a
         // sheet already would queue the alert behind it, and the main window takes no
         // input under a modal one.
@@ -1280,12 +1419,51 @@ impl Inner {
         })
     }
 
-    /// Makes the window `asked` for in `slot` and shows it once its first frame is drawn at
-    /// its content's size, logging under `perf` how long that took.
+    /// The window of the host's an alert rises from, the modal dialog's while it is shown;
+    /// none, for the main window.
+    fn alert_parent(&self) -> Option<Arc<Window>> {
+        self.open[Slot::Dialog.index()]
+            .as_ref()
+            .filter(|open| open.form.modal() && open.phase == Phase::Shown)
+            .map(|open| open.window.clone())
+    }
+
+    /// The host's window an alert open or asked rose from ([`Inner::alert_parent`]), which
+    /// takes no input while it asks; none where it rose from the main window, which the
+    /// app's `raw_input_hook` holds, or where no alert asks.
+    fn held_by_alert(&self) -> Option<Slot> {
+        let alert = Slot::Alert.index();
+        let asks = self.open[alert].is_some() || self.asked[alert].is_some();
+        (asks && self.alert_parent().is_some()).then_some(Slot::Dialog)
+    }
+
+    /// Brings the alert open forward, as a press on the window it rose from asks.
+    fn raise_alert(&self) {
+        if let Some(open) = &self.open[Slot::Alert.index()] {
+            platform::activate(&open.window);
+        }
+    }
+
+    /// Makes the window `asked` for in `slot` ([`Inner::make_window`]). An alert whose window
+    /// cannot be made answers [`Answer::Failed`], as the system's alert that cannot be shown
+    /// does, rather than seem dismissed by the person.
     fn make(&mut self, event_loop: &ActiveEventLoop, slot: Slot, asked: Asked) {
+        let main = asked.main.clone();
+        if !self.make_window(event_loop, slot, asked) && slot == Slot::Alert {
+            // Whenever the alert's dialog was dropped, before or after this: its drop
+            // answers dismissed only where no answer is set, and this one is set over it.
+            self.answer.set(Some(Answer::Failed));
+            main.request_repaint();
+        }
+    }
+
+    /// Makes the window `asked` for in `slot` and shows it once its first frame is drawn at
+    /// its content's size, logging under `perf` how long that took. Returns whether it was
+    /// made; why not is logged.
+    fn make_window(&mut self, event_loop: &ActiveEventLoop, slot: Slot, asked: Asked) -> bool {
         let (Some(render), Some(main)) = (self.render.clone(), self.main.upgrade()) else {
             tracing::warn!(target: "gpu", "dialog not shown: the main window is not up yet");
-            return;
+            return false;
         };
         let Asked {
             dialog,
@@ -1298,7 +1476,14 @@ impl Inner {
         let ctx = context(&from, &self.proxy, slot.viewport());
         let title = dialog.title(&from);
         let os = from.os();
+        // Decided once, from the main window: X11 or Wayland is known only at run time.
+        let shadowed = platform::shadowed(os, platform::wayland(&main));
+        set_shadow(&ctx, shadowed);
         let form = platform::form(dialog.form(os), os);
+        let parent = match slot {
+            Slot::Alert => self.alert_parent().unwrap_or_else(|| main.clone()),
+            _ => main.clone(),
+        };
         // A first guess, which the first frame corrects before the window shows.
         let guess = egui::vec2(400.0, 300.0) * zoom;
         let logical = |size: egui::Vec2| LogicalSize::new(f64::from(size.x), f64::from(size.y));
@@ -1307,13 +1492,14 @@ impl Inner {
             .with_inner_size(logical(guess))
             .with_resizable(false)
             .with_enabled_buttons(WindowButtons::CLOSE)
-            .with_visible(false);
+            .with_visible(false)
+            .with_transparent(shadowed);
         // One the person resizes opens at its size, never smaller than its least, the
         // frame the host draws on top of both.
         let resize = dialog.resize();
         let attributes = match resize {
             Some(resize) => {
-                let frame = frame_strip(os);
+                let frame = chrome(&ctx);
                 attributes
                     .with_resizable(true)
                     .with_inner_size(logical((resize.size + frame) * zoom))
@@ -1321,17 +1507,18 @@ impl Inner {
             }
             None => attributes,
         };
-        let attributes = platform::attributes(attributes, form, &main);
+        let attributes = platform::attributes(attributes, form, &parent);
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(e) => {
                 tracing::error!(target: "gpu", "dialog not shown: {e}");
-                return;
+                return false;
             }
         };
         if let Err(e) = apertrust_display::keep_out_of_tabs(&*window) {
             tracing::warn!(target: "gpu", "dialog may open as a tab: {e}");
         }
+        platform::made(&window, form, &parent);
         let mut state = egui_winit::State::new(
             ctx.clone(),
             ViewportId::ROOT,
@@ -1366,12 +1553,12 @@ impl Inner {
         let painter = ready(egui_wgpu::winit::Painter::new(
             ctx.clone(),
             configuration,
-            false,
+            shadowed,
             options,
         ));
         let Some(mut painter) = painter else {
             tracing::error!(target: "gpu", "dialog not shown: its painter waited");
-            return;
+            return false;
         };
         // The surface, configured on the engine's device: this waits for what the engine
         // has submitted to finish.
@@ -1380,11 +1567,11 @@ impl Inner {
             Some(Err(e)) => {
                 let e = apertrust_base::log::one_line(&e.to_string());
                 tracing::error!(target: "gpu", "dialog not shown: {e}");
-                return;
+                return false;
             }
             None => {
                 tracing::error!(target: "gpu", "dialog not shown: its surface waited");
-                return;
+                return false;
             }
         }
         let opener = from.memory(|m| m.focused());
@@ -1418,7 +1605,7 @@ impl Inner {
         if open.fit() {
             drawn = open.paint(event_loop);
         }
-        open.show(&main, place, &self.proxy, focus);
+        open.show(&parent, place, &self.proxy, focus);
         let ms = at.elapsed().as_secs_f64() * 1000.0;
         let (name, form) = (open.dialog.id(), open.form.name());
         tracing::debug!(target: "perf", "dialog {name}: {form}, first frame in {ms:.1} ms");
@@ -1429,6 +1616,7 @@ impl Inner {
         if drawn.close {
             self.advance(slot, true);
         }
+        true
     }
 
     /// Keeps what the dialog's content asked of the app, and wakes the main window to
@@ -1501,25 +1689,29 @@ impl Inner {
         if resizable {
             let logical = window.inner_size().to_logical::<f32>(window.scale_factor());
             let points = egui::vec2(logical.width, logical.height) / ctx.zoom_factor();
-            self.outputs
-                .extend(dialog.sized(points - frame_strip(ctx.os())));
+            self.outputs.extend(dialog.sized(points - chrome(&ctx)));
         }
         drop(painter);
         drop(state);
         drop(window);
         let opener = given_back(form, opener, main.memory(|m| m.focused()));
-        // The main window takes the focus back from a modal window: Windows gives it to the
-        // owner as the owned window goes, and AppKit to a sheet's window, but a window
-        // manager or compositor may give it to another app.
+        // A modal window's parent takes the focus back where the system may not give it:
+        // for an alert, that is the dialog it rose from, else the main window.
+        let parent = match slot {
+            Slot::Alert => self.alert_parent().or_else(|| self.main.upgrade()),
+            _ => self.main.upgrade(),
+        };
         if form == Form::Modal
             && !cfg!(target_os = "windows")
-            && let Some(window) = self.main.upgrade()
+            && let Some(window) = parent
         {
             window.focus_window();
         }
         let (name, form) = (dialog.id(), form.name());
         tracing::debug!(target: "gpu", "dialog {name}: {form} closed");
-        self.closed = Some(Closed { opener });
+        if slot != Slot::Alert {
+            self.closed = Some(Closed { opener });
+        }
         main.request_repaint();
     }
 }
@@ -1543,7 +1735,8 @@ impl Open {
         // Where the host draws the frame, a window the person resizes resizes from the
         // bands inside its edges, as the main window does there.
         let banded = self.resizable && platform::draws_frame(self.ctx.os());
-        if banded && let Some(way) = crate::resize_press(&self.ctx, &mut input) {
+        let band = resize_band(&self.ctx);
+        if banded && let Some(way) = crate::resize_press(&self.ctx, &mut input, band) {
             match self.window.drag_resize_window(resize_direction(way)) {
                 Ok(()) => self.moved = true,
                 Err(e) => tracing::warn!(target: "gpu", "dialog not resized: {e}"),
@@ -1554,7 +1747,7 @@ impl Open {
         let output = self.ctx.run_ui(input, |ui| {
             drawn = Some(draw(ui, dialog));
             if banded {
-                crate::resize_hover(ui.ctx());
+                crate::resize_hover(ui.ctx(), band);
             }
         });
         crate::popups::show(&self.ctx, &*self.window);
@@ -1566,7 +1759,12 @@ impl Open {
         );
         let primitives = self.ctx.tessellate(output.shapes, output.pixels_per_point);
         let t = theme(&self.ctx);
-        let clear = self.dialog.look(&t).background.to_normalized_gamma_f32();
+        let background = if shadow(&self.ctx) {
+            egui::Color32::TRANSPARENT
+        } else {
+            self.dialog.look(&t).background
+        };
+        let clear = background.to_normalized_gamma_f32();
         let mut textures = output.textures_delta;
         self.painter.paint_and_update_textures(
             ViewportId::ROOT,
@@ -1749,6 +1947,73 @@ impl Open {
     }
 }
 
+/// What the window an alert rose from does with an event while the alert asks
+/// ([`under_alert`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UnderAlert {
+    /// It handles it as usual.
+    handled: bool,
+    /// It brings the alert forward.
+    raises: bool,
+}
+
+/// What the window an alert rose from does with `event` while the alert asks: it is drawn,
+/// sized, scaled and themed, and keeps its focus, the modifiers held and the pointer's
+/// leaving as usual, but takes no pointer or keyboard input, nor files dropped on it. A
+/// press on it, its taking the focus or a close asked of it, which it ignores, brings the
+/// alert forward.
+fn under_alert(event: &WindowEvent) -> UnderAlert {
+    use egui_winit::winit::event::{ElementState, TouchPhase};
+    let handled = matches!(
+        event,
+        WindowEvent::RedrawRequested
+            | WindowEvent::Resized(_)
+            | WindowEvent::Moved(_)
+            | WindowEvent::ScaleFactorChanged { .. }
+            | WindowEvent::ThemeChanged(_)
+            | WindowEvent::Occluded(_)
+            | WindowEvent::Destroyed
+            | WindowEvent::Focused(_)
+            | WindowEvent::ModifiersChanged(_)
+            | WindowEvent::CursorLeft { .. }
+            | WindowEvent::ActivationTokenDone { .. }
+    );
+    let raises = match event {
+        WindowEvent::Focused(true) | WindowEvent::CloseRequested => true,
+        WindowEvent::MouseInput { state, .. } => *state == ElementState::Pressed,
+        WindowEvent::Touch(touch) => touch.phase == TouchPhase::Started,
+        _ => false,
+    };
+    UnderAlert { handled, raises }
+}
+
+/// Asks for `request` as an alert the host draws ([`platform::draws_alerts`]), made by the
+/// next callback in the alert's slot, `asked`, its answer kept in `answer` and `main` asked
+/// for a frame as it goes. One at a time: while one is asked or `open`, nothing is asked.
+fn ask_drawn(
+    asked: &mut Option<Asked>,
+    open: bool,
+    request: &alert::Request,
+    answer: &Rc<Cell<Option<Answer>>>,
+    main: &egui::Context,
+) -> Ask {
+    if open || asked.is_some() {
+        return Ask::Busy;
+    }
+    *asked = Some(Asked {
+        dialog: Box::new(alert_dialog::AlertDialog::new(
+            request,
+            Rc::clone(answer),
+            main,
+        )),
+        focus: true,
+        place: None,
+        main: main.clone(),
+        at: Instant::now(),
+    });
+    Ask::Shown
+}
+
 impl Open {
     /// Follows the main window's theme and language, for the windows that stay open while
     /// Settings changes them (the jobs and the log window); a dialog's own context is
@@ -1894,6 +2159,246 @@ mod tests {
     }
 
     #[test]
+    fn a_drawn_alert_taken_away_answers_dismissed_and_wakes_the_app() {
+        let answer = Rc::new(Cell::new(None));
+        let request = alert::Request::new("Title", "Message").button("OK", alert::Role::Default);
+        let wake = egui::Context::default();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let called = Arc::clone(&calls);
+        wake.set_request_repaint_callback(move |_| {
+            called.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        });
+        let dialog = alert_dialog::AlertDialog::new(&request, Rc::clone(&answer), &wake);
+        assert_eq!(dialog.form(OperatingSystem::Nix), Form::Modal);
+        drop(dialog);
+        assert_eq!(answer.get(), Some(Answer::Dismissed));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_drawn_alert_s_window_is_one_alert_dialog_named_once_by_its_title() {
+        let answer = Rc::new(Cell::new(None));
+        let request = alert::Request::new("Overwrite?", "The old files go.")
+            .button("Overwrite", alert::Role::Destructive)
+            .button("Cancel", alert::Role::Cancel);
+        let wake = egui::Context::default();
+        let dialog = alert_dialog::AlertDialog::new(&request, Rc::clone(&answer), &wake);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(480.0, 240.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, dialog: &mut alert_dialog::AlertDialog| {
+                    draw(ui, dialog);
+                },
+                dialog,
+            );
+        harness.run();
+        let alerts: Vec<String> = harness
+            .query_all_by_role(Role::AlertDialog)
+            .map(|node| node.accesskit_node().label().unwrap_or_default())
+            .collect();
+        assert_eq!(alerts, ["Overwrite?"]);
+        assert_eq!(harness.query_all_by_role(Role::Dialog).count(), 0);
+    }
+
+    /// A dialog's context on `os`, shadowed as the host makes it for a main window on
+    /// Wayland or not (`wayland`).
+    fn hosted(os: OperatingSystem, wayland: bool) -> egui::Context {
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        ctx.set_os(os);
+        set_shadow(&ctx, platform::shadowed(os, wayland));
+        ctx
+    }
+
+    #[test]
+    fn a_window_s_content_s_least_and_kept_sizes_leave_out_its_frame_and_margins() {
+        let on = |os, wayland| hosted(os, wayland);
+        assert_eq!(chrome(&on(OperatingSystem::Mac, false)), egui::Vec2::ZERO);
+        assert_eq!(
+            chrome(&on(OperatingSystem::Windows, false)),
+            egui::Vec2::ZERO
+        );
+        // X11: the strip above alone.
+        let x11 = chrome(&on(OperatingSystem::Nix, false));
+        assert_eq!(x11, egui::vec2(0.0, FRAME));
+        // Wayland: the strip, and the shadow's margin and the border on each side.
+        let side = 2.0 * (MARGIN + Theme::default().shape.hairline);
+        let wayland = chrome(&on(OperatingSystem::Nix, true));
+        assert_eq!(wayland, egui::vec2(side, FRAME + side));
+        // As `draw` measures it: the content's size and this room are the window's.
+        #[derive(Debug)]
+        struct Fixed;
+        impl Dialog for Fixed {
+            fn id(&self) -> &'static str {
+                "fixed"
+            }
+            fn title(&self, _: &egui::Context) -> String {
+                "Fixed".to_owned()
+            }
+            fn form(&self, _: OperatingSystem) -> Form {
+                Form::Modeless
+            }
+            fn look(&self, t: &apertrust_ui::Theme) -> Look {
+                Look {
+                    background: t.colors.panel,
+                    margin: 0.0,
+                }
+            }
+            fn keys(&self, _: OperatingSystem) -> Keys {
+                Keys::default()
+            }
+            fn show(&mut self, ui: &mut egui::Ui) -> Asks {
+                ui.allocate_exact_size(egui::vec2(300.0, 200.0), egui::Sense::hover());
+                Asks::default()
+            }
+        }
+        for (os, wayland) in [
+            (OperatingSystem::Mac, false),
+            (OperatingSystem::Windows, false),
+            (OperatingSystem::Nix, false),
+            (OperatingSystem::Nix, true),
+        ] {
+            let mut harness = Harness::builder()
+                .with_size(egui::vec2(600.0, 400.0))
+                .with_os(os)
+                .with_context_setup(move |ctx| {
+                    apertrust_ui::install(ctx, Theme::default());
+                    set_shadow(ctx, platform::shadowed(os, wayland));
+                })
+                .build_ui_state(
+                    |ui, sizes: &mut Vec<egui::Vec2>| sizes.push(draw(ui, &mut Fixed).size),
+                    Vec::new(),
+                );
+            harness.run();
+            let size = *harness.state().last().expect("drawn");
+            let chrome = chrome(&harness.ctx);
+            assert_eq!(size, egui::vec2(300.0, 200.0) + chrome, "{os:?} {wayland}");
+        }
+    }
+
+    #[test]
+    fn a_resizable_window_resizes_from_its_edge_to_just_inside_its_card() {
+        use egui::ResizeDirection as Way;
+        let on = |os, wayland| hosted(os, wayland);
+        // Where no card is inset, X11's among them, the main window's band.
+        for (os, wayland) in [
+            (OperatingSystem::Mac, false),
+            (OperatingSystem::Windows, false),
+            (OperatingSystem::Nix, false),
+        ] {
+            assert_eq!(resize_band(&on(os, wayland)), crate::RESIZE_BAND, "{os:?}");
+        }
+        let linux = on(OperatingSystem::Nix, true);
+        let card = card_inset(&linux);
+        assert_eq!(card, MARGIN + Theme::default().shape.hairline);
+        let band = resize_band(&linux);
+        assert_eq!(band, card + crate::RESIZE_BAND);
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(600.0, 400.0));
+        let at = |x, y| crate::resize_direction(window, egui::pos2(x, y), band);
+        // The transparent margin, the card's border and just inside it resize.
+        assert_eq!(at(1.0, 200.0), Some(Way::West));
+        assert_eq!(at(card + 2.0, 200.0), Some(Way::West));
+        assert_eq!(at(300.0, 400.0 - card - 2.0), Some(Way::South));
+        assert_eq!(at(card + 2.0, card + 2.0), Some(Way::NorthWest));
+        // Further in is the content's.
+        assert_eq!(at(band + 1.0, 200.0), None);
+    }
+
+    #[test]
+    fn a_drawn_alert_whose_window_failed_answers_failed_whenever_its_dialog_drops() {
+        let request = alert::Request::new("Title", "Message").button("OK", alert::Role::Default);
+        let wake = egui::Context::default();
+        // Dropped first, as `make_window` drops it, then set by `make`.
+        let answer = Rc::new(Cell::new(None));
+        drop(alert_dialog::AlertDialog::new(
+            &request,
+            Rc::clone(&answer),
+            &wake,
+        ));
+        answer.set(Some(Answer::Failed));
+        assert_eq!(answer.get(), Some(Answer::Failed));
+        // Set first: the drop leaves it.
+        let answer = Rc::new(Cell::new(None));
+        let dialog = alert_dialog::AlertDialog::new(&request, Rc::clone(&answer), &wake);
+        answer.set(Some(Answer::Failed));
+        drop(dialog);
+        assert_eq!(answer.get(), Some(Answer::Failed));
+    }
+
+    #[test]
+    fn a_drawn_alert_is_asked_once_and_a_second_ask_meanwhile_is_busy() {
+        let answer = Rc::new(Cell::new(None));
+        let request = alert::Request::new("Title", "Message").button("OK", alert::Role::Default);
+        let main = egui::Context::default();
+        let mut asked = None;
+        assert_eq!(
+            ask_drawn(&mut asked, false, &request, &answer, &main),
+            Ask::Shown
+        );
+        let dialog = &asked.as_ref().expect("asked").dialog;
+        assert_eq!(dialog.id(), "alert");
+        assert_eq!(dialog.form(OperatingSystem::Nix), Form::Modal);
+        // Asked, then open: a second ask asks nothing, and the first is left to answer.
+        assert_eq!(
+            ask_drawn(&mut asked, false, &request, &answer, &main),
+            Ask::Busy
+        );
+        let mut none = None;
+        assert_eq!(
+            ask_drawn(&mut none, true, &request, &answer, &main),
+            Ask::Busy
+        );
+        assert!(none.is_none());
+        assert_eq!(answer.get(), None);
+        // Taken away before it was made, it answers dismissed.
+        drop(asked);
+        assert_eq!(answer.get(), Some(Answer::Dismissed));
+    }
+
+    #[test]
+    fn the_window_an_alert_rose_from_is_drawn_but_takes_no_input_and_a_press_raises_it() {
+        use egui_winit::winit::dpi::PhysicalPosition;
+        use egui_winit::winit::event::{DeviceId, ElementState, MouseButton};
+        let device_id = DeviceId::dummy();
+        let under = |handled, raises| UnderAlert { handled, raises };
+        // Drawn, sized and focused as usual; its taking the focus raises the alert.
+        for event in [
+            WindowEvent::RedrawRequested,
+            WindowEvent::Resized(PhysicalSize::new(640, 480)),
+            WindowEvent::Moved(PhysicalPosition::new(10, 10)),
+            WindowEvent::Focused(false),
+            WindowEvent::CursorLeft { device_id },
+        ] {
+            assert_eq!(under_alert(&event), under(true, false), "{event:?}");
+        }
+        assert_eq!(under_alert(&WindowEvent::Focused(true)), under(true, true));
+        // A press, or its close, raises the alert and does nothing else.
+        let press = |state| WindowEvent::MouseInput {
+            device_id,
+            state,
+            button: MouseButton::Left,
+        };
+        for event in [press(ElementState::Pressed), WindowEvent::CloseRequested] {
+            assert_eq!(under_alert(&event), under(false, true), "{event:?}");
+        }
+        // The rest of its input goes nowhere.
+        for event in [
+            press(ElementState::Released),
+            WindowEvent::CursorMoved {
+                device_id,
+                position: PhysicalPosition::new(20.0, 20.0),
+            },
+            WindowEvent::CursorEntered { device_id },
+            WindowEvent::Ime(egui_winit::winit::event::Ime::Commit("é".into())),
+            WindowEvent::DroppedFile("photo.raw".into()),
+        ] {
+            assert_eq!(under_alert(&event), under(false, false), "{event:?}");
+        }
+    }
+
+    #[test]
     fn a_dialog_s_buttons_sit_at_its_end_in_the_order_given_for_readers_and_tab() {
         let mut harness = Harness::builder()
             .with_size(egui::vec2(400.0, 80.0))
@@ -2008,7 +2513,12 @@ mod tests {
             assert!(harness.state().closed());
             // A drag on the strip's empty part asks for a move, a right-click for the menu.
             let mut harness = settings_on(os, &[]);
-            let at = egui::pos2(20.0, FRAME / 2.0);
+            let close = harness
+                .query_all_by_role_and_label(Role::Button, "Close")
+                .last()
+                .expect("the frame's close")
+                .rect();
+            let at = egui::pos2(close.left() - 24.0, close.center().y);
             harness.drag_at(at);
             harness.hover_at(at + egui::vec2(30.0, 0.0));
             harness.run();

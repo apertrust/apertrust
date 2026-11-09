@@ -951,6 +951,15 @@ fn under_modal(input: &mut egui::RawInput) {
     input.dropped_files.clear();
 }
 
+/// Whether a press on the main window, or its taking the focus, brings the window over it
+/// forward on `os` ([`dialog_host::Dialogs::raise`]): under a modal window (`modal`), but
+/// not while the system's alert asks (`alert`), which would lose the front to the dialog;
+/// an alert the host draws ([`dialog_host::platform::draws_alerts`]) is itself the window
+/// brought forward.
+fn raises_under_modal(modal: bool, alert: bool, os: OperatingSystem) -> bool {
+    modal && (!alert || dialog_host::platform::draws_alerts(os))
+}
+
 /// Whether `input` reaches for the main window under a modal dialog: a press of a pointer's
 /// button in it, or its taking the focus.
 fn reaches_under_modal(input: &egui::RawInput) -> bool {
@@ -1000,18 +1009,23 @@ fn run_title_bar(gesture: TitleBar, ctx: &egui::Context, window: &mut impl Windo
     }
 }
 
-/// Which way the window resizes from `at`, in the bands [`RESIZE_BAND`] wide inside the
-/// edges of `window`, its rectangle in points; a corner where two bands meet. None
-/// elsewhere.
-fn resize_direction(window: egui::Rect, at: egui::Pos2) -> Option<egui::ResizeDirection> {
+/// Which way the window resizes from `at`, in the bands `band` wide inside the edges of
+/// `window`, its rectangle in points: [`RESIZE_BAND`] for the main window, wider for a
+/// dialog's whose card sits inside a margin (`dialog_host::resize_band`); a corner where two
+/// bands meet. None elsewhere.
+fn resize_direction(
+    window: egui::Rect,
+    at: egui::Pos2,
+    band: f32,
+) -> Option<egui::ResizeDirection> {
     use egui::ResizeDirection as Way;
     if !window.contains(at) {
         return None;
     }
-    let west = at.x < window.left() + RESIZE_BAND;
-    let east = at.x >= window.right() - RESIZE_BAND;
-    let north = at.y < window.top() + RESIZE_BAND;
-    let south = at.y >= window.bottom() - RESIZE_BAND;
+    let west = at.x < window.left() + band;
+    let east = at.x >= window.right() - band;
+    let north = at.y < window.top() + band;
+    let south = at.y >= window.bottom() - band;
     match (north, south, west, east) {
         (true, _, true, _) => Some(Way::NorthWest),
         (true, _, _, true) => Some(Way::NorthEast),
@@ -1050,7 +1064,11 @@ fn resizable(viewport: &egui::ViewportInfo) -> bool {
 /// edges, where it can be resized, so no widget under a band sees it, and returns which
 /// way the window is to resize. The compositor or window manager then resizes it and may
 /// keep the release, which egui, never having seen the press, ignores.
-fn resize_press(ctx: &egui::Context, input: &mut egui::RawInput) -> Option<egui::ResizeDirection> {
+fn resize_press(
+    ctx: &egui::Context,
+    input: &mut egui::RawInput,
+    band: f32,
+) -> Option<egui::ResizeDirection> {
     if !resizable(input.viewport()) {
         return None;
     }
@@ -1062,7 +1080,7 @@ fn resize_press(ctx: &egui::Context, input: &mut egui::RawInput) -> Option<egui:
             button: egui::PointerButton::Primary,
             pressed: true,
             ..
-        } => match resize_direction(window, *pos) {
+        } => match resize_direction(window, *pos, band) {
             Some(direction) => {
                 way = Some(direction);
                 false
@@ -1076,7 +1094,7 @@ fn resize_press(ctx: &egui::Context, input: &mut egui::RawInput) -> Option<egui:
 
 /// Shows the resize cursor over the bands inside the window's edges where it can be
 /// resized, in place of any a widget under them asked for, while no button is down.
-fn resize_hover(ctx: &egui::Context) {
+fn resize_hover(ctx: &egui::Context, band: f32) {
     let (can, at, down, window) = ctx.input(|i| {
         let pointer = &i.pointer;
         let viewport = resizable(i.viewport());
@@ -1088,7 +1106,7 @@ fn resize_hover(ctx: &egui::Context) {
         )
     });
     if let (true, false, Some(at)) = (can, down, at)
-        && let Some(way) = resize_direction(window, at)
+        && let Some(way) = resize_direction(window, at, band)
     {
         ctx.set_cursor_icon(resize_cursor(way));
     }
@@ -2020,8 +2038,9 @@ impl App {
     /// Does what the answer to the alert asked for `purpose` says. Overwrite: a yes sends
     /// the export, Export Again's if it asked, else the Export dialog's, which closes
     /// with it; anything else leaves the dialog as it was and drops Export Again. Quit: a yes stops the jobs that can be stopped and goes on
-    /// quitting, which waits for the others; anything else stays, and the next Quit asks
-    /// again. Save: Try Again writes the edit again.
+    /// quitting, which waits for the others; an alert that could not be shown after all
+    /// leaves; anything else stays, and the next Quit asks again. Save: Try Again writes
+    /// the edit again.
     fn alert_answered(&mut self, purpose: alerts::Purpose, answer: dialog_host::Answer) {
         self.shell.overwrite.answered(purpose, answer);
         match alerts::then(purpose, answer, &mut self.quit, &self.mirror.jobs) {
@@ -2036,6 +2055,7 @@ impl App {
             alerts::Then::RetrySave => {
                 self.send_edit(Command::RetrySave);
             }
+            alerts::Then::Leave => self.quit_again = true,
         }
     }
 
@@ -2996,7 +3016,7 @@ impl eframe::App for App {
             self.handed_off |= system.handed_off || moved;
         }
         if CAPTION_BUTTONS {
-            resize_hover(&ctx);
+            resize_hover(&ctx, RESIZE_BAND);
         }
         // The menus follow what ran: the keys, what can run now, the focus, the language.
         let state = self.state(&ctx);
@@ -3063,9 +3083,9 @@ impl eframe::App for App {
         let modal = self.dialogs.shown().is_some_and(|shown| shown.modal());
         // A click on the main window, or its taking the focus, under a modal window brings
         // the dialog forward, as a system's modal window does; where the platform keeps it
-        // in front already, a sheet or a window Windows' owner holds, nothing moves. Not
-        // while an alert asks, which would lose the front to the dialog.
-        if modal && self.alerts.pending().is_none() && reaches_under_modal(raw_input) {
+        // in front already, a sheet or a window Windows' owner holds, nothing moves.
+        let alert = self.alerts.pending().is_some();
+        if raises_under_modal(modal, alert, ctx.os()) && reaches_under_modal(raw_input) {
             self.dialogs.raise();
         }
         if modal || self.alerts.pending().is_some() {
@@ -3075,7 +3095,7 @@ impl eframe::App for App {
             release_after_drag(ctx, raw_input);
         }
         if CAPTION_BUTTONS {
-            self.resize = resize_press(ctx, raw_input);
+            self.resize = resize_press(ctx, raw_input, RESIZE_BAND);
         }
     }
 
@@ -5851,7 +5871,7 @@ mod tests {
     fn the_bands_inside_the_window_s_edges_resize_it() {
         use egui::ResizeDirection as Way;
         let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
-        let at = |x, y| resize_direction(window, egui::pos2(x, y));
+        let at = |x, y| resize_direction(window, egui::pos2(x, y), RESIZE_BAND);
         assert_eq!(at(0.0, 0.0), Some(Way::NorthWest));
         assert_eq!(at(799.0, 5.0), Some(Way::NorthEast));
         assert_eq!(at(3.0, 599.0), Some(Way::SouthWest));
@@ -5891,16 +5911,19 @@ mod tests {
             input
         };
         let mut normal = input(false);
-        assert_eq!(resize_press(&ctx, &mut normal), Some(Way::NorthWest));
+        assert_eq!(
+            resize_press(&ctx, &mut normal, RESIZE_BAND),
+            Some(Way::NorthWest)
+        );
         assert_eq!(normal.events.len(), 1);
         // Away from the bands, the press stays egui's.
         let mut inside = input(false);
         inside.events = vec![press(100.0, 100.0)];
-        assert_eq!(resize_press(&ctx, &mut inside), None);
+        assert_eq!(resize_press(&ctx, &mut inside, RESIZE_BAND), None);
         assert_eq!(inside.events.len(), 1);
         // A maximised window is not resized from its edges.
         let mut maximised = input(true);
-        assert_eq!(resize_press(&ctx, &mut maximised), None);
+        assert_eq!(resize_press(&ctx, &mut maximised, RESIZE_BAND), None);
         assert_eq!(maximised.events.len(), 2);
     }
 
@@ -5977,6 +6000,18 @@ mod tests {
     }
 
     #[test]
+    fn under_an_alert_a_press_on_the_main_window_raises_it_where_the_host_draws_it() {
+        use OperatingSystem::{Mac, Nix, Windows};
+        for os in [Mac, Windows, Nix] {
+            assert!(raises_under_modal(true, false, os), "{os:?}");
+            assert!(!raises_under_modal(false, false, os), "{os:?}");
+        }
+        // The Mac's `NSAlert` keeps the front itself; Linux's drawn alert is raised.
+        assert!(!raises_under_modal(true, true, Mac));
+        assert!(raises_under_modal(true, true, Nix));
+    }
+
+    #[test]
     fn a_press_or_the_focus_on_the_main_window_reaches_for_it_under_a_modal_dialog() {
         let input = |events| egui::RawInput {
             events,
@@ -6035,6 +6070,12 @@ mod tests {
         alert_result: Option<dialog_host::Ask>,
         /// The answer a person gave to the alert up, until the app takes it.
         answer: Option<dialog_host::Answer>,
+        /// Whether the host draws its alerts, as on Linux: each alert asked is then a modal
+        /// window of its own, `alert`, shown over the dialog until it is answered or closed,
+        /// and brought forward `alert_fronted` times.
+        drawn_alerts: bool,
+        alert: Option<dialog_host::Shown>,
+        alert_fronted: usize,
     }
 
     #[derive(Clone, Default)]
@@ -6076,12 +6117,20 @@ mod tests {
         }
 
         fn shown(&self) -> Option<dialog_host::Shown> {
-            self.0.borrow().shown
+            let hosted = self.0.borrow();
+            hosted.alert.or(hosted.shown)
+        }
+
+        fn alert_shown(&self) -> bool {
+            self.0.borrow().alert.is_some()
         }
 
         fn raise(&mut self) {
             let mut hosted = self.0.borrow_mut();
-            if let Some(shown) = &mut hosted.shown
+            if let Some(alert) = &mut hosted.alert {
+                alert.focused = true;
+                hosted.alert_fronted += 1;
+            } else if let Some(shown) = &mut hosted.shown
                 && shown.form == dialog_host::Form::Modal
             {
                 shown.focused = true;
@@ -6097,7 +6146,13 @@ mod tests {
         }
 
         fn close(&mut self) {
-            self.0.borrow_mut().closing = true;
+            let mut hosted = self.0.borrow_mut();
+            // As the host: an alert it draws closes first, dismissed, the dialog staying.
+            if hosted.alert.take().is_some() {
+                hosted.answer = Some(dialog_host::Answer::Dismissed);
+            } else {
+                hosted.closing = true;
+            }
         }
 
         fn preview(&mut self, through: u64, _preview: apertrust_engine::session::ExportPreview) {
@@ -6171,6 +6226,10 @@ mod tests {
                 Some(result) => result,
                 None if hosted.native_alerts => {
                     hosted.alerts.push(request.clone());
+                    if hosted.drawn_alerts {
+                        let (form, focused) = (dialog_host::Form::Modal, true);
+                        hosted.alert = Some(dialog_host::Shown { form, focused });
+                    }
                     dialog_host::Ask::Shown
                 }
                 None => dialog_host::Ask::NoAlerts,
@@ -6351,6 +6410,7 @@ mod tests {
                                 d.quit_again = true;
                             }
                             alerts::Then::RetrySave => d.sent.push(Command::RetrySave),
+                            alerts::Then::Leave => d.quit_again = true,
                         }
                     }
                     if d.quit_held && d.alerts.pending() != Some(alerts::Purpose::Overwrite) {
@@ -6944,9 +7004,18 @@ mod tests {
         host
     }
 
-    /// The person answers the alert up.
+    /// A host that draws its alerts, as Linux's does.
+    fn with_drawn_alerts() -> FakeHost {
+        let host = with_alerts();
+        host.0.borrow_mut().drawn_alerts = true;
+        host
+    }
+
+    /// The person answers the alert up, which goes.
     fn answer_alert(host: &FakeHost, answer: dialog_host::Answer) {
-        host.0.borrow_mut().answer = Some(answer);
+        let mut hosted = host.0.borrow_mut();
+        hosted.answer = Some(answer);
+        hosted.alert = None;
     }
 
     /// An export of the user's starts running in the harness's jobs.
@@ -7060,6 +7129,83 @@ mod tests {
         assert_eq!(asked_alerts(&host), 1);
         assert!(!closing(&harness));
         assert!(harness.state().stopped.is_empty());
+    }
+
+    #[test]
+    fn under_a_drawn_alert_quit_and_close_window_do_nothing_as_under_the_mac_s() {
+        // The quit alert up, as Linux draws it: Quit, Close Window and the window's close
+        // button neither take it away nor ask it again, frame after frame.
+        let host = with_drawn_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        start_export(&mut harness);
+        press_action(&mut harness, ActionId::QUIT);
+        assert_eq!(asked_alerts(&host), 1);
+        assert!(host.0.borrow().alert.is_some());
+        press_action(&mut harness, ActionId::QUIT);
+        press_action(&mut harness, ActionId::CLOSE_WINDOW);
+        harness.step();
+        harness.step();
+        assert_eq!(asked_alerts(&host), 1);
+        assert!(host.0.borrow().alert.is_some(), "still up");
+        assert!(host.0.borrow().answer.is_none(), "not dismissed");
+        assert!(!closing(&harness));
+        // The save warning's alert up: Quit leaves it as it is, never the quit alert.
+        let host = with_drawn_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        harness.state_mut().edit = TestEdit::Failed("disk full".to_owned());
+        let ctx = harness.ctx.clone();
+        let request = alerts::save_request(&ctx, "photo.raw", "disk full");
+        let state = harness.state_mut();
+        let purpose = alerts::Purpose::Save;
+        state
+            .alerts
+            .ask(&mut state.dialogs, purpose, &request, &ctx);
+        press_action(&mut harness, ActionId::QUIT);
+        harness.step();
+        assert_eq!(asked_alerts(&host), 1);
+        assert_eq!(harness.state().alerts.pending(), Some(purpose));
+        assert!(host.0.borrow().alert.is_some());
+        assert!(!closing(&harness));
+        // Over a modal dialog, Quit neither closes the alert nor the dialog, nor waits for
+        // them: nothing is left to quit once they go.
+        let host = FakeHost::on(OperatingSystem::Nix);
+        {
+            let mut hosted = host.0.borrow_mut();
+            hosted.native_alerts = true;
+            hosted.drawn_alerts = true;
+        }
+        let mut dialogs = dialog_host::AppDialogs::new(host.clone());
+        let ctx = egui::Context::default();
+        let export = export::Export::new(export::Values::default());
+        dialogs.open(export, None, &ctx);
+        let request = alerts::overwrite_request(&ctx, false);
+        assert_eq!(dialogs.ask(&request, &ctx), dialog_host::Ask::Shown);
+        assert!(!dialogs.quit());
+        assert!(!host.0.borrow().closing);
+        assert!(host.0.borrow().alert.is_some());
+        answer_alert(&host, dialog_host::Answer::Pressed(1));
+        assert!(!dialogs.frame(&ctx), "no Quit was held");
+    }
+
+    #[test]
+    fn under_a_drawn_alert_a_press_on_the_main_window_raises_the_alert() {
+        let host = with_drawn_alerts();
+        let mut dialogs = dialog_host::AppDialogs::new(host.clone());
+        let ctx = egui::Context::default();
+        let request = alerts::save_request(&ctx, "photo.raw", "disk full");
+        assert_eq!(dialogs.ask(&request, &ctx), dialog_host::Ask::Shown);
+        host.0.borrow_mut().alert.as_mut().expect("up").focused = false;
+        // As `raw_input_hook` asks it on Linux, where the host draws the alert.
+        assert!(raises_under_modal(
+            dialogs.shown().is_some_and(|shown| shown.modal()),
+            true,
+            OperatingSystem::Nix
+        ));
+        dialogs.raise();
+        assert_eq!(host.0.borrow().alert_fronted, 1);
+        assert!(host.0.borrow().alert.expect("up").focused);
     }
 
     #[test]

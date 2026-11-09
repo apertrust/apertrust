@@ -37,7 +37,13 @@
 //! On macOS a dialog's window can be a sheet on the main window (decision 41):
 //! [`begin_sheet`] and [`end_sheet`] present it and take it away from the run loop, and
 //! [`keep_out_of_tabs`] keeps a dialog's own window from opening as a tab. A confirmation is
-//! the system's alert, on the Mac an `NSAlert` as a sheet ([`begin_alert`]).
+//! the system's alert, on the Mac an `NSAlert` as a sheet ([`begin_alert`]); Linux's is
+//! drawn by the app's dialog host instead.
+//!
+//! On Wayland a modal dialog's window takes the window it rises from as its parent,
+//! `xdg_toplevel.set_parent`, which winit 0.30 does not offer: `set_parent` sends it
+//! through wayland-client over winit's own display and toplevels, the app keeping the
+//! dialog modal.
 //!
 //! On macOS the popup service's plain lists are AppKit's menus (decision 40):
 //! [`pop_up_menu`] shows one from the run loop and answers with the item chosen.
@@ -48,7 +54,7 @@
 
 #![allow(
     unsafe_code,
-    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes; on Windows, the console calls that attach the app to its terminal"
+    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes; on Windows, the console calls that attach the app to its terminal; on Wayland, wayland-client's views of winit's display and toplevels, to set a dialog's parent"
 )]
 
 mod alert;
@@ -60,6 +66,8 @@ mod title_bar;
 
 pub use alert::{AlertButton, ButtonRole, begin_alert};
 pub use console::attach_to_terminal;
+#[cfg(target_os = "linux")]
+pub use dialog::set_parent;
 pub use dialog::{begin_sheet, end_sheet, keep_out_of_tabs, show_without_focus};
 pub use menu_bar::{handling_key_repeat, no_system_full_screen_item};
 pub use popup_menu::{Appearance, KeyEquivalent, MenuEntry, MenuItem, PopUpMenu, pop_up_menu};
@@ -81,6 +89,12 @@ pub enum ColorSpace {
 pub enum Error {
     #[error("no window handle: {0}")]
     Handle(#[from] HandleError),
+    #[cfg(target_os = "linux")]
+    #[error("Wayland object: {0}")]
+    WaylandObject(#[from] wayland_client::backend::InvalidId),
+    #[cfg(target_os = "linux")]
+    #[error("Wayland connection: {0}")]
+    WaylandConnection(#[from] wayland_client::backend::WaylandError),
     #[error("no Metal layer")]
     NoMetalLayer,
     #[error("the view is in no window")]

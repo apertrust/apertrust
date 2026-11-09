@@ -17,8 +17,9 @@
 //! A dialog's window where winit cannot make it what it is (`docs/gui.md`, Dialogs and
 //! alerts; decision 41): on macOS, presented as a sheet on the window it rises from, where
 //! macOS 27 centres it, the window dimmed behind it, and kept out of other windows' tabs.
-//! Elsewhere these do nothing yet: Windows' and Linux's modality are planned
-//! (`docs/gui.md`, Still to build).
+//! On Linux, [`set_parent`] sets a Wayland dialog's parent while the app keeps its modality.
+//! Windows' owner disabling and X11's native modality are planned (`docs/gui.md`, Still to
+//! build).
 //!
 //! AppKit animates a sheet in and out inside `beginSheet:completionHandler:` and
 //! `endSheet:`, each in a run loop of its own, 177 to 206 ms on the M4 (spike D1). Called
@@ -105,6 +106,77 @@ pub fn show_without_focus(window: &impl HasWindowHandle) -> Result<bool, Error> 
     }
     let _ = handle;
     Ok(false)
+}
+
+/// Parents `dialog` to `parent` on Wayland, while the app keeps the dialog modal and both
+/// windows independently movable. Returns false on X11.
+#[cfg(target_os = "linux")]
+pub fn set_parent(
+    parent: &winit::window::Window,
+    dialog: &winit::window::Window,
+) -> Result<bool, Error> {
+    linux::set_parent(parent, dialog)
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
+    use wayland_client::{
+        Connection, Proxy,
+        backend::{Backend, InvalidId, ObjectId, WaylandError},
+    };
+    use wayland_protocols::xdg::shell::client::xdg_toplevel::XdgToplevel;
+    use winit::{platform::wayland::WindowExtWayland as _, window::Window};
+
+    use crate::Error;
+
+    pub(super) fn set_parent(parent: &Window, dialog: &Window) -> Result<bool, Error> {
+        let (Some(parent_handle), Some(dialog_handle)) =
+            (parent.xdg_toplevel(), dialog.xdg_toplevel())
+        else {
+            return Ok(false);
+        };
+        let RawDisplayHandle::Wayland(display) =
+            parent.display_handle().map(|handle| handle.as_raw())?
+        else {
+            return Ok(false);
+        };
+        // SAFETY: the `wl_display` is winit's, connected for as long as its event loop runs,
+        // which spans this call, made from inside it with both windows borrowed. The
+        // `Backend` is a guest on it and, with the `Connection` over it, is dropped before
+        // this returns, so the display outlives both.
+        let backend = unsafe { Backend::from_foreign_display(display.display.as_ptr().cast()) };
+        let connection = Connection::from_backend(backend);
+        // SAFETY: `xdg_toplevel` returned the window's own `xdg_toplevel` `wl_proxy`, which
+        // winit manages through wayland-rs and destroys only as the window is dropped; the
+        // window is borrowed for this whole call, beyond which neither the id nor the proxy
+        // made from it is used.
+        let parent = unsafe { toplevel(&connection, parent_handle.as_ptr()) }?;
+        // SAFETY: as above, for the dialog's window.
+        let dialog = unsafe { toplevel(&connection, dialog_handle.as_ptr()) }?;
+        dialog.set_parent(Some(&parent));
+        match connection.flush() {
+            // Queued, not lost: winit's loop sends it with its own next flush.
+            Err(WaylandError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            result => result?,
+        }
+        Ok(true)
+    }
+
+    /// The `xdg_toplevel` at `pointer` as a proxy on `connection`.
+    ///
+    /// # Safety
+    ///
+    /// `pointer` is a live `xdg_toplevel` `wl_proxy` of `connection`'s display, and stays so
+    /// while the proxy returned is used.
+    unsafe fn toplevel(
+        connection: &Connection,
+        pointer: *mut std::ffi::c_void,
+    ) -> Result<XdgToplevel, InvalidId> {
+        // SAFETY: the caller's, above.
+        let id = unsafe { ObjectId::from_ptr(XdgToplevel::interface(), pointer.cast()) }?;
+        XdgToplevel::from_id(connection, id)
+    }
 }
 
 #[cfg(target_os = "macos")]

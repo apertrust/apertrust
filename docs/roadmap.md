@@ -111,7 +111,8 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [x] The photo's background: six neutral greys from black to white, chosen from the surround's right-click menu or the View menu, the theme's own the default, those for judging colour within ISO 12646.
 - [x] File › Open Image… for one raw.
 - [x] Dialogs as native windows on the Mac, and its system alerts.
-- [ ] Native dialogs and alerts on Windows and Linux.
+- [x] Wayland modal dialogs and drawn alerts on Linux; X11's native hints come later.
+- [ ] Native dialogs and alerts on Windows, with the dialogs' border and drop shadow.
 - [x] An edit written by a newer Apertrust opens for viewing only and is never overwritten.
 
 ### Editing
@@ -196,8 +197,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [x] On the command line: JPEG and PNG with darktable's sRGB profile, at darktable's sizes and resampling, file names from darktable's variables, several files at once.
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
 - [x] The Export dialog on the Mac: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, the overwrite question, and Export Again (decision 56; [gui.md](gui.md#the-export-dialog)).
-- [x] The Export dialog on Windows and Linux, as a modal window; Overwrite waits for their alerts.
-- [ ] Alerts on Windows and Linux, for Overwrite and the quit question.
+- [x] The Export dialog on Windows and Linux, as a modal window, with Overwrite's alert on Linux.
+- [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
 - [ ] Export presets, and several presets in one go.
 - [ ] Metadata in exported files, and styles applied on export.
 

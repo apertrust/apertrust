@@ -343,7 +343,10 @@ dependencies = [
  "objc2-quartz-core 0.3.2",
  "raw-window-handle",
  "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
  "windows-sys 0.61.2",
+ "winit",
 ]
 
 [[package]]
