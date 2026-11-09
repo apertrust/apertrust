@@ -86,6 +86,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0001](0001-what-apertrust-is-the-principles.md) | What Apertrust is: the principles |
 | [0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md) | Rewrite darktable first, then Apertrust's own way |
 | [0003](0003-the-reference-is-darktables-latest-stable-release.md) | The reference is darktable's latest stable release |
+| [0074](0074-masks-ported-from-darktables-master.md) | Masks ported from darktable's master |
 | [0004](0004-modules-for-users-operations-for-algorithms.md) | Modules for users, operations for algorithms |
 
 ## Language and platforms
@@ -153,7 +154,6 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0032](0032-modules-off-until-first-touched.md) | Modules off until first touched |
 | [0033](0033-one-tone-mapper-per-edit.md) | One tone mapper per edit |
 | [0034](0034-layers-masked-module-instances-in-a-fixed-order.md) | Layers: masked module instances in a fixed order |
-| [0074](0074-masks-ported-from-darktables-master.md) | Masks ported from darktable's master |
 
 ## Desktop UI
 
