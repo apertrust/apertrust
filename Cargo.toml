@@ -124,10 +124,10 @@ serde = { version = "1.0.229", features = ["derive"] }
 # (apertrust-export's disk, decision 56).
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-toml = "0.8.23"
+toml = "1.1.8"
 # The settings generator's reader (crates/base): toml's own, with each item's place in the
 # file and the comments above it.
-toml_edit = { version = "0.22.27", default-features = false, features = ["parse"] }
+toml_edit = { version = "0.25.17", default-features = false, features = ["parse"] }
 tracing = "0.1.44"
 tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt", "env-filter", "tracing-log"] }

@@ -383,6 +383,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - serde_derive 1.0.229: MIT OR Apache-2.0
 - serde_repr 0.1.21: MIT OR Apache-2.0
 - serde_spanned 0.6.9: MIT OR Apache-2.0
+- serde_spanned 1.1.2: MIT OR Apache-2.0
 - sharded-slab 0.1.7: MIT
 - signal-hook-registry 1.4.8: MIT OR Apache-2.0
 - simd-adler32 0.3.10: MIT
@@ -417,12 +418,14 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - tinystr 0.8.5: Unicode-3.0
 - tokio 1.54.1: MIT
 - toml 0.8.23: MIT OR Apache-2.0
+- toml 1.1.8+spec-1.1.0: MIT OR Apache-2.0
 - toml_datetime 0.6.11: MIT OR Apache-2.0
 - toml_datetime 1.1.2+spec-1.1.0: MIT OR Apache-2.0
 - toml_edit 0.22.27: MIT OR Apache-2.0
 - toml_edit 0.25.17+spec-1.1.0: MIT OR Apache-2.0
 - toml_parser 1.1.5+spec-1.1.0: MIT OR Apache-2.0
 - toml_write 0.1.2: MIT OR Apache-2.0
+- toml_writer 1.2.0+spec-1.1.0: MIT OR Apache-2.0
 - tracing 0.1.44: MIT
 - tracing-attributes 0.1.31: MIT
 - tracing-core 0.1.36: MIT
