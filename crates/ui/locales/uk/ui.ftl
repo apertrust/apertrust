@@ -147,7 +147,6 @@ job-import = Імпортування { $done } / { $total }
 job-delete = Видалення { $done } / { $total }
 job-thumbnails = Створення мініатюр
 job-folder = Читання { $folder }
-job-target-disk = файл на диску
 
 job-export-photo =
     Експортування { $number } / { $total } до { $storage ->
@@ -199,51 +198,12 @@ job-cause-folder = папку не вдається створити або за
 job-cause-write = не вдалося записати файл
 job-cause-engine = рушій несподівано зупинився
 
-## Рядок експорту у вікні завдань: подробиці і кнопки
+## Рядок завдання у вікні завдань: рядки і кнопки
 
-activity-name-finished =
-    { $total ->
-        [1] Експорт завершено: експортовано 1 знімок
-       *[other] Експорт завершено, експортовано: { $total }
-    }
-activity-name-failed =
-    { $total ->
-        [1] Помилка експорту
-       *[other] Експорт завершено, помилок: { $failed }. Експортовано { $done } із { $total }
-    }
-activity-name-cancelled = Експорт скасовано. Експортовано { $done } із { $total }
-activity-title-running =
-    { $total ->
-        [1] Експорт 1 знімка
-       *[other] Експорт знімків: { $total }
-    }
-activity-title-finished =
-    { $total ->
-        [1] Знімок експортовано
-       *[other] Експортовано знімків: { $total }
-    }
-activity-title-failed =
-    { $total ->
-        [1] Не вдалося експортувати знімок
-       *[other] Експортовано знімків: { $done } із { $total }
-    }
-activity-title-cancelled = Експорт скасовано
-activity-now =
-    { $total ->
-        [1] Експортується { $file }
-       *[other] Готово { $done } із { $total } · зараз { $file }
-    }
-activity-between = Готово { $done } із { $total }
 activity-folder = Папка: { $folder }
 activity-failure = { $photo }: не вдалося записати { $file }: { $cause }.
 activity-failure-photo = { $photo }: { $cause }.
 activity-failure-cause = { $cause }.
-activity-cancelled-detail =
-    { $done ->
-        [0] Перед зупинкою нічого не експортовано.
-       *[other] Перед зупинкою експортовано { $done } із { $total }; файли залишаються.
-    }
-activity-queued = Далі в черзі: { photo-count }, до папки { $folder }
 activity-show-finder = Показати у Finder
 activity-show-explorer = Показати у Провіднику
 activity-show-files = Показати у Файлах

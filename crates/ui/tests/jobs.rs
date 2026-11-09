@@ -19,8 +19,8 @@
 //! in place (`docs/gui.md`, The jobs window; decision 57), driven through AccessKit.
 
 use apertrust_ui::components::{
-    ActivityAction, Available, ExportDetails, ExportFailure, FileManager, Job, JobMessage,
-    JobPhase, Jobs, SaveState, TopPanel, TopPanelAction,
+    ActivityAction, Available, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, SaveState,
+    TopPanel, TopPanelAction,
 };
 use apertrust_ui::{Locale, Theme, Translator};
 use egui::accesskit::{Live, Role};
@@ -37,39 +37,56 @@ fn export_message(done: usize, total: usize) -> JobMessage {
         .text("target", "file on disk")
 }
 
-/// An export of 12 photos with id `id`, in `phase`, 3 in, as the gallery has it.
+/// What an export's outcome counts: `written` of 12.
+fn outcome(id: &str, written: usize) -> JobMessage {
+    JobMessage::new(id)
+        .number("written", written as f64)
+        .number("skipped", 0.0)
+        .number("total", 12.0)
+}
+
+/// An export of 12 photos with id `id`, in `phase`, 3 in, as the gallery has it: the parts
+/// the export job reports of itself.
 fn export(id: u64, phase: JobPhase) -> Job {
-    let mut details = ExportDetails::new(12, FOLDER);
-    let mut cancellable = false;
+    let done = match phase {
+        JobPhase::Queued => 0,
+        JobPhase::Running | JobPhase::Cancelled => 3,
+        JobPhase::Finished => 12,
+        JobPhase::Failed => 11,
+    };
+    let job = Job::new(id, phase, export_message(done, 12))
+        .kind("export")
+        .fraction(done as f32 / 12.0)
+        .destination(FOLDER);
     match phase {
-        JobPhase::Running => {
-            details.done = 3;
-            details.current = Some("IMG_2044.ARW".to_owned());
-            cancellable = true;
-        }
-        JobPhase::Finished => details.done = 12,
-        JobPhase::Failed => {
-            details.done = 11;
-            details.failed = 1;
-            details.failure = Some(ExportFailure {
-                photo: "IMG_2047.ARW".to_owned(),
+        JobPhase::Queued => job.cancellable(true).detail(
+            JobMessage::new("job-export-queued")
+                .number("count", 12.0)
+                .text("folder", FOLDER),
+        ),
+        JobPhase::Running => job.cancellable(true).detail(
+            JobMessage::new("job-export-now")
+                .number("done", 3.0)
+                .number("total", 12.0)
+                .text("photo", "IMG_2044.ARW"),
+        ),
+        JobPhase::Finished => job.outcome(outcome("job-export-finished", 12)),
+        JobPhase::Failed => job
+            .outcome(outcome("job-export-failed-outcome", 11))
+            .failure(JobFailure {
+                item: "IMG_2047.ARW".to_owned(),
                 file: "IMG_2047.jpg".to_owned(),
                 cause: "the disk is full".to_owned(),
-            });
-        }
-        JobPhase::Cancelled => details.done = 3,
-        JobPhase::Queued => cancellable = true,
+            })
+            .retry(true),
+        JobPhase::Cancelled => job.outcome(outcome("job-export-cancelled", 3)),
     }
-    let message = export_message(details.done, details.total);
-    Job::new(id, phase, message)
-        .fraction(details.done as f32 / 12.0)
-        .cancellable(cancellable)
-        .export(details)
 }
 
 /// A job that is not an export: thumbnails, or a delete that cannot be stopped.
 fn other(id: u64, phase: JobPhase, cancellable: bool) -> Job {
     Job::new(id, phase, JobMessage::new("job-thumbnails"))
+        .kind("thumbnails")
         .fraction(0.6)
         .cancellable(cancellable)
 }
@@ -276,15 +293,18 @@ fn a_polite_live_region_speaks_when_a_job_starts_and_ends_not_as_it_progresses()
     harness.state_mut().jobs = vec![export(1, JobPhase::Running)];
     harness.run();
     let start = said(&harness);
-    assert_eq!(start, "Exporting 12 photos");
+    assert_eq!(start, "Started: Exporting 3 / 12 to file on disk");
 
     // Photo after photo it says the same, so nothing is spoken again.
     for done in 4..12 {
         let mut running = export(1, JobPhase::Running);
-        if let Some(details) = running.export.as_mut() {
-            details.done = done;
-            details.current = Some(format!("IMG_{}.ARW", 2040 + done));
-        }
+        running.title = export_message(done, 12);
+        running.detail = Some(
+            JobMessage::new("job-export-now")
+                .number("done", done as f64)
+                .number("total", 12.0)
+                .text("photo", format!("IMG_{}.ARW", 2040 + done)),
+        );
         running.fraction = done as f32 / 12.0;
         harness.state_mut().jobs = vec![running];
         harness.run();
@@ -299,13 +319,10 @@ fn a_polite_live_region_speaks_when_a_job_starts_and_ends_not_as_it_progresses()
     harness.run();
     assert_eq!(said(&harness), "Started: Creating thumbnails");
 
-    // A job ends while another runs, and the end is said.
+    // A job ends while another runs, and the end is said, by its outcome.
     for (phase, text) in [
-        (JobPhase::Finished, "Export finished: 12 photos exported"),
-        (
-            JobPhase::Failed,
-            "Export finished, 1 failed: 11 of 12 photos exported",
-        ),
+        (JobPhase::Finished, "12 photos exported"),
+        (JobPhase::Failed, "Failed: 11 of 12 photos exported"),
         (
             JobPhase::Cancelled,
             "Export cancelled: 3 of 12 photos exported",
@@ -321,7 +338,7 @@ fn a_polite_live_region_speaks_when_a_job_starts_and_ends_not_as_it_progresses()
         assert_eq!(said(&harness), text, "{phase:?}");
     }
 
-    // A job that is not an export says its own message and how it ended.
+    // A job with no outcome says its title and how it ended.
     harness.state_mut().jobs = vec![other(2, JobPhase::Running, true)];
     harness.run();
     harness.state_mut().jobs = vec![other(2, JobPhase::Finished, true)];
@@ -345,15 +362,12 @@ fn a_job_that_starts_again_under_the_id_it_ended_with_is_heard_to_start() {
     harness.run();
     harness.state_mut().jobs = vec![export(1, JobPhase::Failed)];
     harness.run();
-    assert_eq!(
-        said(&harness),
-        "Export finished, 1 failed: 11 of 12 photos exported"
-    );
+    assert_eq!(said(&harness), "Failed: 11 of 12 photos exported");
     // Try again, with the same id: the start is said, not left unsaid because the id
     // was heard before.
     harness.state_mut().jobs = vec![export(1, JobPhase::Running)];
     harness.run();
-    assert_eq!(said(&harness), "Exporting 12 photos");
+    assert_eq!(said(&harness), "Started: Exporting 3 / 12 to file on disk");
 }
 
 #[test]
@@ -682,10 +696,7 @@ fn each_export_state_says_its_words_and_offers_the_buttons_it_allows() {
         ),
         (
             JobPhase::Cancelled,
-            &[
-                "Export cancelled",
-                "3 of 12 photos were exported before it stopped; they stay.",
-            ],
+            &["Export cancelled: 3 of 12 photos exported"],
             &["Show in Finder", "Dismiss"],
         ),
         (
@@ -696,23 +707,25 @@ fn each_export_state_says_its_words_and_offers_the_buttons_it_allows() {
     ];
     let all = ["Show in Finder", "Cancel export", "Try again", "Dismiss"];
     for (phase, lines, buttons) in cases {
-        let job = export(7, phase);
-        let title = format!(
-            "Exporting {} / 12 to file on disk",
-            job.export.as_ref().map_or(0, |d| d.done)
-        );
-        let mut harness = window(vec![job]);
+        let done = match phase {
+            JobPhase::Queued => 0,
+            JobPhase::Running | JobPhase::Cancelled => 3,
+            JobPhase::Finished => 12,
+            JobPhase::Failed => 11,
+        };
+        let title = format!("Exporting {done} / 12 to file on disk");
+        let mut harness = window(vec![export(7, phase)]);
         harness.run();
         assert!(has(&harness, &title), "{phase:?}: {title}");
         for line in lines {
             assert!(has(&harness, line), "{phase:?}: {line}");
         }
-        if phase != JobPhase::Queued {
-            assert!(
-                has(&harness, &format!("To {FOLDER}")),
-                "{phase:?}: the folder"
-            );
-        }
+        // The destination, once the job does not wait: a queued one's detail names it.
+        assert_eq!(
+            has(&harness, &format!("To {FOLDER}")),
+            phase != JobPhase::Queued,
+            "{phase:?}: the folder"
+        );
         for button in all {
             assert_eq!(
                 has(&harness, button),
@@ -751,16 +764,12 @@ fn each_export_state_says_its_words_and_offers_the_buttons_it_allows() {
 
 #[test]
 fn a_failure_names_the_photo_and_file_only_where_it_has_them() {
-    let failed = |photo: &str, file: &str| {
-        let mut job = export(7, JobPhase::Failed);
-        if let Some(details) = job.export.as_mut() {
-            details.failure = Some(ExportFailure {
-                photo: photo.to_owned(),
-                file: file.to_owned(),
-                cause: "the raw file cannot be read".to_owned(),
-            });
-        }
-        job
+    let failed = |item: &str, file: &str| {
+        export(7, JobPhase::Failed).failure(JobFailure {
+            item: item.to_owned(),
+            file: file.to_owned(),
+            cause: "the raw file cannot be read".to_owned(),
+        })
     };
     for (photo, file, line) in [
         (
@@ -862,9 +871,13 @@ fn a_queued_job_says_so_and_one_that_cannot_be_cancelled_has_no_cancel() {
     assert_eq!(harness.state().actions, vec![ActivityAction::Cancel(5)]);
     harness.state_mut().actions.clear();
 
-    // A non-export that failed says so with its reason, and can only be dismissed.
-    harness.state_mut().jobs =
-        vec![other(4, JobPhase::Failed, true).error("the folder is not readable")];
+    // A job with no outcome, destination or retry that failed says so with its cause, and
+    // can only be dismissed.
+    harness.state_mut().jobs = vec![other(4, JobPhase::Failed, true).failure(JobFailure {
+        item: String::new(),
+        file: String::new(),
+        cause: "the folder is not readable".to_owned(),
+    })];
     harness.run();
     assert!(has(&harness, "Failed"));
     assert!(has(&harness, "the folder is not readable."));

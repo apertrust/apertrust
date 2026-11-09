@@ -186,8 +186,6 @@ job-delete = Deleting { $done } / { $total }
 job-thumbnails = Creating thumbnails
 # A folder being read as it opens; $folder is its path.
 job-folder = Reading { $folder }
-# The storage an export goes to, in the export's message.
-job-target-disk = file on disk
 
 ## What an export job reports of itself for its row. $number is the photo under way,
 ## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
@@ -252,60 +250,15 @@ job-cause-folder = the folder cannot be made or written to
 job-cause-write = the file could not be written
 job-cause-engine = the engine stopped unexpectedly
 
-## An export's row in the jobs window: its details and buttons. $done is the photos
-## written, $total those asked for, $failed those that failed, $file the photo being
-## exported or a file written, $photo a photo's name, $folder where they go, $cause why a
-## file could not be written, as the app words it, and $count the photos waiting. A single
-## photo is the exact number 1, never the plural category one, which Ukrainian also gives
-## 21.
+## A job's row in the jobs window: its lines and buttons. $folder is where its results go,
+## $photo the item it failed on, $file the file it could not write, and $cause why, as the
+## app words it.
 
-# What the live region says as an export ends.
-activity-name-finished =
-    { $total ->
-        [1] Export finished: 1 photo exported
-       *[other] Export finished: { $total } photos exported
-    }
-activity-name-failed =
-    { $total ->
-        [1] Export failed
-       *[other] Export finished, { $failed } failed: { $done } of { $total } photos exported
-    }
-activity-name-cancelled = Export cancelled: { $done } of { $total } photos exported
-# How a row says an export ended.
-activity-title-running =
-    { $total ->
-        [1] Exporting 1 photo
-       *[other] Exporting { $total } photos
-    }
-activity-title-finished =
-    { $total ->
-        [1] 1 photo exported
-       *[other] { $total } photos exported
-    }
-activity-title-failed =
-    { $total ->
-        [1] The photo could not be exported
-       *[other] { $done } of { $total } photos exported
-    }
-activity-title-cancelled = Export cancelled
 # A row's lines.
-activity-now =
-    { $total ->
-        [1] Exporting { $file }
-       *[other] { $done } of { $total } done · now { $file }
-    }
-activity-between = { $done } of { $total } done
 activity-folder = To { $folder }
 activity-failure = { $photo }: could not write { $file }: { $cause }.
 activity-failure-photo = { $photo }: { $cause }.
 activity-failure-cause = { $cause }.
-activity-cancelled-detail =
-    { $done ->
-        [0] Nothing was exported before it stopped.
-        [1] 1 of { $total } photos was exported before it stopped; it stays.
-       *[other] { $done } of { $total } photos were exported before it stopped; they stay.
-    }
-activity-queued = Next in line: { photo-count }, to { $folder }
 # A row's buttons: Show names the platform's file manager.
 activity-show-finder = Show in Finder
 activity-show-explorer = Show in Explorer

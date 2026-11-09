@@ -1991,10 +1991,11 @@ impl App {
         }
     }
 
-    /// Sends an export job, which the jobs window follows.
+    /// Sends an export job, which the jobs window follows by its events, and quitting
+    /// waits for until it is added.
     fn send_job(&mut self, command: Command) {
-        let number = self.session.send(command.clone());
-        self.mirror.jobs.sent(number, &command, None);
+        let number = self.session.send(command);
+        self.mirror.jobs.starting(number);
     }
 
     /// Sends the session what `asked` holds for the photo open.
@@ -2005,13 +2006,13 @@ impl App {
         let commands = export::commands(&photo.path, asked, &self.shell.export, &self.places);
         for command in commands {
             let preview = matches!(command, Command::PreviewExport { .. });
-            let exporting = matches!(command, Command::Export { .. }).then(|| command.clone());
+            let exporting = matches!(command, Command::Export { .. });
             let number = self.session.send(command);
             if preview && asked.opened {
                 self.mirror.previews_from(number);
             }
-            if let Some(export) = exporting {
-                self.mirror.jobs.sent(number, &export, None);
+            if exporting {
+                self.mirror.jobs.starting(number);
             }
         }
     }
@@ -2113,9 +2114,8 @@ impl App {
     fn jobs_action(&mut self, action: ActivityAction, ctx: &egui::Context) {
         match self.mirror.jobs.act(action) {
             jobs::Do::Nothing => {}
-            jobs::Do::Send { command, retry_of } => {
-                let number = self.session.send(command.clone());
-                self.mirror.jobs.sent(number, &command, retry_of);
+            jobs::Do::Send(command) => {
+                self.session.send(command);
             }
             jobs::Do::Reveal(what) => jobs::reveal(&what),
             jobs::Do::Changed => {
@@ -6266,8 +6266,7 @@ mod tests {
     fn overwrite_confirmed(d: &mut Dialogged) {
         d.exported += 1;
         // The export is sent, and has no job yet.
-        d.jobs
-            .sent(d.exported as u64, &jobs::tests::export(1), None);
+        d.jobs.starting(d.exported as u64);
         match d.again.confirmed() {
             Some(command) => d.sent.push(command),
             None => d.dialogs.close(),
@@ -6533,7 +6532,7 @@ mod tests {
             command: None,
         };
         assert_eq!(mirror.apply(&progress), jobs::Show::Update);
-        let import = jobs::tests::added(ids[1], Queue::UserForeground, None);
+        let import = jobs::tests::added(ids[1], Queue::UserForeground, Some(2));
         let (show, view) = jobs_after(&mut mirror, &[import]);
         jobs::refresh(&view, &mut harness.state_mut().dialogs, show, None, &ctx);
         assert_eq!(host.0.borrow().jobs_opened.len(), 2);
@@ -7111,10 +7110,7 @@ mod tests {
         harness.run();
         start_export(&mut harness);
         // A second export sent and never added, as when the engine dies before adding it.
-        harness
-            .state_mut()
-            .jobs
-            .sent(8, &jobs::tests::export(1), None);
+        harness.state_mut().jobs.starting(8);
         let show = harness.state_mut().jobs.engine_stopped();
         assert_eq!(show, jobs::Show::Update);
         press_action(&mut harness, ActionId::QUIT);
@@ -7536,10 +7532,7 @@ mod tests {
         let host = with_alerts();
         let mut harness = dialogged(host.clone());
         harness.run();
-        harness
-            .state_mut()
-            .jobs
-            .sent(7, &jobs::tests::export(2), None);
+        harness.state_mut().jobs.starting(7);
         press_action(&mut harness, ActionId::QUIT);
         assert!(!closing(&harness));
         assert_eq!(asked_alerts(&host), 1);
