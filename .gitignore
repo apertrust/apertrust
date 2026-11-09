@@ -87,6 +87,7 @@ venv/
 .claude/commands/
 .claude/.agent-kit-installed
 .agents/
+.kimi-code/
 .opencode/
 .github/agents/
 .github/prompts/
