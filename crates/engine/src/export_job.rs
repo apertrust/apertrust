@@ -36,7 +36,7 @@
 //!   quantised, encoded and written into its temporary file, and renamed into place, by
 //!   the worker itself, as darktable's store runs on its worker.
 //! - **What the client hears:** the job's progress as `Event::Job`, "export images" with a
-//!   message per photo and a fraction per photo done; each photo's start and result, and
+//!   title per photo and its progress, the photos done; each photo's start and result, and
 //!   the job's counts, as `Event::Export` ([`ExportStatus`]).
 //! - **Failures:** a photo's own fails that photo, and the job goes on; a failure of the
 //!   destination, or the engine stopping under it ([`Failure::ends_job`]), ends the job
@@ -68,7 +68,7 @@ use crate::export::{
     ExportError, Hand, MapResult, Mapping, Rendered, Submit, Tiling, export_handing,
 };
 use crate::gpu::GpuContext;
-use crate::jobs::{self, Context, Interrupted, Job, Message, Outcome, TaskError, Tasks};
+use crate::jobs::{self, Context, Interrupted, Job, Message, TaskError, Tasks};
 use crate::names::{self, Shot, Sizes};
 use crate::pipeline::{self, Instance, Limits, Pipe, PlanError, Resample};
 use crate::session::{Decoded, Event, Load, Outbox};
@@ -76,7 +76,7 @@ use crate::sidecar;
 
 /// What the session reports of an export job's photos, as `Event::Export`, in order: each
 /// photo's start and result, then the job's counts. The job itself, queued, running, its
-/// fraction, message and end, comes as `Event::Job`.
+/// progress, title and end, comes as `Event::Job`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExportStatus {
     /// Photo `index` of the job's photos, the raw at `source`, begins.
@@ -189,17 +189,13 @@ impl Failure {
     }
 
     /// The job's failure, as its `Ended` carries it, the photo `photo`'s where it is one.
-    fn ended(&self, photo: Option<&Path>) -> Message {
-        let mut message = Message::new("job-export-failed")
-            .with("cause", self.cause.id())
-            .with("reason", self.message.as_str());
-        if let Some(photo) = photo {
-            message = message.with("photo", photo);
+    fn ended(&self, photo: Option<&Path>) -> jobs::Failure {
+        jobs::Failure {
+            cause: self.cause.id().to_owned(),
+            item: photo.map(Path::to_owned),
+            file: self.file.clone(),
+            reason: self.message.clone(),
         }
-        if let Some(file) = &self.file {
-            message = message.with("file", file.as_path());
-        }
-        message
     }
 }
 
@@ -488,7 +484,7 @@ pub(crate) fn job(run: Run, tasks: Tasks) -> Job {
 
 impl Run {
     /// Each photo in turn, until the last, a failure of the destination or a cancel.
-    fn body(self, tasks: &Tasks, context: &Context<'_>) -> Outcome {
+    fn body(self, tasks: &Tasks, context: &Context<'_>) -> Result<(), jobs::Failure> {
         let start = Instant::now();
         let total = self.photos.len();
         let job = context.job();
@@ -538,7 +534,7 @@ impl Run {
             }
             let source = path.clone();
             report(ExportStatus::Started { index, source });
-            context.set_message(
+            context.set_title(
                 Message::new("job-export-photo")
                     .with("number", index + 1)
                     .with("total", total)
@@ -562,7 +558,7 @@ impl Run {
                 _ => None,
             };
             report(ExportStatus::Done { index, result });
-            context.set_fraction((index + 1) as f64 / total as f64);
+            context.set_progress((index + 1) as u64, Some(total as u64));
             if let Some(failure) = stop {
                 summary.not_reached = total - index - 1;
                 let rest = summary.not_reached;
@@ -969,7 +965,7 @@ mod tests {
     use super::*;
     use crate::export::export_at;
     use crate::gpu::GpuOptions;
-    use crate::jobs::{Argument, JobEvent, JobId, Queue, State};
+    use crate::jobs::{JobEvent, JobId, Progress, Queue, State};
     use crate::session::{Command, Session, SessionError, TEST_WAIT};
 
     /// The build the tests' sessions record.
@@ -1207,15 +1203,8 @@ mod tests {
         }
 
         fn of_job(&self, job: JobId) -> Vec<JobEvent> {
-            let own = |event: &JobEvent| match event {
-                JobEvent::Added { job, .. }
-                | JobEvent::Progress { job, .. }
-                | JobEvent::Message { job, .. }
-                | JobEvent::State { job, .. }
-                | JobEvent::Ended { job, .. } => *job,
-            };
             let events = self.events.iter().filter_map(|e| match e {
-                Event::Job { event, .. } if own(event) == job => Some(event.clone()),
+                Event::Job { event, .. } if event.job() == job => Some(event.clone()),
                 _ => None,
             });
             events.collect()
@@ -1576,9 +1565,7 @@ mod tests {
         else {
             panic!("it did not end failed: {own:?}");
         };
-        assert_eq!(failure.id, "job-export-failed");
-        let photo = Argument::Path(photos[1].clone());
-        assert_eq!(failure.argument("photo"), Some(&photo));
+        assert_eq!(failure.item.as_ref(), Some(&photos[1]));
         let statuses = client.exported(job);
         let counts = Summary {
             failed: 2,
@@ -1660,13 +1647,17 @@ mod tests {
         let command = client.send(export(&[&photos[0], &photos[1]], &folder));
         let job = client.job(command);
         let own = client.ended(job);
-        // The job's own: added, queued, running, its messages and fractions, its end.
+        // The job's own: added, queued, running, its titles and progress, its end.
         let added = JobEvent::Added {
             job,
             kind: "export",
             queue: Some(Queue::UserExport),
-            message: Message::new("job-export"),
+            title: Message::new("job-export"),
             cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
         };
         let queued = JobEvent::State {
             job,
@@ -1677,12 +1668,19 @@ mod tests {
             state: State::Running,
         };
         assert_eq!(own[..3], [added, queued, running]);
-        let finished = JobEvent::Ended {
-            job,
-            state: State::Finished,
-            failure: None,
-        };
-        assert_eq!(own.last(), Some(&finished));
+        assert!(
+            matches!(
+                own.last(),
+                Some(JobEvent::Ended {
+                    state: State::Finished,
+                    outcome: None,
+                    failure: None,
+                    offers,
+                    ..
+                }) if offers.is_empty()
+            ),
+            "{own:?}"
+        );
         let photo = |number: usize| {
             Message::new("job-export-photo")
                 .with("number", number)
@@ -1690,25 +1688,25 @@ mod tests {
                 .with("storage", "disk")
                 .with("photo", photos[number - 1].as_path())
         };
-        let messages: Vec<&Message> = own
+        let titles: Vec<&Message> = own
             .iter()
             .filter_map(|e| match e {
-                JobEvent::Message { message, .. } => Some(message),
+                JobEvent::Title { title, .. } => Some(title),
                 _ => None,
             })
             .collect();
         // The first goes out at once and the last as the job ends, whatever the throttle.
-        assert_eq!(messages.first(), Some(&&photo(1)));
-        assert_eq!(messages.last(), Some(&&photo(2)));
-        let fractions: Vec<f64> = own
+        assert_eq!(titles.first(), Some(&&photo(1)));
+        assert_eq!(titles.last(), Some(&&photo(2)));
+        let progress: Vec<(u64, Option<u64>)> = own
             .iter()
             .filter_map(|e| match e {
-                JobEvent::Progress { fraction, .. } => Some(*fraction),
+                JobEvent::Progress { done, total, .. } => Some((*done, *total)),
                 _ => None,
             })
             .collect();
-        assert_eq!(fractions.first(), Some(&0.5));
-        assert_eq!(fractions.last(), Some(&1.0));
+        assert_eq!(progress.first(), Some(&(1, Some(2))));
+        assert_eq!(progress.last(), Some(&(2, Some(2))));
         // The photos', each started then done, then the counts.
         let statuses = client.exported(job);
         let [

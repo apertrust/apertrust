@@ -305,8 +305,8 @@ pub enum Event {
         through: u64,
     },
     /// What a job with a progress did (decision 57), in order for each job: added, with
-    /// its queue, message and whether it can be cancelled, then its states, fraction and
-    /// message, then its end. `command`, on `Added`, is the number [`Session::send`] gave
+    /// its queue, title and whether it can be cancelled, then its states, progress and
+    /// title, then its end. `command`, on `Added`, is the number [`Session::send`] gave
     /// the command that started the job, so a client knows its own; `None` on the rest.
     Job {
         event: JobEvent,
@@ -352,9 +352,9 @@ pub enum Fact {
     Scopes,
     /// The Export dialog's feedback: [`Event::ExportPreview`], the latest answer kept.
     ExportPreview,
-    /// A job's fraction, by job.
+    /// A job's progress, by job.
     Progress(JobId),
-    /// A job's message, by job.
+    /// A job's title, darktable's message, by job.
     Message(JobId),
     /// A job's state while it lives, by job.
     State(JobId),
@@ -370,8 +370,11 @@ impl Event {
             Event::ExportPreview { .. } => Fact::ExportPreview,
             Event::Job { event, .. } => match *event {
                 JobEvent::Progress { job, .. } => Fact::Progress(job),
-                JobEvent::Message { job, .. } => Fact::Message(job),
+                JobEvent::Title { job, .. } => Fact::Message(job),
                 JobEvent::State { job, .. } => Fact::State(job),
+                // Notices until the session states them as facts of their own (decision
+                // 72's step 3); no job sends them yet.
+                JobEvent::Detail { .. } | JobEvent::Destination { .. } => return Topic::Notice,
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => return Topic::Notice,
             },
             // The library's events are about one open, and each comes once: a folder's
@@ -6235,13 +6238,7 @@ mod tests {
     }
 
     fn job_of(event: &JobEvent) -> JobId {
-        match event {
-            JobEvent::Added { job, .. }
-            | JobEvent::Progress { job, .. }
-            | JobEvent::Message { job, .. }
-            | JobEvent::State { job, .. }
-            | JobEvent::Ended { job, .. } => *job,
-        }
+        event.job()
     }
 
     /// The job the command numbered `command` started, and its events so far, in order.
@@ -6444,8 +6441,12 @@ mod tests {
                     job,
                     kind: "synthetic",
                     queue: Some(queue),
-                    message: Message::new("job-synthetic"),
+                    title: Message::new("job-synthetic"),
                     cancellable,
+                    destination: None,
+                    detail: None,
+                    progress: jobs::Progress::default(),
+                    retries: None,
                 },
                 JobEvent::State {
                     job,
@@ -6455,17 +6456,26 @@ mod tests {
                     job,
                     state: State::Running,
                 },
-                JobEvent::Message {
+                JobEvent::Title { job, title: steps },
+                JobEvent::Progress {
                     job,
-                    message: steps,
+                    done: 1,
+                    total: Some(1),
                 },
-                JobEvent::Progress { job, fraction: 1.0 },
                 JobEvent::Ended {
                     job,
                     state: State::Finished,
+                    outcome: None,
                     failure: None,
+                    at: std::time::SystemTime::UNIX_EPOCH,
+                    offers: Vec::new(),
                 },
             ];
+            // The end's time is the control's clock: compared apart.
+            let mut own = own;
+            if let Some(JobEvent::Ended { at, .. }) = own.last_mut() {
+                *at = std::time::SystemTime::UNIX_EPOCH;
+            }
             assert_eq!(own, expected);
         }
         // Only `Added` names a command.
@@ -6503,11 +6513,11 @@ mod tests {
             else {
                 panic!("{label} did not end failed: {own:?}");
             };
-            let id = match fault {
-                Fault::BodyPanics => "job-panicked",
-                _ => "job-synthetic-failed",
+            let cause = match fault {
+                Fault::BodyPanics => jobs::Failure::PANICKED,
+                _ => "synthetic",
             };
-            assert_eq!(failure.id, id, "{label}: {failure:?}");
+            assert_eq!(failure.cause, cause, "{label}: {failure:?}");
         }
         // The tasks the GPU refused told their bodies why, before the jobs ended, the one
         // refused in its last step too, never its result.
@@ -6639,7 +6649,8 @@ mod tests {
             Event::Job { event, .. } => match *event {
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => Topic::Notice,
                 JobEvent::Progress { job, .. } => Topic::Fact(Fact::Progress(job)),
-                JobEvent::Message { job, .. } => Topic::Fact(Fact::Message(job)),
+                JobEvent::Title { job, .. } => Topic::Fact(Fact::Message(job)),
+                JobEvent::Detail { .. } | JobEvent::Destination { .. } => Topic::Notice,
                 JobEvent::State { job, .. } => Topic::Fact(Fact::State(job)),
             },
             Event::Export { status, .. } => match status {
@@ -6890,8 +6901,12 @@ mod tests {
                 job,
                 kind: "folder",
                 queue: Some(Queue::UserBackground),
-                message: Message::new("job-folder").with("folder", folder.as_path()),
+                title: Message::new("job-folder").with("folder", folder.as_path()),
                 cancellable: true,
+                destination: None,
+                detail: None,
+                progress: jobs::Progress::default(),
+                retries: None,
             })
         );
         assert!(

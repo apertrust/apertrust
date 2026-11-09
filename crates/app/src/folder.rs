@@ -482,7 +482,7 @@ pub fn status(edit: &library::EditState) -> Option<apertrust_ui::components::Cel
 #[cfg(test)]
 mod tests {
     use super::*;
-    use apertrust_engine::jobs::{Message, Queue};
+    use apertrust_engine::jobs::{Message, Progress, Queue};
     use apertrust_engine::session::library::EditState;
 
     fn photo(name: &str, edit: EditState) -> Photo {
@@ -621,8 +621,12 @@ mod tests {
             job,
             kind: "folder",
             queue: Some(Queue::UserBackground),
-            message: Message::new("job-folder"),
+            title: Message::new("job-folder"),
             cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
         }
     }
 
@@ -630,7 +634,10 @@ mod tests {
         JobEvent::Ended {
             job,
             state,
+            outcome: None,
             failure: None,
+            at: std::time::SystemTime::UNIX_EPOCH,
+            offers: Vec::new(),
         }
     }
 

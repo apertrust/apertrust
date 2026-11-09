@@ -6451,7 +6451,8 @@ mod tests {
         let progress = Event::Job {
             event: apertrust_engine::session::JobEvent::Progress {
                 job: ids[0],
-                fraction: 0.5,
+                done: 1,
+                total: Some(2),
             },
             command: None,
         };

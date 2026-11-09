@@ -62,8 +62,12 @@ pub(crate) fn added(job: JobId, queue: Queue, command: Option<u64>) -> Event {
             job,
             kind: "export",
             queue: Some(queue),
-            message,
+            title: message,
             cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
         },
         command,
     }
@@ -80,11 +84,14 @@ pub(crate) fn state(job_id: JobId, state: State) -> Event {
     job(JobEvent::State { job: job_id, state })
 }
 
-pub(crate) fn ended(job_id: JobId, state: State, failure: Option<Message>) -> Event {
+pub(crate) fn ended(job_id: JobId, state: State, failure: Option<JobFailure>) -> Event {
     job(JobEvent::Ended {
         job: job_id,
         state,
+        outcome: None,
         failure,
+        at: std::time::SystemTime::UNIX_EPOCH,
+        offers: Vec::new(),
     })
 }
 
@@ -169,7 +176,8 @@ fn an_exports_start_progress_and_end_fold_into_its_row() {
     mirror.apply(&written(id, 0));
     mirror.apply(&job(JobEvent::Progress {
         job: id,
-        fraction: 1.0 / 3.0,
+        done: 1,
+        total: Some(3),
     }));
     mirror.apply(&started(id, 1));
     mirror.apply(&written(id, 1));
@@ -206,9 +214,9 @@ fn a_failed_export_says_which_photo_and_why_in_words() {
     mirror.apply(&started(id, 1));
     // The disk fills up: that photo failed, and the job ends, the last not reached.
     mirror.apply(&failed(id, 1, Cause::DiskFull));
-    let end = Message::new("job-export-failed")
-        .with("cause", "disk-full")
-        .with("reason", "an error in the engine's words");
+    let end = JobFailure::new("disk-full", "an error in the engine's words")
+        .item(photos(2).remove(1))
+        .file("/out/IMG_0002.jpg");
     mirror.apply(&ended(id, State::Finished, Some(end)));
 
     let row = only(&mirror);
@@ -233,9 +241,7 @@ fn a_failed_export_says_which_photo_and_why_in_words() {
 fn an_export_refused_before_any_photo_names_no_photo_and_no_file() {
     let (mut mirror, id) = exporting(2);
     mirror.apply(&state(id, State::Running));
-    let end = Message::new("job-export-failed")
-        .with("cause", "pattern")
-        .with("reason", "the path holds an unknown variable");
+    let end = JobFailure::new("pattern", "the path holds an unknown variable");
     mirror.apply(&ended(id, State::Finished, Some(end)));
     let row = only(&mirror);
     assert_eq!(row.phase, JobPhase::Failed);
@@ -284,7 +290,8 @@ fn a_job_dropped_unrun_leaves_no_row_and_events_of_unknown_jobs_change_nothing()
     // Events of a job never added (from before this run) are not taken in.
     let progress = JobEvent::Progress {
         job: other,
-        fraction: 0.5,
+        done: 1,
+        total: Some(2),
     };
     assert_eq!(mirror.apply(&job(progress)), Show::Nothing);
     assert_eq!(mirror.apply(&written(other, 0)), Show::Nothing);
@@ -326,8 +333,12 @@ fn a_job_that_is_not_an_export_says_how_it_ended() {
         job: id,
         kind: "import",
         queue: Some(Queue::UserForeground),
-        message,
+        title: message,
         cancellable: true,
+        destination: None,
+        detail: None,
+        progress: Progress::default(),
+        retries: None,
     };
     mirror.apply(&job(event));
     mirror.apply(&state(id, State::Running));
@@ -339,7 +350,7 @@ fn a_job_that_is_not_an_export_says_how_it_ended() {
             .number("total", 9.0)
     );
     assert!(row.export.is_none());
-    let failure = Message::new("job-import-failed").with("reason", "the card was removed.");
+    let failure = JobFailure::new("import", "the card was removed.");
     mirror.apply(&ended(id, State::Finished, Some(failure)));
     let row = only(&mirror);
     assert_eq!(row.phase, JobPhase::Failed);
@@ -374,7 +385,7 @@ fn the_buttons_ask_for_cancel_the_reveal_the_retry_and_the_dismissal() {
     // The second photo fails, the disk is full, the third is not reached.
     mirror.apply(&started(id, 1));
     mirror.apply(&failed(id, 1, Cause::DiskFull));
-    let end = Message::new("job-export-failed").with("cause", "disk-full");
+    let end = JobFailure::new("disk-full", "no space left on device");
     mirror.apply(&ended(id, State::Finished, Some(end)));
 
     // Try again sends the export again: the photos not written, the same settings.
@@ -619,8 +630,12 @@ pub(crate) fn added_stoppable(
             job,
             kind: "delete",
             queue: Some(queue),
-            message: Message::new("job-delete"),
+            title: Message::new("job-delete"),
             cancellable,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
         },
         command,
     }
@@ -701,7 +716,7 @@ fn a_job_that_ended_no_longer_counts_and_one_asked_to_stop_waits_until_it_has() 
     let more = ids(2);
     for (job_id, outcome) in [
         (more[0], None),
-        (more[1], Some(Message::new("job-cause-write"))),
+        (more[1], Some(JobFailure::new("write", "cannot write"))),
     ] {
         mirror.apply(&added(job_id, Queue::UserExport, None));
         mirror.apply(&ended(job_id, State::Finished, outcome));

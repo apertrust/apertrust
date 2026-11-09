@@ -40,7 +40,7 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{Tiling, export_at};
 use apertrust_engine::export_job;
 use apertrust_engine::gpu::{self, GpuContext};
-use apertrust_engine::jobs::{Argument, JobEvent};
+use apertrust_engine::jobs::JobEvent;
 use apertrust_engine::names::{self, Shot};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline};
 use apertrust_engine::scopes::{Graphs, Meter, Reading};
@@ -1022,10 +1022,7 @@ async fn export_in_session(
     if let Some(Some(failure)) = ended
         && printed.done == 0
     {
-        match failure.argument("reason") {
-            Some(Argument::Text(reason)) => bail!("{reason}"),
-            _ => bail!("the export failed: {}", failure.id),
-        }
+        bail!("{}", failure.reason);
     }
     if printed.failed > 0 {
         bail!("{} of {} photos not exported", printed.failed, files.len());

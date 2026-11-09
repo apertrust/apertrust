@@ -37,7 +37,9 @@
 
 use std::path::{Path, PathBuf};
 
-use apertrust_engine::jobs::{Argument, JobEvent, JobId, Message, Queue, State};
+use apertrust_engine::jobs::{
+    Argument, Failure as JobFailure, JobEvent, JobId, Message, Progress, Queue, State,
+};
 use apertrust_engine::session::{Command, Event, ExportStatus, Failure, PhotoResult};
 use apertrust_export::{ExportSettings, Places};
 use apertrust_ui::components::{
@@ -106,7 +108,7 @@ struct Row {
     /// while one runs.
     user: bool,
     /// How it ended, if its body failed.
-    failure: Option<Message>,
+    failure: Option<JobFailure>,
     export: Option<ExportRow>,
 }
 
@@ -225,7 +227,7 @@ impl Mirror {
             changed = true;
             row.phase = JobPhase::Failed;
             row.cancellable = false;
-            row.failure = Some(Message::new("job-export-failed").with("cause", "engine"));
+            row.failure = Some(JobFailure::new("engine", "the engine stopped"));
             if let Some(export) = row.export.as_mut() {
                 export.current = None;
             }
@@ -242,7 +244,7 @@ impl Mirror {
             JobEvent::Added {
                 job,
                 queue,
-                message,
+                title,
                 cancellable,
                 ..
             } => {
@@ -268,13 +270,13 @@ impl Mirror {
                 // shut).
                 let user = match queue {
                     Some(Queue::UserForeground | Queue::UserExport) => true,
-                    Some(Queue::UserBackground) => command.is_some() && message.id != "job-folder",
+                    Some(Queue::UserBackground) => command.is_some() && title.id != "job-folder",
                     _ => false,
                 };
                 self.rows.push(Row {
                     id: *job,
                     phase: JobPhase::Queued,
-                    message: message.clone(),
+                    message: title.clone(),
                     fraction: 0.0,
                     cancellable: *cancellable,
                     user,
@@ -283,12 +285,16 @@ impl Mirror {
                 });
                 if user { Show::Open } else { Show::Update }
             }
-            JobEvent::Progress { job, fraction } => {
-                self.update(*job, |row| row.fraction = *fraction as f32)
-            }
-            JobEvent::Message { job, message } => {
-                self.update(*job, |row| row.message = message.clone())
-            }
+            JobEvent::Progress { job, done, total } => self.update(*job, |row| {
+                let progress = Progress {
+                    done: *done,
+                    total: *total,
+                };
+                row.fraction = progress.fraction().unwrap_or(0.0) as f32;
+            }),
+            JobEvent::Title { job, title } => self.update(*job, |row| row.message = title.clone()),
+            // The window draws neither yet (decision 72's steps 4 and 5).
+            JobEvent::Detail { .. } | JobEvent::Destination { .. } => Show::Nothing,
             JobEvent::State { job, state } => self.update(*job, |row| match state {
                 State::Queued => row.phase = JobPhase::Queued,
                 State::Running => row.phase = JobPhase::Running,
@@ -300,6 +306,7 @@ impl Mirror {
                 job,
                 state,
                 failure,
+                ..
             } => {
                 if *state == State::Discarded {
                     // Dropped unrun: there is nothing to show of it.
@@ -565,15 +572,12 @@ impl ExportRow {
                 cause: cause_words(words, failure.cause.id(), Some(&failure.message)),
             });
         }
-        let message = row.failure.as_ref()?;
-        let name = |name: &str| match message.argument(name) {
-            Some(Argument::Path(path)) => file_name(path),
-            _ => String::new(),
-        };
+        let failure = row.failure.as_ref()?;
+        let name = |path: &Option<PathBuf>| path.as_deref().map(file_name).unwrap_or_default();
         Some(ExportFailure {
-            photo: name("photo"),
-            file: name("file"),
-            cause: failure_words(words, message),
+            photo: name(&failure.item),
+            file: name(&failure.file),
+            cause: failure_words(words, failure),
         })
     }
 }
@@ -591,32 +595,9 @@ fn job_message(message: &Message) -> JobMessage {
     out
 }
 
-/// The words for a failed job's message: its cause in Fluent where the engine sent a code,
-/// else the reason it gave, else the message itself.
-fn failure_words(words: &Translator, failure: &Message) -> String {
-    let text = |name: &str| match failure.argument(name) {
-        Some(Argument::Text(text)) => Some(text.as_str()),
-        _ => None,
-    };
-    match text("cause") {
-        Some(cause) => cause_words(words, cause, text("reason")),
-        None => text("reason").map_or_else(
-            || job_message_words(words, failure),
-            |reason| reason.trim_end_matches('.').to_owned(),
-        ),
-    }
-}
-
-fn job_message_words(words: &Translator, message: &Message) -> String {
-    let mut args = apertrust_ui::i18n::Args::new();
-    for (name, value) in &message.arguments {
-        match value {
-            Argument::Number(n) => args.set(name.as_str(), *n),
-            Argument::Text(t) => args.set(name.as_str(), t.as_str()),
-            Argument::Path(p) => args.set(name.as_str(), file_name(p)),
-        }
-    }
-    words.text_with(&message.id, Some(&args))
+/// The words for a failed job: its cause in Fluent, else the reason it gave.
+fn failure_words(words: &Translator, failure: &JobFailure) -> String {
+    cause_words(words, &failure.cause, Some(&failure.reason))
 }
 
 /// A cause's words, `job-cause-<code>`, without a full stop; the engine's own `reason` for a

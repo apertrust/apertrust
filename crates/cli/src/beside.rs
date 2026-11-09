@@ -105,7 +105,7 @@ impl Client {
                         if job == *own =>
                     {
                         if let Some(failure) = failure {
-                            bail!("the export failed: {}", failure.id);
+                            bail!("the export failed: {}", failure.cause);
                         }
                         *ended = true;
                     }

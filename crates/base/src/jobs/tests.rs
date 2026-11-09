@@ -14,16 +14,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The control on real workers, its test caller a counting job. Nothing here sleeps or
-//! races: a job that must hold a worker waits for the test's go through [`Context::wait`],
-//! and the test waits for what a job or the observer tells it, with a generous deadline
-//! that only a failure reaches. The order of picks is [`schedule`]'s tables', so these hold
-//! the control to them.
+//! The control on real workers, its test caller a counting job. Nothing here races: a job
+//! that must hold a worker waits for the test's go through [`Context::wait`], and the test
+//! waits for what a job or the observer tells it, with a generous deadline that only a
+//! failure reaches. One body sleeps past the throttle's interval, a time that can only be
+//! longer, never shorter. The order of picks is [`schedule`]'s tables', so these hold the
+//! control to them.
 
 use std::fmt::Debug;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{OnceLock, Weak};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use super::*;
 use Queue::{SystemBackground, SystemForeground, UserBackground, UserExport, UserForeground};
@@ -79,12 +81,19 @@ impl Heard<Told> {
 }
 
 impl Heard<JobEvent> {
-    /// One job's events, in order.
+    /// One job's events, in order, `Ended`'s time set to the epoch, as [`ended`] makes
+    /// it, so a test compares the rest.
     fn of(&self, job: JobId) -> Vec<JobEvent> {
         self.seen
             .iter()
-            .filter(|event| id(event) == job)
+            .filter(|event| event.job() == job)
             .cloned()
+            .map(|mut event| {
+                if let JobEvent::Ended { at, .. } = &mut event {
+                    *at = SystemTime::UNIX_EPOCH;
+                }
+                event
+            })
             .collect()
     }
 
@@ -93,13 +102,36 @@ impl Heard<JobEvent> {
     }
 }
 
-fn id(event: &JobEvent) -> JobId {
-    match event {
-        JobEvent::Added { job, .. }
-        | JobEvent::Progress { job, .. }
-        | JobEvent::Message { job, .. }
-        | JobEvent::State { job, .. }
-        | JobEvent::Ended { job, .. } => *job,
+/// A job's `Added` with only a title, as [`Job::progress`] alone makes it.
+fn added(job: JobId, queue: Option<Queue>, title: Message, cancellable: bool) -> JobEvent {
+    JobEvent::Added {
+        job,
+        kind: "count",
+        queue,
+        title,
+        cancellable,
+        destination: None,
+        detail: None,
+        progress: Progress::default(),
+        retries: None,
+    }
+}
+
+/// A job's `Ended` in `state` with nothing set and no failure, its time the epoch, as
+/// [`Heard::of`] shows it.
+fn ended(job: JobId, state: State) -> JobEvent {
+    failed(job, state, None)
+}
+
+/// A job's `Ended` in `state` with `failure`, as [`ended`].
+fn failed(job: JobId, state: State, failure: Option<Failure>) -> JobEvent {
+    JobEvent::Ended {
+        job,
+        state,
+        outcome: None,
+        failure,
+        at: SystemTime::UNIX_EPOCH,
+        offers: Vec::new(),
     }
 }
 
@@ -112,7 +144,7 @@ fn control(workers: usize) -> (Control, Heard<JobEvent>) {
     (control, Heard::new(receiver))
 }
 
-/// The test caller: a job that counts to `steps`, its fraction the count over `steps`,
+/// The test caller: a job that counts to `steps`, its progress the count of `steps`,
 /// telling the test as it starts, at each step and as it returns, and stopping at
 /// cancel. With a `go`, it waits for one before each step.
 fn counting(
@@ -134,7 +166,7 @@ fn counting(
                 let _ = tell.send(Told::Stopped(label, Err(Interrupted::Cancelled)));
                 return Ok(());
             }
-            context.set_fraction(step as f64 / steps as f64);
+            context.set_progress(step as u64, Some(steps as u64));
             let _ = tell.send(Told::Counted(label, step));
         }
         let _ = tell.send(Told::Stopped(label, Ok(steps)));
@@ -235,18 +267,13 @@ fn system_foreground_jobs_are_deduplicated() {
     assert_eq!(
         events.of(again),
         [
-            JobEvent::Added {
-                job: again,
-                kind: "count",
-                queue: Some(SystemForeground),
-                message: Message::new("job-test").with("label", "again"),
-                cancellable: true,
-            },
-            JobEvent::Ended {
-                job: again,
-                state: State::Discarded,
-                failure: None,
-            },
+            added(
+                again,
+                Some(SystemForeground),
+                Message::new("job-test").with("label", "again"),
+                true,
+            ),
+            ended(again, State::Discarded),
         ]
     );
 
@@ -316,11 +343,7 @@ fn a_job_cancelled_before_it_starts_never_runs() {
                 job: x,
                 state: State::Queued,
             },
-            JobEvent::Ended {
-                job: x,
-                state: State::Cancelled,
-                failure: None,
-            },
+            ended(x, State::Cancelled),
         ]
     );
     assert_eq!(control.pending(), 2);
@@ -339,7 +362,7 @@ fn a_job_cancelled_before_it_starts_never_runs() {
 }
 
 /// A running job stops at its next check, here its wait for the next go, and ends
-/// cancelled; its fraction so far went out first.
+/// cancelled; its progress so far went out first.
 #[test]
 fn a_job_cancelled_while_running_stops_at_its_next_check() {
     let (control, mut events) = control(1);
@@ -378,17 +401,14 @@ fn a_job_cancelled_while_running_stops_at_its_next_check() {
             },
             JobEvent::Progress {
                 job: x,
-                fraction: 0.25,
+                done: 1,
+                total: Some(4),
             },
             JobEvent::State {
                 job: x,
                 state: State::Cancelled,
             },
-            JobEvent::Ended {
-                job: x,
-                state: State::Cancelled,
-                failure: None,
-            },
+            ended(x, State::Cancelled),
         ]
     );
 }
@@ -424,54 +444,220 @@ fn wait_returns_at_cancel_and_when_the_other_side_hangs_up() {
     );
 }
 
-/// Fractions and messages set at once go out throttled: the first at once and the last
-/// as the job ends, whatever came between; a fraction clamped to 0 to 1.
+/// The four values set at once go out throttled through the control: the first of each at
+/// once and the last of each as the job ends, before its `Ended`, whatever came between.
+/// The throttle's table for each is `progress`'s tests'.
 #[test]
-fn progress_is_throttled_the_first_and_last_always_sent() {
+fn each_value_is_throttled_the_first_and_last_always_sent() {
     let (control, mut events) = control(1);
-    let job = Job::new("count", "throttled", |context| {
-        context.set_fraction(-0.5);
-        context.set_message(Message::new("job-first"));
-        for step in 1..=99 {
-            context.set_fraction(f64::from(step) / 100.0);
+    let file = |n| Destination::File(PathBuf::from(format!("/out/{n}.jpg")));
+    let job = Job::new("count", "throttled", move |context| {
+        for n in 0..=99u64 {
+            context.set_progress(n, Some(99));
+            context.set_title(Message::new("job-title").with("n", n));
+            context.set_detail(Some(Message::new("job-detail").with("n", n)));
+            context.set_destination(file(n));
         }
-        context.set_message(Message::new("job-between"));
-        context.set_fraction(1.5);
-        context.set_message(Message::new("job-last"));
+        context.set_detail(None);
         Ok(())
     })
     .progress(Message::new("job-test"), false);
     let x = control.add(UserBackground, job);
     events.ended(x);
     let of = events.of(x);
-    let fractions: Vec<f64> = of
+    let values = |pick: fn(&JobEvent) -> bool| -> Vec<JobEvent> {
+        of.iter().filter(|event| pick(event)).cloned().collect()
+    };
+    let progress = values(|e| matches!(e, JobEvent::Progress { .. }));
+    let titles = values(|e| matches!(e, JobEvent::Title { .. }));
+    let details = values(|e| matches!(e, JobEvent::Detail { .. }));
+    let destinations = values(|e| matches!(e, JobEvent::Destination { .. }));
+    let n = |id: &str, n: u64| Message::new(id).with("n", n);
+    let progress_of = |done| JobEvent::Progress {
+        job: x,
+        done,
+        total: Some(99),
+    };
+    let title = |m| JobEvent::Title { job: x, title: m };
+    let detail = |detail| JobEvent::Detail { job: x, detail };
+    let destination = |destination| JobEvent::Destination {
+        job: x,
+        destination,
+    };
+    assert_eq!(progress.first(), Some(&progress_of(0)));
+    assert_eq!(progress.last(), Some(&progress_of(99)));
+    assert_eq!(titles.first(), Some(&title(n("job-title", 0))));
+    assert_eq!(titles.last(), Some(&title(n("job-title", 99))));
+    assert_eq!(details.first(), Some(&detail(Some(n("job-detail", 0)))));
+    assert_eq!(details.last(), Some(&detail(None)));
+    assert_eq!(destinations.first(), Some(&destination(file(0))));
+    assert_eq!(destinations.last(), Some(&destination(file(99))));
+    for (name, sent) in [
+        ("progress", &progress),
+        ("titles", &titles),
+        ("details", &details),
+        ("destinations", &destinations),
+    ] {
+        assert!(sent.len() <= 5, "{name}: {sent:?}");
+    }
+    // The last of each before the end.
+    assert_eq!(of.last(), Some(&ended(x, State::Finished)));
+}
+
+/// The titles a job sent, in order.
+fn titles(events: &[JobEvent]) -> Vec<String> {
+    let title = |event: &JobEvent| match event {
+        JobEvent::Title { title, .. } => Some(title.id.clone()),
+        _ => None,
+    };
+    events.iter().filter_map(title).collect()
+}
+
+/// A title held while the body sets another value goes out with that setter once due:
+/// `job-b`, held behind `job-a`, is sent as the progress is set past the interval, so
+/// `job-c` after it holds again instead of replacing it.
+#[test]
+fn a_held_value_goes_out_once_due_as_the_body_sets_another() {
+    let (control, mut events) = control(1);
+    let job = Job::new("count", "busy", |context| {
+        context.set_title(Message::new("job-a"));
+        context.set_title(Message::new("job-b"));
+        thread::sleep(progress::INTERVAL + Duration::from_millis(50));
+        context.set_progress(1, Some(1));
+        context.set_title(Message::new("job-c"));
+        Ok(())
+    })
+    .progress(Message::new("job-test"), false);
+    let x = control.add(UserBackground, job);
+    events.ended(x);
+    let of = events.of(x);
+    assert_eq!(titles(&of), ["job-a", "job-b", "job-c"], "{of:?}");
+    let at = |wanted: &JobEvent| of.iter().position(|event| event == wanted);
+    let progress = JobEvent::Progress {
+        job: x,
+        done: 1,
+        total: Some(1),
+    };
+    let b = JobEvent::Title {
+        job: x,
+        title: Message::new("job-b"),
+    };
+    assert!(
+        at(&progress) < at(&b),
+        "with the setter, after its own value"
+    );
+}
+
+/// A title held while the body waits goes out once due, before the wait ends: the test
+/// lets the body go only once it has heard `job-b`.
+#[test]
+fn a_held_value_goes_out_once_due_while_the_body_waits() {
+    let (control, mut events) = control(1);
+    let (go, wait) = mpsc::channel::<()>();
+    let job = Job::new("count", "waiting", move |context| {
+        context.set_title(Message::new("job-a"));
+        context.set_title(Message::new("job-b"));
+        let _ = context.wait(&wait);
+        Ok(())
+    })
+    .progress(Message::new("job-test"), false);
+    let x = control.add(UserBackground, job);
+    events.until(
+        |event| matches!(event, JobEvent::Title { job, title } if *job == x && title.id == "job-b"),
+    );
+    assert!(
+        !events
+            .seen
+            .iter()
+            .any(|event| matches!(event, JobEvent::Ended { job, .. } if *job == x)),
+        "sent while the body waits, not as it ends"
+    );
+    go.send(()).unwrap();
+    events.ended(x);
+    assert_eq!(titles(&events.of(x)), ["job-a", "job-b"]);
+}
+
+/// A job's `Added` carries what its builder set, and its `Ended` the outcome and offers
+/// its body set, the failure it returned, with its item and file, and the time the
+/// control ended it.
+#[test]
+fn ended_carries_what_the_body_set() {
+    let (control, mut events) = control(1);
+    let folder = Destination::Folder(PathBuf::from("/out"));
+    let job = Job::new("count", "sets everything", |context| {
+        context.set_outcome(Message::new("job-first-outcome"));
+        context.set_progress(2, Some(3));
+        context.offer(Offer::Retry { items: 1 });
+        context.set_outcome(Message::new("job-outcome").with("done", 2u64));
+        context.offer(Offer::Retry { items: 2 });
+        Err(Failure::new("write", "cannot write /out/c.jpg: no space")
+            .item("/photos/c.ARW")
+            .file("/out/c.jpg"))
+    })
+    .progress(Message::new("job-test"), true)
+    .destination(folder.clone())
+    .detail(Message::new("job-queued").with("count", 3u64))
+    .total(3)
+    .retries(JobId(41));
+    let before = SystemTime::now();
+    let x = control.add(UserExport, job);
+    events.ended(x);
+    let after = SystemTime::now();
+    let seen: Vec<_> = events
+        .seen
         .iter()
-        .filter_map(|event| match event {
-            JobEvent::Progress { fraction, .. } => Some(*fraction),
-            _ => None,
-        })
+        .filter(|e| e.job() == x)
+        .cloned()
         .collect();
-    let messages: Vec<&str> = of
-        .iter()
-        .filter_map(|event| match event {
-            JobEvent::Message { message, .. } => Some(message.id.as_str()),
-            _ => None,
+    assert_eq!(
+        seen.first(),
+        Some(&JobEvent::Added {
+            job: x,
+            kind: "count",
+            queue: Some(UserExport),
+            title: Message::new("job-test"),
+            cancellable: true,
+            destination: Some(folder),
+            detail: Some(Message::new("job-queued").with("count", 3u64)),
+            progress: Progress {
+                done: 0,
+                total: Some(3),
+            },
+            retries: Some(JobId(41)),
         })
-        .collect();
-    assert_eq!(fractions.first(), Some(&0.0));
-    assert_eq!(fractions.last(), Some(&1.0));
-    assert!(fractions.len() <= 5, "{fractions:?}");
-    assert_eq!(messages.first(), Some(&"job-first"));
-    assert_eq!(messages.last(), Some(&"job-last"));
-    assert!(messages.len() <= 3, "{messages:?}");
-    assert!(matches!(
-        of.last(),
-        Some(JobEvent::Ended {
-            state: State::Finished,
-            failure: None,
-            ..
+    );
+    let Some(JobEvent::Ended {
+        job,
+        state,
+        outcome,
+        failure,
+        at,
+        offers,
+    }) = seen.last()
+    else {
+        panic!("{seen:?}");
+    };
+    assert_eq!(*job, x);
+    assert_eq!(*state, State::Finished, "a failure is not a cancel");
+    assert_eq!(
+        *outcome,
+        Some(Message::new("job-outcome").with("done", 2u64)),
+        "the last set"
+    );
+    assert_eq!(
+        *failure,
+        Some(Failure {
+            cause: "write".to_owned(),
+            item: Some(PathBuf::from("/photos/c.ARW")),
+            file: Some(PathBuf::from("/out/c.jpg")),
+            reason: "cannot write /out/c.jpg: no space".to_owned(),
         })
-    ));
+    );
+    assert!(before <= *at && *at <= after, "{at:?}");
+    assert_eq!(
+        *offers,
+        [Offer::Retry { items: 1 }, Offer::Retry { items: 2 }]
+    );
 }
 
 /// Shutting down: a running job that can be cancelled is, one that cannot finishes,
@@ -508,30 +694,9 @@ fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
     });
     events.ended(b);
     let end = |job| events.of(job).last().cloned();
-    assert_eq!(
-        end(a),
-        Some(JobEvent::Ended {
-            job: a,
-            state: State::Cancelled,
-            failure: None,
-        })
-    );
-    assert_eq!(
-        end(b),
-        Some(JobEvent::Ended {
-            job: b,
-            state: State::Finished,
-            failure: None,
-        })
-    );
-    assert_eq!(
-        end(c),
-        Some(JobEvent::Ended {
-            job: c,
-            state: State::Discarded,
-            failure: None,
-        })
-    );
+    assert_eq!(end(a), Some(ended(a, State::Cancelled)));
+    assert_eq!(end(b), Some(ended(b, State::Finished)));
+    assert_eq!(end(c), Some(ended(c, State::Discarded)));
     heard.until(|told| *told == Told::Stopped("b", Ok(1)));
     let mut started = heard.started();
     started.sort_unstable();
@@ -547,34 +712,29 @@ fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
     assert_eq!(
         events.of(late),
         [
-            JobEvent::Added {
-                job: late,
-                kind: "count",
-                queue: Some(UserBackground),
-                message: Message::new("job-test").with("label", "late"),
-                cancellable: true,
-            },
-            JobEvent::Ended {
-                job: late,
-                state: State::Discarded,
-                failure: None,
-            },
+            added(
+                late,
+                Some(UserBackground),
+                Message::new("job-test").with("label", "late"),
+                true,
+            ),
+            ended(late, State::Discarded),
         ]
     );
     assert_eq!(heard.receiver.try_iter().count(), 0, "late never ran");
 }
 
 /// A body's failure and a panic both end the job finished with the failure, never
-/// cancelled; the worker carries on.
+/// cancelled, a panic as cause `panicked` with its text the reason; the worker carries
+/// on.
 #[test]
-fn a_failure_ends_a_job_failed_not_cancelled() {
+fn a_failure_or_a_panic_ends_a_job_failed_not_cancelled() {
     let (control, mut events) = control(1);
+    let failure = Failure::new("unreadable", "not a raw").item("/photos/IMG_0001.ARW");
+    let returned = failure.clone();
     let failing = control.add(
         UserBackground,
-        Job::new("count", "failing", |_| {
-            Err(Message::new("job-test-failed").with("file", "IMG_0001.ARW"))
-        })
-        .progress(Message::new("job-test"), true),
+        Job::new("count", "failing", |_| Err(returned)).progress(Message::new("job-test"), true),
     );
     let panicking = control.add(
         UserBackground,
@@ -589,19 +749,17 @@ fn a_failure_ends_a_job_failed_not_cancelled() {
 
     assert_eq!(
         events.of(failing).last(),
-        Some(&JobEvent::Ended {
-            job: failing,
-            state: State::Finished,
-            failure: Some(Message::new("job-test-failed").with("file", "IMG_0001.ARW")),
-        })
+        Some(&failed(failing, State::Finished, Some(failure)))
     );
+    let panicked = Failure {
+        cause: "panicked".to_owned(),
+        item: None,
+        file: None,
+        reason: "counted too far".to_owned(),
+    };
     assert_eq!(
         events.of(panicking).last(),
-        Some(&JobEvent::Ended {
-            job: panicking,
-            state: State::Finished,
-            failure: Some(Message::new("job-panicked").with("reason", "counted too far")),
-        })
+        Some(&failed(panicking, State::Finished, Some(panicked)))
     );
 }
 
@@ -612,45 +770,39 @@ fn run_now_runs_on_the_callers_thread() {
     let (control, mut events) = control(1);
     let caller = thread::current().id();
     let (sender, ran_on) = mpsc::channel();
-    let ended = control.run_now(
+    let how = control.run_now(
         Job::new("count", "now", move |context| {
             let _ = sender.send(thread::current().id());
-            context.set_fraction(1.0);
+            context.set_progress(1, Some(1));
             Ok(())
         })
         .progress(Message::new("job-test"), false),
     );
-    assert_eq!(ended, Ok(State::Finished));
+    assert_eq!(how, Ok(State::Finished));
     assert_eq!(ran_on.try_recv(), Ok(caller));
     events.until(|event| matches!(event, JobEvent::Ended { .. }));
-    let job = id(&events.seen[0]);
+    let job = events.seen[0].job();
     assert_eq!(
         events.of(job),
         [
-            JobEvent::Added {
-                job,
-                kind: "count",
-                queue: None,
-                message: Message::new("job-test"),
-                cancellable: false,
-            },
+            added(job, None, Message::new("job-test"), false),
             JobEvent::State {
                 job,
                 state: State::Running,
             },
-            JobEvent::Progress { job, fraction: 1.0 },
-            JobEvent::Ended {
+            JobEvent::Progress {
                 job,
-                state: State::Finished,
-                failure: None,
+                done: 1,
+                total: Some(1),
             },
+            ended(job, State::Finished),
         ]
     );
+    let failure = Failure::new("test", "failed now");
+    let returned = failure.clone();
     assert_eq!(
-        control.run_now(Job::new("count", "failing now", |_| Err(Message::new(
-            "job-test-failed"
-        )))),
-        Err(Message::new("job-test-failed"))
+        control.run_now(Job::new("count", "failing now", |_| Err(returned))),
+        Err(failure)
     );
     assert_eq!(control.pending(), 0);
 }
@@ -703,14 +855,7 @@ fn a_panicking_observer_loses_one_event_and_the_control_runs_on() {
         "{:?}",
         events.of(x)
     );
-    assert_eq!(
-        events.of(x).last(),
-        Some(&JobEvent::Ended {
-            job: x,
-            state: State::Finished,
-            failure: None,
-        })
-    );
+    assert_eq!(events.of(x).last(), Some(&ended(x, State::Finished)));
     let y = control.add(UserExport, cancellable(counting("y", 1, None, &tell), "y"));
     events.ended(y);
     heard.until(|told| *told == Told::Stopped("y", Ok(1)));
