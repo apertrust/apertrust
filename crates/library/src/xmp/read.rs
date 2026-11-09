@@ -122,15 +122,11 @@ enum Resolved {
 impl Resolved {
     fn of(result: ResolveResult<'_>) -> Self {
         match result {
-            ResolveResult::Bound(namespace) => Resolved::Bound(lossy(namespace.as_ref())),
+            ResolveResult::Bound(namespace) => Resolved::Bound(namespace.as_ref().to_owned()),
             ResolveResult::Unbound => Resolved::Unbound,
-            ResolveResult::Unknown(prefix) => Resolved::Unknown(lossy(&prefix)),
+            ResolveResult::Unknown(prefix) => Resolved::Unknown(prefix),
         }
     }
-}
-
-fn lossy(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).into_owned()
 }
 
 /// quick-xml's events as a tree: the root element.
@@ -169,15 +165,11 @@ fn tree(xml: &str) -> Result<Element, Fail> {
                 attach(&mut open, &mut root, element, offset)?;
             }
             Event::Text(text) => {
-                let text = text
-                    .xml_content(VERSION)
-                    .map_err(|e| Fail::at(offset, e.to_string()))?;
+                let text = text.xml_content(VERSION);
                 add_text(&mut open, &text, offset)?;
             }
             Event::CData(data) => {
-                let text = data
-                    .xml_content(VERSION)
-                    .map_err(|e| Fail::at(offset, e.to_string()))?;
+                let text = data.xml_content(VERSION);
                 add_text(&mut open, &text, offset)?;
             }
             Event::GeneralRef(reference) => {
@@ -208,10 +200,7 @@ fn reference_text(
     {
         return Ok(character.to_string());
     }
-    let name = reference
-        .decode()
-        .map_err(|e| Fail::at(offset, e.to_string()))?;
-    match name.as_ref() {
+    match reference.as_ref() {
         "lt" => Ok("<".to_owned()),
         "gt" => Ok(">".to_owned()),
         "amp" => Ok("&".to_owned()),
@@ -270,10 +259,10 @@ fn element(
     offset: usize,
 ) -> Result<Element, Fail> {
     let qname = tag.name();
-    let local = lossy(tag.local_name().as_ref());
+    let local = tag.local_name().as_ref().to_owned();
     let prefix = qname
         .prefix()
-        .map(|p| lossy(p.as_ref()))
+        .map(|p| p.as_ref().to_owned())
         .unwrap_or_default();
     let name = match resolved {
         Resolved::Bound(namespace) => Name {
@@ -305,17 +294,17 @@ fn element(
         if let Some(declaration) = attribute.key.as_namespace_binding() {
             let prefix = match declaration {
                 PrefixDeclaration::Default => String::new(),
-                PrefixDeclaration::Named(prefix) => lossy(prefix),
+                PrefixDeclaration::Named(prefix) => prefix.to_owned(),
             };
             declarations.push(Namespace { prefix, uri: value });
             continue;
         }
         let (resolved, local) = reader.resolver().resolve_attribute(attribute.key);
-        let local = lossy(local.as_ref());
+        let local = local.as_ref().to_owned();
         let prefix = attribute
             .key
             .prefix()
-            .map(|p| lossy(p.as_ref()))
+            .map(|p| p.as_ref().to_owned())
             .unwrap_or_default();
         match Resolved::of(resolved) {
             Resolved::Bound(namespace) => attrs.push((

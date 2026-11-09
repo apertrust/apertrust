@@ -150,16 +150,15 @@ fn clean(what: &str, text: &str) -> String {
 }
 
 /// An attribute's value, escaped and with the characters an attribute would normalise as
-/// numeric references.
+/// numeric references; quick-xml's escaping writes a carriage return as `&#13;` itself.
 fn attribute_value(what: &str, text: &str) -> String {
     escape(clean(what, text))
         .replace('\n', "&#xA;")
-        .replace('\r', "&#xD;")
         .replace('\t', "&#x9;")
 }
 
 fn element_text(what: &str, text: &str) -> String {
-    partial_escape(clean(what, text)).replace('\r', "&#xD;")
+    partial_escape(clean(what, text)).into_owned()
 }
 
 struct Writer<'a> {
