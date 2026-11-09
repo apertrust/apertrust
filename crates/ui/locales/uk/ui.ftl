@@ -149,6 +149,41 @@ job-thumbnails = Створення мініатюр
 job-folder = Читання { $folder }
 job-target-disk = файл на диску
 
+job-export-photo =
+    Експортування { $number } / { $total } до { $storage ->
+       *[disk] файлу на диску
+    }
+job-export-queued = Далі в черзі: { photo-count }, до папки { $folder }
+job-export-now =
+    { $total ->
+        [1] Експортується { $photo }
+       *[other] Готово { $done } із { $total } · зараз { $photo }
+    }
+job-export-between = Готово { $done } із { $total }
+job-export-finished =
+    { $skipped ->
+        [0]
+            { $written ->
+                [1] Знімок експортовано
+               *[other] Експортовано знімків: { $written }
+            }
+       *[other]
+            { $total ->
+                [1] Знімок пропущено
+               *[other] Експортовано { $written } із { $total }, пропущено: { $skipped }
+            }
+    }
+job-export-failed-outcome =
+    { $total ->
+        [1] Не вдалося експортувати знімок
+       *[other] Експортовано знімків: { $written } із { $total }
+    }
+job-export-cancelled =
+    { $total ->
+        [1] Експорт скасовано
+       *[other] Експорт скасовано. Експортовано { $written } із { $total }
+    }
+
 job-cause-unreadable = не вдалося прочитати файл raw
 job-cause-edit = не вдалося прочитати його редагування
 job-cause-binding = змінений модуль не вдалося застосувати до фото

@@ -149,6 +149,43 @@ job-thumbnails = Tworzenie miniatur
 job-folder = Odczytywanie { $folder }
 job-target-disk = plik na dysku
 
+job-export-photo =
+    Eksportowanie { $number } / { $total } do { $storage ->
+       *[disk] pliku na dysku
+    }
+job-export-queued = Następne w kolejce: { photo-count }, do folderu { $folder }
+job-export-now =
+    { $total ->
+        [1] Eksportowanie: { $photo }
+       *[other] Gotowe: { $done } z { $total } · teraz { $photo }
+    }
+job-export-between = Gotowe: { $done } z { $total }
+job-export-finished =
+    { $skipped ->
+        [0]
+            { $written ->
+                [1] Wyeksportowano 1 zdjęcie
+                [few] Wyeksportowano { $written } zdjęcia
+                [many] Wyeksportowano { $written } zdjęć
+               *[other] Wyeksportowano { $written } zdjęcia
+            }
+       *[other]
+            { $total ->
+                [1] Zdjęcie pominięto
+               *[other] Wyeksportowano { $written } z { $total } zdjęć, pominięto: { $skipped }
+            }
+    }
+job-export-failed-outcome =
+    { $total ->
+        [1] Nie udało się wyeksportować zdjęcia
+       *[other] Wyeksportowano { $written } z { $total } zdjęć
+    }
+job-export-cancelled =
+    { $total ->
+        [1] Eksport anulowany
+       *[other] Eksport anulowany. Wyeksportowano { $written } z { $total } zdjęć
+    }
+
 job-cause-unreadable = nie można odczytać pliku raw
 job-cause-edit = nie można odczytać jego edycji
 job-cause-binding = zmienionego modułu nie można zastosować do zdjęcia

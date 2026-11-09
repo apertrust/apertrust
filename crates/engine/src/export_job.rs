@@ -35,9 +35,14 @@
 //!   first, and with no live frame, the CLI's session's, one step; then
 //!   quantised, encoded and written into its temporary file, and renamed into place, by
 //!   the worker itself, as darktable's store runs on its worker.
-//! - **What the client hears:** the job's progress as `Event::Job`, "export images" with a
-//!   title per photo and its progress, the photos done; each photo's start and result, and
-//!   the job's counts, as `Event::Export` ([`ExportStatus`]).
+//! - **What the client hears:** the job's whole row as `Event::Job` (decision 72): as it
+//!   is added, darktable's title at 0, its photos as its total, its folder as its
+//!   destination where it holds no variable, and a queued detail; for each photo its
+//!   title, a detail naming it and the photos done; the first file written as its
+//!   destination; at its end its outcome by its counts, the failure that ended it or else
+//!   the first photo's, and Try again for the photos not written, unless it was cancelled
+//!   or refused. Each photo's start and result, and the job's counts, also come as
+//!   `Event::Export` ([`ExportStatus`]), the record for scripts and the CLI.
 //! - **Failures:** a photo's own fails that photo, and the job goes on; a failure of the
 //!   destination, or the engine stopping under it ([`Failure::ends_job`]), ends the job
 //!   failed, the photos after it not reached. A cancel takes effect before the job's next
@@ -68,7 +73,7 @@ use crate::export::{
     ExportError, Hand, MapResult, Mapping, Rendered, Submit, Tiling, export_handing,
 };
 use crate::gpu::GpuContext;
-use crate::jobs::{self, Context, Interrupted, Job, Message, TaskError, Tasks};
+use crate::jobs::{self, Context, Destination, Interrupted, Job, Message, Offer, TaskError, Tasks};
 use crate::names::{self, Shot, Sizes};
 use crate::pipeline::{self, Instance, Limits, Pipe, PlanError, Resample};
 use crate::session::{Decoded, Event, Load, Outbox};
@@ -473,13 +478,77 @@ impl Hand for Handing<'_, '_> {
 }
 
 /// The job that exports `run`'s photos, its renders handed to the engine thread through
-/// `tasks`: darktable's "export images", cancellable.
+/// `tasks`: darktable's "export images", cancellable. As it is added: darktable's title at
+/// photo 0, its photos as its total, the folder its path names as its destination where
+/// it holds no variable, and the detail that it waits, with that folder as typed.
 pub(crate) fn job(run: Run, tasks: Tasks) -> Job {
-    let description = format!("export {} images", run.photos.len());
-    Job::new("export", description, move |context| {
+    let total = run.photos.len();
+    let description = format!("export {total} images");
+    let path = &run.settings.path;
+    let folder = typed_folder(path);
+    let queued = Message::new("job-export-queued")
+        .with("count", total)
+        .with("folder", folder.unwrap_or(path));
+    let destination = folder.and_then(|folder| destination(folder, run.places.home.as_deref()));
+    let job = Job::new("export", description, move |context| {
         run.body(&tasks, context)
     })
-    .progress(Message::new("job-export"), true)
+    .progress(title(0, total), true)
+    .total(total as u64)
+    .detail(queued);
+    match destination {
+        Some(destination) => job.destination(destination),
+        None => job,
+    }
+}
+
+/// darktable's message as it exports photo `number` of `total`, from 1, and 0 before the
+/// first: "Exporting 3 / 12 to file on disk".
+fn title(number: usize, total: usize) -> Message {
+    Message::new("job-export-photo")
+        .with("number", number)
+        .with("total", total)
+        .with("storage", "disk")
+}
+
+/// The folder an export's path names, as typed: the text before its last `/`, the
+/// separator a path takes on every system, since it reads `\` as an escape; a root with
+/// its `/`, `/` itself or a drive's `D:/`, and none for a path with no folder.
+fn typed_folder(path: &str) -> Option<&str> {
+    let (folder, _) = path.rsplit_once('/')?;
+    let drive = |folder: &str| {
+        let mut chars = folder.chars();
+        matches!((chars.next(), chars.next(), chars.next()), (Some(c), Some(':'), None) if c.is_ascii_alphabetic())
+    };
+    let root = folder.is_empty() || drive(folder);
+    Some(if root { &path[..=folder.len()] } else { folder })
+}
+
+/// Where `folder`, as typed, is: none where it holds a variable, which each photo expands
+/// in its own way, or an escape, which the text as typed does not resolve; a leading `~`
+/// the person's `home`, as File on disk reads it.
+fn destination(folder: &str, home: Option<&Path>) -> Option<Destination> {
+    if folder.contains(['$', '\\']) {
+        return None;
+    }
+    let folder = disk::home_for_tilde(folder, home);
+    Some(Destination::Folder(PathBuf::from(folder)))
+}
+
+/// The ended row's title: what became of the job's photos, cancelled, failed, or finished.
+fn outcome(summary: &Summary, total: usize, cancelled: bool, failed: bool) -> Message {
+    let id = if cancelled {
+        "job-export-cancelled"
+    } else if failed {
+        "job-export-failed-outcome"
+    } else {
+        "job-export-finished"
+    };
+    Message::new(id)
+        .with("written", summary.written)
+        .with("skipped", summary.skipped)
+        .with("failed", summary.failed)
+        .with("total", total)
 }
 
 impl Run {
@@ -500,11 +569,28 @@ impl Run {
             &self.build,
             self.places.clone(),
         );
+        // The counts, then the outcome and, where `retryable`, Try again for the photos not
+        // written, unless it was cancelled, a cancel too late to stop a photo included;
+        // `failure`, what ended it or else the first photo's, makes it a failed job.
+        let end = |summary: Summary, failure: Option<jobs::Failure>, retryable: bool| {
+            report(ExportStatus::Finished(summary));
+            let cancelled = summary.cancelled || context.cancelled();
+            let failed = failure.is_some();
+            context.set_outcome(outcome(&summary, total, cancelled, failed));
+            let items = summary.failed + summary.not_reached;
+            if retryable && !cancelled && items > 0 {
+                context.offer(Offer::Retry {
+                    items: items as u64,
+                });
+            }
+            failure.map_or(Ok(()), Err)
+        };
+        // Refused before any photo: the same settings would be refused again, so no Try
+        // again.
         let refused = |failure: Failure, mut summary: Summary| {
             tracing::debug!(target: "pipe", "export refused: {}", failure.message);
             summary.not_reached = total;
-            report(ExportStatus::Finished(summary));
-            Err(failure.ended(None))
+            end(summary, Some(failure.ended(None)), false)
         };
         // The path and its pattern before any photo (D8).
         let home = names.home();
@@ -518,14 +604,16 @@ impl Run {
             Err(Interrupted::Cancelled) => {
                 summary.not_reached = total;
                 summary.cancelled = true;
-                report(ExportStatus::Finished(summary));
-                return Ok(());
+                return end(summary, None, true);
             }
             Err(Interrupted::Disconnected) => {
                 let failure = Failure::new(Cause::Engine, None, "the edit writer stopped");
                 return refused(failure, summary);
             }
         };
+        // The first photo's failure, which the job ends with where nothing ended it.
+        let mut first_failure = None;
+        let mut first_file = true;
         for (index, (path, snapshot)) in self.photos.iter().zip(snapshot).enumerate() {
             if context.cancelled() {
                 summary.not_reached = total - index;
@@ -534,13 +622,13 @@ impl Run {
             }
             let source = path.clone();
             report(ExportStatus::Started { index, source });
-            context.set_title(
-                Message::new("job-export-photo")
-                    .with("number", index + 1)
+            context.set_title(title(index + 1, total).with("photo", path.as_path()));
+            context.set_detail(Some(
+                Message::new("job-export-now")
+                    .with("done", index)
                     .with("total", total)
-                    .with("storage", "disk")
                     .with("photo", path.as_path()),
-            );
+            ));
             let Some(result) = self.photo(tasks, context, index, path, snapshot, &disk, &names)
             else {
                 // Cancelled with it under way: dropped, its temporary file removed.
@@ -549,29 +637,50 @@ impl Run {
                 break;
             };
             summary.count(&result);
-            let stop = match &result {
+            // The failure that ends the job, which explains the photos not reached.
+            let mut stop = None;
+            let file = match &result {
+                PhotoResult::Written { path, .. } | PhotoResult::Skipped { path, .. } => {
+                    Some(path.clone())
+                }
                 PhotoResult::Failed(failure) => {
                     let number = index + 1;
                     tracing::debug!(target: "pipe", "export: photo {number} failed: {}", failure.message);
-                    failure.ends_job().then(|| failure.ended(Some(path)))
+                    let ended = failure.ended(Some(path));
+                    if failure.ends_job() {
+                        stop = Some(ended);
+                    } else {
+                        first_failure.get_or_insert(ended);
+                    }
+                    None
                 }
-                _ => None,
             };
             report(ExportStatus::Done { index, result });
-            context.set_progress((index + 1) as u64, Some(total as u64));
+            // The first file written, or left by On conflict, is where the photos go.
+            if let Some(file) = file
+                && first_file
+            {
+                first_file = false;
+                context.set_destination(Destination::File(file));
+            }
+            let done = index + 1;
+            context.set_progress(done as u64, Some(total as u64));
+            context.set_detail(Some(
+                Message::new("job-export-between")
+                    .with("done", done)
+                    .with("total", total),
+            ));
             if let Some(failure) = stop {
-                summary.not_reached = total - index - 1;
+                summary.not_reached = total - done;
                 let rest = summary.not_reached;
                 tracing::debug!(target: "pipe", "export: ended by its failure, {rest} not reached");
-                report(ExportStatus::Finished(summary));
-                return Err(failure);
+                return end(summary, Some(failure), true);
             }
         }
         let ms = start.elapsed().as_secs_f64() * 1e3;
         let photos = if total == 1 { "photo" } else { "photos" };
         tracing::debug!(target: "perf", "exported {total} {photos} in {ms:.0} ms");
-        report(ExportStatus::Finished(summary));
-        Ok(())
+        end(summary, first_failure, true)
     }
 
     /// Photo `index` of the job, the raw at `path` with the edit `snapshot` holds, or the
@@ -1418,17 +1527,19 @@ mod tests {
     }
 
     /// A render the GPU refuses in the step that reads its tile back fails the photo, its
-    /// file never written, though the step had finished and its readback was mapped.
+    /// file never written, though the step had finished and its readback was mapped; the
+    /// job ends failed with it, its cause, photo and file, and offers to try it again.
     #[test]
     fn a_refused_readback_render_fails_the_photo_and_writes_no_file() {
         let gpu = gpu();
         let folder = scratch("refused");
         let out = folder.join("out");
+        let photo = folder.join("a.ARW");
         let mut client = Client::start(&gpu);
         client.send(Command::HoldExport(testing::Hold::refusing()));
-        let command = client.send(export(&[&folder.join("a.ARW")], &out));
+        let command = client.send(export(&[&photo], &out));
         let job = client.job(command);
-        client.ended(job);
+        let own = client.ended(job);
         let statuses = client.exported(job);
         let [PhotoResult::Failed(failure)] = results(&statuses)[..] else {
             panic!("{statuses:?}");
@@ -1436,6 +1547,22 @@ mod tests {
         assert_eq!(failure.cause, Cause::Render, "{failure:?}");
         assert!(failure.message.contains("the GPU"), "{failure:?}");
         assert!(listed(&out).is_empty(), "{:?}", listed(&out));
+        let Some(JobEvent::Ended {
+            state: State::Finished,
+            outcome: Some(outcome),
+            failure: Some(ended),
+            offers,
+            ..
+        }) = own.last()
+        else {
+            panic!("it did not end failed: {own:?}");
+        };
+        assert_eq!(ended.cause, "render");
+        assert_eq!(ended.item.as_ref(), Some(&photo));
+        assert_eq!(ended.file, Some(out.join("a.png")));
+        assert_eq!(ended.reason, failure.message);
+        assert_eq!(outcome.id, "job-export-failed-outcome");
+        assert_eq!(offers, &[Offer::Retry { items: 1 }]);
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
     }
@@ -1456,14 +1583,22 @@ mod tests {
         client.send(Command::CancelJob { job });
         permit.send(()).unwrap();
         let own = client.ended(job);
+        // Cancelled, as its outcome says, with no Try again for the photos not reached.
+        let outcome = Message::new("job-export-cancelled")
+            .with("written", 0)
+            .with("skipped", 0)
+            .with("failed", 0)
+            .with("total", 2);
         assert!(
             matches!(
                 own.last(),
                 Some(JobEvent::Ended {
                     state: State::Cancelled,
+                    outcome: Some(said),
                     failure: None,
+                    offers,
                     ..
-                })
+                }) if *said == outcome && offers.is_empty()
             ),
             "{own:?}"
         );
@@ -1478,6 +1613,93 @@ mod tests {
         // Nothing under a photo's name, and no temporary file.
         assert!(listed(&folder).is_empty(), "{:?}", listed(&folder));
         drop(permit);
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// A cancel after a photo failed ends the job cancelled, with that photo's failure and
+    /// no Try again.
+    #[test]
+    fn a_cancel_after_a_failed_photo_offers_no_retry() {
+        let gpu = gpu();
+        let folder = scratch("cancel-failed");
+        let mut client = Client::start(&gpu);
+        let (hold, begun, permit) = testing::Hold::new();
+        client.send(Command::HoldExport(hold));
+        let photos = [folder.join("broken.ARW"), folder.join("a.ARW")];
+        let command = client.send(export(&[&photos[0], &photos[1]], &folder));
+        let job = client.job(command);
+        // The raw that cannot be read has failed; the second photo's render has begun.
+        begun.recv_timeout(TEST_WAIT).unwrap();
+        client.send(Command::CancelJob { job });
+        permit.send(()).unwrap();
+        let own = client.ended(job);
+        let Some(JobEvent::Ended {
+            state: State::Cancelled,
+            outcome: Some(outcome),
+            failure: Some(failure),
+            offers,
+            ..
+        }) = own.last()
+        else {
+            panic!("it did not end cancelled with a failure: {own:?}");
+        };
+        assert_eq!(failure.cause, "unreadable", "{failure:?}");
+        assert_eq!(failure.item.as_ref(), Some(&photos[0]));
+        let cancelled = Message::new("job-export-cancelled")
+            .with("written", 0)
+            .with("skipped", 0)
+            .with("failed", 1)
+            .with("total", 2);
+        assert_eq!(outcome, &cancelled);
+        assert!(offers.is_empty(), "{offers:?}");
+        drop(permit);
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// An export whose path is refused before any photo ends failed with the pattern's
+    /// cause, and offers no Try again: the same settings would be refused again.
+    #[test]
+    fn a_refused_export_offers_no_retry() {
+        let gpu = gpu();
+        let folder = scratch("refused-pattern");
+        let mut client = Client::start(&gpu);
+        let Command::Export {
+            photos,
+            mut settings,
+            places,
+        } = export(&[&folder.join("a.ARW")], &folder)
+        else {
+            unreachable!("an export");
+        };
+        settings.path = testing::path_in(&folder, "$(NO.SUCH.VARIABLE)");
+        let command = client.send(Command::Export {
+            photos,
+            settings,
+            places,
+        });
+        let job = client.job(command);
+        let own = client.ended(job);
+        let Some(JobEvent::Ended {
+            state: State::Finished,
+            outcome: Some(outcome),
+            failure: Some(failure),
+            offers,
+            ..
+        }) = own.last()
+        else {
+            panic!("it did not end failed: {own:?}");
+        };
+        assert_eq!(failure.cause, "pattern", "{failure:?}");
+        assert_eq!(failure.item, None);
+        assert_eq!(outcome.id, "job-export-failed-outcome");
+        assert!(offers.is_empty(), "{offers:?}");
+        let refused = Summary {
+            not_reached: 1,
+            ..Summary::default()
+        };
+        assert_eq!(summary(&client.exported(job)), refused);
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
     }
@@ -1559,13 +1781,25 @@ mod tests {
         let own = client.ended(job);
         let Some(JobEvent::Ended {
             state: State::Finished,
+            outcome: Some(outcome),
             failure: Some(failure),
+            offers,
             ..
         }) = own.last()
         else {
             panic!("it did not end failed: {own:?}");
         };
+        // The job's failure is the one that ended it, the folder that cannot be made, not
+        // the first photo's; Try again takes the two that failed and the one not reached.
         assert_eq!(failure.item.as_ref(), Some(&photos[1]));
+        assert_eq!(failure.file, Some(out.join("a.png")));
+        let failed = Message::new("job-export-failed-outcome")
+            .with("written", 0)
+            .with("skipped", 0)
+            .with("failed", 2)
+            .with("total", 3);
+        assert_eq!(outcome, &failed);
+        assert_eq!(offers, &[Offer::Retry { items: 3 }]);
         let statuses = client.exported(job);
         let counts = Summary {
             failed: 2,
@@ -1584,9 +1818,11 @@ mod tests {
         // The raw that cannot be read is that photo's failure, and the job went on.
         assert_eq!(unreadable.cause, Cause::Unreadable);
         assert!(!unreadable.destination());
-        // The folder that cannot be made is the destination's, and ends it.
+        // The folder that cannot be made is the destination's, and ends it, its cause the
+        // job's.
         assert!(destination.destination(), "{destination:?}");
         assert_eq!(destination.file, Some(out.join("a.png")));
+        assert_eq!(failure.cause, destination.cause.id());
         assert_eq!(listed(&folder), ["blocker"]);
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
@@ -1647,16 +1883,26 @@ mod tests {
         let command = client.send(export(&[&photos[0], &photos[1]], &folder));
         let job = client.job(command);
         let own = client.ended(job);
-        // The job's own: added, queued, running, its titles and progress, its end.
+        // The job's own: added with darktable's title at 0, its total, its folder and the
+        // detail that it waits; queued, running; its titles, details, first file and
+        // progress; its end.
+        let typed = folder.to_string_lossy().replace('\\', "/");
         let added = JobEvent::Added {
             job,
             kind: "export",
             queue: Some(Queue::UserExport),
-            title: Message::new("job-export"),
+            title: title(0, 2),
             cancellable: true,
-            destination: None,
-            detail: None,
-            progress: Progress::default(),
+            destination: Some(Destination::Folder(folder.clone())),
+            detail: Some(
+                Message::new("job-export-queued")
+                    .with("count", 2)
+                    .with("folder", typed.as_str()),
+            ),
+            progress: Progress {
+                done: 0,
+                total: Some(2),
+            },
             retries: None,
         };
         let queued = JobEvent::State {
@@ -1668,26 +1914,27 @@ mod tests {
             state: State::Running,
         };
         assert_eq!(own[..3], [added, queued, running]);
+        let finished = Message::new("job-export-finished")
+            .with("written", 2)
+            .with("skipped", 0)
+            .with("failed", 0)
+            .with("total", 2);
         assert!(
             matches!(
                 own.last(),
                 Some(JobEvent::Ended {
                     state: State::Finished,
-                    outcome: None,
+                    outcome: Some(outcome),
                     failure: None,
                     offers,
                     ..
-                }) if offers.is_empty()
+                }) if *outcome == finished && offers.is_empty()
             ),
             "{own:?}"
         );
-        let photo = |number: usize| {
-            Message::new("job-export-photo")
-                .with("number", number)
-                .with("total", 2)
-                .with("storage", "disk")
-                .with("photo", photos[number - 1].as_path())
-        };
+        // The first of each goes out at once and the last as the job ends, whatever the
+        // throttle.
+        let photo = |number: usize| title(number, 2).with("photo", photos[number - 1].as_path());
         let titles: Vec<&Message> = own
             .iter()
             .filter_map(|e| match e {
@@ -1695,9 +1942,24 @@ mod tests {
                 _ => None,
             })
             .collect();
-        // The first goes out at once and the last as the job ends, whatever the throttle.
         assert_eq!(titles.first(), Some(&&photo(1)));
         assert_eq!(titles.last(), Some(&&photo(2)));
+        let details: Vec<&Option<Message>> = own
+            .iter()
+            .filter_map(|e| match e {
+                JobEvent::Detail { detail, .. } => Some(detail),
+                _ => None,
+            })
+            .collect();
+        let now = Message::new("job-export-now")
+            .with("done", 0)
+            .with("total", 2)
+            .with("photo", photos[0].as_path());
+        let between = Message::new("job-export-between")
+            .with("done", 2)
+            .with("total", 2);
+        assert_eq!(details.first(), Some(&&Some(now)));
+        assert_eq!(details.last(), Some(&&Some(between)));
         let progress: Vec<(u64, Option<u64>)> = own
             .iter()
             .filter_map(|e| match e {
@@ -1707,6 +1969,30 @@ mod tests {
             .collect();
         assert_eq!(progress.first(), Some(&(1, Some(2))));
         assert_eq!(progress.last(), Some(&(2, Some(2))));
+        // The first file written, once.
+        let destinations: Vec<&Destination> = own
+            .iter()
+            .filter_map(|e| match e {
+                JobEvent::Destination { destination, .. } => Some(destination),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(destinations, [&Destination::File(folder.join("a.png"))]);
+        // In the order the first photo sets them: its title and detail as it starts, the
+        // file and the photos done as it ends, all before the job's end.
+        let first = |wanted: fn(&JobEvent) -> bool| own.iter().position(wanted).unwrap();
+        let title_at = first(|e| matches!(e, JobEvent::Title { .. }));
+        let detail_at = first(|e| matches!(e, JobEvent::Detail { .. }));
+        let destination_at = first(|e| matches!(e, JobEvent::Destination { .. }));
+        let progress_at = first(|e| matches!(e, JobEvent::Progress { .. }));
+        let ended_at = own.len() - 1;
+        assert!(
+            title_at < detail_at
+                && detail_at < destination_at
+                && destination_at < progress_at
+                && progress_at < ended_at,
+            "{own:?}"
+        );
         // The photos', each started then done, then the counts.
         let statuses = client.exported(job);
         let [
@@ -1789,5 +2075,28 @@ mod tests {
         for error in [disk::Error::Empty, disk::Error::NoName(String::new())] {
             assert!(!Failure::disk(&error, None).destination());
         }
+    }
+
+    /// The destination a job is added with: the folder its path names where that holds no
+    /// variable or escape, a leading `~` the home folder as File on disk reads it.
+    #[test]
+    fn a_job_s_destination_is_the_folder_its_path_names_without_a_variable() {
+        let home = Some(Path::new("/home/ana"));
+        let named = |path| typed_folder(path).and_then(|folder| destination(folder, home));
+        let folder = |path: &str| Some(Destination::Folder(PathBuf::from(path)));
+        assert_eq!(named("/out/$(FILE_NAME)"), folder("/out"));
+        assert_eq!(named("/out/"), folder("/out"));
+        assert_eq!(named("/$(FILE_NAME)"), folder("/"));
+        assert_eq!(typed_folder("D:/$(FILE_NAME)"), Some("D:/"));
+        assert_eq!(named("D:/$(FILE_NAME)"), folder("D:/"));
+        assert_eq!(named("D:/out/$(FILE_NAME)"), folder("D:/out"));
+        assert_eq!(named("~/out/$(FILE_NAME)"), folder("/home/ana/out"));
+        assert_eq!(named("~/$(FILE_NAME)"), folder("/home/ana"));
+        assert_eq!(named("~bob/out/$(FILE_NAME)"), folder("~bob/out"));
+        assert_eq!(named("/out/$(YEAR)/$(FILE_NAME)"), None);
+        assert_eq!(named("/out\\_1/$(FILE_NAME)"), None);
+        assert_eq!(named("$(FILE_NAME)"), None);
+        let nowhere = typed_folder("~/out/x").and_then(|folder| destination(folder, None));
+        assert_eq!(nowhere, folder("~/out"));
     }
 }

@@ -793,6 +793,11 @@ mod tests {
                 args.set("value", "2 running");
                 args.set("message", "Exporting 3 / 12 to file on disk");
                 args.set("target", "file on disk");
+                // The export job's own.
+                args.set("number", 3);
+                args.set("storage", "disk");
+                args.set("written", 10);
+                args.set("skipped", 1);
                 // The Export dialog's.
                 args.set("source", "IMG_2041.ARW");
                 args.set("names", "$(OPENCL.ACTIVATED)");
