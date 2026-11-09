@@ -17,8 +17,6 @@ on:
 
 permissions:
   contents: read
-  # The platforms job reads the pull request's labels.
-  pull-requests: read
 
 # A new push to a pull request cancels its run in progress; main's runs all finish.
 concurrency:
@@ -88,6 +86,11 @@ jobs:
   platforms:
     name: Choose what runs
     runs-on: ubuntu-24.04
+    # It alone reads the pull request's labels. A job's permissions replace the workflow's,
+    # so `contents` is repeated.
+    permissions:
+      contents: read
+      pull-requests: read
     timeout-minutes: 15
     outputs:
       code: ${{ steps.platforms.outputs.code }}
