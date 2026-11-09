@@ -53,7 +53,7 @@ mod top_panel;
 mod value_field;
 
 pub use action_row::ActionRow;
-pub use alert::{AlertBody, ButtonOrder};
+pub use alert::{AlertBody, AlertResponse, ButtonOrder};
 pub use buttons_row::{ButtonsAction, ButtonsRow};
 pub use central_bar::{CentralBar, CentralBarAction, Toggle, Zoom};
 pub use choice::{Choice, ChoiceAction, ChoiceStyle};

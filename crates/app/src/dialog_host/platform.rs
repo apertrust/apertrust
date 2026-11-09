@@ -24,15 +24,17 @@
 //! | Sheet | AppKit's sheet | As Modal | As Modal | As Modal |
 //! | Modal | A window centred on the main window | The same, owned by the main window: above it, minimised with it, no taskbar button of its own | The same, of the dialog window type | The same, placed by the compositor |
 //! | Modeless | A window where it was last left | The same | The same | Placed by the compositor |
+//! | A modal window's parent | Its sheet's window | Its owner | None set yet: no `WM_TRANSIENT_FOR` | `xdg_toplevel.set_parent` ([`made`]) |
+//! | An alert | AppKit's `NSAlert`, a sheet | None yet: no task dialog | Drawn by the host in a modal window ([`draws_alerts`]) | As X11 |
+//! | Border and shadow | AppKit's | The system's frame's | None: a transparent margin can show black without a compositing manager | Drawn by the host round a transparent margin ([`shadowed`]) |
+//! | Bringing a window forward | `focus_window` | The same | The same | An xdg-activation request ([`activate`]) |
 //!
 //! Under a modal dialog or a sheet the app keeps the main window's input from it on every
 //! platform (the app's `raw_input_hook`), and a click on the main window brings a modal
 //! window forward ([`super::Dialogs::raise`]). Still to build (decision 41; `docs/gui.md`,
-//! Still to build): Windows' owner disabled while it is open (winit's `set_enable`); X11's
-//! `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`, which winit 0.30 does not set (its parent
-//! window is a child confined to the parent, not a transient), and Wayland's
-//! `xdg_toplevel.set_parent` and xdg-dialog's modal hint, which winit 0.30 does not offer,
-//! both `apertrust-display`'s.
+//! Still to build): Windows' owner disabled while it is open (winit's `set_enable`), and
+//! X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`, which winit 0.30 does not set (its
+//! parent window is a child confined to the parent, not a transient), `apertrust-display`'s.
 
 use eframe::egui::os::OperatingSystem;
 use egui_winit::winit::window::{Window, WindowAttributes};
@@ -60,11 +62,30 @@ pub fn unsheeted(form: Form) -> Form {
     }
 }
 
-/// Whether the host can ask an alert on `os`: only the Mac's, `NSAlert`, is built. Windows'
-/// task dialog and Linux's drawn alert are still to build (decision 41), so there an ask
-/// answers [`super::Ask::NoAlerts`], and a dialog leaves out what would need one.
+/// Whether the host can ask an alert on `os`: the Mac's `NSAlert`, and the alert it draws
+/// itself where it does ([`draws_alerts`]). Windows' task dialog is still to build (decision
+/// 41), so there an ask answers [`super::Ask::NoAlerts`], and a dialog leaves out what would
+/// need one.
 pub fn shows_alerts(os: OperatingSystem) -> bool {
-    os == OperatingSystem::Mac
+    os == OperatingSystem::Mac || draws_alerts(os)
+}
+
+/// Whether the host draws an alert itself on `os`, `components::AlertBody` in a modal window
+/// of its own, rather than asking the system's: on Linux, which has no system alert for an
+/// app outside GTK and Qt (decision 41).
+pub fn draws_alerts(os: OperatingSystem) -> bool {
+    os == OperatingSystem::Nix
+}
+
+/// Whether a dialog's window has a border and a drop shadow the host draws round a
+/// transparent outer margin, on `os`, where the app runs on Wayland (`wayland`, from the
+/// main window, [`wayland`]): every hosted window on Linux under Wayland, modal or
+/// modeless, whose window has no decorations ([`draws_frame`]). Not on X11, where the
+/// transparent margin can show black without a compositing manager. The Mac's sheets and
+/// windows are AppKit's, and Windows' keep the system's frame and shadow until its dialogs
+/// are undecorated on a transparent surface (planned).
+pub fn shadowed(os: OperatingSystem, wayland: bool) -> bool {
+    os == OperatingSystem::Nix && wayland
 }
 
 /// Whether the host draws a dialog window's frame on `os`: on Linux, where GNOME on
@@ -99,6 +120,51 @@ pub(super) fn attributes(
     };
     let _ = main;
     attributes
+}
+
+/// What the platform gives the window of a dialog shown as `form` over `parent` once it is
+/// made, where winit cannot: on Wayland a modal one's parent, `xdg_toplevel.set_parent`
+/// (`apertrust_display::set_parent`), its modality kept by the app. Nothing elsewhere, nor
+/// for a modeless window.
+pub(super) fn made(window: &Window, form: Form, parent: &Window) {
+    #[cfg(target_os = "linux")]
+    if form.modal()
+        && let Err(e) = apertrust_display::set_parent(parent, window)
+    {
+        tracing::warn!(target: "gpu", "Wayland dialog parent not set: {e}");
+    }
+    let _ = (window, form, parent);
+}
+
+/// Brings a hosted window forward when the user asks, with winit's focus call. On Wayland,
+/// where that call does nothing, the window asks the compositor to activate it instead,
+/// through xdg-activation; a compositor may only mark it as wanting attention.
+pub(super) fn activate(window: &Window) {
+    window.focus_window();
+    #[cfg(target_os = "linux")]
+    if wayland(window) {
+        use egui_winit::winit::window::UserAttentionType;
+        window.request_user_attention(Some(UserAttentionType::Critical));
+    }
+}
+
+/// Whether `window` is on Wayland rather than X11, known only once a window is up: where
+/// winit's `focus_window` does nothing ([`activate`]) and dialogs are shadowed
+/// ([`shadowed`]). Never off Linux.
+pub(super) fn wayland(window: &Window) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use egui_winit::winit::raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
+        matches!(
+            window.display_handle().map(|handle| handle.as_raw()),
+            Ok(RawDisplayHandle::Wayland(_))
+        )
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        false
+    }
 }
 
 /// `attributes` owned by `main` (Windows): the window stays above it, is minimised with it
@@ -150,8 +216,20 @@ mod tests {
     }
 
     #[test]
-    fn only_the_mac_shows_alerts_so_far() {
-        assert_eq!(PLATFORMS.map(shows_alerts), [true, false, false]);
+    fn the_mac_and_linux_show_alerts() {
+        assert_eq!(PLATFORMS.map(shows_alerts), [true, false, true]);
+    }
+
+    #[test]
+    fn the_host_draws_alerts_on_linux_alone() {
+        assert_eq!(PLATFORMS.map(draws_alerts), [false, false, true]);
+    }
+
+    #[test]
+    fn hosted_windows_have_a_shadow_and_border_on_wayland_alone() {
+        assert_eq!(PLATFORMS.map(|os| shadowed(os, true)), [false, false, true]);
+        // On X11, none.
+        assert_eq!(PLATFORMS.map(|os| shadowed(os, false)), [false; 3]);
     }
 
     #[test]

@@ -9,7 +9,7 @@ On Linux, Export was disabled until the window manager's modal hints and Linux's
 **Dialogs show on Linux as the host's modal windows now, before the window manager's hints, and the host draws their frame there.** This narrows [0041](0041-dialogs-as-native-modal-windows.md)'s system frame for Linux.
 
 - **Export on every platform.** File › Export… is enabled with a photo open on the Mac, Windows and Linux: a sheet on the Mac, a modal window elsewhere, as the host gives each form (`dialog_host::platform::form`). Nothing outside the host knows the platform.
-- **What the host can ask.** `platform::shows_alerts` says whether the host can show an alert: on the Mac only, until Windows' task dialog and Linux's drawn alert are built. Where it cannot, Export lists On conflict's Overwrite disabled, with its reason in the tooltip, and rests while a kept Overwrite is chosen.
+- **What the host can ask.** `platform::shows_alerts` says whether the host can show an alert: on the Mac, `NSAlert`, and on Linux, the alert the host draws (`platform::draws_alerts`), not on Windows until its task dialog is built. Where it cannot, Export lists On conflict's Overwrite disabled, with its reason in the tooltip, and rests while a kept Overwrite is chosen.
 - **The frame on Linux** (`platform::draws_frame`): the dialog's window has no decorations, on X11 too, so the frame is the same on every desktop. The host draws a 32-point strip at the window's top, in the dialog's own colour, with one close button at its end in the main window's caption style (`components::caption_button`), which closes the dialog as its Cancel. A drag on the strip's empty part moves the window through the compositor or window manager, and a right-click opens the window menu. The dialogs draw nothing of it.
 - **The size.** A window the person cannot resize is held at its size by its minimum and maximum, which Wayland's winit sets to the first guess as the window is made; the host moves both with each resize to the content's size.
 
@@ -22,4 +22,5 @@ On Linux, Export was disabled until the window manager's modal hints and Linux's
 ## Consequences
 
 - Settings on Linux has the frame's close and its own Close, as on Windows, where the system's frame has a close beside it.
-- The modal hints (`WM_TRANSIENT_FOR`, `_NET_WM_STATE_MODAL`, `xdg_toplevel.set_parent`) and Linux's drawn alert stay to build; with the alert, Overwrite comes back on Linux.
+- Wayland's `xdg_toplevel.set_parent` and Linux's drawn alert are built, so Overwrite is offered on Linux; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` stay to build.
+- On Wayland the host also draws each dialog window's border and drop shadow round a transparent margin ([0041](0041-dialogs-as-native-modal-windows.md)); X11 has none.

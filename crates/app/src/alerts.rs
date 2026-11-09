@@ -287,14 +287,22 @@ pub enum Then {
     Stop(Vec<JobId>),
     /// Write the edit again.
     RetrySave,
+    /// Quit again at once, to leave: the quit alert could not be shown, so this one Quit
+    /// leaves and the next asks again, as when asking it fails ([`ask_quit`]).
+    Leave,
 }
 
 /// The decision an answer makes: only a yes (the first button, the default) does anything.
 /// A yes to the quit alert is told to `guard`, which then waits for the jobs to end; any
-/// other answer lets the next Quit ask again.
+/// other answer lets the next Quit ask again. A quit alert that could not be shown after
+/// all ([`Answer::Failed`]) lets this Quit leave, as one that fails as it is asked does.
 pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) -> Then {
     let confirmed = answer.confirmed();
     match purpose {
+        Purpose::Quit if answer == Answer::Failed => {
+            guard.leave_once();
+            Then::Leave
+        }
         Purpose::Overwrite if confirmed => Then::Export,
         Purpose::Overwrite => Then::Nothing,
         Purpose::Quit => {
@@ -608,6 +616,26 @@ mod tests {
             assert!(!guard.confirmed());
             // Back to asking: the next Quit asks again.
             assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
+        }
+    }
+
+    #[test]
+    fn a_quit_alert_whose_window_could_not_be_made_lets_that_quit_leave_and_the_next_ask() {
+        let (mirror, _) = exporting();
+        let mut guard = Guard::default();
+        assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
+        let leave = then(Purpose::Quit, Answer::Failed, &mut guard, &mirror);
+        assert_eq!(leave, Then::Leave);
+        assert!(!guard.confirmed());
+        assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Leave);
+        assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
+        // Failed is no yes and ticks nothing: the other questions do nothing on it.
+        assert!(!Answer::Failed.confirmed() && !Answer::Failed.ticked());
+        for purpose in [Purpose::Overwrite, Purpose::Save] {
+            assert_eq!(
+                then(purpose, Answer::Failed, &mut guard, &mirror),
+                Then::Nothing
+            );
         }
     }
 

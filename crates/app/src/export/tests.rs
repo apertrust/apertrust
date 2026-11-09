@@ -755,6 +755,27 @@ fn overwrite_can_be_chosen_and_nothing_stops_export_for_it() {
 }
 
 #[test]
+fn on_linux_the_host_draws_the_alert_so_overwrite_is_listed_enabled() {
+    let alerts = dialog_host::platform::shows_alerts(egui::os::OperatingSystem::Nix);
+    let mut harness = dialog_of(
+        home(Values::default()).alerts(alerts),
+        Builtin::Dark,
+        Locale::EnGb,
+        egui::vec2(660.0, 640.0),
+    );
+    harness
+        .get_by_role_and_label(Role::ComboBox, "On conflict")
+        .click();
+    settle(&mut harness);
+    let overwrite = harness.get_by_role_and_label(Role::MenuItemCheckBox, "Overwrite");
+    assert!(!overwrite.accesskit_node().is_disabled());
+    overwrite.click();
+    settle(&mut harness);
+    assert_eq!(held(&mut harness).on_conflict, OnConflict::Overwrite);
+    assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
+}
+
+#[test]
 fn where_no_alert_can_ask_overwrite_is_listed_disabled_and_export_rests_while_it_is_kept() {
     let mut harness = dialog_of(
         home(Values::default()).alerts(false),

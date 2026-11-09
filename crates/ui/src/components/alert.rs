@@ -16,14 +16,16 @@
 
 //! The body of an alert, drawn in the theme (`docs/gui.md`, Dialogs and alerts; decision
 //! 41): the content of a dialog window on a platform with no alert of its own to use. The
-//! Mac shows `NSAlert` instead and no platform draws this yet, so it is built and tested
-//! for Windows and Linux, where it is planned.
+//! Mac shows `NSAlert` instead, Linux draws this in the dialog host, and Windows' task
+//! dialog is planned.
 //!
 //! It is a function of a `Ui`, as every dialog's content is, so the dialog host draws it
 //! in a window and the tests in a harness. Return presses the default button and Escape the
-//! cancel, unless a control has the focus, which takes Return itself. The buttons sit at
-//! the end of the last row in the platform's order, and screen readers and Tab meet them in
-//! the order they are seen.
+//! cancel, unless a button has the focus, which takes Return itself; with the suppression
+//! box focused, Return still presses the default and Space ticks the box. The buttons sit
+//! at the end of the last row in the platform's order, and screen readers and Tab meet them
+//! in the order they are seen. Its node is an alert dialog named by the title, unless the
+//! window it is drawn in is that node already ([`AlertBody::in_alert_window`]).
 
 use egui::accesskit::Role as AccessRole;
 use egui::{Button, Key, Label, Modifiers, RichText, Ui, WidgetInfo};
@@ -65,18 +67,37 @@ impl ButtonOrder {
     }
 }
 
+/// The button an alert answered, and whether its suppression box was ticked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AlertResponse {
+    pub pressed: usize,
+    pub ticked: bool,
+}
+
 /// An alert request drawn as a dialog's content.
 pub struct AlertBody<'a> {
     request: &'a Request,
+    ticked: &'a mut bool,
     order: ButtonOrder,
+    /// Whether its scope is a node of its own, an alert dialog named by the title.
+    node: bool,
 }
 
 impl<'a> AlertBody<'a> {
-    pub fn new(request: &'a Request) -> Self {
+    pub fn new(request: &'a Request, ticked: &'a mut bool) -> Self {
         AlertBody {
             request,
+            ticked,
             order: ButtonOrder::platform(),
+            node: true,
         }
+    }
+
+    /// Drawn in a window whose own node is the alert dialog named by the title, as the
+    /// dialog host's is: no node of its own, so screen readers read the title once.
+    pub fn in_alert_window(mut self) -> Self {
+        self.node = false;
+        self
     }
 
     /// Where the default button sits; the platform's unless a test says otherwise.
@@ -85,9 +106,9 @@ impl<'a> AlertBody<'a> {
         self
     }
 
-    /// Draws the alert in `ui` and returns the index of the button pressed, by a click or
-    /// by Return or Escape, if one was.
-    pub fn show(self, ui: &mut Ui) -> Option<usize> {
+    /// Draws the alert in `ui` and returns the button pressed, by a click or by Return or
+    /// Escape, with the suppression box's state, if one was.
+    pub fn show(self, ui: &mut Ui) -> Option<AlertResponse> {
         let t = theme(ui.ctx());
         let request = self.request;
         let mut pressed = None;
@@ -96,12 +117,29 @@ impl<'a> AlertBody<'a> {
             ui.spacing_mut().item_spacing = egui::vec2(t.spacing.s, t.spacing.m);
             ui.add(Label::new(RichText::new(&request.title).heading()).selectable(false));
             ui.add(Label::new(&request.message).selectable(false));
+            // Return with the box focused presses the default button, as `NSAlert`'s does,
+            // and Space ticks it: the box never sees Return.
+            let mut enter_on_box = false;
+            if let Some(label) = &request.suppression {
+                let key = ui.make_persistent_id("alert suppression box");
+                let last: Option<egui::Id> = ui.data(|d| d.get_temp(key));
+                let on_box = last.is_some_and(|id| ui.memory(|m| m.has_focus(id)));
+                enter_on_box =
+                    on_box && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+                let id = ui.checkbox(&mut *self.ticked, label).id;
+                ui.data_mut(|d| d.insert_temp(key, id));
+            }
             pressed = self.buttons(ui);
-            // Keys the focused control does not take: a button presses itself on Return.
+            if pressed.is_none() && enter_on_box && !request.buttons.is_empty() {
+                pressed = Some(request.default);
+            }
+            // Return with no control focused: a focused control takes it itself, the body's
+            // buttons above, or one drawn after the body, as the host's frame's close, which
+            // must still see it.
             let focused = ui.ctx().memory(|m| m.focused()).is_some();
-            let enter = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+            let enter = !focused && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
             let escape = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
-            if pressed.is_none() && enter && !focused && !request.buttons.is_empty() {
+            if pressed.is_none() && enter && !request.buttons.is_empty() {
                 pressed = Some(request.default);
             }
             if pressed.is_none() && escape {
@@ -109,10 +147,15 @@ impl<'a> AlertBody<'a> {
             }
         });
         let title = &request.title;
-        scope
-            .response
-            .widget_info(|| WidgetInfo::labeled(AccessRole::AlertDialog, true, title));
-        pressed
+        if self.node {
+            scope
+                .response
+                .widget_info(|| WidgetInfo::labeled(AccessRole::AlertDialog, true, title));
+        }
+        pressed.map(|pressed| AlertResponse {
+            pressed,
+            ticked: *self.ticked,
+        })
     }
 
     /// The buttons at the end of a row, in the platform's order. Their width is the last
