@@ -10,7 +10,7 @@ How is the interface built so that its parts are reused, it can be themed and tr
 
 **Themes** are token sets named by role: colours, the photo's neutral surround, type sizes, density, radii and strokes, overlay colours and motion. They are TOML files in `crates/ui/themes`: dark (the default, a neutral dark grey), light and high contrast built in, and user theme files that extend one. Every theme is checked for WCAG AA contrast when it loads and can be switched live. The interface's scale is a setting (egui's zoom factor). The layout, the components' shapes, the typeface and colours that are data are not themable.
 
-**Type:** IBM Plex Sans in Regular, Medium and SemiBold for every egui font family. Its digits, `+` and `−` share one width (600 units), so a changing value keeps its place without tabular figures, which egui's text renderer cannot apply. egui's default fonts are off. The fonts ship unmodified with their licence ([0064](0064-licences-gplv3-darktables-provenance-and-bundled-fonts.md)).
+**Type:** IBM Plex Sans in Regular, Medium and SemiBold for the interface, egui's monospace family included. Its digits, `+` and `−` share one width (600 units), so a changing value keeps its place without tabular figures, which egui's text renderer cannot apply. IBM Plex Mono Regular, in a family of its own, sets the log window's lines alone, in columns as the terminal writes them. egui's default fonts are off. The fonts ship unmodified with their licence ([0064](0064-licences-gplv3-darktables-provenance-and-bundled-fonts.md)).
 
 **Icons** are one-colour SVG files, rendered by resvg (pure Rust) at their pixel size and tinted with a theme colour, with no gradients or opacity; `Picture` draws an SVG in its own colours, for the logo.
 
@@ -31,7 +31,7 @@ How is the interface built so that its parts are reused, it can be themed and tr
 - gettext (a binding to C's libintl, or a reader without Fluent's selectors), or key-value files without plurals.
 - Shortcuts per widget: no single place to rebind or show them.
 - AccessKit off, and checking by eye.
-- IBM Plex Mono for values: Plex Sans's equal-width digits make it unnecessary.
+- IBM Plex Mono for values: Plex Sans's equal-width digits make it unnecessary, so Mono is the log window's alone.
 - egui's default fonts kept by a licence exception: a typeface the design does not use.
 
 ## Consequences

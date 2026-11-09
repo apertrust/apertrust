@@ -15,9 +15,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The UI's typeface, IBM Plex Sans (architecture decision 36), in place of egui's
-//! default fonts. The files ship unmodified, with their licence, in `assets/fonts`.
-//! It covers Latin, Cyrillic and Greek, so English, Ukrainian and Polish need no other
-//! font (`docs/gui.md`).
+//! default fonts, and IBM Plex Mono Regular for the log window's lines. The files ship
+//! unmodified, with their licence, in `assets/fonts`. Sans covers Latin, Cyrillic and
+//! Greek, Mono Latin and Cyrillic, so English, Ukrainian and Polish need no other font
+//! (`docs/gui.md`).
 
 use std::sync::Arc;
 
@@ -29,8 +30,12 @@ pub const MEDIUM: &str = "IBM Plex Sans Medium";
 /// The family of the SemiBold face, which marks a choice: the chosen tab, the match in a
 /// dropdown's filter. Headings are Medium.
 pub const SEMIBOLD: &str = "IBM Plex Sans SemiBold";
+/// The family of IBM Plex Mono Regular, the log window's lines as the terminal shows
+/// them, Plex Sans Regular drawing the Greek it lacks (ΔE). egui's `Monospace` family
+/// stays Plex Sans Regular.
+pub const MONO: &str = "IBM Plex Mono";
 
-const FACES: [(&str, &[u8]); 3] = [
+const FACES: [(&str, &[u8]); 4] = [
     (
         REGULAR,
         include_bytes!("../assets/fonts/IBMPlexSans-Regular.ttf"),
@@ -42,6 +47,10 @@ const FACES: [(&str, &[u8]); 3] = [
     (
         SEMIBOLD,
         include_bytes!("../assets/fonts/IBMPlexSans-SemiBold.ttf"),
+    ),
+    (
+        MONO,
+        include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf"),
     ),
 ];
 
@@ -58,7 +67,8 @@ pub fn install(ctx: &egui::Context) {
 
 /// Regular serves both of egui's families. Its digits, `+` and `−` share one width, so a
 /// changing value keeps its place and egui's monospace style needs no second font.
-/// Medium and SemiBold are families named after their face.
+/// Medium, SemiBold and Mono are families named after their face, Mono falling back to
+/// Regular.
 pub(crate) fn definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::empty();
     for (name, bytes) in FACES {
@@ -74,6 +84,10 @@ pub(crate) fn definitions() -> FontDefinitions {
             .families
             .insert(FontFamily::Name(name.into()), vec![name.to_owned()]);
     }
+    fonts.families.insert(
+        FontFamily::Name(MONO.into()),
+        vec![MONO.to_owned(), REGULAR.to_owned()],
+    );
     fonts
 }
 
@@ -84,12 +98,13 @@ mod tests {
 
     use super::*;
 
-    fn families() -> [FontFamily; 4] {
+    fn families() -> [FontFamily; 5] {
         [
             FontFamily::Proportional,
             FontFamily::Monospace,
             FontFamily::Name(MEDIUM.into()),
             FontFamily::Name(SEMIBOLD.into()),
+            FontFamily::Name(MONO.into()),
         ]
     }
 
@@ -115,6 +130,17 @@ mod tests {
             for c in "123456789+−".chars() {
                 assert_eq!(view.glyph_width(&font, c), width, "{family:?} {c}");
             }
+        }
+    }
+
+    #[test]
+    fn mono_sets_every_character_of_a_line_in_one_width() {
+        let mut fonts = Fonts::new(TextOptions::default(), definitions());
+        let mut view = fonts.with_pixels_per_point(1.0);
+        let font = FontId::new(12.0, FontFamily::Name(MONO.into()));
+        let width = view.glyph_width(&font, '0');
+        for c in "il MW.[]: ×…Жщłż".chars() {
+            assert_eq!(view.glyph_width(&font, c), width, "{c}");
         }
     }
 

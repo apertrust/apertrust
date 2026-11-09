@@ -292,7 +292,7 @@ impl About {
             .auto_shrink([false, true]);
         quiet_scroll(ui, area, |ui| match page {
             Page::Licence => {
-                // Its line breaks kept, in the body font: the interface has no monospace.
+                // Its line breaks kept, in the body font: monospace is the log window's alone.
                 ui.label(egui::RichText::new(LICENCE).color(t.colors.text));
             }
             _ => {

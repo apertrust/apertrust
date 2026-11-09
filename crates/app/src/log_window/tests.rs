@@ -378,6 +378,14 @@ fn the_saved_log_is_named_by_the_session_s_start_in_the_last_folder_or_downloads
 // How it looks.
 
 #[test]
+fn the_domain_column_holds_the_longest_domain() {
+    for domain in apertrust_base::log::DOMAINS {
+        let bracket = format!("[{}]", domain.name);
+        assert!(bracket.chars().count() <= DOMAIN, "{bracket}");
+    }
+}
+
+#[test]
 fn the_log_window_in_the_dark_theme() {
     let domains = [
         Domain::GPU,
