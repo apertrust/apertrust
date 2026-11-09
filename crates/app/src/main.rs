@@ -1105,6 +1105,17 @@ const TOP_PANEL: [(TopPanelAction, ActionId); 9] = [
     (TopPanelAction::ApplyEdit, ActionId::APPLY_EDIT),
 ];
 
+/// The central bar's zoom menu entries that are actions too, whose keys they show.
+const ZOOM_MENU: [(CentralBarAction, ActionId); 4] = [
+    (CentralBarAction::Zoom(Zoom::Fit), ActionId::ZOOM_FIT),
+    (
+        CentralBarAction::Zoom(Zoom::Percent(100.0)),
+        ActionId::ZOOM_100,
+    ),
+    (CentralBarAction::ZoomIn, ActionId::ZOOM_IN),
+    (CentralBarAction::ZoomOut, ActionId::ZOOM_OUT),
+];
+
 /// The shell's own state (`docs/gui.md`, A frame), part of it kept in settings.
 struct Shell {
     view: View,
@@ -2569,9 +2580,9 @@ impl App {
     ) -> (egui::Rect, Option<ActionId>) {
         let t = theme(ui.ctx());
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-        // The photo's slot, everything under the central bar, first: the bar's scale
-        // follows from the size the engine is asked for. The photo and its caption are one
-        // block in it, inside the margin (`PhotoFrame`, `docs/gui.md`, The photo frame).
+        // The photo's slot, everything under the central bar, first. The photo and its
+        // caption are one block in it, inside the margin (`PhotoFrame`, `docs/gui.md`, The
+        // photo frame).
         let top = ui.cursor().min;
         let rest = ui.available_rect_before_wrap();
         let slot = egui::Rect::from_min_max(
@@ -2611,30 +2622,29 @@ impl App {
             PhotoState::Open(photo) => Some(photo),
             _ => None,
         };
-        // The viewport only fits the photo for now: the scale shows, but cannot change.
-        // 100% is one photo pixel per physical pixel, as the frame is drawn.
-        // As shown: while the window resizes, at the size the next frame will have.
-        let fit = match (photo, &self.mirror.frame) {
-            (Some(_), Some(_)) => {
-                let values = &self.mirror.values;
-                let (width, _) = values.viewport_size(self.bounds.latest());
-                100.0 * f64::from(width) / f64::from(values.extent[0].max(1))
-            }
-            _ => 100.0,
-        };
         let layer = tr(ui.ctx(), "layer-image");
-        let zoom = Zoom {
-            fit,
-            scale: None,
-            enabled: false,
-        };
         let open = photo.is_some();
-        let bar = CentralBar::new(&layer, zoom).toggles(
-            Toggle::new(false, false),
-            Toggle::new(self.shell.proof_margin, open),
-            Toggle::new(false, false),
-            Toggle::new(self.shell.guides, open),
-        );
+        // The zoom menu's entries with the keys of the actions that do the same.
+        let words = translator(ui.ctx());
+        let keys: Vec<(CentralBarAction, String)> = ZOOM_MENU
+            .iter()
+            .filter_map(|(entry, id)| {
+                Some((*entry, self.shell.keymap.tip(*id, ui.ctx().os(), &words)?))
+            })
+            .collect();
+        // The viewport only fits the photo for now: the zoom shows Fit, and its menu
+        // offers Fit alone, which it already is.
+        let mut bar = CentralBar::new(&layer, Zoom::Fit)
+            .toggles(
+                Toggle::new(false, false),
+                Toggle::new(self.shell.proof_margin, open),
+                Toggle::new(false, false),
+                Toggle::new(self.shell.guides, open),
+            )
+            .zoom_enabled(open);
+        for (entry, keys) in &keys {
+            bar = bar.shortcut(*entry, keys);
+        }
         match bar.show(ui) {
             // The area was laid out before the bar, so the margin shows from the next frame.
             Some(CentralBarAction::ProofMargin) => {
@@ -3368,11 +3378,6 @@ impl Bounds {
         let at = self.resized?;
         self.held
             .map(|_| RESIZE_SETTLED.saturating_sub(now.duration_since(at)))
-    }
-
-    /// The size the photo area has now, held or sent.
-    fn latest(&self) -> (u32, u32) {
-        self.held.unwrap_or(self.sent)
     }
 }
 
@@ -5862,7 +5867,6 @@ mod tests {
         assert_eq!(bounds.update((820, 610), true, at(16)), None);
         assert_eq!(bounds.update((820, 610), false, at(40)), None);
         assert_eq!(bounds.update((840, 620), true, at(60)), None);
-        assert_eq!(bounds.latest(), (840, 620));
         assert_eq!(
             bounds.wait(at(100)),
             Some(RESIZE_SETTLED - std::time::Duration::from_millis(40))
@@ -8493,6 +8497,21 @@ mod tests {
     }
 
     #[test]
+    fn the_zoom_menu_shows_the_keys_of_its_entries_actions() {
+        let tr = Translator::new(Locale::EnGb);
+        for os in [OperatingSystem::Mac, OperatingSystem::Nix] {
+            let keymap = Keymap::defaults(os);
+            let keys: Vec<_> = ZOOM_MENU
+                .iter()
+                .map(|(_, id)| keymap.tip(*id, os, &tr))
+                .collect();
+            // Z for 100%; Ctrl+0, Ctrl+= and Ctrl+− stay the interface's size's until the
+            // viewport can zoom.
+            assert_eq!(keys, [None, Some("Z".to_owned()), None, None], "{os:?}");
+        }
+    }
+
+    #[test]
     fn the_menu_shows_each_item_as_the_registry_has_it() {
         let mut harness = bench(OperatingSystem::Nix);
         harness.run();
@@ -8519,7 +8538,16 @@ mod tests {
             menu_line(&harness, check, "Full screen"),
             (true, keys("F11"), Some(Toggled::False))
         );
-        // Sort By first, its checks the grid panel's sort, resting with no photos shown.
+        // The photo's zoom first, declared but not built: disabled, with its keys.
+        assert_eq!(menu_line(&harness, item, "Zoom in"), (false, None, None));
+        assert_eq!(
+            menu_line(&harness, item, "Zoom to 100%"),
+            (false, keys("Z"), None)
+        );
+        // Then Sort By, its checks the grid panel's sort, resting with no photos shown.
+        for _ in 0..4 {
+            harness.key_press(Key::ArrowDown);
+        }
         harness.key_press(Key::ArrowRight);
         harness.run();
         assert!(menu_open(&harness, "Sort By"));

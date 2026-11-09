@@ -354,7 +354,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 
 The engine's photo is not rendered for each step of a resize: the app holds the size it sends until the window has kept its size for 150 ms (`Bounds`, decision 18), since a render each step could not keep up. It holds it the same way while the side panel's edge moves, dragged or held under a key ([The side panel](#the-side-panel)).
 
-- **Meanwhile the last frame is shown scaled,** bilinearly, to the size the next will have (`Values::viewport_size`, the photo as its edit shows it, turned where its orientation turns it), so the photo follows the window and the sharp frame then takes its place with nothing moving. The central bar's scale follows the size shown.
+- **Meanwhile the last frame is shown scaled,** bilinearly, to the size the next will have (`Values::viewport_size`, the photo as its edit shows it, turned where its orientation turns it), so the photo follows the window and the sharp frame then takes its place with nothing moving.
 - **The submit gate.** Each step reconfigures the window's surface, which wgpu-core 30 fails, with a panic, should another thread submit meanwhile. What is guaranteed (decision 18): no submission of the engine's overlaps a reconfigure of the window's surface, on any platform, the one eframe makes at the first event after a resize included. Every reconfigure is inside an eframe callback, and the app holds the engine's submit gate round each (`Gated`).
 - **What is not guaranteed:** the holds take turns in the order asked (`SubmitGate`), so each thread waits for the other.
   - A submission of the engine's waits for the eframe callback under way, however long it runs. A loop of its own inside a callback, a modal one included, would stop the engine's frames until it returned, so such loops run from the run loop, outside eframe's callbacks, as the Mac's popups do (decision 40).
@@ -644,10 +644,10 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Photo, checked when shown | `layout-photo` | — (E is left free) | Declared as the Edit view's action, `view-edit`, with E, to be renamed and lose its key; in the menu with the Map, once there are two layouts |
 | Map, checked when shown; chosen again, back to Photo | `layout-map` | Shift+M | New, with the Map and its central-bar toggle, after Phase 5 |
 | — | | | |
-| Zoom In | `zoom-in` | Ctrl+= (or Ctrl++) | New, Phase 2, with the scale's zoom |
-| Zoom Out | `zoom-out` | Ctrl+− | New, Phase 2 |
-| Zoom to Fit, checked while fitted | `zoom-fit` | Ctrl+0 | New, Phase 2 |
-| Zoom to 100%, checked at 100%; chosen again, back to Fit | `zoom-100` | Z | New, Phase 2 |
+| Zoom In | `zoom-in` | Ctrl+= (or Ctrl++) | Declared, drawn disabled until the viewport zooms, and in the central bar's zoom menu; no key until then, while Interface Size keeps Ctrl+= |
+| Zoom Out | `zoom-out` | Ctrl+− | As Zoom In, Interface Size keeping Ctrl+− |
+| Zoom to Fit, checked while fitted | `zoom-fit` | Ctrl+0 | As Zoom In, Interface Size keeping Ctrl+0 |
+| Zoom to 100%, checked at 100%; chosen again, back to Fit | `zoom-100` | Z | Declared with Z, drawn disabled until the viewport zooms, and in the central bar's zoom menu |
 | — | | | |
 | Before and After | `before-after` | Chosen with Compare; `\` is kept free for it but needs AltGr on German and French keyboards | New, Phase 3 |
 | Clipping Warnings | `clipping` | J | New, Phase 2, with the clipping overlays (step 8) |
@@ -864,7 +864,7 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the side panel's tabs; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; Auto › Exposure, drawn disabled; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
 | Later in Phase 2 | Open… (Open Image… becoming it), Open Recent, Close and Show in Folder, with folder mode and the start window; Library, with its tab (decision 37); Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
@@ -1978,7 +1978,7 @@ Built. The surround behind the photo is one of six neutral greys (`Background`),
 
 The thin bar along the central panel's top, `CentralBar` in the code. Up to the Map toggle it is the same in every layout, the photo's toggles and the Map toggle staying where they are; after it, it is the layout's. Its parts in Photo are built; the Map toggle and Guides' own icon are not.
 
-- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the scale. With more than one photo selected, the count, "12 selected", stands before the scale.
+- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). With more than one photo selected, the count, "12 selected", stands before the zoom.
   - **Show all selected photos:** on, Photo shows the selected photos side by side; off, the active photo alone ([The central panel's layouts](#the-central-panels-layouts)). On by default. It is enabled whenever a photo is active, since it sets what Photo does once several are selected; View › Show All Selected is the same toggle.
   - **Guides,** the composition guides drawn over the photo in the `guides` token. Its message is `photo-guides`, and its action `guides` (View › Guides) comes with the menus. It is to take an icon of its own, thirds over a frame; until then it shows the icon `grid`. Which guides it draws is chosen with Crop's composition guides once Crop exists.
   - **The values under the cursor:** four numbers 0–255, with no swatch. Red, green and blue each in its channel's colour token and grey in the text colour, with no letters; their full names for screen readers.
@@ -2004,6 +2004,29 @@ A small icon toggle immediately right of Guides that shows the map in the centra
 - **Undo:** none; a layout is interface state, not a history step, as the menus' rules have it ([Rules](#rules)).
 - **What a script sees:** nothing; the layout is interface state.
 - **When:** with the Map, after Phase 5. Until then Photo is the only layout and the bar has no Map toggle, since a choice of one is no choice.
+
+#### The zoom
+
+One button at the bar's end, `CentralBar`'s zoom, showing the scale and a 10-point chevron: "Small", "Fit", "Fill" or a percentage rounded to a whole number, such as "100%" or "137%". It is the bar's height and 64 points wide or more, as its words need, the scale and the chevron at its end; `hover` behind it under the pointer and while its menu is open.
+
+- **Its menu** opens under it through the popup service, as the other pull-downs do: native on the Mac, drawn elsewhere ([Popups](#popups), decision 40). Its entries are darktable's zoom menu (`src/libs/navigation.c`), then the two steps:
+  - Small (half of Fit), Fit, Fill;
+  - a separator;
+  - 50%, 100%, 200%, 400%, 800%, 1600%;
+  - a separator;
+  - Zoom in, Zoom out.
+
+  The scale shown is checked; a scale between them checks none. Each entry shows its action's keys from the keymap, as a menu item does: Z for 100% (`zoom-100`); Fit, Zoom in and Zoom out show Ctrl+0, Ctrl+= and Ctrl+− once the interface's size gives those keys up ([the default keyboard map](#the-default-keyboard-map)). Zoom in is disabled at 1600% and Zoom out at Small.
+- **What it reports:** `CentralBarAction::Zoom` with a `Zoom` (Small, Fit, Fill or a percentage), or `ZoomIn` and `ZoomOut`, which the app takes along the menu's list.
+- **While the viewport can only fit,** as now: it shows Fit, every entry but Fit is disabled, and its tooltip says zoom comes with the 100% view. With no photo shown it is disabled.
+- **Tooltip:** "Zoom: pinch or Ctrl+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways", Cmd on the Mac. At 100% it starts "At 100% the screen shows exactly what the export will be."
+- **Focus and screen readers:** a button with a menu named "Zoom", its value the scale. Enter, Space or ↓ opens the menu; the arrows move, Enter chooses, and Escape closes it and gives the focus back to the button.
+- **The gestures,** planned, built with the zoom (the rest of step 8):
+  - a pinch, or Ctrl+scroll (Cmd+scroll on the Mac), zooms about the pointer;
+  - a plain scroll moves a zoomed photo, and Shift+scroll moves it sideways;
+  - a drag moves it too;
+  - at Fit, scrolling does nothing;
+  - Zoom in and Zoom out step along the menu's list.
 
 ### The caption under the photo
 
@@ -2886,8 +2909,8 @@ Ctrl means Cmd on macOS.
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a module's section too; rendering the photo without that module waits for a session command that leaves one module out of the render |
 | View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
 | View | Extend the selection | Shift with the arrows, in the grid panel | Phase 3, with selecting several photos |
-| View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++), Ctrl+−; Ctrl+0 fits | Not built: the scale's zoom comes with the viewport's 100% view; at the point under the pointer when it is over the photo. Every cell together with several shown |
-| View | Zoom the photo to 100%, and back to Fit | Z | Not built, as above; in Photo only |
+| View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++), Ctrl+−; Ctrl+0 fits | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. Every cell together with several shown |
+| View | Zoom the photo to 100%, and back to Fit | Z | Declared with Z, not yet available, as above; in Photo only |
 | View | Search the grid panel by file name | Ctrl+F, from a value field too, which does not keep it | Planned: View › Search Photos… alone ([The grid bar](#the-grid-bar)) |
 | View | The grid panel's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the grid bar's Sort, Labels and Zoom, its options menu and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the grid bar; Sort by Rating in Phase 3 |
 | View | Select every photo, or none | Ctrl+A, Ctrl+Shift+A | Phase 3; Ctrl+A is a focused field's own |

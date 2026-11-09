@@ -258,6 +258,13 @@ pub static MENUS: [Menu; 7] = [
         role: Role::Plain,
         on: Platforms::All,
         groups: &[
+            // The photo's zoom, which the central bar's zoom menu offers too.
+            &[
+                item(ActionId::ZOOM_IN),
+                item(ActionId::ZOOM_OUT),
+                item(ActionId::ZOOM_FIT),
+                item(ActionId::ZOOM_100),
+            ],
             // The grid bar's menus (`docs/gui.md`, The grid bar).
             &[
                 Entry::Submenu(&SORT_BY),

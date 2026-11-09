@@ -819,6 +819,8 @@ mod tests {
                 // The log window's counts of lines.
                 args.set("kept", 1284);
                 args.set("shown", 1107);
+                // The zoom's tooltip: the pointer's modifier.
+                args.set("command", "Ctrl");
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }
