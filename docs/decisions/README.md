@@ -46,7 +46,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Tone mapping | One tone mapper on the background per edit, a module of its own: AgX now, sigmoid and filmic rgb to come; a layer's own tone mapper replacing it within the layer's mask, planned with layers (33) | A fixed AgX; stacked tone mappers |
 | Layers | Masked module instances at their pipeline positions, in a fixed order (34, Phase 4) | Compositing at the end of the pipe |
 | UI toolkit | egui, one interface for the desktop and a desktop browser (35) | Iced, Slint, GPUI, Tauri with web panels |
-| Design system | `apertrust-ui`: tokens and themes in TOML, IBM Plex Sans, Fluent and ICU4X; British and American English, Ukrainian and Polish; AccessKit on (36) | egui's default look; gettext |
+| Design system | `apertrust-ui`: tokens and themes in TOML, IBM Plex Sans, Fluent and ICU4X; British and American English, Ukrainian and Polish; AccessKit on (36); the slider's marker a setting, Triangle, Circle or Square, Square by default, whole at the track's ends (75) | egui's default look; gettext; darktable's triangle alone, cut off at the ends |
 | One view | No separate views: the Library tab chooses photos, the centre shows the Photo layout and later Map, the grid panel always shown (37) | darktable's views; a Grid layout |
 | Side panel tabs | Library, Base, Colour, Correct, Effect and History: darktable's scene-referred groups between Apertrust's own two (38) | A quick access panel; an active-modules tab |
 | Window frame and menus | One top bar from the window's top edge; the Mac's native menu bar through muda; one menu button, ☰, on Windows and Linux (39) | The system's title bar above the top bar; muda's Win32 menu bar |
@@ -167,6 +167,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0041](0041-dialogs-as-native-modal-windows.md) | Dialogs as native modal windows |
 | [0069](0069-dialogs-on-linux-framed-by-the-host.md) | Dialogs on Linux, framed by the host |
 | [0042](0042-numbers-shown-typed-and-stored.md) | Numbers shown, typed and stored |
+| [0075](0075-the-slider-marker-a-setting.md) | The slider's marker, a setting |
 
 ## Settings, folders and diagnostics
 
