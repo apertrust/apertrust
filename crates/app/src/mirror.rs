@@ -259,12 +259,13 @@ impl Mirror {
                     reactions.push(Reaction::Preview { through, preview });
                 }
             }
-            // The jobs' progress and the export's results are the spinner's and the jobs
-            // window's (decision 57).
-            event @ (Event::Job { .. } | Event::Export { .. }) => {
+            // The jobs' events are the spinner's and the jobs window's (decisions 57 and 72).
+            event @ Event::Job { .. } => {
                 let show = self.jobs.apply(&event);
                 jobs_reaction(show, &mut reactions);
             }
+            // The export's own record is for scripts and the CLI: no row is drawn from it.
+            Event::Export { .. } => {}
             // The folder took these in above.
             Event::Library(_) => {}
             // The session logs a failed save, a module left out and the scopes turned off as

@@ -24,11 +24,6 @@ job-export-cancelled =
        *[other] Export canceled: { $written } of { $total } photos exported
     }
 
-## An export's row in the jobs window
-
-activity-name-cancelled = Export canceled: { $done } of { $total } photos exported
-activity-title-cancelled = Export canceled
-
 ## The central bar
 
 photo-values-read = Red { $red }, green { $green }, blue { $blue }, gray { $grey }

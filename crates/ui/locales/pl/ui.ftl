@@ -147,7 +147,6 @@ job-import = Importowanie { $done } / { $total }
 job-delete = Usuwanie { $done } / { $total }
 job-thumbnails = Tworzenie miniatur
 job-folder = Odczytywanie { $folder }
-job-target-disk = plik na dysku
 
 job-export-photo =
     Eksportowanie { $number } / { $total } do { $storage ->
@@ -201,56 +200,12 @@ job-cause-folder = nie można utworzyć folderu ani zapisać w nim
 job-cause-write = nie udało się zapisać pliku
 job-cause-engine = silnik nieoczekiwanie się zatrzymał
 
-## Wiersz eksportu w oknie zadań: szczegóły i przyciski
+## Wiersz zadania w oknie zadań: wiersze i przyciski
 
-activity-name-finished =
-    { $total ->
-        [1] Eksport zakończony: wyeksportowano 1 zdjęcie
-        [few] Eksport zakończony: wyeksportowano { $total } zdjęcia
-        [many] Eksport zakończony: wyeksportowano { $total } zdjęć
-       *[other] Eksport zakończony: wyeksportowano { $total } zdjęcia
-    }
-activity-name-failed =
-    { $total ->
-        [1] Eksport nie powiódł się
-       *[other] Eksport zakończony, błędów: { $failed }. Wyeksportowano { $done } z { $total } zdjęć
-    }
-activity-name-cancelled = Eksport anulowany. Wyeksportowano { $done } z { $total } zdjęć
-activity-title-running =
-    { $total ->
-        [1] Eksport 1 zdjęcia
-       *[other] Eksport zdjęć: { $total }
-    }
-activity-title-finished =
-    { $total ->
-        [1] Wyeksportowano 1 zdjęcie
-        [few] Wyeksportowano { $total } zdjęcia
-        [many] Wyeksportowano { $total } zdjęć
-       *[other] Wyeksportowano { $total } zdjęcia
-    }
-activity-title-failed =
-    { $total ->
-        [1] Nie udało się wyeksportować zdjęcia
-       *[other] Wyeksportowano { $done } z { $total } zdjęć
-    }
-activity-title-cancelled = Eksport anulowany
-activity-now =
-    { $total ->
-        [1] Eksportowanie: { $file }
-       *[other] Gotowe: { $done } z { $total } · teraz { $file }
-    }
-activity-between = Gotowe: { $done } z { $total }
 activity-folder = Folder: { $folder }
 activity-failure = { $photo }: nie udało się zapisać { $file }: { $cause }.
 activity-failure-photo = { $photo }: { $cause }.
 activity-failure-cause = { $cause }.
-activity-cancelled-detail =
-    { $done ->
-        [0] Przed zatrzymaniem nic nie wyeksportowano.
-        [1] Przed zatrzymaniem wyeksportowano 1 z { $total } zdjęć; zostaje.
-       *[other] Przed zatrzymaniem wyeksportowano { $done } z { $total } zdjęć; zostają.
-    }
-activity-queued = Następne w kolejce: { photo-count }, do folderu { $folder }
 activity-show-finder = Pokaż w Finderze
 activity-show-explorer = Pokaż w Eksploratorze
 activity-show-files = Pokaż w Plikach

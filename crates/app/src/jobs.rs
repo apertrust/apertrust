@@ -14,37 +14,37 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The app's jobs (`docs/gui.md`, The jobs window; decision 57): the mirror of what the
-//! session reports of them, the window that shows it, and what the window's buttons do.
+//! The app's jobs (`docs/gui.md`, The jobs window; decisions 57 and 72): the mirror of what
+//! the session reports of them, the window that shows it, and what the window's buttons do.
 //!
-//! - **The mirror** ([`Mirror`]) folds the session's `Event::Job` and `Event::Export` into
-//!   the design system's [`Job`] rows, as the app's mirror (`mirror.rs`, decision 59's
-//!   reducer) takes the events in. It starts empty and holds only the jobs
-//!   this run's events have named. An export keeps the request that started it, so Try
-//!   again can send the photos that did not get written, and what each photo became; the
-//!   failure's cause stays the engine's code until a row is drawn, when Fluent turns it into
-//!   words in the language then.
-//! - **When the window opens itself** is [`Mirror::apply`]'s answer: only for a job the user
-//!   started, one of darktable's user queues (`UserForeground`, `UserExport`, and
-//!   `UserBackground` when a command of the user's started it). A system job turns the
-//!   spinner and shows in the window, but never opens it.
+//! - **The mirror** ([`Mirror`]) folds the session's `Event::Job` into the design system's
+//!   [`Job`] rows, as the app's mirror (`mirror.rs`, decision 59's reducer) takes the events
+//!   in: each event sets its part of its job's row, with no code for any kind of job
+//!   (decision 72). It starts empty and holds only the jobs this run's events have named.
+//!   A failure's cause stays the job's code until a row is drawn, when Fluent turns it
+//!   into words in the language then.
+//! - **When the window opens itself** is [`Mirror::apply`]'s answer: only for a job added
+//!   to one of darktable's user queues, `UserForeground` or `UserExport`, whose `Added`
+//!   names a command this app sent. Every other job turns the spinner and shows in the
+//!   window, but never opens it.
 //! - **The window** ([`Window`]) is the content of a window of the dialog host, modeless and
 //!   beside the main window, whose rows `Jobs::window` draws; it scrolls when they are too
 //!   many to show. Closing it stops no job.
-//! - **What its buttons do** is the app's: Cancel sends `CancelJob`, Dismiss and Try again
-//!   change the mirror (Try again also sends the export), and Show in Finder reveals the
-//!   first file written, or the folder, through the platform ([`reveal`]).
+//! - **What its buttons do** is the app's: Cancel sends `CancelJob`, Dismiss changes the
+//!   mirror, and Show in Finder reveals the job's destination through the platform
+//!   ([`reveal`]), a file selected in its folder. The rows keep a job's retry offer, but
+//!   the window draws no Try again until the session takes `Command::RetryJob` (decision
+//!   72's step 6).
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use apertrust_engine::jobs::{
-    Argument, Failure as JobFailure, JobEvent, JobId, Message, Progress, Queue, State,
+    Argument, Destination, Failure, JobEvent, JobId, Message, Offer, Progress, Queue, State,
 };
-use apertrust_engine::session::{Command, Event, ExportStatus, Failure, PhotoResult};
-use apertrust_export::{ExportSettings, Places};
+use apertrust_engine::session::{Command, Event};
 use apertrust_ui::components::{
-    ActivityAction, ExportDetails, ExportFailure, FileManager, Job, JobMessage, JobPhase, Jobs,
-    quiet_scroll,
+    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, quiet_scroll,
 };
 use apertrust_ui::{Theme, Translator, theme, tr};
 use eframe::egui;
@@ -53,63 +53,25 @@ use eframe::egui::os::OperatingSystem;
 use crate::dialog_host::{AppDialogs, Asks, Dialog, Form, Keys, Look, Output};
 use crate::settings::Position;
 
-/// The exports' request: what an export job was sent, to send the photos it did not write
-/// again with the same settings.
-#[derive(Clone, Debug, PartialEq)]
-struct Request {
-    photos: Vec<PathBuf>,
-    settings: ExportSettings,
-    places: Places,
-}
-
-/// An export the app sent, until the session adds its job.
-#[derive(Debug)]
-struct Sent {
-    /// The number [`Session::send`](apertrust_engine::session::Session::send) gave it.
-    command: u64,
-    request: Request,
-    /// The job whose row this export replaces: the failed one it tries again.
-    retry_of: Option<u64>,
-}
-
-/// What became of one photo of an export.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Photo {
-    /// Not reached yet, or never.
-    Waiting,
-    Written,
-    /// Left out as On conflict says.
-    Skipped,
-    Failed,
-}
-
-/// What an export row keeps beyond any job's.
-#[derive(Debug)]
-struct ExportRow {
-    request: Request,
-    photos: Vec<Photo>,
-    /// The photo under way.
-    current: Option<usize>,
-    /// The first file written or left, which Show in Finder reveals.
-    first_file: Option<PathBuf>,
-    /// The first photo's failure.
-    failure: Option<(usize, Failure)>,
-}
-
-/// One job as the session reported it.
+/// One job's row, each part as the job's events last set it.
 #[derive(Debug)]
 struct Row {
     id: JobId,
-    phase: JobPhase,
-    message: Message,
-    fraction: f32,
-    cancellable: bool,
-    /// Whether the user started it, as darktable's user queues have it: quitting asks first
-    /// while one runs.
+    kind: &'static str,
+    /// Whether it is on one of darktable's user queues, `UserForeground` or `UserExport`:
+    /// quitting asks first while one runs.
     user: bool,
-    /// How it ended, if its body failed.
-    failure: Option<JobFailure>,
-    export: Option<ExportRow>,
+    phase: JobPhase,
+    title: Message,
+    progress: Progress,
+    cancellable: bool,
+    /// The line under its bar, none once it has ended.
+    detail: Option<Message>,
+    destination: Option<Destination>,
+    outcome: Option<Message>,
+    failure: Option<Failure>,
+    ended_at: Option<SystemTime>,
+    offers: Vec<Offer>,
 }
 
 /// What a session event asks of the jobs window, the larger the more.
@@ -146,7 +108,9 @@ impl Running {
 #[derive(Debug, Default)]
 pub struct Mirror {
     rows: Vec<Row>,
-    sent: Vec<Sent>,
+    /// The commands the app sent that start a job of the user's, by their numbers, until
+    /// the job's `Added` names them: quitting waits for them.
+    starting: Vec<u64>,
     /// The person's home, which folders are shown relative to as `~`.
     home: Option<PathBuf>,
 }
@@ -156,11 +120,8 @@ pub struct Mirror {
 pub enum Do {
     /// Nothing: the job is gone, or there is nothing to do for it.
     Nothing,
-    /// Send the session a command; `retry_of` names the failed export it tries again.
-    Send {
-        command: Command,
-        retry_of: Option<u64>,
-    },
+    /// Send the session a command.
+    Send(Command),
     /// Show something in the platform's file manager.
     Reveal(Reveal),
     /// The mirror changed: the window shows it.
@@ -180,57 +141,39 @@ impl Mirror {
     pub fn new(home: Option<PathBuf>) -> Mirror {
         Mirror {
             rows: Vec::new(),
-            sent: Vec::new(),
+            starting: Vec::new(),
             home,
         }
     }
 
-    /// Notes a command the app sent, numbered `number`: an export waits for its job to be
-    /// added, so its row knows what to send again. `retry_of` is the failed job it tries
-    /// again, whose row it takes the place of.
-    pub fn sent(&mut self, number: u64, command: &Command, retry_of: Option<u64>) {
-        if let Command::Export {
-            photos,
-            settings,
-            places,
-        } = command
-        {
-            self.sent.push(Sent {
-                command: number,
-                request: Request {
-                    photos: photos.clone(),
-                    settings: settings.clone(),
-                    places: places.clone(),
-                },
-                retry_of,
-            });
-        }
+    /// Notes a command the app sent, numbered `number`, that starts a job of the user's,
+    /// such as an export: until its job is added it has no number to cancel, so quitting
+    /// waits for it.
+    pub fn starting(&mut self, number: u64) {
+        self.starting.push(number);
     }
 
     /// Folds `event` in, and says what the window is to do about it.
     pub fn apply(&mut self, event: &Event) -> Show {
         match event {
             Event::Job { event, command } => self.job(event, *command),
-            Event::Export { job, status } => self.export(*job, status),
             _ => Show::Nothing,
         }
     }
 
     /// The engine thread has ended, by a panic or by stopping: no job it ran will report
-    /// again. The exports sent and not yet added are forgotten, and every row still queued
-    /// or running ends as failed with the engine's stop as its cause, so that quitting waits
-    /// for nothing.
+    /// again. The commands sent and not yet added are forgotten, and every row still queued
+    /// or running ends as failed with the engine's stop as its cause, so that quitting
+    /// waits for nothing.
     pub fn engine_stopped(&mut self) -> Show {
-        let mut changed = !self.sent.is_empty();
-        self.sent.clear();
+        let mut changed = !self.starting.is_empty();
+        self.starting.clear();
         for row in self.rows.iter_mut().filter(|row| row.phase.active()) {
             changed = true;
             row.phase = JobPhase::Failed;
             row.cancellable = false;
-            row.failure = Some(JobFailure::new("engine", "the engine stopped"));
-            if let Some(export) = row.export.as_mut() {
-                export.current = None;
-            }
+            row.detail = None;
+            row.failure = Some(Failure::new("engine", "the engine stopped"));
         }
         if changed { Show::Update } else { Show::Nothing }
     }
@@ -239,62 +182,64 @@ impl Mirror {
         self.rows.iter_mut().find(|row| row.id == job)
     }
 
+    /// Sets the part of its job's row that `event` carries.
     fn job(&mut self, event: &JobEvent, command: Option<u64>) -> Show {
         match event {
             JobEvent::Added {
                 job,
+                kind,
                 queue,
                 title,
                 cancellable,
-                ..
+                destination,
+                detail,
+                progress,
+                retries,
             } => {
-                let sent = command.and_then(|number| {
-                    let at = self.sent.iter().position(|sent| sent.command == number)?;
-                    Some(self.sent.remove(at))
-                });
-                // A row under this id is the same job's, or a retry's that reuses it.
-                self.rows.retain(|row| row.id != *job);
-                if let Some(old) = sent.as_ref().and_then(|sent| sent.retry_of) {
-                    self.rows.retain(|row| row.id.get() != old);
+                if let Some(number) = command {
+                    self.starting.retain(|starting| *starting != number);
                 }
-                let export = sent.map(|sent| ExportRow {
-                    photos: vec![Photo::Waiting; sent.request.photos.len()],
-                    request: sent.request,
-                    current: None,
-                    first_file: None,
-                    failure: None,
-                });
-                // A job the user started: darktable's user queues, and a background one a
-                // command of the user's started, but not a folder's reading, which shows in
-                // the Library tab and the grid panel (the spinner turns, the window stays
-                // shut).
-                let user = match queue {
-                    Some(Queue::UserForeground | Queue::UserExport) => true,
-                    Some(Queue::UserBackground) => command.is_some() && title.id != "job-folder",
-                    _ => false,
-                };
+                // A row under this id is the same job's, or a retry's that reuses it; the
+                // job it tries again gives it its place.
+                self.rows
+                    .retain(|row| row.id != *job && Some(row.id) != *retries);
+                let user = matches!(queue, Some(Queue::UserForeground | Queue::UserExport));
                 self.rows.push(Row {
                     id: *job,
-                    phase: JobPhase::Queued,
-                    message: title.clone(),
-                    fraction: 0.0,
-                    cancellable: *cancellable,
+                    kind,
                     user,
+                    phase: JobPhase::Queued,
+                    title: title.clone(),
+                    progress: *progress,
+                    cancellable: *cancellable,
+                    detail: detail.clone(),
+                    destination: destination.clone(),
+                    outcome: None,
                     failure: None,
-                    export,
+                    ended_at: None,
+                    offers: Vec::new(),
                 });
-                if user { Show::Open } else { Show::Update }
+                // Only this app's commands open the window: another client's export shows
+                // in it, but never opens it.
+                if user && command.is_some() {
+                    Show::Open
+                } else {
+                    Show::Update
+                }
             }
             JobEvent::Progress { job, done, total } => self.update(*job, |row| {
-                let progress = Progress {
+                row.progress = Progress {
                     done: *done,
                     total: *total,
                 };
-                row.fraction = progress.fraction().unwrap_or(0.0) as f32;
             }),
-            JobEvent::Title { job, title } => self.update(*job, |row| row.message = title.clone()),
-            // The window draws neither yet (decision 72's steps 4 and 5).
-            JobEvent::Detail { .. } | JobEvent::Destination { .. } => Show::Nothing,
+            JobEvent::Title { job, title } => self.update(*job, |row| row.title = title.clone()),
+            JobEvent::Detail { job, detail } => {
+                self.update(*job, |row| row.detail = detail.clone())
+            }
+            JobEvent::Destination { job, destination } => {
+                self.update(*job, |row| row.destination = Some(destination.clone()))
+            }
             JobEvent::State { job, state } => self.update(*job, |row| match state {
                 State::Queued => row.phase = JobPhase::Queued,
                 State::Running => row.phase = JobPhase::Running,
@@ -305,8 +250,10 @@ impl Mirror {
             JobEvent::Ended {
                 job,
                 state,
+                outcome,
                 failure,
-                ..
+                at,
+                offers,
             } => {
                 if *state == State::Discarded {
                     // Dropped unrun: there is nothing to show of it.
@@ -319,23 +266,20 @@ impl Mirror {
                     };
                 }
                 self.update(*job, |row| {
-                    row.cancellable = false;
-                    row.failure = failure.clone();
-                    let photo_failed = row
-                        .export
-                        .as_ref()
-                        .is_some_and(|export| export.failure.is_some());
+                    // A job ends failed exactly when it carries a failure, cancelled or not
+                    // (decision 72).
                     row.phase = match state {
+                        _ if failure.is_some() => JobPhase::Failed,
                         State::Cancelled => JobPhase::Cancelled,
-                        _ if failure.is_some() || photo_failed => JobPhase::Failed,
-                        _ => {
-                            row.fraction = 1.0;
-                            JobPhase::Finished
-                        }
+                        _ => JobPhase::Finished,
                     };
-                    if let Some(export) = row.export.as_mut() {
-                        export.current = None;
-                    }
+                    row.cancellable = false;
+                    // An ended row has no detail line: its outcome says how it went.
+                    row.detail = None;
+                    row.outcome = outcome.clone();
+                    row.failure = failure.clone();
+                    row.ended_at = Some(*at);
+                    row.offers = offers.clone();
                 })
             }
         }
@@ -351,60 +295,17 @@ impl Mirror {
         }
     }
 
-    fn export(&mut self, job: JobId, status: &ExportStatus) -> Show {
-        self.update(job, |row| {
-            let Some(export) = row.export.as_mut() else {
-                return;
-            };
-            match status {
-                ExportStatus::Started { index, .. } => export.current = Some(*index),
-                ExportStatus::Done { index, result } => {
-                    export.current = None;
-                    let photo = match result {
-                        PhotoResult::Written { path, .. } => {
-                            export.first_file.get_or_insert_with(|| path.clone());
-                            Photo::Written
-                        }
-                        PhotoResult::Skipped { path, .. } => {
-                            export.first_file.get_or_insert_with(|| path.clone());
-                            Photo::Skipped
-                        }
-                        PhotoResult::Failed(failure) => {
-                            export
-                                .failure
-                                .get_or_insert_with(|| (*index, failure.clone()));
-                            Photo::Failed
-                        }
-                    };
-                    if let Some(slot) = export.photos.get_mut(*index) {
-                        *slot = photo;
-                    }
-                }
-                ExportStatus::Finished(_) => export.current = None,
-            }
-        })
-    }
-
     /// What a button of the window asks of the app: Cancel is the session's `CancelJob`;
-    /// Show in Finder reveals what the export wrote; Try again is the export of the photos
-    /// not written, which takes the failed row's place once its job is added; Dismiss takes
-    /// an ended row away.
+    /// Show in Finder reveals the job's destination; Dismiss takes an ended row away. Try
+    /// again asks nothing until the session takes `RetryJob` (decision 72's step 6).
     pub fn act(&mut self, action: ActivityAction) -> Do {
         match action {
             ActivityAction::Cancel(job) => match self.rows.iter().find(|r| r.id.get() == job) {
-                Some(row) => Do::Send {
-                    command: Command::CancelJob { job: row.id },
-                    retry_of: None,
-                },
+                Some(row) => Do::Send(Command::CancelJob { job: row.id }),
                 None => Do::Nothing,
             },
             ActivityAction::ShowFolder(job) => self.reveal(job).map_or(Do::Nothing, Do::Reveal),
-            ActivityAction::TryAgain(job) => {
-                self.retry(job).map_or(Do::Nothing, |command| Do::Send {
-                    command,
-                    retry_of: Some(job),
-                })
-            }
+            ActivityAction::TryAgain(_) => Do::Nothing,
             ActivityAction::Dismiss(job) => match self.dismiss(job) {
                 Show::Nothing => Do::Nothing,
                 _ => Do::Changed,
@@ -412,12 +313,12 @@ impl Mirror {
         }
     }
 
-    /// The jobs the user started that are queued or running, as quitting counts them. An
-    /// export sent and not yet added has no id to cancel, so it is waited for.
+    /// The jobs the user started that are queued or running, as quitting counts them. A
+    /// command sent and not yet added has no id to cancel, so it is waited for.
     pub fn running(&self) -> Running {
         let mut running = Running {
             stoppable: 0,
-            waiting: self.sent.len(),
+            waiting: self.starting.len(),
         };
         for row in self
             .rows
@@ -463,126 +364,43 @@ impl Mirror {
         }
     }
 
-    /// The export that tries a failed one again: the photos that were not written, with the
-    /// same settings, each photo's edit as it is when it is sent. None for a job that is
-    /// not a failed export, or that wrote every photo.
-    fn retry(&self, job: u64) -> Option<Command> {
-        let row = self.rows.iter().find(|row| row.id.get() == job)?;
-        let export = row.export.as_ref()?;
-        if row.phase != JobPhase::Failed {
-            return None;
-        }
-        let photos: Vec<PathBuf> = export
-            .request
-            .photos
-            .iter()
-            .zip(&export.photos)
-            .filter(|(_, photo)| matches!(photo, Photo::Waiting | Photo::Failed))
-            .map(|(path, _)| path.clone())
-            .collect();
-        (!photos.is_empty()).then(|| Command::Export {
-            photos,
-            settings: export.request.settings.clone(),
-            places: export.request.places.clone(),
-        })
-    }
-
-    /// What Show in Finder reveals for an export: the first file it wrote or left, or, with
-    /// none yet, the folder its path names where that names one.
+    /// What Show in Finder reveals: the job's destination, a file selected in its folder.
     fn reveal(&self, job: u64) -> Option<Reveal> {
-        let export = self
-            .rows
-            .iter()
-            .find(|row| row.id.get() == job)?
-            .export
-            .as_ref()?;
-        if let Some(file) = &export.first_file {
-            return Some(Reveal::File(file.clone()));
-        }
-        let folder = typed_folder(&export.request.settings.path)?;
-        (!folder.contains("$("))
-            .then(|| Reveal::Folder(expand_home(&folder, &export.request.places)))
+        let row = self.rows.iter().find(|row| row.id.get() == job)?;
+        Some(match row.destination.as_ref()? {
+            Destination::Folder(folder) => Reveal::Folder(folder.clone()),
+            Destination::File(file) => Reveal::File(file.clone()),
+        })
     }
 }
 
 impl Row {
     fn view(&self, words: &Translator, home: Option<&Path>) -> Job {
-        let job = |message| {
-            Job::new(self.id.get(), self.phase, message)
-                .fraction(self.fraction)
-                .cancellable(self.cancellable && self.phase.active())
-        };
-        match &self.export {
-            // An export's message is its counts, which change as photos are written.
-            Some(export) => {
-                let details = export.details(self, words, home);
-                let message = JobMessage::new("job-export")
-                    .number("done", details.done as f64)
-                    .number("total", details.total as f64)
-                    .text("target", words.text("job-target-disk"));
-                job(message).export(details)
-            }
-            None => {
-                let mut job = job(job_message(&self.message));
-                if let Some(failure) = &self.failure {
-                    job = job.error(failure_words(words, failure));
-                }
-                job
-            }
-        }
+        let fraction = self.progress.fraction().unwrap_or(0.0) as f32;
+        let mut job = Job::new(self.id.get(), self.phase, job_message(&self.title))
+            .kind(self.kind)
+            .fraction(fraction)
+            .cancellable(self.cancellable && self.phase.active())
+            .retry(self.offers.iter().any(|o| matches!(o, Offer::Retry { .. })));
+        job.detail = self.detail.as_ref().map(job_message);
+        job.destination = self.destination.as_ref().and_then(|destination| {
+            let folder = match destination {
+                Destination::Folder(folder) => folder.as_path(),
+                Destination::File(file) => file.parent()?,
+            };
+            Some(crate::export::shown(folder, home))
+        });
+        job.outcome = self.outcome.as_ref().map(job_message);
+        job.failure = self
+            .failure
+            .as_ref()
+            .map(|failure| failure_words(words, failure));
+        job.ended_at = self.ended_at;
+        job
     }
 }
 
-impl ExportRow {
-    fn details(&self, row: &Row, words: &Translator, home: Option<&Path>) -> ExportDetails {
-        let count = |wanted: fn(&Photo) -> bool| self.photos.iter().filter(|p| wanted(p)).count();
-        let folder = match &self.first_file {
-            Some(file) => file
-                .parent()
-                .map(|folder| crate::export::shown(folder, home)),
-            None => typed_folder(&self.request.settings.path),
-        };
-        let mut details = ExportDetails::new(
-            self.request.photos.len(),
-            folder.unwrap_or_else(|| self.request.settings.path.clone()),
-        );
-        details.done = count(|p| matches!(p, Photo::Written | Photo::Skipped));
-        details.failed = count(|p| *p == Photo::Failed);
-        details.current = self.current.map(|i| self.name(i));
-        details.failure = self.failure_words(row, words);
-        details
-    }
-
-    /// The raw's file name, `IMG_2047.ARW`.
-    fn name(&self, index: usize) -> String {
-        self.request
-            .photos
-            .get(index)
-            .map(|path| file_name(path))
-            .unwrap_or_default()
-    }
-
-    /// The failure to explain: the first photo's, else the job's own, such as a path that
-    /// is not valid.
-    fn failure_words(&self, row: &Row, words: &Translator) -> Option<ExportFailure> {
-        if let Some((index, failure)) = &self.failure {
-            return Some(ExportFailure {
-                photo: self.name(*index),
-                file: failure.file.as_deref().map(file_name).unwrap_or_default(),
-                cause: cause_words(words, failure.cause.id(), Some(&failure.message)),
-            });
-        }
-        let failure = row.failure.as_ref()?;
-        let name = |path: &Option<PathBuf>| path.as_deref().map(file_name).unwrap_or_default();
-        Some(ExportFailure {
-            photo: name(&failure.item),
-            file: name(&failure.file),
-            cause: failure_words(words, failure),
-        })
-    }
-}
-
-/// An engine message as the window's: the same id and arguments, a path as text.
+/// A job's message as the window's: the same id and arguments, a path as its file name.
 fn job_message(message: &Message) -> JobMessage {
     let mut out = JobMessage::new(&message.id);
     for (name, value) in &message.arguments {
@@ -595,20 +413,26 @@ fn job_message(message: &Message) -> JobMessage {
     out
 }
 
-/// The words for a failed job: its cause in Fluent, else the reason it gave.
-fn failure_words(words: &Translator, failure: &JobFailure) -> String {
-    cause_words(words, &failure.cause, Some(&failure.reason))
+/// A failure as the window words it: the item and file by their names, the cause in
+/// Fluent, else the reason the job gave.
+fn failure_words(words: &Translator, failure: &Failure) -> JobFailure {
+    let name = |path: &Option<PathBuf>| path.as_deref().map(file_name).unwrap_or_default();
+    JobFailure {
+        item: name(&failure.item),
+        file: name(&failure.file),
+        cause: cause_words(words, &failure.cause, &failure.reason),
+    }
 }
 
-/// A cause's words, `job-cause-<code>`, without a full stop; the engine's own `reason` for a
+/// A cause's words, `job-cause-<code>`, without a full stop; the job's own `reason` for a
 /// code this build has no words for.
-fn cause_words(words: &Translator, code: &str, reason: Option<&str>) -> String {
+fn cause_words(words: &Translator, code: &str, reason: &str) -> String {
     let id = format!("job-cause-{code}");
     let text = words.text(&id);
     if text != id {
         return text;
     }
-    reason.map_or(text, |reason| reason.trim_end_matches('.').to_owned())
+    reason.trim_end_matches('.').to_owned()
 }
 
 /// `path`'s last component, `IMG_2047.ARW`.
@@ -617,23 +441,6 @@ fn file_name(path: &Path) -> String {
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     )
-}
-
-/// The folder an export's path pattern names, as typed: the pattern without its last
-/// component, which names the file.
-fn typed_folder(pattern: &str) -> Option<String> {
-    let folder = Path::new(pattern).parent()?.to_str()?;
-    (!folder.is_empty()).then(|| folder.to_owned())
-}
-
-/// `folder` with a leading `~` the person's home, as darktable's paths have it.
-fn expand_home(folder: &str, places: &Places) -> PathBuf {
-    match (folder.strip_prefix('~'), &places.home) {
-        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
-            home.join(rest.trim_start_matches('/'))
-        }
-        _ => PathBuf::from(folder),
-    }
 }
 
 /// The program and arguments that show `what` in the platform's file manager.
@@ -791,9 +598,16 @@ impl Window {
         let area = egui::ScrollArea::vertical()
             .max_height(MAX_HEIGHT)
             .auto_shrink([false, true]);
-        let jobs = &self.jobs;
+        // Try again is not drawn until the session takes `RetryJob` (decision 72's step 6):
+        // the rows keep the offer, but the button would ask nothing.
+        let jobs: Vec<Job> = self
+            .jobs
+            .iter()
+            .cloned()
+            .map(|job| job.retry(false))
+            .collect();
         quiet_scroll(ui, area, |ui| {
-            Jobs::new(jobs).file_manager(FILE_MANAGER).window(ui)
+            Jobs::new(&jobs).file_manager(FILE_MANAGER).window(ui)
         })
     }
 }

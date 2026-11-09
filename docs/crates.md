@@ -539,10 +539,10 @@ File › Open Image… (`open`, Ctrl+O, first in File; `src/dialogs.rs`):
 
 `src/jobs.rs` (decision 57): a second modeless window, in a slot of its own beside the dialog's.
 
-- It opens from the top panel's spinner, and by itself for a job the user started (`Mirror::apply`'s `Show::Open`), never for a system job.
+- It opens from the top panel's spinner, and by itself for a job on `UserForeground` or `UserExport` whose `Added` names a command the app sent (`Mirror::apply`'s `Show::Open`), never for another job.
 - It is kept at `jobs_window.position`. Closing it stops no job.
-- It is fed by `App::receive`'s mirror of `Event::Job` and `Event::Export`; planned, a fold of `Event::Job` alone, with no code for any kind of job (decision 72).
-- Its buttons: Cancel (sent as `CancelJob`), Show in Finder (the first file written, or the folder, through the platform), Try again (the photos that were not written) and Dismiss. Planned: the ✕ to cancel, Show in Finder the job's destination, Try again sent as `RetryJob`, Dismiss on a failed row and Clear Finished for the rest.
+- It is fed by `App::receive`'s mirror, `jobs::Mirror`, a fold of `Event::Job` alone: each event sets its part of its job's row, with no code for any kind of job (decision 72). An export sent is noted by its number until its job is added (`Mirror::starting`), so quitting waits for it.
+- Its buttons: Cancel (sent as `CancelJob`), Show in Finder (the job's destination, a file selected in its folder, through the platform), and Dismiss; the rows keep a job's retry offer, but the window draws no Try again yet. Planned: the ✕ to cancel, Try again sent as `RetryJob`, Dismiss on a failed row and Clear Finished for the rest.
 
 ### The log window
 
@@ -706,7 +706,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 **The jobs** (decision 57), `Jobs` through `TopPanel::jobs`:
 
 - `spinner`: one icon button beside Saved while any job is shown, never one per job. It turns while a job is queued or running (still where the theme's motion is zero) and at rest shows the tick, or the warning sign where one failed; planned (decision 72), nothing at rest but the warning sign after a failure. It is named "Jobs", with the count in its value ("2 running"), sits in the Tab order, and is a polite live region speaking at a job's start and end only. It has no words, so it never folds. It reports `TopPanelAction::Jobs`.
-- `window`: the jobs window's content, as a function of `&mut Ui`, which the app hosts. One row per `Job`, newest first: its `JobMessage` translated (`job-…`), a bar, details, and the buttons its state allows. An export's `ExportDetails` has its lines and buttons. Cancel is only for a job that can be cancelled. It returns `ActivityAction`s. Planned (decision 72): every row drawn alike from the parts its job reports, `ExportDetails` gone, the look in [gui.md](gui.md#a-row-and-where-each-part-comes-from).
+- `window`: the jobs window's content, as a function of `&mut Ui`, which the app hosts. One row per `Job`, newest first, every row drawn alike from the parts its job reports (decision 72): its title translated (`job-…`), a bar while it runs, its detail, outcome, failure (`JobFailure`) and destination, and the buttons its state and parts allow. Cancel is only for a job that can be cancelled, in its kind's words. It returns `ActivityAction`s. Planned: the look in [gui.md](gui.md#a-row-and-where-each-part-comes-from).
 
 ### Popups
 
@@ -940,7 +940,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - Its five queues, and `jobs::schedule`'s pure `add` and `pick`: priorities with ageing, `SystemForeground`'s deduplicated stack of 30, one export at a time. Tables worked through darktable's code hold them.
 - `Job` (`dedup`, `progress`, and for its `Added` `destination`, `detail`, `total` and `retries`); `Context` (`cancelled`, `set_progress`, `set_title`, `set_detail`, `set_destination`, `set_outcome`, `offer`, `wait`); a `Message` id with arguments; `Progress` (done and an optional total), `Destination`, `Failure` (cause, item, file, reason) and `Offer` (decision 72).
 - `JobEvent`s, everything a job's row shows: the progress, title, detail and destination each at most every 0.5 s, the last of each before `Ended`, which carries the outcome, failure, time and offers; a failure or a panic (cause `panicked`) ends a job failed; 7 or 4 workers; `-d control`.
-- The engine's export reports its whole row through them. Planned (decision 72): the app's mirror as a fold of these events, and Try again ([roadmap.md](roadmap.md#the-jobs-window-and-the-job-api)).
+- The engine's export reports its whole row through them, and the app's mirror folds them into its rows. Planned (decision 72): Try again ([roadmap.md](roadmap.md#the-jobs-window-and-the-job-api)).
 - Tested with a counting job.
 
 ### Planned

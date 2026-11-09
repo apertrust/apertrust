@@ -27,10 +27,13 @@
 //!   asks for the jobs window.
 //! - **The window's content** ([`Jobs::window`]) is a function of a `Ui`, which the app's
 //!   dialog host draws in a window of its own: one row per job, newest first, each with its
-//!   message, a bar, its details and the buttons its state allows. An export's row keeps
-//!   the activity's details ("3 of 12 done · now IMG_2044.ARW", the folder, a failure's
-//!   photo, file and cause) and buttons (Show in Finder, Cancel export, Try again,
-//!   Dismiss); a queued job says so; a job that cannot be cancelled has no Cancel.
+//!   title, a bar while it runs, its lines and the buttons its state allows. Every job's
+//!   row is drawn alike from the parts it reported of itself (decision 72): the detail
+//!   under the bar ("3 of 12 done · now IMG_2044.ARW", or that it waits), the outcome once
+//!   it has ended, a failure's item, file and cause, and "To" its destination; Show in
+//!   Finder where it has a destination, Cancel where it can be cancelled ("Cancel export"
+//!   by its kind's words), Try again where it offers a retry, and Dismiss once it has
+//!   ended.
 //! - **Plain data in, actions out.** The caller passes the jobs as the app mirrors them from
 //!   the session's events and applies the [`ActivityAction`] it gets back; the component
 //!   knows no engine type, and keeps only what it last announced, in egui's memory. The
@@ -43,7 +46,7 @@
 
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, TAU};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use egui::accesskit::Live;
 use egui::epaint::text::LayoutJob;
@@ -66,14 +69,14 @@ pub enum JobPhase {
     Queued,
     Running,
     Finished,
-    /// Ended with an error, or an export with at least one photo not written.
+    /// Ended with a failure, cancelled or not.
     Failed,
     Cancelled,
 }
 
 impl JobPhase {
-    /// The word its messages carry (`jobs-live-<word>`, `activity-name-<word>`); a waiting
-    /// job has none of its own.
+    /// The word its messages carry (`jobs-<word>`, `jobs-live-<word>`); a waiting job has
+    /// none of its own.
     fn word(self) -> &'static str {
         match self {
             JobPhase::Queued | JobPhase::Running => "running",
@@ -135,88 +138,71 @@ impl JobMessage {
     }
 }
 
-/// Why a photo was not written, with the words the app made of the engine's error.
+/// Why a job failed, with the words the app made of its cause.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ExportFailure {
-    /// The photo, by its file name: `IMG_2047.ARW`. Empty for a failure of the whole
-    /// export, such as a path that is not valid.
-    pub photo: String,
+pub struct JobFailure {
+    /// The item it failed on, by its file name: `IMG_2047.ARW`. Empty for a failure of the
+    /// whole job, such as an export's path that is not valid.
+    pub item: String,
     /// The file that could not be written: `IMG_2047.jpg`. Empty where none was named, a
     /// raw that cannot be read.
     pub file: String,
-    /// The reason, translated and without a full stop: "the disk is full".
+    /// The cause, translated and without a full stop: "the disk is full".
     pub cause: String,
 }
 
-/// What an export's row adds to any job's: the photos, the folder and the failure.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ExportDetails {
-    /// The photos asked for.
-    pub total: usize,
-    /// The photos written.
-    pub done: usize,
-    /// The photos not written, once the job has ended.
-    pub failed: usize,
-    /// The photo being exported now, while it runs.
-    pub current: Option<String>,
-    /// Where the files go, as the app wants it read: `~/Pictures/apertrust_exported`.
-    pub folder: String,
-    /// The failure to explain, on a job that failed.
-    pub failure: Option<ExportFailure>,
-}
-
-impl ExportDetails {
-    /// An export with nothing written yet.
-    pub fn new(total: usize, folder: impl Into<String>) -> Self {
-        ExportDetails {
-            total,
-            done: 0,
-            failed: 0,
-            current: None,
-            folder: folder.into(),
-            failure: None,
-        }
-    }
-
-    fn args(&self) -> Args<'_> {
-        let mut args = Args::new();
-        args.set("done", self.done);
-        args.set("total", self.total);
-        args.set("failed", self.failed);
-        args.set("folder", self.folder.as_str());
-        args.set("file", self.current.as_deref().unwrap_or_default());
-        args
-    }
-}
-
-/// One job, as the window shows it: any job the session lists, an export among them.
+/// One job's row, as the window shows it: the parts the job reported of itself, the same
+/// for every kind of job.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Job {
     pub id: JobId,
+    /// What it does, as the session names it: `export`, `folder`. Its Cancel button says
+    /// its kind's words.
+    pub kind: String,
     pub phase: JobPhase,
-    pub message: JobMessage,
+    /// Its title, darktable's message: "Exporting 3 / 12 to file on disk".
+    pub title: JobMessage,
     /// How much is done, from 0 to 1.
     pub fraction: f32,
     /// Whether the job can be stopped; only a queued or running one shows Cancel.
     pub cancellable: bool,
-    /// Why a job failed, translated and without a full stop, for a job that is not an
-    /// export.
-    pub error: Option<String>,
-    /// Set for an export, whose row has the activity's details and buttons.
-    pub export: Option<ExportDetails>,
+    /// The line under its bar while it is queued or running: "3 of 12 done · now
+    /// IMG_2044.ARW".
+    pub detail: Option<JobMessage>,
+    /// Where its results go, as the app wants it read: `~/Pictures/apertrust_exported`.
+    /// Show in Finder reveals it.
+    pub destination: Option<String>,
+    /// How it ended, once it has: "11 of 12 photos exported".
+    pub outcome: Option<JobMessage>,
+    /// Why it failed, on a job that failed.
+    pub failure: Option<JobFailure>,
+    /// Whether it offers to be tried again, once it has ended.
+    pub retry: bool,
+    /// When it ended, by the session's clock.
+    pub ended_at: Option<SystemTime>,
 }
 
 impl Job {
-    pub fn new(id: JobId, phase: JobPhase, message: JobMessage) -> Self {
+    pub fn new(id: JobId, phase: JobPhase, title: JobMessage) -> Self {
         Job {
             id,
+            kind: String::new(),
             phase,
-            message,
+            title,
             fraction: 0.0,
             cancellable: false,
-            error: None,
-            export: None,
+            detail: None,
+            destination: None,
+            outcome: None,
+            failure: None,
+            retry: false,
+            ended_at: None,
         }
+    }
+
+    pub fn kind(mut self, kind: impl Into<String>) -> Self {
+        self.kind = kind.into();
+        self
     }
 
     pub fn fraction(mut self, fraction: f32) -> Self {
@@ -229,13 +215,33 @@ impl Job {
         self
     }
 
-    pub fn error(mut self, error: impl Into<String>) -> Self {
-        self.error = Some(error.into());
+    pub fn detail(mut self, detail: JobMessage) -> Self {
+        self.detail = Some(detail);
         self
     }
 
-    pub fn export(mut self, export: ExportDetails) -> Self {
-        self.export = Some(export);
+    pub fn destination(mut self, destination: impl Into<String>) -> Self {
+        self.destination = Some(destination.into());
+        self
+    }
+
+    pub fn outcome(mut self, outcome: JobMessage) -> Self {
+        self.outcome = Some(outcome);
+        self
+    }
+
+    pub fn failure(mut self, failure: JobFailure) -> Self {
+        self.failure = Some(failure);
+        self
+    }
+
+    pub fn retry(mut self, retry: bool) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    pub fn ended_at(mut self, at: SystemTime) -> Self {
+        self.ended_at = Some(at);
         self
     }
 }
@@ -250,9 +256,9 @@ pub enum FileManager {
     Files,
 }
 
-/// What the user asked of a job. The app does it: reveals the folder through the
-/// platform, asks the session to stop or to run the failed photos again, and forgets a
-/// job that is dismissed.
+/// What the user asked of a job. The app does it: reveals the destination through the
+/// platform, asks the session to stop the job or to try it again, and forgets a job that
+/// is dismissed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActivityAction {
     ShowFolder(JobId),
@@ -472,10 +478,10 @@ impl<'a> Jobs<'a> {
         action
     }
 
-    /// One job's row: a group named by its message.
+    /// One job's row: a group named by its title.
     fn row(&self, ui: &mut Ui, job: &Job, words: &Translator) -> Option<ActivityAction> {
         let t = theme(ui.ctx());
-        let title = job.message.translate(words);
+        let title = job.title.translate(words);
         let mut action = None;
         Frame::new()
             .fill(t.colors.raised)
@@ -512,8 +518,7 @@ impl<'a> Jobs<'a> {
 
     /// The buttons the job's state allows, at the row's end, in the order they are heard.
     fn buttons(&self, ui: &mut Ui, job: &Job, words: &Translator) -> Option<ActivityAction> {
-        let export = job.export.is_some();
-        let show = export.then(|| {
+        let show = job.destination.is_some().then(|| {
             (
                 words.text(match self.file_manager {
                     FileManager::Finder => "activity-show-finder",
@@ -525,18 +530,14 @@ impl<'a> Jobs<'a> {
             )
         });
         let cancel = job.cancellable.then(|| {
-            let (label, tip) = if export {
-                ("activity-cancel", "activity-cancel-tip")
-            } else {
-                ("jobs-cancel", "jobs-cancel-tip")
-            };
+            let (label, tip) = cancel_words(&job.kind);
             (
                 words.text(label),
                 Some(words.text(tip)),
                 ActivityAction::Cancel(job.id),
             )
         });
-        let again = export.then(|| {
+        let again = job.retry.then(|| {
             (
                 words.text("activity-try-again"),
                 Some(words.text("activity-try-again-tip")),
@@ -595,90 +596,72 @@ impl<'a> Jobs<'a> {
     }
 }
 
+/// The words of a job's Cancel button and its tip, by its kind: an export's say what a
+/// cancel keeps.
+fn cancel_words(kind: &str) -> (&'static str, &'static str) {
+    match kind {
+        "export" => ("activity-cancel", "activity-cancel-tip"),
+        _ => ("jobs-cancel", "jobs-cancel-tip"),
+    }
+}
+
 /// The words for a job that has just started, for the live region.
 fn started(words: &Translator, job: &Job) -> String {
-    match &job.export {
-        Some(export) => words.text_with("activity-title-running", Some(&export.args())),
-        None => {
-            let mut args = Args::new();
-            args.set("message", job.message.translate(words));
-            words.text_with("jobs-live-started", Some(&args))
-        }
-    }
+    let mut args = Args::new();
+    args.set("message", job.title.translate(words));
+    words.text_with("jobs-live-started", Some(&args))
 }
 
-/// The words for a job that has just ended, for the live region.
+/// The words for a job that has just ended, for the live region: its outcome, or without
+/// one its title with the state's word; a failed job's always says it failed.
 fn ended(words: &Translator, job: &Job) -> String {
-    match &job.export {
-        Some(export) => words.text_with(
-            &format!("activity-name-{}", job.phase.word()),
-            Some(&export.args()),
-        ),
-        None => {
-            let mut args = Args::new();
-            args.set("message", job.message.translate(words));
-            words.text_with(&format!("jobs-live-{}", job.phase.word()), Some(&args))
-        }
-    }
+    let message = match &job.outcome {
+        Some(outcome) if job.phase != JobPhase::Failed => return outcome.translate(words),
+        Some(outcome) => outcome.translate(words),
+        None => job.title.translate(words),
+    };
+    let mut args = Args::new();
+    args.set("message", message);
+    words.text_with(&format!("jobs-live-{}", job.phase.word()), Some(&args))
 }
 
-/// A row's lines under its bar: what the job is doing or how it ended, and for an export
-/// the folder.
+/// A row's lines under its bar: what the job is doing, or that it waits, or how it ended
+/// and why it failed; then, once it is not waiting, where its results go.
 fn details(ui: &mut Ui, job: &Job, words: &Translator) {
     let t = theme(ui.ctx());
     let small = t.text.small;
-    let Some(export) = &job.export else {
-        let outcome = match job.phase {
-            JobPhase::Queued => Some(("jobs-queued", t.colors.text_secondary)),
-            JobPhase::Running => None,
-            JobPhase::Finished => Some(("jobs-finished", t.colors.text)),
-            JobPhase::Failed => Some(("jobs-failed", t.colors.text)),
-            JobPhase::Cancelled => Some(("jobs-cancelled", t.colors.text)),
-        };
-        if let Some((id, colour)) = outcome {
-            line(ui, &words.text(id), small, colour, false);
-        }
-        if let Some(error) = &job.error {
-            line(ui, &format!("{error}."), small, t.colors.error, false);
-        }
-        return;
-    };
-    let args = export.args();
     match job.phase {
         JobPhase::Queued => {
-            let mut args = Args::new();
-            args.set("count", export.total);
-            args.set("folder", export.folder.as_str());
-            let queued = words.text_with("activity-queued", Some(&args));
-            line(ui, &queued, small, t.colors.text_secondary, true);
+            // The detail names the place, so no "To" line.
+            match &job.detail {
+                Some(detail) => {
+                    let queued = detail.translate(words);
+                    line(ui, &queued, small, t.colors.text_secondary, true);
+                }
+                None => {
+                    let queued = words.text("jobs-queued");
+                    line(ui, &queued, small, t.colors.text_secondary, false);
+                }
+            }
             return;
         }
         JobPhase::Running => {
-            let id = match (&export.current, export.total) {
-                (Some(_), _) => Some("activity-now"),
-                (None, total) if total > 1 => Some("activity-between"),
-                _ => None,
-            };
-            if let Some(id) = id {
-                let now = words.text_with(id, Some(&args));
-                line(ui, &now, small, t.colors.text, false);
+            if let Some(detail) = &job.detail {
+                line(ui, &detail.translate(words), small, t.colors.text, false);
             }
         }
         JobPhase::Finished | JobPhase::Failed | JobPhase::Cancelled => {
-            let id = format!("activity-title-{}", job.phase.word());
-            line(
-                ui,
-                &words.text_with(&id, Some(&args)),
-                small,
-                t.colors.text,
-                false,
-            );
-            if let Some(failure) = &export.failure {
+            let outcome = match &job.outcome {
+                Some(outcome) => outcome.translate(words),
+                None => words.text(&format!("jobs-{}", job.phase.word())),
+            };
+            line(ui, &outcome, small, t.colors.text, false);
+            if let Some(failure) = &job.failure {
                 let mut args = Args::new();
-                args.set("photo", failure.photo.as_str());
+                args.set("photo", failure.item.as_str());
                 args.set("file", failure.file.as_str());
                 args.set("cause", failure.cause.as_str());
-                let id = match (failure.photo.is_empty(), failure.file.is_empty()) {
+                let id = match (failure.item.is_empty(), failure.file.is_empty()) {
                     (false, false) => "activity-failure",
                     (false, true) => "activity-failure-photo",
                     (true, _) => "activity-failure-cause",
@@ -686,14 +669,14 @@ fn details(ui: &mut Ui, job: &Job, words: &Translator) {
                 let reason = words.text_with(id, Some(&args));
                 line(ui, &reason, small, t.colors.error, false);
             }
-            if job.phase == JobPhase::Cancelled {
-                let detail = words.text_with("activity-cancelled-detail", Some(&args));
-                line(ui, &detail, small, t.colors.text, false);
-            }
         }
     }
-    let folder = words.text_with("activity-folder", Some(&args));
-    line(ui, &folder, small, t.colors.text_secondary, true);
+    if let Some(destination) = &job.destination {
+        let mut args = Args::new();
+        args.set("folder", destination.as_str());
+        let to = words.text_with("activity-folder", Some(&args));
+        line(ui, &to, small, t.colors.text_secondary, true);
+    }
 }
 
 /// A line of text, wrapped at the row's width, `anywhere` for a path with no spaces, which
@@ -711,7 +694,7 @@ fn line(ui: &mut Ui, text: &str, size: f32, colour: Color32, anywhere: bool) {
 }
 
 /// The row's bar: the track and the part done, to screen readers a progress indicator
-/// named by the row's message, with the percentage done.
+/// named by the row's title, with the percentage done.
 fn progress_bar(ui: &mut Ui, job: &Job, title: &str) {
     let t = theme(ui.ctx());
     let fraction = job.fraction.clamp(0.0, 1.0);

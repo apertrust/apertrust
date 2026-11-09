@@ -26,13 +26,12 @@ use egui::{Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, vec2
 use crate::components::{
     ActionRow, Available, Axis, CellPicture, CellRating, CellStatus, CentralBar, CentralBarAction,
     Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup, ColourLabel, ColourLabels, Curve,
-    CurveAction, Equalizer, EqualizerAction, ExportDetails, ExportFailure, FileManager, GridCell,
-    GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job, JobMessage, JobPhase,
-    Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab,
-    PhotoCaption, PhotoFrame, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction,
-    Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb,
-    Toggle, ToggleRow, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
-    group_label,
+    CurveAction, Equalizer, EqualizerAction, FileManager, GridCell, GridPanel, GridPanelAction,
+    Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin,
+    Mark, Marker, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption,
+    PhotoFrame, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
+    ToggleRow, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -1788,51 +1787,57 @@ fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
 /// another waiting, and thumbnails.
 fn sample_jobs() -> Vec<Job> {
     let folder = "~/Pictures/apertrust_exported";
-    let mut failed = ExportDetails::new(12, folder);
-    failed.done = 11;
-    failed.failed = 1;
-    failed.failure = Some(ExportFailure {
-        photo: "IMG_2047.ARW".to_owned(),
-        file: "IMG_2047.jpg".to_owned(),
-        cause: "the disk is full".to_owned(),
-    });
-    let mut running = ExportDetails::new(12, folder);
-    running.done = 3;
-    running.current = Some("IMG_2044.ARW".to_owned());
+    let wedding = "~/Pictures/Wedding/apertrust_exported";
     let message = |id: &str, done: f64, total: f64| {
         JobMessage::new(id)
             .number("done", done)
             .number("total", total)
     };
-    vec![
+    let export = |id, phase, done| {
         Job::new(
-            1,
-            JobPhase::Failed,
-            message("job-export", 11.0, 12.0).text("target", "file on disk"),
+            id,
+            phase,
+            message("job-export", done, 12.0).text("target", "file on disk"),
         )
-        .fraction(1.0)
-        .export(failed),
+        .kind("export")
+    };
+    vec![
+        export(1, JobPhase::Failed, 11.0)
+            .fraction(1.0)
+            .destination(folder)
+            .outcome(
+                JobMessage::new("job-export-failed-outcome")
+                    .number("written", 11.0)
+                    .number("total", 12.0),
+            )
+            .failure(JobFailure {
+                item: "IMG_2047.ARW".to_owned(),
+                file: "IMG_2047.jpg".to_owned(),
+                cause: "the disk is full".to_owned(),
+            })
+            .retry(true),
         Job::new(2, JobPhase::Finished, message("job-import", 212.0, 212.0)).fraction(1.0),
         Job::new(3, JobPhase::Running, message("job-delete", 4.0, 9.0)).fraction(0.44),
-        Job::new(
-            4,
-            JobPhase::Running,
-            message("job-export", 3.0, 12.0).text("target", "file on disk"),
-        )
-        .fraction(0.25)
-        .cancellable(true)
-        .export(running),
+        export(4, JobPhase::Running, 3.0)
+            .fraction(0.25)
+            .cancellable(true)
+            .detail(message("job-export-now", 3.0, 12.0).text("photo", "IMG_2044.ARW"))
+            .destination(folder),
         Job::new(
             5,
             JobPhase::Queued,
             message("job-export", 0.0, 5.0).text("target", "file on disk"),
         )
+        .kind("export")
         .cancellable(true)
-        .export(ExportDetails::new(
-            5,
-            "~/Pictures/Wedding/apertrust_exported",
-        )),
+        .detail(
+            JobMessage::new("job-export-queued")
+                .number("count", 5.0)
+                .text("folder", wedding),
+        )
+        .destination(wedding),
         Job::new(6, JobPhase::Running, JobMessage::new("job-thumbnails"))
+            .kind("thumbnails")
             .fraction(0.6)
             .cancellable(true),
     ]

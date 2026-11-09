@@ -14,12 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The jobs mirror and the jobs window: the session's events folded into rows, when the
+//! The jobs mirror and the jobs window: the session's events in, the rows out, when the
 //! window opens itself, what the buttons ask, and the window's content in the dialog
 //! host's harness.
 
+use std::time::Duration;
+
 use apertrust_base::jobs::{Control, Job as ControlJob};
-use apertrust_engine::session::{Cause, Summary};
+use apertrust_engine::session::Cause;
 use apertrust_ui::components::JobPhase;
 use apertrust_ui::{Builtin, Locale, Theme};
 use eframe::egui::accesskit::Role;
@@ -40,29 +42,15 @@ pub(crate) fn ids(count: usize) -> Vec<JobId> {
         .collect()
 }
 
-pub(crate) fn photos(count: usize) -> Vec<PathBuf> {
-    (1..=count)
-        .map(|i| PathBuf::from(format!("/raws/IMG_{i:04}.ARW")))
-        .collect()
-}
-
-/// An export of `count` photos, as the Export dialog sends it.
-pub(crate) fn export(count: usize) -> Command {
-    Command::Export {
-        photos: photos(count),
-        settings: crate::export::Values::default().settings(),
-        places: Places::default(),
-    }
-}
-
+/// A job added to `queue`, by the command numbered `command` where it names one: an export
+/// with nothing but its title.
 pub(crate) fn added(job: JobId, queue: Queue, command: Option<u64>) -> Event {
-    let message = Message::new("job-export");
     Event::Job {
         event: JobEvent::Added {
             job,
             kind: "export",
             queue: Some(queue),
-            title: message,
+            title: Message::new("job-export-photo"),
             cancellable: true,
             destination: None,
             detail: None,
@@ -84,45 +72,15 @@ pub(crate) fn state(job_id: JobId, state: State) -> Event {
     job(JobEvent::State { job: job_id, state })
 }
 
-pub(crate) fn ended(job_id: JobId, state: State, failure: Option<JobFailure>) -> Event {
+pub(crate) fn ended(job_id: JobId, state: State, failure: Option<Failure>) -> Event {
     job(JobEvent::Ended {
         job: job_id,
         state,
         outcome: None,
         failure,
-        at: std::time::SystemTime::UNIX_EPOCH,
+        at: SystemTime::UNIX_EPOCH,
         offers: Vec::new(),
     })
-}
-
-fn status(job: JobId, status: ExportStatus) -> Event {
-    Event::Export { job, status }
-}
-
-pub(crate) fn started(job: JobId, index: usize) -> Event {
-    let source = photos(index + 1).remove(index);
-    status(job, ExportStatus::Started { index, source })
-}
-
-pub(crate) fn written(job: JobId, index: usize) -> Event {
-    let result = PhotoResult::Written {
-        path: PathBuf::from(format!("/out/IMG_{:04}.jpg", index + 1)),
-        width: 6000,
-        height: 4000,
-        tiles: 1,
-        newer: false,
-    };
-    status(job, ExportStatus::Done { index, result })
-}
-
-fn failed(job: JobId, index: usize, cause: Cause) -> Event {
-    let failure = Failure {
-        cause,
-        file: Some(PathBuf::from(format!("/out/IMG_{:04}.jpg", index + 1))),
-        message: "an error in the engine's words".to_owned(),
-    };
-    let result = PhotoResult::Failed(failure);
-    status(job, ExportStatus::Done { index, result })
 }
 
 fn english() -> Translator {
@@ -136,148 +94,353 @@ fn only(mirror: &Mirror) -> Job {
     view.remove(0)
 }
 
-/// A mirror that has been sent an export of `count` photos and told its job was added.
-fn exporting(count: usize) -> (Mirror, JobId) {
-    let job_id = ids(1)[0];
-    let mut mirror = Mirror::new(Some(PathBuf::from("/Users/anna")));
-    mirror.sent(7, &export(count), None);
-    mirror.apply(&added(job_id, Queue::UserExport, Some(7)));
-    (mirror, job_id)
+const HOME: &str = "/Users/anna";
+const OUT: &str = "/Users/anna/out";
+
+/// Photo `number` of an export, from 1.
+fn raw(number: usize) -> PathBuf {
+    PathBuf::from(format!("/raws/IMG_{number:04}.ARW"))
 }
 
-fn export_message(done: f64, total: f64) -> JobMessage {
-    JobMessage::new("job-export")
-        .number("done", done)
-        .number("total", total)
-        .text("target", "file on disk")
+fn file(number: usize) -> PathBuf {
+    Path::new(OUT).join(format!("IMG_{number:04}.jpg"))
+}
+
+/// The export's title as it exports photo `number` of `total`, darktable's message.
+fn title(number: usize, total: usize) -> Message {
+    Message::new("job-export-photo")
+        .with("number", number)
+        .with("total", total)
+        .with("storage", "disk")
+}
+
+/// The same title as the window has it.
+fn title_row(number: usize, total: usize) -> JobMessage {
+    JobMessage::new("job-export-photo")
+        .number("number", number as f64)
+        .number("total", total as f64)
+        .text("storage", "disk")
+}
+
+/// An export of `total` photos to `~/out` as the session adds it, sent by this app as its
+/// command 7.
+fn export_added(job: JobId, total: usize) -> Event {
+    let queued = Message::new("job-export-queued")
+        .with("count", total)
+        .with("folder", "~/out");
+    Event::Job {
+        event: JobEvent::Added {
+            job,
+            kind: "export",
+            queue: Some(Queue::UserExport),
+            title: title(0, total),
+            cancellable: true,
+            destination: Some(Destination::Folder(PathBuf::from(OUT))),
+            detail: Some(queued),
+            progress: Progress {
+                done: 0,
+                total: Some(total as u64),
+            },
+            retries: None,
+        },
+        command: Some(7),
+    }
+}
+
+/// What the export reports as photo `number` of `total` begins.
+fn photo_starts(job_id: JobId, number: usize, total: usize) -> Vec<Event> {
+    let now = Message::new("job-export-now")
+        .with("done", number - 1)
+        .with("total", total)
+        .with("photo", raw(number));
+    vec![
+        job(JobEvent::Title {
+            job: job_id,
+            title: title(number, total).with("photo", raw(number)),
+        }),
+        job(JobEvent::Detail {
+            job: job_id,
+            detail: Some(now),
+        }),
+    ]
+}
+
+/// What the export reports as photo `number` of `total` is done, its file the first
+/// written where `first`.
+fn photo_done(job_id: JobId, number: usize, total: usize, first: bool) -> Vec<Event> {
+    let between = Message::new("job-export-between")
+        .with("done", number)
+        .with("total", total);
+    let mut events = Vec::new();
+    if first {
+        events.push(job(JobEvent::Destination {
+            job: job_id,
+            destination: Destination::File(file(number)),
+        }));
+    }
+    events.push(job(JobEvent::Progress {
+        job: job_id,
+        done: number as u64,
+        total: Some(total as u64),
+    }));
+    events.push(job(JobEvent::Detail {
+        job: job_id,
+        detail: Some(between),
+    }));
+    events
+}
+
+/// `seconds` after the epoch, an end's time.
+fn at(seconds: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+/// The events in, in order: what the window is asked, the most it was asked.
+fn fold(mirror: &mut Mirror, events: impl IntoIterator<Item = Event>) -> Show {
+    events
+        .into_iter()
+        .map(|event| mirror.apply(&event))
+        .max()
+        .unwrap_or(Show::Nothing)
 }
 
 #[test]
-fn an_exports_start_progress_and_end_fold_into_its_row() {
-    let (mut mirror, id) = exporting(3);
-    // Added: queued, with the counts at nothing and the folder its path names.
-    let row = only(&mirror);
-    assert_eq!(row.phase, JobPhase::Queued);
-    assert!(row.cancellable);
-    let details = row.export.expect("an export");
-    assert_eq!((details.total, details.done, details.failed), (3, 0, 0));
-    assert_eq!(details.folder, "$(FILE_FOLDER)/apertrust_exported");
-    assert_eq!(row.message, export_message(0.0, 3.0));
+fn an_exports_events_fold_into_its_row() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(Some(PathBuf::from(HOME)));
+    // Added: queued, its title at photo 0, the detail that it waits, its folder.
+    assert_eq!(mirror.apply(&export_added(id, 3)), Show::Open);
+    let queued = JobMessage::new("job-export-queued")
+        .number("count", 3.0)
+        .text("folder", "~/out");
+    let expected = Job::new(id.get(), JobPhase::Queued, title_row(0, 3))
+        .kind("export")
+        .cancellable(true)
+        .detail(queued)
+        .destination("~/out");
+    assert_eq!(only(&mirror), expected);
 
-    // Running, the first photo under way.
+    // Running, the first photo under way: its title and the detail naming it.
     mirror.apply(&state(id, State::Running));
-    mirror.apply(&started(id, 0));
+    fold(&mut mirror, photo_starts(id, 1, 3));
     let row = only(&mirror);
     assert_eq!(row.phase, JobPhase::Running);
-    let details = row.export.expect("an export");
-    assert_eq!(details.current.as_deref(), Some("IMG_0001.ARW"));
-
-    // Photo after photo: counted, the folder the files really go to, the fraction as sent.
-    mirror.apply(&written(id, 0));
-    mirror.apply(&job(JobEvent::Progress {
-        job: id,
-        done: 1,
-        total: Some(3),
-    }));
-    mirror.apply(&started(id, 1));
-    mirror.apply(&written(id, 1));
-    let row = only(&mirror);
-    let details = row.export.clone().expect("an export");
-    assert_eq!((details.done, details.current), (2, None));
-    assert_eq!(details.folder, "/out");
-    assert!((row.fraction - 1.0 / 3.0).abs() < 1e-6);
-    assert_eq!(row.message, export_message(2.0, 3.0));
-
-    // Done: finished, whole, with nothing to cancel.
-    mirror.apply(&started(id, 2));
-    mirror.apply(&written(id, 2));
-    mirror.apply(&status(id, ExportStatus::Finished(Summary::default())));
-    mirror.apply(&ended(id, State::Finished, None));
-    let row = only(&mirror);
     assert_eq!(
-        (row.phase, row.fraction, row.cancellable),
-        (JobPhase::Finished, 1.0, false)
+        row.title,
+        title_row(1, 3).text("photo", "IMG_0001.ARW"),
+        "a path by its name"
     );
-    let details = row.export.expect("an export");
     assert_eq!(
-        (details.done, details.failed, details.failure),
-        (3, 0, None)
+        row.detail,
+        Some(
+            JobMessage::new("job-export-now")
+                .number("done", 0.0)
+                .number("total", 3.0)
+                .text("photo", "IMG_0001.ARW")
+        )
+    );
+
+    // Its first file: the destination is that file's folder, the bar a third full.
+    fold(&mut mirror, photo_done(id, 1, 3, true));
+    let row = only(&mirror);
+    assert_eq!(row.destination.as_deref(), Some("~/out"));
+    assert!((row.fraction - 1.0 / 3.0).abs() < 1e-6);
+    assert_eq!(
+        row.detail,
+        Some(
+            JobMessage::new("job-export-between")
+                .number("done", 1.0)
+                .number("total", 3.0)
+        )
+    );
+    for number in 2..=3 {
+        fold(&mut mirror, photo_starts(id, number, 3));
+        fold(&mut mirror, photo_done(id, number, 3, false));
+    }
+    assert_eq!(only(&mirror).fraction, 1.0);
+
+    // Ended: finished, its outcome and time, no detail line, nothing to cancel.
+    let outcome = Message::new("job-export-finished")
+        .with("written", 3)
+        .with("skipped", 0)
+        .with("failed", 0)
+        .with("total", 3);
+    let end = JobEvent::Ended {
+        job: id,
+        state: State::Finished,
+        outcome: Some(outcome),
+        failure: None,
+        at: at(60),
+        offers: Vec::new(),
+    };
+    assert_eq!(mirror.apply(&job(end)), Show::Update);
+    let outcome = JobMessage::new("job-export-finished")
+        .number("written", 3.0)
+        .number("skipped", 0.0)
+        .number("failed", 0.0)
+        .number("total", 3.0);
+    let expected = Job::new(
+        id.get(),
+        JobPhase::Finished,
+        title_row(3, 3).text("photo", "IMG_0003.ARW"),
+    )
+    .kind("export")
+    .fraction(1.0)
+    .destination("~/out")
+    .outcome(outcome)
+    .ended_at(at(60));
+    assert_eq!(only(&mirror), expected);
+    // Show in Finder selects its first file.
+    assert_eq!(
+        mirror.act(ActivityAction::ShowFolder(id.get())),
+        Do::Reveal(Reveal::File(file(1)))
     );
 }
 
 #[test]
-fn a_failed_export_says_which_photo_and_why_in_words() {
-    let (mut mirror, id) = exporting(3);
+fn a_folders_reading_folds_through_the_same_code_and_never_opens_the_window() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(Some(PathBuf::from(HOME)));
+    let folder = PathBuf::from("/photos/2026-10 Lisbon");
+    let added = Event::Job {
+        event: JobEvent::Added {
+            job: id,
+            kind: "folder",
+            queue: Some(Queue::UserBackground),
+            title: Message::new("job-folder").with("folder", folder),
+            cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
+        },
+        command: Some(4),
+    };
+    // Sent by this app, but not on a user queue: it shows, and opens nothing.
+    assert_eq!(mirror.apply(&added), Show::Update);
+    let reading = JobMessage::new("job-folder").text("folder", "2026-10 Lisbon");
+    let expected = Job::new(id.get(), JobPhase::Running, reading.clone())
+        .kind("folder")
+        .cancellable(true);
+    // With no total its bar has no fraction, however much is done.
+    let events = [
+        state(id, State::Running),
+        job(JobEvent::Progress {
+            job: id,
+            done: 120,
+            total: None,
+        }),
+    ];
+    assert_eq!(fold(&mut mirror, events), Show::Update);
+    assert_eq!(only(&mirror), expected);
+
+    mirror.apply(&job(JobEvent::Ended {
+        job: id,
+        state: State::Finished,
+        outcome: None,
+        failure: None,
+        at: at(5),
+        offers: Vec::new(),
+    }));
+    let expected = Job::new(id.get(), JobPhase::Finished, reading)
+        .kind("folder")
+        .ended_at(at(5));
+    assert_eq!(only(&mirror), expected);
+    // No destination: Show in Finder has nothing to reveal.
+    assert_eq!(
+        mirror.act(ActivityAction::ShowFolder(id.get())),
+        Do::Nothing
+    );
+}
+
+#[test]
+fn a_failed_export_says_which_photo_and_why_in_words_and_offers_a_retry() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(Some(PathBuf::from(HOME)));
+    mirror.apply(&export_added(id, 3));
     mirror.apply(&state(id, State::Running));
-    mirror.apply(&started(id, 0));
-    mirror.apply(&written(id, 0));
-    mirror.apply(&started(id, 1));
+    fold(&mut mirror, photo_starts(id, 1, 3));
+    fold(&mut mirror, photo_done(id, 1, 3, true));
+    fold(&mut mirror, photo_starts(id, 2, 3));
     // The disk fills up: that photo failed, and the job ends, the last not reached.
-    mirror.apply(&failed(id, 1, Cause::DiskFull));
-    let end = JobFailure::new("disk-full", "an error in the engine's words")
-        .item(photos(2).remove(1))
-        .file("/out/IMG_0002.jpg");
-    mirror.apply(&ended(id, State::Finished, Some(end)));
+    let failure = Failure::new("disk-full", "an error in the engine's words")
+        .item(raw(2))
+        .file(file(2));
+    let outcome = Message::new("job-export-failed-outcome")
+        .with("written", 1)
+        .with("total", 3);
+    mirror.apply(&job(JobEvent::Ended {
+        job: id,
+        state: State::Finished,
+        outcome: Some(outcome),
+        failure: Some(failure),
+        at: at(9),
+        offers: vec![Offer::Retry { items: 2 }],
+    }));
 
     let row = only(&mirror);
     assert_eq!((row.phase, row.cancellable), (JobPhase::Failed, false));
-    let details = row.export.expect("an export");
-    assert_eq!((details.done, details.failed), (1, 1));
+    assert_eq!(row.detail, None);
+    assert!(row.retry);
     assert_eq!(
-        details.failure,
-        Some(ExportFailure {
-            photo: "IMG_0002.ARW".to_owned(),
+        row.failure,
+        Some(JobFailure {
+            item: "IMG_0002.ARW".to_owned(),
             file: "IMG_0002.jpg".to_owned(),
             cause: "the disk is full".to_owned(),
         })
     );
     // In Ukrainian the cause is in Ukrainian.
     let uk = mirror.view(&Translator::new(Locale::Uk));
-    let cause = uk[0].export.as_ref().and_then(|d| d.failure.as_ref());
-    assert_eq!(cause.map(|f| f.cause.as_str()), Some("диск заповнений"));
+    let cause = uk[0].failure.as_ref().map(|f| f.cause.as_str());
+    assert_eq!(cause, Some("диск заповнений"));
 }
 
 #[test]
 fn an_export_refused_before_any_photo_names_no_photo_and_no_file() {
-    let (mut mirror, id) = exporting(2);
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 2));
     mirror.apply(&state(id, State::Running));
-    let end = JobFailure::new("pattern", "the path holds an unknown variable");
+    let end = Failure::new("pattern", "the path holds an unknown variable");
     mirror.apply(&ended(id, State::Finished, Some(end)));
     let row = only(&mirror);
     assert_eq!(row.phase, JobPhase::Failed);
-    let failure = row.export.and_then(|d| d.failure).expect("a failure");
+    assert!(!row.retry, "no offer, no Try again");
     assert_eq!(
-        (
-            failure.photo.as_str(),
-            failure.file.as_str(),
-            failure.cause.as_str()
-        ),
-        ("", "", "the file name is not valid")
+        row.failure,
+        Some(JobFailure {
+            item: String::new(),
+            file: String::new(),
+            cause: "the file name is not valid".to_owned(),
+        })
     );
 }
 
 #[test]
-fn a_cancelled_export_keeps_what_it_wrote_and_offers_no_second_cancel() {
-    let (mut mirror, id) = exporting(3);
-    mirror.apply(&state(id, State::Running));
-    mirror.apply(&started(id, 0));
-    mirror.apply(&written(id, 0));
-    mirror.apply(&started(id, 1));
-    // Asked to stop, it goes on until its next check: no second Cancel meanwhile.
-    mirror.apply(&state(id, State::Cancelled));
-    let row = only(&mirror);
-    assert_eq!((row.phase, row.cancellable), (JobPhase::Running, false));
-    // Then it ends cancelled, the file it wrote staying counted.
-    let summary = Summary {
-        cancelled: true,
-        ..Summary::default()
-    };
-    mirror.apply(&status(id, ExportStatus::Finished(summary)));
-    mirror.apply(&ended(id, State::Cancelled, None));
-    let row = only(&mirror);
-    assert_eq!(row.phase, JobPhase::Cancelled);
-    let details = row.export.expect("an export");
-    assert_eq!((details.done, details.current), (1, None));
+fn a_cancel_takes_the_cancel_away_and_ends_cancelled_or_failed_with_a_failure() {
+    let ids = ids(2);
+    let mut mirror = Mirror::new(None);
+    for id in &ids {
+        mirror.apply(&export_added(*id, 3));
+        mirror.apply(&state(*id, State::Running));
+        // Asked to stop, it goes on until its next check: no second Cancel meanwhile.
+        mirror.apply(&state(*id, State::Cancelled));
+    }
+    let view = mirror.view(&english());
+    assert!(
+        view.iter()
+            .all(|row| row.phase == JobPhase::Running && !row.cancellable)
+    );
+    // Cancelled with nothing failed: a cancelled row.
+    mirror.apply(&ended(ids[0], State::Cancelled, None));
+    // Cancelled after a photo failed: the failure makes it a failed row (decision 72).
+    let failure = Failure::new("unreadable", "cannot decode").item(raw(1));
+    mirror.apply(&ended(ids[1], State::Cancelled, Some(failure)));
+    let view = mirror.view(&english());
+    let phase = |id: JobId| view.iter().find(|row| row.id == id.get()).unwrap().phase;
+    assert_eq!(phase(ids[0]), JobPhase::Cancelled);
+    assert_eq!(phase(ids[1]), JobPhase::Failed);
 }
 
 #[test]
@@ -294,8 +457,15 @@ fn a_job_dropped_unrun_leaves_no_row_and_events_of_unknown_jobs_change_nothing()
         total: Some(2),
     };
     assert_eq!(mirror.apply(&job(progress)), Show::Nothing);
-    assert_eq!(mirror.apply(&written(other, 0)), Show::Nothing);
+    assert_eq!(fold(&mut mirror, photo_starts(other, 1, 2)), Show::Nothing);
     assert!(mirror.view(&english()).is_empty());
+    // Nor is the export's own record, which is for scripts and the CLI.
+    let status = apertrust_engine::session::ExportStatus::Started {
+        index: 0,
+        source: raw(1),
+    };
+    let record = Event::Export { job: one, status };
+    assert_eq!(mirror.apply(&record), Show::Nothing);
 
     mirror.apply(&added(one, Queue::SystemForeground, None));
     assert_eq!(mirror.view(&english()).len(), 1);
@@ -305,27 +475,28 @@ fn a_job_dropped_unrun_leaves_no_row_and_events_of_unknown_jobs_change_nothing()
 }
 
 #[test]
-fn only_a_job_the_user_started_opens_the_window() {
+fn only_a_job_on_a_user_queue_that_this_app_started_opens_the_window() {
     let id = ids(1)[0];
     let opens = |queue, command| {
         // Each in a mirror of its own, so a row never replaces another.
         let mut mirror = Mirror::new(None);
         mirror.apply(&added(id, queue, command))
     };
-    // darktable's user queues.
-    assert_eq!(opens(Queue::UserForeground, None), Show::Open);
+    // darktable's user queues, by a command of this app's.
+    assert_eq!(opens(Queue::UserForeground, Some(2)), Show::Open);
     assert_eq!(opens(Queue::UserExport, Some(3)), Show::Open);
-    // A background one when a command of the user's started it.
-    assert_eq!(opens(Queue::UserBackground, Some(4)), Show::Open);
-    // The system's, and a background job the system started, show but never open it.
+    // Another client's export shows, but opens nothing.
+    assert_eq!(opens(Queue::UserExport, None), Show::Update);
+    assert_eq!(opens(Queue::UserForeground, None), Show::Update);
+    // A background job, a folder's reading, even one this app asked for, and the system's.
+    assert_eq!(opens(Queue::UserBackground, Some(4)), Show::Update);
     assert_eq!(opens(Queue::UserBackground, None), Show::Update);
     assert_eq!(opens(Queue::SystemForeground, None), Show::Update);
-    assert_eq!(opens(Queue::SystemBackground, None), Show::Update);
     assert_eq!(opens(Queue::SystemBackground, Some(5)), Show::Update);
 }
 
 #[test]
-fn a_job_that_is_not_an_export_says_how_it_ended() {
+fn a_job_with_no_outcome_says_why_it_failed() {
     let id = ids(1)[0];
     let mut mirror = Mirror::new(None);
     let message = Message::new("job-import").with("done", 2).with("total", 9);
@@ -344,67 +515,43 @@ fn a_job_that_is_not_an_export_says_how_it_ended() {
     mirror.apply(&state(id, State::Running));
     let row = only(&mirror);
     assert_eq!(
-        row.message,
+        row.title,
         JobMessage::new("job-import")
             .number("done", 2.0)
             .number("total", 9.0)
     );
-    assert!(row.export.is_none());
-    let failure = JobFailure::new("import", "the card was removed.");
+    let failure = Failure::new("import", "the card was removed.");
     mirror.apply(&ended(id, State::Finished, Some(failure)));
     let row = only(&mirror);
-    assert_eq!(row.phase, JobPhase::Failed);
-    assert_eq!(row.error.as_deref(), Some("the card was removed"));
+    assert_eq!((row.phase, row.outcome), (JobPhase::Failed, None));
+    assert_eq!(
+        row.failure.map(|f| f.cause),
+        Some("the card was removed".to_owned())
+    );
 }
 
 #[test]
-fn the_buttons_ask_for_cancel_the_reveal_the_retry_and_the_dismissal() {
-    let (mut mirror, id) = exporting(3);
+fn the_buttons_ask_for_cancel_the_reveal_and_the_dismissal() {
+    let id = ids(1)[0];
     let number = id.get();
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 3));
     mirror.apply(&state(id, State::Running));
-    mirror.apply(&started(id, 0));
-    mirror.apply(&written(id, 0));
 
     // Cancel is the session's CancelJob for the job.
     assert_eq!(
         mirror.act(ActivityAction::Cancel(number)),
-        Do::Send {
-            command: Command::CancelJob { job: id },
-            retry_of: None,
-        }
+        Do::Send(Command::CancelJob { job: id })
     );
-    // Show in Finder reveals the first file it wrote.
+    // Before any file, Show in Finder opens the folder it was added with.
     assert_eq!(
         mirror.act(ActivityAction::ShowFolder(number)),
-        Do::Reveal(Reveal::File(PathBuf::from("/out/IMG_0001.jpg")))
+        Do::Reveal(Reveal::Folder(PathBuf::from(OUT)))
     );
-    // A running job is not dismissed, a retry needs a failed export.
+    // A running job is not dismissed, and Try again waits for the session's RetryJob.
     assert_eq!(mirror.act(ActivityAction::Dismiss(number)), Do::Nothing);
     assert_eq!(mirror.act(ActivityAction::TryAgain(number)), Do::Nothing);
-
-    // The second photo fails, the disk is full, the third is not reached.
-    mirror.apply(&started(id, 1));
-    mirror.apply(&failed(id, 1, Cause::DiskFull));
-    let end = JobFailure::new("disk-full", "no space left on device");
-    mirror.apply(&ended(id, State::Finished, Some(end)));
-
-    // Try again sends the export again: the photos not written, the same settings.
-    let again = mirror.act(ActivityAction::TryAgain(number));
-    let Do::Send {
-        command:
-            Command::Export {
-                photos: again_photos,
-                settings,
-                ..
-            },
-        retry_of,
-    } = &again
-    else {
-        panic!("Try again sends an export: {again:?}");
-    };
-    assert_eq!(*again_photos, photos(3)[1..].to_vec());
-    assert_eq!(*settings, crate::export::Values::default().settings());
-    assert_eq!(*retry_of, Some(number));
+    // A job the mirror does not hold asks nothing.
     assert_eq!(
         mirror.act(ActivityAction::Cancel(number + 100)),
         Do::Nothing
@@ -412,34 +559,32 @@ fn the_buttons_ask_for_cancel_the_reveal_the_retry_and_the_dismissal() {
 }
 
 #[test]
-fn try_again_takes_the_failed_rows_place_whatever_number_its_job_has() {
+fn a_retry_takes_the_place_of_the_job_it_tries_again() {
     let ids = ids(2);
     let (first, second) = (ids[0], ids[1]);
     let mut mirror = Mirror::new(None);
-    mirror.sent(1, &export(2), None);
-    mirror.apply(&added(first, Queue::UserExport, Some(1)));
-    mirror.apply(&state(first, State::Running));
-    mirror.apply(&started(first, 0));
-    mirror.apply(&failed(first, 0, Cause::Unreadable));
-    mirror.apply(&started(first, 1));
-    mirror.apply(&written(first, 1));
-    mirror.apply(&ended(first, State::Finished, None));
+    mirror.apply(&export_added(first, 2));
+    let failure = Failure::new("unreadable", "cannot decode").item(raw(1));
+    mirror.apply(&ended(first, State::Finished, Some(failure)));
     assert_eq!(only(&mirror).phase, JobPhase::Failed);
 
-    let Do::Send { command, retry_of } = mirror.act(ActivityAction::TryAgain(first.get())) else {
-        panic!("Try again sends the export");
+    let retry = Event::Job {
+        event: JobEvent::Added {
+            job: second,
+            kind: "export",
+            queue: Some(Queue::UserExport),
+            title: title(0, 1),
+            cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: Some(first),
+        },
+        command: Some(9),
     };
-    // Only the photo that failed goes again.
-    assert!(matches!(&command, Command::Export { photos, .. } if photos.len() == 1));
-    mirror.sent(2, &command, retry_of);
-    // The new job is a user job: it opens the window, and takes the failed row's place.
-    assert_eq!(
-        mirror.apply(&added(second, Queue::UserExport, Some(2))),
-        Show::Open
-    );
+    assert_eq!(mirror.apply(&retry), Show::Open);
     let row = only(&mirror);
     assert_eq!((row.id, row.phase), (second.get(), JobPhase::Queued));
-    assert_eq!(row.export.map(|d| d.total), Some(1));
 
     // A job that comes back under the number it had, as a retry that reuses it may, is one
     // row, queued again.
@@ -451,43 +596,13 @@ fn try_again_takes_the_failed_rows_place_whatever_number_its_job_has() {
 
 #[test]
 fn dismissing_an_ended_row_takes_it_away() {
-    let (mut mirror, id) = exporting(1);
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 1));
     mirror.apply(&state(id, State::Running));
     mirror.apply(&ended(id, State::Cancelled, None));
     assert_eq!(mirror.act(ActivityAction::Dismiss(id.get())), Do::Changed);
     assert!(mirror.view(&english()).is_empty());
-}
-
-#[test]
-fn show_in_finder_reveals_a_folder_before_anything_is_written_if_the_path_names_one() {
-    let id = ids(1)[0];
-    let mut mirror = Mirror::new(None);
-    let values = crate::export::Values {
-        path: "~/proofs/$(FILE_NAME)".to_owned(),
-        ..crate::export::Values::default()
-    };
-    let command = Command::Export {
-        photos: photos(1),
-        settings: values.settings(),
-        places: Places {
-            home: Some(PathBuf::from("/Users/anna")),
-            ..Places::default()
-        },
-    };
-    mirror.sent(1, &command, None);
-    mirror.apply(&added(id, Queue::UserExport, Some(1)));
-    assert_eq!(
-        mirror.act(ActivityAction::ShowFolder(id.get())),
-        Do::Reveal(Reveal::Folder(PathBuf::from("/Users/anna/proofs")))
-    );
-    // A folder that depends on the photo cannot be shown before one is written.
-    let id = ids(1)[0];
-    mirror.sent(2, &export(1), None);
-    mirror.apply(&added(id, Queue::UserExport, Some(2)));
-    assert_eq!(
-        mirror.act(ActivityAction::ShowFolder(id.get())),
-        Do::Nothing
-    );
 }
 
 #[cfg(target_os = "macos")]
@@ -534,11 +649,10 @@ fn every_cause_the_engine_names_has_words_in_every_language() {
             let text = words.text(&id);
             assert!(!text.ends_with('.'), "{id}: no full stop: {text}");
         }
-        assert!(words.has("job-target-disk"), "{locale:?}");
     }
-    // A code this build has no words for falls back to the engine's own.
+    // A code this build has no words for falls back to the job's own.
     assert_eq!(
-        cause_words(&english(), "from-the-future", Some("it broke.")),
+        cause_words(&english(), "from-the-future", "it broke."),
         "it broke"
     );
 }
@@ -616,6 +730,20 @@ fn what_is_pressed_in_the_window_reaches_the_app_as_an_output() {
     assert!(harness.state().asked.iter().all(|drawn| !drawn.close));
 }
 
+#[test]
+fn the_window_draws_no_try_again_until_the_session_takes_retry_job() {
+    let failed = Job::new(5, JobPhase::Failed, JobMessage::new("job-thumbnails"))
+        .failure(JobFailure {
+            item: String::new(),
+            file: String::new(),
+            cause: "the disk is full".to_owned(),
+        })
+        .retry(true);
+    let harness = window(vec![failed]);
+    assert!(harness.query_by_label("Try again").is_none());
+    assert!(harness.query_by_label("Dismiss").is_some());
+}
+
 // What quitting asks about.
 
 /// A job added to `queue` that `cancellable` says can or cannot be stopped.
@@ -642,12 +770,11 @@ pub(crate) fn added_stoppable(
 }
 
 #[test]
-fn quitting_counts_the_jobs_the_user_started_that_have_not_ended() {
+fn quitting_counts_the_jobs_on_the_user_queues_that_have_not_ended() {
     let jobs = ids(5);
     let mut mirror = Mirror::new(None);
     assert!(mirror.running().none());
-    // An export (stoppable), a delete that cannot be stopped, and a background job a
-    // command of the user's started.
+    // An export (stoppable), whichever client sent it, and a delete that cannot be stopped.
     mirror.apply(&added(jobs[0], Queue::UserExport, None));
     mirror.apply(&added_stoppable(
         jobs[1],
@@ -655,10 +782,10 @@ fn quitting_counts_the_jobs_the_user_started_that_have_not_ended() {
         None,
         false,
     ));
-    mirror.apply(&added(jobs[2], Queue::UserBackground, Some(3)));
-    // A system job and a background one no command of the user's started never count.
+    mirror.apply(&added(jobs[2], Queue::UserExport, Some(3)));
+    // A system job and a background one, a folder's reading, never count.
     mirror.apply(&added(jobs[3], Queue::SystemBackground, None));
-    mirror.apply(&added(jobs[4], Queue::UserBackground, None));
+    mirror.apply(&added(jobs[4], Queue::UserBackground, Some(4)));
     assert_eq!(
         mirror.running(),
         Running {
@@ -673,7 +800,7 @@ fn quitting_counts_the_jobs_the_user_started_that_have_not_ended() {
 fn an_export_sent_and_not_yet_added_is_waited_for_until_its_job_is() {
     let job = ids(1)[0];
     let mut mirror = Mirror::new(None);
-    mirror.sent(7, &export(2), None);
+    mirror.starting(7);
     // It has no number to cancel yet.
     assert_eq!(
         mirror.running(),
@@ -716,7 +843,7 @@ fn a_job_that_ended_no_longer_counts_and_one_asked_to_stop_waits_until_it_has() 
     let more = ids(2);
     for (job_id, outcome) in [
         (more[0], None),
-        (more[1], Some(JobFailure::new("write", "cannot write"))),
+        (more[1], Some(Failure::new("write", "cannot write"))),
     ] {
         mirror.apply(&added(job_id, Queue::UserExport, None));
         mirror.apply(&ended(job_id, State::Finished, outcome));
@@ -726,14 +853,16 @@ fn a_job_that_ended_no_longer_counts_and_one_asked_to_stop_waits_until_it_has() 
 
 #[test]
 fn the_engine_stopping_fails_the_running_rows_and_forgets_the_exports_sent() {
-    let (mut mirror, running) = exporting(3);
+    let ids = ids(2);
+    let (running, done) = (ids[0], ids[1]);
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(running, 3));
     mirror.apply(&state(running, State::Running));
-    mirror.apply(&started(running, 0));
+    fold(&mut mirror, photo_starts(running, 1, 3));
     // One that ended before keeps how it ended; one sent has no job yet.
-    let done = ids(2)[1];
     mirror.apply(&added(done, Queue::UserExport, None));
     mirror.apply(&ended(done, State::Finished, None));
-    mirror.sent(9, &export(1), None);
+    mirror.starting(9);
     assert!(!mirror.running().none());
 
     assert_eq!(mirror.engine_stopped(), Show::Update);
@@ -743,34 +872,16 @@ fn the_engine_stopping_fails_the_running_rows_and_forgets_the_exports_sent() {
     let view = mirror.view(&english());
     let row = view.iter().find(|job| job.id == running.get()).unwrap();
     assert_eq!((row.phase, row.cancellable), (JobPhase::Failed, false));
-    let details = row.export.as_ref().expect("an export");
-    assert_eq!(details.current, None);
+    assert_eq!(row.detail, None);
     assert_eq!(
-        details.failure.as_ref().map(|f| f.cause.as_str()),
+        row.failure.as_ref().map(|f| f.cause.as_str()),
         Some("the engine stopped unexpectedly")
     );
     let row = view.iter().find(|job| job.id == done.get()).unwrap();
     assert_eq!(row.phase, JobPhase::Finished);
     // In Ukrainian the cause is in Ukrainian, and a second stop changes nothing.
     let uk = mirror.view(&Translator::new(Locale::Uk));
-    let cause = uk
-        .iter()
-        .find_map(|job| job.export.as_ref()?.failure.as_ref());
+    let cause = uk.iter().find_map(|job| job.failure.as_ref());
     assert!(cause.is_some_and(|f| f.cause != "job-cause-engine"));
     assert_eq!(mirror.engine_stopped(), Show::Nothing);
-}
-
-#[test]
-fn a_job_that_is_not_an_export_fails_with_the_engine_s_stop_as_its_cause() {
-    let job_id = ids(1)[0];
-    let mut mirror = Mirror::new(None);
-    mirror.apply(&added(job_id, Queue::UserForeground, None));
-    mirror.apply(&state(job_id, State::Running));
-    mirror.engine_stopped();
-    let row = only(&mirror);
-    assert_eq!(row.phase, JobPhase::Failed);
-    assert_eq!(
-        row.error.as_deref(),
-        Some("the engine stopped unexpectedly")
-    );
 }
