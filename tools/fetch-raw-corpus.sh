@@ -41,7 +41,7 @@ while read -r digest name; do
   fi
   mkdir -p "$(dirname "$file")"
   echo "fetching $name"
-  curl -fsSL --globoff -o "$file.part" "https://raw.pixls.us/data/${name// /%20}"
+  curl --proto '=https' -fsSL --globoff -o "$file.part" "https://raw.pixls.us/data/${name// /%20}"
   if [[ "$(sha256 "$file.part")" != "$digest" ]]; then
     echo "checksum mismatch: $name" >&2
     rm -f "$file.part"

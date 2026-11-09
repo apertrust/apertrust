@@ -10,13 +10,15 @@ name: CI
 on:
   push:
     branches: [main]
+  # Not on `labeled`: a run that a label started would cancel the one in progress. To use
+  # `full-ci`, add the label and re-run the jobs; the platforms job reads the labels then.
   pull_request:
-    # `labeled`, so that adding `full-ci` runs the checks it asks for. Any label runs the
-    # workflow again.
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
+  # The platforms job reads the pull request's labels.
+  pull-requests: read
 
 # A new push to a pull request cancels its run in progress; main's runs all finish.
 concurrency:
@@ -55,16 +57,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
-  # Windows' and macOS's code and tests compiled, not run.
-  clippy:
-    name: ${{ startsWith(matrix.os, 'windows') && 'Clippy, Windows' || 'Clippy, macOS' }}
+  # Windows' and macOS's code and tests compiled, not run. Two jobs rather than a matrix,
+  # so each keeps its name when skipped: GitHub does not work out a skipped job's name.
+  clippy-windows:
+    name: Clippy, Windows
     needs: platforms
     if: needs.platforms.outputs.code == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2025, macos-15]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  clippy-macos:
+    name: Clippy, macOS
+    needs: platforms
+    if: needs.platforms.outputs.code == 'true'
+    runs-on: macos-15
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,8 +102,17 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-          FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          # The labels as they are now, not as the event saw them, so a re-run after adding
+          # `full-ci` picks it up.
+          FULL_CI=false
+          if [ "$EVENT" = pull_request ] &&
+            gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx full-ci; then
+            FULL_CI=true
+          fi
           code=true
           if [ "$EVENT" = pull_request ] && [ "$FULL_CI" != true ] &&
             [ -z "$(tools/check-docs-paths.sh --code "$BASE...$HEAD")" ]; then
@@ -114,7 +133,7 @@ jobs:
   # The one check of this workflow a ruleset requires: it passes when every job above
   # passed or was skipped, as on a pull request that changes only docs.
   ci-passed:
-    needs: [platforms, lint, deny, clippy, test]
+    needs: [platforms, lint, deny, clippy-windows, clippy-macos, test]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
