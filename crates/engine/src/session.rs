@@ -102,7 +102,7 @@ use thiserror::Error;
 
 use crate::compute::{ComputeError, GpuImage, POLL_INTERVAL, Timings};
 use crate::edit::{self, Edit, EditError, Held, panic_message};
-use crate::export_job::{self, Live, Snapshot};
+use crate::export_job::{self, Live, Numbering, Snapshot};
 pub use crate::export_job::{Cause, ExportStatus, Failure, PhotoResult, Summary, Why};
 use crate::export_preview;
 pub use crate::export_preview::ExportPreview;
@@ -1359,31 +1359,32 @@ pub const RETRIES_KEPT: usize = 64;
 
 /// What the session's jobs leave it to run for Try again (decision 72): each job that
 /// offers [`jobs::Offer::Retry`] keeps, before its body returns, the command its retry
-/// runs, so the command is kept before its `Ended` reaches a client. The latest
-/// [`RETRIES_KEPT`], for the session's life; [`Command::RetryJob`] takes one, so each is
-/// used once.
+/// runs, with an export's photos' numbering, so the command is kept before its `Ended`
+/// reaches a client. The latest [`RETRIES_KEPT`], for the session's life;
+/// [`Command::RetryJob`] takes one, so each is used once.
 #[derive(Clone, Default)]
-pub(crate) struct Retries(Arc<Mutex<VecDeque<(JobId, Command)>>>);
+pub(crate) struct Retries(Arc<Mutex<VecDeque<(JobId, Command, Numbering)>>>);
 
 impl Retries {
-    /// Keeps `command` as what trying `job` again runs, the oldest kept dropped past
-    /// [`RETRIES_KEPT`].
-    pub(crate) fn keep(&self, job: JobId, command: Command) {
+    /// Keeps `command`, its photos numbered as `numbering` says, as what trying `job`
+    /// again runs, the oldest kept dropped past [`RETRIES_KEPT`].
+    pub(crate) fn keep(&self, job: JobId, command: Command, numbering: Numbering) {
         let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if kept.len() == RETRIES_KEPT
-            && let Some((old, _)) = kept.pop_front()
+            && let Some((old, ..)) = kept.pop_front()
         {
             tracing::debug!(target: "control", "dropped the retry of job {old}, past {RETRIES_KEPT}");
         }
-        kept.push_back((job, command));
+        kept.push_back((job, command, numbering));
         tracing::debug!(target: "control", "kept the retry of job {job}");
     }
 
     /// What trying `job` again runs, taken: none where none is kept.
-    fn take(&self, job: JobId) -> Option<Command> {
+    fn take(&self, job: JobId) -> Option<(Command, Numbering)> {
         let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let at = kept.iter().position(|(own, _)| *own == job)?;
-        kept.remove(at).map(|(_, command)| command)
+        let at = kept.iter().position(|(own, ..)| *own == job)?;
+        kept.remove(at)
+            .map(|(_, command, numbering)| (command, numbering))
     }
 }
 
@@ -2145,18 +2146,24 @@ impl Engine {
     }
 
     /// [`Command::Export`], the command numbered [`Self::applied`]: a `UserExport` job of
-    /// the session's control, its `Added` naming the job it `retries` where it is one's
-    /// retry. Each photo's edit is taken now (D12): the open photo's from memory, and every
-    /// other's read by the edit writer after the writes handed to it so far, the job
-    /// waiting for them on its worker, so nothing here waits for a disk.
+    /// the session's control. Where it is a retry, `retry` names the job it tries again,
+    /// which its `Added` names, and its photos' numbering in the export first asked for;
+    /// otherwise they are numbered from 1. Each photo's edit is taken now (D12): the open
+    /// photo's from memory, and every other's read by the edit writer after the writes
+    /// handed to it so far, the job waiting for them on its worker, so nothing here waits
+    /// for a disk.
     fn export(
         &mut self,
         photos: Vec<PathBuf>,
         settings: ExportSettings,
         places: Places,
-        retries: Option<JobId>,
+        retry: Option<(JobId, Numbering)>,
     ) {
         let live = self.live_among(&photos);
+        let (retries, numbering) = match retry {
+            Some((old, numbering)) => (Some(old), numbering),
+            None => (None, Numbering::of(photos.len())),
+        };
         let sidecars = photos.iter().map(|path| sidecar::path_for(path)).collect();
         let run = export_job::Run {
             gpu: self.gpu.clone(),
@@ -2166,6 +2173,7 @@ impl Engine {
             limits: self.limits,
             load: self.load,
             photos,
+            numbering,
             settings,
             places,
             now: crate::names::now(),
@@ -2193,14 +2201,17 @@ impl Engine {
     /// kept.
     fn retry(&mut self, job: JobId) -> Result<(), SessionError> {
         match self.jobs.retries.take(job) {
-            Some(Command::Export {
-                photos,
-                settings,
-                places,
-            }) => {
+            Some((
+                Command::Export {
+                    photos,
+                    settings,
+                    places,
+                },
+                numbering,
+            )) => {
                 let count = photos.len();
                 tracing::debug!(target: "control", "trying job {job} again: {count} photos");
-                self.export(photos, settings, places, Some(job));
+                self.export(photos, settings, places, Some((job, numbering)));
                 Ok(())
             }
             // Only an export leaves a retry.
@@ -6573,13 +6584,14 @@ mod tests {
             .collect();
         let retries = Retries::default();
         for &job in &ids {
-            retries.keep(job, Command::Reset);
+            retries.keep(job, Command::Reset, Numbering::of(1));
         }
+        let kept = Some((Command::Reset, Numbering::of(1)));
         assert_eq!(RETRIES_KEPT, 64);
         assert_eq!(retries.take(ids[0]), None, "the oldest is dropped");
-        assert_eq!(retries.take(ids[1]), Some(Command::Reset));
+        assert_eq!(retries.take(ids[1]), kept);
         assert_eq!(retries.take(ids[1]), None, "used once");
-        assert_eq!(retries.take(ids[RETRIES_KEPT]), Some(Command::Reset));
+        assert_eq!(retries.take(ids[RETRIES_KEPT]), kept);
     }
 
     #[test]

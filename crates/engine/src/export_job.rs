@@ -391,6 +391,8 @@ pub(crate) struct Run {
     pub limits: Limits,
     pub load: Load,
     pub photos: Vec<PathBuf>,
+    /// The photos' places in the export first asked for, which a retry keeps.
+    pub numbering: Numbering,
     pub settings: ExportSettings,
     /// The person's folders and name, as the client gives them.
     pub places: Places,
@@ -411,6 +413,35 @@ pub(crate) struct Run {
     /// Holds the job's first render step for a test.
     #[cfg(test)]
     pub hold: Option<testing::Hold>,
+}
+
+/// Where an export's photos stand in the export first asked for, so that a retry of some
+/// of them writes the files that export would have: each photo's `$(SEQUENCE)`, in the
+/// photos' order, and how many photos that export had, which decides whether `_$(SEQUENCE)`
+/// is added to a pattern with no variable. Kept with a retry beside its `Command::Export`,
+/// which stays the protocol's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Numbering {
+    pub sequences: Vec<u32>,
+    pub count: usize,
+}
+
+impl Numbering {
+    /// An export of `photos` photos asked for as it is: numbered from 1.
+    pub(crate) fn of(photos: usize) -> Self {
+        Self {
+            sequences: (1..=photos as u32).collect(),
+            count: photos,
+        }
+    }
+
+    /// The numbering of the photos at `indices` of these.
+    fn of_these(&self, indices: &[usize]) -> Self {
+        Self {
+            sequences: indices.iter().map(|&i| self.sequences[i]).collect(),
+            count: self.count,
+        }
+    }
 }
 
 /// The largest tile a job's export renders, across and down, however much the budget
@@ -572,12 +603,13 @@ impl Run {
             &self.build,
             self.places.clone(),
         );
-        // The counts, then the outcome and Try again for the photos `left`, those that
+        // The counts, then the outcome and Try again for the photos at `left`, those that
         // failed and those not reached, unless it was cancelled, a cancel too late to stop a
         // photo included; `failure`, what ended it or else the first photo's, makes it a
-        // failed job. Its retry, the same export of those photos, is left with the session
-        // before the body returns, so it is kept before the offer reaches a client.
-        let end = |summary: Summary, failure: Option<jobs::Failure>, left: Vec<PathBuf>| {
+        // failed job. Its retry, the same export of those photos with their numbering, is
+        // left with the session before the body returns, so it is kept before the offer
+        // reaches a client.
+        let end = |summary: Summary, failure: Option<jobs::Failure>, left: Vec<usize>| {
             report(ExportStatus::Finished(summary));
             let cancelled = summary.cancelled || context.cancelled();
             let failed = failure.is_some();
@@ -587,11 +619,12 @@ impl Run {
                     items: left.len() as u64,
                 });
                 let retry = Command::Export {
-                    photos: left,
+                    photos: left.iter().map(|&i| self.photos[i].clone()).collect(),
                     settings: settings.clone(),
                     places: self.places.clone(),
                 };
-                self.retries.keep(job, retry);
+                self.retries
+                    .keep(job, retry, self.numbering.of_these(&left));
             }
             failure.map_or(Ok(()), Err)
         };
@@ -604,7 +637,9 @@ impl Run {
         };
         // The path and its pattern before any photo (D8).
         let home = names.home();
-        let disk = match Disk::new(&settings.path, settings.on_conflict, total, home) {
+        // As many photos as the export first asked for, which a retry's names follow.
+        let count = self.numbering.count;
+        let disk = match Disk::new(&settings.path, settings.on_conflict, count, home) {
             Ok(disk) => disk,
             Err(error) => return refused(Failure::disk(&error, None), summary),
         };
@@ -623,8 +658,8 @@ impl Run {
         };
         // The first photo's failure, which the job ends with where nothing ended it.
         let mut first_failure = None;
-        // The photos that failed, which Try again exports with those not reached.
-        let mut failed_photos = Vec::new();
+        // Where the photos that failed are, which Try again exports with those not reached.
+        let mut left = Vec::new();
         let mut first_file = true;
         for (index, (path, snapshot)) in self.photos.iter().zip(snapshot).enumerate() {
             if context.cancelled() {
@@ -659,7 +694,7 @@ impl Run {
                     let number = index + 1;
                     tracing::debug!(target: "pipe", "export: photo {number} failed: {}", failure.message);
                     let ended = failure.ended(Some(path));
-                    failed_photos.push(path.clone());
+                    left.push(index);
                     if failure.ends_job() {
                         stop = Some(ended);
                     } else {
@@ -687,15 +722,15 @@ impl Run {
                 summary.not_reached = total - done;
                 let rest = summary.not_reached;
                 tracing::debug!(target: "pipe", "export: ended by its failure, {rest} not reached");
-                failed_photos.extend_from_slice(&self.photos[done..]);
-                return end(summary, Some(failure), failed_photos);
+                left.extend(done..total);
+                return end(summary, Some(failure), left);
             }
         }
         let ms = start.elapsed().as_secs_f64() * 1e3;
         let photos = if total == 1 { "photo" } else { "photos" };
         tracing::debug!(target: "perf", "exported {total} {photos} in {ms:.0} ms");
         // A cancel offers no Try again, so the photos it left need not be named.
-        end(summary, first_failure, failed_photos)
+        end(summary, first_failure, left)
     }
 
     /// Photo `index` of the job, the raw at `path` with the edit `snapshot` holds, or the
@@ -788,7 +823,9 @@ impl Run {
             developed: size(image.width, image.height),
             crop: size(extent[0], extent[1]),
         };
-        let values = names.values(path, &shot, index as u32 + 1, sizes);
+        // Its place in the export first asked for, which a retry keeps.
+        let sequence = self.numbering.sequences[index];
+        let values = names.values(path, &shot, sequence, sizes);
         let extension = settings.format.extension();
         let mut target = match disk.prepare(&values, extension, changed) {
             Ok(Prepared::Write(target)) => target,
@@ -1668,6 +1705,9 @@ mod tests {
             .with("total", 2);
         assert_eq!(outcome, &cancelled);
         assert!(offers.is_empty(), "{offers:?}");
+        // Nor has the session a retry for it.
+        let retry = client.send(Command::RetryJob { job });
+        client.until(|e| not_retryable(e, retry, job));
         drop(permit);
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
@@ -1715,6 +1755,9 @@ mod tests {
             ..Summary::default()
         };
         assert_eq!(summary(&client.exported(job)), refused);
+        // Nor has the session a retry for it.
+        let retry = client.send(Command::RetryJob { job });
+        client.until(|e| not_retryable(e, retry, job));
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
     }
@@ -1968,6 +2011,86 @@ mod tests {
         };
         assert_eq!(summary(&statuses), counts);
         assert_eq!(listed(&out), ["a.png", "b.png"]);
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// [`export`] of `photos` to the pattern `rest` in `folder`, with `on_conflict`.
+    fn export_as(photos: &[&Path], folder: &Path, rest: &str, on_conflict: OnConflict) -> Command {
+        let Command::Export {
+            photos,
+            mut settings,
+            places,
+        } = export(photos, folder)
+        else {
+            unreachable!("an export");
+        };
+        settings.path = testing::path_in(folder, rest);
+        settings.on_conflict = on_conflict;
+        Command::Export {
+            photos,
+            settings,
+            places,
+        }
+    }
+
+    /// Exports `photos`, the one at `failing` failing as its edit cannot be read, then,
+    /// with that edit mended, tries the job again; returns once the retry has ended.
+    fn export_then_retry(client: &mut Client, photos: &[&Path], failing: usize, command: Command) {
+        let sidecar = sidecar::path_for(photos[failing]);
+        std::fs::write(&sidecar, "not an edit").unwrap();
+        let sent = client.send(command);
+        let failed = client.job(sent);
+        client.ended(failed);
+        std::fs::remove_file(&sidecar).unwrap();
+        let retry = client.send(Command::RetryJob { job: failed });
+        let again = client.job(retry);
+        client.ended(again);
+    }
+
+    /// A retry keeps each photo's `$(SEQUENCE)` from the export first asked for: the
+    /// second photo is written as `_0002`, and the first's file, under Overwrite, is left
+    /// as it was.
+    #[test]
+    fn a_retry_keeps_each_photo_s_sequence() {
+        let gpu = gpu();
+        let folder = scratch("retry-sequence");
+        let [a, b] = ["a.ARW", "b.ARW"].map(|name| folder.join(name));
+        // `a`'s own edit, so its file differs from `b`'s.
+        let saved = edit_at(Some(1.0));
+        sidecar::write(&sidecar::path_for(&a), &saved, OPERATIONS, MODULES, BUILD).unwrap();
+        let out = folder.join("out");
+        let mut client = Client::start(&gpu);
+        let command = export_as(&[&a, &b], &out, "img_$(SEQUENCE)", OnConflict::Overwrite);
+        export_then_retry(&mut client, &[&a, &b], 1, command);
+        assert_eq!(listed(&out), ["img_0001.png", "img_0002.png"]);
+        let first = std::fs::read(out.join("img_0001.png")).unwrap();
+        assert!(
+            first == expected(&gpu, Some(1.0)),
+            "a's file was overwritten"
+        );
+        let second = std::fs::read(out.join("img_0002.png")).unwrap();
+        assert!(second == expected(&gpu, None), "b's file differs");
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// A retry adds `_$(SEQUENCE)` to a pattern with no variable as the export first asked
+    /// for did, by its count of photos: the one photo tried again is written as `_0002`.
+    #[test]
+    fn a_retry_numbers_a_pattern_with_no_variable_as_the_first_export_did() {
+        let gpu = gpu();
+        let folder = scratch("retry-added");
+        let photos = ["a.ARW", "b.ARW", "c.ARW"].map(|name| folder.join(name));
+        let photos: Vec<&Path> = photos.iter().map(PathBuf::as_path).collect();
+        let out = folder.join("out");
+        let mut client = Client::start(&gpu);
+        let command = export_as(&photos, &out, "photo", OnConflict::Overwrite);
+        export_then_retry(&mut client, &photos, 1, command);
+        assert_eq!(
+            listed(&out),
+            ["photo_0001.png", "photo_0002.png", "photo_0003.png"]
+        );
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);
     }

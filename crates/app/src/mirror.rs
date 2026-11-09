@@ -1230,6 +1230,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_refused_try_again_leaves_nothing_for_quitting_to_wait_for() {
+        let id = jobs::tests::ids(1)[0];
+        let mut m = mirror();
+        // Try again sent as command 5, which quitting waits for until its job is added.
+        m.jobs.starting(5);
+        assert!(!m.jobs.running().none());
+        m.apply(Event::Failed(SessionError::Refused {
+            command: 5,
+            error: Box::new(SessionError::NotRetryable { job: id }),
+        }));
+        assert!(m.jobs.running().none());
+    }
+
+    #[test]
     fn an_export_preview_shows_only_if_newer_than_the_dialog_s_and_the_last_shown() {
         let preview = || {
             Box::new(ExportPreview {
