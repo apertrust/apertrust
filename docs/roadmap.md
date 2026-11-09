@@ -127,6 +127,7 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [ ] Undo and redo, with the history saved in the sidecar as its log of steps (decision 47; [the library's step 9](#the-librarys-steps)).
 - [ ] Per-pixel steps fused into fewer GPU passes, once a spike measures how.
 - [ ] A fine-control popup for sliders, as darktable's (decision 42).
+- [ ] The slider's marker as a setting, Triangle, Circle or Square, Square by default, kept whole at the track's ends (decision 75), built with the popup's cards.
 
 ### Scopes
 
