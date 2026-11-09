@@ -433,6 +433,7 @@ fn stepped(gpu: &GpuContext, task: &mut dyn Stepping) -> Result<bool, String> {
 /// to the test as it goes, and held where the test needs it held.
 #[cfg(test)]
 pub(crate) mod testing {
+    use std::path::Path;
     use std::sync::{Arc, Mutex, PoisonError};
 
     use super::*;
@@ -482,6 +483,8 @@ pub(crate) mod testing {
         /// How many tasks its body hands at once, each of `steps` steps, before it waits
         /// for each in turn, telling each one's end.
         tasks: usize,
+        /// Whether it reports the rest of its row (decision 72).
+        reporting: bool,
     }
 
     impl PartialEq for Synthetic {
@@ -504,6 +507,17 @@ pub(crate) mod testing {
                 gated: 0,
                 permits: None,
                 tasks: 1,
+                reporting: false,
+            }
+        }
+
+        /// It reports the rest of its row (decision 72): its `Added` a destination, a
+        /// detail and a total of one; its body, first, a detail and a destination of its
+        /// own; and once done, an outcome and a `Retry` offer, which its `Ended` carries.
+        pub fn reporting(self) -> Self {
+            Self {
+                reporting: true,
+                ..self
             }
         }
 
@@ -548,9 +562,14 @@ pub(crate) mod testing {
         pub(crate) fn job(self, tasks: Tasks) -> Job {
             let progress = (Message::new("job-synthetic"), self.cancellable);
             let label = self.label;
-            Job::new("synthetic", label, move |context| {
+            let reporting = self.reporting;
+            let job = Job::new("synthetic", label, move |context| {
                 if self.fault == Fault::BodyPanics {
                     panic!("the synthetic job {label} panicked");
+                }
+                if self.reporting {
+                    context.set_detail(Some(Message::new("job-synthetic-detail")));
+                    context.set_destination(Destination::File(Path::new(label).join("done")));
                 }
                 if let Some(held) = &self.held {
                     let gone = held.lock().unwrap_or_else(PoisonError::into_inner);
@@ -587,13 +606,23 @@ pub(crate) mod testing {
                 match failed {
                     None if !context.cancelled() => {
                         context.set_progress(1, Some(1));
+                        if self.reporting {
+                            context.set_outcome(Message::new("job-synthetic-done"));
+                            context.offer(Offer::Retry { items: 1 });
+                        }
                         Ok(())
                     }
                     None => Ok(()),
                     Some(error) => Err(Failure::new("synthetic", error.to_string())),
                 }
             })
-            .progress(progress.0, progress.1)
+            .progress(progress.0, progress.1);
+            if !reporting {
+                return job;
+            }
+            job.destination(Destination::Folder(label.into()))
+                .detail(Message::new("job-synthetic-queued"))
+                .total(1)
         }
     }
 

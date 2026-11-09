@@ -200,7 +200,7 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 
 The session's events (decision 59, [docs/events.md](events.md)):
 
-- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title and state are a fact each, by job; the Export dialog's preview is a fact.
+- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title, detail, destination and state are a fact each, by job, its `Added` and `Ended` notices; the Export dialog's preview is a fact.
 - A refused command names its number (`SessionError::Refused { command, error }`), its words the error's.
 - Every thread of the session sends through one `Outbox` (`session/outbox.rs`): the engine thread, the edit writer, the jobs' observer, and the export's and the preview's bodies.
 - The outbox calls `wake` once per burst, through a flag that `events()` clears as it drains with one loop of `try_recv`. Nothing is sent once the handle drops.

@@ -308,10 +308,12 @@ pub enum Event {
         path: PathBuf,
         through: u64,
     },
-    /// What a job with a progress did (decision 57), in order for each job: added, with
-    /// its queue, title and whether it can be cancelled, then its states, progress and
-    /// title, then its end. `command`, on `Added`, is the number [`Session::send`] gave
-    /// the command that started the job, so a client knows its own; `None` on the rest.
+    /// What a job with a progress did (decision 57), everything its row shows (decision
+    /// 72), in order for each job: added, with its queue, title, whether it can be
+    /// cancelled and the rest of its row as it starts; then its states, progress, title,
+    /// detail and destination, each a fact by job; then its end, with its outcome,
+    /// failure and offers. `command`, on `Added`, is the number [`Session::send`] gave the
+    /// command that started the job, so a client knows its own; `None` on the rest.
     Job {
         event: JobEvent,
         command: Option<u64>,
@@ -359,7 +361,11 @@ pub enum Fact {
     /// A job's progress, by job.
     Progress(JobId),
     /// A job's title, darktable's message, by job.
-    Message(JobId),
+    Title(JobId),
+    /// The line under a job's bar, by job.
+    Detail(JobId),
+    /// Where a job's results go, by job.
+    Destination(JobId),
     /// A job's state while it lives, by job.
     State(JobId),
 }
@@ -372,13 +378,14 @@ impl Event {
             Event::Frame(_) => Fact::Frame,
             Event::Scopes(_) => Fact::Scopes,
             Event::ExportPreview { .. } => Fact::ExportPreview,
+            // Each of a job's values is a topic of its own, since each event carries only
+            // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
                 JobEvent::Progress { job, .. } => Fact::Progress(job),
-                JobEvent::Title { job, .. } => Fact::Message(job),
+                JobEvent::Title { job, .. } => Fact::Title(job),
+                JobEvent::Detail { job, .. } => Fact::Detail(job),
+                JobEvent::Destination { job, .. } => Fact::Destination(job),
                 JobEvent::State { job, .. } => Fact::State(job),
-                // Notices until the session states them as facts of their own (decision
-                // 72's step 3); no job sends them yet.
-                JobEvent::Detail { .. } | JobEvent::Destination { .. } => return Topic::Notice,
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => return Topic::Notice,
             },
             // The library's events are about one open, and each comes once: a folder's
@@ -2649,7 +2656,7 @@ mod tests {
     use crate::compute::read_buffer;
     use crate::gpu::GpuOptions;
     use crate::jobs::testing::{Fault, Synthetic, Told};
-    use crate::jobs::{Message, State, TaskError};
+    use crate::jobs::{Destination, Message, Offer, State, TaskError};
     use crate::pipeline::Instance;
 
     fn gpu() -> GpuContext {
@@ -6473,29 +6480,37 @@ mod tests {
         let gpu = gpu();
         let (session, wakes) = start_with(&gpu, &[], synthetic);
         let (told, _heard) = Heard::start();
+        // The first reports its whole row (decision 72), the second its title and
+        // progress alone.
         let jobs = [
-            ("first", Queue::UserBackground, 3, true),
-            ("second", Queue::UserForeground, 2, false),
+            ("first", Queue::UserBackground, 3, true, true),
+            ("second", Queue::UserForeground, 2, false, false),
         ];
-        let started = jobs.map(|(label, queue, steps, cancellable)| {
+        let started = jobs.map(|(label, queue, steps, cancellable, reporting)| {
             let job = Synthetic::new(label, queue, steps, &told);
             let job = if cancellable { job.cancellable() } else { job };
+            let job = if reporting { job.reporting() } else { job };
             session.send(Command::Synthetic(job))
         });
         let mut events = Vec::new();
-        for ((_, queue, steps, cancellable), command) in jobs.into_iter().zip(started) {
+        for ((label, queue, steps, cancellable, reporting), command) in
+            jobs.into_iter().zip(started)
+        {
             let (job, own) = follow(&session, &wakes, &mut events, command, ended);
             let steps = Message::new("job-synthetic-steps").with("steps", steps);
-            let expected = [
+            let mut expected = vec![
                 JobEvent::Added {
                     job,
                     kind: "synthetic",
                     queue: Some(queue),
                     title: Message::new("job-synthetic"),
                     cancellable,
-                    destination: None,
-                    detail: None,
-                    progress: jobs::Progress::default(),
+                    destination: reporting.then(|| Destination::Folder(label.into())),
+                    detail: reporting.then(|| Message::new("job-synthetic-queued")),
+                    progress: jobs::Progress {
+                        done: 0,
+                        total: reporting.then_some(1),
+                    },
                     retries: None,
                 },
                 JobEvent::State {
@@ -6506,6 +6521,20 @@ mod tests {
                     job,
                     state: State::Running,
                 },
+            ];
+            if reporting {
+                expected.extend([
+                    JobEvent::Detail {
+                        job,
+                        detail: Some(Message::new("job-synthetic-detail")),
+                    },
+                    JobEvent::Destination {
+                        job,
+                        destination: Destination::File(Path::new(label).join("done")),
+                    },
+                ]);
+            }
+            expected.extend([
                 JobEvent::Title { job, title: steps },
                 JobEvent::Progress {
                     job,
@@ -6515,12 +6544,16 @@ mod tests {
                 JobEvent::Ended {
                     job,
                     state: State::Finished,
-                    outcome: None,
+                    outcome: reporting.then(|| Message::new("job-synthetic-done")),
                     failure: None,
                     at: std::time::SystemTime::UNIX_EPOCH,
-                    offers: Vec::new(),
+                    offers: if reporting {
+                        vec![Offer::Retry { items: 1 }]
+                    } else {
+                        Vec::new()
+                    },
                 },
-            ];
+            ]);
             // The end's time is the control's clock: compared apart.
             let mut own = own;
             if let Some(JobEvent::Ended { at, .. }) = own.last_mut() {
@@ -6534,6 +6567,67 @@ mod tests {
                 assert_eq!(command.is_some(), matches!(event, JobEvent::Added { .. }));
             }
         }
+    }
+
+    /// The observer's map of the jobs shown: each from its `Added` to its `Ended`, with
+    /// whether it can be cancelled, the rest of its row leaving the map as it was; so a
+    /// cancel stops one that can be, is refused for one that cannot, and changes nothing
+    /// once it has ended.
+    #[test]
+    fn the_observer_keeps_each_job_shown_from_its_added_to_its_end() {
+        let (woken, wakes) = mpsc::channel();
+        let (outbox, drain) = outbox::channel(Arc::new(move || {
+            let _ = woken.send(());
+        }));
+        let (inbox, _tasks) = mpsc::channel();
+        let mut jobs = Jobs::start(outbox, inbox);
+        let shown = |jobs: &Jobs| -> Vec<(JobId, bool)> {
+            let shown = jobs.shown.lock().unwrap_or_else(PoisonError::into_inner);
+            shown
+                .iter()
+                .map(|(job, cancellable)| (*job, *cancellable))
+                .collect()
+        };
+        let mut events = Vec::new();
+        let mut until = |job: JobId, last: fn(&JobEvent) -> bool| {
+            while !events
+                .iter()
+                .any(|e| matches!(e, Event::Job { event, .. } if event.job() == job && last(event)))
+            {
+                wakes
+                    .recv_timeout(TEST_WAIT)
+                    .expect("the job's events come in time");
+                events.extend(drain.events());
+            }
+        };
+        let (told, _heard) = Heard::start();
+        // Each held before it hands its task, its detail and destination reported.
+        let (first, _go) = Synthetic::new("first", Queue::UserBackground, 1, &told)
+            .cancellable()
+            .reporting()
+            .held();
+        let (second, go) = Synthetic::new("second", Queue::UserBackground, 1, &told)
+            .reporting()
+            .held();
+        let one = jobs.add(1, first.queue, |tasks| first.job(tasks));
+        let two = jobs.add(2, second.queue, |tasks| second.job(tasks));
+        assert_eq!(shown(&jobs), [(one, true), (two, false)]);
+        until(one, |e| matches!(e, JobEvent::Destination { .. }));
+        assert_eq!(shown(&jobs), [(one, true), (two, false)]);
+
+        // Cancelled as it waits, it ends and goes.
+        assert!(jobs.cancel(one).is_ok());
+        until(one, ended);
+        assert_eq!(shown(&jobs), [(two, false)]);
+        assert!(matches!(
+            jobs.cancel(two),
+            Err(SessionError::NotCancellable { job }) if job == two
+        ));
+        // Its go gone, the second ends without handing its task.
+        drop(go);
+        until(two, ended);
+        assert_eq!(shown(&jobs), []);
+        assert!(jobs.cancel(two).is_ok());
     }
 
     #[test]
@@ -6699,8 +6793,9 @@ mod tests {
             Event::Job { event, .. } => match *event {
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => Topic::Notice,
                 JobEvent::Progress { job, .. } => Topic::Fact(Fact::Progress(job)),
-                JobEvent::Title { job, .. } => Topic::Fact(Fact::Message(job)),
-                JobEvent::Detail { .. } | JobEvent::Destination { .. } => Topic::Notice,
+                JobEvent::Title { job, .. } => Topic::Fact(Fact::Title(job)),
+                JobEvent::Detail { job, .. } => Topic::Fact(Fact::Detail(job)),
+                JobEvent::Destination { job, .. } => Topic::Fact(Fact::Destination(job)),
                 JobEvent::State { job, .. } => Topic::Fact(Fact::State(job)),
             },
             Event::Export { status, .. } => match status {
@@ -6739,11 +6834,11 @@ mod tests {
         if !events.iter().any(saved) {
             events.extend(until(&session, &wakes, saved));
         }
-        // Two jobs, whose facts are their own.
+        // Two jobs, whose facts are their own, each reporting its whole row.
         let (told, _heard) = Heard::start();
         let mut ids = Vec::new();
         for label in ["first", "second"] {
-            let job = Synthetic::new(label, Queue::UserBackground, 2, &told);
+            let job = Synthetic::new(label, Queue::UserBackground, 2, &told).reporting();
             let command = session.send(Command::Synthetic(job));
             ids.push(follow(&session, &wakes, &mut events, command, ended).0);
         }
@@ -6821,16 +6916,46 @@ mod tests {
             .map(Event::Library),
         );
         let mut seen = BTreeSet::new();
+        let mut jobs = BTreeSet::new();
         for event in &events {
             assert_eq!(event.topic(), kind(event), "{event:?}");
             seen.insert(format!("{:?}", std::mem::discriminant(event)));
+            // `-d event` writes each with its kind, a job's with its name and job first.
+            let line = outbox::line(event);
+            if let Event::Job { event, .. } = event {
+                jobs.insert(format!("{:?}", std::mem::discriminant(event)));
+                let name = match event {
+                    JobEvent::Added { .. } => "Job Added",
+                    JobEvent::Progress { .. } => "Job Progress",
+                    JobEvent::Title { .. } => "Job Title",
+                    JobEvent::Detail { .. } => "Job Detail",
+                    JobEvent::Destination { .. } => "Job Destination",
+                    JobEvent::State { .. } => "Job State",
+                    JobEvent::Ended { .. } => "Job Ended",
+                };
+                let start = format!("{name}, job {}", event.job());
+                assert!(line.starts_with(&start), "{line}");
+            }
+            let kind = match event.topic() {
+                Topic::Fact(_) => ", a fact",
+                Topic::Notice => ", a notice",
+            };
+            assert!(line.ends_with(kind), "{line}");
         }
-        // Every variant, the ones a session sent among them.
+        // Every variant, the ones a session sent among them, and every job event.
         assert_eq!(seen.len(), 10, "{events:?}");
-        // Each job's fraction, message and state are facts of their own.
+        assert_eq!(jobs.len(), 7, "{jobs:?}");
+        // Each job's progress, title, detail, destination and state are facts of their
+        // own.
         let topics: BTreeSet<Topic> = events.iter().map(Event::topic).collect();
         for job in ids {
-            for fact in [Fact::Progress(job), Fact::Message(job), Fact::State(job)] {
+            for fact in [
+                Fact::Progress(job),
+                Fact::Title(job),
+                Fact::Detail(job),
+                Fact::Destination(job),
+                Fact::State(job),
+            ] {
                 assert!(topics.contains(&Topic::Fact(fact)), "{topics:?}");
             }
         }

@@ -1155,7 +1155,7 @@ flowchart TD
   - One export runs at a time already, so `pick` is never told one runs.
 - **One step on the GPU at a time.** After a step the engine waits for its work, and all submitted before it, to finish on the GPU (`on_submitted_work_done`, polled without waiting) before it steps any task again. So at most one step's work is ever on the GPU, and a frame waits for one step at most. A turn sends its events first and steps last, so a frame never waits for the step after it.
 - **Cancel and failure.** Before each step the tasks of jobs no longer running are dropped, a cancelled job's among them, so its task never steps again. A step's panic and the GPU's errors for it, caught in error scopes of its own, fail its task alone.
-- **The protocol.** `Event::Job { event, command }`: base's `JobEvent`, and on `Added` the number `Session::send` gave the command that started the job, so a client knows its own. The observer reads it from what `Jobs::add` sets around `Control::add`, the job's `Added` coming on the engine thread inside it. The observer keeps the jobs shown, from `Added` to `Ended`, with whether each can be cancelled. `Command::CancelJob { job }` refuses one that cannot be (`SessionError::NotCancellable`), and a job not shown, ended or never with a progress, changes nothing.
+- **The protocol.** `Event::Job { event, command }`: base's `JobEvent`, every one, and on `Added` the number `Session::send` gave the command that started the job, so a client knows its own. `Added` and `Ended` are notices, and each of `Progress`, `Title`, `Detail`, `Destination` and `State` a fact by job (decision 72; [events.md](events.md#facts-and-notices)). The observer reads it from what `Jobs::add` sets around `Control::add`, the job's `Added` coming on the engine thread inside it. The observer keeps the jobs shown, from `Added` to `Ended`, with whether each can be cancelled. `Command::CancelJob { job }` refuses one that cannot be (`SessionError::NotCancellable`), and a job not shown, ended or never with a progress, changes nothing.
   - **Try again, planned (decision 72):** `Command::RetryJob { job }`. A job that offers `Retry` leaves the session, before its body returns, the command its retry runs, an export's `Command::Export` of the photos that failed and those not reached. The session keeps the latest 64, runs one as if it were sent with `RetryJob`'s number, its job built with `.retries(job)`, and refuses one not kept, or used already, with `SessionError::NotRetryable`.
 - **The edit writer** stays the session's thread (decision 28), never a job, so a save never waits for a worker and D12's reads stay in order with its writes.
 - **Quitting:** dropping the session shuts its control down; the app asks first while a user job runs ([gui.md](gui.md), The jobs window).
@@ -1197,7 +1197,8 @@ flowchart TD
   - a change waits for one step at most;
   - a cancel takes effect before the task's next step, and a cancel of a job that ended changes nothing;
   - two tasks step in darktable's order and ageing;
-  - a job's events reach the client in order, `Added` naming its command;
+  - a job's events reach the client in order, `Added` naming its command, a job reporting its whole row among them;
+  - the observer keeps each job shown from its `Added` to its `Ended`, with whether it can be cancelled;
   - a job that panics, or whose step panics, fails or is refused by the GPU, ends failed and the session goes on;
   - the session ends with a job that cannot be cancelled in flight, its task handed and stepped during the shutdown, and refuses `CancelJob` for it;
   - a `SystemForeground` task that has stepped outlasts 31 newer ones, the two oldest that had not stepped dropped (J17);
@@ -1809,7 +1810,7 @@ Command::CancelJob { job }                                          any cancella
 Command::RetryJob { job }                                           a failed job's offer, its photos left (planned, decision 72)
 Command::PreviewExport { photos: Vec<PathBuf>, settings: ExportSettings, places: Places }
 
-Event::Job { event, command }               the job: added, queued, running, its progress and title, its end (Jobs); its whole row (planned, decision 72)
+Event::Job { event, command }               the job's whole row (Jobs, decision 72): added, its states, progress, title, detail and destination, its end
 Event::Export { job, status }
   Started { index, source }                 a photo begins
   Done { index, result }                    Written { path, width, height }
