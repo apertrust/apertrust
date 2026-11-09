@@ -427,7 +427,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
   - File with Open Image…, Open Folder…, Import, Export…, Export Again and Close Window;
   - Edit with Undo and Redo, Copy Edit, Apply Edit and Copy or Apply Parts, then Reset Edit;
   - Photo with Next Photo and Previous Photo;
-  - View with Library, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size) and Full Screen;
+  - View with Library, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
   - Window; Help, with AppKit's search.
 
   Disabled until built: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo, Previous Photo and Library. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions and H's peek. An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Side-panel tab 1"; the `.menu` and `.mac` attributes, title case and the tabs' own names, check marks and Undo naming its step come later.
@@ -679,6 +679,8 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Side Panel on the Right, Side Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built; its keys go |
 | — | | | |
+| Jobs | `show-jobs`: the jobs window with its rows, finished ones too, or brought to the front ([The jobs window](#the-jobs-window)) | Ctrl+Shift+J | Built, every platform |
+| — | | | |
 | Enter Full Screen and Exit Full Screen on macOS; Full Screen, checked, on Windows and Linux | `full-screen` | Ctrl+Cmd+F on macOS; F11 | Built |
 
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo, every cell together when several are shown.
@@ -784,7 +786,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 
 **With no photo open,** every menu is there.
 
-- Enabled: Open, Open Folder, Open Recent, Settings, About, Quit, Close Window, Library, Side Panel Tab, Workspace, Panels, Interface Size, Full Screen, Keyboard Shortcuts and the platform's items.
+- Enabled: Open, Open Folder, Open Recent, Settings, About, Quit, Close Window, Library, Side Panel Tab, Workspace, Panels, Interface Size, Jobs, Full Screen, Keyboard Shortcuts and the platform's items.
 - Disabled: what acts on a photo, which is Export, Export Again, Show in Folder, Undo and Redo, the edit's items, the whole Photo menu, the zoom, the overlays and the grid bar's items.
 - The empty central panel offers Open… and Open Folder… with their keys, as the platform writes them (Cmd+O on the Mac) and as the person has set them; without a key, the sentence stops after the item ([The central panel's states](#the-central-panels-states)).
 
@@ -869,7 +871,7 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo, and View's zoom items |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the side panel's tabs; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; Auto › Exposure, drawn disabled; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
 | Later in Phase 2 | Open… (Open Image… becoming it), Open Recent, Close and Show in Folder, with folder mode and the start window; Library, with its tab (decision 37); Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
@@ -1073,6 +1075,7 @@ Where winit cannot:
 #### The menus while a dialog is open
 
 - **One dialog at a time.** The view's items rest. So does every action that opens a dialog, a file dialog or About, so one dialog is open at a time, as Apple asks of sheets, while a modal one is up: a sheet, a modal window of the host's (Settings' on Windows and Linux), About over the window, or the open dialog asking (`State::modal`).
+- **View › Jobs stays:** the jobs window is modeless beside any dialog, so the jobs stay in reach under a sheet or the quit alert that waits for them.
 - **Close Window** rests then too, as AppKit's does under a sheet, unless a dialog's own window has the focus: it acts on the key window.
 - **A modeless Settings window** leaves them all to run, as Apple's apps do: Open Image… and About open over the main window beside it.
 - **Quit while the open dialog asks** waits for its answer: AppKit's panel hangs on the main window as a sheet, and a Quit under it would take the panel away and leave the window open, the app running on.
@@ -1401,10 +1404,10 @@ How background jobs are shown (decisions 57 and 72; [engine.md](engine.md), Jobs
 
 - **One spinner** at the top panel's end, before the save state, only while a job with a progress is queued or running; never one per job. It is a button in the top panel's Tab order, named "Jobs" with the count in its value ("2 running"), so its name stays as jobs come and go, with a polite live region at a job's start and end. It has a slot of its own, one button wide and a group's gap (`spacing.m`) before the save state's, kept whether it shows or not, so neither a job coming and going nor a save moves it or anything else, and, having no words, it never folds.
 - **At rest** the spinner's place is empty, with no tick: the finished rows wait in the window. After a failure the warning sign stays in its place until the failed row is dismissed or tried again.
-- **A click on it** (or on the warning sign) opens the jobs window; a click while the window is open brings it to the front.
+- **A click on it** (or on the warning sign) opens the jobs window; a click while the window is open brings it to the front. View › Jobs (`show-jobs`, Ctrl+Shift+J) does the same at any time, the spinner shown or not, so the finished rows are always a key away.
 - **The jobs window** is a modeless window of the dialog host (decision 41), beside the main window as Settings is on the Mac, never blocking it, restored where the user last left it. One row per job, newest first, each part told by the job itself ([A row](#a-row-and-where-each-part-comes-from)).
 - **It opens itself when a job the user started starts:** an export, an import, a copy, a move, a rename or a delete, darktable's `UserForeground` and `UserExport` queues. Closing it never stops a job.
-- **It closes itself when it opened itself and those jobs end well:** about 2 seconds after the last job it opened for finishes, so its outcome is seen, unless any of them failed or was cancelled, or the user touched it: clicked in it, typed in it, or brought it to the front with the spinner. While the pointer is over it, it waits, and the 2 seconds start again once the pointer leaves. On the Mac, where it opens without the focus, its taking the focus is a touch too, which a click, a move by its title bar or Cmd+` gives it. Opened from the spinner, it stays until closed. Its finished rows stay for the next time it opens.
+- **It closes itself when it opened itself and those jobs end well:** about 2 seconds after the last job it opened for finishes, so its outcome is seen, unless any of them failed or was cancelled, or the user touched it: clicked in it, typed in it, or brought it to the front with the spinner or View › Jobs. While the pointer is over it, it waits, and the 2 seconds start again once the pointer leaves. On the Mac, where it opens without the focus, its taking the focus is a touch too, which a click, a move by its title bar or Cmd+` gives it. Opened from the spinner or View › Jobs, it stays until closed. Its finished rows stay for the next time it opens.
 - Other jobs, a folder's reading and rescans, turn the spinner and show in the window, newest on top with the others, but never open it.
 - **Thumbnails never show.** Each is a job of its own on `SystemForeground`, with no progress or message, so neither the spinner nor the window knows of it.
 - **When a job ends,** its row stays, finished, failed or cancelled, until it is cleared: finished and cancelled rows together by Clear Finished, a failed row only by its own Dismiss, so a failure is never cleared unseen.
@@ -1472,7 +1475,7 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
   - **A command awaiting its job:** an export the app sends is noted by its number (`Mirror::starting`) until the `Added` that names it, so quitting waits for it; nothing else of the command is kept.
   - **Try again:** the rows keep a job's retry offer (`Job::retry`), but the app's window (`jobs::Window`) draws no Try again until the session takes `RetryJob` (planned with step 6 of [the job API's steps](roadmap.md#the-jobs-window-and-the-job-api)).
   - **When the engine stops** under its jobs, every row still queued or running ends failed, cause `engine`, so quitting waits for nothing.
-- **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport` whose `Added` names a command the app sent. Every other job answers `Show::Update` and only shows in the window if it is open. The spinner's click is `Show::Front`: it opens the window or brings it to the front, with the focus.
+- **When the window opens itself** is `Mirror::apply`'s answer, `Show::Open`: for a job added to `UserForeground` or `UserExport` whose `Added` names a command the app sent. Every other job answers `Show::Update` and only shows in the window if it is open. The spinner's click and View › Jobs are `Show::Front`: it opens the window or brings it to the front, with the focus. View › Jobs, the registry's `show-jobs`, sets a flag of the shell's that `run_action` hands to `jobs::refresh` with the rows as they stand, as Settings goes to the host.
   - An automatic open does not take the focus from the window the user is working in: on the Mac the host shows it with `apertrust_display::show_without_focus` (`orderFront:`), since winit's `set_visible(true)` is `makeKeyAndOrderFront:`. Windows and Linux show it as winit does until their modality is in.
   - An open asked twice before the window is made keeps the stronger focus. An open asked while the window is open, or asked and not yet made, goes to the window (`jobs::Window::again`): a click on the spinner keeps it open, and another automatic open adds the jobs it opened for to those it waits for.
 - **The close** is the window's own: `Mirror::apply` notes each job that answers `Show::Open`, which `Mirror::opened` hands to `jobs::refresh`, and the window opened for them (`Window::opened_for`) asks the host to close it (`Asks::close`) `CLOSE_AFTER`, 2 seconds, after it first sees them all finished, the time counted by a repaint it asks for (`request_repaint_after`), never a thread. A job of them failed or cancelled, a press or a key in it, or, on the Mac, its focus, keeps it open for good; the pointer over it holds the count until it leaves. A job it did not open for, a folder's reading, never holds it.
@@ -1486,7 +1489,7 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
   - Show in Finder reveals the destination: a file with `open -R` on the Mac, `explorer /select,` on Windows, its folder through `xdg-open` elsewhere, or a folder opened;
   - Try again asks nothing yet: the window draws none until the session takes `RetryJob` (step 6);
   - Dismiss takes a failed row away, and Clear Finished every finished and cancelled row.
-- **Not built:** a Window menu item or a key for the jobs window, the way back to finished rows once the window is closed, since the spinner is gone at rest; Windows' and Linux's focus handling.
+- **Not built:** Windows' and Linux's focus handling.
 
 ### What a script sees
 
@@ -2915,6 +2918,7 @@ Ctrl means Cmd on macOS.
 | App | Side-panel tabs 1 to 5 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold. With the Library's tab first, the sixth has no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types − |
 | App | Interface scale | None by default: View › Interface Size and Settings set it, and a user may give it keys | egui's zoom factor, from 50% to 300% in steps of 10%. egui's own zoom keys are off, so the registry owns them. `actions.rs` still gives it Ctrl+=, Ctrl+− and Ctrl+0 until the photo's zoom is built, when they move to it |
 | App | Next and previous pane | F6, Shift+F6 | Between the regions, as above |
+| App | Jobs | Ctrl+Shift+J | Opens the jobs window, or brings it to the front; never disabled, as the window opens beside any dialog |
 | App | Full screen | F11; on macOS Control+Cmd+F first (spelt Ctrl+Cmd+F), since macOS keeps F11 for showing the desktop | The window's full-screen command |
 | App | Close | Ctrl+W, Windows and Linux | New, with the start window: closes what is open and shows the start window |
 | App | Close Window | Cmd+W, macOS only | Closes the key window: a dialog's own window when it has the focus, else the main window, which quits as Quit does until the start window, and then does what Close does. Rests under a modal dialog over the main window, unless a dialog's own window has the focus |

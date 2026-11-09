@@ -539,7 +539,7 @@ File › Open Image… (`open`, Ctrl+O, first in File; `src/dialogs.rs`):
 
 `src/jobs.rs` (decision 57): a second modeless window, in a slot of its own beside the dialog's.
 
-- It opens from the top panel's spinner, and by itself for a job on `UserForeground` or `UserExport` whose `Added` names a command the app sent (`Mirror::apply`'s `Show::Open`), never for another job.
+- It opens from the top panel's spinner and View › Jobs (`show-jobs`, Ctrl+Shift+J), which bring it to the front and never let it close itself, and by itself for a job on `UserForeground` or `UserExport` whose `Added` names a command the app sent (`Mirror::apply`'s `Show::Open`), never for another job.
 - It is kept at `jobs_window.position`. Closing it stops no job.
 - Opened by itself, it closes itself about 2 seconds after the jobs it opened for (`Mirror::opened`) have finished, unless one failed or was cancelled, or the person touched it (`Window::opened_for`; [gui.md](gui.md#in-the-app)).
 - It is fed by `App::receive`'s mirror, `jobs::Mirror`, a fold of `Event::Job` alone: each event sets its part of its job's row, with no code for any kind of job (decision 72). An export sent is noted by its number until its job is added (`Mirror::starting`), so quitting waits for it.

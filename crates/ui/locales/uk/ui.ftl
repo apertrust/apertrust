@@ -121,6 +121,7 @@ window-close = Закрити
 ## Завдання: індикатор у кінці верхньої панелі і вікно, яке він відкриває
 
 jobs-name = Завдання
+action-show-jobs = Завдання
 jobs-tip = Завдання: { $value }
 jobs-value-running = Виконується: { $running }
 jobs-value-waiting = Очікують: { $waiting }

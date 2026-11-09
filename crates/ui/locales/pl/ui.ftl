@@ -121,6 +121,7 @@ window-close = Zamknij
 ## Zadania: wskaźnik na końcu górnego paska i okno, które otwiera
 
 jobs-name = Zadania
+action-show-jobs = Zadania
 jobs-tip = Zadania: { $value }
 jobs-value-running = Uruchomione: { $running }
 jobs-value-waiting = Oczekujące: { $waiting }

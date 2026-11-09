@@ -63,6 +63,8 @@ impl ActionId {
     pub const ABOUT: ActionId = ActionId("about");
     /// Help › Show Log: the log window.
     pub const SHOW_LOG: ActionId = ActionId("show-log");
+    /// View › Jobs: the jobs window.
+    pub const SHOW_JOBS: ActionId = ActionId("show-jobs");
     pub const SETTINGS: ActionId = ActionId("settings");
     pub const OPEN: ActionId = ActionId("open");
     pub const OPEN_FOLDER: ActionId = ActionId("open-folder");
@@ -186,6 +188,9 @@ pub enum Intent {
     About,
     /// The log window, opened or brought to the front (`log_window`).
     ShowLog,
+    /// The jobs window, opened or brought to the front as the spinner's click does, so it
+    /// never closes itself (`jobs`).
+    ShowJobs,
     Settings,
     /// The platform's open dialog, for one raw (`dialogs`).
     Open,
@@ -444,7 +449,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 57] = [
+pub static ACTIONS: [Action; 58] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -464,6 +469,17 @@ pub static ACTIONS: [Action; 57] = [
         trigger: Trigger::Press,
         available: no_modal_dialog,
         emits: Emit::Intent(Intent::ShowLog),
+    },
+    // View › Jobs, finished rows too: never disabled, as the jobs window opens beside any
+    // dialog.
+    Action {
+        id: ActionId::SHOW_JOBS,
+        message: "action-show-jobs",
+        keys: &[command_shift(Key::J)],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: always,
+        emits: Emit::Intent(Intent::ShowJobs),
     },
     Action {
         id: ActionId::SETTINGS,

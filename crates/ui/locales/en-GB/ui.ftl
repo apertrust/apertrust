@@ -158,6 +158,8 @@ window-close = Close
 ## plural forms: "2 running".
 
 jobs-name = Jobs
+# View › Jobs: the jobs window, opened or brought to the front.
+action-show-jobs = Jobs
 jobs-tip = Jobs: { $value }
 jobs-value-running = { $running } running
 jobs-value-waiting = { $waiting } waiting
