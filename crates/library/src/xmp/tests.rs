@@ -560,7 +560,7 @@ fn values_with_markup_whitespace_and_unicode_round_trip() {
     };
     let written = xmp.to_xml();
     assert!(
-        written.contains("&#xA;") && written.contains("&#xD;"),
+        written.contains("&#xA;") && written.contains("&#13;"),
         "{written}"
     );
     assert_eq!(read(&written).properties, xmp.properties);
