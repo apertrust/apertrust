@@ -859,6 +859,8 @@ mod tests {
                 args.set("shown", 1107);
                 // The zoom's tooltip: the pointer's modifier.
                 args.set("command", "Ctrl");
+                // Open Recent's item for a name two recents share: the folder it is in.
+                args.set("parent", "Lisbon");
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

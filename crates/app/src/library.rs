@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use apertrust_ui::components::{
     Button, ChoiceBox, CollapsibleGroup, IconButton, Section, SectionAction, context_menu,
-    focus_ring_centred, group_label, middle_cut, pull_down,
+    focus_ring_centred, middle_cut, pull_down,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::popup::{self, Entry, Item, Submenu};
@@ -165,56 +165,6 @@ fn name(path: &Path) -> String {
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     )
-}
-
-/// One folder in a list: a line, its name cut with … where it is too long, the rows' `hover`
-/// band under the pointer and the rows' focus ring, both 4 points beyond it at each end; the
-/// whole path in its tooltip, disabled with why in its tooltip when it cannot be opened.
-fn row(ui: &mut egui::Ui, label: &str, tip: &str, missing: Option<Missing<'_>>) -> bool {
-    let t = theme(ui.ctx());
-    let size = vec2(ui.available_width(), t.sizes.panel_line);
-    let response = ui
-        .add_enabled_ui(missing.is_none(), |ui| {
-            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-            if ui.is_rect_visible(rect) {
-                let painter = ui.painter();
-                let band = rect.expand2(vec2(t.spacing.xs, 0.0));
-                if response.hovered() && ui.is_enabled() {
-                    painter.rect_filled(band, t.shape.radius, t.colors.hover);
-                }
-                let font = egui::FontId::proportional(t.text.body);
-                let mut job =
-                    egui::text::LayoutJob::simple_singleline(label.to_owned(), font, t.colors.text);
-                job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width());
-                let galley = painter.layout_job(job);
-                let at = egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0);
-                painter.galley(at, galley, t.colors.text);
-                if response.has_focus() {
-                    focus_ring_centred(painter, band, &t);
-                }
-            }
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label)
-            });
-            response
-        })
-        .inner;
-    match missing {
-        Some(why) => {
-            let words = translator(ui.ctx());
-            let text = match why {
-                Missing::Failed(reason) => {
-                    let mut args = Args::new();
-                    args.set("reason", reason);
-                    words.text_with("folders-recent-missing", Some(&args))
-                }
-                Missing::Gone => words.text("folders-recent-gone"),
-            };
-            response.on_disabled_hover_text(format!("{tip}\n{text}"));
-            false
-        }
-        None => response.on_hover_text(tip).clicked(),
-    }
 }
 
 /// What Browse draws from: the active folder and the tree's root, the recents, which of its
@@ -546,7 +496,7 @@ fn recent_action(id: &str, listed: &[PathBuf]) -> Option<Action> {
 }
 
 /// Why a recent folder cannot be opened, in words.
-fn missing_words(ctx: &egui::Context, why: Missing<'_>) -> String {
+pub fn missing_words(ctx: &egui::Context, why: Missing<'_>) -> String {
     let words = translator(ctx);
     match why {
         Missing::Failed(reason) => {
@@ -912,23 +862,16 @@ fn open_this_row(ui: &mut egui::Ui, words: &str, shown: &str) -> egui::Response 
     response
 }
 
-/// The central panel's empty state in the middle of `slot`: "No photo selected" alone on the
-/// surround, in its text colour; else a card with the heading, and under the start's the two
-/// ways to open with their keys and the recent folders, under a folder with no raws Open
-/// Folder… again.
-pub fn empty_state(
-    ui: &mut egui::Ui,
-    slot: Rect,
-    what: Empty<'_>,
-    recent: &[Recent<'_>],
-    keys: &Keys,
-    home: Option<&Path>,
-) -> Vec<Action> {
+/// The central panel's empty state in the middle of `slot`: with nothing open "No folder
+/// open", and "No photo selected", each one line alone on the surround, in its text colour,
+/// the ways in being File's, Browse's and the keys'; else a card with the heading, and under
+/// a folder that failed or has no raws the two ways to open with their keys.
+pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) -> Vec<Action> {
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
     let ctx = ui.ctx().clone();
     let heading = match what {
-        Empty::Start => words.text("start-title"),
+        Empty::Start => words.text("browse-no-folder"),
         Empty::Reading(path) => with_folder(&ctx, "folder-reading", &name(path)),
         Empty::Failed(path, reason) => {
             let shown = path.display().to_string();
@@ -945,21 +888,17 @@ pub fn empty_state(
         Empty::NoRaws(name) => with_folder(&ctx, "folder-empty", name),
         Empty::NoneChosen => words.text("folder-no-photo"),
     };
-    let buttons = matches!(what, Empty::Start | Empty::NoRaws(_) | Empty::Failed(..));
-    let recents = matches!(what, Empty::Start) && !recent.is_empty();
-    // A line alone where nothing is chosen yet; the card where there is more to say or do.
-    let boxed = !matches!(what, Empty::NoneChosen);
+    let buttons = matches!(what, Empty::NoRaws(_) | Empty::Failed(..));
+    // A line alone where nothing is open or chosen yet; the card where there is more to say
+    // or do.
+    let boxed = !matches!(what, Empty::Start | Empty::NoneChosen);
 
     let width = (slot.width() - 2.0 * t.spacing.xl).clamp(0.0, 420.0);
     let margin = t.spacing.l;
     // The card's height from its parts, so it can be centred without a layout pass.
-    let line = t.sizes.panel_line;
     let mut height = 2.0 * margin + t.text.heading * 1.6;
     if buttons {
         height += t.spacing.l + 2.0 * (t.sizes.control + t.spacing.s);
-    }
-    if recents {
-        height += t.spacing.l + t.text.caption * 1.6 + recent.len() as f32 * line;
     }
     let height = height.min(slot.height() - 2.0 * t.spacing.m).max(0.0);
     let card = Rect::from_center_size(slot.center(), vec2(width, height));
@@ -1001,19 +940,6 @@ pub fn empty_state(
                         actions.push(action);
                     }
                 }
-            }
-            if recents {
-                let inset = egui::Margin::symmetric(margin as i8, 0);
-                egui::Frame::new().inner_margin(inset).show(ui, |ui| {
-                    ui.set_width(width - 2.0 * margin);
-                    group_label(ui, &tr(ui.ctx(), "start-recent"));
-                    for entry in recent {
-                        let tip = export::shown(entry.path, home);
-                        if row(ui, &name(entry.path), &tip, entry.missing) {
-                            actions.push(Action::Open(entry.path.to_owned()));
-                        }
-                    }
-                });
             }
         },
     );
@@ -1954,51 +1880,45 @@ mod tests {
         assert!(row.contains('…'), "{row}");
     }
 
-    /// The central panel's card over a slot, with what it asked for.
-    fn card(what: Folder, recent: Vec<(PathBuf, Option<String>)>) -> Harness<'static, Vec<Action>> {
-        card_sized(egui::vec2(320.0, 700.0), what, recent)
+    /// The central panel's empty state over a slot, with what it asked for.
+    fn card(what: Folder) -> Harness<'static, Vec<Action>> {
+        card_sized(egui::vec2(320.0, 700.0), what)
     }
 
-    fn card_sized(
-        size: egui::Vec2,
-        what: Folder,
-        recent: Vec<(PathBuf, Option<String>)>,
-    ) -> Harness<'static, Vec<Action>> {
+    fn card_sized(size: egui::Vec2, what: Folder) -> Harness<'static, Vec<Action>> {
         sized(size, move |ui, actions| {
             let slot = ui.ctx().content_rect();
             let surround = theme(ui.ctx()).colors.photo_surround;
             ui.painter().rect_filled(slot, 0.0, surround);
-            let recent: Vec<Recent<'_>> = recent
-                .iter()
-                .map(|(path, missing)| Recent {
-                    path,
-                    missing: missing.as_deref().map(Missing::Failed),
-                })
-                .collect();
             let keys = Keys {
                 folder: Some("Ctrl+Shift+O".to_owned()),
                 files: Some("Ctrl+O".to_owned()),
             };
-            actions.extend(empty_state(
-                ui,
-                slot,
-                Empty::of(&what),
-                &recent,
-                &keys,
-                None,
-            ));
+            actions.extend(empty_state(ui, slot, Empty::of(&what), &keys));
         })
     }
 
+    /// With nothing open, one quiet line and no card: the ways in are File's, Browse's, the
+    /// keys' and Open Recent's.
     #[test]
-    fn with_nothing_open_the_card_offers_both_ways_to_open_and_the_recent_folders() {
-        let recent = vec![
-            (PathBuf::from("/photos/Portraits"), None),
-            (PathBuf::from("/photos/Gone"), Some("missing".to_owned())),
-        ];
-        let mut harness = card(Folder::None, recent);
+    fn with_nothing_open_one_line_says_so_with_no_card() {
+        let mut harness = card(Folder::None);
         harness.run();
-        harness.get_by_label("Open a folder to start");
+        harness.get_by_label("No folder open");
+        assert!(harness.query_by_label("Open Folder…").is_none());
+        assert!(harness.query_by_label("Open…").is_none());
+        assert!(harness.state().is_empty());
+    }
+
+    /// A failed folder's card offers both ways to open, the keys its buttons' shortcuts.
+    #[test]
+    fn a_failed_folder_s_card_offers_both_ways_to_open() {
+        let failed = Folder::Failed {
+            path: PathBuf::from("/photos/gone"),
+            reason: Some("the folder is missing".to_owned()),
+        };
+        let mut harness = card(failed);
+        harness.run();
         let folder = harness.get_by_label("Open Folder…");
         // The keys are the button's shortcut, not part of its name.
         assert_eq!(
@@ -2009,22 +1929,12 @@ mod tests {
         harness.run();
         harness.get_by_label("Open…").click();
         harness.run();
-        harness.get_by_label("Portraits").click();
-        harness.run();
-        assert!(harness.get_by_label("Gone").accesskit_node().is_disabled());
-        assert_eq!(
-            *harness.state(),
-            [
-                Action::OpenFolder,
-                Action::OpenFiles,
-                Action::Open(PathBuf::from("/photos/Portraits"))
-            ]
-        );
+        assert_eq!(*harness.state(), [Action::OpenFolder, Action::OpenFiles]);
     }
 
     #[test]
     fn a_folder_with_no_raws_a_failed_one_and_one_with_no_photo_chosen_each_say_so() {
-        let mut empty = card(listing(0, true), Vec::new());
+        let mut empty = card(listing(0, true));
         empty.run();
         empty.get_by_label("No raw photos in Wedding");
         empty.get_by_label("Open Folder…");
@@ -2033,7 +1943,7 @@ mod tests {
             path: PathBuf::from("/photos/gone"),
             reason: Some("the folder is missing".to_owned()),
         };
-        let mut failed = card(failed, Vec::new());
+        let mut failed = card(failed);
         failed.run();
         failed.get_by_label("Could not open /photos/gone: the folder is missing");
 
@@ -2041,11 +1951,11 @@ mod tests {
             path: PathBuf::from("/photos/slow"),
             reason: None,
         };
-        let mut cancelled = card(cancelled, Vec::new());
+        let mut cancelled = card(cancelled);
         cancelled.run();
         cancelled.get_by_label("Reading /photos/slow was cancelled");
 
-        let mut chosen = card(wedding(), Vec::new());
+        let mut chosen = card(wedding());
         chosen.run();
         // A line alone: nothing more to read, and no card drawn under it.
         chosen.get_by_label("No photo selected");
@@ -2070,12 +1980,10 @@ mod tests {
             });
         let on_surround = theme(&chosen.ctx).colors.text_on_surround();
         assert_eq!(colour, Some(on_surround));
-        let mut start = card(Folder::None, Vec::new());
+        // Nothing open is a line alone too, as quiet.
+        let mut start = card(Folder::None);
         start.run();
-        assert!(
-            start.output().shapes.iter().any(filled),
-            "the start keeps its card"
-        );
+        assert!(!start.output().shapes.iter().any(filled));
     }
 
     #[test]
@@ -2091,10 +1999,10 @@ mod tests {
         }
     }
 
-    /// The Photos tab's Browse in the dark and light themes, and the start card,
-    /// photographed as the app draws them.
+    /// The Photos tab's Browse in the dark and light themes, and the central panel with
+    /// nothing open, photographed as the app draws them.
     #[test]
-    fn the_photos_tab_and_the_start_card_are_photographed() {
+    fn the_photos_tab_and_the_empty_state_are_photographed() {
         let mut results = egui_kittest::SnapshotResults::new();
         // The wireframe's folder: a long trip, its days and its panoramas.
         let lisbon = || {
@@ -2212,13 +2120,9 @@ mod tests {
         tab.snapshot("photos-tab-alone");
         results.extend(tab.take_snapshot_results());
 
-        let recent = vec![
-            (PathBuf::from("/photos/Portraits"), None),
-            (PathBuf::from("/photos/Gone"), Some("missing".to_owned())),
-        ];
-        let mut card = card_sized(egui::vec2(640.0, 360.0), Folder::None, recent);
+        let mut card = card_sized(egui::vec2(640.0, 360.0), Folder::None);
         card.run();
-        card.snapshot("start-card");
+        card.snapshot("nothing-open");
         results.extend(card.take_snapshot_results());
     }
 }

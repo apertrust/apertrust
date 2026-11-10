@@ -138,6 +138,11 @@ pub enum Command {
     /// open before it, whose events a client drops by their number. From it until the
     /// values are live, every command on the edit is refused ([`SessionError::NotLive`]).
     Open(PathBuf),
+    /// Close the photo open, as File › Close does, and cancel the open under way, whose
+    /// events a client drops by their number: its edit saved first where anything in it is
+    /// not on disk yet, reported [`Event::Saved`] or failed as any write is, and nothing
+    /// else sent of it. With none open, nothing.
+    Close,
     /// The most physical pixels the photo may be shown in.
     Resize { width: u32, height: u32 },
     /// Set a module's control, which keeps it. `done` on the last change of a gesture (a
@@ -308,6 +313,7 @@ pub enum Command {
 fn on_edit(command: &Command) -> bool {
     match command {
         Command::Open(_)
+        | Command::Close
         | Command::Resize { .. }
         | Command::Scopes(_)
         | Command::CancelJob { .. }
@@ -1858,6 +1864,12 @@ impl Engine {
                     (values, render, save, cancelled) = (false, false, false, false);
                     Ok(())
                 }
+                // Its edit is saved and the photo dropped: nothing more is said of it.
+                Command::Close => {
+                    self.close_saving();
+                    (values, render, save, cancelled) = (false, false, false, false);
+                    Ok(())
+                }
                 Command::Resize { width, height } => {
                     render |= self.size != Some((width, height));
                     self.size = Some((width, height));
@@ -1981,11 +1993,11 @@ impl Engine {
     }
 
     /// Applies the edit commands of a batch that arrived after the client dropped its
-    /// handle, rendering nothing, up to one that opens another photo; whether it reached
-    /// one.
+    /// handle, rendering nothing, up to one that opens another photo or closes this one;
+    /// whether it reached one.
     fn apply_edits(&mut self, batch: Vec<(Instant, Command)>) -> bool {
         for (_, command) in batch {
-            if matches!(command, Command::Open(_)) {
+            if matches!(command, Command::Open(_) | Command::Close) {
                 return true;
             }
             self.applied += 1;
@@ -2132,6 +2144,7 @@ impl Engine {
                 (changed, true)
             }
             Command::Open(_)
+            | Command::Close
             | Command::Resize { .. }
             | Command::Scopes(_)
             | Command::CancelJob { .. }
@@ -6595,6 +6608,32 @@ mod tests {
             (&ControlValue::Number(30.0), Some(Mark::Kept))
         );
         assert_eq!(control(values, "sample", "size").mark, Some(Mark::Kept));
+        remove(&path);
+    }
+
+    /// File › Close: a change never completed is saved, the photo is dropped, and nothing
+    /// more is said of it; a resize then renders nothing, and a second close does nothing.
+    #[test]
+    fn close_saves_what_the_edit_still_needs_and_drops_the_photo() {
+        let path = scratch("closed");
+        let sidecar = sidecar::path_for(&path);
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        driven.run([set("grain", ControlValue::Number(20.0), false)]);
+        assert!(driven.writes().is_empty());
+        let events = driven.run([Command::Close]);
+        assert!(events.is_empty(), "{events:?}");
+        assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+        let xml = std::fs::read_to_string(&sidecar).unwrap();
+        assert!(xml.contains(r#"control:grain="20""#), "{xml}");
+        assert!(driven.engine.open.is_none() && driven.engine.display.is_none());
+        let resize = Command::Resize {
+            width: 50,
+            height: 50,
+        };
+        let events = driven.run([resize, Command::Close]);
+        assert!(events.is_empty(), "{events:?}");
+        assert!(driven.writes().is_empty());
         remove(&path);
     }
 

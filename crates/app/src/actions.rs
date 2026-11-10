@@ -68,6 +68,21 @@ impl ActionId {
     pub const SETTINGS: ActionId = ActionId("settings");
     pub const OPEN: ActionId = ActionId("open");
     pub const OPEN_FOLDER: ActionId = ActionId("open-folder");
+    /// File › Open Recent's items by place, newest first, whatever they hold.
+    pub const OPEN_RECENT: [ActionId; crate::recents::MOST] = [
+        ActionId("open-recent-1"),
+        ActionId("open-recent-2"),
+        ActionId("open-recent-3"),
+        ActionId("open-recent-4"),
+        ActionId("open-recent-5"),
+        ActionId("open-recent-6"),
+        ActionId("open-recent-7"),
+        ActionId("open-recent-8"),
+        ActionId("open-recent-9"),
+        ActionId("open-recent-10"),
+    ];
+    /// Open Recent's Clear Menu.
+    pub const CLEAR_RECENT: ActionId = ActionId("clear-recent");
     pub const IMPORT: ActionId = ActionId("import");
     pub const EXPORT: ActionId = ActionId("export");
     pub const EXPORT_AGAIN: ActionId = ActionId("export-again");
@@ -96,6 +111,8 @@ impl ActionId {
     /// The ☰'s menu, where the menus are drawn (decision 39).
     pub const MENU: ActionId = ActionId("menu");
     pub const FULL_SCREEN: ActionId = ActionId("full-screen");
+    /// File › Close: the folder or photo open.
+    pub const CLOSE: ActionId = ActionId("close");
     /// File › Close Window, the Mac's alone: the key window, a dialog's or the main one.
     pub const CLOSE_WINDOW: ActionId = ActionId("close-window");
     pub const QUIT: ActionId = ActionId("quit");
@@ -197,6 +214,12 @@ pub enum Intent {
     Open,
     /// The platform's folder dialog: the folder chosen is opened as the library's folder.
     OpenFolder,
+    /// Open Recent's entry at this place, newest first, opened as Open Folder… opens one.
+    OpenRecent(usize),
+    /// Clear Menu: the recents emptied.
+    ClearRecent,
+    /// File › Close: what is open closed, its edit saved, and nothing open after it.
+    Close,
     /// The Export dialog, a sheet on the Mac (`export`).
     Export,
     /// The export with the settings as last kept, with no dialog (`export_again`).
@@ -233,6 +256,12 @@ pub struct State {
     pub photo: bool,
     pub edited: bool,
     pub photos: usize,
+    /// Whether anything is open, a folder or a photo, opening, open or failed: File ›
+    /// Close's to close.
+    pub opened: bool,
+    /// The recents Open Recent lists, newest first, by place: whether each can be opened,
+    /// none where the list holds no entry there. One found missing cannot.
+    pub recents: [Option<bool>; crate::recents::MOST],
     /// The side panel's tabs, by position: whether each can be chosen. One with nothing
     /// behind it yet cannot, so its key is unavailable (decision 38).
     pub tabs: &'static [bool],
@@ -444,6 +473,26 @@ const fn background(id: ActionId, message: &'static str, chosen: Background) -> 
     }
 }
 
+/// Whether Open Recent's `I`th entry, newest first, can be opened: it is there and not
+/// found missing, and no modal dialog is open, as for Open Folder….
+fn recent_enabled<const I: usize>(state: &State) -> bool {
+    no_modal_dialog(state) && state.recents.get(I).copied().flatten() == Some(true)
+}
+
+/// Open Recent's entry at place `I`, newest first: no keys by default, its words for the
+/// keyboard map its own message, the menu showing the folder's name.
+const fn open_recent<const I: usize>(message: &'static str) -> Action {
+    Action {
+        id: ActionId::OPEN_RECENT[I],
+        message,
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: recent_enabled::<I>,
+        emits: Emit::Intent(Intent::OpenRecent(I)),
+    }
+}
+
 /// Whether the side panel has an `I`th tab, by position, that can be chosen, the main
 /// window the one acted on.
 fn tab_enabled<const I: usize>(state: &State) -> bool {
@@ -452,7 +501,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 58] = [
+pub static ACTIONS: [Action; 70] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -513,6 +562,27 @@ pub static ACTIONS: [Action; 58] = [
         trigger: Trigger::Press,
         available: no_modal_dialog,
         emits: Emit::Intent(Intent::OpenFolder),
+    },
+    // File › Open Recent, the recents newest first, then Clear Menu, with nothing to
+    // clear disabled (`docs/gui.md`, File).
+    open_recent::<0>("action-open-recent-1"),
+    open_recent::<1>("action-open-recent-2"),
+    open_recent::<2>("action-open-recent-3"),
+    open_recent::<3>("action-open-recent-4"),
+    open_recent::<4>("action-open-recent-5"),
+    open_recent::<5>("action-open-recent-6"),
+    open_recent::<6>("action-open-recent-7"),
+    open_recent::<7>("action-open-recent-8"),
+    open_recent::<8>("action-open-recent-9"),
+    open_recent::<9>("action-open-recent-10"),
+    Action {
+        id: ActionId::CLEAR_RECENT,
+        message: "action-clear-recent",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.recents[0].is_some(),
+        emits: Emit::Intent(Intent::ClearRecent),
     },
     Action {
         id: ActionId::IMPORT,
@@ -732,6 +802,18 @@ pub static ACTIONS: [Action; 58] = [
         trigger: Trigger::Press,
         available: on_main_window,
         emits: Emit::Intent(Intent::FullScreen),
+    },
+    // What is open, the folder or the photo, on the main window with no modal dialog over
+    // it. Ctrl+W on Windows and Linux; on the Mac Cmd+W is Close Window's, so Close has
+    // none of its own (`docs/gui.md`, File).
+    Action {
+        id: ActionId::CLOSE,
+        message: "action-close",
+        keys: &[command(Key::W).only(Platforms::NotMac)],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.opened && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::Close),
     },
     // The key window: a dialog's own, as Settings' on the Mac, or the main window, which
     // ends the app as Quit does while it is the one window, and rests under a modal dialog
@@ -1751,6 +1833,8 @@ mod tests {
             photo: true,
             edited: true,
             photos: 2,
+            opened: true,
+            recents: [Some(true); crate::recents::MOST],
             tabs: &[true; 5],
             scale: 1.5,
             dialog: false,
@@ -2029,6 +2113,62 @@ mod tests {
         }
         let close = action(ActionId::CLOSE_WINDOW).expect("declared");
         assert_eq!(close.emits, Emit::Intent(Intent::CloseWindow));
+    }
+
+    /// File › Close: Ctrl+W on Windows and Linux, no key of its own on the Mac, where Cmd+W
+    /// is Close Window's; enabled with anything open, on the main window with no modal
+    /// dialog over it.
+    #[test]
+    fn close_takes_ctrl_w_off_the_mac_and_needs_something_open() {
+        let ctrl_w = Shortcut {
+            modifiers: Modifiers::COMMAND,
+            key: Key::W,
+        };
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            assert_eq!(Keymap::defaults(os).keys(ActionId::CLOSE), [ctrl_w]);
+        }
+        assert!(
+            Keymap::defaults(OperatingSystem::Mac)
+                .keys(ActionId::CLOSE)
+                .is_empty()
+        );
+        let close = action(ActionId::CLOSE).expect("declared");
+        assert_eq!(close.emits, Emit::Intent(Intent::Close));
+        let mut state = everything();
+        assert!(close.enabled(&state));
+        state.opened = false;
+        assert!(!close.enabled(&state), "nothing open");
+        state.opened = true;
+        state.modal = true;
+        assert!(!close.enabled(&state), "under a modal dialog");
+        (state.modal, state.dialog, state.dialog_window) = (false, true, true);
+        assert!(!close.enabled(&state), "Settings' window has the focus");
+    }
+
+    /// Open Recent's items: one per entry listed, each enabled only where its entry can be
+    /// opened, a missing one not; Clear Menu with any entry, missing or not.
+    #[test]
+    fn open_recent_s_items_follow_the_recents() {
+        let enabled = |id, state: &State| action(id).expect("declared").enabled(state);
+        let mut state = everything();
+        state.recents = [None; crate::recents::MOST];
+        assert!(!enabled(ActionId::CLEAR_RECENT, &state), "nothing to clear");
+        assert!(ActionId::OPEN_RECENT.iter().all(|id| !enabled(*id, &state)));
+        state.recents[0] = Some(true);
+        state.recents[1] = Some(false);
+        assert!(enabled(ActionId::OPEN_RECENT[0], &state));
+        assert!(!enabled(ActionId::OPEN_RECENT[1], &state), "missing");
+        assert!(!enabled(ActionId::OPEN_RECENT[2], &state), "not listed");
+        assert!(enabled(ActionId::CLEAR_RECENT, &state));
+        for (i, id) in ActionId::OPEN_RECENT.iter().enumerate() {
+            let recent = action(*id).expect("declared");
+            assert_eq!(recent.emits, Emit::Intent(Intent::OpenRecent(i)));
+            assert!(recent.keys.is_empty());
+            assert_eq!(recent.message, format!("action-open-recent-{}", i + 1));
+        }
+        // Opening one opens a folder: not under a modal dialog, as Open Folder….
+        state.modal = true;
+        assert!(!enabled(ActionId::OPEN_RECENT[0], &state));
     }
 
     #[test]

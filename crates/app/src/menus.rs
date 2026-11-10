@@ -17,7 +17,8 @@
 //! The application menus (`docs/gui.md`, The menus and The menu bar; decision 39).
 //!
 //! One model, [`MENUS`]: menus of groups that lines separate, each entry an action of the
-//! registry by id, a submenu, or one of the Mac's own items. It names actions as the top
+//! registry by id, a submenu, one of the Mac's own items, or Open Recent's list, whose
+//! items are the recents the app hands in ([`Recent`]). It names actions as the top
 //! panel's `TOP_PANEL` does, so the registry still declares each action once: an item's
 //! words are its action's message, its key the keymap's first for the platform, and it is
 //! enabled exactly when its action can run where it is ([`shown`]). Only actions the
@@ -78,6 +79,21 @@ pub enum Entry {
     Submenu(&'static Menu),
     /// One of the Mac's own items, which the system performs.
     System(System),
+    /// Open Recent's list: an item for each recent the app hands in, newest first, each
+    /// the registry's action for its place ([`ActionId::OPEN_RECENT`]), its words the
+    /// recent's own. A menu holding it is built afresh on the Mac whenever what it shows
+    /// changes.
+    Recents,
+}
+
+/// One of Open Recent's entries as its item shows it: its words, the folder's name, and
+/// its tip, the path and why it cannot be opened where it cannot, which the drawn menu
+/// shows and the Mac's menus, which show no path, leave out. Whether it can be chosen is
+/// its action's ([`State::recents`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recent {
+    pub words: String,
+    pub tip: String,
 }
 
 /// The Mac's own items, which muda predefines: macOS performs them, so they are not the
@@ -123,6 +139,15 @@ static PANEL_TAB: Menu = Menu {
         item(ActionId::PANEL_TABS[3]),
         item(ActionId::PANEL_TABS[4]),
     ]],
+};
+
+/// File › Open Recent: the recents, newest first, then Clear Menu, which alone is there
+/// with none (`docs/gui.md`, File).
+static OPEN_RECENT: Menu = Menu {
+    title: "menu-open-recent",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[Entry::Recents], &[item(ActionId::CLEAR_RECENT)]],
 };
 
 static INTERFACE_SIZE: Menu = Menu {
@@ -219,14 +244,19 @@ pub static MENUS: [Menu; 7] = [
         role: Role::Plain,
         on: Platforms::All,
         groups: &[
-            &[item(ActionId::OPEN), item(ActionId::OPEN_FOLDER)],
+            &[
+                item(ActionId::OPEN),
+                item(ActionId::OPEN_FOLDER),
+                Entry::Submenu(&OPEN_RECENT),
+            ],
             &[
                 item(ActionId::IMPORT),
                 item(ActionId::EXPORT),
                 item(ActionId::EXPORT_AGAIN),
             ],
-            // Close Window on the Mac; Exit on Windows, Quit on Linux.
+            // Close; then Close Window on the Mac; Exit on Windows, Quit on Linux.
             &[
+                item(ActionId::CLOSE),
                 Entry::Action(ActionId::CLOSE_WINDOW, Platforms::Mac),
                 Entry::Action(ActionId::QUIT, Platforms::NotMac),
             ],
@@ -313,7 +343,82 @@ fn holds(entry: &Entry, os: OperatingSystem) -> bool {
         Entry::Action(_, on) => on.includes(os),
         Entry::Submenu(menu) => present(menu, os),
         Entry::System(_) => os == OperatingSystem::Mac,
+        Entry::Recents => true,
     }
+}
+
+/// Whether `menu` holds Open Recent's list, so its items follow the recents.
+fn lists_recents(menu: &Menu) -> bool {
+    menu.groups
+        .iter()
+        .flat_map(|g| g.iter())
+        .any(|e| matches!(e, Entry::Recents))
+}
+
+/// One item of a menu whose items follow the recents, or a line between two of its groups.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Listed {
+    Item {
+        id: ActionId,
+        words: String,
+        tip: Option<String>,
+        shown: Shown,
+    },
+    Separator,
+}
+
+/// What `menu`, one that lists the recents, holds on `os` with `recents`, newest first, at
+/// most [`ActionId::OPEN_RECENT`]'s: its actions' items and each recent's ([`shown`]), in
+/// groups that lines separate, a group with nothing to hold left out with its line, so
+/// with no recents Open Recent holds Clear Menu alone. Its submenus and the Mac's own items
+/// are never in it.
+pub fn listed(
+    menu: &'static Menu,
+    os: OperatingSystem,
+    keymap: &Keymap,
+    state: &State,
+    recents: &[Recent],
+    tr: &Translator,
+    focus: Focus,
+) -> Vec<Listed> {
+    let mut listed = Vec::new();
+    for group in groups(menu, os) {
+        let mut items = Vec::new();
+        for entry in group {
+            match entry {
+                Entry::Action(id, _) => {
+                    let Some(action) = actions::action(*id) else {
+                        continue;
+                    };
+                    items.push(Listed::Item {
+                        id: *id,
+                        words: tr.text(action.message),
+                        tip: None,
+                        shown: shown(*id, keymap, state, focus),
+                    });
+                }
+                Entry::Recents => {
+                    for (id, recent) in ActionId::OPEN_RECENT.iter().zip(recents) {
+                        items.push(Listed::Item {
+                            id: *id,
+                            words: recent.words.clone(),
+                            tip: Some(recent.tip.clone()),
+                            shown: shown(*id, keymap, state, focus),
+                        });
+                    }
+                }
+                Entry::Submenu(_) | Entry::System(_) => {}
+            }
+        }
+        if items.is_empty() {
+            continue;
+        }
+        if !listed.is_empty() {
+            listed.push(Listed::Separator);
+        }
+        listed.extend(items);
+    }
+    listed
 }
 
 /// Whether `menu` is there on `os`: when it holds anything there, and on the Mac the
@@ -379,17 +484,18 @@ pub fn runs(id: ActionId, repeat: bool) -> bool {
 /// where it is, and the keymap's first key as the platform spells it, whatever has the
 /// focus, since the registry reads every key there and the menu only shows them; and a
 /// check mark where the action turns something on or chooses one of a set. An item's id is
-/// its action's ([`chosen`]).
+/// its action's ([`chosen`]). Open Recent lists `recents`, each with its path in its tip.
 pub fn request(
     ctx: &egui::Context,
     keymap: &Keymap,
     state: &State,
+    recents: &[Recent],
     anchor: Rect,
 ) -> popup::Request {
     let tr = translator(ctx);
     let os = ctx.os();
     let entries = menus(os)
-        .map(|menu| drawn(menu, os, keymap, state, &tr).into())
+        .map(|menu| drawn(menu, os, keymap, state, recents, &tr).into())
         .collect();
     popup::Request::pull_down(anchor, tr.text("top-panel-menu"), entries)
 }
@@ -404,19 +510,43 @@ pub fn context(
     at: Pos2,
 ) -> popup::Request {
     let tr = translator(ctx);
-    let entries = drawn(menu, ctx.os(), keymap, state, &tr).entries;
+    let entries = drawn(menu, ctx.os(), keymap, state, &[], &tr).entries;
     let anchor = Rect::from_min_size(at, egui::Vec2::ZERO);
     popup::Request::pull_down(anchor, tr.text(menu.title), entries)
 }
 
-/// `menu` as a submenu of the ☰'s menu, its id its title's message id.
+/// `menu` as a submenu of the ☰'s menu, its id its title's message id; one that lists the
+/// recents holds `recents` ([`listed`]).
 fn drawn(
     menu: &'static Menu,
     os: OperatingSystem,
     keymap: &Keymap,
     state: &State,
+    recents: &[Recent],
     tr: &Translator,
 ) -> popup::Submenu {
+    if lists_recents(menu) {
+        let listed = listed(menu, os, keymap, state, recents, tr, Focus::None);
+        let entries = listed.into_iter().map(|listed| match listed {
+            Listed::Item {
+                id,
+                words,
+                tip,
+                shown,
+            } => {
+                let mut item = popup::Item::new(id.0, words).enabled(shown.enabled);
+                if let Some(key) = shown.key {
+                    item = item.shortcut(key.spell(os, tr));
+                }
+                if let Some(tip) = tip {
+                    item = item.tip(tip);
+                }
+                item.into()
+            }
+            Listed::Separator => popup::Entry::Separator,
+        });
+        return popup::Submenu::new(menu.title, tr.text(menu.title), entries.collect());
+    }
     let mut entries = Vec::new();
     for (i, group) in groups(menu, os).into_iter().enumerate() {
         if i > 0 {
@@ -439,9 +569,12 @@ fn drawn(
                     }
                     entries.push(item.into());
                 }
-                Entry::Submenu(inner) => entries.push(drawn(inner, os, keymap, state, tr).into()),
-                // The Mac's alone, which `groups` leaves out elsewhere.
-                Entry::System(_) => {}
+                Entry::Submenu(inner) => {
+                    entries.push(drawn(inner, os, keymap, state, recents, tr).into());
+                }
+                // The Mac's alone, which `groups` leaves out elsewhere; the recents are in a
+                // menu of their own ([`listed`]).
+                Entry::System(_) | Entry::Recents => {}
             }
         }
     }
@@ -470,7 +603,7 @@ impl NativeMenus {
         match *self {}
     }
 
-    pub fn update(&mut self, _: &eframe::egui::Context, _: &Keymap, _: &State) {
+    pub fn update(&mut self, _: &eframe::egui::Context, _: &Keymap, _: &State, _: &[Recent]) {
         match *self {}
     }
 }
@@ -485,7 +618,10 @@ mod mac {
     use muda::accelerator::{Key as Logical, KeyAccelerator, Modifiers as Held, NamedKey};
     use muda::{MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
-    use super::{Entry, Role, Shown, System, groups, menus, runs, shown};
+    use super::{
+        Entry, Listed, Recent, Role, Shown, System, groups, listed, lists_recents, menus, runs,
+        shown,
+    };
     use crate::actions::{self, ACTIONS, ActionId, Focus, Keymap, Shortcut, State};
 
     /// The Mac's menu bar, built from [`super::MENUS`] once the window exists, on the main
@@ -495,6 +631,9 @@ mod mac {
         bar: muda::Menu,
         /// Each action's item, with what it shows now.
         items: Vec<Placed>,
+        /// The menus whose items follow the recents, Open Recent, each built afresh as what
+        /// it shows changes.
+        listing: Vec<Listing>,
         /// The menus' titles and the system's items, by their message ids.
         titles: Vec<(&'static str, Titled)>,
         /// The language the words are in.
@@ -520,6 +659,39 @@ mod mac {
         System(PredefinedMenuItem),
     }
 
+    /// A menu whose items follow the recents, with what it shows now, none until it is
+    /// first filled.
+    struct Listing {
+        menu: &'static super::Menu,
+        submenu: Submenu,
+        shown: Option<Vec<Listed>>,
+    }
+
+    impl Listing {
+        /// Puts `listed` in place of its items: the actions' and the recents' items, by
+        /// their actions' ids, and the lines. A key muda cannot set is left out.
+        fn fill(&self, listed: &[Listed]) -> muda::Result<()> {
+            while self.submenu.remove_at(0).is_some() {}
+            for listed in listed {
+                match listed {
+                    Listed::Item {
+                        id, words, shown, ..
+                    } => {
+                        let item = MenuItem::with_id(id.0, words, shown.enabled, None);
+                        if let Some(key) = shown.key.and_then(key_equivalent) {
+                            item.set_key_accelerator(Some(key))?;
+                        }
+                        self.submenu.append(&item)?;
+                    }
+                    Listed::Separator => {
+                        self.submenu.append(&PredefinedMenuItem::separator())?;
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
     impl NativeMenus {
         /// Builds the menu bar in the interface's language and hands it to AppKit, the
         /// Window and Help menus as such; None, with a warning, if muda fails. Its items
@@ -538,6 +710,7 @@ mod mac {
             let mut built = NativeMenus {
                 bar: muda::Menu::new(),
                 items: Vec::new(),
+                listing: Vec::new(),
                 titles: Vec::new(),
                 locale: tr.locale(),
                 chosen,
@@ -577,6 +750,17 @@ mod mac {
         ) -> muda::Result<Submenu> {
             // muda leaves out the `&` of a top-level menu's access key on the Mac.
             let submenu = Submenu::new(tr.text(menu.title), true);
+            // Filled by each update, as the recents change.
+            if lists_recents(menu) {
+                self.listing.push(Listing {
+                    menu,
+                    submenu: submenu.clone(),
+                    shown: None,
+                });
+                self.titles
+                    .push((menu.title, Titled::Menu(submenu.clone())));
+                return Ok(submenu);
+            }
             for (i, group) in groups(menu, OperatingSystem::Mac).into_iter().enumerate() {
                 if i > 0 {
                     submenu.append(&PredefinedMenuItem::separator())?;
@@ -609,6 +793,8 @@ mod mac {
                             submenu.append(&item)?;
                             self.titles.push((system.message(), Titled::System(item)));
                         }
+                        // In a menu of their own, filled by each update.
+                        Entry::Recents => {}
                     }
                 }
             }
@@ -633,7 +819,14 @@ mod mac {
         /// Brings every item up to date with `keymap`, `state`, the focus and the
         /// language, calling muda only for what changed: a language chosen in Settings
         /// renames every menu, and while a widget has focus no item holds a key it keeps.
-        pub fn update(&mut self, ctx: &egui::Context, keymap: &Keymap, state: &State) {
+        /// Open Recent lists `recents`, built afresh only when what it shows changes.
+        pub fn update(
+            &mut self,
+            ctx: &egui::Context,
+            keymap: &Keymap,
+            state: &State,
+            recents: &[Recent],
+        ) {
             let tr = translator(ctx);
             if tr.locale() != self.locale {
                 self.locale = tr.locale();
@@ -663,6 +856,20 @@ mod mac {
                     self.refused = true;
                 }
                 placed.shown = now;
+            }
+            let mac = OperatingSystem::Mac;
+            for listing in &mut self.listing {
+                let now = listed(listing.menu, mac, keymap, state, recents, &tr, focus);
+                if listing.shown.as_ref() == Some(&now) {
+                    continue;
+                }
+                if let Err(e) = listing.fill(&now)
+                    && !self.refused
+                {
+                    tracing::warn!(target: "gpu", "{} not filled: {e}", listing.menu.title);
+                    self.refused = true;
+                }
+                listing.shown = Some(now);
             }
         }
     }
@@ -807,6 +1014,8 @@ mod tests {
                 Entry::Action(id, _) => ids.push(*id),
                 Entry::Submenu(inner) => placed_in(inner, os, ids),
                 Entry::System(_) => {}
+                // Every place, whatever the recents hold.
+                Entry::Recents => ids.extend(ActionId::OPEN_RECENT),
             }
         }
     }
@@ -843,6 +1052,8 @@ mod tests {
             photo: true,
             edited: true,
             photos: 2,
+            opened: true,
+            recents: [Some(true); crate::recents::MOST],
             tabs: &[true; 5],
             scale: 1.5,
             dialog: false,
@@ -1055,16 +1266,146 @@ mod tests {
             let mut ids = Vec::new();
             placed_in(file, os, &mut ids);
             assert_eq!(ids.first(), Some(&ActionId::OPEN), "{os:?}");
-            // A group of its own, Open Folder… after it, as Open Recent will join them.
+            // A group of its own, Open Folder… and Open Recent after it.
             let first: Vec<_> = groups(file, os)[0]
                 .iter()
                 .map(|entry| match entry {
-                    Entry::Action(id, _) => *id,
-                    _ => panic!("an action"),
+                    Entry::Action(id, _) => id.0,
+                    Entry::Submenu(menu) => menu.title,
+                    _ => panic!("an action or a submenu"),
                 })
                 .collect();
-            assert_eq!(first, [ActionId::OPEN, ActionId::OPEN_FOLDER], "{os:?}");
+            assert_eq!(first, ["open", "open-folder", "menu-open-recent"], "{os:?}");
+            // Close starts File's last group, Close Window or Quit after it.
+            let last = groups(file, os).pop().expect("groups");
+            assert!(
+                matches!(last[0], Entry::Action(ActionId::CLOSE, _)),
+                "{os:?}"
+            );
+            assert_eq!(last.len(), 2, "{os:?}");
         }
+    }
+
+    fn recent(words: &str, tip: &str) -> Recent {
+        Recent {
+            words: words.to_owned(),
+            tip: tip.to_owned(),
+        }
+    }
+
+    /// Open Recent's items as `os` lists them, with `recents` and `state`.
+    fn open_recent(os: OperatingSystem, state: &State, recents: &[Recent]) -> Vec<Listed> {
+        let tr = Translator::new(Locale::EnGb);
+        let keymap = Keymap::defaults(os);
+        listed(&OPEN_RECENT, os, &keymap, state, recents, &tr, Focus::None)
+    }
+
+    /// Open Recent the same on every platform: each recent's words, newest first, a missing
+    /// one disabled, then a line and Clear Menu; with none, Clear Menu alone and disabled.
+    #[test]
+    fn open_recent_lists_the_recents_then_clear_menu_on_every_platform() {
+        let mut state = everything();
+        state.recents = [None; crate::recents::MOST];
+        state.recents[0] = Some(true);
+        state.recents[1] = Some(false);
+        let recents = [
+            recent("Wedding", "/photos/Wedding"),
+            recent("Gone", "This folder is no longer there.\n/photos/Gone"),
+        ];
+        for os in PLATFORMS {
+            let shown = |enabled| Shown { enabled, key: None };
+            let item = |id: ActionId, words: &str, tip: Option<&str>, enabled| Listed::Item {
+                id,
+                words: words.to_owned(),
+                tip: tip.map(str::to_owned),
+                shown: shown(enabled),
+            };
+            assert_eq!(
+                open_recent(os, &state, &recents),
+                [
+                    item(
+                        ActionId::OPEN_RECENT[0],
+                        "Wedding",
+                        Some("/photos/Wedding"),
+                        true
+                    ),
+                    item(
+                        ActionId::OPEN_RECENT[1],
+                        "Gone",
+                        Some(&recents[1].tip),
+                        false
+                    ),
+                    Listed::Separator,
+                    item(ActionId::CLEAR_RECENT, "Clear menu", None, true),
+                ],
+                "{os:?}"
+            );
+            state.recents = [None; crate::recents::MOST];
+            assert_eq!(
+                open_recent(os, &state, &[]),
+                [item(ActionId::CLEAR_RECENT, "Clear menu", None, false)],
+                "{os:?}"
+            );
+            state.recents[0] = Some(true);
+            state.recents[1] = Some(false);
+        }
+    }
+
+    /// The ☰'s Open Recent: the recents' words with their paths in the tips, a missing one
+    /// disabled, each chosen by its place's action.
+    #[test]
+    fn the_drawn_open_recent_holds_the_recents_with_their_paths() {
+        let mut state = everything();
+        state.recents = [None; crate::recents::MOST];
+        state.recents[0] = Some(true);
+        state.recents[1] = Some(false);
+        let recents = [
+            recent("Wedding", "/photos/Wedding"),
+            recent("Selects — Lisbon", "/photos/Lisbon/Selects"),
+        ];
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let menu = request(&ctx, &keymap, &state, &recents, Rect::NOTHING);
+        let file = tops(&menu)[0];
+        let submenu = file
+            .entries
+            .iter()
+            .find_map(|e| match e {
+                popup::Entry::Submenu(s) if s.id == "menu-open-recent" => Some(s),
+                _ => None,
+            })
+            .expect("Open Recent in File");
+        assert_eq!(submenu.text, "Open Recent");
+        assert_eq!(
+            submenu.entries,
+            [
+                popup::Item::new("open-recent-1", "Wedding")
+                    .tip("/photos/Wedding")
+                    .into(),
+                popup::Item::new("open-recent-2", "Selects — Lisbon")
+                    .tip("/photos/Lisbon/Selects")
+                    .enabled(false)
+                    .into(),
+                popup::Entry::Separator,
+                popup::Item::new("clear-recent", "Clear menu").into(),
+            ]
+        );
+        assert_eq!(chosen("open-recent-2"), Some(ActionId::OPEN_RECENT[1]));
+        assert_eq!(chosen("clear-recent"), Some(ActionId::CLEAR_RECENT));
+        // Close, with Linux's Ctrl+W, before Quit.
+        let close = file
+            .entries
+            .iter()
+            .find_map(|e| match e {
+                popup::Entry::Item(item) if item.id == "close" => Some(item),
+                _ => None,
+            })
+            .expect("Close in File");
+        assert_eq!(close.text, "Close");
+        assert_eq!(close.shortcut.as_deref(), Some("Ctrl+W"));
+        assert!(close.enabled);
     }
 
     #[test]
@@ -1257,6 +1598,7 @@ mod tests {
             &ctx,
             &Keymap::defaults(OperatingSystem::Nix),
             state,
+            &[],
             Rect::NOTHING,
         )
     }
@@ -1345,11 +1687,16 @@ mod tests {
         assert_eq!(find(ActionId::PANEL_TABS[2]).checked, Some(true));
         assert_eq!(find(ActionId::PANEL_TABS[0]).checked, Some(false));
         assert_eq!(find(ActionId::QUIT).checked, None);
-        // Every item is its action's, as the registry has it, and the menus' order.
+        // Every item is its action's, as the registry has it, and the menus' order; Open
+        // Recent, given no recents, holds Clear Menu alone.
         let keymap = Keymap::defaults(OperatingSystem::Nix);
         let en = Translator::new(Locale::EnGb);
         let ids: Vec<&str> = all.iter().map(|item| item.id.as_str()).collect();
-        let placed: Vec<&str> = placed(OperatingSystem::Nix).iter().map(|id| id.0).collect();
+        let placed: Vec<&str> = placed(OperatingSystem::Nix)
+            .iter()
+            .filter(|id| !ActionId::OPEN_RECENT.contains(id))
+            .map(|id| id.0)
+            .collect();
         assert_eq!(ids, placed);
         for item in all {
             let id = chosen(&item.id).expect("an action's id");

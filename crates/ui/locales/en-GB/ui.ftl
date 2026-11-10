@@ -480,7 +480,8 @@ open-folder-title = Open Folder
 # of folders. Albums and Smart albums join it with the library.
 section-browse = Browse
 browse-folders = Folders
-# The top line's box: what screen readers call it, its words for a folder, or for none.
+# The top line's box: what screen readers call it, its words for a folder, or for none,
+# which the central panel says too with nothing open.
 browse-open-name = What is open
 browse-open-folder = Folder: { $name }
 browse-no-folder = No folder open
@@ -513,9 +514,6 @@ folders-reading = Reading { $name }…
 folders-recent-missing = This folder could not be opened. { $reason }
 # The tooltip of a recent folder that is no longer where it was.
 folders-recent-gone = This folder is no longer there.
-# The central panel and the grid panel with nothing open: where to start.
-start-title = Open a folder to start
-start-recent = Recent folders
 folder-reading = Reading { $folder }…
 folder-empty = No raw photos in { $folder }
 folder-failed = Could not open { $folder }: { $reason }
@@ -548,6 +546,7 @@ settings-page-ai = AI
 settings-page-later = Coming in a later version
 # The titled groups of a page's rows.
 settings-group-interface = Interface
+settings-group-start = Start
 settings-group-confirmations = Confirmations
 settings-group-thumbnails = Thumbnails
 settings-group-side-panel = Side panel
@@ -566,6 +565,8 @@ setting-sliders-marker-label = Slider marker
 setting-sliders-marker-option-triangle = Triangle
 setting-sliders-marker-option-circle = Circle
 setting-sliders-marker-option-square = Square
+setting-library-reopen-last-label = Reopen what was open last
+setting-library-reopen-last-help = Opens the folder you were working in when { app-name } closed, with its photo. A file or folder opened from the file manager or a terminal opens instead.
 setting-export-ask-before-overwrite-label = Ask before overwriting an exported file
 setting-grid-panel-square-thumbnails-label = Square thumbnails
 setting-side-panel-tab-names-label = Show tab names
@@ -724,6 +725,21 @@ action-full-screen = Full screen
 # File › Close Window on the Mac: the window with the focus, Settings' or the main window,
 # which quits.
 action-close-window = Close window
+# File › Close: the folder or photo open, its edit saved; then where to start.
+action-close = Close
+# File › Open Recent's items by place, newest first, as the keyboard map names them;
+# the menu shows each folder's name. Clear Menu empties the list.
+action-open-recent-1 = Open recent 1
+action-open-recent-2 = Open recent 2
+action-open-recent-3 = Open recent 3
+action-open-recent-4 = Open recent 4
+action-open-recent-5 = Open recent 5
+action-open-recent-6 = Open recent 6
+action-open-recent-7 = Open recent 7
+action-open-recent-8 = Open recent 8
+action-open-recent-9 = Open recent 9
+action-open-recent-10 = Open recent 10
+action-clear-recent = Clear menu
 action-quit = Quit
 action-peek = See the photo without the section under the pointer
 action-next-photo = Next photo
@@ -780,6 +796,10 @@ menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size
 menu-background = Background
 menu-grid-position = Grid Panel Position
+# A submenu of File, and its item for a recent whose name another shares: with the
+# name of the folder it is in.
+menu-open-recent = Open Recent
+menu-recent-in = { $name } — { $parent }
 # The Mac's own items in the app menu and the Window menu, which macOS performs.
 menu-services = Services
 menu-hide-app = Hide { app-name }

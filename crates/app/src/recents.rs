@@ -34,6 +34,11 @@
 //!   not asked again; an entry found missing is marked ([`Recents::missing`]), one not yet
 //!   answered is not, and an answer to a question asked before the entry was opened again
 //!   is dropped.
+//! - **What was open last** ([`Last`]) is kept beside the list, as `[last]`, for the next
+//!   start to reopen (`docs/gui.md`, The start window): the folder a way in opened and its
+//!   photo active as the app ended, never a photo opened alone; File › Close takes it out
+//!   ([`Recents::set_last`]). A write merges it as it does the list, the newest winning;
+//!   one this build cannot read is read as none and left in the file until replaced.
 //! - A damaged `state.toml`, one that is not TOML or not UTF-8, is set aside as
 //!   `state.toml.bak` with a warning naming no path in it: read at the start, the list
 //!   starts empty; met by a later write, what the last write left is written. One a newer
@@ -56,6 +61,9 @@ const VERSION: i64 = 1;
 
 /// The key of the list in the file.
 const KEY: &str = "recent";
+
+/// The key of what was open last.
+const LAST: &str = "last";
 
 /// What an entry is. Libraries and projects join folders in Phase 5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -86,6 +94,40 @@ pub struct Entry {
     pub kind: Kind,
     pub path: PathBuf,
     pub opened: u64,
+}
+
+/// What was open last, for the next start to reopen: a folder, never a photo opened alone,
+/// with the file name of its photo active as the app ended, if any.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Last {
+    pub kind: Kind,
+    pub path: PathBuf,
+    pub photo: Option<String>,
+}
+
+impl Last {
+    /// What `value` holds, or None where this build cannot read it.
+    fn read(value: &Value) -> Option<Last> {
+        let table = value.as_table()?;
+        let kind = Kind::from_id(table.get("kind")?.as_str()?)?;
+        let path = PathBuf::from(table.get("path")?.as_str()?);
+        let photo = match table.get("photo") {
+            Some(photo) => Some(photo.as_str()?.to_owned()),
+            None => None,
+        };
+        Some(Last { kind, path, photo })
+    }
+
+    fn value(&self) -> Value {
+        let mut table = Table::new();
+        table.insert("kind".into(), self.kind.id().into());
+        let path = self.path.to_string_lossy().into_owned();
+        table.insert("path".into(), path.into());
+        if let Some(photo) = &self.photo {
+            table.insert("photo".into(), photo.clone().into());
+        }
+        Value::Table(table)
+    }
 }
 
 /// An entry as the file holds it: one this build reads, or one it cannot, kept as it is.
@@ -146,6 +188,8 @@ enum Change {
     Cleared,
     /// The list written as it is, even empty: the move of the old setting's.
     Kept,
+    /// What was open last, or none.
+    Last(Option<Last>),
 }
 
 /// Applies `change` to `items`, newest first, keeping at most [`MOST`]. An entry opened
@@ -178,7 +222,7 @@ fn apply(items: &mut Vec<Item>, change: &Change) {
             }
         }
         Change::Cleared => items.retain(|item| matches!(item, Item::Unknown(_))),
-        Change::Kept => {}
+        Change::Kept | Change::Last(_) => {}
     }
     // Newest first; the sort is stable, so an entry opened in the same second as another
     // stays where it was put.
@@ -192,6 +236,8 @@ struct Read {
     table: Table,
     /// None where the file has no list yet.
     items: Option<Vec<Item>>,
+    /// What was open last, where the file holds one this build reads.
+    last: Option<Last>,
     /// Whether it was damaged, and set aside.
     damaged: bool,
     /// Whether it may be written: not one a newer Apertrust wrote, nor one that could not
@@ -272,6 +318,7 @@ fn read(file: &Path) -> Read {
         items.truncate(MOST);
         read.items = Some(items);
     }
+    read.last = table.get(LAST).and_then(Last::read);
     read.table = table;
     read
 }
@@ -301,6 +348,12 @@ fn merge(file: &Path, changes: &[Change], last: &[Item]) -> io::Result<Vec<Item>
     };
     for change in changes {
         apply(&mut items, change);
+        if let Change::Last(last) = change {
+            match last {
+                Some(last) => table.insert(LAST.into(), last.value()),
+                None => table.remove(LAST),
+            };
+        }
     }
     table.insert("version".into(), VERSION.into());
     let list = items.iter().map(Item::value);
@@ -398,6 +451,8 @@ type Key = (Kind, PathBuf);
 /// The list of what was opened, newest first, kept in `state.toml`.
 pub struct Recents {
     items: Vec<Item>,
+    /// What was open last.
+    last: Option<Last>,
     /// What changed since the last [`save`](Recents::save).
     changes: Vec<Change>,
     /// The entries a check found missing.
@@ -417,6 +472,7 @@ impl Recents {
         let (answer, answers) = mpsc::channel();
         Recents {
             items: Vec::new(),
+            last: None,
             changes: Vec::new(),
             missing: HashSet::new(),
             asking: HashMap::new(),
@@ -433,11 +489,13 @@ impl Recents {
     pub fn open(file: PathBuf, old: impl FnOnce() -> Vec<PathBuf>) -> (Recents, Vec<String>) {
         let Read {
             items,
+            last,
             writable,
             warnings,
             ..
         } = read(&file);
         let mut recents = Recents::nowhere();
+        recents.last = last;
         if writable {
             recents.writer = Writer::start(file, items.clone().unwrap_or_default());
         }
@@ -500,14 +558,27 @@ impl Recents {
         there
     }
 
-    /// Clear Menu: every entry this build reads goes.
-    #[cfg_attr(not(test), allow(dead_code, reason = "Clear Menu is to come"))]
+    /// Clear Menu: every entry this build reads goes. What was open last stays.
     pub fn clear(&mut self) {
         self.missing.clear();
         for still in self.asking.values_mut() {
             *still = false;
         }
         self.change(Change::Cleared);
+    }
+
+    /// What was open last, as the file held it at the start or as last set.
+    pub fn last(&self) -> Option<&Last> {
+        self.last.as_ref()
+    }
+
+    /// What was open last is now `last`, or none: written with the list's next save, and
+    /// not at all where it is the same.
+    pub fn set_last(&mut self, last: Option<Last>) {
+        if self.last != last {
+            self.last.clone_from(&last);
+            self.changes.push(Change::Last(last));
+        }
     }
 
     /// Marks `path` there or missing, as a check would.
