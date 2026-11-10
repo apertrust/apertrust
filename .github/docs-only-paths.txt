@@ -17,5 +17,3 @@ docs/**
 
 # Embedded in the About box, and checked by the icons' test.
 !CREDITS.md
-# Read by crates/operations/tests/order.rs.
-!docs/engine.md

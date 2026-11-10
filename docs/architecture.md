@@ -161,7 +161,7 @@ Details: [engine.md, The GPU](engine.md#the-gpu), the `slang-kernels` skill.
 
 Every operation, built-in or third-party, is a plugin behind one interface: a manifest with its slot in darktable's order, a versioned parameter schema, Slang kernels and a CPU-side `prepare`, one crate each (decisions 20 to 22). Built-in operations are compiled in; third-party ones are to come as declarative packages with WebAssembly logic, never native shared libraries.
 
-Details: [plugins.md](plugins.md), with the order in [engine.md, Order](engine.md#order).
+Details: [plugins.md](plugins.md), with the order in [engine.md, Order](engine.md#order) and each operation's slot in [crates/operations/order.md](../crates/operations/order.md).
 
 ### Modules
 
