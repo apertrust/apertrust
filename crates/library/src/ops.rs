@@ -399,6 +399,30 @@ pub fn thumbnail_key(folder: &Path, photo: &str, size: u32) -> Option<ThumbnailK
     let meta = std::fs::metadata(&path).ok()?;
     let modified = meta.modified().ok()?;
     let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    let slot = thumbnail_slot(&path, size);
+    let mut version = EMBEDDED.to_vec();
+    version.extend_from_slice(apertrust_raw::PREVIEW_VERSION.as_bytes());
+    version.push(0);
+    version.extend_from_slice(&meta.len().to_le_bytes());
+    version.extend_from_slice(&since.as_nanos().to_le_bytes());
+    Some(ThumbnailKey { slot, version })
+}
+
+/// The sizes a thumbnail is kept at in the cache, smallest first (`docs/cache.md`,
+/// Entries).
+pub const THUMBNAIL_SIZES: [u32; 4] = [128, 256, 512, 1024];
+
+/// What the version of the camera's embedded picture kept as a thumbnail starts with.
+pub const EMBEDDED: &[u8] = b"embedded\0";
+
+/// What the version of Apertrust's own render of the photo's edit kept as a thumbnail
+/// starts with, its edit's hash and the render version after it (the library's step 6),
+/// which an opening photo shows first, stale or not (decision 77).
+pub const RENDERED: &[u8] = b"rendered\0";
+
+/// The cache's slot of the thumbnail of the raw at `path` at `size`, whatever picture it
+/// holds: the photo, its virtual copy and the size.
+pub fn thumbnail_slot(path: &Path, size: u32) -> Vec<u8> {
     // The virtual copy: the photo itself until virtual copies are built.
     let copy = 0u32;
     let mut slot = b"thumbnail\0".to_vec();
@@ -406,12 +430,7 @@ pub fn thumbnail_key(folder: &Path, photo: &str, size: u32) -> Option<ThumbnailK
     slot.push(0);
     slot.extend_from_slice(&copy.to_le_bytes());
     slot.extend_from_slice(&size.to_le_bytes());
-    let mut version = b"embedded\0".to_vec();
-    version.extend_from_slice(apertrust_raw::PREVIEW_VERSION.as_bytes());
-    version.push(0);
-    version.extend_from_slice(&meta.len().to_le_bytes());
-    version.extend_from_slice(&since.as_nanos().to_le_bytes());
-    Some(ThumbnailKey { slot, version })
+    slot
 }
 
 /// A photo of the index as a client sees it.

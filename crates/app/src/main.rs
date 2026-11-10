@@ -105,7 +105,7 @@ use egui_winit::winit::application::ApplicationHandler;
 use egui_winit::winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::window::WindowId;
-use mirror::{Mirror, PhotoState, Reaction, Shown};
+use mirror::{Mirror, PhotoState, Picture, Reaction, Shown};
 use modules::{Change, Panels, Pending};
 use settings::{Keeper, Settings};
 
@@ -828,6 +828,9 @@ struct App {
     /// Quit is to run again before the next frame: the quit alert was answered yes, or
     /// could not be shown.
     quit_again: bool,
+    /// The texture of the mirror's picture of a photo opening, with its generation
+    /// (decision 77).
+    picture: Option<(u64, egui::TextureHandle)>,
     /// The grid panel's thumbnails as textures, made of what the mirror holds.
     thumbnails: thumbnails::Textures,
     /// The thumbnails asked for of the photos in the grid panel's sight.
@@ -2032,6 +2035,7 @@ impl App {
             alerts: alerts::Alerts::default(),
             quit: alerts::Guard::default(),
             quit_again: false,
+            picture: None,
             thumbnails: thumbnails::Textures::default(),
             thumbnails_asked: thumbnails::Asking::default(),
             kept,
@@ -2297,7 +2301,7 @@ impl App {
         // File › Open… shows the folder of what it opens (`docs/gui.md`, File).
         let folder = self.mirror.folder.to_show(&path);
         let open = self.session.send(Command::Open(path.clone()));
-        self.mirror.opening(path, open);
+        self.mirror.opening(path, open, Instant::now());
         if let Some(folder) = folder {
             self.open_folder(folder);
         }
@@ -2527,10 +2531,10 @@ impl App {
     /// The shell's part of the actions' availability, with the photo's.
     fn shell_state(&self, ctx: &egui::Context) -> State {
         let open = matches!(self.mirror.photo, PhotoState::Open(_));
-        // A photo open for viewing only has nothing Reset could take back.
-        let state = self
-            .shell
-            .state(ctx, open, self.mirror.values.edited && !self.view_only());
+        // A photo open for viewing only has nothing Reset could take back, nor one still
+        // opening, read-only until it is live (decision 77).
+        let resettable = self.mirror.values.edited && self.mirror.takes_edits();
+        let state = self.shell.state(ctx, open, resettable);
         State {
             shown: !self.mirror.folder.order().is_empty(),
             ..state
@@ -2816,7 +2820,21 @@ impl App {
             _ => None,
         };
         let layer = tr(ui.ctx(), "layer-image");
-        let open = photo.is_some();
+        // Until the photo is live, nothing acts on it: no guides, proof margin or zoom
+        // (decision 77).
+        let live = self.mirror.live();
+        let open = photo.is_some() && live;
+        // Rendering…, quietly, only once the photo is still not live a second after it was
+        // asked for, from a repaint asked for then.
+        if let Some(from) = self.mirror.rendering_from()
+            && from > now
+        {
+            ui.ctx().request_repaint_after(from - now);
+        }
+        let rendering = self
+            .mirror
+            .rendering(now)
+            .then(|| tr(ui.ctx(), "photo-rendering"));
         // The zoom menu's entries with the keys of the actions that do the same.
         let words = translator(ui.ctx());
         let keys: Vec<(CentralBarAction, String)> = ZOOM_MENU
@@ -2834,7 +2852,8 @@ impl App {
                 Toggle::new(false, false),
                 Toggle::new(self.shell.guides, open),
             )
-            .zoom_enabled(open);
+            .zoom_enabled(open)
+            .status(rendering.as_deref());
         for (entry, keys) in &keys {
             bar = bar.shortcut(*entry, keys);
         }
@@ -2850,34 +2869,28 @@ impl App {
         let central_bar =
             egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().top()));
 
+        // Until its first frame, the photo's picture where one is in hand, else its name.
+        let picture = self
+            .mirror
+            .picture()
+            .filter(|_| self.mirror.frame.is_none());
+        if self.mirror.picture().is_none() {
+            self.picture = None;
+        }
+        let opening = |path: &Path| {
+            let mut args = apertrust_ui::i18n::Args::new();
+            args.set("name", file_name(path));
+            translator(ui.ctx()).text_with("photo-opening", Some(&args))
+        };
         let message = match &self.mirror.photo {
             // The folder's own words, under the photo's: the empty state below.
             PhotoState::None => None,
-            PhotoState::Opening { path, .. } => {
-                let mut args = apertrust_ui::i18n::Args::new();
-                args.set("name", file_name(path));
-                Some(translator(ui.ctx()).text_with("photo-opening", Some(&args)))
-            }
+            PhotoState::Opening { path, .. } => picture.is_none().then(|| opening(path)),
             PhotoState::Failed { message, .. } => Some(message.clone()),
-            PhotoState::Open(_) => None,
+            PhotoState::Open(photo) => (!live && picture.is_none()).then(|| opening(&photo.path)),
         };
-        // Where the photo is drawn, at the size the engine renders it at for this room, so
-        // a frame rendered for it is shown pixel for pixel, and one rendered for another
-        // size, as while the window resizes, scaled to the size its successor will have.
-        let placed = photo.map(|_| {
-            let (width, height) = if bounds.0 > 0 && bounds.1 > 0 {
-                self.mirror.values.viewport_size(bounds)
-            } else {
-                (0, 0)
-            };
-            block.place(egui::vec2(width as f32, height as f32) / ppp, ppp)
-        });
-        // A failed render keeps the last frame, if any, and says what failed over it.
-        if message.is_none()
-            && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
-        {
-            self.photo_at(ui, slot, placed, frame);
-        }
+        let values = photo.map(|_| &self.mirror.values);
+        let placed = place_photo(&block, bounds, ppp, values, picture.map(|(p, _)| p));
         // A failed save says so until a write succeeds; a failed render until the next
         // frame. The edit of a photo left, which could not be written, is said over
         // whatever follows, until another photo is asked for.
@@ -2886,6 +2899,18 @@ impl App {
             .failure
             .as_ref()
             .or(self.mirror.saving.failure.as_ref());
+        // A failed render keeps the last frame, if any, and says what failed over it.
+        if message.is_none()
+            && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
+        {
+            self.photo_at(ui, slot, placed, frame);
+        } else if message.is_none()
+            && failure.is_none()
+            && let (Some((shown, generation)), Some(placed)) = (picture, &placed)
+        {
+            let painter = ui.painter_at(slot);
+            paint_picture(&painter, placed, shown, generation, &mut self.picture);
+        }
         let left = self.mirror.saving.left.as_ref().map(|(edit, why)| {
             let mut args = apertrust_ui::i18n::Args::new();
             // The edit's file is the photo's name with `.apxmp` after it.
@@ -2991,6 +3016,85 @@ impl App {
             }
         }
     }
+}
+
+/// The largest size with `size`'s shape that fits `bounds`, never larger than `size`, each
+/// side rounded and at least a pixel, as the engine fits the viewport (`pipeline::fit`).
+fn fit((width, height): (u32, u32), (room_width, room_height): (u32, u32)) -> (u32, u32) {
+    if width == 0 || height == 0 {
+        return (0, 0);
+    }
+    let scale = (f64::from(room_width) / f64::from(width))
+        .min(f64::from(room_height) / f64::from(height))
+        .min(1.0);
+    let side = |n: u32| ((f64::from(n) * scale).round() as u32).max(1);
+    (side(width), side(height))
+}
+
+/// Where the photo goes in `block`, for a room of `bounds` physical pixels at `ppp` (the
+/// photo frame's layout, which its caption follows): once the photo's `values` have come,
+/// at the size the engine renders the edit at, so a frame rendered for it is shown pixel
+/// for pixel and one rendered for another size, as while the window resizes, scaled to the
+/// size its successor will have; before them, an opening photo's `picture` in its own
+/// shape (decision 77). `None` with neither.
+fn place_photo(
+    block: &PhotoFrame,
+    bounds: (u32, u32),
+    ppp: f32,
+    values: Option<&Values>,
+    picture: Option<&Picture>,
+) -> Option<Placed> {
+    let (width, height) = match (values, picture) {
+        _ if bounds.0 == 0 || bounds.1 == 0 => (0, 0),
+        (Some(values), _) => values.viewport_size(bounds),
+        (None, Some(picture)) => fit((picture.image.width, picture.image.height), bounds),
+        (None, None) => return None,
+    };
+    Some(block.place(egui::vec2(width as f32, height as f32) / ppp, ppp))
+}
+
+/// Draws an opening photo's `picture` of `generation` as it is, unmarked, letterboxed in
+/// the place the photo takes, `placed`, never larger than itself (decision 77); its
+/// texture made once for each picture and kept in `kept`.
+fn paint_picture(
+    painter: &egui::Painter,
+    placed: &Placed,
+    picture: &Picture,
+    generation: u64,
+    kept: &mut Option<(u64, egui::TextureHandle)>,
+) {
+    let ppp = painter.pixels_per_point();
+    let room = placed.photo.size() * ppp;
+    let image = (picture.image.width, picture.image.height);
+    let (width, height) = fit(image, (room.x.round() as u32, room.y.round() as u32));
+    let size = egui::vec2(width as f32, height as f32) / ppp;
+    let corner = egui::Rect::from_center_size(placed.photo.center(), size).min;
+    let rect =
+        egui::Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(corner, ppp), size);
+    let texture = picture_texture(painter.ctx(), kept, picture, generation);
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
+}
+
+/// The texture of the mirror's picture of a photo opening, `picture` of `generation`, made
+/// once for each and kept in `kept` (decision 77).
+fn picture_texture(
+    ctx: &egui::Context,
+    kept: &mut Option<(u64, egui::TextureHandle)>,
+    picture: &Picture,
+    generation: u64,
+) -> egui::TextureHandle {
+    if let Some((made, texture)) = kept
+        && *made == generation
+    {
+        return texture.clone();
+    }
+    let image = &picture.image;
+    let size = [image.width as usize, image.height as usize];
+    let pixels = egui::ColorImage::from_rgba_unmultiplied(size, &image.pixels);
+    let texture = ctx.load_texture("opening picture", pixels, egui::TextureOptions::LINEAR);
+    *kept = Some((generation, texture.clone()));
+    texture
 }
 
 /// Opens the menu `request` gives at the pointer when `slot` is right-clicked outside
@@ -3499,9 +3603,21 @@ fn edit_tab(
     peek: bool,
 ) -> (Vec<scopes::Change>, Vec<Change>) {
     let shown = mirror.shown();
-    let photo = shown != Shown::Nothing;
+    // A photo opening shows Scopes as with no photo until it is live (decision 77).
+    let photo = matches!(shown, Shown::Photo { .. });
     let scopes = Some((photo.then(|| mirror.scopes.measured()).flatten(), photo));
     let (modules, values) = (mirror.modules(), &mirror.values);
+    // Every control of a photo opening says why it is disabled.
+    let opening = mirror.opening_name().map(|name| {
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set(
+            "name",
+            Path::new(&name)
+                .file_stem()
+                .map_or(name.clone(), |stem| stem.to_string_lossy().into_owned()),
+        );
+        translator(ui.ctx()).text_with("controls-opening", Some(&args))
+    });
     panel_body(
         ui,
         shell,
@@ -3511,6 +3627,7 @@ fn edit_tab(
         panels,
         peek,
         shown.editable(),
+        opening.as_deref(),
     )
 }
 
@@ -3533,6 +3650,7 @@ fn panel_body(
     panels: &Panels,
     peek: bool,
     editable: bool,
+    opening: Option<&str>,
 ) -> (Vec<scopes::Change>, Vec<Change>) {
     let shown = TAB_MODULES
         .get(shell.panel_tab)
@@ -3558,7 +3676,9 @@ fn panel_body(
                 // sliders of one name, as Vignetting's and Soften's Brightness, never share
                 // one.
                 let drawn = ui.push_id(id, |ui| {
-                    modules::section(ui, *module, state, open, panels, &groups, peek, editable)
+                    modules::section(
+                        ui, *module, state, open, panels, &groups, peek, editable, opening,
+                    )
                 });
                 changes.extend(drawn.inner);
             }
@@ -3871,6 +3991,7 @@ mod tests {
                 edited,
                 through: 0,
                 extent: [84, 62],
+                live: true,
             }
         };
         // The step on the session's edit, its holds then pruned as after every change.
@@ -3976,8 +4097,6 @@ mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time: None,
             aperture: None,
@@ -4030,6 +4149,7 @@ mod tests {
             edited: false,
             through: 0,
             extent: [84, 62],
+            live: true,
         };
         let modules: &[&dyn Module] = &[&WhiteBalance];
         let drag = Pending::Control {
@@ -4381,8 +4501,9 @@ mod tests {
                     let ctx = ui.ctx().clone();
                     let shell = &kept.shell;
                     let groups = |group: &str| shell.group_open("sample", group);
-                    let changes =
-                        modules::section(ui, &Sample, &state, true, &panels, &groups, false, true);
+                    let changes = modules::section(
+                        ui, &Sample, &state, true, &panels, &groups, false, true, None,
+                    );
                     for change in changes {
                         if let Change::Group { module, group } = change {
                             kept.shell.toggle_group(module, group);
@@ -4484,6 +4605,7 @@ mod tests {
                         &panels,
                         false,
                         true,
+                        None,
                     );
                     for change in scopes {
                         side.shell.scopes_change(change);
@@ -4502,6 +4624,7 @@ mod tests {
                         edited: false,
                         through: 1,
                         extent: [84, 62],
+                        live: true,
                     },
                     sent: Vec::new(),
                 },
@@ -4606,7 +4729,7 @@ mod tests {
     }
 
     /// Exposure's slider: its value as screen readers hear it, and whether it is disabled.
-    fn exposure_slider(harness: &Harness<'_, Editing>) -> (String, bool) {
+    fn exposure_slider<S>(harness: &Harness<'_, S>) -> (String, bool) {
         let slider = harness.get_by_role_and_label(Role::Slider, "Exposure");
         let node = slider.accesskit_node();
         (
@@ -4643,7 +4766,188 @@ mod tests {
             }
         }
         values.through = through;
+        values.live = true;
         values
+    }
+
+    /// A photo opening shows its values read-only until it is live (decision 77): every
+    /// control disabled, its tooltip saying why, Scopes with no graph; live, enabled in
+    /// the next frame.
+    #[test]
+    fn a_photo_opening_shows_its_values_disabled_until_it_is_live() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-opening");
+        let mut harness = editing(&folder);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.opening(PathBuf::from("IMG_2041.ARW"), 2, Instant::now());
+        mirror.apply(Event::Opened(Photo {
+            path: PathBuf::from("IMG_2041.ARW"),
+            ..photo(2)
+        }));
+        mirror.apply(Event::Values(Values {
+            live: false,
+            ..photo_values(1.5, 3)
+        }));
+        harness.run();
+        assert_eq!(exposure_slider(&harness), (String::from("+1.500 EV"), true));
+        assert_eq!(graph_says_in(&harness, "Histogram"), "Nothing measured yet");
+        // Its tooltip says why.
+        harness
+            .get_by_role_and_label(Role::Slider, "Exposure")
+            .hover();
+        // A second's frames, past egui's tooltip delay.
+        for _ in 0..60 {
+            harness.step();
+        }
+        let tip = "Opening IMG_2041…";
+        assert!(harness.query_by_role_and_label(Role::Label, tip).is_some());
+        // Screen readers hear it on each row of controls.
+        let described = harness
+            .query_all_by_role(Role::Group)
+            .filter(|row| row.accesskit_node().description().as_deref() == Some(tip))
+            .count();
+        assert!(described > 1, "{described}");
+        // Live: enabled, and nothing said of opening.
+        harness
+            .state_mut()
+            .mirror
+            .apply(Event::Values(photo_values(1.5, 3)));
+        harness.run();
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+1.500 EV"), false)
+        );
+        let described = harness
+            .query_all_by_role(Role::Group)
+            .filter(|row| row.accesskit_node().description().as_deref() == Some(tip))
+            .count();
+        assert_eq!(described, 0);
+    }
+
+    /// A photo opening as the app draws it, for the snapshots: the central bar, Rendering…
+    /// on it from `rendering`, the picture fitted in the photo's slot, and the side panel's
+    /// Base tab with the photo's values read-only.
+    struct Opening {
+        shell: Shell,
+        mirror: Mirror,
+        rendering: Instant,
+        picture: Option<(u64, egui::TextureHandle)>,
+    }
+
+    fn opening_scene(folder: &settings::testing::Folder) -> Harness<'static, Opening> {
+        use crate::mirror::tests::photo;
+        let (_, settings) = Keeper::open(folder.storage());
+        let mut mirror = crate::mirror::tests::mirror();
+        let asked = Instant::now();
+        mirror.opening(PathBuf::from("IMG_2041.ARW"), 2, asked);
+        // The camera's picture: a gradient, sky over ground.
+        let (width, height) = (300, 200);
+        let pixels: Vec<u8> = (0..width * height)
+            .flat_map(|i| {
+                let (x, y) = (i % width, i / width);
+                let sky = y < height * 3 / 5;
+                let shade = (x * 120 / width) as u8;
+                if sky {
+                    [90 + shade / 2, 140 + shade / 3, 200, 255]
+                } else {
+                    [70 + shade / 3, 110, 60 + shade / 4, 255]
+                }
+            })
+            .collect();
+        mirror.apply(Event::OpenPreview(apertrust_engine::session::OpenPreview {
+            open: 2,
+            picture: Some(apertrust_engine::session::library::Thumbnail {
+                width,
+                height,
+                pixels: pixels.into(),
+            }),
+            source: apertrust_engine::session::PreviewSource::Embedded,
+        }));
+        mirror.apply(Event::Opened(Photo {
+            path: PathBuf::from("IMG_2041.ARW"),
+            ..photo(2)
+        }));
+        mirror.apply(Event::Values(Values {
+            live: false,
+            // Its edit crops it square: the 3:2 picture letterboxed in the square place.
+            extent: [600, 600],
+            ..photo_values(1.5, 3)
+        }));
+        Harness::builder()
+            .with_size(egui::vec2(1000.0, 640.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, scene: &mut Opening| {
+                    let t = theme(ui.ctx());
+                    let full = ui.max_rect();
+                    let side = egui::Rect::from_min_max(
+                        egui::pos2(full.right() - 360.0, full.top()),
+                        full.max,
+                    );
+                    let centre =
+                        egui::Rect::from_min_max(full.min, egui::pos2(side.left(), full.bottom()));
+                    ui.painter()
+                        .rect_filled(centre, 0.0, t.colors.photo_surround);
+                    ui.painter().rect_filled(side, 0.0, t.colors.panel);
+                    let now = scene.rendering;
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(centre), |ui| {
+                        let rendering = scene
+                            .mirror
+                            .rendering(now)
+                            .then(|| tr(ui.ctx(), "photo-rendering"));
+                        let layer = tr(ui.ctx(), "layer-image");
+                        CentralBar::new(&layer, Zoom::Fit)
+                            .toggles(
+                                Toggle::new(false, false),
+                                Toggle::new(false, false),
+                                Toggle::new(false, false),
+                                Toggle::new(false, false),
+                            )
+                            .status(rendering.as_deref())
+                            .show(ui);
+                        let slot = egui::Rect::from_min_max(ui.cursor().min, centre.max);
+                        let block = PhotoFrame::new(slot, Margin::Points(24.0));
+                        let ppp = ui.pixels_per_point();
+                        let room = block.bounds();
+                        let bounds = ((room.x * ppp) as u32, (room.y * ppp) as u32);
+                        // As `App::central_panel` places and draws it.
+                        let (picture, generation) = scene.mirror.picture().expect("the picture");
+                        let values = Some(&scene.mirror.values);
+                        let placed = place_photo(&block, bounds, ppp, values, Some(picture))
+                            .expect("a place");
+                        let painter = ui.painter_at(slot);
+                        paint_picture(&painter, &placed, picture, generation, &mut scene.picture);
+                    });
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        let panels = modules::Panels::default();
+                        edit_tab(ui, &scene.shell, &scene.mirror, &panels, false);
+                    });
+                },
+                Opening {
+                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                    mirror,
+                    rendering: asked,
+                    picture: None,
+                },
+            )
+    }
+
+    /// The central panel showing a photo's picture while it opens, its controls disabled,
+    /// with no Rendering… before a second, then with it (decision 77). Look at them.
+    #[test]
+    fn a_photo_opening_shows_its_picture_unmarked_then_rendering() {
+        let folder = settings::testing::Folder::new("opening-scene");
+        let mut harness = opening_scene(&folder);
+        harness.run();
+        assert!(harness.query_by_label("Rendering…").is_none());
+        assert_eq!(exposure_slider(&harness), (String::from("+1.500 EV"), true));
+        harness.snapshot("opening-picture");
+        let later = harness.state().rendering + mirror::RENDERING_AFTER;
+        harness.state_mut().rendering = later;
+        harness.run();
+        assert!(harness.query_by_label("Rendering…").is_some());
+        harness.snapshot("opening-rendering");
     }
 
     #[test]
@@ -4667,7 +4971,7 @@ mod tests {
         harness
             .state_mut()
             .mirror
-            .opening(PathBuf::from("/photos/b.ARW"), 2);
+            .opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
         for step in 0..3 {
             if step == 1 {
                 harness.state_mut().mirror.apply(Event::Opened(photo(2)));

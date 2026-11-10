@@ -76,7 +76,10 @@ pub fn read_preview(file: &[u8], longest: u32) -> Result<Option<Preview>, Error>
     read_preview_source(&RawSource::new_from_slice(file), longest)
 }
 
-fn read_preview_source(source: &RawSource, longest: u32) -> Result<Option<Preview>, Error> {
+pub(crate) fn read_preview_source(
+    source: &RawSource,
+    longest: u32,
+) -> Result<Option<Preview>, Error> {
     let longest = longest.max(1);
     // A parser bug on an odd file must not take the application down.
     let read = catch_unwind(AssertUnwindSafe(|| {

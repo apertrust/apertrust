@@ -209,20 +209,31 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 - Every library event names the number of its folder's open or close and is a notice. Opening a folder opens no photo.
 - `session::library` re-exports the library's `ops`.
 
+### Opening a photo
+
+`session/open.rs`, decision 77 ([engine.md](engine.md#opening-a-photo)):
+
+- `Command::Open` saves and closes the photo before it, cancels the open before it and adds a job of kind `open` on `SystemForeground`, with no progress, keyed by its open so a newer open of the same photo is never taken for it.
+- Its body maps the raw once (`open::RawFile`, over `apertrust_raw::RawFile`), sends the largest rendered thumbnail the cache holds, stale or not (`Cache::read_any` on `ops::thumbnail_slot`, its version starting `ops::RENDERED`), reads the metadata without the pixels, the EXIF and the sidecar after the edit writer's writes (`Writer::read`), and hands them to the engine thread, which sends `Opened` and `Values { live: false }`; then the embedded picture at the last `Resize`'s longer side where no rendered one was sent, as `Event::OpenPreview`.
+- It waits for the session's one decode slot (`open::Decodes`) through `Context::wait`, tells the engine thread, which plans and compiles the photo's kernels meanwhile, decodes, and hands the mosaic over; a cancelled open's is dropped. The engine thread uploads it and renders the first frame, sending `Values { live: true }` and the `Frame`.
+- From the `Open` until live, every command on the edit is refused, `SessionError::NotLive`. A job dropped from the stack before it ran is added again; one that ends early fails its open.
+- Compiled kernels are kept across photos (`pipeline::Kernels`, `Pipeline::with_kernels`, `Pipeline::into_kernels`).
+- Each stage's time from the `Open` is logged under `-d perf`.
+- `open::testing` gives tests synthetic raws, and `Command::HoldDecode` holds a decode with the slot taken. Behind the `testing` feature, `session::testing::start` starts a real session on such raws for the tests of the engine's clients, the app's through its dev-dependencies.
+
 ### Events
 
 The session's events (decision 59, [docs/events.md](events.md)):
 
-- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title, detail, destination and state are a fact each, by job, its `Added` and `Ended` notices; the Export dialog's preview is a fact.
+- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title, detail, destination and state are a fact each, by job, its `Added` and `Ended` notices; the Export dialog's preview and an opening photo's picture are facts.
 - A refused command names its number (`SessionError::Refused { command, error }`), its words the error's.
-- Every thread of the session sends through one `Outbox` (`session/outbox.rs`): the engine thread, the edit writer, the jobs' observer, and the export's and the preview's bodies.
+- Every thread of the session sends through one `Outbox` (`session/outbox.rs`): the engine thread, the edit writer, the jobs' observer, and the bodies of the export, the preview, the folder's reading, the thumbnails and an open.
 - The outbox calls `wake` once per burst, through a flag that `events()` clears as it drains with one loop of `try_recv`. Nothing is sent once the handle drops.
 - Each send and drain is logged under `-d event` (`signal` an alias), and a count per kind each second under `-d verbose`.
 
 ### Planned
 
-- **A photo opening in stages** (decision 77, [engine.md](engine.md#opening-a-photo)): the `open` job on `SystemForeground`, its picture (`Event::OpenPreview`), the metadata and sidecar before the decode, one decode slot, decoding off the engine thread; `Values::live` and `SessionError::NotLive`; `Photo` without its decode and upload times; kernels kept across photos.
-- **Several photos in one session** (decision 37, once spike W1 measures it): the active one live and every other on screen a still, rendered once from its saved edit; background work one tile per submission; decoding off the engine thread on a job worker (decision 57), the live photo's from decision 77 on; kernels kept for the session.
+- **Several photos in one session** (decision 37, once spike W1 measures it): the active one live and every other on screen a still, rendered once from its saved edit; background work one tile per submission; decoding off the engine thread on a job worker (decision 57), as the live photo's is (decision 77); kernels kept for the session, as they are across photos (decision 77).
 - **Readouts** (decision 19): what an operation measures of the photo for its module's panel, the tone equalizer's mask histogram first. Its readout pass is planned in the viewport alone and dispatched while a client asks (`Command::Readouts`, by module) and its key, a whole-image result's, has changed. Its counts are read back through the scopes' staging pair, decoded by the operation and sent as `Event::Readout`. A failure turns readouts off, never the frame.
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
@@ -369,6 +380,8 @@ Raw decoding with rawler (decision 23).
 - a DNG's colour calibration tags and its LinearResponseLimit;
 - black measured from the masked areas as darktable's decoder does, to explain darktable's levels.
 
+**A raw mapped once** (decision 77): `RawFile::open`, then its `metadata`, rawler's decode with `dummy`, everything the decode gives but the pixels, which are empty, in milliseconds; its `preview`; and its `decode`. The metadata and the decode each come with the shooting data (`Exif`) from their one parse of the metadata. `tests/corpus.rs`'s `the_metadata_read_equals_the_decode_but_for_the_pixels` holds the two equal, field for field, over the corpus.
+
 **Shooting data.** `read_exif_file` and `read_exif` give the shooting data darktable's variables read (`Exif`), from rawler's metadata, without decoding the image.
 
 **The embedded picture.** `read_preview_file` and `read_preview` (`src/preview.rs`) read the camera's own picture without decoding the mosaic, as darktable's thumbnails show it before their render: rawler's thumbnail (a DNG's) when it is at least the size asked, else its preview, else the larger of the two; at most the size asked on its longer side, each pixel the mean of those under it, never made larger; turned upright by the EXIF Orientation, since the camera stores it as the sensor sees it; 8-bit RGBA (`Preview`). A raw with none gives `None`. `tests/preview.rs` holds the corpus's pictures at 256 pixels to `tests/corpus/previews.txt` and each upright where its raw decodes.
@@ -377,9 +390,8 @@ Raw decoding with rawler (decision 23).
 
 **Lens corrections** the raw carries, as darktable reads them, over rawler's public parsers (decision 25): Fujifilm's (the FujiIFD and the maker note's CropMode), held to Exiv2's dump in `tests/lens.rs`. Sony's, DNG opcodes and Olympus's are planned.
 
-**Planned** (decisions 27 and 77):
+**Planned** (decision 27):
 
-- a metadata read without the pixels, rawler's decode with `dummy`, giving the camera an opening photo's values need before its decode, held equal to the decode's over the corpus (decision 77);
 - darktable's spellings where they differ from rawler's (`Z 6_2`, `OM System`, `GFX100S`), applied to `make`, `model` and `alias`;
 - darktable's `data/wb_presets.json`, embedded and parsed once with serde_json as darktable reads it, the camera's presets looked up by alias then model and carried in the image context.
 
@@ -651,6 +663,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - It returns the reactions the app owes: `Reaction::Jobs`, the jobs window to open or update, and `Reaction::Preview`, a preview for the Export dialog.
 - A refused command's number (`SessionError::Refused`) drops its pending change and the save it would have waited for.
 - It is tested by feeding it event sequences. There is no bus and no subscriptions: panels draw from the mirror each frame.
+- **A photo opening in stages** (decision 77): asked for, the mirror takes the largest thumbnail the folder holds of it as its `Picture`, which `OpenPreview` replaces for its own open where larger or rendered; `Values { live: false }` show read-only (`Shown::Opening`, every control drawn disabled, the module sections' rows of controls saying "Opening IMG_2041…" at the pointer and in their AccessKit description); the first live frame drops the picture, the controls enabled in the same apply. The picture is placed and drawn by `place_photo` and `paint_picture`, letterboxed in the photo's place and never enlarged, until the first frame. `Mirror::rendering` tells the central bar to say Rendering… once the photo is still not live `RENDERING_AFTER`, a second, after the click (`CentralBar::status`). A `NotLive` refusal is dropped with nothing said, and a failure after `Opened` fails the open.
 
 ### Planned
 
@@ -1331,7 +1344,7 @@ It also holds roots by id file and photos by fingerprint (decision 53), change d
 - Each `Photo` has its name, size, modified time and `EditState`: none, edited, view-only with its `Newer`, or unreadable with the reason.
 - `ops::open` is a blocking call a job's body makes, with an observer and a cancel closure, over `Index::build`. Nothing is sent after a cancel, and a cancelled reading returns at once, without waiting for a call into the folder.
 - `ops::thumbnail`, a blocking call a thumbnail job's body makes, with the same two: the photo's embedded picture through `apertrust_raw::read_preview_file`, as a `Thumbnail` (8-bit RGBA, upright, its pixels an `Arc<[u8]>`), or `None` where the raw holds none that can be read; nothing sent after a cancel, and nothing read for a name that is no plain file name.
-- `ops::thumbnail_key`: a thumbnail's slot and version in the disk cache (decision 76), the slot the photo's path, its virtual copy and the size (its fingerprint with step 8), the version `apertrust_raw::PREVIEW_VERSION` and the raw's size and modified time; none for a name that is no plain file name or a file whose size and time cannot be read. The engine's thumbnail jobs read and write the cache with it.
+- `ops::thumbnail_key`: a thumbnail's slot and version in the disk cache (decision 76), the slot the photo's path, its virtual copy and the size (its fingerprint with step 8), the version `apertrust_raw::PREVIEW_VERSION` and the raw's size and modified time; none for a name that is no plain file name or a file whose size and time cannot be read. The engine's thumbnail jobs read and write the cache with it. `ops::thumbnail_slot` is the slot alone, for any picture, and `ops::EMBEDDED` and `ops::RENDERED` what an embedded picture's and a rendered thumbnail's versions start with, an opening photo reading the largest rendered one at `ops::THUMBNAIL_SIZES`, stale or not (decision 77).
 
 ### sidecar
 

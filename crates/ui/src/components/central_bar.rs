@@ -22,6 +22,8 @@
 //! opens darktable's zoom menu (`src/libs/navigation.c`): Small, Fit and Fill, the stops
 //! from 50 to 1600%, then Zoom in and Zoom out.
 
+use std::ops::RangeInclusive;
+
 use egui::accesskit::HasPopup;
 use egui::os::OperatingSystem;
 use egui::{
@@ -85,6 +87,7 @@ pub struct CentralBar<'a> {
     layer: &'a str,
     layers: bool,
     values: Option<[u8; 3]>,
+    status: Option<&'a str>,
     zoom: Zoom,
     zoom_enabled: bool,
     zoomable: bool,
@@ -132,6 +135,7 @@ impl<'a> CentralBar<'a> {
             layer,
             layers: false,
             values: None,
+            status: None,
             zoom,
             zoom_enabled: false,
             zoomable: false,
@@ -182,6 +186,13 @@ impl<'a> CentralBar<'a> {
     /// The sRGB values under the cursor, while it is over the photo.
     pub fn values(mut self, rgb: Option<[u8; 3]>) -> Self {
         self.values = rgb;
+        self
+    }
+
+    /// A quiet word on what the photo is waiting for, after the layer's buttons, as
+    /// Rendering… while a photo opening is slow to go live (decision 77); `None` for none.
+    pub fn status(mut self, status: Option<&'a str>) -> Self {
+        self.status = status;
         self
     }
 
@@ -287,6 +298,13 @@ impl<'a> CentralBar<'a> {
             )
             .inner;
 
+        // The status, quiet, at the gap's start, never over the photo.
+        let mut left_end = left_end;
+        if let Some(status) = self.status
+            && right_start > left_end
+        {
+            left_end = status_label(ui, left_end..=right_start, inner, status);
+        }
         // The values under the cursor, in the gap between the two ends when they fit.
         if let Some(rgb) = self.values
             && right_start > left_end
@@ -492,6 +510,24 @@ fn layer_button(ui: &mut Ui, layer: &str, name: &str, enabled: bool) -> bool {
 
 /// Red, green, blue and grey under the cursor, 0 to 255, centred in `bar`; each value in
 /// its channel's colour, with no letters and no swatch; nothing when they don't fit.
+/// Draws `status` quietly from `span`'s start, in `inner`'s height, when it fits; where it
+/// ends, or `span`'s start where it does not fit.
+fn status_label(ui: &mut Ui, span: RangeInclusive<f32>, inner: Rect, status: &str) -> f32 {
+    let t = theme(ui.ctx());
+    let font = FontId::proportional(t.text.small);
+    let galley = (ui.painter()).layout_no_wrap(status.to_owned(), font, t.colors.text_disabled);
+    let (start, end) = (*span.start() + t.spacing.l, *span.end() - t.spacing.l);
+    if start + galley.size().x > end {
+        return *span.start();
+    }
+    let at = pos2(start, inner.center().y - galley.size().y / 2.0);
+    let rect = Rect::from_min_size(at, galley.size());
+    ui.painter().galley(at, galley, t.colors.text_disabled);
+    let response = ui.interact(rect, ui.scope_id().with("status"), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, status));
+    rect.right()
+}
+
 fn values(ui: &mut Ui, bar: Rect, [r, g, b]: [u8; 3]) {
     let t = theme(ui.ctx());
     let tr_ = translator(ui.ctx());

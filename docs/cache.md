@@ -79,7 +79,7 @@ Built for the camera's embedded pictures, the only thumbnails until Apertrust re
 
 **The JPEG:** quality 90, through the export's JPEG writer (`apertrust_export::jpeg::write`), chroma halved across (4:2:2). It is read back by rawler's own decoder (`apertrust_raw::read_jpeg`), the image crate's zune-jpeg, so no decoder is added; zune-jpeg misreads the export's 4:2:0, whose optimised tables give a scan for each component, and a test says when it no longer does. An entry that does not end with the JPEG's end marker, cut short or not a JPEG, is a miss: read again and written over. The encoding runs in the engine, where the thumbnail jobs run: the library depends on neither the export nor the GPU, and needs neither for this.
 
-**Apertrust's own rendered thumbnails** are planned with step 6: a still of the viewport pipe, its version the edit's hash and the render version.
+**Apertrust's own rendered thumbnails** are planned with step 6: a still of the viewport pipe, its version the edit's hash and the render version. An opening photo already reads the largest of them its slots hold, whatever its version (`Cache::read_any`), as its first picture (decision 77); until step 6 writes them it finds none and shows the camera's embedded picture.
 
 ### Timing the walk
 
@@ -225,9 +225,9 @@ cache.unused_after: days_90
 
 ## Where the code lives
 
-- `apertrust_base::cache`, behind a `cache` feature ([crates.md](crates.md#apertrust-base)): the kinds, the folder's layout and its creation (`Cache::create`), the entry's write, read and touch, the walk, eviction's order, clearing, `UnusedAfter`, and the commands' and events' types, `CacheCommand` and `CacheEvent`.
+- `apertrust_base::cache`, behind a `cache` feature ([crates.md](crates.md#apertrust-base)): the kinds, the folder's layout and its creation (`Cache::create`), the entry's write, read and touch, a read of any version (`Cache::read_any`, an opening photo's rendered thumbnail, stale or not, decision 77), the walk, eviction's order, clearing, `UnusedAfter`, and the commands' and events' types, `CacheCommand` and `CacheEvent`.
 - The engine's `session::cache` ([crates.md](crates.md#the-cache)): `CacheOptions`, the start's job, eviction's, the walk for the sizes and the Clear's; its `session::thumbnail`, the thumbnails read from and written to the cache.
-- The library's `ops::thumbnail_key`, a thumbnail's slot and version.
+- The library's `ops::thumbnail_key`, a thumbnail's slot and version, and `ops::thumbnail_slot`, its slot alone, with the marks its versions start with.
 - `apertrust-raw`'s `PREVIEW_VERSION` and `read_jpeg`, which reads a cached thumbnail back.
 - The app's `open_cache`, which opens it as the app starts.
 - The CLI's `cache` commands, `crates/cli/src/cache.rs`.

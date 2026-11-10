@@ -6,7 +6,8 @@ The engine answers its clients with events: a photo opened, the values after a c
 
 - **Built:** the session's side, in `crates/engine/src/session.rs` and `crates/engine/src/session/outbox.rs`; the app's reducer, in `crates/app/src/mirror.rs`; and the library's first events, a folder opened and listed and its photos' thumbnails, in `crates/library/src/ops.rs`, the session and `crates/app/src/folder.rs`; and the disk cache's sizes, `Event::Cache`, whose types are base's `cache` (decision 76).
 - **Built for decision 72:** base's job events, every field of a job's row, and their throttle ([A job's events](#a-jobs-events)); the export reporting its whole row through them; the session carrying them, each of a job's values a fact by job; the app folding them into its rows, in `crates/app/src/jobs.rs`.
-- **Planned:** `CollectionChanged`, notices for the user, the remote protocol, and the events of a photo opening in stages ([What is planned](#what-is-planned)).
+- **Built for decision 77:** the events of a photo opening in stages, `OpenPreview`, `Values::live` and the `NotLive` refusal ([A photo opening](#a-photo-opening)), in the session and its tests, and the app's mirror taking them in.
+- **Planned:** `CollectionChanged`, notices for the user and the remote protocol ([What is planned](#what-is-planned)).
 
 ## The idea
 
@@ -37,6 +38,7 @@ The topics, `Fact`, as built:
 
 | `Fact` | Its event |
 | --- | --- |
+| `OpenPreview` | `Event::OpenPreview`, the opening photo's picture (decision 77) |
 | `Values` | `Event::Values` |
 | `Frame` | `Event::Frame` |
 | `Scopes` | `Event::Scopes` |
@@ -50,7 +52,7 @@ The topics, `Fact`, as built:
 
 Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
 
-Planned facts: `OpenPreview`, the opening photo's picture (decision 77); a readout, by module (decision 19); the selection and the active photo (decision 37); and a page of the collection shown, by page.
+Planned facts: a readout, by module (decision 19); the selection and the active photo (decision 37); and a page of the collection shown, by page.
 
 ## The events the session sends
 
@@ -58,7 +60,8 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 
 | Event | Kind | Numbers | Sent by | What it carries |
 | --- | --- | --- | --- | --- |
-| `Opened(Photo)` | notice | `Photo::open`, the open's number | engine thread | the path, the camera's name, the size at full resolution, decode and upload times (planned: none, `Opened` coming before the decode, decision 77), `view_only` when a newer Apertrust wrote the edit (decision 43), the shooting data for the caption, and the photo's image context (decision 27) |
+| `OpenPreview(OpenPreview)` | fact | `open`, the open's number | the open's job body | the opening photo's picture and where it came from, until its first live frame (decision 77; [A photo opening](#a-photo-opening)) |
+| `Opened(Photo)` | notice | `Photo::open`, the open's number | engine thread | from the raw's metadata and the sidecar, before the decode (decision 77): the path, the camera's name, the size at full resolution, `view_only` when a newer Apertrust wrote the edit (decision 43), the shooting data for the caption, and the photo's image context (decision 27) |
 | `Values(Values)` | fact | `through` | engine thread | every module's state, the unowned parameters and whether anything is edited (below) |
 | `Frame(Frame)` | fact | `through` | engine thread | the display buffer to show (decision 17), its size, the GPU timings and the latency from the first command it answers |
 | `Scopes(Reading)` | fact | `through`, the frame's | engine thread | what the frame holds, counted for the scopes, about a frame after it (decision 19; [engine.md](engine.md#scopes)) |
@@ -80,11 +83,11 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 
 Then come `settings`, the parameters no module owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Planned (decision 32): whether each module is on, `ModuleState::enabled`, and a switched module counting as edited while on.
 
-Planned (decision 77): `live`, whether the photo's pipeline is ready and commands on the edit are taken: false from `Opened` until the photo is live, true from the batch of its first live frame ([A photo opening](#a-photo-opening)).
+Last, `live` (decision 77): whether the photo is live and commands on the edit are taken, false from `Opened` until its raw is decoded and uploaded, true from the batch of its first live frame ([A photo opening](#a-photo-opening)).
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `OpenPreview`, the opening photo's picture ([A photo opening](#a-photo-opening)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 
@@ -125,7 +128,7 @@ Decision 72: each job reports everything its row in the jobs window shows, so a 
 
 ## A photo opening
 
-Planned, decision 77 ([engine.md](engine.md#opening-a-photo)). A photo opens in three stages, each a state every client sees:
+Decision 77 ([engine.md](engine.md#opening-a-photo)). A photo opens in three stages, each a state every client sees; the session sends them, and the app shows them ([gui.md](gui.md#the-central-panels-states)):
 
 | Stage | Events | What a client shows |
 | --- | --- | --- |
@@ -133,20 +136,20 @@ Planned, decision 77 ([engine.md](engine.md#opening-a-photo)). A photo opens in 
 | 2. The values | `Opened(Photo)`, then `Values { live: false }`, from the engine thread | The photo's values, read-only |
 | 3. Live | `Values { live: true }`, then the `Frame` or the render's failure, in one batch | The live frame in one swap, the values enabled, then the scopes |
 
-- **`OpenPreview`:** `picture` is 8-bit RGBA, upright, its pixels shared (`Arc<[u8]>`), as a thumbnail's; `source` is `Rendered`, the largest of the photo's rendered thumbnails in the cache, or `Embedded`, the camera's picture at the central panel's size; no picture where it has neither. It is the open photo's picture until its first live frame: a client takes it only for its latest open and before that open's live frame, and `Sync` sends it only while the photo is not live. A remote client receives it encoded.
-- **Order.** The engine thread's events come in the order above. `OpenPreview` comes through the outbox from the job's body, as a thumbnail does, so only the open's number orders it against them; it is never sent after the job's cancel. A failure of the decode or the upload comes after `Opened`, as `Failed(Open { open, error })`.
-- **Read-only until live.** A command on the edit from the `Open` until `Values { live: true }` is refused, `Refused { command, error: NotLive }`. The app sends none, since it draws the values disabled; a script, the CLI's helpers and the planned MCP adapter wait for `live` before an edit.
+- **`OpenPreview`:** `picture` is a `library::Thumbnail`, 8-bit RGBA, upright, its pixels shared (`Arc<[u8]>`); `source` is `PreviewSource::Rendered`, the largest of the photo's rendered thumbnails in the cache, stale or not, or `Embedded`, the camera's picture at the longer side of the last `Resize`, never enlarged; `picture` is `None`, with `Embedded`, where the photo has neither. Each open sends one, unless it is cancelled first. It is the open photo's picture until its first live frame: a client takes it only for its latest open and before that open's live frame. Planned: `Sync` sends it only while the photo is not live, and a remote client receives it encoded.
+- **Order.** The engine thread's events come in the order above. `OpenPreview` comes through the outbox from the job's body, as a thumbnail does, so only the open's number orders it against them; the job looks for its cancel just before it sends it. A failure of the decode or the upload comes after `Opened`, as `Failed(Open { open, error })`.
+- **Read-only until live.** A command on the edit from the `Open` until `Values { live: true }` is refused, `Refused { command, error: NotLive }`. The app sends none, drawing the values disabled; a script and the planned MCP adapter wait for `live` before an edit.
 - **Quick switching.** Each newer `Open` cancels the older one's job; a client drops a replaced open's events by its number, as the app's mirror does.
-- **What the CLI sees:** the same events. `export` and `preview` wait for the frame, as now, and `-d perf` logs each open's stages.
+- **What the CLI sees:** the same events. `export` and `preview` render without the session; `preview --beside-export`'s session waits for the first frame, as before, and `-d perf` logs each open's stages ([engine.md](engine.md#opening-a-photo)).
 
 ## Numbers
 
 Every command has a number, which `Session::send` returns: 1 for the first, then up by one each. An event that includes or answers commands names them, so a client knows which of its commands an event reflects and never compares arrival times:
 
 - `through` on `Values`, `Frame`, `Scopes`, `Saved` and `ExportPreview`: how many commands it includes. It never decreases on each of `Values`, `Frame` and `Scopes`, nor on `Saved` for one file. A client shows a value it has just sent until a `Values` includes that command, so a slider never jumps back (decision 17).
-- `open` on `Opened`, on `OpenPreview` (planned) and on `SessionError::Open`, the `Open` command's number, so a client drops what an earlier open sent. On every `LibraryEvent`, the number of the `Command::Library` it answers: an open's for what that open found, a close's on its `Closed`, so a client keeps the number of its latest library open or close and drops the rest.
+- `open` on `Opened`, on `OpenPreview` and on `SessionError::Open`, the `Open` command's number, so a client drops what an earlier open sent. On every `LibraryEvent`, the number of the `Command::Library` it answers: an open's for what that open found, a close's on its `Closed`, so a client keeps the number of its latest library open or close and drops the rest.
 - `command` on a job's `Added`: the number of the command that started the job, so a client knows its own job; for a job a `RetryJob` started, that command's, with `retries` naming the job it tries again (decision 72). The rest of a job's events name the job.
-- A refused command names itself: `SessionError::Refused { command, error }`. It changed nothing. An edit refused, a change on a photo open for viewing only or, planned, on one not yet live, a job that cannot be cancelled and a job with no retry kept are refusals.
+- A refused command names itself: `SessionError::Refused { command, error }`. It changed nothing. An edit refused, a change on a photo open for viewing only or not yet live, a job that cannot be cancelled and a job with no retry kept are refusals.
 
 ## One outbox per session
 
@@ -174,7 +177,7 @@ A job that needs the person's answer is to send a notice naming its question, an
 ## Order and delivery
 
 - **The channel orders every send.** One producer's events arrive in the order it sent them.
-- **Within a batch** (the commands the engine thread took together, [session-protocol.md](session-protocol.md#numbers-and-batches)): an `Opened` or a command's `Failed` comes in the commands' order; then the `Values` after them; then the batch's `Frame`, or the render's failure; then any scopes readings that arrived, a frame's reading always after its frame. A GPU error during the batch drops its frame, and its `Failed` comes after the batch's other events, before the scopes readings. Planned (decision 77): an `Opened` comes in the turn its open's metadata reaches the engine thread, followed by its `Values { live: false }`, and the batch of its first live frame sends `Values { live: true }` before the `Frame` ([A photo opening](#a-photo-opening)).
+- **Within a batch** (the commands the engine thread took together, [session-protocol.md](session-protocol.md#numbers-and-batches)): an `Opened` or a command's `Failed` comes in the commands' order; then the `Values` after them; then the batch's `Frame`, or the render's failure; then any scopes readings that arrived, a frame's reading always after its frame. A GPU error during the batch drops its frame, and its `Failed` comes after the batch's other events, before the scopes readings. An `Opened` comes in the turn its open's metadata reaches the engine thread, after the commands sent before that turn, followed by its `Values { live: false }`; the turn its raw arrives sends `Values { live: true }`, then the `Frame` (decision 77, [A photo opening](#a-photo-opening)).
 - **A job's events come in order**, since the observer runs under the control's lock. Its `Added` is sent as it is added, before a worker can take it, so its body's own events, such as an export's, come after it.
 - **Across producers only the numbers order events.** The writer's `Saved` may arrive before the `Values` it includes.
 - **In process every event is delivered exactly once, in order.** Nothing is coalesced in process: a client applies each fact over the last.
@@ -189,9 +192,8 @@ An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes i
 
 `Failed(SessionError)` carries errors in plain words, which the app shows and the CLI logs. Those that answer a command are wrapped with its number:
 
-- `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open. Planned, it may come after the open's `Opened`, when the decode or the upload fails (decision 77).
-- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76), and, planned, `NotLive`, a command on the edit while the photo is opening (decision 77).
-
+- `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open. It comes after the open's `Opened` when the decode or the upload fails (decision 77).
+- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, `NotLive`, a command on the edit from an `Open` until the photo is live (decision 77), or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76).
 - `CacheWalk { command, source }`: the walk for a `CacheCommand::Sizes` failed, its folder or a kind's not listed, one for each `Sizes` that walk's pass answers.
 
 The others stand alone:
@@ -209,9 +211,9 @@ The others stand alone:
 
 | Thread | Sends | Receives |
 | --- | --- | --- |
-| Engine | its batch's events and scopes readings, readouts later, through the outbox | commands and its jobs' GPU tasks (the inbox) |
+| Engine | its batch's events and scopes readings, readouts later, through the outbox | commands, its jobs' GPU tasks and what an open's job read (the inbox) |
 | Edit writer | `Saved`, a failed save | the edits handed to it |
-| Job workers | `Job` events through the control's observer; their bodies' own (an export's `Export`, a preview's `ExportPreview`, a folder's reading's `Library` events, the cache's walk's and Clear's `Cache`, an open's `OpenPreview`, planned) through the outbox | `Context::wait`'s answers, later |
+| Job workers | `Job` events through the control's observer; their bodies' own (an export's `Export`, a preview's `ExportPreview`, a folder's reading's `Library` events, the cache's walk's and Clear's `Cache`, an open's `OpenPreview`) through the outbox | `Context::wait`'s answers, later |
 | Library's threads, a root's queue (decision 53; planned) | `Library` events through its observer | its calls |
 | UI | commands | every event, drained in `App::logic` ([gui.md](gui.md#a-frame)) |
 | Server, tokio (later) | each connection's commands | the events, fanned out per connection ([session-protocol.md](session-protocol.md#remote-clients)) |
@@ -305,6 +307,7 @@ Kept from darktable:
 ## Tests
 
 - **The session, built.** In `session.rs`: `every_event_states_whether_it_is_a_fact_or_a_notice`, every variant's kind through an exhaustive match, so a new variant must state its kind, every `JobEvent` among them, sent by jobs that report their whole row, each job's five values facts of its own, and `-d event`'s line naming each kind; `a_batch_s_refusal_comes_before_its_values_and_its_values_before_its_frame`; `through_never_decreases_over_a_drag`, over the values, frames, scopes readings and saves; `a_job_s_events_reach_the_client_in_order_its_added_naming_its_command`, one job reporting its whole row and one its title and progress alone; `the_observer_keeps_each_job_shown_from_its_added_to_its_end`, with whether it can be cancelled, its other events leaving the map as it was; and the refused cancel numbered in `a_session_ends_with_a_gpu_job_that_cannot_be_cancelled_in_flight`. In `outbox.rs`: `no_event_is_lost_while_three_threads_send_and_a_fourth_drains`, `a_burst_wakes_the_client_once_and_a_send_after_a_drain_again`, `nothing_is_sent_once_the_client_drops_its_handle` and `a_drain_s_kinds_count_runs`.
+- **A photo opening, built (decision 77).** In `session.rs`: `an_open_s_events_come_in_order_named_by_its_number`, `a_command_on_the_edit_before_the_photo_is_live_is_refused_and_writes_nothing`, `a_newer_open_cancels_the_older_whose_decode_runs_alone_and_is_never_uploaded` (the decode held by `Command::HoldDecode`), `a_decode_failing_after_opened_fails_the_open` and `an_open_s_picture_is_the_cache_s_rendered_thumbnail_else_the_embedded_one`; `OpenPreview`'s kind in `every_event_states_whether_it_is_a_fact_or_a_notice`. In the app: `mirror.rs`'s `a_photo_opens_in_stages_read_only_until_it_is_live`, `a_stale_open_preview_is_dropped`, `rendering_shows_only_a_second_after_the_click_while_not_live` and `a_not_live_refusal_shows_nothing_and_a_late_failure_ends_the_open`; `main.rs`'s `a_photo_opening_shows_its_values_disabled_until_it_is_live`, with the tooltip, and `a_photo_opening_shows_its_picture_unmarked_then_rendering`, with the snapshots `opening-picture` and `opening-rendering`. Through a real session on synthetic raws (`session::testing`, the engine's `testing` feature): `a_real_session_opens_a_photo_in_stages`, `a_real_session_s_view_only_photo_ends_not_editable` and `a_real_session_switched_quickly_shows_only_the_last_photo`.
 - **The app's reducer, built:** event sequences in, the mirror and its reactions out, with no egui (`crates/app/src/mirror.rs`'s tests: a drag, a frame replacing the last and clearing a failure, refusals with and without an earlier unsaved change, a failed save, a failed open with stale events dropped, a scopes failure, a job from added to ended, the engine stopping, the preview floor, opening another photo).
 - **The library, built.** In `crates/library/src/ops.rs`: `an_open_reports_the_folder_its_subfolders_and_every_photo_with_its_edit` (every edit state, subfolders sorted with the hidden one left out, chunks in order, done once), `an_empty_folder_sends_one_empty_chunk_done`, `a_missing_folder_or_a_file_fails_without_opening`, `a_cancel_between_chunks_ends_the_open_with_no_chunk_done`, `a_cancel_while_the_folder_is_read_sends_nothing` and `a_cancel_returns_at_once_while_a_call_into_the_folder_is_stuck` (a listing held by `listing::stall`, a test hook); `listing::tests::names_sort_as_a_file_browser_lists_them`. In `session.rs`: `a_folder_opens_as_a_job_whose_events_name_the_open` and `a_second_open_cancels_the_first_and_a_close_the_second`, and each `LibraryEvent`'s kind in `every_event_states_whether_it_is_a_fact_or_a_notice`. In `crates/app/src/folder.rs`: the reducer's side, among them `a_second_open_drops_the_first_one_s_late_events`, `a_close_empties_the_folder_and_drops_what_the_reading_still_sends` and `a_reading_cancelled_through_its_job_ends_the_open_with_no_reason`. Planned: one `CollectionChanged` per change.
 - **A job's events, built in base (decision 72):** the throttle's table for each of the four values and the four on one clock (`crates/base/src/jobs/progress.rs`); the control sending the first and last of each before `Ended` and a held one once due, as the body sets another or waits, `Ended` carrying the outcome, offers, failure and time, and a panic as `panicked` (`crates/base/src/jobs/tests.rs`). The export's, in `crates/engine/src/export_job.rs`: its events in order, from `Added` with its title at 0, total, folder and queued detail to `Ended` with its outcome (`an_export_s_events_come_in_order`); its failure's cause, photo and file and its `Retry` (`a_refused_readback_render_fails_the_photo_and_writes_no_file`, `a_photo_s_failure_is_its_own_and_the_destination_s_ends_the_job`); no `Retry` after a cancel or a refusal (`a_cancel_mid_photo_leaves_no_temporary_file`, `a_cancel_after_a_failed_photo_offers_no_retry`, `a_refused_export_offers_no_retry`). Try again through the session: `RetryJob` exporting the photo that failed alone, its edit as it is then, its `Added` naming `retries`, refused a second time and for a job that offered none (`a_failed_photo_tried_again_exports_alone_once`); the photos that failed and those not reached, in order, after the destination ended a job (`the_retry_of_a_job_its_destination_ended_takes_the_photos_failed_and_not_reached`), each keeping its `$(SEQUENCE)` and the first count's `_$(SEQUENCE)` (`a_retry_keeps_each_photo_s_sequence`, `a_retry_numbers_a_pattern_with_no_variable_as_the_first_export_did`); the latest 64 kept, each taken once (`session.rs`, `the_latest_64_retries_are_kept_and_each_is_taken_once`). The app's fold, in `crates/app/src/jobs/tests.rs`, events in and rows out: an export's whole sequence (`an_exports_events_fold_into_its_row`) and a folder's reading through the same code (`a_folders_reading_folds_through_the_same_code_and_never_opens_the_window`), a failure in words with its retry, a cancel ended cancelled or, with a failure, failed, and the window opening only for a user queue's job this app started; Try again sending `RetryJob` once and the new row taking the failed one's place (`try_again_sends_retry_job_and_its_row_takes_the_failed_one_s_place`), and a refused one leaving the row failed (`a_refused_try_again_leaves_the_row_failed_and_is_not_waited_for`).
@@ -315,4 +318,3 @@ Kept from darktable:
 - **`CollectionChanged`**, with darktable's reason and property, with the first change to a collection ([Lower crates report through an observer](#lower-crates-report-through-an-observer)).
 - **Notices for the user**, `Event::Notice { message, photo }` and its place in the app, with the library's step 12 ([Notices for the user](#notices-for-the-user)).
 - **The remote protocol**, with the server or MCP, whichever comes first ([session-protocol.md](session-protocol.md#remote-clients)).
-- **A photo opening in stages**, `OpenPreview`, `Values::live` and the `NotLive` refusal (decision 77; [A photo opening](#a-photo-opening)), tested by the session's tests (an open's events in order and named by its number, a command on the edit refused before live and taken after, a replaced open never sending its live values or frame) and the mirror's (the picture, the read-only values, the swap in one frame, a replaced open's picture dropped).

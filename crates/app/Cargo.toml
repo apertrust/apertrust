@@ -44,6 +44,8 @@ apertrust-base = { workspace = true, features = ["codegen", "build"] }
 winresource.workspace = true
 
 [dev-dependencies]
+# A real session on synthetic raws (`session::testing`), whose events the mirror's tests take in.
+apertrust-engine = { workspace = true, features = ["testing"] }
 # The jobs' control, which gives the jobs mirror's tests real job numbers.
 apertrust-base = { workspace = true, features = ["jobs"] }
 # Its `testing::Sample` module, whose rows the renderer's tests draw too.

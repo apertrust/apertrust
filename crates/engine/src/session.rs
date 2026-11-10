@@ -78,6 +78,7 @@
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
 mod cache;
+pub(crate) mod open;
 mod outbox;
 mod thumbnail;
 
@@ -114,13 +115,15 @@ use crate::gpu::{GpuContext, SubmitGate};
 use crate::jobs::{self, Background, Queue, Tasks, Waiting};
 pub use crate::jobs::{JobEvent, JobId};
 use crate::names::Shot;
-use crate::pipeline::{self, Limits, Pipe, Pipeline, PlanError};
+use crate::pipeline::{self, Kernels, Limits, Pipe, Pipeline, PlanError};
 use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
+use crate::sidecar;
 pub use crate::sidecar::ViewOnly;
-use crate::{raw, sidecar};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
+pub(crate) use open::Load;
+use open::{Decodes, Stage};
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
 use thumbnail::Tally;
@@ -128,7 +131,12 @@ use thumbnail::Tally;
 /// What a client asks of the session. Plain data, so it can move into the protocol.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
-    /// Open a raw, with the edit saved beside it or none.
+    /// Open a raw, with the edit saved beside it or none, in three stages (decision 77):
+    /// its picture, [`Event::OpenPreview`]; [`Event::Opened`] and its values, not yet live,
+    /// before the decode; then, the raw decoded on a job worker and uploaded, the values
+    /// live with the first frame. It saves and closes the photo before it and cancels the
+    /// open before it, whose events a client drops by their number. From it until the
+    /// values are live, every command on the edit is refused ([`SessionError::NotLive`]).
     Open(PathBuf),
     /// The most physical pixels the photo may be shown in.
     Resize { width: u32, height: u32 },
@@ -284,6 +292,9 @@ pub enum Command {
     /// read, for a test.
     #[cfg(test)]
     HoldThumbnails(export_job::testing::Hold),
+    /// Holds the next open's decode, the decode slot taken, for a test.
+    #[cfg(test)]
+    HoldDecode(export_job::testing::Hold),
     /// Holds the next [`CacheCommand::Clear`] at each progress it tells, before each
     /// removal, for a test.
     #[cfg(test)]
@@ -292,7 +303,8 @@ pub enum Command {
 
 /// Whether `command` acts on the open photo's edit, as every command does but these: the
 /// values are reported after every command on the edit, and such a command ends a
-/// gesture under way and is refused on a photo open for viewing only.
+/// gesture under way and is refused on a photo open for viewing only, and on a photo
+/// not yet live.
 fn on_edit(command: &Command) -> bool {
     match command {
         Command::Open(_)
@@ -310,17 +322,20 @@ fn on_edit(command: &Command) -> bool {
         | Command::HoldPreview(_)
         | Command::HoldFolder(_)
         | Command::HoldThumbnails(_)
+        | Command::HoldDecode(_)
         | Command::HoldClear(_) => false,
         _ => true,
     }
 }
 
 /// What reaches the engine thread, in the order sent: the client's commands, the GPU
-/// tasks its jobs' bodies hand it ([`crate::jobs::Tasks`]), a worker's ask for the
-/// cache's eviction ([`cache::Upkeep::check`]), and, last, the client's handle dropping.
+/// tasks its jobs' bodies hand it ([`crate::jobs::Tasks`]), what an open's job read
+/// ([`open::Stage`]), a worker's ask for the cache's eviction ([`cache::Upkeep::check`]),
+/// and, last, the client's handle dropping.
 pub(crate) enum Inbox {
     Command(Instant, Box<Command>),
     Task(Waiting),
+    Open(Box<Stage>),
     Evict,
     Stop,
 }
@@ -334,6 +349,11 @@ pub fn raw_extensions() -> &'static [&'static str] {
 /// What the session tells its client.
 #[derive(Debug)]
 pub enum Event {
+    /// The opening photo's picture until its first live frame (decision 77): from its
+    /// open's job, so only its number orders it against the engine thread's events.
+    OpenPreview(OpenPreview),
+    /// The photo an open opened, from its raw's metadata and its sidecar, before the
+    /// decode (decision 77); its values follow, not yet live.
     Opened(Photo),
     /// Every module's controls and the unowned parameters, after an open or a change.
     Values(Values),
@@ -394,6 +414,8 @@ pub enum Topic {
 /// The topic a fact states the whole of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Fact {
+    /// The opening photo's picture: [`Event::OpenPreview`].
+    OpenPreview,
     /// Every module's controls: [`Event::Values`].
     Values,
     /// The frame to show: [`Event::Frame`].
@@ -420,6 +442,7 @@ impl Event {
     /// Whether this is a fact, and of which topic, or a notice.
     pub fn topic(&self) -> Topic {
         let fact = match self {
+            Event::OpenPreview(_) => Fact::OpenPreview,
             Event::Values(_) => Fact::Values,
             Event::Frame(_) => Fact::Frame,
             Event::Scopes(_) => Fact::Scopes,
@@ -451,7 +474,31 @@ impl Event {
     }
 }
 
-/// The photo the session opened.
+/// The opening photo's picture (decision 77), the open photo's until its first live
+/// frame: a client takes it only for its latest open and before that open's live frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenPreview {
+    /// The number of the [`Command::Open`] it is the picture of.
+    pub open: u64,
+    /// 8-bit RGBA, upright, at most the last [`Command::Resize`]'s longer side, never
+    /// larger than the picture itself; none where the photo has neither a rendered
+    /// thumbnail nor an embedded picture.
+    pub picture: Option<library::Thumbnail>,
+    /// Where it came from; with no picture, the camera's, which the raw lacks.
+    pub source: PreviewSource,
+}
+
+/// Where an opening photo's picture comes from (decision 77).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewSource {
+    /// The largest of the photo's rendered thumbnails the cache holds, stale or not.
+    Rendered,
+    /// The camera's embedded picture.
+    Embedded,
+}
+
+/// The photo the session opened, from its raw's metadata and its sidecar, before its
+/// decode (decision 77).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Photo {
     pub path: PathBuf,
@@ -463,8 +510,6 @@ pub struct Photo {
     /// The developed image at full resolution.
     pub width: u32,
     pub height: u32,
-    pub decode_ms: f64,
-    pub upload_ms: f64,
     /// Set when a newer Apertrust wrote the photo's edit: the photo is open for viewing
     /// only, and this says which build wrote it.
     pub view_only: Option<ViewOnly>,
@@ -496,6 +541,10 @@ pub struct Values {
     /// The photo as the edit shows it, at full resolution: the developed image, turned and
     /// mirrored where its orientation says (decision 16), which the viewport fits.
     pub extent: [u32; 2],
+    /// Whether the photo is live (decision 77): false from its `Opened` until its raw is
+    /// decoded and uploaded, while every command on the edit is refused
+    /// ([`SessionError::NotLive`]), and true from the batch of its first live frame.
+    pub live: bool,
 }
 
 impl Values {
@@ -628,6 +677,10 @@ pub enum SessionError {
     /// wrote its edit ([`Photo::view_only`]).
     #[error(transparent)]
     ViewOnly(#[from] ViewOnly),
+    /// A command on the edit refused because the photo is still opening (decision 77):
+    /// from its `Open` until its values are live.
+    #[error("the photo is still opening")]
+    NotLive,
     /// A module that does not hold, left out of the session; or one whose binding failed,
     /// left out of the render until it binds again.
     #[error("the module {module} is left out: {source}")]
@@ -688,19 +741,13 @@ pub enum SessionError {
 /// from the engine thread, the writer's or a job's.
 pub(crate) type Wake = Arc<dyn Fn() + Send + Sync>;
 
-/// A photo decoded and uploaded: what [`Engine::open`] and an export's photo start from.
+/// A photo decoded and uploaded: what an export's photo starts from.
 pub(crate) struct Decoded {
-    pub(crate) camera: String,
     pub(crate) image: ImageContext,
     pub(crate) input: GpuImage,
     /// What an export's variables read of the raw beside its EXIF.
     pub(crate) shot: Shot,
-    pub(crate) decode_ms: f64,
-    pub(crate) upload_ms: f64,
 }
-
-/// How the engine gets a photo from its path: [`decode`], or a synthetic photo in tests.
-pub(crate) type Load = fn(&GpuContext, &Path) -> Result<Decoded, SessionError>;
 
 /// The options each choice of `modules` lists on `image`, by module and control
 /// (decision 30): [`edit::listed`], every option where a module's code panics or gives a
@@ -723,39 +770,6 @@ fn listed_options(
         }
     }
     lists
-}
-
-/// Decodes the raw at `path` and uploads its mosaic.
-fn decode(gpu: &GpuContext, path: &Path) -> Result<Decoded, SessionError> {
-    let start = Instant::now();
-    let decoded = apertrust_raw::decode_file(path)?;
-    let decode_ms = start.elapsed().as_secs_f64() * 1e3;
-    let start = Instant::now();
-    let input = raw::upload(gpu, &decoded).ok_or(SessionError::NotAMosaic)??;
-    let upload_ms = start.elapsed().as_secs_f64() * 1e3;
-    Ok(Decoded {
-        // The name the camera has, an alias's own.
-        camera: format!("{} {}", decoded.camera.make, decoded.camera.alias),
-        image: raw::image_context(&decoded),
-        input,
-        shot: shot_of(&decoded, path),
-        decode_ms,
-        upload_ms,
-    })
-}
-
-/// What the variables and the photo's caption read of the raw at `path`: its decoded image
-/// and its EXIF, the metadata alone, which, if it cannot be read, leaves the shooting data
-/// `None` and the photo open.
-fn shot_of(decoded: &apertrust_raw::RawImage, path: &Path) -> Shot {
-    let shot = Shot::of(decoded);
-    match apertrust_raw::read_exif_file(path) {
-        Ok(exif) => shot.with_exif(&exif),
-        Err(error) => {
-            tracing::warn!(target: "raw", "{}: no shooting data: {error}", path.display());
-            shot
-        }
-    }
 }
 
 /// A client's handle on the session; dropping it ends the thread, once the edit is saved.
@@ -803,13 +817,13 @@ impl Session {
             budget,
             cache,
             Arc::new(wake),
-            decode,
+            open::files(),
         )
     }
 
     #[allow(
         clippy::too_many_arguments,
-        reason = "`start`'s, and the decode a test puts in its place"
+        reason = "`start`'s, and the raws a test puts in their place"
     )]
     pub(crate) fn spawn(
         gpu: GpuContext,
@@ -880,10 +894,17 @@ impl Session {
                     };
                     let mut batch = Vec::new();
                     let mut stop = false;
+                    // What an open's job read, taken after the commands sent before it and
+                    // before those after, which wait for the next turn.
+                    let mut staged = None;
                     for item in first.into_iter().chain(received.try_iter()) {
                         match item {
                             Inbox::Command(at, command) => batch.push((at, *command)),
                             Inbox::Task(waiting) => engine.jobs.background.add(waiting),
+                            Inbox::Open(stage) => {
+                                staged = Some(stage);
+                                break;
+                            }
                             Inbox::Evict => engine.evict_cache(),
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
@@ -915,6 +936,9 @@ impl Session {
                         } else {
                             engine.apply(batch)
                         };
+                        if let Some(stage) = staged {
+                            events.extend(engine.stage(*stage));
+                        }
                         // What arrived meanwhile, during the batch's render included.
                         events.extend(engine.scopes());
                         events
@@ -1232,6 +1256,14 @@ struct Engine {
     limits: Limits,
     load: Load,
     size: Option<(u32, u32)>,
+    /// The open under way, from its `Open` until its photo is live or it fails (decision
+    /// 77), while every command on the edit is refused.
+    opening: Option<Opening>,
+    /// The session's one decode slot (decision 77).
+    decodes: Arc<Decodes>,
+    /// The kernels compiled for every photo so far, which the next photo's pipeline takes
+    /// (decisions 37 and 77); the open photo's pipeline holds them while it lives.
+    kernels: Kernels,
     open: Option<Open>,
     /// Whether a live frame shares the GPU with the export jobs, a photo open and the
     /// viewport's size given: beside one, a job's operations before the tiles take a step
@@ -1273,6 +1305,18 @@ struct Engine {
     /// Holds the next thumbnails asked for, for a test.
     #[cfg(test)]
     thumbnails_hold: Option<export_job::testing::Hold>,
+    /// Holds the next open's decode, for a test.
+    #[cfg(test)]
+    decode_hold: Option<export_job::testing::Hold>,
+    /// The opens whose decode began, and those whose mosaic was uploaded, in order, for a
+    /// test.
+    #[cfg(test)]
+    decoding: Vec<u64>,
+    #[cfg(test)]
+    uploaded: Vec<u64>,
+    /// How many kernels the session has compiled, for a test.
+    #[cfg(test)]
+    compiled: usize,
     /// Holds the next Clear of the cache, for a test.
     #[cfg(test)]
     clear_hold: Option<export_job::testing::Hold>,
@@ -1466,11 +1510,23 @@ impl Retries {
     }
 }
 
+/// The open under way (decision 77): its number, its job, which a newer open cancels,
+/// and when it reached the session, which each stage's time counts from.
+struct Opening {
+    open: u64,
+    path: PathBuf,
+    job: JobId,
+    started: Instant,
+}
+
 struct Open {
     /// The edit's file, beside the photo.
     sidecar: PathBuf,
     image: ImageContext,
-    input: GpuImage,
+    /// The raw's mosaic, once decoded and uploaded: the photo is live from then on
+    /// (decision 77).
+    input: Option<GpuImage>,
+    /// The mosaic, from the raw's metadata until it is uploaded.
     sensor: ImageDesc,
     /// What an export's variables read of the raw, so that its export needs no decode.
     shot: Shot,
@@ -1572,8 +1628,11 @@ impl Engine {
             retired: apertrust_modules::RETIRED,
             build,
             limits,
-            load: decode,
+            load: open::files(),
             size: None,
+            opening: None,
+            decodes: Arc::default(),
+            kernels: Kernels::default(),
             open: None,
             live_frame: Arc::new(AtomicBool::new(false)),
             display: None,
@@ -1597,6 +1656,14 @@ impl Engine {
             #[cfg(test)]
             thumbnails_hold: None,
             #[cfg(test)]
+            decode_hold: None,
+            #[cfg(test)]
+            decoding: Vec::new(),
+            #[cfg(test)]
+            uploaded: Vec::new(),
+            #[cfg(test)]
+            compiled: 0,
+            #[cfg(test)]
             clear_hold: None,
         };
         (engine, rejected)
@@ -1605,6 +1672,12 @@ impl Engine {
     /// Applies a batch of commands, then renders once if any of them changed the image.
     fn apply(&mut self, batch: Vec<(Instant, Command)>) -> Vec<Event> {
         self.guarded(|engine| engine.apply_batch(batch))
+    }
+
+    /// Takes in what an open's job read (decision 77), rendering the photo's first live
+    /// frame once its mosaic is uploaded.
+    fn stage(&mut self, stage: Stage) -> Vec<Event> {
+        self.guarded(|engine| engine.take_stage(stage))
     }
 
     /// The scopes' readings that have arrived, never waiting.
@@ -1704,9 +1777,15 @@ impl Engine {
     }
 
     /// Drops the photo and everything rendered from it, unsaved, with the readings of its
-    /// frames still on their way.
+    /// frames still on their way, and cancels the open under way, whose events from then
+    /// on are dropped. The kernels its pipeline compiled are kept for the next photo.
     fn close(&mut self) {
-        self.open = None;
+        if let Some(opening) = self.opening.take() {
+            self.jobs.control.cancel(opening.job);
+        }
+        if let Some(pipeline) = self.open.take().and_then(|open| open.pipeline) {
+            self.kernels = pipeline.into_kernels();
+        }
         self.tell_live_frame();
         self.display = None;
         if let Some(meter) = &mut self.meter {
@@ -1715,10 +1794,12 @@ impl Engine {
     }
 
     /// Tells the export jobs whether a live frame now shares the GPU with them
-    /// ([`Self::live_frame`]), after the photo or the viewport's size changes.
+    /// ([`Self::live_frame`]), after the photo or the viewport's size changes: a photo open
+    /// or opening, and the viewport's size given.
     fn tell_live_frame(&self) {
-        let live = self.open.is_some() && self.size.is_some();
-        self.live_frame.store(live, Ordering::Relaxed);
+        let photo = self.open.is_some() || self.opening.is_some();
+        self.live_frame
+            .store(photo && self.size.is_some(), Ordering::Relaxed);
     }
 
     /// A worker's ask for the cache's eviction ([`Inbox::Evict`]): one added, unless one is
@@ -1755,24 +1836,18 @@ impl Engine {
         let (mut values, mut render, mut save, mut cancelled) = (false, false, false, false);
         // Whether the scopes now count a graph the published frame was not counted for.
         let mut recount = false;
-        for (_, command) in batch {
+        for (at, command) in batch {
             self.applied += 1;
             // Values follow every change asked for, failed or not, so a client's own
             // value is replaced by the engine's either way.
             values |= on_edit(&command);
             let result = match command {
                 Command::Open(path) => {
-                    // Its number, which its `Opened` or its failure carries.
-                    let open = self.applied;
-                    self.open(&path, open)
-                        .map(|photo| {
-                            events.push(Event::Opened(photo));
-                            (values, render, save, cancelled) = (true, true, false, false);
-                        })
-                        .map_err(|error| SessionError::Open {
-                            open,
-                            error: Box::new(error),
-                        })
+                    // Its number, which its `Opened` or its failure carries. What was
+                    // asked for the photo before it is gone with it.
+                    self.open(path, self.applied, at);
+                    (values, render, save, cancelled) = (false, false, false, false);
+                    Ok(())
                 }
                 Command::Resize { width, height } => {
                     render |= self.size != Some((width, height));
@@ -1836,6 +1911,11 @@ impl Engine {
                 #[cfg(test)]
                 Command::HoldThumbnails(hold) => {
                     self.thumbnails_hold = Some(hold);
+                    Ok(())
+                }
+                #[cfg(test)]
+                Command::HoldDecode(hold) => {
+                    self.decode_hold = Some(hold);
                     Ok(())
                 }
                 #[cfg(test)]
@@ -1906,10 +1986,15 @@ impl Engine {
         false
     }
 
-    /// Applies one command that changes the edit; on a photo open for viewing only, refuses
-    /// it.
+    /// Applies one command that changes the edit; on a photo still opening, or open for
+    /// viewing only, refuses it.
     fn apply_edit(&mut self, command: Command) -> Result<Effect, SessionError> {
         let edits = on_edit(&command);
+        // Refused, never held (decision 77), so `through` still counts what a report
+        // includes, and a newer `Open` never waits behind it.
+        if self.opening.is_some() && edits {
+            return Err(SessionError::NotLive);
+        }
         if let Some(view_only) = self.open.as_ref().and_then(|open| open.view_only.as_ref())
             && edits
         {
@@ -2054,6 +2139,7 @@ impl Engine {
             | Command::HoldPreview(_)
             | Command::HoldFolder(_)
             | Command::HoldThumbnails(_)
+            | Command::HoldDecode(_)
             | Command::HoldClear(_) => {
                 return Ok(Effect::default());
             }
@@ -2165,66 +2251,149 @@ impl Engine {
         }
     }
 
-    /// Opens the raw at `path` for the [`Command::Open`] numbered `open`.
-    fn open(&mut self, path: &Path, open: u64) -> Result<Photo, SessionError> {
+    /// [`Command::Open`], numbered `open`, which reached the session `at` (decision 77): the
+    /// photo before it saved and closed, the open before it cancelled, and this one's job
+    /// added, which reads the photo on a worker and hands the engine thread what it read
+    /// ([`Self::take_stage`]).
+    fn open(&mut self, path: PathBuf, open: u64, at: Instant) {
         // The old photo's edit is saved, and its buffers go before the new one's arrive.
         self.close_saving();
-        let Decoded {
-            camera,
-            image,
-            input,
-            shot,
-            decode_ms,
-            upload_ms,
-        } = (self.load)(&self.gpu, path)?;
-        let sidecar = sidecar::path_for(path);
-        // An edit of this photo still being written is read back whole.
-        self.writer.flush(Some(&sidecar));
-        let (edit, view_only) = if sidecar.exists() {
-            tracing::debug!(target: "pipe", "read {}", sidecar::file_name(&sidecar));
-            let loaded = sidecar::read(&sidecar, self.operations, &self.modules, self.retired)?;
-            let view_only = loaded.view_only();
-            if let Some(view_only) = &view_only {
-                let (name, by) = (
-                    sidecar::file_name(&sidecar),
-                    sidecar::writer(&view_only.build),
-                );
-                tracing::warn!(target: "pipe", "view only: {name}, by {by}");
-            }
-            let mut edit = loaded.edit;
-            // A number outside the range its module's values give, as only a hand-written
-            // file holds, is clamped as it is read (decisions 21 and 30); an edit a newer
-            // Apertrust wrote is shown as it was.
-            if view_only.is_none() {
-                for warning in edit.clamp_read(&self.modules, &image) {
-                    tracing::warn!(target: "pipe", "{warning}");
-                }
-            }
-            (edit, view_only)
-        } else {
-            (Edit::default(), None)
-        };
-        let photo = Photo {
-            path: path.to_owned(),
+        let job = self.open_job(&path, open, at);
+        self.opening = Some(Opening {
             open,
-            camera,
+            path,
+            job,
+            started: at,
+        });
+        self.tell_live_frame();
+    }
+
+    /// Adds the job that opens `path` for the open numbered `open`, which reached the
+    /// session at `started`: an `open` on `SystemForeground`, with no progress.
+    fn open_job(&mut self, path: &Path, open: u64, started: Instant) -> JobId {
+        let run = open::Run {
+            open,
+            path: path.to_owned(),
+            started,
+            longest: self.size.map(|(width, height)| width.max(height)),
+            load: Arc::clone(&self.load),
+            cache: self.cache.clone(),
+            operations: self.operations,
+            modules: self.modules.clone(),
+            retired: self.retired,
+            // Read once the writer has written the edits handed to it, the photo
+            // before's among them.
+            snapshot: self.writer.read(vec![sidecar::path_for(path)]),
+            decodes: Arc::clone(&self.decodes),
+            inbox: self.jobs.inbox.clone(),
+            outbox: self.jobs.outbox.clone(),
+            #[cfg(test)]
+            hold: self.decode_hold.take(),
+        };
+        self.jobs
+            .add(open, Queue::SystemForeground, |_| open::job(run))
+    }
+
+    /// What an open's job read (decision 77), for the open under way alone: an older
+    /// open's, and one whose photo has closed, is dropped. Its metadata and sidecar install
+    /// the photo, not yet live, and send `Opened` and its values; the decode's start
+    /// compiles its kernels; its mosaic is uploaded, and the values, live, and the first
+    /// frame follow. A failure closes the photo and fails the open.
+    fn take_stage(&mut self, stage: Stage) -> Vec<Event> {
+        let mut events = Vec::new();
+        let Some(opening) = (self.opening.as_ref()).filter(|o| o.open == stage.open()) else {
+            return events;
+        };
+        let (open, started, path) = (opening.open, opening.started, opening.path.clone());
+        let name = sidecar::file_name(&path);
+        let failure = match stage {
+            Stage::Read { read: Ok(read), .. } => {
+                let photo = self.install(*read, open);
+                let values = (self.open.as_mut())
+                    .map(|photo| photo.values(self.operations, &self.modules, self.applied));
+                events.push(Event::Opened(photo));
+                events.extend(values.map(Event::Values));
+                let ms = started.elapsed().as_secs_f64() * 1e3;
+                tracing::debug!(target: "perf", "open {name}: values, at {ms:.0} ms");
+                None
+            }
+            Stage::Decoding { .. } => {
+                #[cfg(test)]
+                self.decoding.push(open);
+                self.compile(&name);
+                None
+            }
+            Stage::Decoded {
+                decoded: Ok(decoded),
+                ..
+            } => {
+                #[cfg(test)]
+                self.uploaded.push(open);
+                (self.go_live(*decoded, started, &name, &mut events)).err()
+            }
+            // Dropped from the stack before it ran: added again.
+            Stage::Gone { began: false, .. } => {
+                tracing::debug!(target: "control", "open {name}: its job was dropped, added again");
+                let job = self.open_job(&path, open, started);
+                if let Some(opening) = &mut self.opening {
+                    opening.job = job;
+                }
+                None
+            }
+            Stage::Read {
+                read: Err(error), ..
+            }
+            | Stage::Decoded {
+                decoded: Err(error),
+                ..
+            } => Some(error),
+            Stage::Gone { began: true, .. } => Some(SessionError::Panicked(
+                "the photo's open ended before its decode".to_owned(),
+            )),
+        };
+        if let Some(error) = failure {
+            tracing::error!(target: "pipe", "open {name}: {error}");
+            self.close();
+            events.push(Event::Failed(SessionError::Open {
+                open,
+                error: Box::new(error),
+            }));
+        }
+        events
+    }
+
+    /// Installs the photo `read` gives for the open numbered `open`, not yet live: its
+    /// edit, its image context and the options its choices list. Returns what `Opened`
+    /// says of it.
+    fn install(&mut self, read: open::Read, open: u64) -> Photo {
+        let open::Read {
+            metadata,
+            edit,
+            view_only,
+        } = read;
+        let path = (self.opening.as_ref())
+            .map(|opening| opening.path.clone())
+            .unwrap_or_default();
+        let image = metadata.image;
+        let photo = Photo {
+            path: path.clone(),
+            open,
+            camera: metadata.camera,
             width: image.width,
             height: image.height,
-            decode_ms,
-            upload_ms,
             view_only: view_only.clone(),
-            exposure_time: shot.exposure_time,
-            aperture: shot.aperture,
-            focal_length: shot.focal_length,
+            exposure_time: metadata.shot.exposure_time,
+            aperture: metadata.shot.aperture,
+            focal_length: metadata.shot.focal_length,
             image: Box::new(image.clone()),
         };
         let options = listed_options(&self.modules, &image);
         self.open = Some(Open {
-            sidecar,
+            sidecar: sidecar::path_for(&path),
             image,
-            sensor: input.desc(),
-            input,
-            shot,
+            input: None,
+            sensor: metadata.sensor,
+            shot: metadata.shot,
             edit,
             view_only,
             unsaved: false,
@@ -2238,8 +2407,93 @@ impl Engine {
             views_failed: BTreeSet::new(),
             pipeline: None,
         });
-        self.tell_live_frame();
-        Ok(photo)
+        photo
+    }
+
+    /// As an open's decode begins: plans the photo's pipeline at the viewport's size and
+    /// compiles its kernels, so they are ready when the raw arrives. Nothing before the
+    /// viewport's size is given; a plan or a kernel that fails here fails the first render,
+    /// which reports it.
+    fn compile(&mut self, name: &str) {
+        let (Some(open), Some((width, height))) = (&self.open, self.size) else {
+            return;
+        };
+        let start = Instant::now();
+        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        let pipe = Pipe::Viewport { width, height };
+        let planned = pipeline::plan(
+            &bound.instances,
+            &open.image,
+            open.sensor,
+            pipe,
+            &self.limits,
+        );
+        let Ok(plan) = planned else {
+            return;
+        };
+        let compiled = pollster::block_on(pipeline::compile(&self.gpu, &plan, &mut self.kernels));
+        let ms = start.elapsed().as_secs_f64() * 1e3;
+        match compiled {
+            Ok(count) => {
+                #[cfg(test)]
+                {
+                    self.compiled += count;
+                }
+                tracing::debug!(target: "perf", "open {name}: compiled {count} kernels as it decodes, {ms:.0} ms");
+            }
+            Err(error) => tracing::debug!(target: "pipe", "open {name}: not compiled: {error}"),
+        }
+    }
+
+    /// Uploads the decoded mosaic of the open under way, which reached the session at
+    /// `started`, makes the photo live and renders its first frame: the values, live, then
+    /// the frame or the render's failure, in `events`. The decode's image context is taken
+    /// where it differs from the metadata's, said under `-d raw`. A failed upload is the
+    /// open's failure.
+    fn go_live(
+        &mut self,
+        decoded: (open::Metadata, open::Mosaic),
+        started: Instant,
+        name: &str,
+        events: &mut Vec<Event>,
+    ) -> Result<(), SessionError> {
+        let (metadata, mosaic) = decoded;
+        let start = Instant::now();
+        let input = mosaic.upload(&self.gpu)?;
+        drop(mosaic);
+        let ms = start.elapsed().as_secs_f64() * 1e3;
+        let at = started.elapsed().as_secs_f64() * 1e3;
+        tracing::debug!(target: "perf", "open {name}: upload, {ms:.0} ms, at {at:.0} ms");
+        // Its metadata installed it, which came first from the same job.
+        let Some(photo) = &mut self.open else {
+            let error = "the photo's raw arrived before its metadata";
+            return Err(SessionError::Panicked(error.to_owned()));
+        };
+        if metadata.image != photo.image {
+            tracing::debug!(target: "raw", "{name}: the decode's image context differs from the metadata's, taken");
+            photo.options = listed_options(&self.modules, &metadata.image);
+            photo.image = metadata.image;
+            // Clamped again to the ranges the decode's context gives, as an opened edit is.
+            if photo.view_only.is_none() {
+                for warning in photo.edit.clamp_read(&self.modules, &photo.image) {
+                    tracing::warn!(target: "pipe", "{warning}");
+                }
+            }
+        }
+        photo.sensor = input.desc();
+        photo.shot = metadata.shot;
+        photo.input = Some(input);
+        self.opening = None;
+        let values = photo.values(self.operations, &self.modules, self.applied);
+        events.push(Event::Values(values));
+        match self.render(started, events) {
+            Ok(Some(frame)) => events.push(Event::Frame(frame)),
+            Ok(None) => {}
+            Err(error) => events.push(Event::Failed(error)),
+        }
+        let at = started.elapsed().as_secs_f64() * 1e3;
+        tracing::debug!(target: "perf", "open {name}: live, at {at:.0} ms");
+        Ok(())
     }
 
     /// [`Command::Export`], the command numbered [`Self::applied`]: a `UserExport` job of
@@ -2268,7 +2522,7 @@ impl Engine {
             modules: self.modules.clone(),
             retired: self.retired,
             limits: self.limits,
-            load: self.load,
+            load: Arc::clone(&self.load),
             photos,
             numbering,
             settings,
@@ -2316,16 +2570,19 @@ impl Engine {
         }
     }
 
-    /// The open photo as an export of `photos` takes it, if it is one of them: the raw is
-    /// held only for an export of it.
+    /// The open photo as an export of `photos` takes it, if it is one of them and live: the
+    /// raw is held only for an export of it. One still opening has no change its file
+    /// lacks, so its export reads the file.
     fn live_among(&self, photos: &[PathBuf]) -> Option<Live> {
-        let exported = |open: &&Open| photos.iter().any(|p| sidecar::path_for(p) == open.sidecar);
-        self.open.as_ref().filter(exported).map(|open| Live {
+        let open = self.open.as_ref()?;
+        let input = open.input.clone()?;
+        let exported = photos.iter().any(|p| sidecar::path_for(p) == open.sidecar);
+        exported.then(|| Live {
             sidecar: open.sidecar.clone(),
             edit: open.edit.clone(),
             newer: open.view_only.is_some(),
             image: open.image.clone(),
-            input: open.input.clone(),
+            input,
             shot: open.shot.clone(),
             unsaved: open.unsaved,
         })
@@ -2520,6 +2777,10 @@ impl Engine {
         let (Some(open), Some((width, height))) = (&mut self.open, self.size) else {
             return Ok(None);
         };
+        // A photo still opening has nothing to render yet.
+        let Some(input) = open.input.clone() else {
+            return Ok(None);
+        };
         let pipe = Pipe::Viewport { width, height };
         let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
         let failing: BTreeSet<&'static str> = bound.failed.iter().map(|(id, _)| *id).collect();
@@ -2539,7 +2800,18 @@ impl Engine {
         )?;
         let pipeline = match open.pipeline.take() {
             Some(pipeline) => pollster::block_on(pipeline.update(&self.gpu, plan))?,
-            None => pollster::block_on(Pipeline::new(&self.gpu, plan, open.input.clone()))?,
+            // The photo's first, taking the kernels earlier photos compiled; the session
+            // keeps its own, so a build that fails loses none of them.
+            None => {
+                let kernels = self.kernels.clone();
+                let built = Pipeline::with_kernels(&self.gpu, plan, input, kernels);
+                let pipeline = pollster::block_on(built)?;
+                #[cfg(test)]
+                {
+                    self.compiled += pipeline.kernels() - self.kernels.len();
+                }
+                pipeline
+            }
         };
         let pipeline = open.pipeline.insert(pipeline);
         let output = pipeline.output();
@@ -2775,6 +3047,7 @@ impl Open {
             edited,
             through,
             extent,
+            live: self.input.is_some(),
         }
     }
 
@@ -2890,6 +3163,41 @@ impl Open {
     }
 }
 
+/// A session whose raws are synthetic, for the tests of its clients (the `testing`
+/// feature), so a client's test runs a real session on the test's GPU with no raw on disk.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing {
+    use super::*;
+
+    /// Starts a session as [`Session::start`] does, within the engine's default budget and
+    /// with no disk cache, whose every raw is the modules crate's synthetic photo, 96 × 72
+    /// photosites, whatever its path; one called `embedded.ARW` holds an embedded
+    /// picture. The edit beside each path is read and written as any.
+    pub fn start(
+        gpu: GpuContext,
+        operations: &'static [&'static dyn Operation],
+        modules: &'static [&'static dyn Module],
+        build: &str,
+        wake: impl Fn() + Send + Sync + 'static,
+    ) -> Session {
+        Session::spawn(
+            gpu,
+            operations,
+            modules,
+            build,
+            pipeline::BUDGET,
+            None,
+            Arc::new(wake),
+            open::testing::loading(synthetic),
+        )
+    }
+
+    fn synthetic(_: &Path) -> Result<(open::Metadata, open::Mosaic), SessionError> {
+        use apertrust_modules::testing::{image, mosaic};
+        Ok(open::testing::photo(image(), [96, 72], mosaic()))
+    }
+}
+
 /// How long a test waits for any one thing a session does: on WARP, which compiles every
 /// kernel through FXC on a CPU the tests running beside it share, one step can take
 /// minutes.
@@ -2913,6 +3221,9 @@ mod tests {
     use crate::jobs::testing::{Fault, Synthetic, Told};
     use crate::jobs::{Destination, Message, Offer, State, TaskError};
     use crate::pipeline::Instance;
+    use crate::raw;
+    use open::testing::loading;
+    use open::{Metadata, Mosaic};
 
     fn gpu() -> GpuContext {
         pollster::block_on(GpuContext::new(&GpuOptions::default()))
@@ -2922,18 +3233,40 @@ mod tests {
     /// The build the tests' sessions record in the edits they write.
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
-    /// Set once the engine has begun to open `slow.ARW`.
-    static SLOW_OPEN: AtomicBool = AtomicBool::new(false);
-
-    /// `testing::image`'s photo, whatever the path; one called `slow.ARW` takes a third of
-    /// a second to arrive, so commands queue behind it, and one called `bias.ARW` records
-    /// an exposure bias of −0.7 EV.
-    fn synthetic(gpu: &GpuContext, path: &Path) -> Result<Decoded, SessionError> {
-        if path.ends_with("slow.ARW") {
-            SLOW_OPEN.store(true, Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(300));
-        }
+    /// `testing::image`'s photo, whatever the path; one called `bias.ARW` records an
+    /// exposure bias of −0.7 EV, one called `xtrans.ARW` has an X-Trans filter, and one
+    /// called `wide.ARW` is 1100 photosites wide, its image 1088 × 62.
+    fn synthetic(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         let mut image = testing::image();
+        if let (true, Some(camera)) = (path.ends_with("xtrans.ARW"), &mut image.camera) {
+            #[rustfmt::skip]
+            let values = vec![
+                1, 1, 0, 1, 1, 2,
+                1, 1, 2, 1, 1, 0,
+                2, 0, 1, 0, 2, 1,
+                1, 1, 2, 1, 1, 0,
+                1, 1, 0, 1, 1, 2,
+                0, 2, 1, 2, 0, 1,
+            ];
+            camera.cfa = Some(apertrust_plugin::Pattern {
+                width: 6,
+                height: 6,
+                values,
+            });
+        }
+        if path.ends_with("wide.ARW") {
+            let [width, height] = [1100, 72];
+            let mut camera = image.camera.expect("a raw's");
+            camera.width = width;
+            camera.crop = [2, 2, 1096, 68];
+            camera.declared = [6, 4, 1088, 62];
+            let image = ImageContext {
+                camera: Some(camera),
+                ..ImageContext::full(1088, 62)
+            };
+            let mosaic = vec![2000; (width * height) as usize];
+            return Ok(open::testing::photo(image, [width, height], mosaic));
+        }
         if let (true, Some(camera)) = (path.ends_with("bias.ARW"), &mut image.camera) {
             camera.exposure_bias = -0.7;
         }
@@ -2942,19 +3275,23 @@ mod tests {
         if let (true, Some(camera)) = (path.ends_with("portrait.ARW"), &mut image.camera) {
             camera.orientation = 6;
         }
-        Ok(Decoded {
-            camera: "Synthetic".to_owned(),
-            image,
-            input: GpuImage::upload_mosaic(gpu, 96, 72, &testing::mosaic()).expect("it uploads"),
-            shot: Shot::default(),
-            decode_ms: 0.0,
-            upload_ms: 0.0,
-        })
+        Ok(open::testing::photo(image, [96, 72], testing::mosaic()))
     }
 
+    /// A session opening the synthetic photos `develop` gives.
     fn start_with(
         gpu: &GpuContext,
         modules: &'static [&'static dyn Module],
+        develop: open::testing::Develop,
+    ) -> (Session, Receiver<()>) {
+        spawned(gpu, modules, None, loading(develop))
+    }
+
+    /// A session opening the raws `load` gives, keeping `cache`.
+    fn spawned(
+        gpu: &GpuContext,
+        modules: &'static [&'static dyn Module],
+        cache: Option<CacheOptions>,
         load: Load,
     ) -> (Session, Receiver<()>) {
         let (woken, wakes) = mpsc::channel();
@@ -2967,15 +3304,27 @@ mod tests {
             modules,
             BUILD,
             pipeline::BUDGET,
-            None,
+            cache,
             Arc::new(wake),
             load,
         );
         (session, wakes)
     }
 
+    /// A session opening the raws on disk.
     fn start(gpu: &GpuContext, modules: &'static [&'static dyn Module]) -> (Session, Receiver<()>) {
-        start_with(gpu, modules, decode)
+        spawned(gpu, modules, None, open::files())
+    }
+
+    /// Whether `event` is the values of a photo gone live.
+    fn live(event: &Event) -> bool {
+        matches!(event, Event::Values(values) if values.live)
+    }
+
+    /// Opens `path` and waits until it is live, its events returned.
+    fn open_live(session: &Session, wakes: &Receiver<()>, path: &Path) -> Vec<Event> {
+        session.send(Command::Open(path.to_owned()));
+        until(session, wakes, live)
     }
 
     /// The events up to the first that `last` accepts, waiting at most [`TEST_WAIT`] for
@@ -2994,15 +3343,15 @@ mod tests {
     }
 
     /// The synthetic photo with the shooting data a decode gives it.
-    fn synthetic_shot(gpu: &GpuContext, path: &Path) -> Result<Decoded, SessionError> {
-        let mut decoded = synthetic(gpu, path)?;
-        decoded.shot = decoded.shot.with_exif(&apertrust_raw::Exif {
+    fn synthetic_shot(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
+        let (mut metadata, mosaic) = synthetic(path)?;
+        metadata.shot = metadata.shot.with_exif(&apertrust_raw::Exif {
             exposure_time: Some(1.0 / 250.0),
             aperture: Some(5.6),
             focal_length: Some(35.0),
             ..Default::default()
         });
-        Ok(decoded)
+        Ok((metadata, mosaic))
     }
 
     /// A client shows the exposure time, the f-number and the focal length in the photo's
@@ -3039,9 +3388,8 @@ mod tests {
     #[test]
     #[ignore = "needs the raw.pixls.us corpus: tools/fetch-raw-corpus.sh"]
     fn a_decoded_raw_carries_its_exif_shooting_data() {
-        let gpu = gpu();
-        let decoded = decode(&gpu, &corpus_raw()).expect("the raw decodes");
-        let shot = decoded.shot;
+        let file = open::files()(&corpus_raw()).expect("the raw opens");
+        let shot = file.metadata().expect("its metadata reads").shot;
         assert!(shot.exposure_time.is_some_and(|t| t > 0.0), "{shot:?}");
         assert!(shot.aperture.is_some_and(|f| f > 0.0), "{shot:?}");
         assert!(shot.focal_length.is_some_and(|f| f > 0.0), "{shot:?}");
@@ -3181,9 +3529,9 @@ mod tests {
             width: 64,
             height: 48,
         });
-        session.send(Command::Open(path.clone()));
-        let frame = |sent: u64| move |e: &Event| matches!(e, Event::Frame(f) if f.through >= sent);
         // The first frame opens the photo and compiles the kernels, the gate free.
+        open_live(&session, &wakes, &path);
+        let frame = |sent: u64| move |e: &Event| matches!(e, Event::Frame(f) if f.through >= sent);
         let sent = session.send(set("brightness", ControlValue::Number(0.5), false));
         until(&session, &wakes, frame(sent));
         let mut held = gpu.gate.hold();
@@ -3234,13 +3582,12 @@ mod tests {
     fn each_photo_opened_carries_the_number_its_open_was_sent_with() {
         let gpu = gpu();
         let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let opened = |open: u64| move |e: &Event| matches!(e, Event::Opened(p) if p.open == open);
+        // Each opened in turn: a second sent at once would cancel the first (decision 77).
         let first = session.send(Command::Open(PathBuf::from("first.ARW")));
+        let mut events = until(&session, &wakes, opened(first));
         let second = session.send(Command::Open(PathBuf::from("second.ARW")));
-        let events = until(
-            &session,
-            &wakes,
-            |e| matches!(e, Event::Opened(photo) if photo.open == second),
-        );
+        events.extend(until(&session, &wakes, opened(second)));
         let opened: Vec<(u64, &Path)> = events
             .iter()
             .filter_map(|e| match e {
@@ -3250,6 +3597,512 @@ mod tests {
             .collect();
         let expected = [(first, "first.ARW"), (second, "second.ARW")];
         assert_eq!(opened, expected.map(|(n, p)| (n, Path::new(p))));
+    }
+
+    /// What an open's events say, in order, its picture left out: `Opened`, the values
+    /// not live and live, the frame and a failure.
+    fn stages(events: &[Event]) -> Vec<&'static str> {
+        let stage = |event: &Event| match event {
+            Event::Opened(_) => Some("opened"),
+            Event::Values(values) if values.live => Some("live"),
+            Event::Values(_) => Some("values"),
+            Event::Frame(_) => Some("frame"),
+            Event::Failed(SessionError::Open { .. }) => Some("failed"),
+            _ => None,
+        };
+        events.iter().filter_map(stage).collect()
+    }
+
+    /// The open's pictures among `events`.
+    fn pictures(events: &[Event]) -> Vec<&OpenPreview> {
+        (events.iter())
+            .filter_map(|event| match event {
+                Event::OpenPreview(preview) => Some(preview),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A photo opens in stages (decision 77): the engine thread sends `Opened`, the values
+    /// not yet live, then, in the batch of the first frame, the values live and the frame;
+    /// the job sends the picture, none for a raw that holds none; each names the open.
+    #[test]
+    fn an_open_s_events_come_in_order_named_by_its_number() {
+        let gpu = gpu();
+        let path = scratch("stages");
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 40,
+            height: 40,
+        });
+        let sent = session.send(Command::Open(path.clone()));
+        let mut events = until(&session, &wakes, |e| matches!(e, Event::Frame(_)));
+        if pictures(&events).is_empty() {
+            events.extend(until(&session, &wakes, |e| {
+                matches!(e, Event::OpenPreview(_))
+            }));
+        }
+        assert_eq!(stages(&events), ["opened", "values", "live", "frame"]);
+        assert!(
+            (events.iter()).any(|e| matches!(e, Event::Opened(p) if p.open == sent)),
+            "{events:?}"
+        );
+        assert_eq!(
+            pictures(&events),
+            [&OpenPreview {
+                open: sent,
+                picture: None,
+                source: PreviewSource::Embedded,
+            }]
+        );
+        // The first frame's latency counts from the `Open`.
+        let Some(Event::Frame(frame)) = events.iter().find(|e| matches!(e, Event::Frame(_))) else {
+            unreachable!()
+        };
+        assert!(frame.through >= sent && frame.latency_ms > 0.0);
+        drop(session);
+        remove(&path);
+    }
+
+    /// Every command on the edit, from the `Open` until the photo is live, is refused as
+    /// `NotLive`, changing and writing nothing; once live, it is taken (decision 77).
+    #[test]
+    fn a_command_on_the_edit_before_the_photo_is_live_is_refused_and_writes_nothing() {
+        let path = scratch("not-live");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([Command::HoldDecode(hold)]);
+        driven.run([
+            Command::Open(path.clone()),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        // Before the photo's metadata arrives.
+        let early = driven.engine.applied + 1;
+        let mut events = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+        // Its values, not live, then its decode held.
+        events
+            .extend(driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::Values(_)))));
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        let late = driven.engine.applied + 1;
+        events.extend(driven.run([
+            set("brightness", ControlValue::Number(0.5), true),
+            Command::Reset,
+            Command::RetrySave,
+        ]));
+        let refused: Vec<u64> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Failed(SessionError::Refused { command, error })
+                    if matches!(**error, SessionError::NotLive) =>
+                {
+                    Some(*command)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(refused, [early, late, late + 1, late + 2], "{events:?}");
+        let reported = values(&events);
+        assert!(!reported.live);
+        assert_eq!(
+            control(reported, "sample", "brightness").value,
+            ControlValue::Number(0.0)
+        );
+        assert!(driven.writes().is_empty());
+        assert!(!sidecar::path_for(&path).exists());
+        // Live: taken.
+        permit.send(()).unwrap();
+        let events = driven.settle();
+        assert_eq!(stages(&events), ["live", "frame"]);
+        let events = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        assert_eq!(
+            control(values(&events), "sample", "brightness").value,
+            ControlValue::Number(0.5)
+        );
+        assert_eq!(
+            written(&driven.writes()),
+            [(sidecar::path_for(&path).as_path(), true)]
+        );
+        remove(&path);
+    }
+
+    /// Switching quickly (decision 77): a newer open cancels the older, whose decode, under
+    /// way, runs to its end alone, the newer's waiting for the slot, and whose mosaic is
+    /// never uploaded; only the newer goes live.
+    #[test]
+    fn a_newer_open_cancels_the_older_whose_decode_runs_alone_and_is_never_uploaded() {
+        let first = scratch("switch-first");
+        let second = scratch("switch-second");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([
+            Command::HoldDecode(hold),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        let one = driven.engine.applied + 1;
+        driven.run([Command::Open(first.clone())]);
+        // The first's decode under way and held, the slot its.
+        let mut events = driven.pump(|engine, _| engine.decoding == [one]);
+        begun
+            .recv_timeout(TEST_WAIT)
+            .expect("the first's decode begins");
+        let two = driven.engine.applied + 1;
+        events.extend(driven.run([Command::Open(second.clone())]));
+        let opened = |open: u64| move |e: &Event| matches!(e, Event::Opened(p) if p.open == open);
+        events.extend(driven.pump(|_, events| events.iter().any(opened(two))));
+        // The second's decode waits for the first's.
+        events.extend(driven.pump_for(Duration::from_millis(200)));
+        assert_eq!(driven.engine.decoding, [one]);
+        permit.send(()).unwrap();
+        events.extend(driven.settle());
+        assert_eq!(driven.engine.decoding, [one, two]);
+        assert_eq!(driven.engine.uploaded, [two]);
+        assert_eq!(
+            stages(&events),
+            ["opened", "values", "opened", "values", "live", "frame"]
+        );
+        let second_opened = events.iter().position(opened(two)).unwrap();
+        let first_live = events.iter().position(live).unwrap();
+        assert!(second_opened < first_live, "{events:?}");
+        remove(&first);
+        remove(&second);
+    }
+
+    /// Three photos switched quickly: the second, cancelled while it waits for the slot,
+    /// decodes nothing, even handed the slot as its cancel comes; the first's decode, under
+    /// way, ends, and the third's follows (decision 77).
+    #[test]
+    fn a_cancelled_open_waiting_for_the_decode_slot_decodes_nothing() {
+        let paths = ["switch-a", "switch-b", "switch-c"].map(scratch);
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([
+            Command::HoldDecode(hold),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        let a = driven.engine.applied + 1;
+        driven.run([Command::Open(paths[0].clone())]);
+        driven.pump(|engine, _| engine.decoding == [a]);
+        begun.recv_timeout(TEST_WAIT).expect("A's decode begins");
+        let b = driven.engine.applied + 1;
+        driven.run([Command::Open(paths[1].clone())]);
+        let opened = |open: u64| move |e: &Event| matches!(e, Event::Opened(p) if p.open == open);
+        driven.pump(|_, events| events.iter().any(opened(b)));
+        // B waits for the slot; C cancels it, and A's decode ends as it does.
+        driven.pump_for(Duration::from_millis(100));
+        let c = driven.engine.applied + 1;
+        driven.run([Command::Open(paths[2].clone())]);
+        permit.send(()).unwrap();
+        driven.settle();
+        assert_eq!(driven.engine.decoding, [a, c]);
+        assert_eq!(driven.engine.uploaded, [c]);
+        for path in &paths {
+            remove(path);
+        }
+    }
+
+    /// Reopening the photo that is opening cancels the first open and opens it again,
+    /// never taken for the first by the stack's deduplication (decision 77).
+    #[test]
+    fn reopening_a_photo_while_it_opens_opens_it_again() {
+        let path = scratch("reopen");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([
+            Command::HoldDecode(hold),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        let first = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        driven.pump(|engine, _| engine.decoding == [first]);
+        begun
+            .recv_timeout(TEST_WAIT)
+            .expect("the first decode begins");
+        let second = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        permit.send(()).unwrap();
+        let events = driven.settle();
+        assert_eq!(driven.engine.decoding, [first, second]);
+        assert_eq!(driven.engine.uploaded, [second]);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Opened(p) if p.open == second))
+        );
+        assert_eq!(stages(&events)[2..], ["live", "frame"]);
+        remove(&path);
+    }
+
+    /// An open job that ends before its decode, as one panicking would, fails its open,
+    /// and what it handed over after is dropped (decision 77).
+    #[test]
+    fn an_open_job_that_ends_early_fails_its_open() {
+        let path = scratch("ends-early");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([Command::HoldDecode(hold)]);
+        let open = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        driven.pump(|engine, _| engine.decoding == [open]);
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        let events = driven.engine.stage(Stage::Gone { open, began: true });
+        assert!(
+            matches!(&events[..], [Event::Failed(SessionError::Open { open: failed, error })]
+                if *failed == open && matches!(**error, SessionError::Panicked(_))),
+            "{events:?}"
+        );
+        assert!(driven.engine.opening.is_none() && driven.engine.open.is_none());
+        // The job's decode, ending after, changes nothing.
+        permit.send(()).unwrap();
+        assert!(driven.pump_for(Duration::from_millis(200)).is_empty());
+        assert!(driven.engine.uploaded.is_empty());
+        remove(&path);
+    }
+
+    /// An open job dropped from the stack, past 30 jobs added after it while every worker
+    /// is busy, is added again, and the photo still goes live (decision 77).
+    #[test]
+    fn an_open_job_dropped_from_the_stack_is_added_again() {
+        let gpu = gpu();
+        let path = scratch("dropped-open");
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 40,
+            height: 40,
+        });
+        // Every worker held.
+        let (told, _heard) = Heard::start();
+        let mut gos = Vec::new();
+        for _ in 0..apertrust_base::jobs::workers(64) {
+            let label: &'static str = Box::leak(format!("busy {}", gos.len()).into_boxed_str());
+            let (job, go) = Synthetic::new(label, Queue::UserBackground, 1, &told).held();
+            session.send(Command::Synthetic(job));
+            gos.push(go);
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        session.send(Command::Open(path.clone()));
+        for n in 0..31 {
+            let label: &'static str = Box::leak(format!("stacked {n}").into_boxed_str());
+            let job = Synthetic::new(label, Queue::SystemForeground, 1, &told);
+            session.send(Command::Synthetic(job));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        drop(gos);
+        until(&session, &wakes, live);
+        drop(session);
+        remove(&path);
+    }
+
+    /// A photo still opening is no live photo for an export, which reads its file
+    /// (decision 77).
+    #[test]
+    fn a_photo_still_opening_is_exported_from_its_file() {
+        let path = scratch("export-opening");
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        assert!(
+            driven
+                .engine
+                .live_among(std::slice::from_ref(&path))
+                .is_some()
+        );
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([Command::HoldDecode(hold), Command::Open(path.clone())]);
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        driven.pump(|engine, _| engine.open.is_some());
+        assert!(
+            driven
+                .engine
+                .live_among(std::slice::from_ref(&path))
+                .is_none()
+        );
+        permit.send(()).unwrap();
+        driven.settle();
+        assert!(
+            driven
+                .engine
+                .live_among(std::slice::from_ref(&path))
+                .is_some()
+        );
+        remove(&path);
+    }
+
+    /// Kernels are kept across photos (decisions 37 and 77): a Bayer photo, an X-Trans
+    /// one, which adds its demosaic's, then a Bayer one again, compiling nothing.
+    #[test]
+    fn kernels_are_kept_across_photos() {
+        let mut driven = Driven::new(&[&Sample]);
+        let mut counts = Vec::new();
+        for name in ["kernels-bayer", "kernels-xtrans", "kernels-bayer-again"] {
+            let mut path = scratch(name);
+            if name.ends_with("xtrans") {
+                path.set_file_name("xtrans.ARW");
+            }
+            let before = driven.engine.compiled;
+            let events = driven.open(&path);
+            assert!(
+                events.iter().any(|e| matches!(e, Event::Frame(_))),
+                "{events:?}"
+            );
+            counts.push(driven.engine.compiled - before);
+            remove(&path);
+        }
+        assert!(counts[0] > 0 && counts[1] > 0, "{counts:?}");
+        assert_eq!(counts[2], 0, "{counts:?}");
+    }
+
+    /// A photo's first pipeline that fails to build leaves the kernels earlier photos
+    /// compiled to the next, which compiles none (decision 77).
+    #[test]
+    fn a_failed_build_leaves_the_kernels_to_the_next_photo() {
+        let options = GpuOptions {
+            max_storage_binding: Some(512 * 1024),
+            ..GpuOptions::default()
+        };
+        let gpu = pollster::block_on(GpuContext::new(&options)).expect("a GPU adapter");
+        let mut driven = Driven::on(gpu, &[&Sample], pipeline::BUDGET);
+        let first = scratch("failed-build-first");
+        driven.open(&first);
+        // Planned as if the GPU bound anything, the wide photo's build fails.
+        let honest = driven.engine.limits;
+        driven.engine.limits.binding = u64::MAX;
+        let wide = scratch("failed-build").with_file_name("wide.ARW");
+        driven.run([Command::Open(wide.clone())]);
+        let events = driven.settle();
+        let refused = |e: &Event| {
+            matches!(
+                e,
+                Event::Failed(SessionError::Compute(ComputeError::Binding { .. }))
+            )
+        };
+        assert!(
+            events.iter().all(|e| !matches!(e, Event::Frame(_))) && events.iter().any(refused),
+            "{:?}",
+            stages(&events)
+        );
+        driven.engine.limits = honest;
+        let before = driven.engine.compiled;
+        let next = scratch("failed-build-next");
+        let events = driven.open(&next);
+        assert!(
+            events.iter().any(|e| matches!(e, Event::Frame(_))),
+            "{events:?}"
+        );
+        assert_eq!(driven.engine.compiled, before);
+        for path in [first, wide, next] {
+            remove(&path);
+        }
+    }
+
+    /// A decode that fails after the photo's values were sent fails its open, the photo
+    /// closed (decision 77).
+    #[test]
+    fn a_decode_failing_after_opened_fails_the_open() {
+        let gpu = gpu();
+        let path = scratch("undecodable").with_file_name("undecodable.ARW");
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 40,
+            height: 40,
+        });
+        let sent = session.send(Command::Open(path.clone()));
+        let failed = |e: &Event| matches!(e, Event::Failed(SessionError::Open { .. }));
+        let events = until(&session, &wakes, failed);
+        assert_eq!(stages(&events), ["opened", "values", "failed"]);
+        assert!(
+            events.iter().any(|e| matches!(e,
+                Event::Failed(SessionError::Open { open, error })
+                    if *open == sent && matches!(**error, SessionError::Decode(_)))),
+            "{events:?}"
+        );
+        drop(session);
+        remove(&path);
+    }
+
+    /// The opening photo's picture (decision 77): the camera's embedded picture at the
+    /// last `Resize`'s longer side; the largest rendered thumbnail the cache holds, stale
+    /// or not, in its place, an embedded one in the cache passed over.
+    #[test]
+    fn an_open_s_picture_is_the_cache_s_rendered_thumbnail_else_the_embedded_one() {
+        use apertrust_base::cache::{Cache, Limit, THUMBNAILS};
+        let gpu = gpu();
+        let path = scratch("pictures").with_file_name("embedded.ARW");
+        let frame = |e: &Event| matches!(e, Event::Frame(_));
+        let picture = |events: &[Event]| {
+            let shown: Vec<(Option<(u32, u32)>, PreviewSource)> = pictures(events)
+                .iter()
+                .map(|p| (p.picture.as_ref().map(|p| (p.width, p.height)), p.source))
+                .collect();
+            shown
+        };
+
+        // The camera's.
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 40,
+            height: 30,
+        });
+        let mut events = open_live(&session, &wakes, &path);
+        if pictures(&events).is_empty() {
+            events.extend(until(&session, &wakes, |e| {
+                matches!(e, Event::OpenPreview(_))
+            }));
+        }
+        assert_eq!(
+            picture(&events),
+            [(Some((40, 30)), PreviewSource::Embedded)]
+        );
+        drop(session);
+
+        // The cache's rendered one, the largest, stale or not.
+        let cache = Cache::create(path.parent().unwrap().join("cache")).expect("a cache");
+        let cache = Arc::new(cache);
+        let thumbnail = |width: u32, height: u32| library::Thumbnail {
+            width,
+            height,
+            pixels: vec![128; (width * height * 4) as usize].into(),
+        };
+        let keep = |size: u32, version: &[u8], width: u32, height: u32| {
+            let jpeg = thumbnail::encode(&thumbnail(width, height)).expect("a JPEG");
+            let slot = library::thumbnail_slot(&path, size);
+            cache.write(THUMBNAILS, &slot, version, &jpeg).unwrap();
+        };
+        let rendered = [library::RENDERED, b"an older edit"].concat();
+        keep(256, &rendered, 256, 192);
+        keep(512, &rendered, 512, 384);
+        keep(1024, &[library::EMBEDDED, b"a reading"].concat(), 1024, 768);
+        let options = CacheOptions {
+            cache: Arc::clone(&cache),
+            limit: Limit::Unlimited,
+        };
+        let (session, wakes) = spawned(&gpu, &[&Sample], Some(options), loading(synthetic));
+        session.send(Command::Resize {
+            width: 40,
+            height: 30,
+        });
+        let events = open_live(&session, &wakes, &path);
+        let mut events = events;
+        if !events.iter().any(frame) {
+            events.extend(until(&session, &wakes, frame));
+        }
+        assert_eq!(
+            picture(&events),
+            [(Some((512, 384)), PreviewSource::Rendered)]
+        );
+        drop(session);
+        remove(&path);
     }
 
     /// Owns exposure's exposure too, which [`Sample`] has.
@@ -3353,7 +4206,11 @@ mod tests {
 
         /// An engine that plans within `budget` bytes.
         fn within(modules: &'static [&'static dyn Module], budget: u64) -> Self {
-            let gpu = gpu();
+            Driven::on(gpu(), modules, budget)
+        }
+
+        /// An engine on `gpu` that plans within `budget` bytes.
+        fn on(gpu: GpuContext, modules: &'static [&'static dyn Module], budget: u64) -> Self {
             let (sent, saved) = outbox::channel(Arc::new(|| {}));
             let (tasks, inbox) = mpsc::channel();
             let (mut engine, _) = Engine::new(
@@ -3365,7 +4222,7 @@ mod tests {
                 Writer::start(sent.clone()),
                 Jobs::start(sent, tasks),
             );
-            engine.load = synthetic;
+            engine.load = loading(synthetic);
             Driven {
                 gpu,
                 engine,
@@ -3374,15 +4231,17 @@ mod tests {
             }
         }
 
-        /// Opens the synthetic photo as `path`, as a client does, and sizes the viewport.
+        /// Opens the synthetic photo as `path`, as a client does, and sizes the viewport,
+        /// taking in what the open's job hands the engine until the photo is live.
         fn open(&mut self, path: &Path) -> Vec<Event> {
-            let events = self.run([
+            let mut events = self.run([
                 Command::Open(path.to_owned()),
                 Command::Resize {
                     width: 40,
                     height: 40,
                 },
             ]);
+            events.extend(self.settle());
             assert!(
                 matches!(events.first(), Some(Event::Opened(photo)) if (photo.width, photo.height) == (84, 62)),
                 "{events:?}"
@@ -3395,10 +4254,62 @@ mod tests {
             self.engine.apply(batch)
         }
 
-        /// What the writer has reported since, once it is done.
+        /// Takes in what reaches the engine thread, as its loop does, until the open under
+        /// way is live or has failed.
+        fn settle(&mut self) -> Vec<Event> {
+            self.pump(|engine, _| engine.opening.is_none())
+        }
+
+        /// Takes in what reaches the engine thread, as its loop does, until `done` holds of
+        /// the engine and the events so far, waiting at most [`TEST_WAIT`] for each.
+        fn pump(&mut self, done: impl Fn(&Engine, &[Event]) -> bool) -> Vec<Event> {
+            let mut events = Vec::new();
+            while !done(&self.engine, &events) {
+                match self
+                    .inbox
+                    .recv_timeout(TEST_WAIT)
+                    .expect("the open goes on")
+                {
+                    Inbox::Open(stage) => events.extend(self.engine.stage(*stage)),
+                    Inbox::Task(waiting) => self.engine.jobs.background.add(waiting),
+                    Inbox::Command(..) | Inbox::Evict | Inbox::Stop => {}
+                }
+            }
+            events
+        }
+
+        /// Takes in what reaches the engine thread, as its loop does, for `time`.
+        fn pump_for(&mut self, time: Duration) -> Vec<Event> {
+            let until = Instant::now() + time;
+            let left = || until.saturating_duration_since(Instant::now());
+            self.pump_until(|_, _| left().is_zero(), left)
+        }
+
+        /// [`Self::pump`], each wait at most `wait` long.
+        fn pump_until(
+            &mut self,
+            done: impl Fn(&Engine, &[Event]) -> bool,
+            wait: impl Fn() -> Duration,
+        ) -> Vec<Event> {
+            let mut events = Vec::new();
+            while !done(&self.engine, &events) {
+                match self.inbox.recv_timeout(wait()) {
+                    Ok(Inbox::Open(stage)) => events.extend(self.engine.stage(*stage)),
+                    Ok(Inbox::Task(waiting)) => self.engine.jobs.background.add(waiting),
+                    Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            events
+        }
+
+        /// What the writer has reported since, once it is done: the open's pictures, which
+        /// come through the same outbox, left out.
         fn writes(&self) -> Vec<Event> {
             self.engine.writer.flush(None);
-            self.saved.events()
+            let mut events = self.saved.events();
+            events.retain(|event| !matches!(event, Event::OpenPreview(_)));
+            events
         }
     }
 
@@ -4843,12 +5754,12 @@ mod tests {
     }
 
     /// `testing::image`'s photo with no colour matrix, as a camera darktable lacks one for.
-    fn synthetic_without_a_matrix(gpu: &GpuContext, path: &Path) -> Result<Decoded, SessionError> {
-        let mut decoded = synthetic(gpu, path)?;
-        if let Some(camera) = decoded.image.camera.as_mut() {
+    fn synthetic_without_a_matrix(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
+        let (mut metadata, mosaic) = synthetic(path)?;
+        if let Some(camera) = metadata.image.camera.as_mut() {
             camera.xyz_to_camera = None;
         }
-        Ok(decoded)
+        Ok((metadata, mosaic))
     }
 
     /// White balance (decision 27): the photo carries its image context; a coefficient set
@@ -4916,7 +5827,7 @@ mod tests {
         remove(&path);
 
         let path = scratch("white-balance-no-matrix");
-        driven.engine.load = synthetic_without_a_matrix;
+        driven.engine.load = loading(synthetic_without_a_matrix);
         let opened = driven.open(&path);
         let values = values(&opened);
         assert_eq!(settings(values), (Some("as_shot"), preset("as_shot"), None));
@@ -5776,8 +6687,13 @@ mod tests {
                 ..
             } = driven;
             engine.finish(inbox);
-            // Nothing but the end of the session's threads.
-            let ended = |e: &Event| matches!(e, Event::Failed(SessionError::Stopped));
+            // Nothing but the last open's picture and the end of the session's threads.
+            let ended = |e: &Event| {
+                matches!(
+                    e,
+                    Event::Failed(SessionError::Stopped) | Event::OpenPreview(_)
+                )
+            };
             assert!(saved.events().iter().all(ended), "{name}");
             assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml, "{name}");
             remove(&path);
@@ -5882,29 +6798,33 @@ mod tests {
 
     #[test]
     fn commands_queued_when_the_client_drops_its_handle_are_saved() {
-        let path = scratch("dropped").with_file_name("slow.ARW");
+        let path = scratch("dropped");
         let other = scratch("dropped-other");
         let gpu = gpu();
         let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
-        // The slow open keeps the engine busy while the rest queues behind it and the
-        // handle drops.
-        session.send(Command::Open(path.clone()));
-        let waiting = Instant::now();
-        while !SLOW_OPEN.load(Ordering::SeqCst) {
-            assert!(waiting.elapsed() < TEST_WAIT, "the open never began");
-            std::thread::yield_now();
-        }
         session.send(Command::Resize {
             width: 40,
             height: 40,
         });
+        open_live(&session, &wakes, &path);
+        // A GPU task's step holds the engine thread while the rest queues behind it and
+        // the handle drops, the step let go a moment after.
+        let (told, mut heard) = Heard::start();
+        let (long, permit) = Synthetic::new("long", Queue::UserBackground, 1, &told).gated(1);
+        session.send(Command::Synthetic(long));
+        heard.until(&Told::Began("long", 1));
         session.send(set("grain", ControlValue::Number(25.0), false));
         session.send(set("brightness", ControlValue::Number(0.5), true));
         // A photo opened after the drop never opens, and nothing after it applies.
         session.send(Command::Open(other.clone()));
         session.send(set("brightness", ControlValue::Number(-1.0), true));
+        let letting_go = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(permit);
+        });
         drop(session);
         drop(wakes);
+        letting_go.join().unwrap();
         let saved = sidecar::read(&sidecar::path_for(&path), OPERATIONS, &[&Sample], &[])
             .expect("the edit was saved")
             .edit;
@@ -6412,6 +7332,17 @@ mod tests {
             height: 480,
         });
         let events = until(&session, &wakes, |e| matches!(e, Event::Frame(_)));
+        // The picture first, from the job; then the engine thread's, `Opened` first.
+        let mut events = events.into_iter().peekable();
+        assert!(matches!(
+            events.next_if(|e| matches!(e, Event::OpenPreview(_))),
+            Some(Event::OpenPreview(OpenPreview {
+                picture: Some(_),
+                source: PreviewSource::Embedded,
+                ..
+            }))
+        ));
+        let events: Vec<Event> = events.collect();
         let Some(Event::Opened(photo)) = events.first() else {
             panic!("{events:?}");
         };
@@ -6607,7 +7538,7 @@ mod tests {
             width: 64,
             height: 48,
         });
-        session.send(Command::Open(path.to_owned()));
+        open_live(&session, &wakes, path);
         let sent = session.send(set("brightness", ControlValue::Number(0.5), false));
         until(&session, &wakes, frame_after(sent));
         (session, wakes)
@@ -6784,7 +7715,7 @@ mod tests {
             pipeline::BUDGET,
             Some(options),
             Arc::new(|| {}),
-            synthetic,
+            loading(synthetic),
         );
         let within = |limit: u64| {
             let deadline = Instant::now() + TEST_WAIT;
@@ -6857,7 +7788,7 @@ mod tests {
             pipeline::BUDGET,
             Some(options),
             Arc::new(wake),
-            synthetic,
+            open::testing::loading(synthetic),
         );
         let deadline = Instant::now() + TEST_WAIT;
         while cache.sizes().is_none() {
@@ -7440,6 +8371,7 @@ mod tests {
     /// stops this test from building until its kind is decided (decision 59, rule 1).
     fn kind(event: &Event) -> Topic {
         match event {
+            Event::OpenPreview(_) => Topic::Fact(Fact::OpenPreview),
             Event::Opened(_) => Topic::Notice,
             Event::Values(_) => Topic::Fact(Fact::Values),
             Event::Frame(_) => Topic::Fact(Fact::Frame),
@@ -7484,10 +8416,10 @@ mod tests {
             width: 64,
             height: 48,
         });
-        session.send(Command::Open(path.clone()));
+        let mut events = open_live(&session, &wakes, &path);
         session.send(Command::Scopes(Some(Graphs::default())));
         let sent = session.send(set("brightness", ControlValue::Number(0.2), true));
-        let mut events = until(&session, &wakes, |e| matches!(e, Event::Scopes(_)));
+        events.extend(until(&session, &wakes, |e| matches!(e, Event::Scopes(_))));
         let saved = |e: &Event| matches!(e, Event::Saved { through, .. } if *through >= sent);
         if !events.iter().any(saved) {
             events.extend(until(&session, &wakes, saved));
@@ -7606,7 +8538,7 @@ mod tests {
             assert!(line.ends_with(kind), "{line}");
         }
         // Every variant, the ones a session sent among them, and every job event.
-        assert_eq!(seen.len(), 11, "{events:?}");
+        assert_eq!(seen.len(), 12, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.

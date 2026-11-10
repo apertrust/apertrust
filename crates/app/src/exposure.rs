@@ -120,8 +120,6 @@ mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time,
             aperture,

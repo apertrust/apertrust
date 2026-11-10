@@ -45,9 +45,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
-    ControlState, CoordinateState, Event, ExportPreview, Frame, ModuleState, Photo, PresetState,
-    SessionError, Values,
+    ControlState, CoordinateState, Event, ExportPreview, Frame, ModuleState, OpenPreview, Photo,
+    PresetState, PreviewSource, SessionError, Values,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_modules::Module;
@@ -86,6 +87,10 @@ pub enum Shown {
     /// The open photo's values and its scopes; its controls send their commands, unless the
     /// photo is open for viewing only (`editable` false).
     Photo { editable: bool },
+    /// A photo opening whose values have arrived but which is not yet live (decision 77):
+    /// its values, every control drawn disabled with its tooltip saying why, and Scopes
+    /// with no graph, as with no photo.
+    Opening,
     /// No photo, or one opening whose values have not arrived: every module at its
     /// definition's defaults and Scopes with no graph, drawn disabled, with no marks, so the
     /// person sees at once that a click on another photo was taken.
@@ -118,6 +123,16 @@ pub struct Mirror {
     pub failure: Option<String>,
     /// The latest frame, which the viewport draws.
     pub frame: Option<Frame>,
+    /// What the central panel shows of the photo until its first live frame (decision 77):
+    /// the largest thumbnail the folder held for it as it was asked for, then the
+    /// session's picture where it is larger or rendered.
+    pub picture: Option<Picture>,
+    /// Raised whenever `picture` changes, so a texture made of it knows it is current.
+    picture_generation: u64,
+    /// Whether the photo is live: its values take changes, and its frames come.
+    live: bool,
+    /// When the photo open was asked for, from which Rendering… waits.
+    asked_at: Option<Instant>,
     /// The latest scopes reading, and what the session was asked to count.
     pub scopes: Scopes,
     /// Whether the photo's edit is on disk as it is now, as the top panel says.
@@ -153,6 +168,10 @@ impl Mirror {
             pending: Vec::new(),
             failure: None,
             frame: None,
+            picture: None,
+            picture_generation: 0,
+            live: false,
+            asked_at: None,
             scopes: Scopes::default(),
             saving: Saving::default(),
             jobs,
@@ -174,16 +193,85 @@ impl Mirror {
         self.shown == Shown::Photo { editable: true }
     }
 
-    /// The raw at `path` is asked for by the open numbered `open`: nothing of the photo
-    /// left is shown for the new one, and the side panel shows no photo until the new
-    /// one's values arrive.
-    pub fn opening(&mut self, path: PathBuf, open: u64) {
+    /// The raw at `path` is asked for by the open numbered `open`, `now`: nothing of the
+    /// photo left is shown for the new one, the side panel shows no photo until the new
+    /// one's values arrive, and the central panel shows at once the largest thumbnail the
+    /// folder holds of it, if any (decision 77).
+    pub fn opening(&mut self, path: PathBuf, open: u64, now: Instant) {
+        let held = self.folder.largest_thumbnail(&path).cloned();
         self.photo = PhotoState::Opening { path, open };
         self.folder.locate(self.photo.path());
         self.saving.leaving();
         self.frame = None;
         self.failure = None;
         self.no_photo();
+        self.live = false;
+        self.asked_at = Some(now);
+        self.set_picture(held.map(|image| Picture {
+            image,
+            rendered: false,
+        }));
+    }
+
+    /// Whether the photo is live, its controls taking changes and its frames coming.
+    pub fn live(&self) -> bool {
+        self.live
+    }
+
+    /// The photo's file name while it opens and is not yet live, for the disabled controls'
+    /// tooltip ("Opening IMG_2041…"); `None` otherwise.
+    pub fn opening_name(&self) -> Option<String> {
+        let path = match &self.photo {
+            PhotoState::Opening { path, .. } => path,
+            PhotoState::Open(photo) if !self.live => &photo.path,
+            _ => return None,
+        };
+        Some(path.file_name()?.to_string_lossy().into_owned())
+    }
+
+    /// From when the central bar says Rendering…, while the photo is not live:
+    /// [`RENDERING_AFTER`] after it was asked for (decision 77). `None` once it is live, or
+    /// with none asked for.
+    pub fn rendering_from(&self) -> Option<Instant> {
+        let opening = matches!(self.photo, PhotoState::Opening { .. })
+            || matches!(self.photo, PhotoState::Open(_)) && !self.live;
+        self.asked_at
+            .filter(|_| opening)
+            .map(|at| at + RENDERING_AFTER)
+    }
+
+    /// Whether the central bar says Rendering… at `now`: the photo still not live
+    /// [`RENDERING_AFTER`] after it was asked for, so a fast open shows nothing.
+    pub fn rendering(&self, now: Instant) -> bool {
+        self.rendering_from().is_some_and(|from| now >= from)
+    }
+
+    /// The picture and its generation, which a texture made of it remembers.
+    pub fn picture(&self) -> Option<(&Picture, u64)> {
+        (self.picture.as_ref()).map(|picture| (picture, self.picture_generation))
+    }
+
+    fn set_picture(&mut self, picture: Option<Picture>) {
+        self.picture = picture;
+        self.picture_generation += 1;
+    }
+
+    /// The session's picture of the photo opening (decision 77): taken only for the
+    /// latest open, before it is live, and only where it is rendered or larger than the
+    /// picture shown.
+    fn preview(&mut self, preview: OpenPreview) {
+        if self.photo.open() != Some(preview.open) || self.live {
+            return;
+        }
+        let Some(image) = preview.picture else {
+            return;
+        };
+        let rendered = preview.source == PreviewSource::Rendered;
+        let area = |image: &Thumbnail| u64::from(image.width) * u64::from(image.height);
+        let larger = (self.picture.as_ref()).is_none_or(|shown| area(&image) > area(&shown.image));
+        if rendered || larger {
+            self.set_picture(Some(Picture { image, rendered }));
+        }
     }
 
     /// No photo is open: every module untouched, and no scopes reading.
@@ -234,27 +322,41 @@ impl Mirror {
             None => {}
         }
         match event {
+            // The opening photo's picture (decision 77), for its latest open alone.
+            Event::OpenPreview(preview) => self.preview(preview),
             Event::Opened(photo) => {
                 self.saving.opened(&photo.path, photo.view_only.is_some());
                 self.photo = PhotoState::Open(photo);
             }
             Event::Saved { path, through } => self.saving.saved(&path, through),
             // The open photo's values, which replace the untouched ones in one apply; a
-            // session with no photo open sends none.
+            // session with no photo open sends none. Until the photo is live they show
+            // read-only (decision 77).
             Event::Values(values) => {
                 if let PhotoState::Open(photo) = &self.photo {
                     // The photo's cell and the Edited sort follow its edit at once.
                     self.folder.edited(&photo.path, values.edited);
                     let editable = photo.view_only.is_none();
+                    let live = values.live;
                     self.saving.reported(&values);
                     let image = self.photo.image();
                     self.values = reported(values, &mut self.pending, self.modules, &image);
-                    self.shown = Shown::Photo { editable };
+                    self.live = live;
+                    self.shown = if live {
+                        Shown::Photo { editable }
+                    } else {
+                        read_only(&mut self.values);
+                        Shown::Opening
+                    };
                 }
             }
+            // The first live frame takes the picture's place in one swap.
             Event::Frame(frame) => {
                 self.frame = Some(frame);
                 self.failure = None;
+                if self.live {
+                    self.picture = None;
+                }
             }
             Event::Scopes(reading) => self.scopes.receive(&reading),
             // The Export dialog shows the preview, the newest it holds.
@@ -303,6 +405,13 @@ impl Mirror {
             self.saving.refused(command);
             self.jobs.refused(command);
         }
+        // The app sends no change on the edit before the photo is live, its controls drawn
+        // disabled, so it never causes this; should one come, nothing is said of it.
+        if let SessionError::Refused { error: refused, .. } = &error
+            && matches!(**refused, SessionError::NotLive)
+        {
+            return;
+        }
         if !matches!(error, SessionError::Module { .. } | SessionError::Scopes(_)) {
             tracing::error!(target: "pipe", "{error}");
         }
@@ -322,15 +431,20 @@ impl Mirror {
             let show = self.jobs.engine_stopped();
             jobs_reaction(show, reactions);
         }
-        match &self.photo {
-            PhotoState::Opening { path, .. } if ends_open => {
+        // A photo opening, its values come or not, until it is live.
+        let opening = match &self.photo {
+            PhotoState::Opening { path, .. } => Some(path.clone()),
+            PhotoState::Open(photo) if !self.live => Some(photo.path.clone()),
+            _ => None,
+        };
+        match opening {
+            Some(path) if ends_open => {
                 let message = format!("{}: {error}", path.display());
-                self.photo = PhotoState::Failed {
-                    path: path.clone(),
-                    message,
-                };
+                self.photo = PhotoState::Failed { path, message };
                 // The session closed the photo left before it tried: none is open.
                 self.no_photo();
+                self.set_picture(None);
+                self.saving.leaving();
             }
             // The scopes failing turns them off, never the frame (decision 19): nothing over
             // the photo.
@@ -410,6 +524,7 @@ fn untouched(modules: &[&dyn Module]) -> Values {
         edited: false,
         through: 0,
         extent: [0, 0],
+        live: false,
     }
 }
 
@@ -449,6 +564,15 @@ impl PhotoState {
         }
     }
 
+    /// The number of the open that asked for the photo, opening or open.
+    pub fn open(&self) -> Option<u64> {
+        match self {
+            PhotoState::Opening { open, .. } => Some(*open),
+            PhotoState::Open(photo) => Some(photo.open),
+            PhotoState::None | PhotoState::Failed { .. } => None,
+        }
+    }
+
     /// The photo's file, open or not: where the open dialog starts.
     pub fn path(&self) -> Option<&Path> {
         match self {
@@ -462,6 +586,12 @@ impl PhotoState {
     /// photo's: while a photo opens, an earlier open's photo or failure, and every values
     /// report, frame and scopes reading until its own `Opened`.
     fn stale(&self, event: &Event) -> bool {
+        // Once open, an earlier open's failure, which may come after this one's `Opened`
+        // (decision 77).
+        if let PhotoState::Open(photo) = self {
+            return matches!(event,
+                Event::Failed(SessionError::Open { open, .. }) if *open != photo.open);
+        }
         let PhotoState::Opening { open, .. } = self else {
             return false;
         };
@@ -477,6 +607,35 @@ impl PhotoState {
 /// How long a write of the open photo's edit may go unconfirmed before the top panel says
 /// Saving… (`docs/gui.md`, The edit, saved).
 pub const SAVING_AFTER: Duration = Duration::from_secs(2);
+
+/// How long a photo may go unlive after it was asked for before the central bar says
+/// Rendering… (decision 77): a fast open shows nothing.
+pub const RENDERING_AFTER: Duration = Duration::from_secs(1);
+
+/// The picture the central panel shows of a photo until its first live frame (decision
+/// 77), unmarked: a thumbnail, its rendered one or the camera's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picture {
+    pub image: Thumbnail,
+    /// Whether it is Apertrust's render of the edit.
+    pub rendered: bool,
+}
+
+/// Every control, coordinate and preset option of `values` drawn disabled, as a photo's
+/// values are until it is live (decision 77), each keeping its value and mark.
+fn read_only(values: &mut Values) {
+    for module in &mut values.modules {
+        for control in &mut module.controls {
+            control.available = false;
+        }
+        for coordinate in &mut module.views {
+            coordinate.available = false;
+        }
+        for preset in &mut module.presets {
+            preset.available.clear();
+        }
+    }
+}
 
 /// Whether the open photo's edit is on disk as it stands, from what the app sent and the
 /// session reported, for the top panel's save state: nothing while saving works, Saving…
@@ -832,8 +991,6 @@ pub(crate) mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time: None,
             aperture: None,
@@ -846,6 +1003,7 @@ pub(crate) mod tests {
             edited: false,
             through: 4,
             extent: [84, 62],
+            live: true,
         });
         let failed = |open| {
             Event::Failed(SessionError::Open {
@@ -907,6 +1065,7 @@ pub(crate) mod tests {
             edited: true,
             through,
             extent: [84, 62],
+            live: true,
         };
         let image = ImageContext::full(84, 62);
         let mirror = |report, pending: &mut Vec<_>| {
@@ -965,8 +1124,6 @@ pub(crate) mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time: None,
             aperture: None,
@@ -998,6 +1155,7 @@ pub(crate) mod tests {
             edited: exposure != 0.0,
             through,
             extent: [84, 62],
+            live: true,
         }
     }
 
@@ -1161,7 +1319,7 @@ pub(crate) mod tests {
     #[test]
     fn a_failed_open_is_the_photo_s_and_a_failure_later_is_the_central_panel_s() {
         let mut m = mirror();
-        m.opening(PathBuf::from("/photos/b.ARW"), 4);
+        m.opening(PathBuf::from("/photos/b.ARW"), 4, Instant::now());
         // The photo left on its way, the values of the old one: dropped.
         assert_eq!(m.apply(Event::Opened(photo(3))), []);
         assert_eq!(m.apply(Event::Values(report(1.0, 9))), []);
@@ -1228,7 +1386,7 @@ pub(crate) mod tests {
         let id = jobs::tests::ids(1)[0];
         let mut m = mirror();
         m.apply(jobs::tests::added(id, Queue::UserExport, Some(1)));
-        m.opening(PathBuf::from("/photos/b.ARW"), 2);
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
         let reactions = m.apply(Event::Failed(SessionError::Stopped));
         assert_eq!(reactions, [Reaction::Jobs(jobs::Show::Update)]);
         assert!(matches!(m.photo, PhotoState::Failed { .. }));
@@ -1339,7 +1497,7 @@ pub(crate) mod tests {
         // Another photo is asked for: at once no photo, every module untouched, no scopes,
         // and nothing sent for them.
         m.pend(2, set_exposure(2.0));
-        m.opening(PathBuf::from("/photos/b.ARW"), 3);
+        m.opening(PathBuf::from("/photos/b.ARW"), 3, Instant::now());
         assert_eq!(m.shown(), Shown::Nothing);
         assert!(!m.takes_edits());
         assert!(untouched_all(&m.values) && m.pending.is_empty());
@@ -1372,7 +1530,7 @@ pub(crate) mod tests {
         m.apply(Event::Values(report(0.0, 1)));
         assert_eq!(m.shown(), Shown::Photo { editable: false });
         assert!(!m.takes_edits() && !m.shown().editable());
-        m.opening(PathBuf::from("/photos/b.ARW"), 2);
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
         m.apply(Event::Opened(photo(2)));
         m.apply(Event::Values(report(0.0, 2)));
         assert_eq!(m.shown(), Shown::Photo { editable: true });
@@ -1386,7 +1544,7 @@ pub(crate) mod tests {
         m.apply(Event::Scopes(crate::scopes::testing::reading(
             true, false, false,
         )));
-        m.opening(PathBuf::from("/photos/b.ARW"), 2);
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
         let failed = Event::Failed(SessionError::Open {
             open: 2,
             error: Box::new(SessionError::NotAMosaic),
@@ -1397,7 +1555,7 @@ pub(crate) mod tests {
         assert!(untouched_all(&m.values) && m.pending.is_empty());
         assert!(m.scopes.measured().is_none());
         // The next photo opening shows no photo until its values arrive.
-        m.opening(PathBuf::from("/photos/c.ARW"), 3);
+        m.opening(PathBuf::from("/photos/c.ARW"), 3, Instant::now());
         assert_eq!(m.shown(), Shown::Nothing);
         m.apply(Event::Opened(photo(3)));
         assert_eq!(m.shown(), Shown::Nothing);
@@ -1410,7 +1568,7 @@ pub(crate) mod tests {
         let mut m = mirror();
         m.apply(Event::Opened(photo(1)));
         m.apply(Event::Failed(SessionError::Gpu("lost".to_owned())));
-        m.opening(PathBuf::from("/photos/b.ARW"), 2);
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
         assert_eq!(m.failure, None);
         assert!(m.frame.is_none());
         assert_eq!(m.saving.state(Instant::now()), SaveState::None);
@@ -1536,7 +1694,7 @@ pub(crate) mod tests {
     fn the_active_cell_follows_the_photo_and_the_listing_without_a_scan_each_frame() {
         let mut m = mirror();
         m.folder.opening(PathBuf::from("/photos"), 2);
-        m.opening(PathBuf::from("/photos/b.ARW"), 3);
+        m.opening(PathBuf::from("/photos/b.ARW"), 3, Instant::now());
         m.apply(folder_opened(2, "/photos"));
         // The listing's first chunk has not reached the photo yet.
         m.apply(listed(2, &["a.ARW"], false));
@@ -1544,9 +1702,9 @@ pub(crate) mod tests {
         m.apply(listed(2, &["b.ARW", "c.ARW"], true));
         assert_eq!(m.folder.active(), Some(1));
         // Another photo of the folder opens, and then one of another folder.
-        m.opening(PathBuf::from("/photos/c.ARW"), 4);
+        m.opening(PathBuf::from("/photos/c.ARW"), 4, Instant::now());
         assert_eq!(m.folder.active(), Some(2));
-        m.opening(PathBuf::from("/elsewhere/c.ARW"), 5);
+        m.opening(PathBuf::from("/elsewhere/c.ARW"), 5, Instant::now());
         assert_eq!(m.folder.active(), None);
     }
 
@@ -1561,7 +1719,7 @@ pub(crate) mod tests {
         m.folder.opening(PathBuf::from("/photos"), 2);
         m.apply(folder_opened(2, "/photos"));
         m.apply(listed(2, &["a.ARW", "b.ARW"], true));
-        m.opening(PathBuf::from("/photos/a.ARW"), 3);
+        m.opening(PathBuf::from("/photos/a.ARW"), 3, Instant::now());
         m.apply(Event::Opened(photo(3)));
         let edit = |m: &Mirror| match &m.folder.folder {
             folder::Folder::Open(listing) => listing.photos[0].edit.clone(),
@@ -1580,5 +1738,340 @@ pub(crate) mod tests {
         m.apply(Event::Values(report(0.0, 3)));
         assert_eq!(edit(&m), EditState::None);
         assert_eq!(m.folder.order(), [0, 1]);
+    }
+
+    /// A frame including `through` commands, on a buffer of the GPU's; `None` with no
+    /// adapter.
+    fn gpu_frame(through: u64) -> Option<Frame> {
+        use apertrust_engine::compute::Timings;
+        use apertrust_engine::gpu::{GpuContext, GpuOptions};
+        let gpu = pollster::block_on(GpuContext::new(&GpuOptions::default())).ok()?;
+        Some(Frame {
+            buffer: gpu.device.create_buffer(&eframe::wgpu::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage: eframe::wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            }),
+            width: 2,
+            height: 2,
+            through,
+            timings: Timings::default(),
+            latency_ms: 0.0,
+        })
+    }
+
+    /// A picture `side` pixels square.
+    fn square(side: u32) -> Thumbnail {
+        Thumbnail {
+            width: side,
+            height: side,
+            pixels: vec![100; (side * side * 4) as usize].into(),
+        }
+    }
+
+    /// The picture of the photo opened `open`, from `source`.
+    fn open_preview(open: u64, picture: Option<Thumbnail>, source: PreviewSource) -> Event {
+        Event::OpenPreview(OpenPreview {
+            open,
+            picture,
+            source,
+        })
+    }
+
+    /// `report`'s values, not yet live.
+    fn not_live(exposure: f32, through: u64) -> Values {
+        Values {
+            live: false,
+            ..report(exposure, through)
+        }
+    }
+
+    /// A photo opens in stages (decision 77): in the click's frame the largest thumbnail
+    /// the folder holds; the session's picture where larger; its values read-only, every
+    /// control disabled, nothing taken; then live, the picture gone with the first frame
+    /// and the controls enabled in the same apply.
+    #[test]
+    fn a_photo_opens_in_stages_read_only_until_it_is_live() {
+        let mut m = mirror();
+        m.folder.opening(PathBuf::from("/photos/Wedding"), 1);
+        m.apply(folder_opened(1, "/photos/Wedding"));
+        m.apply(listed(1, &["a.ARW"], true));
+        for side in [128, 256] {
+            m.apply(Event::Library(LibraryEvent::Thumbnail {
+                open: 1,
+                photo: "a.ARW".to_owned(),
+                size: side,
+                image: Some(square(side)),
+            }));
+        }
+        let now = Instant::now();
+        m.opening(PathBuf::from("/photos/Wedding/a.ARW"), 5, now);
+        let shown = |m: &Mirror| m.picture().map(|(p, _)| (p.image.width, p.rendered));
+        assert_eq!(shown(&m), Some((256, false)));
+        assert_eq!(m.shown(), Shown::Nothing);
+        // The session's picture, larger, takes its place.
+        m.apply(open_preview(5, Some(square(1024)), PreviewSource::Embedded));
+        assert_eq!(shown(&m), Some((1024, false)));
+        // Stage 2: the values, read-only.
+        m.apply(Event::Opened(Photo {
+            path: PathBuf::from("/photos/Wedding/a.ARW"),
+            ..photo(5)
+        }));
+        m.apply(Event::Values(not_live(1.5, 6)));
+        assert_eq!(m.shown(), Shown::Opening);
+        assert!(!m.takes_edits() && !m.shown().editable() && !m.live());
+        let exposure = &m.values.modules[0].controls[0];
+        assert_eq!(exposure.value, ControlValue::Number(1.5));
+        assert!(!exposure.available);
+        assert_eq!(m.opening_name().as_deref(), Some("a.ARW"));
+        assert_eq!(shown(&m), Some((1024, false)));
+        // Stage 3: live, the controls and the frame in one burst.
+        m.apply(Event::Values(report(1.5, 6)));
+        let Some(frame) = gpu_frame(6) else {
+            return;
+        };
+        m.apply(Event::Frame(frame));
+        assert_eq!(m.shown(), Shown::Photo { editable: true });
+        assert!(m.takes_edits() && m.live());
+        assert!(m.values.modules[0].controls[0].available);
+        assert_eq!(m.picture(), None);
+        assert_eq!(m.opening_name(), None);
+        assert!(!m.rendering(now + RENDERING_AFTER));
+    }
+
+    /// The session's picture is taken for the latest open alone, before it is live: an
+    /// earlier open's, and one after the live frame, are dropped; a rendered one replaces
+    /// even a larger picture.
+    #[test]
+    fn a_stale_open_preview_is_dropped() {
+        let mut m = mirror();
+        m.opening(PathBuf::from("b.ARW"), 4, Instant::now());
+        m.opening(PathBuf::from("c.ARW"), 5, Instant::now());
+        m.apply(open_preview(4, Some(square(512)), PreviewSource::Embedded));
+        assert_eq!(m.picture(), None);
+        m.apply(open_preview(5, Some(square(512)), PreviewSource::Embedded));
+        m.apply(open_preview(5, Some(square(256)), PreviewSource::Rendered));
+        assert_eq!(
+            m.picture().map(|(p, _)| (p.image.width, p.rendered)),
+            Some((256, true))
+        );
+        m.apply(Event::Opened(photo(5)));
+        m.apply(Event::Values(report(0.0, 6)));
+        m.apply(open_preview(5, Some(square(1024)), PreviewSource::Rendered));
+        assert_eq!(
+            m.picture().map(|(p, _)| p.image.width),
+            Some(256),
+            "after live"
+        );
+    }
+
+    /// Rendering… only once the photo is still not live a second after it was asked for,
+    /// and never once it is (decision 77).
+    #[test]
+    fn rendering_shows_only_a_second_after_the_click_while_not_live() {
+        let mut m = mirror();
+        let asked = Instant::now();
+        assert!(!m.rendering(asked + RENDERING_AFTER));
+        m.opening(PathBuf::from("b.ARW"), 2, asked);
+        assert!(!m.rendering(asked));
+        assert!(!m.rendering(asked + RENDERING_AFTER - Duration::from_millis(1)));
+        assert!(m.rendering(asked + RENDERING_AFTER));
+        assert_eq!(m.rendering_from(), Some(asked + RENDERING_AFTER));
+        // Its values, not live: still rendering.
+        m.apply(Event::Opened(photo(2)));
+        m.apply(Event::Values(not_live(0.0, 3)));
+        assert!(m.rendering(asked + 2 * RENDERING_AFTER));
+        // Live: gone.
+        m.apply(Event::Values(report(0.0, 3)));
+        assert!(!m.rendering(asked + 2 * RENDERING_AFTER));
+        assert_eq!(m.rendering_from(), None);
+    }
+
+    /// A change refused because the photo was not live is dropped with nothing said; an
+    /// earlier open's failure is no concern of this one's; a decode failing after `Opened`
+    /// fails the open, its picture gone.
+    #[test]
+    fn a_not_live_refusal_shows_nothing_and_a_late_failure_ends_the_open() {
+        let mut m = mirror();
+        m.opening(PathBuf::from("b.ARW"), 2, Instant::now());
+        m.apply(open_preview(2, Some(square(64)), PreviewSource::Embedded));
+        m.apply(Event::Opened(photo(2)));
+        m.apply(Event::Values(not_live(0.0, 3)));
+        m.apply(Event::Failed(SessionError::Refused {
+            command: 3,
+            error: Box::new(SessionError::NotLive),
+        }));
+        assert_eq!(m.failure, None);
+        let failed = |open| {
+            Event::Failed(SessionError::Open {
+                open,
+                error: Box::new(SessionError::NotAMosaic),
+            })
+        };
+        m.apply(failed(1));
+        assert!(matches!(m.photo, PhotoState::Open(_)));
+        m.apply(failed(2));
+        assert!(matches!(m.photo, PhotoState::Failed { .. }));
+        assert_eq!(m.picture(), None);
+        assert_eq!(m.shown(), Shown::Nothing);
+        assert_eq!(m.saving.state(Instant::now()), SaveState::None);
+    }
+
+    /// A real session on the test's GPU, its raws synthetic (`session::testing`), whose
+    /// events the mirror takes in as the app does; `None` with no adapter.
+    struct Live {
+        session: apertrust_engine::session::Session,
+        wakes: std::sync::mpsc::Receiver<()>,
+        mirror: Mirror,
+        /// What the side panel showed, whether a picture, and the photo's path, after each
+        /// event, a state shown again left out.
+        seen: Vec<(Shown, bool, Option<PathBuf>)>,
+    }
+
+    impl Live {
+        fn start() -> Option<Live> {
+            use apertrust_engine::gpu::{GpuContext, GpuOptions};
+            let Ok(gpu) = pollster::block_on(GpuContext::new(&GpuOptions::default())) else {
+                eprintln!("no GPU adapter: a session needs one");
+                return None;
+            };
+            let (woken, wakes) = std::sync::mpsc::channel();
+            let session = apertrust_engine::session::testing::start(
+                gpu,
+                apertrust_operations::OPERATIONS,
+                apertrust_modules::MODULES,
+                "0.4.0+12~g1a2b3c4",
+                move || {
+                    let _ = woken.send(());
+                },
+            );
+            session.send(apertrust_engine::session::Command::Resize {
+                width: 64,
+                height: 48,
+            });
+            Some(Live {
+                session,
+                wakes,
+                mirror: mirror(),
+                seen: Vec::new(),
+            })
+        }
+
+        /// Asks for the photo at `path`, as the app does.
+        fn open(&mut self, path: &Path) -> u64 {
+            let command = apertrust_engine::session::Command::Open(path.to_owned());
+            let open = self.session.send(command);
+            self.mirror.opening(path.to_owned(), open, Instant::now());
+            open
+        }
+
+        /// Takes in the session's events until the photo is live with its first frame.
+        fn until_live(&mut self) {
+            let deadline = Instant::now() + Duration::from_secs(600);
+            while !(self.mirror.live() && self.mirror.frame.is_some()) {
+                assert!(Instant::now() < deadline, "live in time: {:?}", self.seen);
+                let _ = self.wakes.recv_timeout(Duration::from_millis(50));
+                for event in self.session.events() {
+                    self.mirror.apply(event);
+                    let m = &self.mirror;
+                    let state = (
+                        m.shown(),
+                        m.picture().is_some(),
+                        m.photo.path().map(Path::to_owned),
+                    );
+                    if self.seen.last() != Some(&state) {
+                        self.seen.push(state);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A folder of the test's own, emptied first.
+    fn scratch(name: &str) -> PathBuf {
+        let folder =
+            std::env::temp_dir().join(format!("apertrust-mirror-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    /// Through a real session (decision 77): the picture, the values read-only, then live
+    /// with the first frame, in that order.
+    #[test]
+    fn a_real_session_opens_a_photo_in_stages() {
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("stages");
+        let path = folder.join("embedded.ARW");
+        live.open(&path);
+        live.until_live();
+        let shown: Vec<(Shown, bool)> = live.seen.iter().map(|(s, p, _)| (*s, *p)).collect();
+        let opening = shown.iter().position(|s| *s == (Shown::Opening, true));
+        let photo = shown
+            .iter()
+            .position(|s| s.0 == Shown::Photo { editable: true });
+        assert!(
+            matches!((opening, photo), (Some(o), Some(p)) if o < p),
+            "{shown:?}"
+        );
+        assert_eq!(
+            shown.last(),
+            Some(&(Shown::Photo { editable: true }, false))
+        );
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Through a real session: a photo whose edit a newer Apertrust wrote goes live for
+    /// viewing only (decision 43).
+    #[test]
+    fn a_real_session_s_view_only_photo_ends_not_editable() {
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("view-only");
+        let path = folder.join("newer.ARW");
+        let xml = apertrust_engine::sidecar::to_xml(
+            &apertrust_engine::edit::Edit::default(),
+            apertrust_operations::OPERATIONS,
+            apertrust_modules::MODULES,
+            "9.0.0",
+        )
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+        std::fs::write(sidecar::path_for(&path), xml).unwrap();
+        live.open(&path);
+        live.until_live();
+        assert_eq!(live.mirror.shown(), Shown::Photo { editable: false });
+        assert!(!live.mirror.takes_edits());
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Through a real session, switching quickly A → B → C: only C is shown, whatever A's
+    /// and B's jobs still send.
+    #[test]
+    fn a_real_session_switched_quickly_shows_only_the_last_photo() {
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("switch");
+        let [a, b, c] = ["a.ARW", "b.ARW", "c.ARW"].map(|name| folder.join(name));
+        live.open(&a);
+        live.open(&b);
+        let last = live.open(&c);
+        live.until_live();
+        assert_eq!(live.mirror.photo.open(), Some(last));
+        assert!(
+            live.seen
+                .iter()
+                .all(|(_, _, path)| path.as_deref() == Some(c.as_path())),
+            "{:?}",
+            live.seen
+        );
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

@@ -85,6 +85,49 @@ fn corpus_decodes_as_expected() {
     );
 }
 
+/// The metadata read a photo's open makes before its decode (decision 77) gives what the
+/// decode gives but the pixels, for every sample of the corpus, or fails where it fails.
+#[test]
+#[ignore = "needs the raw corpus: tools/fetch-raw-corpus.sh"]
+fn the_metadata_read_equals_the_decode_but_for_the_pixels() {
+    let dir = corpus_dir();
+    let mut differ = Vec::new();
+    for name in LIST
+        .lines()
+        .filter_map(|line| line.split_once("  "))
+        .map(|(_, name)| name)
+    {
+        let file = apertrust_raw::RawFile::open(dir.join(name))
+            .unwrap_or_else(|e| panic!("{e}: run tools/fetch-raw-corpus.sh"));
+        let read = file.metadata();
+        let decoded = file.decode().map(|(mut raw, exif)| {
+            raw.pixels = match raw.pixels {
+                Pixels::U16(_) => Pixels::U16(Vec::new()),
+                Pixels::F32(_) => Pixels::F32(Vec::new()),
+            };
+            (raw, exif)
+        });
+        // Every field, the lens's corrections and a DNG's tags among them.
+        match (read, decoded) {
+            (Ok(read), Ok(decoded)) if read == decoded => {}
+            (Err(_), Err(_)) => {}
+            (read, decoded) => {
+                let (read, decoded) = (
+                    read.map(|(r, e)| (fingerprint(&r), e)),
+                    decoded.map(|(r, e)| (fingerprint(&r), e)),
+                );
+                differ.push(format!("{name}\n    read: {read:?}\n  decode: {decoded:?}"))
+            }
+        }
+    }
+    assert!(
+        differ.is_empty(),
+        "{} file(s) read otherwise than they decode:\n{}",
+        differ.len(),
+        differ.join("\n")
+    );
+}
+
 /// Everything the decoder reports, on one line, with the pixels as a hash.
 fn fingerprint(raw: &RawImage) -> String {
     let rect = |r: Rect| format!("{}x{}+{}+{}", r.width, r.height, r.x, r.y);

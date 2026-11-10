@@ -181,6 +181,21 @@ impl FolderState {
         }
     }
 
+    /// The largest thumbnail that has come of the raw at `path`, if it is one of the open
+    /// folder's photos: what the central panel shows at once as it opens (decision 77).
+    pub fn largest_thumbnail(&self, path: &Path) -> Option<&Thumbnail> {
+        let Folder::Open(listing) = &self.folder else {
+            return None;
+        };
+        listing.position(path)?;
+        let name = path.file_name()?.to_str()?;
+        (listing.thumbnails.iter())
+            .filter(|((photo, _), _)| photo == name)
+            .filter_map(|((_, size), kept)| Some((*size, kept.image.as_ref()?)))
+            .max_by_key(|(size, _)| *size)
+            .map(|(_, image)| image)
+    }
+
     /// The photo open, where it is in the listing.
     pub fn active(&self) -> Option<usize> {
         // Only a folder that is open has cells.
