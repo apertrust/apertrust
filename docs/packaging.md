@@ -25,7 +25,7 @@ One tool builds every package, [cargo-packager](https://github.com/crabnebula-de
 
 In `packaging/`, beside the configuration:
 
-- `macos/Info.plist`: the bundle's keys, merged over those cargo-packager writes: the name, the version, macOS 11 at least (the oldest that runs on Apple silicon, for both architectures), the photography category, the interface's languages (en-GB, uk, pl), and the raw document types, Apertrust an editor of them at the Alternate rank, so it is offered in Open With and never takes over the raws another app opens. Each type is the system's where macOS declares one; seven formats macOS does not name (ARI, CRM, DCS, KDC, MEF, QTK, X3F) are imported as `org.apertrust.raw-image.<extension>`. The binary embeds `crates/app/assets/macos/Info.plist` for a run without a bundle; its keys agree with these.
+- `macos/Info.plist`: the bundle's keys, merged over those cargo-packager writes: the name, the version, macOS 11 at least (the oldest that runs on Apple silicon, for both architectures), the photography category, the interface's languages (en-GB, uk, pl), and the raw document types, Apertrust an editor of them at the Alternate rank, so it is offered in Open With and never takes over the raws another app opens; and folders, as a viewer at the rank None, so a folder dropped on the Dock icon opens while Apertrust is never offered as a folder's app. Each type is the system's where macOS declares one; seven formats macOS does not name (ARI, CRM, DCS, KDC, MEF, QTK, X3F) are imported as `org.apertrust.raw-image.<extension>`. The binary embeds `crates/app/assets/macos/Info.plist` for a run without a bundle; its keys agree with these.
 - `linux/org.apertrust.Apertrust.desktop`: the desktop entry, with the MIME types of every raw format, its `Exec` passing `--in-folder %F` ([Opening a raw from the system](#opening-a-raw-from-the-system)); `Icon=` and the window's Wayland app id are the app's id, so the compositor finds the window's icon.
 - `linux/org.apertrust.Apertrust.metainfo.xml`: the AppStream metadata: the name, the summary, the GPL-3.0-or-later licence, the homepage and the repository.
 - `linux/org.apertrust.Apertrust.mime.xml`: the MIME types for the five formats shared-mime-info does not name (ARI, CRM, DCS, ORI, QTK), installed as `share/mime/packages/org.apertrust.Apertrust.xml`.
@@ -71,13 +71,21 @@ The nightly builds are Apertrust Dev, a development build that installs and runs
 
 Built (decision 46). A raw opened with Apertrust from the system, by Open With or a double-click, opens its folder with that photo active, where `apertrust FILE` from a terminal opens the photo alone ([library.md](library.md#folder-mode)). The app tells the two apart as each platform delivers them:
 
-- **macOS** sends Open With, a double-click and a drop on the Dock icon as an open-documents event, not arguments, at the launch or while the app runs; `apertrust-display` receives it (`receive_opened_files`). The bundle's document types, `CFBundleDocumentTypes` in `Info.plist`, declare the raw types as they did.
+- **macOS** sends Open With, a double-click and a drop on the Dock icon as an open-documents event, not arguments, at the launch or while the app runs; `apertrust-display` receives it (`receive_opened_files`). The bundle's document types, `CFBundleDocumentTypes` in `Info.plist`, declare the raw types, and folders at the rank None, for the Dock icon alone. Files that come while the window is minimised bring it back and to the front.
 - **Windows:** the ProgID's and the `Applications` entry's `shell\open\command` pass `--in-folder "%1"` before the file.
 - **Linux:** the desktop entry's `Exec` passes `--in-folder %F`, every file chosen; started from a menu it passes none, and nothing opens.
 
-`tests/packaging.rs` holds the desktop entry and both installer lines to the flag. What the files open is looked at off the interface's thread, as a drop's are, and a file that opens nothing is refused with an alert in the window, a launcher having no terminal.
+**A folder from the system** opens in folder mode only from a drop on the Mac's Dock icon, and from a terminal, `apertrust FOLDER`. Neither Windows' registrations nor the Linux desktop entry declare folders (no `inode/directory`), so Apertrust is never offered as a folder's app there; `--in-folder` with a folder, as a script may give, opens it too.
+
+`tests/packaging.rs` holds the desktop entry and both installer lines to the flag, and the folder's document type to the rank None. What the files open is looked at off the interface's thread, as a drop's are, and a file that opens nothing is refused with an alert in the window, a launcher having no terminal.
 
 On Windows each file opened with the app starts an app of its own, since one instance taking the others' files is not built.
+
+**Checked by hand** on each platform, since no test drives the system's opening:
+
+- macOS: a double-click on a raw with the app closed and with it running; Open With; raws and a folder dropped on the Dock icon; several raws from one folder and from two; a raw opened while the window is minimised, which brings it back; one opened under About or Settings, which opens once it closes.
+- Windows: Open With and a double-click on a raw after installing, the registry's command holding `--in-folder`; a file that opens nothing refused with the alert.
+- Linux: a file manager's Open With with one file and several, and the app started from the menu with none.
 
 ## Building one
 

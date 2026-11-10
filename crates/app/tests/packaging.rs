@@ -189,6 +189,18 @@ fn the_bundle_opens_every_decoded_extension() {
     let plist = read("packaging/macos/Info.plist");
     let wanted: BTreeSet<&str> = TYPES.iter().map(|t| t.1).collect();
     assert_eq!(plist_strings(&plist, "LSItemContentTypes"), wanted);
+    // A folder dropped on the Dock icon opens, at the rank None, so the app never becomes
+    // a folder's default; nothing else is declared.
+    let types = plist
+        .split_once("<key>CFBundleDocumentTypes</key>")
+        .and_then(|(_, rest)| rest.split_once("<key>UTImportedTypeDeclarations</key>"))
+        .expect("the document types")
+        .0;
+    let documents = between(types, "\t\t<dict>", "\t\t</dict>");
+    assert_eq!(documents.len(), 2, "the raws' and the folder's");
+    let folder = documents[1];
+    let pairs = between(folder, "<string>", "</string>");
+    assert_eq!(pairs, ["Folder", "Viewer", "None", "public.folder"]);
 
     let imports = plist
         .split_once("<key>UTImportedTypeDeclarations</key>")
