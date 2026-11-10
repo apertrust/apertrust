@@ -40,6 +40,7 @@ crates/app/src/jobs.rs
 crates/app/src/jobs/**
 crates/app/src/menus.rs
 crates/app/src/popups.rs
+crates/app/src/dropped.rs
 crates/engine/src/gpu.rs
 crates/ui/src/components/alert.rs
 

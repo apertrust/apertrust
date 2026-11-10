@@ -529,7 +529,8 @@ impl Recents {
     /// Asks whether each entry's path is there, each on a thread of its own, never the
     /// caller's, but none still being asked: [`take`](Recents::take) marks the answers as
     /// they come. A path that cannot be asked, as a share that refuses, leaves its entry
-    /// unmarked.
+    /// unmarked. A share that hangs keeps its thread until it answers, and so does a drop's
+    /// question of the disk (`dropped::Drops`), which asks the same way.
     pub fn check(&mut self) {
         let keys: Vec<Key> = self.entries().map(|e| (e.kind, e.path.clone())).collect();
         for key in keys {
