@@ -214,7 +214,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
-- **The cache** (decision 76): the handle each binary opens, the golden harness none; the start's walk and eviction as `SystemBackground` jobs, eviction past `cache.limit`, an engine setting; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
+- **The cache** (decision 76): the handle each binary opens, the golden harness none; the start's walk and eviction as `SystemBackground` jobs, eviction past `cache.limit` while `cache.limited` is on, never while it is off, and `cache.unused_after`, engine settings; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
@@ -299,7 +299,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 
 Decision 76, with the library's step 6b. Both call `apertrust_base::cache` directly, with no session and no GPU, and take `--cache-dir DIR` (global) or `APERTRUST_CACHE_DIR`:
 
-- `cache info`: the cache folder and how it was chosen; `cache.limit` and the limited kinds' total; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, those unused for 90 days or not found marked. It walks the folder and writes nothing.
+- `cache info`: the cache folder and how it was chosen; `cache.limit`, or `unlimited` while `cache.limited` is off, and the limited kinds' total; `cache.unused_after`; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, those unopened for `cache.unused_after` or not found marked. It walks the folder and writes nothing.
 - `cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
 
 ## apertrust-golden
@@ -959,7 +959,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 **The cache folder and the cache,** with thumbnails (decisions 43 and 76):
 
 - `Folders` chooses the cache folder: `--cache-dir`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given, then the platform's; Apertrust Dev's its own.
-- `cache`, behind a `cache` feature: `KINDS`, each kind's id, folder and policy, limited (thumbnails, later pipelines, previews and AI results) or kept (library caches, local copies); a limited entry one file per slot, named by the slot's hash, holding its version, written whole through `fs` and replaced by a newer one; last use the file's modified time, set at most once a day; the walk, with each kind's entries and bytes, removing day-old temporaries; eviction oldest first to 90% of `cache.limit`; clearing a kind, a library's cache skipped while another process holds its lock; the types of `Command::Cache` and `Event::Cache`. No index file and no lock for limited kinds. Owners name their slots and versions.
+- `cache`, behind a `cache` feature: `KINDS`, each kind's id, folder and policy, limited (thumbnails, later pipelines, previews and AI results) or kept (library caches, local copies); a limited entry one file per slot, named by the slot's hash, holding its version, written whole through `fs` and replaced by a newer one; last use the file's modified time, set at most once a day; the walk, with each kind's entries and bytes, removing day-old temporaries; eviction oldest first to 90% of `cache.limit` while `cache.limited` is on; `UnusedAfter`, `cache.unused_after`'s `Choice`; clearing a kind, a library's cache skipped while another process holds its lock; the types of `Command::Cache` and `Event::Cache`. No index file and no lock for limited kinds. Owners name their slots and versions.
 
 ## apertrust-plugin
 

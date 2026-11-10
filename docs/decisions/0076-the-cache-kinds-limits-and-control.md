@@ -2,7 +2,7 @@
 
 ## Context
 
-Apertrust keeps on disk what it can compute again: thumbnails first (the library's step 6), then each library's cache ([0055](0055-the-librarys-cache.md)), local copies of raws ([0053](0053-finding-folders-and-photos.md), [0071](0071-a-self-hosted-server-with-sync.md)), later compiled pipelines, previews and AI results. darktable's disk cache has no lifecycle: its mipmaps grow without limit, and nothing shows their size or clears them. Apertrust's must show its size, take a limit, be cleared by the person, and never grow without bound.
+Apertrust keeps on disk what it can compute again: thumbnails first (the library's step 6), then each library's cache ([0055](0055-the-librarys-cache.md)), local copies of raws ([0053](0053-finding-folders-and-photos.md), [0071](0071-a-self-hosted-server-with-sync.md)), later compiled pipelines, previews and AI results. darktable's disk cache has no lifecycle: its mipmaps grow without limit, and nothing shows their size or clears them. Apertrust's must show its size, take a limit, and be cleared by the person; it grows without bound only when the person chooses so.
 
 It is read and written by the app, a second instance and the CLI at once, with no lock in the person's folders ([0053](0053-finding-folders-and-photos.md)). The engine and the library both use it, and the library never depends on the engine ([0065](0065-names-and-crates.md)). The engine's RAM and GPU caches, under its memory budget, are another thing and not covered here.
 
@@ -22,7 +22,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 | Local copies | `copies/` | kept | the library | one raw per fingerprint, for offline drives and server roots |
 | Later: previews, AI results such as depth maps | their own | limited | their owners | |
 
-- **Limited** kinds count together against one limit and are removed oldest last use first.
+- **Limited** kinds count together against one limit and are removed oldest last use first, unless the person chooses an unlimited cache.
 - **Kept** kinds are never removed by size: only by the person, or by the rule of their owner's step.
 - Embeddings for search live inside a library's cache ([0055](0055-the-librarys-cache.md)). AI models are not cache: they are the AI page's downloads, placed with the AI work. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
@@ -35,17 +35,24 @@ It is read and written by the app, a second instance and the CLI at once, with n
 - **No index file and no lock** for limited kinds. Two processes writing one slot each rename a whole file, the last rename winning; a removal that finds the file gone is ignored; a reader whose file vanished renders again. A crash leaves at most a temporary, which a walk removes.
 - **A kept entry is a folder or a file of its own.** A library's cache records the library's name, its last path and when it was last opened on this machine. A process that has one open holds an OS lock on its `lock` file (`std::fs::File::lock`), so no clear removes it under that process.
 
-**The limit:** `cache.limit`, owner `engine`, a number in GB from 0.5 to 1,000 in steps of 0.5, on Settings › Storage, group Cache, applied at once; `--conf cache.limit=…` for one run. Its default is 4 GB, the recommendation pending the maintainer's choice: about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each that step 6 measures for the format it chooses. There is no "unlimited".
+**The limit,** two settings, owner `engine`, on Settings › Storage, group Cache, applied at once, each settable for one run by `--conf`:
+
+- `cache.limited`, a boolean, on by default: whether the limited kinds are kept within a limit. Off is Unlimited: nothing is evicted by size, and the Storage page and `cache info` still show every size and offer Clear.
+- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each that step 6 measures for the format it chooses.
+
+**Time:** nothing in the cache is removed by age. `cache.unused_after`, owner `engine`, a choice of `apertrust_base::cache::UnusedAfter` (`days_30`, `days_90`, `days_180`, `days_365`, `never`), default `days_90`, on the same page and group, is how long a library's cache may go unopened on this machine before it is marked and offered for removal; with `never` none is offered for its age.
+
+**With Unlimited and Never, nothing in the cache is ever removed except by the person's Clear or Remove** (and by a write replacing its own slot's stale version). darktable's disk cache grows without bound too; the difference is that here unlimited is the person's choice, not the default, and its size is always shown and can be cleared.
 
 **Eviction,** a `SystemBackground` job of kind `cache-evict`, with no progress and never shown, one at a time (none added while one is queued or running):
 
-- added after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered;
+- added, while `cache.limited` is on, after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on; never while it is off;
 - it walks the limited kinds, then removes their entries oldest last use first, across kinds, until they hold at most 90% of the limit, so it does not run again at the next write;
 - its cost is the walk and the removals, 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, and paused by an export as darktable's crawler is ([0057](0057-jobs-as-darktables-control-jobs.md)).
 
 **Kept kinds' lifecycle:**
 
-- **A library's cache** is never removed by size. One whose library has not been opened on this machine for 90 days, or was not found at its last path when last looked for, is marked on the Storage page and offered for removal; it is never removed without the person. The open library's cache is rebuilt by Rebuild Cache, not removed.
+- **A library's cache** is never removed by size. One whose library has not been opened on this machine for `cache.unused_after` (90 days by default, never with `never`), or was not found at its last path when last looked for, is marked on the Storage page and offered for removal; it is never removed without the person. The open library's cache is rebuilt by Rebuild Cache, not removed.
 - **Local copies** are never removed by size; how they are cleared, and when one is no longer needed, is decided with the library's step 31.
 
 **Not in the cache:** what would be lost, or need the person, if the cache were cleared. It lives in the user data folder ([0043](0043-settings-and-apertrusts-folders.md)), which the person backs up, and nothing clears it with the cache:
@@ -57,15 +64,16 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 - the cache folder, how it was chosen, and Show in Finder (Explorer, the file manager);
 - each kind present, with its entries and its size, and Clear;
-- the limit, `cache.limit`'s row, with the limited kinds' total against it;
-- each library's cache with the library's name, its last path, when it was last opened and its size, those unused for 90 days or not found marked, each with Remove;
+- the limit, `cache.limited`'s and `cache.limit`'s rows, with the limited kinds' total against it, or alone while unlimited;
+- `cache.unused_after`'s row;
+- each library's cache with the library's name, its last path, when it was last opened and its size, those unused for `cache.unused_after` or not found marked, each with Remove;
 - the conflict copies' count and size, with Show in Finder, and no Clear.
 
 Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progress, cancellable, as Rebuild Cache is ([0057](0057-jobs-as-darktables-control-jobs.md)), removing the entries listed as it starts; a library cache another process has open is skipped and said so. The page reaches the cache through the session: `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`) and `Event::Cache`, a fact for each kind and each library's cache, their types in base's `cache` as the jobs' events are in its `jobs`.
 
 **The CLI,** with no session and no GPU, calling base's `cache` directly, as `library scan` builds an index in its own process:
 
-- `apertrust-cli cache info`: the folder and how it was chosen; the limit and the limited kinds' total; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, marked as on the Storage page. It walks and writes nothing.
+- `apertrust-cli cache info`: the folder and how it was chosen; the limit, or `unlimited`, and the limited kinds' total; `cache.unused_after`; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, marked as on the Storage page. It walks and writes nothing.
 - `apertrust-cli cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
 - `--cache-dir DIR`, global, as `--user-data-dir` is.
 
@@ -83,7 +91,10 @@ Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progres
 - **The cache in the engine:** the library may not depend on it.
 - **A limit for each kind:** the person manages one amount of disk; previews and AI results join the same limit, oldest first.
 - **Library caches counted against the limit:** they cannot be evicted, so they would push thumbnails out to make room.
-- **No limit, as darktable's:** the cache grows without bound, with nothing to see or clear.
+- **Unlimited as the default, as darktable's:** the cache would grow without bound unless the person acts.
+- **No unlimited choice:** a person with room to spare, or a cache on a disk of its own, would see thumbnails rendered again for nothing.
+- **One number with a value for unlimited (0, say):** a number's range would hold a value that means something else; the boolean says it in the dialog and in `settings.toml`.
+- **The unused time as a number of days:** the same, with a value for never.
 - **The root map, last-written sidecars, pending changes and conflict copies in the cache:** clearing it would lose edits or ask the person to locate roots again.
 
 ## Consequences
@@ -91,5 +102,5 @@ Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progres
 - [0055](0055-the-librarys-cache.md): a library's cache is the cache's kept kind `libraries`; its root map and last-written sidecars move to the user data folder.
 - [0052](0052-comparing-two-copies-of-a-sidecar.md) and the library's step 13: conflict copies kept 30 days in the user data folder; silent winners' copies there too. [0071](0071-a-self-hosted-server-with-sync.md): a server root's sidecars and pending changes there, its raws' local copies in the cache.
 - [0043](0043-settings-and-apertrusts-folders.md): the cache folder decided; the user data folder holds each library's per-machine state.
-- `apertrust-base` gains `cache` and the cache folder in `Folders`; the schema `cache.limit`; the session `Command::Cache` and `Event::Cache` and the eviction and clear jobs; the CLI `cache info` and `cache clear`; Settings' Storage page its cache part.
+- `apertrust-base` gains `cache` and the cache folder in `Folders`; the schema `cache.limited`, `cache.limit`, `cache.unused_after` and its `requires` field; the session `Command::Cache` and `Event::Cache` and the eviction and clear jobs; the CLI `cache info` and `cache clear`; Settings' Storage page its cache part.
 - The library's step 6 builds the folder, the thumbnails kind, the limit and eviction; step 6b the Storage page and the CLI's commands.

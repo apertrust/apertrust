@@ -177,7 +177,7 @@ Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#
 
 ### Settings and folders
 
-Every setting is declared once in `data/settings.schema.toml`, from which each owner's crate generates typed statics; `apertrust-base` holds the store, `--conf` and the user data folder. The engine never opens a folder or a settings file: the binaries read the store and hand it plain options. No build overwrites an edit a newer Apertrust wrote (decision 43). The cache folder, planned, holds only what can be rebuilt with nothing lost, each kind's size shown and cleared in Settings › Storage and by `apertrust-cli cache`, thumbnails and later previews kept within one limit, oldest removed first, library caches and local copies kept until the person removes them; what clearing would lose, root maps, pending changes and conflict copies, is in the user data folder (decision 76).
+Every setting is declared once in `data/settings.schema.toml`, from which each owner's crate generates typed statics; `apertrust-base` holds the store, `--conf` and the user data folder. The engine never opens a folder or a settings file: the binaries read the store and hand it plain options. No build overwrites an edit a newer Apertrust wrote (decision 43). The cache folder, planned, holds only what can be rebuilt with nothing lost, each kind's size shown and cleared in Settings › Storage and by `apertrust-cli cache`, thumbnails and later previews kept within one limit, oldest removed first, or unlimited by the person's choice, library caches and local copies kept until the person removes them; what clearing would lose, root maps, pending changes and conflict copies, is in the user data folder (decision 76).
 
 Details: [settings.md](settings.md).
 
