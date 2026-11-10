@@ -1081,7 +1081,7 @@ mod tests {
         let expected = [
             ("General", false, true),
             ("Import", true, false),
-            ("Library", false, false),
+            ("Photos", false, false),
             ("Editing", false, false),
             ("Processing", false, false),
             ("Storage", false, false),
@@ -1120,16 +1120,16 @@ mod tests {
             .collect();
         assert_eq!(names, general);
         assert!(harness.query_by_label("Square thumbnails").is_none());
-        harness.get_by_label("Library").click();
+        harness.get_by_label("Photos").click();
         harness.run();
         assert_eq!(
             harness.state().changes,
-            [Change::Set("settings_window.page", "library".into())]
+            [Change::Set("settings_window.page", "photos".into())]
         );
         harness.get_by_role_and_label(Role::CheckBox, "Square thumbnails");
         harness.get_by_role_and_label(Role::Label, "Thumbnails");
         // ↓ moves to the next page that holds rows: Editing.
-        harness.get_by_label("Library").focus();
+        harness.get_by_label("Photos").focus();
         harness.run();
         harness.key_press(Key::ArrowDown);
         harness.run();
@@ -1145,6 +1145,30 @@ mod tests {
         assert_eq!(Settings::new(&keeper, false).page, Page::Processing);
         keeper.apply(&settings, "settings_window.page", Some(&"ai".into()));
         assert_eq!(Settings::new(&keeper, false).page, Page::General);
+    }
+
+    /// The Photos page's old id, `library`, which earlier builds kept, is a value this build
+    /// cannot read: the dialog opens on General, and the value stays in the file until a
+    /// page is chosen.
+    #[test]
+    fn a_page_kept_as_library_opens_general_and_stays_kept() {
+        let folder = settings::testing::Folder::new("library-page");
+        let text = "version = 1\n\n[settings_window]\npage = \"library\"\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        assert_eq!(Settings::new(&keeper, false).page, Page::General);
+        // Another setting written leaves it as it was.
+        keeper.apply(
+            &settings,
+            "grid_panel.square_thumbnails",
+            Some(&true.into()),
+        );
+        keeper.flush();
+        assert!(
+            folder.text().contains("page = \"library\""),
+            "{}",
+            folder.text()
+        );
     }
 
     /// A change shows darktable's dot, and a double-click on the label, or Reset in its
@@ -1417,12 +1441,7 @@ mod tests {
         for locale in [Locale::EnGb, Locale::Uk] {
             let mut harness = dialog_in(&keeper, Builtin::Dark, locale);
             let words = Translator::new(locale);
-            for page in [
-                Page::General,
-                Page::Library,
-                Page::Editing,
-                Page::Processing,
-            ] {
+            for page in [Page::General, Page::Photos, Page::Editing, Page::Processing] {
                 let name = words.text(&format!("settings-page-{}", page.id()));
                 harness.get_by_role_and_label(Role::Tab, &name).click();
                 harness.run();

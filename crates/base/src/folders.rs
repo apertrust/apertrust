@@ -292,6 +292,12 @@ impl Folders {
         self.user_data.join("settings.toml")
     }
 
+    /// The state file, `state.toml` in the user data folder, which holds the app's recents
+    /// and may not exist yet.
+    pub fn state(&self) -> PathBuf {
+        self.user_data.join("state.toml")
+    }
+
     /// The cache folder, which may not exist yet.
     pub fn cache(&self) -> &Path {
         &self.cache

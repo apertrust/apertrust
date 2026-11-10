@@ -43,6 +43,5 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 
 - The side panel's tabs are [0038](0038-side-panel-tabs-as-darktables-groups.md)'s; the Photos tab's modules are [0073](0073-the-photos-tabs-modules-browse-first-filters-in-folder-mode.md)'s.
 - Known costs of the name: the Mac's Photos app shares the word, and Photos is close to the central panel's Photo layout. A library's `Photos/` folder, which holds the photos copied in ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), keeps its name: it is a folder on disk, shown in Browse's Folders as any folder is, not an interface label.
-- The built tab, its id, its messages and its action still say Library until the rename lands in code ([gui.md](../gui.md#the-side-panel)).
 - `apertrust-library` is built from Phase 2 for folder mode and reached through the session protocol, since a browser client's library lives on the server.
 - Stills, several photos in one session and commands by photo id are planned; spike W1 measures the mechanism before it is built.

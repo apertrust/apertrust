@@ -92,7 +92,24 @@ Where edits are kept is not a setting: each library and each root's id file deci
 
 **Tool settings** live under `[tools.<module>]`, in the schema with `owner = "module:<id>"` once their tool comes; the module's `Row::ToolSetting` then names the static generated for it in place of its kind. Until then a `Row::ToolSetting` keeps its kind (decision 29), since nothing keeps its value.
 
-**`state.toml`**, beside `settings.toml`, holds Open Recent's folders, which name photos' places and so stay out of settings.
+**`state.toml`**, beside `settings.toml`, holds the recents, Open Recent's list, which names photos' places and so stays out of settings (the app's `recents`, `crates/app/src/recents.rs`; the CLI reads and writes nothing of it):
+
+```toml
+version = 1
+
+[[recent]]
+kind = "folder"
+opened = 1794308254
+path = "/Users/me/Pictures/Wedding"
+```
+
+- **The list:** newest first by `opened`, in whole seconds since 1970, at most ten; an entry opened goes to the top, its `opened` one past the newest's where the clock was set back, so a full list never cuts it off. `kind` is `folder`; libraries and projects join it in Phase 5.
+- **Written** on a thread of the list's own, through the safe write, each time the list changes and on exit. Each write reads the file again and merges into it each change made since the last write (an entry opened, removed, re-pointed, or the list cleared), so two Apertrusts on one folder keep each other's entries; the file's other keys stay. A write that fails keeps its changes for the next write, and the one on exit; a file that may not be written is such a failure, with a warning.
+- **What cannot be read:** an entry of a kind this build lacks, or a malformed one, stays in the file, in its place, unshown; a malformed one of a kind it knows is warned of. A damaged file, not TOML or not UTF-8, is set aside as `state.toml.bak` with a warning that quotes nothing of it: at the start the list starts empty, and a later write writes what the last write left, with its change. One a newer version wrote is read as empty and never written.
+- **Paths** are written as text, a path that is not valid Unicode with its invalid bytes replaced.
+- **Missing entries:** whether each entry's path is there is asked as the main window shows, and again as it gains the focus and as Browse comes into sight, each on a thread of its own, never the interface's, so a slow share never holds a frame; a path still being asked is not asked again. One found missing is marked, and unmarked once a later check finds it back; one not yet answered is not, and an answer to a question asked before the entry was opened again is dropped. Remove from the List and Locate…'s re-pointing are the list's own (`Recents::remove`, `Recents::repoint`), and so is Clear Menu (`Recents::clear`).
+- **`library.recent_folders`,** the recent folders' old settings key, stays in the schema: read only where `state.toml` holds no list yet, for its move there, written at once, and never written by the app.
+- **The old key stays in `settings.toml`** after the move, as an earlier build wrote it.
 
 **Overrides.** `--conf KEY=VALUE` in the app and the CLI sets a value for one run, checked against the registry and never written; the dialog draws that row disabled.
 
@@ -179,7 +196,7 @@ No other platform folder is used, XDG's data and state folders among them, so on
 
 **Two instances on one folder** are allowed.
 
-- Settings and `state.toml` merge per key.
+- Settings merge per key, and `state.toml` per change.
 - The cache needs no lock between them but a library cache's own ([cache.md](cache.md#two-processes-at-once)).
 - Two instances, or the app and `apertrust-cli library`, share a library through its files, with no lock: each writes whole files only when their bytes change, reads a file again before writing it if it changed, and sees the other's changes as any outside change (decisions 52 and 54). Each keeps its own cache.
 
@@ -223,14 +240,14 @@ Then:
 
 ## The Settings dialog
 
-Drawn on nine pages, as darktable's preferences: General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, Photos named so because "Library" names only a library you create (decision 37; the built dialog still calls it Library, its id `library`, until the rename lands) ([gui.md](gui.md#the-settings-dialog) holds its form, its rows and its window). It is a native window of its own (decision 41), on the Mac a modeless one rather than a sheet.
+Drawn on nine pages, as darktable's preferences: General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, Photos named so because "Library" names only a library you create (decision 37), its id `photos`; a `settings_window.page` of `library`, which earlier builds kept, is a value this build cannot read, so the dialog opens on General with a warning and the value stays until a page is chosen ([gui.md](gui.md#the-settings-dialog) holds its form, its rows and its window). It is a native window of its own (decision 41), on the Mac a modeless one rather than a sheet.
 
 - **Rows from the registry:** each setting the schema gives a `page` and a `group` is a row on that page, under its group's title, in the schema's order, drawn by its kind. A row off its default has darktable's dot and is reset by a double-click on its label or its right-click menu's Reset; a row `--conf` sets is drawn disabled, saying so; "Applies after a restart" is said where the schema says so. Every change applies at once.
 - **A list of a choice** (`kind = "list"`, `of = { kind = "choice", type = "…" }`) is a row of its own kind: a checkbox per option of the type, stacked in the control column in the type's order, the row as tall as they are, with one dot and one Reset for the whole list; a change sets the list to the options ticked, in the type's order. It is generic, for any such list on a page; the options' words are `setting-<id>-option-<option>`, as a choice's.
 - **A row's help** is its words' `setting-<id>-help`, where it has one, shown as its label's tooltip.
 - **Diagnostics,** General's third group: `log.keep` (a boolean, off by default, applied at once), whether the app keeps this session's log in memory for its log window, and `log.domains` (a list of `apertrust_base::log::Domain`, the `-d` domains but `golden`, then `verbose`; all but `memory` and `verbose` by default, applied at once), what it keeps besides warnings and errors ([gui.md](gui.md#the-log-window)). The list is kept while the log is off, and used once it is on.
 - **Hand-built pages** for what rows cannot hold: Shortcuts, the keymap editor; Storage, the user data and cache folders, each with how it was chosen, read-only, since a folder is chosen before the app starts, and the cache's sizes, settings and Clear ([cache.md](cache.md#settings--storage)); Presets; AI's models. Where edits are kept is no setting: each library's file and each root's id file say (decision 47).
-- **A page that holds nothing yet** is listed dimmed and cannot be chosen. Built: General, Library, Editing, Processing and Storage, its folders and the cache's contents built by hand beside its rows from the schema ([cache.md](cache.md#settings--storage)); Import, Shortcuts, Presets and AI are dimmed.
+- **A page that holds nothing yet** is listed dimmed and cannot be chosen. Built: General, Photos, Editing, Processing and Storage, its folders and the cache's contents built by hand beside its rows from the schema ([cache.md](cache.md#settings--storage)); Import, Shortcuts, Presets and AI are dimmed.
 - **A row whose `requires` is off** is drawn disabled, as a row `--conf` sets is, with nothing said under it: the Storage page's Cache limit while Limit the cache's size is off.
 - What the app remembers on its own (the window's placement, the sections open, the scopes' view, the tab shown, the grid panel's position, size, sort, thumbnails and whether they show their captions, `grid_panel.labels`, the grid bar's Labels, the page Settings last showed, `settings_window.page`, and the log window's place, its size and the folder its Save to file… last wrote to, `log_window.*`) is never shown, and tool settings are drawn in their module.
 - **Square thumbnails,** `grid_panel.square_thumbnails` (a boolean, off by default, applied at once; [gui.md](gui.md#the-cell)), is the Photos page's row, under Thumbnails; `--conf grid_panel.square_thumbnails=true` turns it on for a run.

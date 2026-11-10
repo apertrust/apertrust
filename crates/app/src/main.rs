@@ -62,6 +62,7 @@ mod mirror;
 mod modules;
 mod paths;
 mod popups;
+mod recents;
 mod scopes;
 mod settings;
 mod settings_dialog;
@@ -107,6 +108,7 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::window::WindowId;
 use mirror::{Mirror, PhotoState, Picture, Reaction, Shown};
 use modules::{Change, Panels, Pending};
+use recents::Recents;
 use settings::{Keeper, Settings};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
@@ -300,6 +302,19 @@ fn main() -> eframe::Result {
     };
     // Before the window opens, since it opens where it was.
     let (keeper, settings) = Keeper::open_in(folders.as_ref(), &overrides);
+    // The recents, from `state.toml` beside the settings, the old setting's moved into it
+    // where it has none yet; kept nowhere without a user data folder.
+    let recents = match folders.as_ref() {
+        Some(folders) => {
+            let file = folders.state();
+            let (recents, warnings) = Recents::open(file.clone(), || keeper.old_recent_folders());
+            for warning in warnings {
+                tracing::warn!(target: "settings", "{}: {warning}", file.display());
+            }
+            recents
+        }
+        None => Recents::nowhere(),
+    };
     // The engine's settings, from the same file, as the engine's options (decision 43).
     // The session takes the memory budget as it starts, so the settings read once here
     // give every photo of this run its budget: a change applies at the next start.
@@ -377,6 +392,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     budget,
                     cache,
+                    recents,
                     storage_folders,
                     app_host,
                     kept,
@@ -694,11 +710,11 @@ fn system_locale() -> Locale {
 }
 
 /// The side panel's tabs in Edit (decision 38): darktable's scene-referred module
-/// groups, base, color, correct and effect, between Apertrust's own Library and History.
+/// groups, base, color, correct and effect, between Apertrust's own Photos and History.
 /// Ctrl+1 to Ctrl+5 choose the first five by position ([`ActionId::PANEL_TABS`]); History,
 /// the sixth, has no key.
 const TABS: [(Icon, &str); 6] = [
-    (Icon::Library, "tab-library"),
+    (Icon::Folder, "tab-photos"),
     (Icon::Base, "tab-base"),
     (Icon::Color, "tab-color"),
     (Icon::Correct, "tab-correct"),
@@ -711,10 +727,10 @@ const BASE: usize = 1;
 
 /// The tabs' ids, as settings keep the last one, so a tab the user moves keeps its place:
 /// darktable's names for its groups, as a module's id is its operation's.
-const TAB_IDS: [&str; TABS.len()] = ["library", "base", "color", "correct", "effect", "history"];
+const TAB_IDS: [&str; TABS.len()] = ["photos", "base", "color", "correct", "effect", "history"];
 
-/// The Library tab, first: Folders so far.
-const LIBRARY: usize = 0;
+/// The Photos tab, first: Browse so far.
+const PHOTOS: usize = 0;
 
 /// Whether each tab can be chosen: History has nothing behind it until it is built, so it
 /// is drawn disabled, its key unavailable.
@@ -773,7 +789,7 @@ const TAB_MODULES: [&[&str]; TABS.len()] = [
     &[],
 ];
 
-/// Whether each tab pins Scopes over its modules: every tab but the Library's, as
+/// Whether each tab pins Scopes over its modules: every tab but the Photos tab, as
 /// darktable's histogram sits over its groups (`docs/gui.md`, The tabs: darktable's
 /// groups).
 const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, true];
@@ -846,6 +862,8 @@ struct App {
     /// The disk cache's limit the session was last given, sent again as its settings
     /// change it (decision 76).
     cache_limit: Limit,
+    /// Whether the main window had the focus at the last frame.
+    focused: bool,
     /// The folders the app started with, which Settings › Storage shows.
     storage_folders: storage::Folders,
     /// What Settings › Storage was last handed, so it is handed again only when it changes.
@@ -1207,8 +1225,16 @@ struct Shell {
     open: bool,
     /// Whether Open Folder… ran, for the app to show the folder dialog after the frame.
     open_folder: bool,
-    /// The folders opened, newest first, at most [`settings::RECENT_FOLDERS`].
-    recent: Vec<PathBuf>,
+    /// What was opened, newest first, kept in `state.toml`: Browse's recent folders and
+    /// Open Recent's list.
+    recents: Recents,
+    /// Whether Browse was shown at the last frame, so the recents are checked again as it
+    /// comes into sight.
+    browse_shown: bool,
+    /// The folders the user opened (true) or closed (false) in Browse's tree, for this run.
+    tree: BTreeMap<PathBuf, bool>,
+    /// The missing recent Locate… asked about, for the folder dialog after the frame.
+    locate: Option<PathBuf>,
     /// The recent folders that could not be opened when tried this run, and why.
     missing: BTreeMap<PathBuf, String>,
     /// Whether Export… ran, for the app to open the Export dialog's sheet.
@@ -1301,7 +1327,10 @@ impl Shell {
             about: about::About::default(),
             open: false,
             open_folder: false,
-            recent: settings.recent_folders.clone(),
+            recents: Recents::nowhere(),
+            browse_shown: false,
+            tree: BTreeMap::new(),
+            locate: None,
             missing: BTreeMap::new(),
             export_asked: false,
             export_again: false,
@@ -1354,7 +1383,6 @@ impl Shell {
             },
             scopes: self.scopes,
             grid: self.grid,
-            recent_folders: self.recent.clone(),
             keys: self.keymap.overrides().clone(),
             export: self.export.clone(),
             ask_before_overwrite: self.overwrite.asks(),
@@ -1411,24 +1439,59 @@ impl Shell {
         }
     }
 
-    /// A folder opened: first among the recent folders, once, at most ten, and no longer
-    /// missing, since it opened.
+    /// A folder opened: first among the recents, once, at most ten, and no longer missing,
+    /// since it opened; written on the recents' own thread.
     fn remember_folder(&mut self, path: PathBuf) {
         self.missing.remove(&path);
-        self.recent.retain(|recent| *recent != path);
-        self.recent.insert(0, path);
-        self.recent.truncate(settings::RECENT_FOLDERS);
+        self.recents.opened(recents::Kind::Folder, path);
+        self.recents.save();
     }
 
-    /// The recent folders, each with why it could not be opened when it was tried, if it
-    /// could not (a folder's existence is never checked as the list is drawn: a share can be
-    /// slow, and the interface never waits for one).
+    /// Opens or closes `folder` in Browse's tree, for the run; `open` says it is the open
+    /// folder, which starts open, the others closed. Returns whether it is open now.
+    fn toggle_tree(&mut self, folder: &Path, open: bool) -> bool {
+        let now = !self.tree.get(folder).copied().unwrap_or(open);
+        self.tree.insert(folder.to_owned(), now);
+        now
+    }
+
+    /// Remove from the List: `path` taken out of the recents, and its failure this run
+    /// forgotten.
+    fn forget_recent(&mut self, path: &Path) {
+        self.missing.remove(path);
+        self.recents.remove(recents::Kind::Folder, path);
+        self.recents.save();
+    }
+
+    /// Locate…'s answer: the missing recent `from` points to `to`, keeping its place, and
+    /// is asked about again. Returns `to`, the folder to open.
+    fn located(&mut self, from: &Path, to: PathBuf) -> PathBuf {
+        self.missing.remove(from);
+        self.recents
+            .repoint(recents::Kind::Folder, from, to.clone());
+        self.recents.save();
+        self.recents.check();
+        to
+    }
+
+    /// The recent folders, each with why it cannot be opened, if it cannot: its opening
+    /// failed this run, or the recents' check found it gone. Nothing is asked of the disk as
+    /// the list is drawn: a share can be slow, and the interface never waits for one.
     fn recent_folders(&self) -> Vec<library::Recent<'_>> {
-        self.recent
-            .iter()
-            .map(|path| library::Recent {
-                path,
-                missing: self.missing.get(path).map(String::as_str),
+        let folders = self.recents.entries();
+        folders
+            .filter(|entry| entry.kind == recents::Kind::Folder)
+            .map(|entry| {
+                let path = entry.path.as_path();
+                let failed = self
+                    .missing
+                    .get(path)
+                    .map(|why| library::Missing::Failed(why));
+                let gone = self.recents.missing(entry.kind, path);
+                library::Recent {
+                    path,
+                    missing: failed.or(gone.then_some(library::Missing::Gone)),
+                }
             })
             .collect()
     }
@@ -1458,16 +1521,46 @@ impl Shell {
     /// Whether `module`'s collapsible group `group` is open: as the user left it, or
     /// closed (decision 29).
     fn group_open(&self, module: &str, group: &str) -> bool {
+        self.group_open_or(module, group, modules::GROUP_OPEN)
+    }
+
+    /// Whether `module`'s collapsible group `group` is open: as the user left it, or
+    /// `default`, as Browse's Folders, open in folder mode, where it is Browse alone.
+    fn group_open_or(&self, module: &str, group: &str, default: bool) -> bool {
         let kept = self.groups.get(module).and_then(|groups| groups.get(group));
-        kept.copied().unwrap_or(modules::GROUP_OPEN)
+        kept.copied().unwrap_or(default)
     }
 
     /// Opens or closes `module`'s collapsible group `group`, for this run and the next.
     /// Resetting the module leaves it as it is.
     fn toggle_group(&mut self, module: &str, group: &str) {
         let open = !self.group_open(module, group);
+        self.set_group_open(module, group, open);
+    }
+
+    /// Keeps `module`'s collapsible group `group` open or closed, for this run and the next.
+    fn set_group_open(&mut self, module: &str, group: &str, open: bool) {
         let groups = self.groups.entry(module.to_owned()).or_default();
         groups.insert(group.to_owned(), open);
+    }
+
+    /// Whether Browse and its Folders are open, as the user left them.
+    fn browse_open(&self) -> library::Open {
+        library::Open {
+            browse: self.section_open(library::ID, library::OPEN),
+            folders: self.group_open_or(library::ID, library::FOLDERS, library::FOLDERS_OPEN),
+        }
+    }
+
+    /// Opens or closes Browse, or its Folders, as Browse's header or the Folders' row
+    /// asked (`library::Action::Toggle`, `ToggleFolders`), for this run and the next.
+    fn toggle_browse(&mut self, folders: bool) {
+        let open = self.browse_open();
+        if folders {
+            self.set_group_open(library::ID, library::FOLDERS, !open.folders);
+        } else {
+            self.set_section_open(library::ID, !open.browse);
+        }
     }
 
     /// Whether the side panel shows the Scopes section: the tab shown pins it.
@@ -1936,17 +2029,24 @@ impl App {
         gate: SubmitGate,
         budget: u64,
         cache: Option<Arc<Cache>>,
+        recents: Recents,
         storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
     ) -> Self {
         keep_log(&kept, &settings.log);
         let ask = &apertrust_export::settings::registry::EXPORT_ASK_BEFORE_OVERWRITE;
+        // Whether each recent entry is there, asked as the window shows, off this thread,
+        // so a slow share never holds a frame; again as it gains the focus and as Browse
+        // comes into sight.
+        let mut recents = recents;
+        recents.check();
         let shell = Shell {
             overwrite: alerts::Overwrite::new(
                 settings.ask_before_overwrite,
                 keeper.overridden(ask),
             ),
+            recents,
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         prepare(&cc.egui_ctx, &shell, settings.scale);
@@ -2043,6 +2143,7 @@ impl App {
             started: apertrust_engine::names::now(),
             downloads: paths::downloads(),
             cache_limit,
+            focused: true,
             storage_folders,
             storage_shown: storage::View::default(),
         };
@@ -2310,6 +2411,9 @@ impl App {
     /// Opens the folder at `path` in the library, its photos going into the grid panel;
     /// the photo open stays open (`docs/events.md`, The library's events).
     fn open_folder(&mut self, path: PathBuf) {
+        // Absolute, from the folder the app started in, so the tree's folders are inside it
+        // for the library, which lists no relative path; no disk is asked.
+        let path = std::path::absolute(&path).unwrap_or(path);
         let open = self
             .session
             .send(Command::Library(LibraryCommand::Open(Source::Folder(
@@ -2643,8 +2747,13 @@ impl App {
     fn side_panel(&mut self, ui: &mut egui::Ui, peek: bool) -> Option<ActionId> {
         let tab_clicked = self.shell.tab_bar(ui);
         ui.spacing_mut().item_spacing.y = 0.0;
-        if self.shell.panel_tab == LIBRARY {
-            let actions = self.library_tab(ui);
+        let browse = self.shell.panel_tab == PHOTOS;
+        if browse && !self.shell.browse_shown {
+            self.shell.recents.check();
+        }
+        self.shell.browse_shown = browse;
+        if browse {
+            let actions = self.photos_tab(ui);
             self.carry_out(actions, ui.ctx());
             return tab_clicked;
         }
@@ -2658,35 +2767,64 @@ impl App {
         tab_clicked
     }
 
-    /// The Library tab's body: its Folders section, as the mirror's folder and the recent
-    /// folders have it, over the tab bar.
-    fn library_tab(&self, ui: &mut egui::Ui) -> Vec<library::Action> {
-        let open = self.shell.section_open(library::ID, library::OPEN);
+    /// The Photos tab's body: its Browse section, as the mirror's folder and the recent
+    /// folders have it, under the tab bar.
+    fn photos_tab(&self, ui: &mut egui::Ui) -> Vec<library::Action> {
         let recent = self.shell.recent_folders();
         let folder = &self.mirror.folder.folder;
+        let keys = self.shell.open_keys(ui.ctx());
+        let browse = library::Browse {
+            folder,
+            recent: &recent,
+            open: self.shell.browse_open(),
+            tree: &self.shell.tree,
+            inside: self.mirror.folder.inside(),
+            keys: &keys,
+            home: self.places.home.as_deref(),
+        };
         let mut actions = Vec::new();
         PanelBody::new().show(ui, |ui| {
-            actions = library::library(ui, folder, &recent, open);
+            actions = library::browse(ui, &browse);
         });
         actions
     }
 
-    /// What the Library tab and the empty states asked for: the dialogs are asked after the
-    /// frame, a folder is opened through the session at once, and the section's header opens
-    /// or closes it.
+    /// What Browse and the empty states asked for: the dialogs are asked after the frame, a
+    /// folder is opened through the session at once, Browse's header, its Folders' row and
+    /// the tree's open folder open or close them, the file manager is started, and a
+    /// missing recent is taken out of the recents or located.
     fn carry_out(&mut self, actions: Vec<library::Action>, ctx: &egui::Context) {
+        let mut repaint = false;
         for action in actions {
+            // An ask comes each frame a folder waits for its listing, and needs no frame.
+            repaint |= !matches!(action, library::Action::Ask(_));
             match action {
                 library::Action::OpenFolder => self.shell.open_folder = true,
                 library::Action::OpenImage => self.shell.open = true,
                 library::Action::Open(path) => self.open_folder(path),
-                library::Action::Toggle => {
-                    let open = self.shell.section_open(library::ID, library::OPEN);
-                    self.shell.set_section_open(library::ID, !open);
+                library::Action::Toggle => self.shell.toggle_browse(false),
+                library::Action::ToggleFolders => self.shell.toggle_browse(true),
+                library::Action::ToggleTree(path) => {
+                    let open = self.mirror.folder.shown() == Some(path.as_path());
+                    self.shell.toggle_tree(&path, open);
                 }
+                // Asked while the tree is drawn, sent once an open.
+                library::Action::Ask(folder) => {
+                    if self.mirror.folder.ask_inside(&folder) {
+                        let command = LibraryCommand::Subfolders { folder };
+                        self.session.send(Command::Library(command));
+                    }
+                }
+                library::Action::Retry(folder) => self.mirror.folder.forget_inside(&folder),
+                library::Action::Reveal(path) => jobs::reveal(&jobs::Reveal::Folder(path)),
+                library::Action::ShowInFolder(path) => jobs::reveal(&jobs::Reveal::File(path)),
+                library::Action::Remove(path) => self.shell.forget_recent(&path),
+                library::Action::Locate(path) => self.shell.locate = Some(path),
             }
         }
-        ctx.request_repaint();
+        if repaint {
+            ctx.request_repaint();
+        }
     }
 
     /// The grid panel: the open folder's photos, in the grid bar's sort, the photo open
@@ -2946,7 +3084,8 @@ impl App {
             let recent = self.shell.recent_folders();
             let keys = self.shell.open_keys(ui.ctx());
             let what = library::Empty::of(&self.mirror.folder.folder);
-            asked = library::empty_state(ui, slot, what, &recent, &keys);
+            asked =
+                library::empty_state(ui, slot, what, &recent, &keys, self.places.home.as_deref());
         }
 
         let photo_rect = placed.as_ref().map(|placed| placed.photo);
@@ -3258,7 +3397,7 @@ impl eframe::App for App {
         } else if std::mem::take(&mut self.shell.open_folder) {
             Some(dialogs::Pick::Folder)
         } else {
-            None
+            self.shell.locate.take().map(dialogs::Pick::Locate)
         };
         let (photo, pictures) = (&self.mirror.photo, self.pictures.as_deref());
         let shown = self.mirror.folder.shown();
@@ -3267,8 +3406,10 @@ impl eframe::App for App {
             ctx: &ctx,
             asking: &mut self.asking,
         };
-        let chosen = dialogs::open(&mut dialog, asked, || {
-            dialogs::folder(shown, photo.path(), pictures)
+        let start = dialogs::locate_start(asked.as_ref());
+        let chosen = dialogs::open(&mut dialog, asked, || match start {
+            Some(parent) => parent,
+            None => dialogs::folder(shown, photo.path(), pictures),
         });
         // Quit, held while the dialog asked, runs once it has answered, opening nothing.
         let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
@@ -3276,9 +3417,9 @@ impl eframe::App for App {
             self.quit_held = false;
             self.run_actions([ActionId::QUIT], &ctx, &[]);
         } else if let Some(chosen) = chosen {
-            match chosen.pick {
-                dialogs::Pick::Image => self.open(chosen.path),
-                dialogs::Pick::Folder => self.open_folder(chosen.path),
+            match answered(&mut self.shell, chosen) {
+                Opens::Photo(path) => self.open(path),
+                Opens::Folder(path) => self.open_folder(path),
             }
         }
         if let Some(gesture) = window {
@@ -3310,6 +3451,16 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);
+        // The recents checked again as the window gains the focus, a folder that came back
+        // no longer shown missing; what their checks have found, without waiting.
+        let focused = ctx.input(|i| i.focused);
+        if focused && !self.focused {
+            self.shell.recents.check();
+        }
+        self.focused = focused;
+        if self.shell.recents.take() {
+            ctx.request_repaint();
+        }
         let chosen = self.menus.as_ref().map(menus::NativeMenus::chosen);
         // No F6 among them: the menus hold no action that moves the focus.
         self.run_actions(chosen.unwrap_or_default(), ctx, &[]);
@@ -3382,6 +3533,24 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.keeper.flush();
+        self.shell.recents.flush();
+    }
+}
+
+/// What an open dialog's answer opens.
+#[derive(Debug, PartialEq)]
+enum Opens {
+    Photo(PathBuf),
+    Folder(PathBuf),
+}
+
+/// What `chosen`, an open dialog's answer, opens: the raw or the folder chosen; for
+/// Locate…, the folder chosen, which the missing recent now points to.
+fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Opens {
+    match chosen.pick {
+        dialogs::Pick::Image => Opens::Photo(chosen.path),
+        dialogs::Pick::Folder => Opens::Folder(chosen.path),
+        dialogs::Pick::Locate(from) => Opens::Folder(shell.located(&from, chosen.path)),
     }
 }
 
@@ -5832,13 +6001,15 @@ mod tests {
         assert_eq!(TAB_IDS.len(), TABS.len());
     }
 
-    /// An older build's tab (decision 38 replaced Profile, Adjust, Optics and Detail) is
-    /// read as any unknown id is, under decision 43: Base is shown, and the id stays in
-    /// settings until the user chooses a tab.
+    /// An older build's tab (decision 38 replaced Profile, Adjust, Optics and Detail, and
+    /// `library` was the Photos tab's id) is read as any unknown id is, under decision 43:
+    /// Base is shown, and the id stays in settings until the user chooses a tab.
     #[test]
     fn a_tab_this_build_lacks_stays_in_settings_until_the_user_chooses_one() {
         let ctx = egui::Context::default();
-        for old in ["profile", "adjust", "optics", "detail", "presets"] {
+        for old in [
+            "profile", "adjust", "optics", "detail", "presets", "library",
+        ] {
             let mut shell = opened_on(old);
             assert_eq!(shell.panel_tab, BASE, "{old}");
             assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some(old));
@@ -5848,16 +6019,179 @@ mod tests {
     }
 
     /// A tab kept in settings that cannot be chosen yet, History, opens Base, its id kept
-    /// until the user chooses another; the Library's opens the Library.
+    /// until the user chooses another; the Photos tab's opens the Photos tab.
     #[test]
     fn a_kept_tab_that_cannot_be_chosen_opens_base_and_stays_kept() {
         let ctx = egui::Context::default();
-        assert_eq!(opened_on("library").panel_tab, LIBRARY);
+        assert_eq!(opened_on("photos").panel_tab, PHOTOS);
         let mut shell = opened_on("history");
         assert_eq!(shell.panel_tab, BASE);
         assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("history"));
         shell.panel_tab = 4;
         assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("effect"));
+    }
+
+    /// A folder opened joins the recents at the top, once; Browse's rows say why one cannot
+    /// be opened, its failure this run before the check's finding it gone.
+    #[test]
+    fn a_folder_opened_joins_the_recents_and_a_missing_one_says_why() {
+        let mut shell = opened_on("photos");
+        let (a, b) = (PathBuf::from("/photos/a"), PathBuf::from("/photos/b"));
+        for path in [&a, &b, &a] {
+            shell.remember_folder(path.clone());
+        }
+        let shown = |shell: &Shell| -> Vec<(PathBuf, Option<String>)> {
+            let rows = shell.recent_folders();
+            rows.iter()
+                .map(|r| (r.path.to_owned(), r.missing.map(|m| format!("{m:?}"))))
+                .collect()
+        };
+        assert_eq!(shown(&shell), [(a.clone(), None), (b.clone(), None)]);
+        shell.recents.mark(recents::Kind::Folder, &b, false);
+        shell.missing.insert(a.clone(), "refused".to_owned());
+        shell.recents.mark(recents::Kind::Folder, &a, false);
+        let failed = Some(format!("{:?}", library::Missing::Failed("refused")));
+        let gone = Some(format!("{:?}", library::Missing::Gone));
+        assert_eq!(shown(&shell), [(a.clone(), failed), (b, gone)]);
+        // Opened again, it is neither.
+        shell.remember_folder(a.clone());
+        assert_eq!(shown(&shell)[0], (a, None));
+    }
+
+    /// The tree keeps what was opened for the run: the open folder starts open and the
+    /// others closed, and each toggle flips it.
+    #[test]
+    fn the_tree_keeps_what_was_opened_for_the_run() {
+        let mut shell = opened_on("photos");
+        let (open, sub) = (
+            Path::new("/photos/Wedding"),
+            Path::new("/photos/Wedding/Edits"),
+        );
+        assert!(!shell.toggle_tree(open, true));
+        assert!(shell.toggle_tree(sub, false));
+        assert!(shell.toggle_tree(open, true));
+        assert_eq!(shell.tree.get(sub), Some(&true));
+    }
+
+    /// Remove from the List takes a recent out, and Locate…'s answer points it elsewhere in
+    /// its place, no longer failed.
+    #[test]
+    fn a_missing_recent_is_removed_or_located() {
+        let mut shell = opened_on("photos");
+        let (a, b, c) = (
+            PathBuf::from("/photos/a"),
+            PathBuf::from("/photos/b"),
+            PathBuf::from("/photos/c"),
+        );
+        for path in [&a, &b] {
+            shell.remember_folder(path.clone());
+        }
+        shell.missing.insert(b.clone(), "refused".to_owned());
+        shell.forget_recent(&b);
+        let paths = |shell: &Shell| -> Vec<PathBuf> {
+            shell
+                .recent_folders()
+                .iter()
+                .map(|r| r.path.to_owned())
+                .collect()
+        };
+        assert_eq!(paths(&shell), std::slice::from_ref(&a));
+        assert!(!shell.missing.contains_key(&b));
+        shell.missing.insert(a.clone(), "refused".to_owned());
+        shell.located(&a, c.clone());
+        assert_eq!(paths(&shell), [c]);
+        assert!(shell.missing.is_empty());
+    }
+
+    /// Locate…'s answer, the platform's folder dialog's, points the missing recent to the
+    /// folder chosen, which opens.
+    #[test]
+    fn locate_s_answer_points_the_recent_elsewhere_and_opens_it() {
+        let mut harness = bench(OperatingSystem::Nix);
+        let (gone, found) = (
+            PathBuf::from("/photos/Gone"),
+            PathBuf::from("/photos/Found"),
+        );
+        harness.state_mut().shell.remember_folder(gone.clone());
+        harness.state_mut().shell.locate = Some(gone.clone());
+        harness.run();
+        let asked = harness.state().dialog.picks.last().cloned();
+        assert_eq!(asked, Some(dialogs::Pick::Locate(gone.clone())));
+        // It starts in the folder's parent, unchecked.
+        assert_eq!(
+            harness.state().dialog.asked.last(),
+            Some(&Some(PathBuf::from("/photos")))
+        );
+        harness.state_mut().dialog.answer = Some(Some(found.clone()));
+        harness.run();
+        assert_eq!(
+            harness.state().commands,
+            vec![Command::Library(LibraryCommand::Open(Source::Folder(
+                found.clone()
+            )))]
+        );
+        let recents: Vec<PathBuf> = harness
+            .state()
+            .shell
+            .recent_folders()
+            .iter()
+            .map(|r| r.path.to_owned())
+            .collect();
+        assert_eq!(recents, [found]);
+    }
+
+    /// Browse's Folders starts open, unlike a module's groups. A click on its row closes it,
+    /// hiding its rows, and it is kept closed as `browse.folders` in `edit.groups`; a
+    /// click on Browse's header closes Browse, kept as `browse` in `edit.sections`.
+    #[test]
+    fn a_click_on_folders_closes_it_and_keeps_it_closed() {
+        let shell = opened_on("photos");
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(320.0, 600.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, shell: &mut Shell| {
+                    let keys = library::Keys::default();
+                    let browse = library::Browse {
+                        folder: &folder::Folder::None,
+                        recent: &[],
+                        open: shell.browse_open(),
+                        tree: &BTreeMap::new(),
+                        inside: &std::collections::HashMap::new(),
+                        keys: &keys,
+                        home: None,
+                    };
+                    let mut actions = Vec::new();
+                    PanelBody::new().show(ui, |ui| {
+                        actions = library::browse(ui, &browse);
+                    });
+                    for action in actions {
+                        match action {
+                            library::Action::Toggle => shell.toggle_browse(false),
+                            library::Action::ToggleFolders => shell.toggle_browse(true),
+                            other => panic!("{other:?}"),
+                        }
+                    }
+                },
+                shell,
+            );
+        harness.run();
+        assert!(harness.state().browse_open().folders);
+        harness
+            .get_by_role_and_label(Role::Button, "Folders")
+            .click();
+        harness.run();
+        assert!(!harness.state().browse_open().folders);
+        let ctx = egui::Context::default();
+        let kept = harness.state().to_settings(&ctx).edit;
+        let folders = kept.groups.get("browse").and_then(|g| g.get("folders"));
+        assert_eq!(folders, Some(&false));
+        harness
+            .get_by_role_and_label(Role::Button, "Browse")
+            .click();
+        harness.run();
+        let kept = harness.state().to_settings(&ctx).edit;
+        assert_eq!(kept.sections.get("browse"), Some(&false));
     }
 
     /// The id settings had is forgotten once the user chooses a tab: one this build lacks
@@ -6165,7 +6499,7 @@ mod tests {
 
         fn ask(&mut self, pick: dialogs::Pick, folder: Option<&Path>) {
             self.asking = true;
-            self.pick = Some(pick);
+            self.pick = Some(pick.clone());
             self.picks.push(pick);
             self.asked.push(folder.map(Path::to_owned));
         }
@@ -6291,16 +6625,21 @@ mod tests {
                     } else if std::mem::take(&mut bench.shell.open_folder) {
                         Some(dialogs::Pick::Folder)
                     } else {
-                        None
+                        bench.shell.locate.take().map(dialogs::Pick::Locate)
                     };
                     let pictures = || Some(PathBuf::from("Pictures"));
-                    if let Some(chosen) = dialogs::open(&mut bench.dialog, asked, pictures) {
-                        bench.commands.push(match chosen.pick {
-                            dialogs::Pick::Image => Command::Open(chosen.path),
-                            dialogs::Pick::Folder => {
-                                Command::Library(LibraryCommand::Open(Source::Folder(chosen.path)))
-                            }
-                        });
+                    // The app's own start and answer, `App` needing a session and a GPU.
+                    let start = dialogs::locate_start(asked.as_ref());
+                    let folder = || start.unwrap_or_else(pictures);
+                    if let Some(chosen) = dialogs::open(&mut bench.dialog, asked, folder) {
+                        bench
+                            .commands
+                            .push(match answered(&mut bench.shell, chosen) {
+                                Opens::Photo(path) => Command::Open(path),
+                                Opens::Folder(path) => {
+                                    Command::Library(LibraryCommand::Open(Source::Folder(path)))
+                                }
+                            });
                     }
                     if let Some(gesture) = window {
                         run_title_bar(gesture, &ctx, &mut bench.system);
@@ -7700,7 +8039,7 @@ mod tests {
         assert_eq!(translator(&harness.ctx).locale(), Locale::Uk);
     }
 
-    /// Square thumbnails, the Library page's, and the side panel's tab names, the Editing
+    /// Square thumbnails, the Photos page's, and the side panel's tab names, the Editing
     /// page's, reach the shell at once; the engine's settings are kept for its next start
     /// and the page shown for the dialog's next opening.
     #[test]
@@ -7712,7 +8051,7 @@ mod tests {
         press_action(&mut harness, ActionId::SETTINGS);
         assert!(!harness.state().shell.grid.square_thumbnails);
         host.0.borrow_mut().outputs = vec![
-            dialog_host::Output::Settings(Change::Set("settings_window.page", "library".into())),
+            dialog_host::Output::Settings(Change::Set("settings_window.page", "photos".into())),
             dialog_host::Output::Settings(Change::Set("grid_panel.square_thumbnails", true.into())),
             dialog_host::Output::Settings(Change::Set("side_panel.tab_names", false.into())),
             dialog_host::Output::Settings(Change::Set("engine.memory_budget", 4096.into())),
@@ -7722,7 +8061,7 @@ mod tests {
         assert!(d.shell.grid.square_thumbnails);
         assert!(!d.shell.tab_names);
         assert_eq!(d.keeper.engine().budget, 4096 << 20);
-        assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Library);
+        assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Photos);
         // And back to its default.
         host.0.borrow_mut().outputs = vec![dialog_host::Output::Settings(Change::Reset(
             "grid_panel.square_thumbnails",
@@ -8999,19 +9338,19 @@ mod tests {
             let selected = node.accesskit_node().toggled();
             assert_eq!(selected, Some(egui::accesskit::Toggled::True), "{name}");
         }
-        // The Library's is the first: chosen by Ctrl+1, and not drawn disabled.
-        let library = harness.get_by_role_and_label(Role::Tab, "Library");
-        assert!(!library.accesskit_node().is_disabled());
+        // The Photos tab is the first: chosen by Ctrl+1, and not drawn disabled.
+        let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
+        assert!(!photos.accesskit_node().is_disabled());
         harness.key_press_modifiers(Modifiers::COMMAND, Key::Num1);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, LIBRARY);
+        assert_eq!(harness.state().shell.panel_tab, PHOTOS);
         // A click on a tab runs the same action.
         harness.get_by_role_and_label(Role::Tab, "Colour").click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, 2);
-        harness.get_by_role_and_label(Role::Tab, "Library").click();
+        harness.get_by_role_and_label(Role::Tab, "Photos").click();
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, LIBRARY);
+        assert_eq!(harness.state().shell.panel_tab, PHOTOS);
     }
 
     #[test]
@@ -9094,15 +9433,15 @@ mod tests {
         colour.hover();
         harness.run();
         assert!(harness.query_by_label("Colour (Cmd+3)").is_some());
-        // The Library's is the first.
-        let library = harness.get_by_role_and_label(Role::Tab, "Library");
+        // The Photos tab is the first.
+        let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
         assert_eq!(
-            library.accesskit_node().data().keyboard_shortcut(),
+            photos.accesskit_node().data().keyboard_shortcut(),
             Some("Cmd+1")
         );
-        library.hover();
+        photos.hover();
         harness.run();
-        assert!(harness.query_by_label("Library (Cmd+1)").is_some());
+        assert!(harness.query_by_label("Photos (Cmd+1)").is_some());
         // Reset has no key until undo exists, so its tooltip is its name alone.
         let reset = harness.get_by_role_and_label(Role::Button, "Reset");
         assert_eq!(reset.accesskit_node().data().keyboard_shortcut(), None);
@@ -9172,10 +9511,10 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().pressed, vec![ActionId::PANEL_TABS[3]]);
         // Czech types + on the 1 key: the digit comes before Ctrl++, so the press is the
-        // Library's, and never zooms.
+        // Photos tab's, and never zooms.
         press(&harness, Modifiers::COMMAND, Key::Plus, Key::Num1);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, LIBRARY);
+        assert_eq!(harness.state().shell.panel_tab, PHOTOS);
         assert_eq!(
             harness.state().pressed.last(),
             Some(&ActionId::PANEL_TABS[0])
@@ -9188,7 +9527,7 @@ mod tests {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         for (modifiers, key) in [
-            // Not built yet: Undo, Redo, Copy edit, Library, the next photo.
+            // Not built yet: Undo, Redo, Copy edit, Browse, the next photo.
             (Modifiers::COMMAND, Key::Z),
             (Modifiers::COMMAND, Key::Y),
             (Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C),
@@ -9639,9 +9978,9 @@ mod tests {
         };
         assert_eq!(tab(&harness, BASE + 1), Some(Toggled::True));
         assert_eq!(tab(&harness, 1), Some(Toggled::False));
-        // The Library's is the first, built.
-        let library = menu_line(&harness, check, "Side-panel tab 1");
-        assert!(library.0);
+        // The Photos tab is the first, built.
+        let photos = menu_line(&harness, check, "Side-panel tab 1");
+        assert!(photos.0);
         // Reset is disabled while the photo is as it opened.
         harness.key_press(Key::Escape);
         harness.run();

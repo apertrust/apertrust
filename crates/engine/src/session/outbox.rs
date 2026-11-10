@@ -212,6 +212,7 @@ fn kind(event: &Event) -> &'static str {
         Event::Library(event) => match event {
             LibraryEvent::Opened { .. } => "Library Opened",
             LibraryEvent::Subfolders { .. } => "Library Subfolders",
+            LibraryEvent::SubfoldersOf { .. } => "Library SubfoldersOf",
             LibraryEvent::Listed { .. } => "Library Listed",
             LibraryEvent::Failed { .. } => "Library Failed",
             LibraryEvent::Taken { .. } => "Library Taken",

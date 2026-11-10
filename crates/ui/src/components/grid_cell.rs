@@ -52,7 +52,7 @@ use egui::{
     UiBuilder, WidgetInfo, pos2, text::LayoutJob, vec2,
 };
 
-use super::photo_frame::cut;
+use super::photo_frame::middle_cut;
 use super::{focus_ring, pull_down};
 use crate::i18n::Args;
 use crate::popup::{Entry, Item};
@@ -537,25 +537,11 @@ fn placed(square: Rect, size: egui::Vec2, filling: bool) -> (Rect, Rect) {
 
 /// `name` whole where it fits in `width`, else cut in its middle, its extension kept.
 fn fitted(painter: &egui::Painter, name: &str, font: &FontId, width: f32) -> String {
-    let fits = |text: &str| {
-        painter
-            .layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE)
-            .size()
-            .x
-            <= width
-    };
-    if fits(name) {
-        return name.to_owned();
-    }
     let (stem, tail) = match name.rfind('.') {
         Some(dot) if dot > 0 => name.split_at(dot),
         _ => (name, ""),
     };
-    (1..stem.chars().count())
-        .rev()
-        .map(|chars| cut(stem, tail, chars))
-        .find(|text| fits(text))
-        .unwrap_or_else(|| cut(stem, tail, 1))
+    middle_cut(painter, stem, tail, font, width)
 }
 
 /// The labels' names, translated, in darktable's order.

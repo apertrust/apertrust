@@ -1455,11 +1455,11 @@ fn mask_histogram(overflowing: bool) -> (Vec<f32>, [f32; 2]) {
 }
 
 /// The side panel as the Base tab shows it: Scopes and Layers pinned, the modules below.
-/// Library and History, with nothing behind them yet, are drawn disabled. Its edge, here
+/// Photos and History, with nothing behind them yet, are drawn disabled. Its edge, here
 /// at its end as for a panel at the window's start, resizes it.
 fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
     let ids = [
-        (Icon::Library, "tab-library", false),
+        (Icon::Folder, "tab-photos", false),
         (Icon::Base, "tab-base", true),
         (Icon::Color, "tab-color", true),
         (Icon::Correct, "tab-correct", true),

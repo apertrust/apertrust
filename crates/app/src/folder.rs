@@ -36,7 +36,7 @@
 //!   keeps the folder's own order; the panel draws [`FolderState::order`].
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -133,6 +133,11 @@ pub struct FolderState {
     order: Vec<usize>,
     /// Each photo's place in [`FolderState::order`], by its place in the listing.
     place: Vec<usize>,
+    /// The subfolders of folders inside the open one that Browse's tree opened, by path, as
+    /// the library listed them (`LibraryEvent::SubfoldersOf`).
+    inside: HashMap<PathBuf, Result<Vec<String>, String>>,
+    /// The folders inside it whose subfolders were asked for, so each is asked once.
+    asked: HashSet<PathBuf>,
 }
 
 impl FolderState {
@@ -141,6 +146,8 @@ impl FolderState {
         self.latest = number;
         self.job = None;
         self.folder = Folder::Opening { path };
+        self.inside.clear();
+        self.asked.clear();
         self.generation += 1;
         self.reorder();
     }
@@ -273,6 +280,29 @@ impl FolderState {
         };
     }
 
+    /// Whether the subfolders of `folder`, inside the open folder's tree, are to be asked
+    /// for: neither listed nor asked yet. Marks them asked.
+    pub fn ask_inside(&mut self, folder: &Path) -> bool {
+        let Folder::Open(listing) = &self.folder else {
+            return false;
+        };
+        let listed = listing.path == folder || self.inside.contains_key(folder);
+        !listed && self.asked.insert(folder.to_owned())
+    }
+
+    /// The subfolders of folders inside the open one as the library listed them, by path,
+    /// or why it could not.
+    pub fn inside(&self) -> &HashMap<PathBuf, Result<Vec<String>, String>> {
+        &self.inside
+    }
+
+    /// Try Again: what the library said of `folder`'s subfolders is forgotten, so the tree
+    /// asks for them again.
+    pub fn forget_inside(&mut self, folder: &Path) {
+        self.inside.remove(folder);
+        self.asked.remove(folder);
+    }
+
     /// The folder shown: the open one, or the one being opened.
     pub fn shown(&self) -> Option<&Path> {
         match &self.folder {
@@ -310,7 +340,9 @@ impl FolderState {
         // What follows changes the folder, all but its subfolders and photos.
         if !matches!(
             event,
-            LibraryEvent::Subfolders { .. } | LibraryEvent::Listed { .. }
+            LibraryEvent::Subfolders { .. }
+                | LibraryEvent::SubfoldersOf { .. }
+                | LibraryEvent::Listed { .. }
         ) {
             self.generation += 1;
         }
@@ -332,6 +364,19 @@ impl FolderState {
                 if let Folder::Open(listing) = &mut self.folder {
                     listing.subfolders = names.clone();
                 }
+                None
+            }
+            LibraryEvent::SubfoldersOf {
+                folder,
+                names,
+                unreadable,
+                ..
+            } => {
+                let listed = match unreadable {
+                    Some(why) => Err(why.clone()),
+                    None => Ok(names.clone()),
+                };
+                self.inside.insert(folder.clone(), listed);
                 None
             }
             LibraryEvent::Listed { photos, done, .. } => {
@@ -562,6 +607,52 @@ mod tests {
         let names: Vec<&str> = all.photos.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["a.ARW", "b.ARW", "c.ARW"]);
         assert!(all.done);
+    }
+
+    fn subfolders_of(open: u64, folder: &Path, names: &[&str], unreadable: Option<&str>) -> Event {
+        Event::Library(LibraryEvent::SubfoldersOf {
+            open,
+            folder: folder.to_owned(),
+            names: names.iter().map(|name| (*name).to_owned()).collect(),
+            unreadable: unreadable.map(str::to_owned),
+        })
+    }
+
+    /// A subfolder's subfolders are asked for once an open and kept by its path; a new
+    /// open drops them, and what comes late for the open before it, so the same folder
+    /// opened again asks again; Try Again forgets what came.
+    #[test]
+    fn a_subfolder_s_subfolders_are_asked_once_an_open() {
+        let mut state = FolderState::default();
+        state.opening(PathBuf::from("/photos/Wedding"), 4);
+        state.apply(&opened(4, "/photos/Wedding"));
+        let edits = PathBuf::from("/photos/Wedding/Edits");
+        assert!(state.ask_inside(&edits));
+        assert!(!state.ask_inside(&edits), "asked once");
+        assert!(
+            !state.ask_inside(Path::new("/photos/Wedding")),
+            "the open folder is listed"
+        );
+        state.apply(&subfolders_of(4, &edits, &["Picks"], None));
+        assert_eq!(
+            state.inside().get(&edits),
+            Some(&Ok(vec!["Picks".to_owned()]))
+        );
+        // Opened again: asked again, and the late answer of the open before is dropped.
+        state.opening(PathBuf::from("/photos/Wedding"), 5);
+        state.apply(&opened(5, "/photos/Wedding"));
+        state.apply(&subfolders_of(4, &edits, &["Picks"], None));
+        assert!(state.inside().is_empty());
+        assert!(state.ask_inside(&edits));
+        // A folder that could not be listed says why, and Try Again asks again.
+        state.apply(&subfolders_of(5, &edits, &[], Some("the share is down")));
+        assert_eq!(
+            state.inside().get(&edits),
+            Some(&Err("the share is down".to_owned()))
+        );
+        assert!(!state.ask_inside(&edits));
+        state.forget_inside(&edits);
+        assert!(state.ask_inside(&edits));
     }
 
     #[test]

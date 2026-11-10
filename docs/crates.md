@@ -206,6 +206,7 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 - Its body is `apertrust_library::ops::open`, with an observer that sends each `LibraryEvent` as `Event::Library`, and the job's cancel.
 - `LibraryCommand::Close` cancels it and answers `Closed` at once.
 - `LibraryCommand::Thumbnails { photos, size }`: each photo a job of kind `thumbnail` on darktable's `SystemForeground` queue, with no progress, deduplicated by the open, the photo and the size, added from the last so the first asked is read first; its body is `apertrust_library::ops::thumbnail`, sending `LibraryEvent::Thumbnail` naming the folder's open. A new open or a close cancels those not yet sent; with no folder open nothing is read.
+- `LibraryCommand::Subfolders { folder }`: a cancellable job of kind `subfolders` on `UserBackground`, with no progress, its body `apertrust_library::ops::subfolders`, handed the open folder, which refuses a folder outside its tree and lists through `listing::subfolders` on the listing's own thread, answered by `SubfoldersOf` in the open folder's number; a new open or a close cancels it, and with no folder open it is not added.
 - Every library event names the number of its folder's open or close and is a notice. Opening a folder opens no photo.
 - `session::library` re-exports the library's `ops`.
 
@@ -462,11 +463,11 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 
 - it keeps the number of the latest library command and drops events naming another;
 - it holds the folder's name, path, subfolders and photos, accumulated from `Listed` chunks until `done`, and the thumbnails that have come, by photo and size with the generation they came at, `FolderState::generation` raised whenever the folder or its thumbnails change;
-- it returns `Reaction::FolderOpened`, which updates the recent folders (`library.recent_folders` in settings, newest first, ten);
-- a failure, `Failed`, or the job ending cancelled (the jobs window's Cancel) returns `Reaction::FolderFailed`: the recent folder is drawn disabled with the reason. The list is never checked as it is drawn, since a share may be slow.
+- it returns `Reaction::FolderOpened`, which puts the folder at the top of the recents (`src/recents.rs`, newest first, ten), written to `state.toml` on their own thread;
+- a failure, `Failed`, or the job ending cancelled (the jobs window's Cancel) returns `Reaction::FolderFailed`: the recent folder is drawn disabled with the reason. The list is never checked as it is drawn, since a share may be slow: the recents' check, started as the window opens and again as it gains the focus and as Browse comes into sight, marks a folder gone, drawn disabled too, and `App::logic` takes its answers each frame without waiting.
 - The folder's reading shows in the spinner and never opens the jobs window.
 
-**The first tab**, the Photos tab (decision 37), chosen like the others (Ctrl+1), has its Folders section: Open Folder…, the folder's name with its photo count, its subfolders and the recent folders. Albums and Smart albums are drawn disabled. Browse, the module around Folders (decision 73), is not built, and the tab still reads Library (`tab-library`, kept as `library`, the action `view-library`) until the rename lands.
+**The first tab**, the Photos tab (decision 37; `tab-photos`, kept as `photos`), chosen like the others (Ctrl+1), holds Browse (decision 73; the section `browse`, `section-browse`) in folder mode's form (`library::browse`, drawn from a `library::Browse`): its top line, a box saying what is open (`ChoiceBox`) whose list is the recents, the paths it was built from kept under its id, missing ones with Try Again, Locate… (the folder dialog's `Pick::Locate(path)`, then `Shell::located`, which opens the folder chosen) and Remove from the List; ＋ (New Library… and New Project… disabled, Open Folder…, Open Image…) and ⋯ (Show in Finder, `Section::options_menu`); then its Folders group (`browse-folders`, open by default, kept in `edit.groups` as `browse.folders`), the open folder's tree: the parent's row, the open folder with its count, its subfolders a level in and theirs at every level as each opens, asked for while the tree is drawn (`library::Action::Ask`, once an open by `FolderState::ask_inside`), a folder's open or closed state kept for the run at every level (`Shell::tree`), one whose subfolders could not be listed offering Try Again, each row's right-click (`apertrust-ui`'s `context_menu`) holding Show in Folder and Open. Albums and Smart albums are not shown, as folder mode has none. View › Browse (`show-browse`, L) is declared with no command yet.
 
 **The grid panel** is never hidden: one row of `GridCell`s in the grid bar's sort, which the mirror applies (`FolderState::order`), at the grid bar's size, the open photo the active cell, each caption the name alone until the library keeps ratings (`Thumb::rating` none, its first line's clicks not read). A click or Enter opens one; the arrows, Home and End move between cells. The grid bar's choices are actions of the registry (`sort-…`, `thumbnails-…`, `show-labels`), which View › Sort By, Thumbnail Size and Show Labels run too, kept under `[grid_panel]` with its position, the rows and columns its edge was dragged to, `labels` and `square_thumbnails` (which `--conf` sets, with no Settings row yet; a filling thumbnail asked for half as large again), at most as many as fit in half the window (`Shell::grid_edge`). At the right it lies between the photo and the side panel, at the left at the window's left edge (`Shell::grid_frame`); View › Grid Panel Position and the grid bar's options menu move it (`grid-position-…`).
 
@@ -474,12 +475,21 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 
 **Empty states** (`library::empty_state`). The central panel shows them as a card: where to start, with both ways to open and the recent folders; reading; failed, with its reason; no raws. No photo chosen is one line on the surround, in the surround's text colour. With no photo open, the central panel is the folder's empty state.
 
+### The recents
+
+`src/recents.rs`, with no `unsafe`: the one list of what was opened, which File › Open Recent, Browse's recent folders and the start window read ([docs/settings.md](settings.md#the-settings-schema) has the file). The app's alone, so not in `apertrust-base`, which holds only what every program sets up (decision 43); `Folders::state` there names its file.
+
+- `Recents::open(file, old)` reads `state.toml` and starts its writer thread; where the file holds no list, `old`, settings' `library.recent_folders`, becomes it and is written at once. `Recents::nowhere` keeps nothing.
+- `entries()`, newest first, at most `MOST` (10), each an `Entry` of a `Kind` (`Folder`), a path and `opened`; `opened(kind, path)` moves one to the top, after the newest; `remove`, `repoint` and `clear` are Remove from the List, Locate…'s new path and Clear Menu.
+- `save()` hands what changed to the writer, which merges each change into the file as it then is through `apertrust-base`'s `fs::write`, keeping what it could not write for the next merge; `flush()` waits for it, on exit.
+- `check()` asks whether each entry's path is there, a thread an entry and none for a path still being asked; `take()` marks the answers that have come without waiting, dropping one asked before its entry was opened again; `missing(kind, path)` says what was found.
+
 ### The side panel
 
 - It is as wide as its edge is dragged or moved with the keys: 240 to 600 points, 320 at first, at most half the window but never under 240, kept in settings.
-- **Tabs** are darktable's scene-referred groups between Apertrust's own two (decision 38; [docs/gui.md](gui.md), The tabs: darktable's groups): Photos, Base, Colour, Correct, Effect and History (`TABS`), the first still built as Library.
+- **Tabs** are darktable's scene-referred groups between Apertrust's own two (decision 38; [docs/gui.md](gui.md), The tabs: darktable's groups): Photos, Base, Colour, Correct, Effect and History (`TABS`).
   - Kept by darktable's ids (`base`, `color`, `correct`, `effect`). Edit opens on Base; History is drawn disabled until built, saying it is to come, and its key is unavailable.
-  - A kept id of History opens Base, `library` opens the first tab; once renamed, `photos` opens it and `library` is unknown (decision 38). An unknown id (such as `adjust`) is read as unknown and Base is shown with a warning; both are kept until the user chooses a tab.
+  - A kept id of History opens Base; `photos` opens the first tab, and `library`, which earlier builds kept for it, is unknown (decision 38). An unknown id (such as `adjust`) is read as unknown and Base is shown with a warning; both are kept until the user chooses a tab.
 - **Modules by tab** (`TAB_MODULES`): each module in darktable's group, those in none in the one darktable's other layouts give them, in darktable's order, the last in the pipeline at the top. A test holds the order to `OPERATIONS` reversed.
 
 | Tab | Modules |
@@ -719,6 +729,8 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - the value is clamped to the range and never −0; empty, or a sign alone, puts the value back;
 - the field is named with the slider's unit (`field-value-in`, "Exposure, in EV").
 
+**`ChoiceBox`**, a Boxed choice's box alone, its list the caller's, hung from it with `components::pull_down`: Browse's top line, whose list holds submenus.
+
 **`Choice`**, with a text of its own while no option is chosen, and an option the photo does not list shown last, disabled and described (`unlisted`). Two styles (decision 42, `Choice::style`):
 
 - `ChoiceStyle::Boxed`, the default;
@@ -732,7 +744,8 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 ### Sections and the side panel
 
-- **`Section`:** a header with a chevron, the title, and the wand, reset and presets buttons. A module has no options button; a utility has options only. Underlined `Tabs`; `group_label`; peeking while H is held (`Section::peek`, H read by the app). `Section::presets` and a utility's `options` are drawn disabled while nothing is behind them.
+- **`Section`:** a header with a chevron, the title, and the wand, reset and presets buttons. A module has no options button; a utility has options only. Underlined `Tabs`; `group_label`; peeking while H is held (`Section::peek`, H read by the app). `Section::presets` and a utility's `options` are drawn disabled while nothing is behind them; `Section::options_menu` gives the options button a menu, its choice in `SectionOutput::chosen`.
+- **`middle_cut`:** a name cut in its middle with … to fit a width in a font, a tail kept whole after it: the grid cell's file name, its extension kept, and Browse's folders.
 - **`CollapsibleGroup`**, darktable's collapsible section (decision 29): a row in `group_label`'s type with a hairline to a chevron, and a dot while closed with controls set. To AccessKit it is a Button with `expanded` and "N set"; its rows, the caller's, are a Group while open. It reports a toggle and keeps nothing. One with nothing behind it yet is drawn disabled and closed, its tooltip saying it is to come (`CollapsibleGroup::disabled`).
 - **`TabBar`:** icon tabs; a tab with nothing behind it yet is drawn disabled, never chosen, saying it is to come; » and ⋮ menus.
 - **`PanelBody`:** pinned sections, a band, scrolling sections, and a quiet scroll bar in tokens of its own. `quiet_scroll` is that scroll bar for other scrolling text.
@@ -761,7 +774,8 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - each level an egui `Area`; an open one takes its plain keys through an egui plugin;
 - `popup::show` is called once a frame; a second call in a pass does nothing, so `Choice` calls it too;
 - `popup::Service`, which an app installs in a context (`popup::install`) to show the requests it takes itself, answering between frames through `popup::answered`; the next frame's `popup::answer` gives the answer. The drawn popups show the rest, and everything where no service is installed;
-- a request's opener (`Request::opened_by`) is the control the focus goes back to, set by `Choice` and `components::pull_down`, since a press leaves the focus on nothing.
+- a request's opener (`Request::opened_by`) is the control the focus goes back to, set by `Choice` and `components::pull_down`, since a press leaves the focus on nothing;
+- `components::pull_down`, a menu hung from a button, and `components::context_menu`, one opening at the pointer on a right-click, or under the control on the menu key or Shift+F10, are public for the app's own controls.
 
 ### The central bar and the grid panel
 

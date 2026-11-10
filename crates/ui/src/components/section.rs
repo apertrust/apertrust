@@ -30,8 +30,9 @@ use egui::{
     WidgetInfo, pos2, vec2,
 };
 
-use super::{IconButton, Tabs, focus_ring, icon_colour, icon_lit, truncated};
+use super::{IconButton, Tabs, focus_ring, icon_colour, icon_lit, pull_down, truncated};
 use crate::i18n::Args;
+use crate::popup::Entry;
 use crate::{Icon, fonts, theme, translator};
 
 /// What the user did to a section's frame this frame.
@@ -52,6 +53,9 @@ pub enum SectionAction {
 pub struct SectionOutput {
     pub actions: Vec<SectionAction>,
     pub peeking: bool,
+    /// The id of the item chosen this frame in the menu its options button opens, given
+    /// by [`Section::options_menu`].
+    pub chosen: Option<String>,
 }
 
 pub struct Section<'a> {
@@ -65,6 +69,9 @@ pub struct Section<'a> {
     reset: bool,
     presets: bool,
     options: bool,
+    /// What the options button opens, a pull-down of the popup service's, where the
+    /// section gives one.
+    menu: Option<Vec<Entry>>,
     peek: bool,
 }
 
@@ -81,6 +88,7 @@ impl<'a> Section<'a> {
             reset: true,
             presets: true,
             options: true,
+            menu: None,
             peek: false,
         }
     }
@@ -125,6 +133,14 @@ impl<'a> Section<'a> {
         self
     }
 
+    /// A utility's options as a menu its options button opens, `entries` translated: the
+    /// item chosen comes back as [`SectionOutput::chosen`], in place of
+    /// [`SectionAction::Options`].
+    pub fn options_menu(mut self, entries: Vec<Entry>) -> Self {
+        self.menu = Some(entries);
+        self
+    }
+
     /// Whether the keys that peek (H by default) are held, as the app's actions registry
     /// reports them; the section peeks while it is under the pointer or its header has
     /// focus.
@@ -147,6 +163,8 @@ impl<'a> Section<'a> {
 
         let (header, _) =
             ui.allocate_exact_size(vec2(width, t.sizes.section_header), Sense::hover());
+        let menu = self.menu;
+        let mut chosen = None;
 
         // The buttons, right to left.
         let buttons = ui
@@ -172,12 +190,16 @@ impl<'a> Section<'a> {
                         {
                             pressed.push(SectionAction::Reset);
                         }
-                    } else if IconButton::new(Icon::Options, &say("section-options"))
-                        .enabled(self.options)
-                        .show(ui)
-                        .clicked()
-                    {
-                        pressed.push(SectionAction::Options);
+                    } else {
+                        let name = say("section-options");
+                        let options = IconButton::new(Icon::Options, &name)
+                            .enabled(self.options)
+                            .show(ui);
+                        match menu {
+                            Some(entries) => chosen = pull_down(ui, &options, &name, || entries),
+                            None if options.clicked() => pressed.push(SectionAction::Options),
+                            None => {}
+                        }
                     }
                     (pressed, ui.min_rect().left())
                 },
@@ -299,6 +321,7 @@ impl<'a> Section<'a> {
             pos2(header.left(), top),
             pos2(header.right(), bottom),
         ));
+        output.chosen = chosen;
         output.peeking = self.peek && (hovered || focused);
         if output.peeking {
             ui.painter().rect_filled(

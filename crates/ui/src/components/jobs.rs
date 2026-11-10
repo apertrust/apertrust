@@ -284,7 +284,7 @@ impl Job {
 const KIND_ICONS: [(&str, Icon); 3] = [
     ("export", Icon::Export),
     ("import", Icon::Import),
-    ("folder", Icon::Library),
+    ("folder", Icon::Folder),
 ];
 
 /// The icon of a kind [`KIND_ICONS`] does not list.
@@ -307,6 +307,17 @@ pub enum FileManager {
     /// Linux's, and anything else.
     #[default]
     Files,
+}
+
+impl FileManager {
+    /// The message of Show in Finder, Explorer or Files, as it names itself.
+    pub fn show_message(self) -> &'static str {
+        match self {
+            FileManager::Finder => "activity-show-finder",
+            FileManager::Explorer => "activity-show-explorer",
+            FileManager::Files => "activity-show-files",
+        }
+    }
 }
 
 /// What the user asked of a job, or of the window's rows. The app does it: reveals the
@@ -645,11 +656,7 @@ impl<'a> Jobs<'a> {
         let t = theme(ui.ctx());
         let show = (job.destination.is_some() && job.phase != JobPhase::Queued).then(|| {
             (
-                words.text(match self.file_manager {
-                    FileManager::Finder => "activity-show-finder",
-                    FileManager::Explorer => "activity-show-explorer",
-                    FileManager::Files => "activity-show-files",
-                }),
+                words.text(self.file_manager.show_message()),
                 Some(words.text("activity-show-tip")),
                 ActivityAction::ShowFolder(job.id),
             )

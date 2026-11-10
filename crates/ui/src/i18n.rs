@@ -803,7 +803,7 @@ mod tests {
                 args.set("clipping", "No clipping");
                 args.set("version", "0.1.0+197~g9201df0");
                 args.set("flag", "--conf");
-                args.set("tab", "Library");
+                args.set("tab", "Photos");
                 args.set("unit", "EV");
                 args.set("done", 3);
                 args.set("total", 12);

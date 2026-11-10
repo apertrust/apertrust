@@ -41,12 +41,14 @@ use apertrust_ui::tr;
 use eframe::egui;
 
 /// What a dialog asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pick {
     /// One raw, for File › Open Image….
     Image,
     /// A folder, for File › Open Folder….
     Folder,
+    /// The folder the missing recent at this path went to, for Locate….
+    Locate(PathBuf),
 }
 
 /// What the person chose.
@@ -84,6 +86,16 @@ pub fn open(
         dialog.ask(pick, folder().as_deref());
     }
     dialog.chosen()
+}
+
+/// Where Locate…'s dialog starts, where `asked` is Locate…: in the missing folder's parent,
+/// unchecked, which the platform's dialog passes over for one that is there should it have
+/// gone too, so no disk is asked on the interface's thread. None for any other dialog.
+pub fn locate_start(asked: Option<&Pick>) -> Option<Option<PathBuf>> {
+    match asked {
+        Some(Pick::Locate(from)) => Some(from.parent().map(Path::to_owned)),
+        _ => None,
+    }
 }
 
 /// Where the open dialog starts: in `open`, the folder open, else the folder of `photo`,
@@ -138,8 +150,12 @@ impl OpenDialog for Native<'_> {
                 }
                 Box::pin(dialog.pick_file())
             }
-            Pick::Folder => {
-                dialog = dialog.set_title(tr(self.ctx, "open-folder-title"));
+            Pick::Folder | Pick::Locate(_) => {
+                let title = match pick {
+                    Pick::Locate(_) => "browse-locate-title",
+                    _ => "open-folder-title",
+                };
+                dialog = dialog.set_title(tr(self.ctx, title));
                 if let Some(folder) = folder {
                     dialog = dialog.set_directory(folder);
                 }
@@ -152,7 +168,7 @@ impl OpenDialog for Native<'_> {
 
     fn chosen(&mut self) -> Option<Chosen> {
         let Asking(pick, answer) = self.asking.as_mut()?;
-        let pick = *pick;
+        let pick = pick.clone();
         let waker = Waker::from(Arc::new(Repaint(self.ctx.clone())));
         let Poll::Ready(file) = answer.as_mut().poll(&mut Context::from_waker(&waker)) else {
             return None;
