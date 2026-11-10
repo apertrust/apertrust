@@ -375,6 +375,45 @@ pub fn thumbnail(
     });
 }
 
+/// What a thumbnail is kept by in the disk cache's thumbnails (decision 76): its slot, what
+/// it stands for, and the version of the picture it holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThumbnailKey {
+    /// The photo, its virtual copy and the size asked. Until the photo's fingerprint is
+    /// built (the library's step 8), the photo is its path.
+    pub slot: Vec<u8>,
+    /// What the picture depends on: the embedded picture's reading
+    /// ([`apertrust_raw::PREVIEW_VERSION`]) and the file, by its size and modified time.
+    pub version: Vec<u8>,
+}
+
+/// The cache's key of the thumbnail of `photo`, a file of `folder`, at `size`, as
+/// [`thumbnail`] reads it; `None` where the name is no plain file name or the file's size
+/// and modified time cannot be read, so it is read and not kept.
+pub fn thumbnail_key(folder: &Path, photo: &str, size: u32) -> Option<ThumbnailKey> {
+    let plain = Path::new(photo).file_name() == Some(std::ffi::OsStr::new(photo));
+    if !plain {
+        return None;
+    }
+    let path = folder.join(photo);
+    let meta = std::fs::metadata(&path).ok()?;
+    let modified = meta.modified().ok()?;
+    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    // The virtual copy: the photo itself until virtual copies are built.
+    let copy = 0u32;
+    let mut slot = b"thumbnail\0".to_vec();
+    slot.extend_from_slice(path.as_os_str().as_encoded_bytes());
+    slot.push(0);
+    slot.extend_from_slice(&copy.to_le_bytes());
+    slot.extend_from_slice(&size.to_le_bytes());
+    let mut version = b"embedded\0".to_vec();
+    version.extend_from_slice(apertrust_raw::PREVIEW_VERSION.as_bytes());
+    version.push(0);
+    version.extend_from_slice(&meta.len().to_le_bytes());
+    version.extend_from_slice(&since.as_nanos().to_le_bytes());
+    Some(ThumbnailKey { slot, version })
+}
+
 /// A photo of the index as a client sees it.
 fn photo(entry: crate::index::Entry) -> Photo {
     let edit = match entry.sidecar {
@@ -676,6 +715,32 @@ mod tests {
         }
         // Cancelled, it tells nothing.
         assert!(thumbnails(dir.path(), "A.RAF", &|| true).is_empty());
+    }
+
+    /// A thumbnail's slot is the photo's path, copy and size; its version follows the file
+    /// and the reading, so a file changed reads again. No key for a name that is no file
+    /// name, or a file that is not there.
+    #[test]
+    fn a_thumbnail_s_key_follows_the_photo_its_size_and_its_file() {
+        let dir = folder();
+        let key = thumbnail_key(dir.path(), "A.RAF", 256).expect("a key");
+        assert_eq!(thumbnail_key(dir.path(), "A.RAF", 256), Some(key.clone()));
+        let larger = thumbnail_key(dir.path(), "A.RAF", 512).expect("a key");
+        assert_ne!(larger.slot, key.slot);
+        assert_eq!(larger.version, key.version);
+        let version = String::from_utf8_lossy(&key.version).into_owned();
+        assert!(
+            version.contains(apertrust_raw::PREVIEW_VERSION),
+            "{version}"
+        );
+
+        std::fs::write(dir.path().join("A.RAF"), b"another file, longer").unwrap();
+        let changed = thumbnail_key(dir.path(), "A.RAF", 256).expect("a key");
+        assert_eq!(changed.slot, key.slot);
+        assert_ne!(changed.version, key.version);
+
+        assert_eq!(thumbnail_key(dir.path(), "gone.ARW", 256), None);
+        assert_eq!(thumbnail_key(dir.path(), "../A.RAF", 256), None);
     }
 
     #[test]

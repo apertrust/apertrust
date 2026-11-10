@@ -166,6 +166,7 @@ The groundwork for orientation:
 - **`cache-evict`,** the same queue, never shown, one at a time: asked for after a write past the limit (`Upkeep::check`, for the thumbnails' writes), and by `Command::Cache(CacheCommand::Limit(limit))` where the limit is lowered or turned on; never while the cache is unlimited. A request while one is queued is that one's, which reads the limit as it runs; one while it runs is folded into it, which runs once more. A guard puts eviction back to idle should a job panic, so the next request still adds one.
 - Only the engine thread adds them, since it owns the control: a worker asks it through the inbox (`Inbox::Evict`), one arriving after the session's `Stop` dropped. As the session ends, its stop flag is the cancel of base's `tidy`, `walk` and eviction's listing, asked before each subfolder, and of eviction's removals, so quitting never waits for a cold walk.
 - `-d perf` logs the walk's sizes, the temporaries tidied and its time, each kind under `verbose`, and each eviction's removals, failures and time; a cache that cannot be tidied, walked or evicted is a warning.
+- **Thumbnails,** `session::thumbnail`: a thumbnail job reads the cache first, by the library's `thumbnail_key`, and decodes a hit with `apertrust_raw::read_jpeg`; on a miss it sends the library's reading, then encodes it with the export's JPEG writer at quality 90, chroma whole, writes it and calls `Upkeep::check`. No picture, or one that cannot be encoded, is sent and not kept; with no cache the library's reading alone. One `-d perf` line for each `Thumbnails` command once its last job ends (`Tally`), each thumbnail under `verbose`.
 
 - A job's body hands the engine thread `GpuTask`s through its `Tasks`. They are stepped one a turn, after the live frame, by darktable's queue order and ageing, with one step's work on the GPU at a time.
 - A cancelled job's task is dropped before its next step.
@@ -225,7 +226,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
-- **The cache** (decision 76): the thumbnails written to it and read from it; eviction paused by an export; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
+- **The cache** (decision 76): Apertrust's own rendered thumbnails in it; eviction paused by an export; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
@@ -368,6 +369,8 @@ Raw decoding with rawler (decision 23).
 **Shooting data.** `read_exif_file` and `read_exif` give the shooting data darktable's variables read (`Exif`), from rawler's metadata, without decoding the image.
 
 **The embedded picture.** `read_preview_file` and `read_preview` (`src/preview.rs`) read the camera's own picture without decoding the mosaic, as darktable's thumbnails show it before their render: rawler's thumbnail (a DNG's) when it is at least the size asked, else its preview, else the larger of the two; at most the size asked on its longer side, each pixel the mean of those under it, never made larger; turned upright by the EXIF Orientation, since the camera stores it as the sensor sees it; 8-bit RGBA (`Preview`). A raw with none gives `None`. `tests/preview.rs` holds the corpus's pictures at 256 pixels to `tests/corpus/previews.txt` and each upright where its raw decodes.
+
+**For the cache's thumbnails** (decision 76): `PREVIEW_VERSION`, rawler's version and the reading's own, held to `Cargo.lock`'s rawler by a test, so updating rawler fails until it is raised; and `read_jpeg`, a baseline JPEG of three components back into 8-bit RGBA through rawler's own JPEG decoder, an error, never a panic, for what is no such JPEG.
 
 **Lens corrections** the raw carries, as darktable reads them, over rawler's public parsers (decision 25): Fujifilm's (the FujiIFD and the maker note's CropMode), held to Exiv2's dump in `tests/lens.rs`. Sony's, DNG opcodes and Olympus's are planned.
 
@@ -1322,6 +1325,7 @@ It also holds roots by id file and photos by fingerprint (decision 53), change d
 - Each `Photo` has its name, size, modified time and `EditState`: none, edited, view-only with its `Newer`, or unreadable with the reason.
 - `ops::open` is a blocking call a job's body makes, with an observer and a cancel closure, over `Index::build`. Nothing is sent after a cancel, and a cancelled reading returns at once, without waiting for a call into the folder.
 - `ops::thumbnail`, a blocking call a thumbnail job's body makes, with the same two: the photo's embedded picture through `apertrust_raw::read_preview_file`, as a `Thumbnail` (8-bit RGBA, upright, its pixels an `Arc<[u8]>`), or `None` where the raw holds none that can be read; nothing sent after a cancel, and nothing read for a name that is no plain file name.
+- `ops::thumbnail_key`: a thumbnail's slot and version in the disk cache (decision 76), the slot the photo's path, its virtual copy and the size (its fingerprint with step 8), the version `apertrust_raw::PREVIEW_VERSION` and the raw's size and modified time; none for a name that is no plain file name or a file whose size and time cannot be read. The engine's thumbnail jobs read and write the cache with it.
 
 ### sidecar
 

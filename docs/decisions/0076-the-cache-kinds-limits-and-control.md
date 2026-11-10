@@ -8,7 +8,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 ## Decision
 
-**One cache folder, split by kind, holding only what Apertrust can rebuild with no one's help and nothing lost.** Built: base's `cache`, the folder's choice with `--cache-dir` (or `--cachedir`) and `APERTRUST_CACHE_DIR`, the settings `cache.limited`, `cache.limit` and `cache.unused_after`, the app opening the cache and handing it to its session, and the session's start walk and eviction. The rest is planned, built with the library's steps 6 and 6b.
+**One cache folder, split by kind, holding only what Apertrust can rebuild with no one's help and nothing lost.** Built: base's `cache`, the folder's choice with `--cache-dir` (or `--cachedir`) and `APERTRUST_CACHE_DIR`, the settings `cache.limited`, `cache.limit` and `cache.unused_after`, the app opening the cache and handing it to its session, the session's start walk and eviction, and the thumbnails kind for the camera's embedded pictures, keyed by the photo's path until the fingerprint is built. The rest is planned, built with the library's steps 6 and 6b.
 
 **The folder** ([0043](0043-settings-and-apertrusts-folders.md)): `--cache-dir DIR` (or darktable's `--cachedir`), then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given by flag or variable, then the platform's: `~/Library/Caches/Apertrust`, `%LOCALAPPDATA%\Apertrust\cache`, `$XDG_CACHE_HOME/apertrust`; Apertrust Dev's its own. `Folders` chooses it with the user data folder, the CLI finding it to read as it finds that one. A program that writes the cache creates the folder as it opens it, writing and removing a file of its own there (`Cache::create`), the cache's first write: the app as it starts; the CLI, whose commands write no cache yet, not at all. **A folder that cannot be created or written** is warned of once, as the program starts, and the program runs with no disk cache: it never refuses to start for it, and never warns again for each write it would have made.
 
@@ -24,7 +24,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 - **Limited** kinds count together against one limit and are removed oldest last use first, unless the person chooses an unlimited cache.
 - **Kept** kinds are never removed by size: only by the person, or by the rule of their owner's step.
-- **Thumbnails are stored as JPEG at quality 90,** through the JPEG encoder export already uses, built with step 6.
+- **Thumbnails are stored as JPEG at quality 90,** through the JPEG encoder export already uses, chroma whole, and read back by rawler's decoder, so none is added.
 - Embeddings for search live inside a library's cache ([0055](0055-the-librarys-cache.md)). AI models are not cache: they are the AI page's downloads, placed with the AI work. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
 **One file per entry, the file system as the index.**
@@ -39,7 +39,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 **The limit,** two settings, owner `engine`, on Settings › Storage, group Cache, applied at once, each settable for one run by `--conf`:
 
 - `cache.limited`, a boolean, on by default: whether the limited kinds are kept within a limit. Off is Unlimited: nothing is evicted by size, and the Storage page and `cache info` still show every size and offer Clear.
-- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each that step 6 measures for its JPEGs.
+- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 54,000 thumbnails at 512 px or 17,600 at 1024 px, at 74 kB and 227 kB each, measured on the corpus's embedded pictures.
 
 **Time:** nothing in the cache is removed by age. `cache.unused_after`, owner `engine`, a choice of `apertrust_base::cache::UnusedAfter` (`days_30`, `days_90`, `days_180`, `days_365`, `never`), default `days_90`, on the same page and group, is how long a library's cache may go unopened on this machine before it is marked and offered for removal; with `never` none is offered for its age.
 

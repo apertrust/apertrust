@@ -42,7 +42,7 @@ pub use exif::{DateTime, Exif};
 pub use lens::{
     DngCorrection, FujifilmCorrection, LensCorrection, OlympusCorrection, SonyCorrection,
 };
-pub use preview::{Preview, read_preview, read_preview_file};
+pub use preview::{PREVIEW_VERSION, Preview, read_jpeg, read_preview, read_preview_file};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

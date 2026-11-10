@@ -337,6 +337,11 @@ impl Upkeep {
         self.lock().limit
     }
 
+    /// The cache it keeps, which the thumbnail jobs read and write.
+    pub(crate) fn cache(&self) -> &Cache {
+        &self.cache
+    }
+
     /// Notes a step, for the tests.
     #[cfg(test)]
     fn took(&self, step: Step) {

@@ -79,6 +79,7 @@
 
 mod cache;
 mod outbox;
+mod thumbnail;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
@@ -121,6 +122,7 @@ pub use cache::CacheOptions;
 use cache::Upkeep;
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
+use thumbnail::Tally;
 
 /// What a client asks of the session. Plain data, so it can move into the protocol.
 #[derive(Debug, Clone, PartialEq)]
@@ -2369,7 +2371,8 @@ impl Engine {
     /// `SystemForeground` queue, as darktable's thumbnail loads (decision 57), with no
     /// progress, deduplicated by the open, the photo and the size; added from the last, so
     /// the first, on the stack's top, is read first. Its picture goes out as
-    /// [`Event::Library`]. Nothing with no folder open.
+    /// [`Event::Library`], from the disk cache where it holds it, and one read is kept
+    /// there ([`thumbnail`], decision 76). Nothing with no folder open.
     fn thumbnails(&mut self, photos: Vec<String>, size: u32) {
         let Some((open, folder)) = self.shown.clone() else {
             return;
@@ -2379,10 +2382,13 @@ impl Engine {
         self.thumbnails.retain(|&job| control.state(job).is_some());
         #[cfg(test)]
         let hold = self.thumbnails_hold.take();
+        // The command's jobs share one tally, logged once the last has ended.
+        let cached = (self.cache.clone()).map(|upkeep| (upkeep, Arc::new(Tally::new(size))));
         for photo in photos.into_iter().rev() {
             let key = format!("{open}/{size}/{photo}").into_bytes();
             let description = format!("thumbnail of {photo} at {size}");
             let (outbox, folder) = (self.jobs.outbox.clone(), folder.clone());
+            let cached = cached.clone();
             #[cfg(test)]
             let hold = hold.clone();
             let job = self.jobs.add(self.applied, Queue::SystemForeground, |_| {
@@ -2392,7 +2398,15 @@ impl Engine {
                         hold.wait();
                     }
                     let tell = |event| outbox.send(Event::Library(event));
-                    library::thumbnail(open, &folder, &photo, size, &tell, &|| context.cancelled());
+                    let asked = thumbnail::Asked {
+                        open,
+                        folder: &folder,
+                        photo: &photo,
+                        size,
+                    };
+                    let cached = cached.as_ref().map(|(upkeep, tally)| (upkeep, &**tally));
+                    let cancel = || context.cancelled();
+                    thumbnail::serve(cached, &asked, &tell, &cancel, library::thumbnail);
                     Ok(())
                 })
                 .dedup(key)
