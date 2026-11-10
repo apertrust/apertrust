@@ -650,7 +650,7 @@ The decided design (decisions 53 and 57):
 - **The cache** (decision 76), the library's files in every mode, the cache's limited kind `thumbnails/`: one file per photo, virtual copy and size (128, 256, 512 or 1024), a JPEG of quality 90 through the export's JPEG encoder, chroma halved across (4:2:2), holding the edit's hash and the render version (the operations' and the pipeline's), or the embedded picture's mark, replaced whole by a newer one; a reader finding another version renders again, showing the stale picture meanwhile. Its limit, Unlimited, eviction and clearing are [cache.md](cache.md)'s.
 - **Jobs on `SystemForeground`,** each thumbnail one, deduplicated by photo, size and edit, the newest first, as darktable's thumbnail loads.
 - **Nothing for cloud files not on the disk.**
-- **The opening photo's picture** (decision 77, planned): the session's open reads the largest of the photo's rendered thumbnails from this cache, stale or not, as the central panel's first picture, before its live frame; else the camera's embedded picture at the central panel's size ([engine.md](engine.md#opening-a-photo)).
+- **The opening photo's picture** (decision 77): the session's open reads the largest of the photo's rendered thumbnails from this cache, stale or not, as the central panel's first picture, before its live frame; else the camera's embedded picture at the central panel's size ([engine.md](engine.md#opening-a-photo)).
 
 ## The CLI
 

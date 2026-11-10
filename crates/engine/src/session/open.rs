@@ -553,8 +553,9 @@ fn edit(
     Ok((edit, view_only))
 }
 
-/// A test's synthetic raws, read as files are.
-#[cfg(test)]
+/// A test's synthetic raws, read as files are: the engine's tests', and its clients' through
+/// [`super::testing`].
+#[cfg(any(test, feature = "testing"))]
 pub(crate) mod testing {
     use super::*;
 

@@ -607,15 +607,28 @@ pub fn section(
         module,
         state,
         groups,
+        controls: Default::default(),
     };
     let out = section.show(ui, |ui| {
-        // The rows' tooltip while the photo opens, over where they were drawn last frame,
-        // asked before theirs: egui shows one tooltip a layer, the first asked, so hovering
-        // any disabled control says why rather than what it does.
+        // While the photo opens, the tip over each row of controls on the edit, where they
+        // were drawn last frame, asked before theirs: egui shows one tooltip a layer, the
+        // first asked, so hovering a disabled control says why rather than what it does,
+        // and the rows that stay usable keep their own. Screen readers hear it as each
+        // row's description.
         let rows_id = ui.scope_id().with("opening rows");
-        let drawn = ui.ctx().data(|data| data.get_temp::<egui::Rect>(rows_id));
-        if let (Some(tip), Some(rows)) = (opening, drawn) {
-            (ui.interact(rows, rows_id, egui::Sense::hover())).on_hover_text(tip);
+        let drawn = ui
+            .ctx()
+            .data(|data| data.get_temp::<Vec<egui::Rect>>(rows_id));
+        if let (Some(tip), Some(drawn)) = (opening, drawn) {
+            for (i, rect) in drawn.into_iter().enumerate() {
+                let id = rows_id.with(i);
+                let row = ui.interact(rect, id, egui::Sense::hover());
+                ui.ctx().accesskit_node_builder(id, |node| {
+                    node.set_role(egui::accesskit::Role::Group);
+                    node.set_description(tip.to_owned());
+                });
+                row.on_hover_text_at_pointer(tip);
+            }
         }
         let tab = definition
             .tabs
@@ -626,7 +639,7 @@ pub fn section(
                 draw_row(ui, &page, row, &mut changes);
             }
         }
-        let rows = ui.min_rect();
+        let rows = page.controls.take();
         ui.ctx().data_mut(|data| data.insert_temp(rows_id, rows));
     });
     for action in out.actions {
@@ -654,6 +667,10 @@ struct Page<'a> {
     module: &'a dyn Module,
     state: &'a ModuleState,
     groups: &'a dyn Fn(&str) -> bool,
+    /// Where each row of controls on the edit was drawn, which a photo opening says over
+    /// (decision 77): not a group's header, a tool's setting nor the guides, which stay
+    /// usable and keep their own tips.
+    controls: std::cell::RefCell<Vec<egui::Rect>>,
 }
 
 impl Page<'_> {
@@ -697,6 +714,26 @@ impl Page<'_> {
 }
 
 fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>) {
+    // Where a row of controls on the edit is drawn, for a photo opening's tip.
+    let on_edit = !matches!(
+        row,
+        Row::Label { .. }
+            | Row::Group { .. }
+            | Row::When { .. }
+            | Row::ToolSetting(_)
+            | Row::Action { .. }
+            | Row::Guides
+    );
+    let top = ui.cursor().top();
+    draw_kind(ui, page, row, changes);
+    if on_edit {
+        let bottom = ui.min_rect().bottom().max(top);
+        let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=bottom);
+        page.controls.borrow_mut().push(rect);
+    }
+}
+
+fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>) {
     let (words, module, state) = (page.words, page.module, page.state);
     let definition = module.definition();
     match row {

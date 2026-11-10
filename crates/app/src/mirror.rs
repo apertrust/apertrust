@@ -397,8 +397,8 @@ impl Mirror {
             self.saving.refused(command);
             self.jobs.refused(command);
         }
-        // A change sent as the photo opened, before the app knew: dropped with nothing
-        // said, as the controls it came from were about to be drawn disabled.
+        // The app sends no change on the edit before the photo is live, its controls drawn
+        // disabled, so it never causes this; should one come, nothing is said of it.
         if let SessionError::Refused { error: refused, .. } = &error
             && matches!(**refused, SessionError::NotLive)
         {
@@ -436,6 +436,7 @@ impl Mirror {
                 // The session closed the photo left before it tried: none is open.
                 self.no_photo();
                 self.set_picture(None);
+                self.saving.leaving();
             }
             // The scopes failing turns them off, never the frame (decision 19): nothing over
             // the photo.
@@ -1906,5 +1907,163 @@ pub(crate) mod tests {
         assert!(matches!(m.photo, PhotoState::Failed { .. }));
         assert_eq!(m.picture(), None);
         assert_eq!(m.shown(), Shown::Nothing);
+        assert_eq!(m.saving.state(Instant::now()), SaveState::None);
+    }
+
+    /// A real session on the test's GPU, its raws synthetic (`session::testing`), whose
+    /// events the mirror takes in as the app does; `None` with no adapter.
+    struct Live {
+        session: apertrust_engine::session::Session,
+        wakes: std::sync::mpsc::Receiver<()>,
+        mirror: Mirror,
+        /// What the side panel showed, whether a picture, and the photo's path, after each
+        /// event, a state shown again left out.
+        seen: Vec<(Shown, bool, Option<PathBuf>)>,
+    }
+
+    impl Live {
+        fn start() -> Option<Live> {
+            use apertrust_engine::gpu::{GpuContext, GpuOptions};
+            let Ok(gpu) = pollster::block_on(GpuContext::new(&GpuOptions::default())) else {
+                eprintln!("no GPU adapter: a session needs one");
+                return None;
+            };
+            let (woken, wakes) = std::sync::mpsc::channel();
+            let session = apertrust_engine::session::testing::start(
+                gpu,
+                apertrust_operations::OPERATIONS,
+                apertrust_modules::MODULES,
+                "0.4.0+12~g1a2b3c4",
+                move || {
+                    let _ = woken.send(());
+                },
+            );
+            session.send(apertrust_engine::session::Command::Resize {
+                width: 64,
+                height: 48,
+            });
+            Some(Live {
+                session,
+                wakes,
+                mirror: mirror(),
+                seen: Vec::new(),
+            })
+        }
+
+        /// Asks for the photo at `path`, as the app does.
+        fn open(&mut self, path: &Path) -> u64 {
+            let command = apertrust_engine::session::Command::Open(path.to_owned());
+            let open = self.session.send(command);
+            self.mirror.opening(path.to_owned(), open, Instant::now());
+            open
+        }
+
+        /// Takes in the session's events until the photo is live with its first frame.
+        fn until_live(&mut self) {
+            let deadline = Instant::now() + Duration::from_secs(600);
+            while !(self.mirror.live() && self.mirror.frame.is_some()) {
+                assert!(Instant::now() < deadline, "live in time: {:?}", self.seen);
+                let _ = self.wakes.recv_timeout(Duration::from_millis(50));
+                for event in self.session.events() {
+                    self.mirror.apply(event);
+                    let m = &self.mirror;
+                    let state = (
+                        m.shown(),
+                        m.picture().is_some(),
+                        m.photo.path().map(Path::to_owned),
+                    );
+                    if self.seen.last() != Some(&state) {
+                        self.seen.push(state);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A folder of the test's own, emptied first.
+    fn scratch(name: &str) -> PathBuf {
+        let folder =
+            std::env::temp_dir().join(format!("apertrust-mirror-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    /// Through a real session (decision 77): the picture, the values read-only, then live
+    /// with the first frame, in that order.
+    #[test]
+    fn a_real_session_opens_a_photo_in_stages() {
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("stages");
+        let path = folder.join("embedded.ARW");
+        live.open(&path);
+        live.until_live();
+        let shown: Vec<(Shown, bool)> = live.seen.iter().map(|(s, p, _)| (*s, *p)).collect();
+        let opening = shown.iter().position(|s| *s == (Shown::Opening, true));
+        let photo = shown
+            .iter()
+            .position(|s| s.0 == Shown::Photo { editable: true });
+        assert!(
+            matches!((opening, photo), (Some(o), Some(p)) if o < p),
+            "{shown:?}"
+        );
+        assert_eq!(
+            shown.last(),
+            Some(&(Shown::Photo { editable: true }, false))
+        );
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Through a real session: a photo whose edit a newer Apertrust wrote goes live for
+    /// viewing only (decision 43).
+    #[test]
+    fn a_real_session_s_view_only_photo_ends_not_editable() {
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("view-only");
+        let path = folder.join("newer.ARW");
+        let xml = apertrust_engine::sidecar::to_xml(
+            &apertrust_engine::edit::Edit::default(),
+            apertrust_operations::OPERATIONS,
+            apertrust_modules::MODULES,
+            "9.0.0",
+        )
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+        std::fs::write(sidecar::path_for(&path), xml).unwrap();
+        live.open(&path);
+        live.until_live();
+        assert_eq!(live.mirror.shown(), Shown::Photo { editable: false });
+        assert!(!live.mirror.takes_edits());
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Through a real session, switching quickly A → B → C: only C is shown, whatever A's
+    /// and B's jobs still send.
+    #[test]
+    fn a_real_session_switched_quickly_shows_only_the_last_photo() {
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("switch");
+        let [a, b, c] = ["a.ARW", "b.ARW", "c.ARW"].map(|name| folder.join(name));
+        live.open(&a);
+        live.open(&b);
+        let last = live.open(&c);
+        live.until_live();
+        assert_eq!(live.mirror.photo.open(), Some(last));
+        assert!(
+            live.seen
+                .iter()
+                .all(|(_, _, path)| path.as_deref() == Some(c.as_path())),
+            "{:?}",
+            live.seen
+        );
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

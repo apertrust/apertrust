@@ -515,14 +515,14 @@ fn layer_button(ui: &mut Ui, layer: &str, name: &str, enabled: bool) -> bool {
 fn status_label(ui: &mut Ui, span: RangeInclusive<f32>, inner: Rect, status: &str) -> f32 {
     let t = theme(ui.ctx());
     let font = FontId::proportional(t.text.small);
-    let galley = (ui.painter()).layout_no_wrap(status.to_owned(), font, t.colors.text_secondary);
+    let galley = (ui.painter()).layout_no_wrap(status.to_owned(), font, t.colors.text_disabled);
     let (start, end) = (*span.start() + t.spacing.l, *span.end() - t.spacing.l);
     if start + galley.size().x > end {
         return *span.start();
     }
     let at = pos2(start, inner.center().y - galley.size().y / 2.0);
     let rect = Rect::from_min_size(at, galley.size());
-    ui.painter().galley(at, galley, t.colors.text_secondary);
+    ui.painter().galley(at, galley, t.colors.text_disabled);
     let response = ui.interact(rect, ui.scope_id().with("status"), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, status));
     rect.right()

@@ -3069,6 +3069,41 @@ impl Open {
     }
 }
 
+/// A session whose raws are synthetic, for the tests of its clients (the `testing`
+/// feature), so a client's test runs a real session on the test's GPU with no raw on disk.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing {
+    use super::*;
+
+    /// Starts a session as [`Session::start`] does, within the engine's default budget and
+    /// with no disk cache, whose every raw is the modules crate's synthetic photo, 96 × 72
+    /// photosites, whatever its path; one called `embedded.ARW` holds an embedded
+    /// picture. The edit beside each path is read and written as any.
+    pub fn start(
+        gpu: GpuContext,
+        operations: &'static [&'static dyn Operation],
+        modules: &'static [&'static dyn Module],
+        build: &str,
+        wake: impl Fn() + Send + Sync + 'static,
+    ) -> Session {
+        Session::spawn(
+            gpu,
+            operations,
+            modules,
+            build,
+            pipeline::BUDGET,
+            None,
+            Arc::new(wake),
+            open::testing::loading(synthetic),
+        )
+    }
+
+    fn synthetic(_: &Path) -> Result<(open::Metadata, open::Mosaic), SessionError> {
+        use apertrust_modules::testing::{image, mosaic};
+        Ok(open::testing::photo(image(), [96, 72], mosaic()))
+    }
+}
+
 /// How long a test waits for any one thing a session does: on WARP, which compiles every
 /// kernel through FXC on a CPU the tests running beside it share, one step can take
 /// minutes.

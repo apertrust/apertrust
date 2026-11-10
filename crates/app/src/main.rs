@@ -2825,8 +2825,14 @@ impl App {
         let central_bar =
             egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().top()));
 
-        // Until it is live, the photo's picture where one is in hand, else its name.
-        let picture = self.mirror.picture().filter(|_| !live);
+        // Until its first frame, the photo's picture where one is in hand, else its name.
+        let picture = self
+            .mirror
+            .picture()
+            .filter(|_| self.mirror.frame.is_none());
+        if self.mirror.picture().is_none() {
+            self.picture = None;
+        }
         let opening = |path: &Path| {
             let mut args = apertrust_ui::i18n::Args::new();
             args.set("name", file_name(path));
@@ -2839,33 +2845,8 @@ impl App {
             PhotoState::Failed { message, .. } => Some(message.clone()),
             PhotoState::Open(photo) => (!live && picture.is_none()).then(|| opening(&photo.path)),
         };
-        // Where the photo is drawn, at the size the engine renders it at for this room, so
-        // a frame rendered for it is shown pixel for pixel, and one rendered for another
-        // size, as while the window resizes, scaled to the size its successor will have. A
-        // picture before the photo's values, with no extent yet, takes its own shape.
-        let fitted = match (photo, picture) {
-            _ if bounds.0 == 0 || bounds.1 == 0 => Some((0, 0)),
-            (Some(_), _) => Some(self.mirror.values.viewport_size(bounds)),
-            (None, Some((picture, _))) => {
-                Some(fit((picture.image.width, picture.image.height), bounds))
-            }
-            (None, None) => None,
-        };
-        let placed = fitted
-            .filter(|_| photo.is_some() || picture.is_some())
-            .map(|(width, height)| block.place(egui::vec2(width as f32, height as f32) / ppp, ppp));
-        // A failed render keeps the last frame, if any, and says what failed over it.
-        if message.is_none()
-            && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
-        {
-            self.photo_at(ui, slot, placed, frame);
-        } else if let (Some((shown, generation)), Some(placed)) = (picture, &placed) {
-            // The picture as it is, fitted, with no mark (decision 77).
-            let texture = picture_texture(ui.ctx(), &mut self.picture, shown, generation);
-            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-            let painter = ui.painter_at(slot);
-            painter.image(texture.id(), placed.photo, uv, egui::Color32::WHITE);
-        }
+        let values = photo.map(|_| &self.mirror.values);
+        let placed = place_photo(&block, bounds, ppp, values, picture.map(|(p, _)| p));
         // A failed save says so until a write succeeds; a failed render until the next
         // frame. The edit of a photo left, which could not be written, is said over
         // whatever follows, until another photo is asked for.
@@ -2874,6 +2855,18 @@ impl App {
             .failure
             .as_ref()
             .or(self.mirror.saving.failure.as_ref());
+        // A failed render keeps the last frame, if any, and says what failed over it.
+        if message.is_none()
+            && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
+        {
+            self.photo_at(ui, slot, placed, frame);
+        } else if message.is_none()
+            && failure.is_none()
+            && let (Some((shown, generation)), Some(placed)) = (picture, &placed)
+        {
+            let painter = ui.painter_at(slot);
+            paint_picture(&painter, placed, shown, generation, &mut self.picture);
+        }
         let left = self.mirror.saving.left.as_ref().map(|(edit, why)| {
             let mut args = apertrust_ui::i18n::Args::new();
             // The edit's file is the photo's name with `.apxmp` after it.
@@ -2981,16 +2974,62 @@ impl App {
     }
 }
 
-/// The largest size with `size`'s shape that fits `bounds`, in whole pixels: a picture
-/// fitted to the room, as the live frame will be.
+/// The largest size with `size`'s shape that fits `bounds`, never larger than `size`, each
+/// side rounded and at least a pixel, as the engine fits the viewport (`pipeline::fit`).
 fn fit((width, height): (u32, u32), (room_width, room_height): (u32, u32)) -> (u32, u32) {
     if width == 0 || height == 0 {
         return (0, 0);
     }
-    let scale =
-        (f64::from(room_width) / f64::from(width)).min(f64::from(room_height) / f64::from(height));
-    let side = |n: u32| ((f64::from(n) * scale).floor() as u32).max(1);
+    let scale = (f64::from(room_width) / f64::from(width))
+        .min(f64::from(room_height) / f64::from(height))
+        .min(1.0);
+    let side = |n: u32| ((f64::from(n) * scale).round() as u32).max(1);
     (side(width), side(height))
+}
+
+/// Where the photo goes in `block`, for a room of `bounds` physical pixels at `ppp` (the
+/// photo frame's layout, which its caption follows): once the photo's `values` have come,
+/// at the size the engine renders the edit at, so a frame rendered for it is shown pixel
+/// for pixel and one rendered for another size, as while the window resizes, scaled to the
+/// size its successor will have; before them, an opening photo's `picture` in its own
+/// shape (decision 77). `None` with neither.
+fn place_photo(
+    block: &PhotoFrame,
+    bounds: (u32, u32),
+    ppp: f32,
+    values: Option<&Values>,
+    picture: Option<&Picture>,
+) -> Option<Placed> {
+    let (width, height) = match (values, picture) {
+        _ if bounds.0 == 0 || bounds.1 == 0 => (0, 0),
+        (Some(values), _) => values.viewport_size(bounds),
+        (None, Some(picture)) => fit((picture.image.width, picture.image.height), bounds),
+        (None, None) => return None,
+    };
+    Some(block.place(egui::vec2(width as f32, height as f32) / ppp, ppp))
+}
+
+/// Draws an opening photo's `picture` of `generation` as it is, unmarked, letterboxed in
+/// the place the photo takes, `placed`, never larger than itself (decision 77); its
+/// texture made once for each picture and kept in `kept`.
+fn paint_picture(
+    painter: &egui::Painter,
+    placed: &Placed,
+    picture: &Picture,
+    generation: u64,
+    kept: &mut Option<(u64, egui::TextureHandle)>,
+) {
+    let ppp = painter.pixels_per_point();
+    let room = placed.photo.size() * ppp;
+    let image = (picture.image.width, picture.image.height);
+    let (width, height) = fit(image, (room.x.round() as u32, room.y.round() as u32));
+    let size = egui::vec2(width as f32, height as f32) / ppp;
+    let corner = egui::Rect::from_center_size(placed.photo.center(), size).min;
+    let rect =
+        egui::Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(corner, ppp), size);
+    let texture = picture_texture(painter.ctx(), kept, picture, generation);
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
 }
 
 /// The texture of the mirror's picture of a photo opening, `picture` of `generation`, made
@@ -4682,8 +4721,15 @@ mod tests {
         for _ in 0..60 {
             harness.step();
         }
-        assert!(harness.query_by_label("Opening IMG_2041…").is_some());
-        // Live: enabled.
+        let tip = "Opening IMG_2041…";
+        assert!(harness.query_by_role_and_label(Role::Label, tip).is_some());
+        // Screen readers hear it on each row of controls.
+        let described = harness
+            .query_all_by_role(Role::Group)
+            .filter(|row| row.accesskit_node().description().as_deref() == Some(tip))
+            .count();
+        assert!(described > 1, "{described}");
+        // Live: enabled, and nothing said of opening.
         harness
             .state_mut()
             .mirror
@@ -4693,6 +4739,11 @@ mod tests {
             exposure_slider(&harness),
             (String::from("+1.500 EV"), false)
         );
+        let described = harness
+            .query_all_by_role(Role::Group)
+            .filter(|row| row.accesskit_node().description().as_deref() == Some(tip))
+            .count();
+        assert_eq!(described, 0);
     }
 
     /// A photo opening as the app draws it, for the snapshots: the central bar, Rendering…
@@ -4740,6 +4791,8 @@ mod tests {
         }));
         mirror.apply(Event::Values(Values {
             live: false,
+            // Its edit crops it square: the 3:2 picture letterboxed in the square place.
+            extent: [600, 600],
             ..photo_values(1.5, 3)
         }));
         Harness::builder()
@@ -4779,20 +4832,13 @@ mod tests {
                         let ppp = ui.pixels_per_point();
                         let room = block.bounds();
                         let bounds = ((room.x * ppp) as u32, (room.y * ppp) as u32);
-                        let (size, generation) = {
-                            let (picture, generation) =
-                                scene.mirror.picture().expect("the picture");
-                            ((picture.image.width, picture.image.height), generation)
-                        };
-                        let (w, h) = fit(size, bounds);
-                        let placed = block.place(egui::vec2(w as f32, h as f32) / ppp, ppp);
-                        let (picture, _) = scene.mirror.picture().expect("the picture");
-                        let texture =
-                            picture_texture(ui.ctx(), &mut scene.picture, picture, generation);
-                        let uv =
-                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                        ui.painter()
-                            .image(texture.id(), placed.photo, uv, egui::Color32::WHITE);
+                        // As `App::central_panel` places and draws it.
+                        let (picture, generation) = scene.mirror.picture().expect("the picture");
+                        let values = Some(&scene.mirror.values);
+                        let placed = place_photo(&block, bounds, ppp, values, Some(picture))
+                            .expect("a place");
+                        let painter = ui.painter_at(slot);
+                        paint_picture(&painter, &placed, picture, generation, &mut scene.picture);
                     });
                     ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;

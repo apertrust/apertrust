@@ -217,7 +217,7 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 - From the `Open` until live, every command on the edit is refused, `SessionError::NotLive`. A job dropped from the stack before it ran is added again; one that ends early fails its open.
 - Compiled kernels are kept across photos (`pipeline::Kernels`, `Pipeline::with_kernels`, `Pipeline::into_kernels`).
 - Each stage's time from the `Open` is logged under `-d perf`.
-- `open::testing` gives tests synthetic raws, and `Command::HoldDecode` holds a decode with the slot taken.
+- `open::testing` gives tests synthetic raws, and `Command::HoldDecode` holds a decode with the slot taken. Behind the `testing` feature, `session::testing::start` starts a real session on such raws for the tests of the engine's clients, the app's through its dev-dependencies.
 
 ### Events
 
@@ -659,7 +659,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - It returns the reactions the app owes: `Reaction::Jobs`, the jobs window to open or update, and `Reaction::Preview`, a preview for the Export dialog.
 - A refused command's number (`SessionError::Refused`) drops its pending change and the save it would have waited for.
 - It is tested by feeding it event sequences. There is no bus and no subscriptions: panels draw from the mirror each frame.
-- **A photo opening in stages** (decision 77): asked for, the mirror takes the largest thumbnail the folder holds of it as its `Picture`, which `OpenPreview` replaces for its own open where larger or rendered; `Values { live: false }` show read-only (`Shown::Opening`, every control drawn disabled, the module sections' rows saying "Opening IMG_2041…" when hovered); the first live frame drops the picture, the controls enabled in the same apply. `Mirror::rendering` tells the central bar to say Rendering… once the photo is still not live `RENDERING_AFTER`, a second, after the click (`CentralBar::status`). A `NotLive` refusal is dropped with nothing said, and a failure after `Opened` fails the open.
+- **A photo opening in stages** (decision 77): asked for, the mirror takes the largest thumbnail the folder holds of it as its `Picture`, which `OpenPreview` replaces for its own open where larger or rendered; `Values { live: false }` show read-only (`Shown::Opening`, every control drawn disabled, the module sections' rows of controls saying "Opening IMG_2041…" at the pointer and in their AccessKit description); the first live frame drops the picture, the controls enabled in the same apply. The picture is placed and drawn by `place_photo` and `paint_picture`, letterboxed in the photo's place and never enlarged, until the first frame. `Mirror::rendering` tells the central bar to say Rendering… once the photo is still not live `RENDERING_AFTER`, a second, after the click (`CentralBar::status`). A `NotLive` refusal is dropped with nothing said, and a failure after `Opened` fails the open.
 
 ### Planned
 

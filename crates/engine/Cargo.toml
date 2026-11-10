@@ -32,6 +32,11 @@ thiserror.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
 
+[features]
+# A session whose raws are the modules crate's synthetic photo (`session::testing`), for the
+# tests of the engine's clients: the app's, through its dev-dependencies.
+testing = ["apertrust-modules/testing"]
+
 [build-dependencies]
 # The settings generator, which writes the engine's statics from the schema (decision 43).
 apertrust-base = { workspace = true, features = ["codegen"] }
