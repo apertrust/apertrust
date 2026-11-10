@@ -21,7 +21,7 @@ name = "Apertrust.RawImage" => name = "Apertrust.Dev.RawImage"
 
 # linux/org.apertrust.Apertrust.desktop; its icon stays Apertrust's.
 Name=Apertrust => Name=Apertrust Dev
-Exec=apertrust %f => Exec=apertrust-dev %f
+Exec=apertrust --in-folder %F => Exec=apertrust-dev --in-folder %F
 StartupWMClass=apertrust => StartupWMClass=apertrust-dev
 
 # linux/org.apertrust.Apertrust.metainfo.xml

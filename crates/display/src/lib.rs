@@ -48,19 +48,24 @@
 //! On macOS the popup service's plain lists are AppKit's menus (decision 40):
 //! [`pop_up_menu`] shows one from the run loop and answers with the item chosen.
 //!
+//! On macOS the files Finder opens with the app, by a double-click, Open With or a drop on
+//! the Dock icon, come as an open-documents event that winit 0.30 does not deliver:
+//! [`receive_opened_files`] receives them and [`take_opened_files`] hands them to the app.
+//!
 //! On Windows the app is a windowed program, with no console of its own:
 //! [`attach_to_terminal`] attaches it to the terminal it was started from, so what it
 //! prints shows there.
 
 #![allow(
     unsafe_code,
-    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes; on Windows, the console calls that attach the app to its terminal; on Wayland, wayland-client's views of winit's display and toplevels, to set a dialog's parent"
+    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes, the open-documents event's among them; on Windows, the console calls that attach the app to its terminal; on Wayland, wayland-client's views of winit's display and toplevels, to set a dialog's parent"
 )]
 
 mod alert;
 mod console;
 mod dialog;
 mod menu_bar;
+mod opened;
 mod popup_menu;
 mod title_bar;
 
@@ -70,6 +75,7 @@ pub use console::attach_to_terminal;
 pub use dialog::set_parent;
 pub use dialog::{begin_sheet, end_sheet, keep_out_of_tabs, show_without_focus};
 pub use menu_bar::{handling_key_repeat, no_system_full_screen_item};
+pub use opened::{on_opened_files, receive_opened_files, take_opened_files};
 pub use popup_menu::{Appearance, KeyEquivalent, MenuEntry, MenuItem, PopUpMenu, pop_up_menu};
 pub use title_bar::{
     DoubleClick, DragEvent, DragStart, WindowButtons, content_never_moves_window,
@@ -107,8 +113,10 @@ pub enum Error {
     UnknownView,
     #[error("no mouse event to start the drag with")]
     NoEvent,
-    #[error("winit's view has its own {0}, so winit decides")]
+    #[error("winit's class has its own {0}, so winit decides")]
     OwnMethod(&'static str),
+    #[error("the application has no delegate")]
+    NoDelegate,
 }
 
 /// Tags the window's surface as holding `space`, so the system colour-manages it to the

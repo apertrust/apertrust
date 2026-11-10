@@ -234,6 +234,36 @@ fn linux_opens_every_decoded_extension() {
     assert_eq!(declared, ours, "the MIME types shared-mime-info lacks");
 }
 
+/// Open With and a double-click open the files' folder with them, never a photo alone,
+/// which a terminal's `apertrust FILE` opens (`docs/packaging.md`, Opening a raw from the
+/// system): the desktop entry passes every file chosen after `--in-folder`, and the
+/// installer's ProgID and the app's entry pass the one opened.
+#[test]
+fn open_with_passes_in_folder_before_the_files() {
+    let desktop = read("packaging/linux/org.apertrust.Apertrust.desktop");
+    let exec: Vec<&str> = desktop
+        .lines()
+        .filter_map(|line| line.strip_prefix("Exec="))
+        .collect();
+    assert_eq!(exec, ["apertrust --in-folder %F"]);
+    let template = read("packaging/windows/installer.nsi");
+    let opens: Vec<&str> = template
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("WriteRegStr") && line.contains(r"\shell\open\command"))
+        .filter(|line| !line.contains("{{protocol}}"))
+        .collect();
+    assert_eq!(
+        opens.len(),
+        2,
+        "the ProgID's and the app's entry's: {opens:?}"
+    );
+    for line in opens {
+        let wanted = r#"$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --in-folder $\"%1$\""#;
+        assert!(line.ends_with(&format!("\"\" \"{wanted}\"")), "{line}");
+    }
+}
+
 #[test]
 fn the_installer_registers_every_decoded_extension() {
     let config: toml::Table = read("packaging/Packager.toml").parse().expect("TOML");
@@ -431,7 +461,7 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
     }
 
     let desktop = as_dev("packaging/linux/org.apertrust.Apertrust.desktop");
-    for line in ["Name=Apertrust Dev", "Exec=apertrust-dev %f"] {
+    for line in ["Name=Apertrust Dev", "Exec=apertrust-dev --in-folder %F"] {
         assert!(
             desktop.contains(&format!("\n{line}\n")),
             "{line} in {desktop}"

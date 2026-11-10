@@ -100,6 +100,7 @@ tools/compare-cpu.sh --raws 7rv --add toneequal-eigf,bilat [--size PX --hq BOOL]
 
 # The app and the design system
 cargo run --release -p apertrust -- [--user-data-dir DIR] [FILE | FOLDER]   # a raw alone, or a folder
+cargo run --release -p apertrust -- --in-folder FILE...   # as Open With: the folder, the first file active
 cargo run -p apertrust-ui --example gallery    # tokens, themes, icons, components
 UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test gallery   # accept changed snapshots; review them like golden images
 ```
@@ -168,7 +169,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |
 | `apertrust-ui` | The design system (decision 36): tokens, themes, fonts, icons, translation, components; no engine or module types; `apertrust-base` for `settings::Choice` alone |
-| `apertrust-display` | The window's platform code, FFI that may use `unsafe`: display colour, the window frame and menu bar where winit and muda cannot (decision 39), native popups (decision 40), modal dialogs and alerts (decision 41), and the Windows app's terminal, attached to at its start (`docs/packaging.md`, Windows) |
+| `apertrust-display` | The window's platform code, FFI that may use `unsafe`: display colour, the window frame and menu bar where winit and muda cannot (decision 39), native popups (decision 40), modal dialogs and alerts (decision 41), the files Finder opens with the app (decision 46), and the Windows app's terminal, attached to at its start (`docs/packaging.md`, Windows) |
 | `apertrust-op-<id>` | One operation each, in `crates/op/<id>`: Slang kernel, generated WGSL, CPU-side setup, manifest and schema (decision 20) |
 | `apertrust-operations` | The list of built-in operations, in darktable's order |
 | `apertrust-base` | What every program sets up as it starts, nothing about images, colour, the GPU or the UI (decision 43): logging, version, folders, settings, the safe write, darktable's control jobs; the disk cache, planned (decision 76) |
