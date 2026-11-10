@@ -62,8 +62,8 @@ pub struct Open {
 pub enum Action {
     /// File › Open Folder…'s dialog.
     OpenFolder,
-    /// File › Open Image…'s dialog.
-    OpenImage,
+    /// File › Open…'s dialog.
+    OpenFiles,
     /// A folder, a subfolder of the open one, its parent or a recent one, opened at once.
     Open(PathBuf),
     /// Browse's header: open or close it.
@@ -107,7 +107,7 @@ pub enum Missing<'a> {
 #[derive(Clone, Debug, Default)]
 pub struct Keys {
     pub folder: Option<String>,
-    pub image: Option<String>,
+    pub files: Option<String>,
 }
 
 /// What the central panel says while no photo is open.
@@ -384,7 +384,7 @@ fn top_line(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
         let chosen = pull_down(ui, &plus, &plus_name, || plus_menu(&ctx, browse.keys));
         match chosen.as_deref() {
             Some("open-folder") => actions.push(Action::OpenFolder),
-            Some("open") => actions.push(Action::OpenImage),
+            Some("open") => actions.push(Action::OpenFiles),
             _ => {}
         }
     });
@@ -417,7 +417,7 @@ fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
         )),
         Entry::Item(with_keys(
             Item::new("open", words.text("action-open")),
-            &keys.image,
+            &keys.files,
         )),
     ]
 }
@@ -921,7 +921,7 @@ pub fn empty_state(
                 ui.add_space(t.spacing.s);
                 for (id, keys, action) in [
                     ("action-open-folder", &keys.folder, Action::OpenFolder),
-                    ("action-open", &keys.image, Action::OpenImage),
+                    ("action-open", &keys.files, Action::OpenFiles),
                 ] {
                     let words = tr(ui.ctx(), id);
                     let mut button = Button::new(&words).width(width - 2.0 * margin);
@@ -1058,7 +1058,7 @@ mod tests {
     fn keys() -> Keys {
         Keys {
             folder: Some("Ctrl+Shift+O".to_owned()),
-            image: Some("Ctrl+O".to_owned()),
+            files: Some("Ctrl+O".to_owned()),
         }
     }
 
@@ -1556,10 +1556,25 @@ mod tests {
         }
         let folder = harness.get_by_role_and_label(Role::MenuItem, "Open Folder…");
         assert!(!folder.accesskit_node().is_disabled());
-        harness.get_by_role_and_label(Role::MenuItem, "Open Image…");
+        harness.get_by_role_and_label(Role::MenuItem, "Open…");
         folder.click();
         harness.run();
         assert_eq!(*harness.state(), [Action::OpenFolder]);
+        // Its Open… is File › Open…'s, with its key.
+        harness
+            .get_by_role_and_label(Role::Button, "New or open")
+            .click();
+        harness.run();
+        let open = harness.get_by_role_and_label(Role::MenuItem, "Open…");
+        let keys = open
+            .accesskit_node()
+            .data()
+            .keyboard_shortcut()
+            .map(str::to_owned);
+        open.click();
+        harness.run();
+        assert_eq!(keys.as_deref(), Some("Ctrl+O"));
+        assert_eq!(*harness.state(), [Action::OpenFolder, Action::OpenFiles]);
     }
 
     /// ⋯ shows the open folder in the platform's file manager.
@@ -1714,7 +1729,7 @@ mod tests {
                 .collect();
             let keys = Keys {
                 folder: Some("Ctrl+Shift+O".to_owned()),
-                image: Some("Ctrl+O".to_owned()),
+                files: Some("Ctrl+O".to_owned()),
             };
             actions.extend(empty_state(
                 ui,
@@ -1744,7 +1759,7 @@ mod tests {
         );
         folder.click();
         harness.run();
-        harness.get_by_label("Open Image…").click();
+        harness.get_by_label("Open…").click();
         harness.run();
         harness.get_by_label("Portraits").click();
         harness.run();
@@ -1753,7 +1768,7 @@ mod tests {
             *harness.state(),
             [
                 Action::OpenFolder,
-                Action::OpenImage,
+                Action::OpenFiles,
                 Action::Open(PathBuf::from("/photos/Portraits"))
             ]
         );

@@ -63,13 +63,13 @@ Planned, Phase 2. `apertrust FILE` from a terminal opens that one raw alone, for
 - It is never added to the recents and is never what the next start reopens; that stays what was open before it.
 - The grid panel shows the photo alone. Browse's Folders offers its folder first, as Open This Folder, which opens it in folder mode, that photo active, then the recent folders ([In the window](#in-the-window)).
 
-Until it is built, a raw named on the command line opens with its folder, as File › Open Image… does.
+Until it is built, a raw named on the command line opens with its folder, as File › Open… does.
 
 ### Folder mode
 
 Built first, and partly built.
 
-- It opens by File › Open Folder… or Open…, from a folder in Browse's Folders, from Open Recent or the start window ([gui.md](gui.md#the-start-window)), by `apertrust FOLDER`, or by Open With and a double-click on a raw (below).
+- It opens by File › Open Folder… or Open…, a folder or raws dropped onto the window, from a folder in Browse's Folders, from Open Recent or the start window ([gui.md](gui.md#the-start-window)), by `apertrust FOLDER`, or by Open With and a double-click on a raw (below).
 - **Open With and a double-click** (planned) open the photo's folder, that photo active. The photo opens at once and the folder lists in the background. Several files opened together from one folder open it with them selected, the first active; files from several folders open the first file's folder, with those from it selected, and a notice says how many were left.
   - macOS delivers these as an open-documents event, not as arguments, which the app's platform code receives (`apertrust-display`).
   - On Windows and Linux, the installer's and the desktop entry's registrations pass `--in-folder` before the file (planned, [packaging.md](packaging.md#opening-a-raw-from-the-system)), so the app tells them from a terminal's `apertrust FILE`, which opens [one photo](#one-photo).
@@ -184,7 +184,7 @@ Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid 
 - **Keywords** are one module, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
 - **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
 
-- **Built:** File › Open Folder… and the Photos tab's Browse, in folder mode's form: its top line, what is open, listing the recents kept in the user data folder's `state.toml`, with ＋ and ⋯, and Folders alone, the open folder's tree with its count, its subfolders and the way up to its parent; the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
+- **Built:** File › Open Folder…, File › Open… and drag and drop onto the window ([gui.md](gui.md#file)), View › Browse (L), and the Photos tab's Browse, in folder mode's form: its top line, what is open, listing the recents kept in the user data folder's `state.toml`, with ＋ and ⋯, and Folders alone, the open folder's tree with its count, its subfolders and the way up to its parent; the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. Open… and a drop of raws open the first raw at once and its folder behind it, unless that folder is the one shown; selecting the others with it waits for the grid panel's selection (Phase 3). A dropped folder opens as Open Folder… opens one.
 - `apertrust-library` owns the folders, their listing and the sidecars' metadata, and the thumbnail cache's files ([Thumbnails](#thumbnails)).
 - Offline, in the cloud, missing and view-only photos, and a project's roles, carry marks of their own ([gui.md](gui.md#the-photos-tabs-marks)).
 

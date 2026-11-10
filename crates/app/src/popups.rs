@@ -335,7 +335,7 @@ mod tests {
                     "file",
                     "&File",
                     vec![
-                        Item::new("open", "Open Image…").shortcut("Cmd+O").into(),
+                        Item::new("open", "Open…").shortcut("Cmd+O").into(),
                         Entry::Separator,
                         Submenu::new("recent", "Open &Recent", vec![]).into(),
                     ],
@@ -355,7 +355,7 @@ mod tests {
                     entries: vec![
                         MenuEntry::Item(MenuItem {
                             id: "open".to_owned(),
-                            title: "Open Image…".to_owned(),
+                            title: "Open…".to_owned(),
                             enabled: true,
                             on: false,
                             tip: None,

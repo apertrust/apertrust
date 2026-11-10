@@ -143,13 +143,10 @@ impl ActionId {
     ];
 }
 
-/// The old views enum, from before the one view (decision 37), to be removed: only Edit
-/// is built.
+/// The old views enum, from before the one view (decision 37), to become the central
+/// panel's layouts: only Edit is left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
-    // Only the tests' scopes name it now, until the enum goes.
-    #[allow(dead_code)]
-    Library,
     Edit,
 }
 
@@ -196,7 +193,7 @@ pub enum Intent {
     /// never closes itself (`jobs`).
     ShowJobs,
     Settings,
-    /// The platform's open dialog, for one raw (`dialogs`).
+    /// The platform's open dialog, for one or more raws (`dialogs`).
     Open,
     /// The platform's folder dialog: the folder chosen is opened as the library's folder.
     OpenFolder,
@@ -206,6 +203,8 @@ pub enum Intent {
     ExportAgain,
     View(View),
     PanelTab(usize),
+    /// View › Browse: the first tab holding Browse chosen, nothing where it is chosen.
+    ShowBrowse,
     ScaleUp,
     ScaleDown,
     ScaleReset,
@@ -495,8 +494,7 @@ pub static ACTIONS: [Action; 58] = [
         available: no_modal_dialog,
         emits: Emit::Intent(Intent::Settings),
     },
-    // One raw, in place of the photo open, until folder mode's Open… takes several
-    // (`docs/gui.md`, The menu bar, File).
+    // Raws, opening their folder with the first active (`docs/gui.md`, The menu bar, File).
     Action {
         id: ActionId::OPEN,
         message: "action-open",
@@ -617,8 +615,8 @@ pub static ACTIONS: [Action; 58] = [
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: always,
-        emits: Emit::Later,
+        available: on_main_window,
+        emits: Emit::Intent(Intent::ShowBrowse),
     },
     Action {
         id: ActionId::PANEL_TABS[0],
@@ -1749,7 +1747,7 @@ mod tests {
     /// A state in which everything built can run.
     fn everything() -> State {
         State {
-            view: View::Library,
+            view: View::Edit,
             photo: true,
             edited: true,
             photos: 2,
@@ -1792,11 +1790,7 @@ mod tests {
         // Ctrl+1 chooses the first tab there, and Ctrl+= zooms in.
         let accepted = HashSet::from([(ActionId::PANEL_TABS[0], ActionId::SCALE_UP)]);
         for os in PLATFORMS {
-            for scope in [
-                Scope::App,
-                Scope::View(View::Edit),
-                Scope::View(View::Library),
-            ] {
+            for scope in [Scope::App, Scope::View(View::Edit)] {
                 let found = conflicts(os, [scope, scope]);
                 let expected = if scope == Scope::App {
                     accepted.clone()
@@ -1812,10 +1806,8 @@ mod tests {
     fn no_view_key_hides_an_app_key_by_default() {
         // The narrowest scope wins, so a view key that is one press with an app key hides it.
         for os in PLATFORMS {
-            for view in [View::Edit, View::Library] {
-                let found = conflicts(os, [Scope::App, Scope::View(view)]);
-                assert!(found.is_empty(), "{os:?}, {view:?}: {found:?}");
-            }
+            let found = conflicts(os, [Scope::App, Scope::View(View::Edit)]);
+            assert!(found.is_empty(), "{os:?}: {found:?}");
         }
     }
 
@@ -2089,7 +2081,7 @@ mod tests {
     }
 
     #[test]
-    fn open_image_takes_the_command_key_with_o_and_runs_with_no_photo_open() {
+    fn open_takes_the_command_key_with_o_and_runs_with_no_photo_open() {
         let en = Translator::new(Locale::EnGb);
         for (os, keys) in [
             (OperatingSystem::Windows, "Ctrl+O"),
@@ -2101,7 +2093,7 @@ mod tests {
             assert_eq!(keymap.keys(ActionId::OPEN).len(), 1, "{os:?}");
         }
         let open = action(ActionId::OPEN).expect("declared");
-        assert_eq!(en.text(open.message), "Open Image…");
+        assert_eq!(en.text(open.message), "Open…");
         assert_eq!(open.emits, Emit::Intent(Intent::Open));
         let mut state = everything();
         (state.photo, state.edited, state.photos) = (false, false, 0);
@@ -2479,10 +2471,9 @@ mod tests {
             [key(Modifiers::COMMAND, Key::E)]
         );
 
-        // Keys of two views never work at once.
-        let (edit, library) = (Scope::View(View::Edit), Scope::View(View::Library));
-        assert!(!together(edit, library));
-        assert!(together(edit, Scope::App) && together(Scope::App, library));
+        // A view's keys work with the app's.
+        let edit = Scope::View(View::Edit);
+        assert!(together(edit, Scope::App) && together(Scope::App, edit));
     }
 
     #[test]

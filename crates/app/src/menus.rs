@@ -1047,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    fn open_image_comes_first_in_file_on_every_platform() {
+    fn open_comes_first_in_file_on_every_platform() {
         for os in PLATFORMS {
             let file = menus(os)
                 .find(|menu| menu.title == "menu-file")
@@ -1306,7 +1306,7 @@ mod tests {
                 ("menu-help", "&Help"),
             ]
         );
-        // File: Open Image…, Import and Export, Quit, in groups that lines separate.
+        // File: Open…, Import and Export, Quit, in groups that lines separate.
         let file = tops(&menu)[0];
         let separators = |s: &popup::Submenu| {
             s.entries
@@ -1317,9 +1317,7 @@ mod tests {
         assert_eq!(separators(file), 2);
         assert_eq!(
             file.entries[0],
-            popup::Item::new("open", "Open Image…")
-                .shortcut("Ctrl+O")
-                .into()
+            popup::Item::new("open", "Open…").shortcut("Ctrl+O").into()
         );
         let all = items(&menu.entries);
         let find = |id: ActionId| {
