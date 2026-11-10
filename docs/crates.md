@@ -452,6 +452,10 @@ The photo and its caption are one block in the central panel's slot, under the c
 
 In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `src/mirror.rs`.
 
+**From the command line.** `arguments` in `src/main.rs` reads the first path beside the flags and asks the disk what it is (`dropped::found`) before the window opens: a folder opens in folder mode (`App::open_folder`), a raw, told by its name, alone (`Start::Photo`, `App::open_alone`). A library's or a project's file until Phase 5, another file, or nothing there stops the start with a line on stderr saying why and status 2, as a flag without its folder does. The path is made absolute from the folder the app starts in.
+
+**One photo** (`docs/library.md`, One photo). `FolderState::alone` makes the mirror's folder `Folder::Alone`, the photo and its one cell, with no library command sent: nothing is listed or indexed, no thumbnail is asked for, so nothing is written but the photo's edit, and no `Reaction::FolderOpened` comes, so the recents never hold it. The grid panel holds that cell alone, its edit mark following the session's values (`FolderState::edited`). Browse's top line names the photo with the photo icon, and its Folders holds Open This Folder alone (`browse-open-this-folder`), the photo's folder in its tooltip; it, and ⋯'s Open This Folder, open the folder in folder mode, the photo staying open and becoming its active cell once listed; ⋯'s Show in Finder shows the photo in its folder. Open…, a drop or a recent then opens folder mode as from any other state. Snapshot `photos-tab-alone`.
+
 **Opening a folder.**
 
 - File › Open Folder… (`open-folder`, Ctrl+Shift+O, in the group after Open…) shows rfd's asynchronous folder dialog. It starts in the open folder, else the open photo's, else Pictures.
@@ -692,7 +696,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Switched modules** (decision 32): a module's reset available only while the session reports it edited, a switched module while it is on, or while a change is pending; a switched module that is off told to screen readers as "Not applied", with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
-- **The ways in** (decision 46): `apertrust FILE` opening one photo alone; `--in-folder FILE…` and macOS's open-documents event, through `apertrust-display`, opening the photo's folder with it active; Browse for one photo, with Open This Folder; the start window, what was open last reopened at the start, and File › Close ([docs/gui.md](gui.md), The start window).
+- **The ways in** (decision 46): `--in-folder FILE…` and macOS's open-documents event, through `apertrust-display`, opening the photo's folder with it active; the start window, what was open last reopened at the start, and File › Close ([docs/gui.md](gui.md), The start window).
 
 ## apertrust-ui
 

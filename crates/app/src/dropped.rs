@@ -93,11 +93,18 @@ fn named_raw(path: &Path) -> bool {
 
 /// What `path` is, asked of the disk: a folder, else a file told by its name.
 pub fn kind(path: &Path) -> Kind {
-    match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_dir() => Kind::Folder,
-        Ok(_) => file_kind(path),
-        Err(_) => Kind::Other,
-    }
+    found(path).unwrap_or(Kind::Other)
+}
+
+/// What `path` is, as [`kind`] says, or why the disk cannot say, as for nothing there:
+/// what the command line names is told so (`main.rs`, `arguments`).
+pub fn found(path: &Path) -> std::io::Result<Kind> {
+    let metadata = std::fs::metadata(path)?;
+    Ok(if metadata.is_dir() {
+        Kind::Folder
+    } else {
+        file_kind(path)
+    })
 }
 
 /// What dropping `paths` opens, each asked with `kind` in order until the first that
@@ -261,7 +268,7 @@ pub(crate) mod tests {
     }
 
     /// The kinds the disk would answer, by name: a folder where the name has no dot.
-    fn by_name(path: &Path) -> Kind {
+    pub(crate) fn by_name(path: &Path) -> Kind {
         let name = path
             .file_name()
             .and_then(|n| n.to_str())

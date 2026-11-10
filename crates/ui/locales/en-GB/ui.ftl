@@ -501,6 +501,9 @@ action-new-project = New Project…
 browse-parent = Up to { $name }
 browse-folder-menu = { $name } menu
 browse-open-row = Open
+# A photo opened alone: Folders' one row and Browse's option, which open its folder in
+# folder mode, the photo active.
+browse-open-this-folder = Open This Folder
 # Under a folder in the tree whose subfolders are being listed.
 browse-reading = Reading…
 # Under a folder in the tree whose subfolders could not be listed; the reason is in its tooltip.
