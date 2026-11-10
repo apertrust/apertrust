@@ -184,14 +184,14 @@ Every colour, size and duration a component uses is a token: a named value in th
 
 | Group | Tokens | Notes |
 | --- | --- | --- |
-| Colour | Surfaces (surface for the top panel and the bars, panel, raised, sunken); the scrim under About and, once designed, the splash screen, and the drop shadow round hosted windows on Wayland, and on Windows once its dialogs are undecorated (decision 41); text (primary, strong, secondary, disabled); border, divider, separator; the outline of a control that is only an outline at rest, `ToggleRow`'s checkbox (`control_outline`, 3:1 on `panel` and `sunken`; `text_secondary` under the pointer); accent, accent text, focus ring, selection, and the value field's neutral selection; slider track, fill, handle (with its hover and drag looks); kept marker; scroll bar thumb (with its hover and drag looks); a histogram behind a graph (`graph_histogram`); warning, error, success; shadow and highlight clipping; mask overlay; the close button's hover; the colour labels, darktable's five; a scrim over thumbnails | Authored in sRGB (`ui-conventions`) |
+| Colour | Surfaces (surface for the top panel and the bars, panel, raised, sunken); the scrim under About and, once designed, the splash screen, and the drop shadow round hosted windows on Wayland, and on Windows once its dialogs are undecorated (decision 41); text (primary, strong, secondary, disabled); border, divider, separator; menus' neutral hover and the text on it, faint edge and shadow (`menu_hover`, `text_on_menu_hover`, `menu_edge`, `menu_shadow`); the outline of a control that is only an outline at rest, `ToggleRow`'s checkbox (`control_outline`, 3:1 on `panel` and `sunken`; `text_secondary` under the pointer); accent, accent text, focus ring, selection, and the value field's neutral selection; slider track, fill, handle (with its hover and drag looks); kept marker; scroll bar thumb (with its hover and drag looks); a histogram behind a graph (`graph_histogram`); warning, error, success; shadow and highlight clipping; mask overlay; the close button's hover; the colour labels, darktable's five; a scrim over thumbnails | Authored in sRGB (`ui-conventions`) |
 | Photo surround | The background around the photos in the central panel, in Photo and in the slideshow | Neutral grey only (a* = b* = 0), so it never tints how colour is judged |
 | Surround text | Text on the photo surround: the caption under the photo, its file name, exposure and the marks of its rating and labels | Checked at 4.5:1 against the surround, which the light theme's mid grey fails with the panels' secondary text |
 | Typography | Body 13, small 12, caption 11, title 14, section title 15 (a module's header), heading; Regular, Medium and SemiBold (decision 36), headings and group labels Medium, SemiBold only where it marks a choice ([below](#quieter-icons-lighter-headings-2-point-borders)) | Points, before scaling |
 | Spacing | A scale: 2, 4, 6, 8, 12, 16, 24 | Density picks the scale |
 | Sizes | Row 26, control 22, a module row's field 18, icons 14 and 16, section header 30 and panel line 24, top panel 44, slider row 37, its track strip 16, marker 16, value 54 | [How the rows are laid out](#how-the-rows-are-laid-out); `control` stays for the bars, the headers, segmented controls and egui's own widgets, `field` is the rows' |
-| Shape | Radii 3, 4 and 5; hairlines 1; panel separators 2 (`separator_width`); slider track 4 | |
-| Elevation | A shadow and border for menus, drawn popups and About | A dialog's window on Wayland has the host's drawn border and shadow; elsewhere the system's shadow (decision 41) |
+| Shape | Radii 3, 4 and 5; menus and the popup service's lists, a choice's included, 8 (`menu_radius`), tooltips and About 6 (`popup_radius`); hairlines 1, a popup's faint edge a half point (`popup_hairline`), a full point in the high-contrast theme; panel separators 2 (`separator_width`); slider track 4 | |
+| Elevation | A soft shadow and faint edge for menus, drawn popups, tooltips and About; `menu_shadow` and `menu_edge`, offset, blur and spread in `elevation` | A dialog's window on Wayland has the host's drawn border and shadow; elsewhere the system's shadow (decision 41); the high-contrast theme's popup edge is full-strength and a full point |
 | Motion | Durations for hover, opening and closing | Zero when the user or the system asks for reduced motion |
 
 Colours that are data are not tokens: a hue track shows real hues, and a scope shows the photo's channels.
@@ -206,6 +206,7 @@ A theme is a full set of token values, stored as TOML in `crates/ui/themes`.
 - **The accent is amber** in every theme, and rare ([Product choices](#product-choices)).
 - **Every theme is checked when it loads:**
   - text against its background, for WCAG AA contrast (4.5:1, and 3:1 for large text and controls);
+  - a menu's chosen line: its `menu_hover` band apart from `raised` in every theme, `text_on_menu_hover` on it at 4.5:1; in the high-contrast theme and any theme extending it, the band 3:1 against `raised`, its text at 7:1 and `text_disabled` on it at 3:1, each problem named once;
   - the photo surround, for neutrality;
   - the slider row's height, at least its top line, its track's strip and the padding under them (`sizes.field + sizes.track_strip + spacing.xxs`); what is left is its padding above, a point in the built-in themes.
 
@@ -813,17 +814,18 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 
 #### The drawn menus
 
-The ☰'s menu on Windows and Linux, drawn by the popup service as its pull-downs are (decisions 39 and 40), and later the browser's. The ☰ is an icon button like the top panel's others; its menu opens under it on `raised` with the menus' elevation, and scales with the interface, which native menus do not. A submenu opens beside its line, towards the end where it fits, else towards the start. Built on Windows and Linux.
+The ☰'s menu on Windows and Linux, drawn by the popup service as its pull-downs are (decisions 39 and 40), and later the browser's. The ☰ is an icon button like the top panel's others; its menu opens under it on `raised` with 8-point corners, a half-point `menu_edge` (a full point in the high-contrast theme) and the soft `menu_shadow`, and scales with the interface, which native menus do not. A submenu opens beside its line, towards the end where it fits, else towards the start. Built on Windows and Linux.
 
 | State | Looks | Does |
 | --- | --- | --- |
 | The ☰ at rest, under the pointer, focused | As the top panel's other icon buttons | Opens the menu on a click, Enter, Space, ↓ or F10; while it is open, a click or F10 closes it |
 | Open | The ☰ marked as pressed; the menu under it, listing the menus as submenus | ↓ and ↑ move through its items, wrapping round, separators skipped; → opens a submenu and ← closes it; Esc closes a level, and the last returns focus to what had it; plain keys and typed text are the menu's alone (decision 40); a key with a modifier or an F-key that runs an action closes it, and so does a dialog opening |
-| Item under the pointer or keys | `selection` behind it | A click, Enter or Space runs it; a letter moves to the next item starting with it |
+| Item under the pointer or keys | A 5-point-cornered `menu_hover` band, never the accent, which the popup service's lists, a choice's included, share with its text; its words, key and marks in `text_on_menu_hover`, which is `text_strong` in the dark and light themes; the high-contrast theme's band is white with black text, as the system's own high-contrast mode draws it, a disabled line on it in `text_disabled` (3.4:1) | A click, Enter or Space runs it; a letter moves to the next item starting with it |
 | Disabled | Disabled text | Still reached by the keys and read as unavailable, so screen-reader users learn it exists; does nothing |
 | Checked | The `check` icon at its start, since IBM Plex Sans may lack ✓ | Read as checked |
 | Submenu | A chevron at its end | Opens on →, Enter or Space, or once the pointer has rested 0.2 s on its line, which also closes another level's submenu, so the pointer can cross other lines on its way; ← closes it. The pause is a constant (`PAUSE`), not a motion token: it reads intent, and nothing moves |
-| Key | At its end, in secondary text | — |
+| Key | At its end, in 12-point secondary text | — |
+| Separator | `menu_edge`, with 5 points above and below and an 8-point inset | Skipped by the keys and never focused, but read as a separator, so screen-reader users learn it exists |
 | A top-level menu's access key | Underlined while Alt is held | Alt with the letter, from anywhere, opens the ☰'s menu with that menu expanded |
 | A press outside | — | Closes every level, gives no focus back, since the press goes on to what it landed on, which takes the focus itself; the press is not swallowed |
 

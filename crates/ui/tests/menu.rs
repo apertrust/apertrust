@@ -534,6 +534,19 @@ fn screen_readers_read_it_as_a_menu() {
             .parent()
             .is_some_and(|parent| parent.label().as_deref() == Some("File"))
     );
+    // Separators are read as separators, each in its menu, and never take the focus.
+    let mut menus = Vec::new();
+    for separator in harness.get_all_by_role(Role::Splitter) {
+        let node = separator.accesskit_node();
+        assert!(!node.data().supports_action(egui::accesskit::Action::Focus));
+        let mut menu = node.parent();
+        while let Some(above) = menu.as_ref().filter(|above| above.role() != Role::Menu) {
+            menu = above.parent();
+        }
+        menus.push(menu.and_then(|menu| menu.label()).unwrap_or_default());
+    }
+    menus.sort();
+    assert_eq!(menus, ["File", "File", "Menu"]);
 }
 
 /// Presses `key`, as a keyboard sends it with the text it types, if any.

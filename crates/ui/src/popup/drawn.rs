@@ -43,7 +43,7 @@
 
 use std::sync::Arc;
 
-use egui::accesskit::{HasPopup, Role};
+use egui::accesskit::{HasPopup, Orientation, Role};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
     Area, Color32, Context, Event, FontFamily, FontId, Frame, Id, Key, Order, Pos2, RawInput, Rect,
@@ -526,7 +526,7 @@ fn draw(ctx: &Context, id: Id, open: &mut Open) -> Pointer {
         let dropdown = open.request.kind == Kind::Dropdown;
         let mut layout = Layout::of(ctx, &t, entries, level == 0, dropdown);
         // The frame's border and margin round the lines.
-        let edge = t.spacing.xs + t.shape.hairline;
+        let edge = t.spacing.xs + t.shape.popup_hairline;
         let anchor = open.request.anchor;
         if dropdown {
             // At least as wide as what it hangs from.
@@ -580,6 +580,7 @@ fn draw(ctx: &Context, id: Id, open: &mut Open) -> Pointer {
         let mut lines = Vec::new();
         let response = area.show(ctx, |ui| {
             Frame::menu(ui.style())
+                .corner_radius(t.shape.menu_radius)
                 .inner_margin(t.spacing.xs)
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -796,9 +797,9 @@ impl Layout {
         } else {
             FontId::proportional(t.text.body)
         };
-        let measure = |text: &str| {
+        let measure = |text: &str, font: FontId| {
             ctx.fonts_mut(|f| {
-                f.layout_no_wrap(text.to_owned(), font.clone(), t.colors.text)
+                f.layout_no_wrap(text.to_owned(), font, t.colors.text)
                     .size()
                     .x
             })
@@ -812,13 +813,13 @@ impl Layout {
                     if item.checked.is_some() {
                         check = Icon::Check.size() + t.spacing.s;
                     }
-                    words_width = words_width.max(measure(&item.text));
+                    words_width = words_width.max(measure(&item.text, font.clone()));
                     if let Some(keys) = &item.shortcut {
-                        end = end.max(measure(keys));
+                        end = end.max(measure(keys, key_font(t)));
                     }
                 }
                 Entry::Submenu(_) => {
-                    words_width = words_width.max(measure(&shown(entry, top).0));
+                    words_width = words_width.max(measure(&shown(entry, top).0, font.clone()));
                     end = end.max(Icon::Chevron.size());
                 }
                 Entry::Separator => {}
@@ -828,6 +829,11 @@ impl Layout {
         let width = t.spacing.m + check + words_width.ceil() + gap + end.ceil() + t.spacing.m;
         Layout { check, width }
     }
+}
+
+/// The font of an item's keys, at its end.
+fn key_font(t: &Theme) -> FontId {
+    FontId::proportional(t.text.small)
 }
 
 /// One line of a level.
@@ -850,12 +856,20 @@ impl Line<'_> {
     /// Draws it; its response, but for a separator.
     fn show(self, ui: &mut Ui, t: &Theme, layout: &Layout) -> Option<Response> {
         if let Entry::Separator = self.entry {
-            let (_, rect) = ui.allocate_space(vec2(layout.width, t.spacing.m));
+            let (id, rect) = ui.allocate_space(vec2(layout.width, t.spacing.m + t.spacing.xxs));
             ui.painter().hline(
-                rect.x_range().shrink(t.spacing.xs),
+                rect.x_range().shrink(t.spacing.m),
                 rect.center().y,
-                Stroke::new(t.shape.hairline, t.colors.divider),
+                Stroke::new(t.shape.popup_hairline, t.colors.menu_edge),
             );
+            // Read as a separator, which the keys never focus. Read-only: a menu's separator
+            // never moves, as a splitter between panes can.
+            ui.interact(rect, id, Sense::hover())
+                .widget_info(|| WidgetInfo::new(Role::Splitter));
+            ui.ctx().accesskit_node_builder(id, |node| {
+                node.set_orientation(Orientation::Horizontal);
+                node.set_read_only();
+            });
             return None;
         }
         let (_, rect) = ui.allocate_space(vec2(layout.width, t.sizes.row));
@@ -868,12 +882,14 @@ impl Line<'_> {
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             if self.chosen {
-                painter.rect_filled(rect, t.shape.radius_small, t.colors.selection);
+                painter.rect_filled(rect, t.shape.radius_large, t.colors.menu_hover);
             }
-            let (colour, secondary) = if enabled {
-                (t.colors.text, t.colors.text_secondary)
-            } else {
+            let (colour, secondary) = if !enabled {
                 (t.colors.text_disabled, t.colors.text_disabled)
+            } else if self.chosen {
+                (t.colors.text_on_menu_hover, t.colors.text_on_menu_hover)
+            } else {
+                (t.colors.text, t.colors.text_secondary)
             };
             let mut x = rect.left() + t.spacing.m;
             if checked == Some(true) {
@@ -900,11 +916,7 @@ impl Line<'_> {
             );
             let end = rect.right() - t.spacing.m;
             if let Some(keys) = shortcut {
-                let galley = painter.layout_no_wrap(
-                    keys.to_owned(),
-                    FontId::proportional(t.text.body),
-                    secondary,
-                );
+                let galley = painter.layout_no_wrap(keys.to_owned(), key_font(t), secondary);
                 painter.galley(
                     pos2(
                         end - galley.size().x,

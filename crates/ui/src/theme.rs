@@ -142,7 +142,12 @@ pub struct Theme {
     pub spacing: Spacing,
     pub sizes: Sizes,
     pub shape: Shape,
+    pub elevation: Elevation,
     pub motion: Motion,
+    /// The built-in theme this one is or extends, whatever it is named; none for a theme
+    /// file that extends none. The high-contrast theme's own rules follow it.
+    #[serde(skip)]
+    base: Option<Builtin>,
 }
 
 /// Colours by role, authored in sRGB as `#RRGGBB` or `#RRGGBBAA`.
@@ -192,6 +197,12 @@ pub struct Colors {
     pub text_on_accent: Color32,
     #[serde(with = "hex")]
     pub border: Color32,
+    /// The faint edge of a menu, drawn popup or tooltip.
+    #[serde(with = "hex")]
+    pub menu_edge: Color32,
+    /// The soft shadow under a menu, drawn popup or tooltip.
+    #[serde(with = "hex")]
+    pub menu_shadow: Color32,
     /// The edge of a control that is only an outline at rest, as an unticked checkbox: 3:1
     /// against the panel and the well it is drawn on.
     #[serde(with = "hex")]
@@ -223,6 +234,14 @@ pub struct Colors {
     /// Behind a control under the pointer.
     #[serde(with = "hex")]
     pub hover: Color32,
+    /// Behind the chosen line of a menu or dropdown: neutral, never the accent.
+    #[serde(with = "hex")]
+    pub menu_hover: Color32,
+    /// The words, key and marks of the chosen line on `menu_hover`: `text_strong` in the
+    /// dark and light themes; dark on a light band in high contrast, as the system's own
+    /// high-contrast mode draws it.
+    #[serde(with = "hex")]
+    pub text_on_menu_hover: Color32,
     /// Behind the chosen line of a list of places, as the Settings dialog's chosen page:
     /// apart from both `sunken`, the list's ground, and `hover`.
     #[serde(with = "hex")]
@@ -392,13 +411,30 @@ pub struct Shape {
     pub radius_small: f32,
     pub radius: f32,
     pub radius_large: f32,
+    /// The corners of a menu and every list the popup service draws, a choice's included:
+    /// one look for every drawn popup. Its chosen line uses `radius_large`.
+    pub menu_radius: f32,
+    /// The corners of a tooltip, About, and egui's own windows and menus.
+    pub popup_radius: f32,
     pub hairline: f32,
+    /// The faint edge of a menu, drawn popup or tooltip: a half point, a full one in the
+    /// high-contrast theme.
+    pub popup_hairline: f32,
     /// The border between the window's panels (the top panel, the side panel, the central
     /// bar, the grid panel), in `separator`'s colour: 2 points. Lines inside a panel stay
     /// `hairline`.
     pub separator_width: f32,
     /// A slider's track, and the moved part drawn on it.
     pub track: f32,
+}
+
+/// The shadow beneath menus, drawn popups and tooltips, in points.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Elevation {
+    pub shadow_offset: [i8; 2],
+    pub shadow_blur: u8,
+    pub shadow_spread: u8,
 }
 
 /// Durations in milliseconds; zero when motion is reduced.
@@ -431,6 +467,11 @@ pub enum Issue {
         ratio: f32,
         minimum: f32,
     },
+    /// A token is the very colour of the background it marks something on.
+    Unseen {
+        token: &'static str,
+        against: &'static str,
+    },
     /// The photo's surround has a tint, or is transparent.
     NotNeutral { token: &'static str },
     /// A size smaller than the parts it holds, which would then spill out of it.
@@ -454,6 +495,12 @@ impl fmt::Display for Issue {
                 f,
                 "{token} on {against} has a contrast of {ratio:.1}:1, below {minimum}:1"
             ),
+            Issue::Unseen { token, against } => {
+                write!(
+                    f,
+                    "{token} is the same colour as {against}, so it cannot be seen"
+                )
+            }
             Issue::NotNeutral { token } => {
                 write!(f, "{token} must be an opaque neutral grey")
             }
@@ -473,11 +520,18 @@ impl fmt::Display for Issue {
 /// WCAG AA: body text, and large text and the parts of controls.
 const TEXT: f32 = 4.5;
 const CONTROL: f32 = 3.0;
+/// WCAG AAA for body text, which the high-contrast theme promises.
+const TEXT_AAA: f32 = 7.0;
 
 impl Theme {
     /// A built-in theme. They are compiled in and tested, so this cannot fail.
     pub fn builtin(which: Builtin) -> Theme {
-        toml::from_str(which.source()).expect("the built-in themes parse; tested")
+        let theme: Theme =
+            toml::from_str(which.source()).expect("the built-in themes parse; tested");
+        Theme {
+            base: Some(which),
+            ..theme
+        }
     }
 
     /// Reads a theme file: a full theme, or one that `extends` a built-in theme and
@@ -492,11 +546,15 @@ impl Theme {
             Builtin::from_id(base).ok_or_else(|| ThemeError::UnknownBase(base.to_owned()))?;
         let mut merged: toml::Table = builtin.source().parse()?;
         merge(&mut merged, table);
-        Ok(merged.try_into()?)
+        let theme: Theme = merged.try_into()?;
+        Ok(Theme {
+            base: Some(builtin),
+            ..theme
+        })
     }
 
-    /// Checks the theme for readable text and controls, for a neutral surround, and for a
-    /// slider row tall enough for its parts.
+    /// Checks the theme for readable text and controls, for a menu's chosen line that
+    /// shows, for a neutral surround, and for a slider row tall enough for its parts.
     pub fn check(&self) -> Vec<Issue> {
         let c = &self.colors;
         let pairs = [
@@ -603,9 +661,37 @@ impl Theme {
                 CONTROL,
             ),
         ];
-        let mut issues: Vec<Issue> = pairs
-            .into_iter()
-            .filter_map(|(token, fg, against, bg, minimum)| {
+        // A menu's chosen line: a band that shows on `raised`, its text readable on it. The
+        // high-contrast theme, and any theme extending it, holds the band to a control's
+        // part's ratio, its text to AAA's and a disabled line to a control's.
+        let high_contrast = self.base == Some(Builtin::HighContrast);
+        let mut menu_band = vec![(
+            "text_on_menu_hover",
+            c.text_on_menu_hover,
+            "menu_hover",
+            c.menu_hover,
+            if high_contrast { TEXT_AAA } else { TEXT },
+        )];
+        if high_contrast {
+            menu_band.push((
+                "text_disabled",
+                c.text_disabled,
+                "menu_hover",
+                c.menu_hover,
+                CONTROL,
+            ));
+        }
+        let mut issues = Vec::new();
+        if c.menu_hover == c.raised {
+            issues.push(Issue::Unseen {
+                token: "menu_hover",
+                against: "raised",
+            });
+        } else if high_contrast {
+            menu_band.push(("menu_hover", c.menu_hover, "raised", c.raised, CONTROL));
+        }
+        issues.extend(pairs.into_iter().chain(menu_band).filter_map(
+            |(token, fg, against, bg, minimum)| {
                 let ratio = contrast(fg, bg);
                 (ratio < minimum).then_some(Issue::Contrast {
                     token,
@@ -613,8 +699,8 @@ impl Theme {
                     ratio,
                     minimum,
                 })
-            })
-            .collect();
+            },
+        ));
         // The caption reads on every background the user can choose.
         for &(background, id) in Background::OPTIONS {
             let grey = background.grey();
@@ -668,6 +754,8 @@ impl Theme {
             ("text_disabled", c.text_disabled),
             ("text_on_accent", c.text_on_accent),
             ("border", c.border),
+            ("menu_edge", c.menu_edge),
+            ("menu_shadow", c.menu_shadow),
             ("control_outline", c.control_outline),
             ("divider", c.divider),
             ("separator", c.separator),
@@ -678,6 +766,8 @@ impl Theme {
             ("selection", c.selection),
             ("field_selection", c.field_selection),
             ("hover", c.hover),
+            ("menu_hover", c.menu_hover),
+            ("text_on_menu_hover", c.text_on_menu_hover),
             ("list_chosen", c.list_chosen),
             ("close_hover", c.close_hover),
             ("text_on_close_hover", c.text_on_close_hover),
@@ -723,14 +813,21 @@ impl Theme {
         } else {
             egui::Visuals::light()
         };
-        let radius = |r: f32| CornerRadius::same(r.round().clamp(0.0, 255.0) as u8);
         let hairline = |color| Stroke::new(self.shape.hairline, color);
 
         v.panel_fill = c.panel;
         v.window_fill = c.raised;
-        v.window_stroke = hairline(c.border);
-        v.window_corner_radius = radius(self.shape.radius_large);
-        v.menu_corner_radius = radius(self.shape.radius_large);
+        v.window_stroke = Stroke::new(self.shape.popup_hairline, c.menu_edge);
+        v.window_corner_radius = radius(self.shape.popup_radius);
+        v.menu_corner_radius = radius(self.shape.popup_radius);
+        let shadow = egui::Shadow {
+            offset: self.elevation.shadow_offset,
+            blur: self.elevation.shadow_blur,
+            spread: self.elevation.shadow_spread,
+            color: c.menu_shadow,
+        };
+        v.window_shadow = shadow;
+        v.popup_shadow = shadow;
         v.faint_bg_color = c.surface;
         v.extreme_bg_color = c.sunken;
         v.text_edit_bg_color = Some(c.sunken);
@@ -827,6 +924,11 @@ impl Theme {
         }
         self
     }
+}
+
+/// A radius token as egui's corners, which are whole points from 0 to 255.
+fn radius(r: f32) -> CornerRadius {
+    CornerRadius::same(r.round().clamp(0.0, 255.0) as u8)
 }
 
 /// The WCAG contrast ratio of two opaque sRGB colours, from 1:1 to 21:1.
@@ -1025,6 +1127,116 @@ mod tests {
     }
 
     #[test]
+    fn a_menu_s_chosen_line_shows_and_stands_out_in_high_contrast() {
+        let same = Theme::from_toml(
+            r##"
+            extends = "dark"
+            [colors]
+            menu_hover = "#363636"
+            "##,
+        )
+        .unwrap();
+        let unseen = Issue::Unseen {
+            token: "menu_hover",
+            against: "raised",
+        };
+        assert_eq!(same.check(), vec![unseen.clone()]);
+        assert_eq!(
+            unseen.to_string(),
+            "menu_hover is the same colour as raised, so it cannot be seen"
+        );
+        // A dark band with light text, as the dark theme's, apart from raised but far under
+        // 3:1, would be too faint in high contrast.
+        let faint = Theme::from_toml(
+            r##"
+            extends = "high-contrast"
+            [colors]
+            menu_hover = "#333333"
+            text_on_menu_hover = "#FFFFFF"
+            "##,
+        )
+        .unwrap();
+        assert!(matches!(
+            faint.check().as_slice(),
+            [Issue::Contrast {
+                token: "menu_hover",
+                against: "raised",
+                minimum: CONTROL,
+                ..
+            }]
+        ));
+        let dark = Theme::builtin(Builtin::Dark).colors;
+        assert!(contrast(dark.menu_hover, dark.raised) < CONTROL);
+        // Its text is held to AAA there, which AA's 4.5:1 does not meet; text failing both
+        // is named once, against the stricter.
+        for grey in ["#666666", "#BBBBBB"] {
+            let grey_text = Theme::from_toml(&format!(
+                "extends = \"high-contrast\"\n[colors]\ntext_on_menu_hover = \"{grey}\"\n"
+            ))
+            .unwrap();
+            assert!(
+                matches!(
+                    grey_text.check().as_slice(),
+                    [Issue::Contrast {
+                        token: "text_on_menu_hover",
+                        against: "menu_hover",
+                        minimum: TEXT_AAA,
+                        ..
+                    }]
+                ),
+                "{grey}"
+            );
+        }
+        // A disabled line on the band stays readable there.
+        let light_disabled = Theme::from_toml(
+            r##"
+            extends = "high-contrast"
+            [colors]
+            text_disabled = "#B0B0B0"
+            "##,
+        )
+        .unwrap();
+        assert!(matches!(
+            light_disabled.check().as_slice(),
+            [Issue::Contrast {
+                token: "text_disabled",
+                against: "menu_hover",
+                minimum: CONTROL,
+                ..
+            }]
+        ));
+        // A band the very colour of raised is named once, as unseen, in high contrast too.
+        let unseen_there = Theme::from_toml(
+            r##"
+            extends = "high-contrast"
+            [colors]
+            menu_hover = "#0A0A0A"
+            text_on_menu_hover = "#FFFFFF"
+            text_disabled = "#8C8C8C"
+            "##,
+        )
+        .unwrap();
+        assert_eq!(unseen_there.check(), vec![unseen.clone()]);
+        // The rules follow the theme a file extends, whatever it is named.
+        let renamed = Theme::from_toml(
+            r##"
+            extends = "high-contrast"
+            name = "Mine"
+            [colors]
+            menu_hover = "#333333"
+            text_on_menu_hover = "#FFFFFF"
+            "##,
+        )
+        .unwrap();
+        assert_eq!(renamed.check(), faint.check());
+        // The dark and light themes draw the chosen line's text as before, in text_strong.
+        for which in [Builtin::Dark, Builtin::Light] {
+            let c = Theme::builtin(which).colors;
+            assert_eq!(c.text_on_menu_hover, c.text_strong, "{which:?}");
+        }
+    }
+
+    #[test]
     fn a_slider_row_too_short_for_its_parts_is_named_with_them() {
         // 18 + 16 + 2 points of parts in a row of 35.
         let theme = Theme::from_toml(
@@ -1118,5 +1330,48 @@ mod tests {
         assert_eq!(*theme(&ctx), light);
         assert_eq!(ctx.global_style().visuals.panel_fill, light.colors.panel);
         assert!(!ctx.global_style().visuals.dark_mode);
+    }
+
+    #[test]
+    fn menus_popups_and_tooltips_use_the_themed_edge_and_shadow() {
+        for which in Builtin::ALL {
+            let theme = Theme::builtin(which);
+            let ctx = egui::Context::default();
+            set_theme(&ctx, theme.clone());
+            let visuals = &ctx.global_style().visuals;
+            assert_eq!(visuals.window_fill, theme.colors.raised);
+            assert_eq!(
+                visuals.window_stroke,
+                Stroke::new(theme.shape.popup_hairline, theme.colors.menu_edge)
+            );
+            assert_eq!(
+                visuals.window_corner_radius,
+                radius(theme.shape.popup_radius)
+            );
+            assert_eq!(visuals.menu_corner_radius, radius(theme.shape.popup_radius));
+            let shadow = egui::Shadow {
+                offset: theme.elevation.shadow_offset,
+                blur: theme.elevation.shadow_blur,
+                spread: theme.elevation.shadow_spread,
+                color: theme.colors.menu_shadow,
+            };
+            assert_eq!(visuals.window_shadow, shadow);
+            assert_eq!(visuals.popup_shadow, shadow);
+        }
+    }
+
+    #[test]
+    fn a_radius_token_becomes_whole_egui_corners() {
+        for (token, corners) in [
+            (6.0, 6),
+            (8.0, 8),
+            (5.4, 5),
+            (5.5, 6),
+            (0.0, 0),
+            (-1.0, 0),
+            (300.0, 255),
+        ] {
+            assert_eq!(radius(token), CornerRadius::same(corners), "{token}");
+        }
     }
 }

@@ -21,7 +21,7 @@
 
 use apertrust_ui::components::{Choice, ChoiceAction, ChoiceStyle};
 use apertrust_ui::fonts::SEMIBOLD;
-use apertrust_ui::{Theme, install};
+use apertrust_ui::{Builtin, Theme, install};
 use egui::accesskit::Role;
 use egui::{Color32, Event, FontFamily, Key, vec2};
 use egui_kittest::Harness;
@@ -45,11 +45,15 @@ struct State {
 }
 
 fn row(style: ChoiceStyle) -> Harness<'static, State> {
+    row_in(Theme::default(), style)
+}
+
+fn row_in(theme: Theme, style: ChoiceStyle) -> Harness<'static, State> {
     let mut harness = Harness::builder()
         .with_size(vec2(400.0, 260.0))
         .with_step_dt(1.0 / 60.0)
-        .with_context_setup(|ctx| {
-            install(ctx, Theme::default());
+        .with_context_setup(move |ctx| {
+            install(ctx, theme.clone());
             ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
         })
         .build_ui_state(
@@ -132,10 +136,35 @@ fn parts(harness: &Harness<'_, State>, option: &str) -> Vec<(String, bool, Color
         .unwrap_or_else(|| panic!("{option} is drawn"))
 }
 
-/// The text colour and the half-strength colour a non-matching option takes.
+/// The text on the chosen option's band and the half-strength colour a non-match takes.
 fn colours() -> (Color32, Color32) {
-    let text = Theme::default().colors.text;
-    (text, text.gamma_multiply(0.5))
+    let colors = Theme::default().colors;
+    (colors.text_on_menu_hover, colors.text.gamma_multiply(0.5))
+}
+
+/// Every option drawn plain and at full strength: the highlighted one in the text on its
+/// band, a disabled one in disabled text, the others in the text colour.
+fn assert_all_plain(harness: &Harness<'_, State>) {
+    let colors = apertrust_ui::theme(&harness.ctx).colors.clone();
+    let highlighted = harness
+        .get_by(|node| node.is_focused())
+        .accesskit_node()
+        .label()
+        .unwrap_or_default();
+    for (index, option) in OPTIONS.into_iter().enumerate() {
+        let colour = if harness.state().disabled.contains(&index) {
+            colors.text_disabled
+        } else if option == highlighted {
+            colors.text_on_menu_hover
+        } else {
+            colors.text
+        };
+        assert_eq!(
+            parts(harness, option),
+            [(option.to_owned(), false, colour)],
+            "{option}"
+        );
+    }
 }
 
 #[test]
@@ -145,13 +174,7 @@ fn typing_filters_anywhere_in_the_words_whatever_the_case() {
         open(&mut harness);
         let (text, half) = colours();
         // Nothing typed: every option plain, at full strength.
-        for option in OPTIONS {
-            let drawn = parts(&harness, option);
-            assert!(
-                drawn.iter().all(|(_, bold, c)| !bold && *c != half),
-                "{drawn:?}"
-            );
-        }
+        assert_all_plain(&harness);
         // Capitals, from the middle of Black body.
         type_text(&mut harness, "LACK B");
         assert_eq!(
@@ -172,6 +195,27 @@ fn typing_filters_anywhere_in_the_words_whatever_the_case() {
             );
         }
     }
+}
+
+#[test]
+fn the_highlighted_option_takes_the_text_on_its_band() {
+    // In high contrast the band is light and its text dark, apart from every other line.
+    let theme = Theme::builtin(Builtin::HighContrast);
+    let colors = theme.colors.clone();
+    assert_ne!(colors.text_on_menu_hover, colors.text_strong);
+    let mut harness = row_in(theme, ChoiceStyle::Boxed);
+    open(&mut harness);
+    assert_all_plain(&harness);
+    assert_eq!(parts(&harness, "Daylight")[0].2, colors.text_on_menu_hover);
+    // A match on it keeps that text, its matched letters in SemiBold.
+    type_text(&mut harness, "day");
+    assert_eq!(
+        parts(&harness, "Daylight"),
+        [
+            ("Day".to_owned(), true, colors.text_on_menu_hover),
+            ("light".to_owned(), false, colors.text_on_menu_hover),
+        ]
+    );
 }
 
 #[test]
@@ -223,7 +267,7 @@ fn backspace_takes_the_last_key_back() {
     key(&mut harness, Key::Backspace);
     assert_eq!(
         parts(&harness, "Black body")[1],
-        ("c".to_owned(), true, colours().0)
+        ("c".to_owned(), true, Theme::default().colors.text)
     );
     key(&mut harness, Key::Enter);
     assert!(
@@ -242,13 +286,7 @@ fn backspace_takes_the_last_key_back() {
     for _ in 0..3 {
         key(&mut harness, Key::Backspace);
     }
-    for option in OPTIONS {
-        assert!(
-            parts(&harness, option)
-                .iter()
-                .all(|(_, bold, c)| !bold && *c != colours().1)
-        );
-    }
+    assert_all_plain(&harness);
 }
 
 #[test]
@@ -333,13 +371,7 @@ fn a_disabled_option_never_matches_and_is_never_taken() {
     // Only Fluorescent, which is not ported, holds an "f": as darktable counts only
     // entries that can be chosen, the key is dropped and nothing is a match.
     type_text(&mut harness, "f");
-    for option in OPTIONS {
-        assert!(
-            parts(&harness, option)
-                .iter()
-                .all(|(_, bold, c)| !bold && *c != colours().1)
-        );
-    }
+    assert_all_plain(&harness);
     // "o" is in Fluorescent too, which is drawn as it is, dim, with no match shown.
     type_text(&mut harness, "o");
     assert_eq!(
