@@ -312,7 +312,7 @@ fn checks(ui: &mut Ui, t: &Theme) {
     let issues = t.check();
     if issues.is_empty() {
         ui.label(
-            RichText::new("Checks pass: contrast and a neutral surround.").color(t.colors.success),
+            RichText::new("Checks pass: contrast, the menu band (AAA in high contrast) and a neutral surround.").color(t.colors.success),
         );
     }
     for issue in issues {

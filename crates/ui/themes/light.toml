@@ -20,6 +20,8 @@ text_secondary = "#57574F"
 text_disabled = "#8E8E86"
 text_on_accent = "#1D1D1B"
 border = "#B5B5AE"
+menu_edge = "#00000014"
+menu_shadow = "#0000002E"
 control_outline = "#85857F"
 divider = "#D9D9D4"
 separator = "#C9C9C3"
@@ -30,6 +32,8 @@ focus_ring = "#B87600"
 selection = "#F7DFA8"
 field_selection = "#C9C9C3"
 hover = "#E2E2DE"
+menu_hover = "#E2E2DE"
+text_on_menu_hover = "#000000"
 list_chosen = "#D4D4CE"
 close_hover = "#C42B1C"
 text_on_close_hover = "#FFFFFF"
@@ -100,9 +104,17 @@ side_panel = 320.0
 radius_small = 3.0
 radius = 4.0
 radius_large = 5.0
+menu_radius = 8.0
+popup_radius = 6.0
 hairline = 1.0
+popup_hairline = 0.5
 separator_width = 2.0
 track = 4.0
+
+[elevation]
+shadow_offset = [0, 2]
+shadow_blur = 12
+shadow_spread = 1
 
 [motion]
 hover_ms = 80.0
