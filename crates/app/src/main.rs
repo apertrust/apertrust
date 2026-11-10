@@ -136,7 +136,7 @@ struct Arguments {
 }
 
 /// What the command line's path opens (`docs/gui.md`, The start window).
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Start {
     /// A raw, alone (`docs/library.md`, One photo).
     Photo(PathBuf),
@@ -183,8 +183,8 @@ fn arguments(
 }
 
 /// What `path`, the command line's, opens, as `look` finds it on the disk: a folder in
-/// folder mode; a raw, told by its name, alone; made absolute from the folder the app
-/// starts in, so the photo's folder is known (Open This Folder). A library's or a
+/// folder mode; a raw, told by its name, alone; either [`resolved`], so the photo's folder
+/// is known (Open This Folder). A library's or a
 /// project's file, until Phase 5, another file, or nothing there, is an error saying why.
 fn start(
     path: PathBuf,
@@ -192,15 +192,37 @@ fn start(
 ) -> Result<Start, String> {
     let given = path.display();
     let kind = look(&path).map_err(|error| format!("{given}: {error}"))?;
-    let absolute = || std::path::absolute(&path).unwrap_or_else(|_| path.clone());
     match kind {
-        dropped::Kind::Folder => Ok(Start::Folder(absolute())),
-        dropped::Kind::Raw => Ok(Start::Photo(absolute())),
+        dropped::Kind::Folder => Ok(Start::Folder(resolved(&path, true))),
+        dropped::Kind::Raw => Ok(Start::Photo(resolved(&path, false))),
         dropped::Kind::Library => Err(format!(
             "{given}: libraries and projects come in a later version"
         )),
         dropped::Kind::Other => Err(format!("{given}: only folders and raw photos open")),
     }
+}
+
+/// `path`, a `folder` or a photo, as the app keeps what the command line names: absolute,
+/// from the folder the app starts in, its `.` and `..` and links resolved, a photo's in its
+/// folder alone, so a photo that is a link keeps its own name, and its folder is where the
+/// link lies. On Windows only made absolute, since a resolved path there is a `\\?\` one
+/// the file manager and the dialogs show as it is. One that cannot be resolved is kept
+/// absolute.
+fn resolved(path: &Path, folder: bool) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    if cfg!(windows) {
+        return absolute;
+    }
+    let canonical = |path: &Path| std::fs::canonicalize(path).ok();
+    let resolved = if folder {
+        canonical(&absolute)
+    } else {
+        let (parent, name) = (absolute.parent(), absolute.file_name());
+        parent
+            .zip(name)
+            .and_then(|(parent, name)| Some(canonical(parent)?.join(name)))
+    };
+    resolved.unwrap_or(absolute)
 }
 
 /// The flags that name a folder: the user data folder's (`folders::FLAGS`), then the cache
@@ -2196,10 +2218,9 @@ impl App {
             storage_folders,
             storage_shown: storage::View::default(),
         };
-        match open {
-            Some(Start::Photo(path)) => app.open_alone(path),
-            Some(Start::Folder(path)) => app.open_folder(path),
-            None => {}
+        if let Some(open) = open {
+            let session = &app.session;
+            started(open, &mut app.mirror, &mut |command| session.send(command));
         }
         app
     }
@@ -2450,24 +2471,8 @@ impl App {
     /// and a drop do. The session saves the open photo's edit first, if
     /// anything in it is not on disk yet, and reads the new photo's from beside it.
     fn open(&mut self, path: PathBuf) {
-        // The photo's folder shows in the grid panel, unless it is the one open already:
-        // File › Open… shows the folder of what it opens (`docs/gui.md`, File).
-        let folder = self.mirror.folder.to_show(&path);
-        let open = self.session.send(Command::Open(path.clone()));
-        self.mirror.opening(path, open, Instant::now());
-        if let Some(folder) = folder {
-            self.open_folder(folder);
-        }
-    }
-
-    /// Opens the raw at `path`, absolute, alone, as `apertrust FILE` does at the start
-    /// (`docs/library.md`, One photo): no folder is listed, nothing enters the recents,
-    /// and the grid panel holds the photo by itself. Nothing is written but its edit, once
-    /// something in it changes.
-    fn open_alone(&mut self, path: PathBuf) {
-        self.mirror.folder.alone(path.clone());
-        let open = self.session.send(Command::Open(path.clone()));
-        self.mirror.opening(path, open, Instant::now());
+        let session = &self.session;
+        open_photo(path, &mut self.mirror, &mut |command| session.send(command));
     }
 
     /// Opens what Open… or a drop asked for, or asks the alert that says why nothing opens,
@@ -2487,15 +2492,8 @@ impl App {
     /// Opens the folder at `path` in the library, its photos going into the grid panel;
     /// the photo open stays open (`docs/events.md`, The library's events).
     fn open_folder(&mut self, path: PathBuf) {
-        // Absolute, from the folder the app started in, so the tree's folders are inside it
-        // for the library, which lists no relative path; no disk is asked.
-        let path = std::path::absolute(&path).unwrap_or(path);
-        let open = self
-            .session
-            .send(Command::Library(LibraryCommand::Open(Source::Folder(
-                path.clone(),
-            ))));
-        self.mirror.folder.opening(path, open);
+        let session = &self.session;
+        open_folder(path, &mut self.mirror, &mut |command| session.send(command));
     }
 
     /// Takes in what the engine has reported since the last frame through the mirror
@@ -3502,12 +3500,13 @@ impl eframe::App for App {
         }
         // What was dropped onto the window opens as Open… or Open Folder… would, once it has
         // been looked at, a later frame; nothing while a modal dialog is up, as one may have
-        // opened meanwhile.
+        // opened meanwhile. An earlier drop's answer is taken before this frame's drop is,
+        // so a drop never opens the frame it came in, however soon its thread answers.
         let modal = self.state(&ctx).modal;
-        self.drops.take(&ctx, modal);
         if let Some(dropped) = self.drops.looked().filter(|_| !modal) {
             self.carry_out_opening(dropped_opens(dropped), &ctx);
         }
+        self.drops.take(&ctx, modal);
         if dropped::hovering(&ctx, modal) {
             dropped::show_target(&ctx, central.union(grid_panel));
         }
@@ -3631,6 +3630,48 @@ impl eframe::App for App {
 enum Opens {
     Photo(PathBuf),
     Folder(PathBuf),
+}
+
+/// Sends a command to the session, returning its number: the app's session, or a test's
+/// list.
+type SendCommand<'a> = dyn FnMut(Command) -> u64 + 'a;
+
+/// What the command line named, `open`, opened at the start: a folder in folder mode, or a
+/// raw alone (`docs/library.md`, One photo), where no folder is listed, nothing enters the
+/// recents, and the grid panel holds the photo by itself; nothing is written but its edit,
+/// once something in it changes.
+fn started(open: Start, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    match open {
+        Start::Folder(path) => open_folder(path, mirror, send),
+        Start::Photo(path) => {
+            mirror.folder.alone(path.clone());
+            let open = send(Command::Open(path.clone()));
+            mirror.opening(path, open, Instant::now());
+        }
+    }
+}
+
+/// Opens the raw at `path` in place of the photo open, and its folder behind it unless it
+/// is the one shown: File › Open… shows the folder of what it opens (`docs/gui.md`, File),
+/// so from a photo alone it opens folder mode.
+fn open_photo(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    let folder = mirror.folder.to_show(&path);
+    let open = send(Command::Open(path.clone()));
+    mirror.opening(path, open, Instant::now());
+    if let Some(folder) = folder {
+        open_folder(folder, mirror, send);
+    }
+}
+
+/// Opens the folder at `path` in the library, its photos going into the grid panel; the
+/// photo open stays open (`docs/events.md`, The library's events).
+fn open_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    // Absolute, from the folder the app started in, so the tree's folders are inside it for
+    // the library, which lists no relative path; no disk is asked.
+    let path = std::path::absolute(&path).unwrap_or(path);
+    let source = Source::Folder(path.clone());
+    let open = send(Command::Library(LibraryCommand::Open(source)));
+    mirror.folder.opening(path, open);
 }
 
 /// What an open dialog's answer or a drop opens, or the path it refuses and why.
@@ -4587,12 +4628,111 @@ mod tests {
         std::fs::write(&raw, b"").expect("a raw");
         let line = |path: &Path| [OsString::from(path)];
         let found = |path: &Path| arguments(line(path), dropped::found).map(|a| a.open);
-        assert_eq!(
-            found(&scratch.0),
-            Ok(Some(Start::Folder(scratch.0.clone())))
-        );
-        assert_eq!(found(&raw), Ok(Some(Start::Photo(raw.clone()))));
+        // Resolved where the system resolves them; on Windows only made absolute.
+        let resolved = |path: &Path| {
+            if cfg!(windows) {
+                path.to_owned()
+            } else {
+                std::fs::canonicalize(path).expect("there")
+            }
+        };
+        let folder = resolved(&scratch.0);
+        assert_eq!(found(&scratch.0), Ok(Some(Start::Folder(folder.clone()))));
+        let photo = Some(Start::Photo(folder.join("IMG_1.CR3")));
+        assert_eq!(found(&raw), Ok(photo.clone()));
         assert!(found(&scratch.0.join("IMG_2.CR3")).is_err());
+        // `.` and `..` lead to the folder they name, the photo in it; on Windows making
+        // the path absolute resolves them.
+        let days = scratch.0.join("Days");
+        std::fs::create_dir(&days).expect("a folder");
+        for dots in [scratch.0.join("."), days.join("..")] {
+            let given = Ok(Some(Start::Folder(folder.clone())));
+            assert_eq!(found(&dots), given, "{}", dots.display());
+        }
+        assert_eq!(found(&days.join("..").join("IMG_1.CR3")), Ok(photo));
+    }
+
+    /// A photo that is a link opens under its own name, in the folder where the link lies,
+    /// never as the file it points to.
+    #[cfg(unix)]
+    #[test]
+    fn a_photo_that_is_a_link_keeps_its_name_and_its_folder() {
+        let scratch = settings::testing::Folder::new("command-line-link");
+        let (photos, elsewhere) = (scratch.0.join("Photos"), scratch.0.join("Elsewhere"));
+        for folder in [&photos, &elsewhere] {
+            std::fs::create_dir(folder).expect("a folder");
+        }
+        let raw = elsewhere.join("IMG_1.CR3");
+        std::fs::write(&raw, b"").expect("a raw");
+        let link = photos.join("Best.CR3");
+        std::os::unix::fs::symlink(&raw, &link).expect("a link");
+        let open = arguments([OsString::from(&link)], dropped::found).expect("read");
+        let folder = std::fs::canonicalize(&photos).expect("there");
+        assert_eq!(open.open, Some(Start::Photo(folder.join("Best.CR3"))));
+    }
+
+    /// What `open`, the command line's, sends as the app starts, `App::new` needing a
+    /// session and a GPU: the commands, numbered from 1.
+    fn started_with(open: Start, mirror: &mut Mirror) -> Vec<Command> {
+        let mut sent = Vec::new();
+        started(open, mirror, &mut |command| {
+            sent.push(command);
+            sent.len() as u64
+        });
+        sent
+    }
+
+    /// `apertrust FILE`: the photo alone is the one command, no library command is sent,
+    /// so nothing is listed, and nothing of the photo's own events reaches the recents,
+    /// which the folder's opening alone adds to (`Reaction::FolderOpened`); the recents'
+    /// file stays as it was.
+    #[test]
+    fn a_photo_alone_sends_no_library_command_and_leaves_the_recents_untouched() {
+        let scratch = settings::testing::Folder::new("alone-recents");
+        let file = scratch.0.join("state.toml");
+        let (mut recents, _) = Recents::open(file.clone(), Vec::new);
+        recents.flush();
+        let before = std::fs::read(&file).ok();
+        let mut m = mirror::tests::mirror();
+        let path = PathBuf::from("/photos/a.ARW");
+        let sent = started_with(Start::Photo(path.clone()), &mut m);
+        assert_eq!(sent, [Command::Open(path)]);
+        let mut reactions = m.apply(Event::Opened(mirror::tests::photo(1)));
+        reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, 1))));
+        for reaction in reactions {
+            if let Reaction::FolderOpened(path) = reaction {
+                recents.opened(recents::Kind::Folder, path);
+                recents.save();
+            }
+        }
+        recents.flush();
+        assert_eq!(recents.entries().count(), 0);
+        assert_eq!(std::fs::read(&file).ok(), before);
+        // `apertrust FOLDER` lists the folder, and opens no photo.
+        let folder = PathBuf::from("/photos");
+        let sent = started_with(Start::Folder(folder.clone()), &mut mirror::tests::mirror());
+        let source = Source::Folder(folder);
+        assert_eq!(sent, [Command::Library(LibraryCommand::Open(source))]);
+    }
+
+    /// Open… from a photo alone opens folder mode: the photo chosen and its folder behind
+    /// it, whether it is another of the folder's photos or the one alone again.
+    #[test]
+    fn open_from_a_photo_alone_opens_its_folder() {
+        let folder = PathBuf::from("/photos");
+        let listed = || Command::Library(LibraryCommand::Open(Source::Folder(folder.clone())));
+        for chosen in ["/photos/b.ARW", "/photos/a.ARW"] {
+            let mut m = mirror::tests::mirror();
+            started_with(Start::Photo(PathBuf::from("/photos/a.ARW")), &mut m);
+            let mut sent = Vec::new();
+            let chosen = PathBuf::from(chosen);
+            open_photo(chosen.clone(), &mut m, &mut |command| {
+                sent.push(command);
+                sent.len() as u64 + 1
+            });
+            assert_eq!(sent, [Command::Open(chosen), listed()]);
+            assert_eq!(m.folder.shown(), Some(folder.as_path()));
+        }
     }
 
     #[test]
@@ -6842,10 +6982,10 @@ mod tests {
                         carry_out(bench, opening);
                     }
                     let modal = bench.state(&ctx).modal;
-                    bench.drops.take(&ctx, modal);
                     if let Some(dropped) = bench.drops.looked().filter(|_| !modal) {
                         carry_out(bench, dropped_opens(dropped));
                     }
+                    bench.drops.take(&ctx, modal);
                     if let Some(gesture) = window {
                         run_title_bar(gesture, &ctx, &mut bench.system);
                     }
