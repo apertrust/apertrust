@@ -121,6 +121,9 @@ pub struct Setting<T: 'static> {
     /// The titled group of its page it sits in, by id (`settings-group-<group>` its title);
     /// None exactly when it has no page.
     pub group: Option<&'static str>,
+    /// The boolean setting, by id, its row needs on: the Settings dialog draws it disabled
+    /// while that is off, as `cache.limit`'s while `cache.limited` is. None for most.
+    pub requires: Option<&'static str>,
     /// Its place among every owner's settings, in the schema's order, which the Settings
     /// dialog follows.
     pub place: u32,
@@ -448,6 +451,7 @@ mod tests {
             applies: Applies::AtOnce,
             page: Some(Page::General),
             group: Some("interface"),
+            requires: None,
             place: 0,
             line: 1,
         };
@@ -464,6 +468,7 @@ mod tests {
             applies: Applies::AtOnce,
             page: None,
             group: None,
+            requires: None,
             place: 1,
             line: 10,
         };

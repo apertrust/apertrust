@@ -31,6 +31,8 @@
 //!   past it, and [`Cache::clear`] a limited kind's entries, both cancellable.
 //! - An item that cannot be read or removed is passed over, and a removal counted as
 //!   failed: only a kind's own folder that cannot be listed is an error.
+//! - [`UnusedAfter`], the [`Choice`] of the engine's setting `cache.unused_after`; the
+//!   engine turns `cache.limited` and `cache.limit` into a [`Limit`].
 //!
 //! No index file and no lock for limited kinds:
 //!
@@ -49,6 +51,8 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
+
+use crate::settings::Choice;
 
 /// Whether a kind's entries count against the limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -139,6 +143,29 @@ pub enum Limit {
     Unlimited,
     /// At most this many bytes: `cache.limit`.
     Bytes(u64),
+}
+
+/// How long a library's cache may go unopened on this machine before the Storage page
+/// marks it and offers to remove it, or Never: `cache.unused_after`. Nothing is removed by
+/// age alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnusedAfter {
+    Days30,
+    Days90,
+    Days180,
+    Days365,
+    Never,
+}
+
+/// Kept by these ids in `settings.toml`, listed in this order.
+impl Choice for UnusedAfter {
+    const OPTIONS: &'static [(UnusedAfter, &'static str)] = &[
+        (UnusedAfter::Days30, "days_30"),
+        (UnusedAfter::Days90, "days_90"),
+        (UnusedAfter::Days180, "days_180"),
+        (UnusedAfter::Days365, "days_365"),
+        (UnusedAfter::Never, "never"),
+    ];
 }
 
 /// A kind's entries and their bytes.

@@ -36,6 +36,8 @@
 #   library, editing, processing, storage, shortcuts, presets or ai) and the titled group
 #   on it (snake_case), each with the other; neither for what the app keeps by itself,
 #   which the dialog never shows. A page's groups and rows are in this file's order.
+# - requires: on a setting with a page, the id of another boolean setting its row needs
+#   on: the dialog draws the row disabled while that is off.
 #
 # Decision 43's other fields and kinds, platforms, whole numbers and folders, come with
 # the first setting that needs one.
@@ -457,6 +459,45 @@ default = 2048
 applies = "after-restart"
 page = "processing"
 group = "gpu"
+
+# Whether the cache's limited kinds, thumbnails first, are kept within cache.limit
+# (decision 76; docs/cache.md, The limit and Unlimited). Off is Unlimited: nothing is
+# removed by size, and the sizes and Clear stay.
+[cache.limited]
+owner = "engine"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "storage"
+group = "cache"
+
+# What the cache's limited kinds may hold together, in GB of 10^9 bytes, as disks count
+# them; eviction then removes the oldest last use first, down to 90% of it. Only while
+# cache.limited is on.
+[cache.limit]
+owner = "engine"
+kind = "number"
+min = 0.5
+max = 1000
+step = 0.5
+decimals = 1
+unit = "gb"
+default = 4
+applies = "at-once"
+page = "storage"
+group = "cache"
+requires = "cache.limited"
+
+# How long a library's cache may go unopened on this machine before the Storage page
+# marks it and offers to remove it; never removed without the person.
+[cache.unused_after]
+owner = "engine"
+kind = "choice"
+type = "apertrust_base::cache::UnusedAfter"
+default = "days_90"
+applies = "at-once"
+page = "storage"
+group = "cache"
 
 # The keys that differ from the defaults, by action, in the portable form Shortcut::text
 # writes (Ctrl+Shift+Z, Ctrl being Cmd on macOS), the same on every platform. An empty

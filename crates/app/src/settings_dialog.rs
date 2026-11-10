@@ -25,7 +25,9 @@
 //! - A row's help, where its words have one (`setting-<id>-help`), is its label's tooltip.
 //! - A row off its default has darktable's dot before its control; a double-click on its
 //!   label, or Reset in its right-click menu, puts the default back.
-//! - A row `--conf` sets for this run is drawn disabled, saying so (decision 43).
+//! - A row `--conf` sets for this run is drawn disabled, saying so (decision 43), and so is
+//!   one whose required boolean (the schema's `requires`) is off, as the cache's limit
+//!   while it is unlimited.
 //! - "Applies after a restart" is said under the control of a setting that does.
 //! - Every change applies at once and is kept, with no OK or Apply: it goes to the app as a
 //!   [`Change`], which keeps it through the settings' keeper and shows it in the main
@@ -91,6 +93,8 @@ pub struct Row {
     pub value: Option<Value>,
     pub default: Option<Value>,
     pub overridden: bool,
+    /// The boolean setting whose row must be on for this one to be enabled.
+    pub requires: Option<&'static str>,
 }
 
 impl Row {
@@ -107,6 +111,7 @@ impl Row {
             value: keeper.value(setting),
             default: setting.default_value(),
             overridden: keeper.overridden(setting),
+            requires: setting.requires(),
         })
     }
 
@@ -241,6 +246,16 @@ impl Settings {
     #[cfg(test)]
     pub fn row(&self, id: &str) -> Option<&Row> {
         self.rows.iter().find(|row| row.id == id)
+    }
+
+    /// Whether `row` can be changed: neither `--conf` sets it nor is the row it requires
+    /// off.
+    fn enabled(&self, row: &Row) -> bool {
+        let on = |id| {
+            let required = self.rows.iter().find(|other| other.id == id);
+            required.and_then(|other| other.value.as_ref()?.as_bool()) == Some(true)
+        };
+        !row.overridden && row.requires.is_none_or(on)
     }
 
     /// Whether a row's right-click menu is open, which Escape closes first.
@@ -477,7 +492,7 @@ impl Settings {
             let rows = self.rows.iter().filter(|row| row.group == group);
             for row in rows.filter(|row| row.page == self.page) {
                 let widths = (label_width, control_width, content);
-                if let Some(changed) = draw_row(ui, t, row, widths) {
+                if let Some(changed) = draw_row(ui, t, row, self.enabled(row), widths) {
                     change = Some(changed);
                 }
             }
@@ -536,14 +551,19 @@ fn control_column(ui: &Ui, rows: &[Row], page: Page) -> f32 {
 
 /// Draws `row` across `content` points: its label in the first `label_width`, wrapped
 /// where longer, the dot while it is off its default, its control, and what is said of it
-/// under the row, wrapping at the content's end. `widths` are the label's, the control's
-/// and the content's. Returns what the user changed.
-fn draw_row(ui: &mut Ui, t: &Theme, row: &Row, widths: (f32, f32, f32)) -> Option<Change> {
+/// under the row, wrapping at the content's end; disabled unless `enabled`. `widths` are the
+/// label's, the control's and the content's. Returns what the user changed.
+fn draw_row(
+    ui: &mut Ui,
+    t: &Theme,
+    row: &Row,
+    enabled: bool,
+    widths: (f32, f32, f32),
+) -> Option<Change> {
     let (label_width, control_width, content) = widths;
     let ctx = ui.ctx().clone();
     let tr_ = translator(&ctx);
     let label = label_of(&tr_, row);
-    let enabled = !row.overridden;
     let line = t.sizes.panel_line;
     let top = ui.cursor().min;
     let mut change = None;
@@ -994,7 +1014,7 @@ mod tests {
             ("Library", false, false),
             ("Editing", false, false),
             ("Processing", false, false),
-            ("Storage", true, false),
+            ("Storage", false, false),
             ("Shortcuts", true, false),
             ("Presets", true, false),
             ("AI", true, false),
@@ -1259,6 +1279,33 @@ mod tests {
             .query_all_by_label("Applies after a restart")
             .count();
         assert_eq!(notes, 2);
+    }
+
+    /// A row is disabled while the boolean it requires is off, and enabled again once it
+    /// is on: the cache's limit while the cache is unlimited.
+    #[test]
+    fn a_row_is_disabled_while_the_boolean_it_requires_is_off() {
+        let mut harness = dialog();
+        harness.get_by_label("Storage").click();
+        harness.run();
+        let disabled = |harness: &Harness<'_, Bench>| {
+            let field = harness.get_by_role_and_label(Role::TextInput, "Cache limit, in GB");
+            field.accesskit_node().is_disabled()
+        };
+        assert!(!disabled(&harness));
+        let limited = "Limit the cache's size";
+        harness
+            .get_by_role_and_label(Role::CheckBox, limited)
+            .click();
+        harness.run();
+        let set = Change::Set("cache.limited", Value::Boolean(false));
+        assert_eq!(harness.state().changes.last(), Some(&set));
+        assert!(disabled(&harness));
+        harness
+            .get_by_role_and_label(Role::CheckBox, limited)
+            .click();
+        harness.run();
+        assert!(!disabled(&harness));
     }
 
     /// Every row's words, its page's and its group's, and a choice's options but the

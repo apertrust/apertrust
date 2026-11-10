@@ -17,8 +17,9 @@ codegen = ["dep:toml_edit"]
 build = []
 # The log: darktable's `-d` domains, short lines and the startup banner (decision 44), for the binaries. The design system never turns it on.
 log = ["dep:thiserror", "dep:tracing-log", "dep:tracing-subscriber"]
-# Apertrust's folders: the user data folder and how it was chosen (decision 43), for
-# the binaries. The design system and the golden harness never turn it on.
+# Apertrust's folders: the user data folder and the cache folder, each with how it was
+# chosen (decisions 43 and 76), for the binaries. The design system and the golden
+# harness never turn it on.
 folders = ["dep:directories", "dep:thiserror"]
 # Background jobs: darktable's control jobs, its queues, workers, progress and cancel
 # (decision 57), with std threads and tracing alone, for the engine and the library.
@@ -34,7 +35,7 @@ cache = ["fs"]
 [dependencies]
 # The safe write's hidden temporary file.
 tempfile = { workspace = true, optional = true }
-# The platform's user data folder, the folders' default.
+# The platform's user data and cache folders, the folders' defaults.
 directories = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 # The settings file's reading and writing, the store's (decision 43).

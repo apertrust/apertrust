@@ -92,6 +92,7 @@ unit-kelvin = K
 unit-pixels = px
 unit-iso = ISO
 unit-mib = MiB
+unit-gb = GB
 
 ## Wartość z jednostką, jak pokazuje ją suwak i słyszą czytniki ekranu; $value jest już
 ## w formacie liczb języka
@@ -387,6 +388,7 @@ settings-group-thumbnails = Miniatury
 settings-group-side-panel = Panel boczny
 settings-group-gpu = GPU
 settings-group-diagnostics = Diagnostyka
+settings-group-cache = Pamięć podręczna
 setting-theme-label = Motyw
 setting-theme-option-dark = Ciemny
 setting-theme-option-light = Jasny
@@ -403,6 +405,17 @@ setting-side-panel-tab-names-label = Pokaż nazwy kart
 setting-engine-adapter-label = Karta graficzna
 setting-engine-adapter-hint = Automatycznie
 setting-engine-memory-budget-label = Budżet pamięci
+setting-cache-limited-label = Ogranicz rozmiar pamięci podręcznej
+setting-cache-limited-help = Gdy wyłączone, pamięć podręczna jest nieograniczona: nic z niej nie jest usuwane, by zmieściła się w rozmiarze.
+setting-cache-limit-label = Limit pamięci podręcznej
+setting-cache-limit-help = Powyżej tego rozmiaru usuwane są miniatury najdawniej używane; w razie potrzeby zostaną utworzone ponownie.
+setting-cache-unused-after-label = Pamięci podręczne bibliotek nieużywane od
+setting-cache-unused-after-help = Pamięć podręczna biblioteki nieotwierana na tym komputerze tak długo zostanie zaproponowana do usunięcia. Nic nie jest usuwane bez Ciebie.
+setting-cache-unused-after-option-days_30 = 30 dni
+setting-cache-unused-after-option-days_90 = 90 dni
+setting-cache-unused-after-option-days_180 = 180 dni
+setting-cache-unused-after-option-days_365 = 365 dni
+setting-cache-unused-after-option-never = Nigdy
 setting-log-keep-label = Prowadź dziennik tej sesji
 setting-log-keep-help = Zachowuje dziennik tej sesji w pamięci od chwili włączenia, dla Pomoc › Pokaż dziennik. Aby prowadzić go od samego początku, uruchom Apertrust ponownie. Nic nie trafia do pliku, dopóki go nie zapiszesz.
 setting-log-domains-label = Dziennik

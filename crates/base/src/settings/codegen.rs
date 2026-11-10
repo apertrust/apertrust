@@ -109,6 +109,12 @@ pub struct Schema {
 
 /// One setting's static in generated code.
 struct Static {
+    id: String,
+    /// Whether it is a boolean with a value always, which another setting may require.
+    boolean: bool,
+    /// The setting it requires, and the line that says so, which [`parse`] checks names a
+    /// boolean.
+    requires: Option<(String, usize)>,
     owner: String,
     /// Its name in Rust, the id in capitals: `SIDE_PANEL_WIDTH`.
     name: String,
@@ -161,6 +167,23 @@ pub fn parse(text: &str, path: &str) -> Result<Schema, Vec<Error>> {
     })?;
     let (mut settings, mut errors) = (Vec::new(), Vec::new());
     reader.walk(document.as_table(), "", &mut settings, &mut errors);
+    for setting in &settings {
+        let Some((required, line)) = &setting.requires else {
+            continue;
+        };
+        let boolean = settings
+            .iter()
+            .any(|other| &other.id == required && other.boolean && other.id != setting.id);
+        if !boolean {
+            errors.push(Error {
+                line: *line,
+                message: format!(
+                    "[{}]: requires names no other boolean setting: {required}",
+                    setting.id
+                ),
+            });
+        }
+    }
     let path = path.to_owned();
     if errors.is_empty() {
         Ok(Schema { settings, path })
@@ -239,7 +262,9 @@ impl Reader<'_> {
             id,
             table,
             line,
-            &["owner", "applies", "default", "optional", "page", "group"],
+            &[
+                "owner", "applies", "default", "optional", "page", "group", "requires",
+            ],
         )?;
         let (page, group) = self.place_in_dialog(id, table, line)?;
         let optional = match table.get("optional") {
@@ -248,6 +273,20 @@ impl Reader<'_> {
                 .as_bool()
                 .ok_or_else(|| fail("optional", "optional is true or false"))?,
         };
+        let requires = match table.get_key_value("requires") {
+            None => None,
+            Some((key, item)) => {
+                let required = item.as_str().filter(|id| id.split('.').all(is_snake));
+                let required = required
+                    .ok_or_else(|| fail("requires", "requires is a boolean setting's id"))?;
+                if page == "None" {
+                    let why = "requires draws its row disabled: give its page and group";
+                    return Err(fail("requires", why));
+                }
+                Some((required.to_owned(), self.line(key.span(), line)))
+            }
+        };
+        let boolean = matches!(spec.check, Check::Boolean) && !optional;
         let name = id.replace('.', "_");
         let upper = name.to_uppercase();
         if upper == REGISTRY {
@@ -295,14 +334,22 @@ impl Reader<'_> {
              applies: {BASE}::Applies::{applies},\n    \
              page: {page},\n    \
              group: {group},\n    \
+             requires: {requires_code},\n    \
              place: {place},\n    \
              line: {line},\n\
              }};",
             path = self.path,
             kind = spec.kind,
+            requires_code = match &requires {
+                Some((required, _)) => format!("Some({required:?})"),
+                None => "None".to_owned(),
+            },
         );
         let (owner, types) = (owner.to_owned(), spec.types);
         Ok(Static {
+            id: id.to_owned(),
+            boolean,
+            requires,
             owner,
             name: upper,
             code,
@@ -762,7 +809,16 @@ mod tests {
         every.dedup();
         assert_eq!(every.len(), schema.settings.len());
         // The engine's are its own, and none of the app's.
-        assert_eq!(ids(&engine), ["engine.adapter", "engine.memory_budget"]);
+        assert_eq!(
+            ids(&engine),
+            [
+                "engine.adapter",
+                "engine.memory_budget",
+                "cache.limited",
+                "cache.limit",
+                "cache.unused_after"
+            ]
+        );
         assert!(!app.contains("ENGINE_"), "{app}");
         // The export's are under `export.`, and the others' never (decision 56).
         assert!(ids(&export).iter().all(|id| id.starts_with("export.")));
@@ -795,7 +851,7 @@ mod tests {
         #[rustfmt::skip]
         let expect = [
             format!("/// The interface's size, as `[scale]` keeps it.\n/// Its \\<unit\\> is none.\n///\n/// `[scale]`, declared at line 5 of `test.toml`.\npub static SCALE: {s}::Setting<f32> = "),
-            format!("kind: {s}::Kind::Number({s}::Number {{ min: Some(0.5), max: Some(3.0), above: None, step: Some(0.1), decimals: Some(2), unit: None, factor: None }}),\n    default: {s}::DefaultValue::Value(1.0),\n    applies: {s}::Applies::AtOnce,\n    page: None,\n    group: None,\n    place: 0,\n    line: 5,"),
+            format!("kind: {s}::Kind::Number({s}::Number {{ min: Some(0.5), max: Some(3.0), above: None, step: Some(0.1), decimals: Some(2), unit: None, factor: None }}),\n    default: {s}::DefaultValue::Value(1.0),\n    applies: {s}::Applies::AtOnce,\n    page: None,\n    group: None,\n    requires: None,\n    place: 0,\n    line: 5,"),
             format!("Value({s}::option::<apertrust_ui::Builtin>(\"dark\", \"test.toml:15: [theme]: \\\"dark\\\" is none of apertrust_ui::Builtin's options\"))"),
             format!("pub static WINDOW_POSITION: {s}::Setting<Option<[f32; 2]>> = "),
             format!("default: {s}::DefaultValue::Value(None),"),
@@ -851,7 +907,7 @@ mod tests {
         let code = schema.generate("engine");
         let expect = [
             "decimals: Some(0), unit: Some(\"mib\"), factor: Some(1.0) }),".to_owned(),
-            format!("applies: {s}::Applies::AfterRestart,\n    page: Some({s}::Page::Processing),\n    group: Some(\"gpu\"),\n    place: 0,"),
+            format!("applies: {s}::Applies::AfterRestart,\n    page: Some({s}::Page::Processing),\n    group: Some(\"gpu\"),\n    requires: None,\n    place: 0,"),
         ];
         for part in expect {
             assert!(code.contains(&part), "{part}\nin:\n{code}");
@@ -871,6 +927,32 @@ mod tests {
             ("number", "unit = \"MiB\"\ndefault = 1\n", "5: [scale]: unit is the id of its words: a to z, 0 to 9 and -"),
             ("number", "factor = 0\ndefault = 1\n", "5: [scale]: factor is more than 0"),
             ("boolean", "unit = \"mib\"\ndefault = true\n", "5: [scale]: unknown field unit"),
+        ]);
+    }
+
+    /// A row may require a boolean setting's row on, which its static names; anything
+    /// else is refused, naming the line.
+    #[test]
+    #[rustfmt::skip]
+    fn a_setting_may_require_another_boolean_one() {
+        let on = "[cache.limited]\nowner = \"engine\"\nkind = \"boolean\"\ndefault = true\n\
+                  applies = \"at-once\"\npage = \"storage\"\ngroup = \"cache\"\n";
+        let limit = |requires: &str| {
+            format!(
+                "{on}\n[cache.limit]\nowner = \"engine\"\nkind = \"number\"\ndefault = 4\n\
+                 applies = \"at-once\"\npage = \"storage\"\ngroup = \"cache\"\n{requires}"
+            )
+        };
+        let code = accepted(&limit("requires = \"cache.limited\"\n")).generate("engine");
+        let s = "::apertrust_base::settings";
+        assert!(code.contains("group: Some(\"cache\"),\n    requires: Some(\"cache.limited\"),\n    place: 1,"), "{code}");
+        assert!(code.contains("requires: None,\n    place: 0,"), "{code}");
+        assert!(code.contains(&format!("pub static CACHE_LIMIT: {s}::Setting<f32>")), "{code}");
+        assert_eq!(refused(&limit("requires = \"cache.limt\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limt"]);
+        assert_eq!(refused(&limit("requires = \"cache.limit\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limit"]);
+        assert_eq!(refused(&limit("requires = true\n")), ["16: [cache.limit]: requires is a boolean setting's id"]);
+        each_refused(&[
+            ("boolean", "default = true\nrequires = \"log.keep\"\n", "6: [scale]: requires draws its row disabled: give its page and group"),
         ]);
     }
 

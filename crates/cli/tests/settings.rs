@@ -94,7 +94,8 @@ fn run_status(
         .args(["-d", "settings"])
         .args(args)
         .env_remove("RUST_LOG")
-        .env_remove("APERTRUST_USER_DATA_DIR");
+        .env_remove("APERTRUST_USER_DATA_DIR")
+        .env_remove("APERTRUST_CACHE_DIR");
     if let Some(variable) = variable {
         command.env("APERTRUST_USER_DATA_DIR", variable);
     }
@@ -552,4 +553,40 @@ fn a_setting_that_names_no_adapter_falls_back_and_a_flag_is_refused() {
         stderr.contains("no GPU adapter name contains \"nor this\""),
         "{stderr}"
     );
+}
+
+/// The cache folder `-d settings` names: `--cache-dir`'s, the last given, before or after
+/// the command, then `APERTRUST_CACHE_DIR`'s, then the user data folder's when that is
+/// given; created nowhere.
+#[test]
+fn the_cache_folder_is_named_and_never_created() {
+    let folder = Folder::new("cache");
+    let dir = folder.0.display().to_string();
+    let cache = folder.0.join("cache");
+    let named = |stderr: &str, from: &str| {
+        let line = format!("cache folder: {}, from: {from}", cache.display());
+        logged(stderr, &line)
+    };
+    let given = cache.display().to_string();
+    let joined = format!("--cache-dir={given}");
+    let twice = ["--cache-dir", "elsewhere", "--cache-dir", &given, "info"];
+    for args in [
+        [twice.as_slice(), &["x.CR2"]].concat(),
+        vec!["info", &joined, "x.CR2"],
+    ] {
+        let args = args.as_slice();
+        let (stderr, _) = run(args, &folder.0, None);
+        assert!(named(&stderr, "--cache-dir"), "{args:?}: {stderr}");
+    }
+    let (stderr, _) = run(&["--user-data-dir", &dir, "info", "x.CR2"], &folder.0, None);
+    assert!(named(&stderr, "the user data folder"), "{stderr}");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_apertrust-cli"));
+    command
+        .args(["-d", "settings", "--user-data-dir", &dir, "info", "x.CR2"])
+        .env_remove("RUST_LOG")
+        .env("APERTRUST_CACHE_DIR", &cache);
+    let stderr = command.output().expect("the CLI runs").stderr;
+    let stderr = String::from_utf8_lossy(&stderr);
+    assert!(named(&stderr, "APERTRUST_CACHE_DIR"), "{stderr}");
+    assert!(!cache.exists() && !Path::new("elsewhere").exists());
 }

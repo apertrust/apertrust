@@ -2,7 +2,7 @@
 
 Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. The rest is planned: the folder's choice, the settings, the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. No program opens the cache yet. The rest is planned: the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page's hand-built part and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
 
 ## What goes in it
 
@@ -17,7 +17,7 @@ Chosen once, as the program starts, by `Folders` in `apertrust-base` ([settings.
 3. `<user data>/cache`, when the user data folder is given by flag or variable, since a development build changes kernels without bumping the thumbnails' render version and could otherwise show its thumbnails in the person's Apertrust;
 4. the platform's cache folder: `~/Library/Caches/Apertrust` on macOS, `%LOCALAPPDATA%\Apertrust\cache` on Windows, `$XDG_CACHE_HOME/apertrust` (`~/.cache/apertrust`) on Linux.
 
-Apertrust Dev has its own. The CLI finds the folder to read, as it finds the user data folder.
+Apertrust Dev has its own. A leading `~` and a relative folder are taken as for the user data folder, and one given empty, or with a `~` and no home folder, stops the start. The folder is chosen, never created or probed: the cache creates what it writes. The CLI finds it as the app does, and `-d settings` logs it with how it was chosen.
 
 ## Kinds
 
@@ -78,7 +78,7 @@ A library's cache is locked: a process that has it open holds an OS lock on its 
 Two settings of owner `engine`, declared in the settings schema ([settings.md](settings.md#user-data-folders)):
 
 - `cache.limited`, on by default. Off is **Unlimited**: nothing is evicted by size, and every size and Clear stay.
-- `cache.limit`, in GB from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off. 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each, which step 6 measures for the format it chooses.
+- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each, which step 6 measures for the format it chooses.
 
 Unlimited is the person's choice, never the default, and its size is always shown and can be cleared, where darktable's disk cache grows unseen.
 

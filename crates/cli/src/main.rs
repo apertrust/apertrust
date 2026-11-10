@@ -97,6 +97,11 @@ struct Cli {
         overrides_with = "user_data_dir"
     )]
     user_data_dir: Option<PathBuf>,
+    /// The cache folder, in place of APERTRUST_CACHE_DIR's, else the user data folder's
+    /// cache when that is given, else the platform's. Nothing is created. A leading ~ is
+    /// the home folder. The last given counts.
+    #[arg(long, global = true, value_name = "DIR", overrides_with = "cache_dir")]
+    cache_dir: Option<PathBuf>,
     /// Set an engine or export setting for this run only, as darktable's --conf, never
     /// written: KEY is its id in settings.toml, such as engine.memory_budget or
     /// export.jpeg.quality, and VALUE as the file holds it, but text without quotes. Before
@@ -376,8 +381,9 @@ fn main() -> Result<()> {
         flag: user_data_flag(std::env::args_os()),
         folder,
     });
-    let folders =
-        Folders::find_to_read(given, apertrust_base::program!().dev).map_err(|e| anyhow!("{e}"))?;
+    let cache = cli.cache_dir.clone();
+    let folders = Folders::find_to_read(given, cache, apertrust_base::program!().dev)
+        .map_err(|e| anyhow!("{e}"))?;
     // The settings, read only by the commands that run the engine, `--conf`'s over the
     // file's.
     let store = || settings(folders.as_ref()).with_overrides(&overrides);
@@ -2654,5 +2660,27 @@ mod tests {
         }
         // None given: the variable's, then the platform's (`Folders::find`).
         assert_eq!(parsed(&["apertrust-cli", "gpu"]).0, None);
+    }
+
+    /// `--cache-dir`, apart or joined, before the command or after it, the last counting;
+    /// one without its folder is refused.
+    #[test]
+    fn the_cache_folder_is_named_by_its_flag_the_last_counting() {
+        let cache = |args: &[&str]| Cli::try_parse_from(args).expect("parsed").cache_dir;
+        let args = [
+            "apertrust-cli",
+            "--cache-dir",
+            "one",
+            "gpu",
+            "--cache-dir=two",
+        ];
+        assert_eq!(cache(&args), Some(PathBuf::from("two")));
+        assert_eq!(cache(&["apertrust-cli", "gpu"]), None);
+        for args in [
+            ["apertrust-cli", "gpu", "--cache-dir"].as_slice(),
+            &["apertrust-cli", "--cache-dir=", "gpu"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err(), "{args:?}");
+        }
     }
 }

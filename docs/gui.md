@@ -3025,6 +3025,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 
 - a row off its default has darktable's dot before its control, and its label says so to screen readers ("Changed from its default"); a double-click on its label, or Reset in its right-click menu, puts the default back;
 - a row `--conf` sets for this run is drawn disabled, its dot in `text_disabled`, saying "Set by --conf for this run" under it (`Keeper::overridden`);
+- a row whose schema `requires` a boolean that is off is drawn disabled the same way, with nothing said under it;
 - "Applies after a restart" is said under the row of a setting the schema says `applies = "after-restart"` of: the Processing page's graphics card and memory budget;
 - such a note starts at the control's start, wraps at the content's end, not the control's, and has 4 points after it;
 - every change applies at once and is kept, with no OK or Apply;
@@ -3041,8 +3042,9 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 | Library | Thumbnails | Square thumbnails (`grid_panel.square_thumbnails`) |
 | Editing | Side panel | Show tab names (`side_panel.tab_names`) |
 | Processing | GPU | Graphics card (`engine.adapter`), Memory budget (`engine.memory_budget`, in MiB), both after a restart |
+| Storage | Cache | Limit the cache's size (`cache.limited`, on), Cache limit (`cache.limit`, in GB, disabled while the first is off), Library caches unused for (`cache.unused_after`, 90 days); each with its help in its tooltip. The page's hand-built part is to come |
 
-Import, Storage, Shortcuts, Presets and AI are dimmed until they hold something. Planned rows: the system's title bar on Windows and Linux in General's Interface group (decision 39); Reopen what was open last (`library.reopen_last`, on by default) in General's Start group ([The start window](#the-start-window)); and the tone mapper for new photos on Processing (decision 33).
+Import, Shortcuts, Presets and AI are dimmed until they hold something. Planned rows: the system's title bar on Windows and Linux in General's Interface group (decision 39); Reopen what was open last (`library.reopen_last`, on by default) in General's Start group ([The start window](#the-start-window)); and the tone mapper for new photos on Processing (decision 33).
 
 **Its window** is a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)): on the Mac a modeless window rather than a sheet, minimise and zoom dimmed, no Close button, its own close button and Cmd+W closing it and Escape not, as in the Mac's own Settings windows, opening where the user last left it, centred over the main window the first time. On Windows and Linux it is a modal window of the host, with its Close button, and Escape closes it. Its content is 960 by 640 points, the page list 200 of them.
 

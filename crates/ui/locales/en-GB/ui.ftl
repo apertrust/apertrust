@@ -116,6 +116,7 @@ unit-kelvin = K
 unit-pixels = px
 unit-iso = ISO
 unit-mib = MiB
+unit-gb = GB
 
 ## A value with its unit, as a slider shows it and screen readers hear it; $value is
 ## already in the language's number format, signed where the slider's range spans zero
@@ -485,6 +486,7 @@ settings-group-thumbnails = Thumbnails
 settings-group-side-panel = Side panel
 settings-group-gpu = GPU
 settings-group-diagnostics = Diagnostics
+settings-group-cache = Cache
 # Each setting's row, by the setting's id, its dots and underscores as hyphens; a row's
 # -help, where it has one, is its label's tooltip.
 setting-theme-label = Theme
@@ -504,6 +506,17 @@ setting-engine-adapter-label = Graphics card
 # What the graphics card's field shows while empty: the system's choice.
 setting-engine-adapter-hint = Automatic
 setting-engine-memory-budget-label = Memory budget
+setting-cache-limited-label = Limit the cache's size
+setting-cache-limited-help = Off, the cache is unlimited: nothing is removed from it to keep it within a size.
+setting-cache-limit-label = Cache limit
+setting-cache-limit-help = Past this, the thumbnails used longest ago are removed, and made again when needed.
+setting-cache-unused-after-label = Library caches unused for
+setting-cache-unused-after-help = A library's cache not opened on this computer for this long is offered for removal. Nothing is removed without you.
+setting-cache-unused-after-option-days_30 = 30 days
+setting-cache-unused-after-option-days_90 = 90 days
+setting-cache-unused-after-option-days_180 = 180 days
+setting-cache-unused-after-option-days_365 = 365 days
+setting-cache-unused-after-option-never = Never
 setting-log-keep-label = Keep a log of this session
 setting-log-keep-help = Keeps this session's log in memory from the moment it is on, for Help › Show Log. To log from the start, restart Apertrust. Nothing is written to a file unless you save it.
 setting-log-domains-label = Log

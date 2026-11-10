@@ -31,8 +31,9 @@
 //!   binary's own build script for `program!()`, so that a commit rebuilds no library.
 //! - `folders`, behind the `folders` feature, which only the binaries turn on: `Folders`,
 //!   the user data folder and how it was chosen, by `--user-data-dir` or its aliases, by
-//!   `APERTRUST_USER_DATA_DIR` or as the platform's, the one place that decides it; the
-//!   cache folder joins it with the first cache.
+//!   `APERTRUST_USER_DATA_DIR` or as the platform's, and the cache folder, by
+//!   `--cache-dir`, `APERTRUST_CACHE_DIR`, in a user data folder given or as the
+//!   platform's: the one place that decides them.
 //! - `jobs`, behind the `jobs` feature, which the engine and the library turn on:
 //!   darktable's control jobs, its queues, priorities, workers, progress and cancel
 //!   (decision 57, which widened this crate's rule to hold them), knowing nothing of
@@ -42,7 +43,8 @@
 //!   rename, with the temporary's naming and the removal of old ones.
 //! - `cache`, behind the `cache` feature, which turns on `fs` (decision 76): the disk
 //!   cache's kinds, a limited entry's write and read, the walk with each kind's sizes,
-//!   eviction to 90% of a limit and clearing a kind, on a folder its caller chose.
+//!   eviction to 90% of a limit and clearing a kind, on a folder its caller chose; and
+//!   `UnusedAfter`, a cache setting's choice, which the engine turns it on for.
 //! - [`settings`]: the settings schema's types, a setting and its kinds and [`Choice`]
 //!   (`settings::Choice`); the [`Store`] (`settings::Store`), which reads and writes
 //!   `settings.toml` through a [`Storage`] (`settings::Storage`); and, behind the `codegen`
