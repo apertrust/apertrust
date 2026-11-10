@@ -3445,6 +3445,82 @@ mod tests {
         );
     }
 
+    /// File › Close while the photo decodes, through a real session: nothing of that open
+    /// goes live, no live values and no frame; the next photo opened is the one that does.
+    /// An open's job has no progress, so a client hears nothing of it; its cancel is held
+    /// by the test after this one.
+    #[test]
+    fn close_while_decoding_lets_nothing_of_the_open_go_live() {
+        let gpu = gpu();
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldDecode(hold));
+        session.send(Command::Resize {
+            width: 40,
+            height: 40,
+        });
+        session.send(Command::Open(PathBuf::from("photo.ARW")));
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        session.send(Command::Close);
+        permit.send(()).unwrap();
+        // The next photo, upright where the first lies on its side, goes live; every frame
+        // until then is its.
+        let next = session.send(Command::Open(PathBuf::from("portrait.ARW")));
+        let events = until(&session, &wakes, |e| matches!(e, Event::Frame(_)));
+        let opened = |e: &Event| matches!(e, Event::Opened(photo) if photo.open == next);
+        let at = events
+            .iter()
+            .position(opened)
+            .expect("the next photo opens");
+        assert!(!events[..at].iter().any(live), "{events:?}");
+        assert!(
+            !events[..at].iter().any(|e| matches!(e, Event::Frame(_))),
+            "{events:?}"
+        );
+        assert_eq!(events.iter().filter(|e| live(e)).count(), 1, "{events:?}");
+        for event in &events {
+            if let Event::Frame(frame) = event {
+                assert!(frame.height > frame.width, "{frame:?}");
+            }
+        }
+    }
+
+    /// File › Close while the photo decodes: its open's job is cancelled at once, and ends
+    /// once its decode does, its mosaic never uploaded, nothing of it going live.
+    #[test]
+    fn close_while_decoding_cancels_the_open_s_job() {
+        let path = scratch("close-decoding");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([
+            Command::HoldDecode(hold),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        let one = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        let mut events = driven.pump(|engine, _| engine.decoding == [one]);
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        let job = driven.engine.opening.as_ref().expect("opening").job;
+        events.extend(driven.run([Command::Close]));
+        assert_eq!(
+            driven.engine.jobs.control.state(job),
+            Some(State::Cancelled)
+        );
+        permit.send(()).unwrap();
+        let gone = |engine: &Engine, _: &[Event]| engine.jobs.control.state(job).is_none();
+        events.extend(driven.pump_until(gone, || Duration::from_millis(50)));
+        assert!(driven.engine.uploaded.is_empty());
+        assert!(!events.iter().any(live), "{events:?}");
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::Frame(_))),
+            "{events:?}"
+        );
+        remove(&path);
+    }
+
     /// The real decode reads them from the file's EXIF.
     #[test]
     #[ignore = "needs the raw.pixls.us corpus: tools/fetch-raw-corpus.sh"]

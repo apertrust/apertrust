@@ -581,7 +581,7 @@ pub static ACTIONS: [Action; 70] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.recents[0].is_some(),
+        available: |s| no_modal_dialog(s) && s.recents[0].is_some(),
         emits: Emit::Intent(Intent::ClearRecent),
     },
     Action {
@@ -2160,6 +2160,12 @@ mod tests {
         assert!(!enabled(ActionId::OPEN_RECENT[1], &state), "missing");
         assert!(!enabled(ActionId::OPEN_RECENT[2], &state), "not listed");
         assert!(enabled(ActionId::CLEAR_RECENT, &state));
+        state.modal = true;
+        assert!(
+            !enabled(ActionId::CLEAR_RECENT, &state),
+            "under a modal dialog"
+        );
+        state.modal = false;
         for (i, id) in ActionId::OPEN_RECENT.iter().enumerate() {
             let recent = action(*id).expect("declared");
             assert_eq!(recent.emits, Emit::Intent(Intent::OpenRecent(i)));
