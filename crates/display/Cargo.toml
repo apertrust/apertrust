@@ -1,6 +1,6 @@
 [package]
 name = "apertrust-display"
-description = "Apertrust display colour, title bar and dialogs: tags the window surface's colour space where wgpu does not, places the window's buttons in the app's top bar, presents dialogs as sheets and shows popup menus from the run loop, and attaches the Windows app to the terminal it was started from"
+description = "Apertrust display colour, title bar and dialogs: tags the window surface's colour space where wgpu does not, places the window's buttons in the app's top bar, presents dialogs as sheets and shows popup menus from the run loop, receives the files Finder opens with the app, and attaches the Windows app to the terminal it was started from"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,7 +24,7 @@ objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSAppearance", "NSApplication", "NSButton", "NSCell", "NSControl", "NSEvent", "NSFont", "NSGraphicsContext", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "objc2-core-foundation", "objc2-quartz-core"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGColorSpace"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSArray", "NSDate", "NSDictionary", "NSEnumerator", "NSGeometry", "NSObjCRuntime", "NSObject", "NSRunLoop", "NSString", "NSUserDefaults", "NSValue"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSArray", "NSDate", "NSDictionary", "NSEnumerator", "NSGeometry", "NSObjCRuntime", "NSObject", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults", "NSValue"] }
 objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CALayer", "CAMetalLayer", "objc2-core-graphics"] }
 
 [target.'cfg(windows)'.dependencies]
