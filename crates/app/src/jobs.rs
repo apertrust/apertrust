@@ -440,6 +440,9 @@ fn job_message(message: &Message) -> JobMessage {
     for (name, value) in &message.arguments {
         out = match value {
             Argument::Number(n) => out.number(name, *n),
+            Argument::Decimals { value, at_least } => {
+                out.decimals(name, *value, usize::from(*at_least))
+            }
             Argument::Text(t) => out.text(name, t),
             Argument::Path(p) => out.text(name, file_name(p)),
         };
@@ -623,7 +626,7 @@ impl Dialog for Window {
     }
 
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
-        let output = self.rows(ui).map(Output::Jobs);
+        let outputs = self.rows(ui).map(Output::Jobs).into_iter().collect();
         let ctx = ui.ctx().clone();
         let os = ctx.os();
         let (now, touched, over) = ctx.input(|i| (i.time, touched(i, os), i.pointer.has_pointer()));
@@ -636,7 +639,7 @@ impl Dialog for Window {
             Close::Stay => false,
         };
         Asks {
-            output,
+            outputs,
             close,
             ..Asks::default()
         }

@@ -214,8 +214,8 @@ pub struct Keys {
 /// What one frame of a dialog's content asks of the host.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Asks {
-    /// What it asks of the app.
-    pub output: Option<Output>,
+    /// What it asks of the app, in order.
+    pub outputs: Vec<Output>,
     /// It asked to close: its Close button, or its work done.
     pub close: bool,
     /// A list of its own was open as the frame began, which Escape closes first.
@@ -330,7 +330,8 @@ fn presses(events: &[egui::Event]) -> Vec<egui::Event> {
 /// What a frame of a dialog's content asked for, and its size, in points.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drawn {
-    pub output: Option<Output>,
+    /// What it asked of the app, in order.
+    pub outputs: Vec<Output>,
     /// It asked to close, itself or by its keys.
     pub close: bool,
     pub size: egui::Vec2,
@@ -512,7 +513,7 @@ pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
     ctx.data_mut(|d| d.insert_temp(typing_id(), now));
     let events = ctx.input(|i| presses(&i.events));
     Drawn {
-        output: asks.output,
+        outputs: asks.outputs,
         close,
         size: scope.response.rect.size() + egui::Vec2::splat(2.0 * margin),
         unread: (!events.is_empty()).then(|| Unread {
@@ -1091,7 +1092,7 @@ impl Host {
                 if open.fit() {
                     open.window.request_redraw();
                 }
-                if let Some(output) = drawn.output {
+                for output in drawn.outputs {
                     inner.output(slot, output);
                 }
                 if let Some(unread) = drawn.unread {
@@ -1298,11 +1299,14 @@ impl Dialogs for Host {
 
     fn storage(&mut self, view: crate::storage::View) {
         let mut inner = self.0.borrow_mut();
-        if let Some(open) = inner.open[Slot::Dialog.index()].as_mut()
-            && let Some(settings) = dialog_mut::<settings_dialog::Settings>(&mut open.dialog)
-            && settings.storage != view
+        let slot = Slot::Dialog.index();
+        // Asked for and not yet made, it takes the view too, as the jobs window its rows.
+        if let Some(asked) = inner.asked[slot].as_mut() {
+            hand_storage(&mut asked.dialog, &view);
+        }
+        if let Some(open) = inner.open[slot].as_mut()
+            && hand_storage(&mut open.dialog, &view)
         {
-            settings.storage = view;
             open.window.request_redraw();
         }
     }
@@ -1674,7 +1678,7 @@ impl Inner {
         let (name, form) = (open.dialog.id(), open.form.name());
         tracing::debug!(target: "perf", "dialog {name}: {form}, first frame in {ms:.1} ms");
         self.open[slot.index()] = Some(open);
-        if let Some(output) = drawn.output {
+        for output in drawn.outputs {
             self.output(slot, output);
         }
         if drawn.close {
@@ -1845,7 +1849,7 @@ impl Open {
             self.title = title;
         }
         let drawn = drawn.unwrap_or(Drawn {
-            output: None,
+            outputs: Vec::new(),
             close: false,
             size: self.size,
             unread: None,
@@ -2126,6 +2130,18 @@ fn dialog_mut<T: Dialog>(dialog: &mut Box<dyn Dialog>) -> Option<&mut T> {
     (dialog.as_mut() as &mut dyn Any).downcast_mut()
 }
 
+/// Hands `dialog` Storage's `view` if it is Settings and shows another; whether it took it,
+/// so its window is drawn again.
+fn hand_storage(dialog: &mut Box<dyn Dialog>, view: &crate::storage::View) -> bool {
+    match dialog_mut::<settings_dialog::Settings>(dialog) {
+        Some(settings) if settings.storage() != view => {
+            settings.set_storage(view.clone());
+            true
+        }
+        _ => false,
+    }
+}
+
 /// The waker a dialog is handed ([`Dialog::wake_with`]): it asks for its window's frame
 /// from any thread, as its context's repaint does, through a proxy of its own.
 struct Wakes {
@@ -2229,6 +2245,27 @@ mod tests {
     use apertrust_ui::{Builtin, Theme};
     use egui_kittest::Harness;
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
+
+    /// Settings takes Storage's view whether its window is open or only asked for and not
+    /// yet made, the host holding it in either slot the same way; another dialog takes
+    /// nothing, and the same view again changes nothing.
+    #[test]
+    fn settings_takes_storage_s_view_open_or_asked_for() {
+        let view = crate::storage::tests::sample();
+        let (keeper, _) = Keeper::nowhere();
+        let settings =
+            || -> Box<dyn Dialog> { Box::new(settings_dialog::Settings::new(&keeper, false)) };
+        // The one open, then the one asked for: both are the host's boxed dialog.
+        let (mut open, mut asked) = (settings(), settings());
+        for dialog in [&mut open, &mut asked] {
+            assert!(hand_storage(dialog, &view));
+            let shown = dialog_mut::<settings_dialog::Settings>(dialog).unwrap();
+            assert_eq!(shown.storage(), &view);
+            assert!(!hand_storage(dialog, &view), "the same view again");
+        }
+        let mut export: Box<dyn Dialog> = Box::new(export::Export::new(export::Values::default()));
+        assert!(!hand_storage(&mut export, &view));
+    }
 
     #[test]
     fn an_alert_s_answer_is_the_button_and_whether_the_box_was_ticked() {
@@ -2526,7 +2563,7 @@ mod tests {
 
     impl Bench {
         fn outputs(&self) -> Vec<Output> {
-            self.asked.iter().filter_map(|d| d.output.clone()).collect()
+            self.asked.iter().flat_map(|d| d.outputs.clone()).collect()
         }
 
         fn closed(&self) -> bool {
@@ -2941,7 +2978,7 @@ mod tests {
             .state()
             .asked
             .iter()
-            .filter_map(|d| d.output.clone())
+            .flat_map(|d| d.outputs.clone())
             .collect();
         assert_eq!(
             asked,

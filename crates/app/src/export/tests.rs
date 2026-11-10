@@ -86,7 +86,7 @@ fn dialog_on(
                 ui.painter()
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
                 let drawn = dialog_host::draw(ui, &mut bench.content);
-                if let Some(Output::Export(asked)) = drawn.output {
+                if let Some(Output::Export(asked)) = drawn.outputs.into_iter().next() {
                     bench.asked.push(asked);
                 }
                 bench.closed |= drawn.close;

@@ -643,7 +643,7 @@ impl Dialog for Window {
             })
             .inner;
         Asks {
-            output: asked.map(Output::Log),
+            outputs: asked.map(Output::Log).into_iter().collect(),
             ..Asks::default()
         }
     }

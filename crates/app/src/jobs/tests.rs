@@ -749,6 +749,26 @@ fn every_cause_the_engine_names_has_words_in_every_language() {
     );
 }
 
+/// A size the session gives with its decimal keeps it on the row: "1.0 MB".
+#[test]
+fn a_size_with_its_decimal_keeps_it_on_the_row() {
+    let size = apertrust_engine::jobs::Argument::Decimals {
+        value: 1.0,
+        at_least: 1,
+    };
+    let outcome = Message::new("job-cache-cleared")
+        .with("kind", "thumbnails")
+        .with("entries", 3)
+        .with("size", size)
+        .with("unit", "mb");
+    let expected = JobMessage::new("job-cache-cleared")
+        .text("kind", "thumbnails")
+        .number("entries", 3.0)
+        .decimals("size", 1.0, 1)
+        .text("unit", "mb");
+    assert_eq!(job_message(&outcome), expected);
+}
+
 /// The cache's Clear words its title, its detail and its outcome in every language, the
 /// count's form and the size's unit the language's own (decision 76).
 #[test]
@@ -891,7 +911,7 @@ fn what_is_pressed_in_the_window_reaches_the_app_as_an_output() {
         .state()
         .asked
         .iter()
-        .filter_map(|drawn| drawn.output.clone())
+        .flat_map(|drawn| drawn.outputs.clone())
         .collect();
     assert_eq!(
         outputs,
@@ -922,7 +942,7 @@ fn a_failed_row_that_offers_it_draws_try_again_which_reaches_the_app() {
         .state()
         .asked
         .iter()
-        .filter_map(|drawn| drawn.output.clone())
+        .flat_map(|drawn| drawn.outputs.clone())
         .collect();
     assert_eq!(
         outputs,

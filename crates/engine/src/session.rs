@@ -6972,7 +6972,13 @@ mod tests {
         let cleared = Message::new("job-cache-cleared")
             .with("kind", "thumbnails")
             .with("entries", 10u64)
-            .with("size", 10.0)
+            .with(
+                "size",
+                crate::jobs::Argument::Decimals {
+                    value: 10.0,
+                    at_least: 0,
+                },
+            )
             .with("unit", "kb");
         assert!(
             matches!(
@@ -7036,7 +7042,13 @@ mod tests {
         let cancelled = Message::new("job-cache-clear-cancelled")
             .with("kind", "thumbnails")
             .with("entries", 2u64)
-            .with("size", 2.0)
+            .with(
+                "size",
+                crate::jobs::Argument::Decimals {
+                    value: 2.0,
+                    at_least: 1,
+                },
+            )
             .with("unit", "kb");
         assert!(
             matches!(

@@ -56,7 +56,7 @@ fn window_at(kept: &Kept, size: egui::Vec2) -> Harness<'static, Bench> {
         .build_ui_state(
             |ui, bench: &mut Bench| {
                 let drawn = dialog_host::draw(ui, &mut bench.window);
-                if let Some(Output::Log(asked)) = drawn.output {
+                if let Some(Output::Log(asked)) = drawn.outputs.into_iter().next() {
                     bench.asked.push(asked);
                 }
             },

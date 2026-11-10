@@ -38,8 +38,6 @@
 //! It is a [`Dialog`] (decision 41), which the dialog host draws in a window of its own:
 //! modeless on the Mac and modal on Windows and Linux.
 
-use std::collections::VecDeque;
-
 use apertrust_base::settings::{Applies, CONF_FLAG, Choice as _, Declared, Kind, Page};
 use apertrust_ui::components::{Choice, ChoiceAction, TextField, ToggleRow, ValueField};
 use apertrust_ui::popup::{self, Entry, Item, Request};
@@ -137,11 +135,15 @@ pub struct Settings {
     /// windows have it.
     pub close_button: bool,
     /// Storage's hand-built part, as the app last handed it.
-    pub storage: storage::View,
-    /// What Storage asked that is still to go to the app, one a frame after any change.
-    asks: VecDeque<storage::Asked>,
+    storage: storage::View,
+    /// The kinds whose Clear was pressed since the app last handed the view, disabled
+    /// meanwhile, so a second press never asks again.
+    pressed: Vec<apertrust_base::cache::Kind>,
     /// Whether Storage asked for the sizes since it was last shown.
     sizes_asked: bool,
+    /// Whether its window had the focus at the last frame, so Storage asks for the sizes
+    /// again as it comes back.
+    focused: bool,
 }
 
 /// What the user changed in the dialog: a setting set to a value, as `settings.toml` keeps
@@ -168,6 +170,8 @@ impl Change {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Asked {
     pub change: Option<Change>,
+    /// What Storage asked, after the change.
+    pub storage: Vec<storage::Asked>,
     /// Its Close button was pressed.
     pub close: bool,
 }
@@ -211,16 +215,10 @@ impl Dialog for Settings {
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
         let open = self.menu_open(ui.ctx());
         let asked = self.frame(ui);
-        // One output a frame: Storage's asks wait for a frame with no change.
-        let output = match asked.change {
-            Some(change) => Some(Output::Settings(change)),
-            None => self.asks.pop_front().map(Output::Storage),
-        };
-        if !self.asks.is_empty() {
-            ui.ctx().request_repaint();
-        }
+        let change = asked.change.map(Output::Settings);
+        let storage = asked.storage.into_iter().map(Output::Storage);
         Asks {
-            output,
+            outputs: change.into_iter().chain(storage).collect(),
             close: asked.close,
             keeps_escape: open,
         }
@@ -244,8 +242,9 @@ impl Settings {
             page: Page::General,
             close_button,
             storage: storage::View::default(),
-            asks: VecDeque::new(),
+            pressed: Vec::new(),
             sizes_asked: false,
+            focused: true,
         };
         let kept = keeper.page();
         if dialog.holds(kept) {
@@ -256,8 +255,20 @@ impl Settings {
 
     /// The dialog with Storage's hand-built part showing `view`.
     pub fn with_storage(mut self, view: storage::View) -> Settings {
-        self.storage = view;
+        self.set_storage(view);
         self
+    }
+
+    /// What Storage's hand-built part shows.
+    pub fn storage(&self) -> &storage::View {
+        &self.storage
+    }
+
+    /// Storage's hand-built part showing `view`, as the app hands it after a press: a
+    /// Clear pressed since is the view's to disable now.
+    pub fn set_storage(&mut self, view: storage::View) {
+        self.storage = view;
+        self.pressed.clear();
     }
 
     /// Whether `page` holds a row, so it can be chosen.
@@ -327,7 +338,10 @@ impl Settings {
                                 if let Some(change) = change {
                                     asked.change = Some(change);
                                 }
-                                self.asks.extend(storage);
+                                if let Some(storage::Asked::Clear(kind)) = &storage {
+                                    self.pressed.push(*kind);
+                                }
+                                asked.storage.extend(storage);
                             });
                     },
                 );
@@ -336,11 +350,15 @@ impl Settings {
         if let Some(change) = &asked.change {
             self.take(change, &ctx);
         }
-        // Storage asks for the sizes each time it is shown.
+        // Storage asks for the sizes each time it is shown, and as its window comes back
+        // to the front.
+        let focused = ctx.input(|i| i.focused);
+        let was = std::mem::replace(&mut self.focused, focused);
+        let back = focused && !was;
         if self.page != Page::Storage {
             self.sizes_asked = false;
-        } else if !std::mem::replace(&mut self.sizes_asked, true) {
-            self.asks.push_back(storage::Asked::Sizes);
+        } else if !std::mem::replace(&mut self.sizes_asked, true) || back {
+            asked.storage.push(storage::Asked::Sizes);
         }
         if self.close_button {
             let (line, _) = ui.allocate_exact_size(vec2(WIDTH, 1.0), Sense::hover());
@@ -539,7 +557,8 @@ impl Settings {
             ui.add_space(t.spacing.l);
             let name = tr(&ctx, "settings-group-cache-contents");
             group_title(ui, t, &name, &title, content);
-            if let Some(contents) = storage::contents(ui, t, &self.storage, lines) {
+            let pressed = &self.pressed;
+            if let Some(contents) = storage::contents(ui, t, &self.storage, pressed, lines) {
                 asked = Some(contents);
             }
         }
@@ -995,8 +1014,10 @@ mod tests {
             .build_ui_state(
                 |ui, bench: &mut Bench| {
                     let drawn = dialog_host::draw(ui, &mut bench.content);
-                    if let Some(Output::Settings(change)) = drawn.output {
-                        bench.changes.push(change);
+                    for output in drawn.outputs {
+                        if let Output::Settings(change) = output {
+                            bench.changes.push(change);
+                        }
                     }
                 },
                 Bench {

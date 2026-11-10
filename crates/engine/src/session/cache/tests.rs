@@ -569,7 +569,7 @@ fn a_clear_that_cannot_remove_some_fails_and_still_tells_the_sizes() {
 }
 
 /// A size as a job's message tells it: kB, MB or GB of disks' powers of ten, one decimal
-/// below 10 and none from there.
+/// below 10, written so, and none from there.
 #[test]
 fn a_size_is_told_in_the_unit_it_reads_best_in() {
     let told = |bytes| {
@@ -577,7 +577,10 @@ fn a_size_is_told_in_the_unit_it_reads_best_in() {
         let size = message.argument("size").cloned();
         (size, message.argument("unit").cloned())
     };
-    let number = |n: f64| Some(apertrust_base::jobs::Argument::Number(n));
+    let number = |value: f64| {
+        let at_least = u8::from(value < 10.0);
+        Some(apertrust_base::jobs::Argument::Decimals { value, at_least })
+    };
     let unit = |u: &str| Some(apertrust_base::jobs::Argument::Text(u.to_owned()));
     assert_eq!(told(0), (number(0.0), unit("kb")));
     assert_eq!(told(2_018), (number(2.0), unit("kb")));
