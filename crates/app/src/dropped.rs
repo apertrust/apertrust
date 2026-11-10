@@ -157,7 +157,8 @@ fn file_kind(path: &Path) -> Kind {
     }
 }
 
-/// A drop being looked at, on its thread, until the frame that takes what it opens.
+/// A drop being looked at, on its thread, until the frame that takes what it opens; or the
+/// files the system asked the app to open, Open With's, which open as a drop of them would.
 #[derive(Default)]
 pub struct Drops {
     looking: Option<Receiver<Option<Dropped>>>,
@@ -165,8 +166,7 @@ pub struct Drops {
 
 impl Drops {
     /// Takes what was dropped onto the window this frame, unless `modal`, and looks at it
-    /// on a thread of its own, in place of a drop still being looked at; `ctx` is asked for
-    /// a frame once it has been.
+    /// ([`Drops::look`]).
     pub fn take(&mut self, ctx: &egui::Context, modal: bool) {
         let paths: Vec<PathBuf> = ctx.input(|i| {
             let files = i.raw.dropped_files.iter();
@@ -175,6 +175,13 @@ impl Drops {
         if paths.is_empty() || modal {
             return;
         }
+        self.look(paths, ctx);
+    }
+
+    /// Looks at what `paths` open, on a thread of its own, in place of paths still being
+    /// looked at, so a share that hangs never holds a frame; `ctx` is asked for a frame
+    /// once they have been.
+    pub fn look(&mut self, paths: Vec<PathBuf>, ctx: &egui::Context) {
         let (answer, looking) = mpsc::channel();
         let ctx = ctx.clone();
         let looked = std::thread::Builder::new()

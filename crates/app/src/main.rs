@@ -113,11 +113,18 @@ use recents::Recents;
 use settings::{Keeper, Settings};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
-/// [--cache-dir DIR] [--conf KEY=VALUE]... [FILE | FOLDER]`.
+/// [--cache-dir DIR] [--conf KEY=VALUE]... [FILE | FOLDER | --in-folder FILE...]`.
 #[derive(Debug, Default, PartialEq)]
 struct Arguments {
-    /// What to open: the first path given.
+    /// What to open: the first path given, from a terminal.
     open: Option<Start>,
+    /// `--in-folder FILE...`, Open With's and a double-click's on Windows and Linux, the
+    /// registrations passing it before the files (`docs/packaging.md`, Opening a raw from
+    /// the system): every path given, absolute, to open as a drop of them would, the
+    /// photo's folder with it active, looked at off the interface's thread once the window
+    /// is up and refused there, since a launcher has no terminal. None given, as a desktop
+    /// entry's `%F` gives none when the app is started from a menu, opens nothing.
+    in_folder: Vec<PathBuf>,
     /// darktable-style debug domains for stderr (`apertrust_base::log::DOMAINS`).
     domains: Vec<String>,
     /// The user data folder, where the settings are kept, in place of the platform's:
@@ -144,19 +151,25 @@ enum Start {
     Folder(PathBuf),
 }
 
+/// `--in-folder`, which Open With's registrations pass before the files.
+const IN_FOLDER_FLAG: &str = "--in-folder";
+
 /// Reads `args`, the command line after the program's name, `look` saying what its path
-/// is on the disk ([`start`]). A flag of the user data folder or the cache folder without
-/// one is an error, so that another is never used in its place, as is `--conf` without
-/// its setting.
+/// is on the disk ([`start`]), unless `--in-folder` comes anywhere in it, when the disk is
+/// not asked here and every path is its. A flag of the user data folder or the cache
+/// folder without one is an error, so that another is never used in its place, as is
+/// `--conf` without its setting.
 fn arguments(
     args: impl IntoIterator<Item = OsString>,
     look: impl FnOnce(&Path) -> std::io::Result<dropped::Kind>,
 ) -> Result<Arguments, String> {
     let mut args = args.into_iter();
     let mut arguments = Arguments::default();
-    let mut path = None;
+    let (mut paths, mut in_folder) = (Vec::new(), false);
     while let Some(arg) = args.next() {
-        if arg == "-d" || arg == "--debug" {
+        if arg == IN_FOLDER_FLAG {
+            in_folder = true;
+        } else if arg == "-d" || arg == "--debug" {
             let domain = args.next().map(|d| d.to_string_lossy().into_owned());
             arguments.domains.extend(domain);
         } else if arg == CONF_FLAG {
@@ -174,11 +187,17 @@ fn arguments(
         } else if let Some(given) = joined(&arg) {
             let (flag, folder) = given?;
             arguments.named(flag, folder);
-        } else if path.is_none() {
-            path = Some(PathBuf::from(arg));
+        } else {
+            paths.push(PathBuf::from(arg));
         }
     }
-    arguments.open = path.map(|path| start(path, look)).transpose()?;
+    if in_folder {
+        let absolute = |path: PathBuf| std::path::absolute(&path).unwrap_or(path);
+        arguments.in_folder = paths.into_iter().map(absolute).collect();
+    } else {
+        let first = paths.into_iter().next();
+        arguments.open = first.map(|path| start(path, look)).transpose()?;
+    }
     Ok(arguments)
 }
 
@@ -317,6 +336,7 @@ fn main() -> eframe::Result {
     }
     let Arguments {
         open,
+        in_folder,
         domains,
         user_data,
         cache,
@@ -429,6 +449,11 @@ fn main() -> eframe::Result {
         false,
     );
     let event_loop = builder.build()?;
+    // Finder's files, at the launch too, once winit's delegate is set and before its loop
+    // runs.
+    if let Err(e) = apertrust_display::receive_opened_files() {
+        tracing::warn!(target: "control", "files Finder opens with the app not received: {e}");
+    }
     // The dialogs' windows, beside eframe's, run by `Gated` (decision 41).
     let host = dialog_host::Host::new(event_loop.create_proxy());
     let app_host = host.clone();
@@ -446,6 +471,7 @@ fn main() -> eframe::Result {
                 Ok(Box::new(App::new(
                     cc,
                     open,
+                    in_folder,
                     keeper,
                     settings,
                     engine_gate,
@@ -890,6 +916,8 @@ struct App {
     asking: Option<dialogs::Asking>,
     /// What was dropped onto the window, while it is looked at (`dropped`).
     drops: dropped::Drops,
+    /// The files the system asked the app to open, Open With's, while they are looked at.
+    opened: dropped::Drops,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
     /// The dialogs' windows (decision 41).
@@ -2086,7 +2114,8 @@ fn apply_settings(
 
 impl App {
     /// The app as `settings` left it, before its first frame, opening what the command line
-    /// named, `open`; `keeper` writes them back.
+    /// named, `open`, or the files Open With gave it, `in_folder`, once they have been
+    /// looked at; `keeper` writes them back.
     /// Its session plans within `budget` bytes, `engine.memory_budget`, and keeps `cache`,
     /// the disk cache, if the app could open one. Its dialogs are the host's. It keeps the
     /// session's log in `kept` while settings say so.
@@ -2094,6 +2123,7 @@ impl App {
     fn new(
         cc: &eframe::CreationContext<'_>,
         open: Option<Start>,
+        in_folder: Vec<PathBuf>,
         keeper: Keeper,
         settings: Settings,
         gate: SubmitGate,
@@ -2197,6 +2227,7 @@ impl App {
             menus,
             asking: None,
             drops: dropped::Drops::default(),
+            opened: dropped::Drops::default(),
             pictures: paths::pictures(),
             dialogs,
             jobs_view: Vec::new(),
@@ -2222,6 +2253,12 @@ impl App {
             let session = &app.session;
             started(open, &mut app.mirror, &mut |command| session.send(command));
         }
+        if !in_folder.is_empty() {
+            app.opened.look(in_folder, &cc.egui_ctx);
+        }
+        // Finder's files, at the launch and later, wake the app as they come.
+        let ctx = cc.egui_ctx.clone();
+        apertrust_display::on_opened_files(move || ctx.request_repaint());
         app
     }
 
@@ -3507,6 +3544,15 @@ impl eframe::App for App {
             self.carry_out_opening(dropped_opens(dropped), &ctx);
         }
         self.drops.take(&ctx, modal);
+        // What the system asked the app to open, Open With's, opens as a drop of it would,
+        // its folder with the photo active, once looked at; it waits for a modal dialog to
+        // go rather than being set aside, since nothing on the screen says it came.
+        if let Some(files) = apertrust_display::take_opened_files() {
+            self.opened.look(files, &ctx);
+        }
+        if !modal && let Some(opened) = self.opened.looked() {
+            self.carry_out_opening(dropped_opens(opened), &ctx);
+        }
         if dropped::hovering(&ctx, modal) {
             dropped::show_target(&ctx, central.union(grid_panel));
         }
@@ -4652,6 +4698,70 @@ mod tests {
         assert_eq!(found(&days.join("..").join("IMG_1.CR3")), Ok(photo));
     }
 
+    /// `--in-folder FILE...`: every path given, absolute, wherever the flag comes, the other
+    /// flags read as ever and the disk never asked here, so a library's file or a missing
+    /// one is refused later, in the window; with none, as a desktop entry's `%F` started
+    /// from a menu gives, nothing opens.
+    #[test]
+    fn in_folder_takes_every_file_given_and_asks_nothing_of_the_disk() {
+        let unasked = |path: &Path| -> std::io::Result<dropped::Kind> {
+            panic!("the disk asked of {}", path.display())
+        };
+        let read = |line: &[&str]| arguments(line.iter().map(OsString::from), unasked);
+        let absolute = |path: &str| std::path::absolute(path).expect("absolute");
+        let line = [
+            "IMG_1.CR3",
+            "--conf",
+            "scale=2",
+            "--in-folder",
+            "/a/IMG_2.CR3",
+        ];
+        let given = read(&line).expect("read");
+        assert_eq!(
+            given.in_folder,
+            [absolute("IMG_1.CR3"), absolute("/a/IMG_2.CR3")]
+        );
+        assert_eq!((given.open, given.conf), (None, vec!["scale=2".to_owned()]));
+        let refused_later = read(&["--in-folder", "/a/Home.aplibrary", "/nowhere/x.CR3"]);
+        assert_eq!(refused_later.expect("read").in_folder.len(), 2);
+        assert_eq!(read(&["--in-folder"]), Ok(Arguments::default()));
+    }
+
+    /// What Open With gave the app opens as a drop of it would, once looked at: a raw as
+    /// Open… opens it, a library's file refused with the alert in the window. Unlike a
+    /// drop, it waits for a modal dialog to go, and then opens.
+    #[test]
+    fn open_with_s_files_open_as_a_drop_and_wait_for_a_modal_dialog() {
+        let folder = settings::testing::Folder::new("open-with");
+        let (raw, library) = (folder.0.join("IMG_1.CR3"), folder.0.join("Home.aplibrary"));
+        for file in [&raw, &library] {
+            std::fs::write(file, b"").expect("a file");
+        }
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        let opened = |harness: &mut Harness<'_, Bench>, paths: &[&PathBuf]| {
+            let ctx = harness.ctx.clone();
+            let paths = paths.iter().map(|p| p.to_path_buf()).collect();
+            harness.state_mut().opened.look(paths, &ctx);
+            harness.state_mut().opened.wait();
+            harness.run();
+        };
+        opened(&mut harness, &[&library]);
+        let why = dropped::Refusal::Library;
+        assert_eq!(harness.state().refused, [(library.clone(), why)]);
+        harness.state_mut().alerts = alerts::Alerts::default();
+        harness.run();
+        // About up: the raw waits, then opens once About has gone.
+        let ctx = harness.ctx.clone();
+        harness.state_mut().shell.about.open(&ctx);
+        harness.run();
+        opened(&mut harness, &[&raw]);
+        assert!(harness.state().commands.is_empty());
+        harness.state_mut().shell.about = about::About::default();
+        harness.run();
+        assert_eq!(harness.state().commands, [Command::Open(raw)]);
+    }
+
     /// A photo that is a link opens under its own name, in the folder where the link lies,
     /// never as the file it points to.
     #[cfg(unix)]
@@ -4745,6 +4855,7 @@ mod tests {
             read(&["-d", "settings", "--user-data-dir", "dev", "photo.ARW"]),
             Ok(Arguments {
                 open: photo_arw(),
+                in_folder: Vec::new(),
                 domains: vec!["settings".to_owned()],
                 user_data: given("--user-data-dir", "dev"),
                 cache: None,
@@ -6796,6 +6907,8 @@ mod tests {
         host: FakeHost,
         /// What was dropped, while it is looked at.
         drops: dropped::Drops,
+        /// The files the system asked the app to open, Open With's, while they are looked at.
+        opened: dropped::Drops,
         /// Each drop or Open… that opened nothing: the path it names, and why.
         refused: Vec<(PathBuf, dropped::Refusal)>,
         /// The alert up, and what each refusal's asking of it came to.
@@ -6986,6 +7099,9 @@ mod tests {
                         carry_out(bench, dropped_opens(dropped));
                     }
                     bench.drops.take(&ctx, modal);
+                    if !modal && let Some(opened) = bench.opened.looked() {
+                        carry_out(bench, dropped_opens(opened));
+                    }
                     if let Some(gesture) = window {
                         run_title_bar(gesture, &ctx, &mut bench.system);
                     }
@@ -7013,6 +7129,7 @@ mod tests {
                     dialogs: dialog_host::AppDialogs::new(host.clone()),
                     host,
                     drops: dropped::Drops::default(),
+                    opened: dropped::Drops::default(),
                     refused: Vec::new(),
                     alerts: alerts::Alerts::default(),
                     asked: Vec::new(),
