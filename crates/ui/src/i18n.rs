@@ -861,6 +861,8 @@ mod tests {
                 args.set("command", "Ctrl");
                 // Open Recent's item for a name two recents share: the folder it is in.
                 args.set("parent", "Lisbon");
+                // The start window's recent, to screen readers: its path.
+                args.set("path", "~/Pictures/2026-10 Lisbon");
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

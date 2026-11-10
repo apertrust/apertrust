@@ -213,7 +213,6 @@ impl Drops {
     }
 
     /// Whether a drop is being looked at.
-    #[cfg(test)]
     pub fn looking(&self) -> bool {
         self.looking.is_some()
     }

@@ -6,9 +6,9 @@ The library is how Apertrust finds photos and keeps what is known about them: on
 
 **Status.**
 
-- **Built:** folder mode's first part. A folder is listed and its sidecars read into an index in memory, opened through the session as a job, and shown in Browse's Folders, in the side panel's Photos tab, and in the grid panel. The `.apxmp` version 1 and the XMP layer under it are built, as are the safe write and `apertrust-cli library scan`. The code is in `crates/library/src/`: `listing`, `index`, `sidecar`, `xmp` and `ops`.
+- **Built:** folder mode's first part. A folder is listed and its sidecars read into an index in memory, opened through the session as a job, and shown in Browse's Folders, in the side panel's Photos tab, and in the grid panel. The `.apxmp` version 1 and the XMP layer under it are built, as are the safe write and `apertrust-cli library scan`. The code is in `crates/library/src/`: `listing`, `index`, `sidecar`, `xmp` and `ops`. The ways in to it are built in the app: one photo from a terminal, Open With into folder mode, Open Recent, what was open last reopened at the start, and the start window in place of the main window with nothing open ([gui.md](gui.md#the-start-window)).
 - **In progress:** thumbnails ([Thumbnails](#thumbnails)): the camera's embedded pictures are built, the cache and Apertrust's own renders remain.
-- **Planned:** one photo, Open With into folder mode and the start window in Phase 2; the rest of folder mode in Phases 2 and 3; the Library and the Project in Phase 5; the server in Phase 7 ([The steps](#the-steps), [A server](#a-server)).
+- **Planned:** the rest of folder mode in Phases 2 and 3; the Library and the Project in Phase 5; the server in Phase 7 ([The steps](#the-steps), [A server](#a-server)).
 
 ## What the library is
 

@@ -414,6 +414,18 @@ folder-failed = Не вдалося відкрити { $folder }: { $reason }
 folder-cancelled = Читання { $folder } скасовано
 folder-no-photo = Знімок не вибрано
 
+## Вікно запуску, яке показується замість головного вікна, коли нічого не відкрито
+
+start-recents = Нещодавні
+start-recents-none = Ще нічого не відкрито
+start-kind-folder = Тека
+start-recent-gone = Не знайдено
+start-recent-failed = Не вдалося відкрити
+start-recent-about = { $kind }, { $path }
+start-recent-about-missing = { $kind }, { $path }. { $why }
+start-browse = Огляд…
+start-open = Відкрити
+
 ## Налаштування
 
 settings-close = Закрити

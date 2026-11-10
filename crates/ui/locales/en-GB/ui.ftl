@@ -521,6 +521,26 @@ folder-cancelled = Reading { $folder } was cancelled
 # A folder is open with photos, and none is.
 folder-no-photo = No photo selected
 
+## The start window, which shows in place of the main window with nothing open
+
+# Its list's heading, and what screen readers call the list.
+start-recents = Recents
+# The list with nothing in it.
+start-recents-none = Nothing opened yet
+# A recent's kind, at its row's end.
+start-kind-folder = Folder
+# Before the path of a recent that is no longer there, or that could not be opened.
+start-recent-gone = Not found
+start-recent-failed = Could not be opened
+# What screen readers say of a recent after its name: its kind and its path, and why it
+# cannot be opened where it cannot.
+start-recent-about = { $kind }, { $path }
+start-recent-about-missing = { $kind }, { $path }. { $why }
+# Finds a library's or a project's file anywhere, as File › Open… does.
+start-browse = Browse…
+# The accent button, which opens the recent chosen.
+start-open = Open
+
 ## Settings
 
 settings-close = Close
