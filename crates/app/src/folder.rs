@@ -230,13 +230,6 @@ impl FolderState {
 
     /// The folder is closed by the command numbered `number`: nothing is open at once, and
     /// the events of the reading it stops are dropped.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "no action closes a folder yet; the mirror is ready"
-        )
-    )]
     pub fn closing(&mut self, number: u64) {
         self.latest = number;
         self.job = None;

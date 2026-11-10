@@ -805,6 +805,12 @@ impl Keeper {
         folders.map(PathBuf::from).collect()
     }
 
+    /// Whether the start reopens what was open last, `library.reopen_last`, read once as
+    /// the app starts (`docs/gui.md`, The start window).
+    pub fn reopen_last(&self) -> bool {
+        self.store.get(&LIBRARY_REOPEN_LAST)
+    }
+
     /// The Settings dialog's page last shown.
     pub fn page(&self) -> apertrust_base::settings::Page {
         self.store.get(&SETTINGS_WINDOW_PAGE)
@@ -1152,16 +1158,18 @@ mod tests {
 
     /// The settings the app's own settings write: the app's and the export settings the
     /// Export dialog keeps. The engine's, and the page Settings last showed, the Settings
-    /// dialog keeps through the keeper (`Keeper::apply`); the old recent folders are only
+    /// dialog keeps through the keeper (`Keeper::apply`), and so is reopening what was open
+    /// last, read once at the start (`Keeper::reopen_last`); the old recent folders are only
     /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
+        let reopen = LIBRARY_REOPEN_LAST.id;
         registry::ALL
             .iter()
             .chain(export)
             .map(|s| s.id())
-            .filter(move |id| *id != page && *id != old)
+            .filter(move |id| *id != page && *id != old && *id != reopen)
     }
 
     /// Every setting of the schema is one of the app's or the export's, written once it

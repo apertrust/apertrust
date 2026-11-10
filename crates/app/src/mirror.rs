@@ -34,7 +34,7 @@
 //!   definition's defaults and Scopes with no graph, disabled ([`Shown::Nothing`]): never a blank
 //!   panel. The photo's values replace them in one apply ([`Shown::Photo`]).
 //! - **Stale events:** while a photo opens, what an earlier open left on its way is dropped
-//!   ([`PhotoState::stale`]); a library event naming a command other than the latest open or
+//!   ([`PhotoState::stale`]), and so is what a photo closed left ([`Mirror::closing`]); a library event naming a command other than the latest open or
 //!   close is dropped by the folder ([`folder::FolderState::apply`]).
 //! - **A refused command** ([`SessionError::Refused`]) names its number: its pending change
 //!   stops showing, a save it would have waited for is not waited for, and a job it would
@@ -131,6 +131,9 @@ pub struct Mirror {
     picture_generation: u64,
     /// Whether the photo is live: its values take changes, and its frames come.
     live: bool,
+    /// Whether the photo was closed, with none asked for since: what the session still
+    /// sends of it is dropped ([`Mirror::closing`]).
+    closed: bool,
     /// When the photo open was asked for, from which Rendering… waits.
     asked_at: Option<Instant>,
     /// The latest scopes reading, and what the session was asked to count.
@@ -171,6 +174,7 @@ impl Mirror {
             picture: None,
             picture_generation: 0,
             live: false,
+            closed: false,
             asked_at: None,
             scopes: Scopes::default(),
             saving: Saving::default(),
@@ -200,6 +204,7 @@ impl Mirror {
     pub fn opening(&mut self, path: PathBuf, open: u64, now: Instant) {
         let held = self.folder.largest_thumbnail(&path).cloned();
         self.photo = PhotoState::Opening { path, open };
+        self.closed = false;
         self.folder.locate(self.photo.path());
         self.saving.leaving();
         self.frame = None;
@@ -211,6 +216,22 @@ impl Mirror {
             image,
             rendered: false,
         }));
+    }
+
+    /// The photo is closed, File › Close's `Command::Close` sent: none is open from now on,
+    /// the side panel shows no photo, and what the session still sends of it is dropped,
+    /// but the write of its edit, which `saving` waits for as for a photo left.
+    pub fn closing(&mut self) {
+        self.photo = PhotoState::None;
+        self.closed = true;
+        self.folder.locate(None);
+        self.saving.leaving();
+        self.frame = None;
+        self.failure = None;
+        self.no_photo();
+        self.live = false;
+        self.asked_at = None;
+        self.set_picture(None);
     }
 
     /// Whether the photo is live, its controls taking changes and its frames coming.
@@ -301,7 +322,7 @@ impl Mirror {
     /// ([`PhotoState::stale`]), and returns what the app owes in reply.
     pub fn apply(&mut self, event: Event) -> Vec<Reaction> {
         let mut reactions = Vec::new();
-        if self.photo.stale(&event) {
+        if self.photo.stale(&event) || self.closed && of_a_photo(&event) {
             return reactions;
         }
         // Where the photo open is in the folder changes only with the photo or the listing.
@@ -526,6 +547,20 @@ fn untouched(modules: &[&dyn Module]) -> Values {
         extent: [0, 0],
         live: false,
     }
+}
+
+/// Whether `event` is a photo's own, which only a photo open or opening sends: its
+/// picture, its opening or its failure, its values, frames and scopes readings.
+fn of_a_photo(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Opened(_)
+            | Event::OpenPreview(_)
+            | Event::Values(_)
+            | Event::Frame(_)
+            | Event::Scopes(_)
+            | Event::Failed(SessionError::Open { .. })
+    )
 }
 
 /// Asks the jobs window to show, unless the event changed nothing it shows.

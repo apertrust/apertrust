@@ -79,7 +79,7 @@ impl<'a> Button<'a> {
     }
 
     /// At least `width` points wide, its words at its start and its keys at its end, as the
-    /// start card's buttons fill its width.
+    /// central panel's card's buttons fill its width.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self

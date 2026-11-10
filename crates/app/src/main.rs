@@ -961,6 +961,8 @@ struct App {
     storage_folders: storage::Folders,
     /// What Settings › Storage was last handed, so it is handed again only when it changes.
     storage_shown: storage::View,
+    /// What was open last, while it reopens at the start ([`reopened`]).
+    reopening: Option<Reopening>,
 }
 
 /// What the top panel asked for this frame.
@@ -1318,8 +1320,12 @@ struct Shell {
     open: bool,
     /// Whether Open Folder… ran, for the app to show the folder dialog after the frame.
     open_folder: bool,
+    /// The recent folder Open Recent chose, for the app to open after the action.
+    open_recent: Option<PathBuf>,
+    /// Whether File › Close ran, for the app to close what is open after the action.
+    close: bool,
     /// What was opened, newest first, kept in `state.toml`: Browse's recent folders and
-    /// Open Recent's list.
+    /// Open Recent's list, with what was open last beside them.
     recents: Recents,
     /// Whether Browse was shown at the last frame, so the recents are checked again as it
     /// comes into sight.
@@ -1421,6 +1427,8 @@ impl Shell {
             about: about::About::default(),
             open: false,
             open_folder: false,
+            open_recent: None,
+            close: false,
             recents: Recents::nowhere(),
             browse_shown: false,
             tree: BTreeMap::new(),
@@ -1534,9 +1542,15 @@ impl Shell {
     }
 
     /// A folder opened: first among the recents, once, at most ten, and no longer missing,
-    /// since it opened; written on the recents' own thread.
+    /// since it opened, and what was open last, with no photo active yet; written on the
+    /// recents' own thread. A photo opened alone is never a folder opened.
     fn remember_folder(&mut self, path: PathBuf) {
         self.missing.remove(&path);
+        self.recents.set_last(Some(recents::Last {
+            kind: recents::Kind::Folder,
+            path: path.clone(),
+            photo: None,
+        }));
         self.recents.opened(recents::Kind::Folder, path);
         self.recents.save();
     }
@@ -1586,6 +1600,43 @@ impl Shell {
                     path,
                     missing: failed.or(gone.then_some(library::Missing::Gone)),
                 }
+            })
+            .collect()
+    }
+
+    /// Open Recent's items, newest first: each folder's name, with the name of the folder it
+    /// is in where another recent has the same name, and its path in the tip, after why it
+    /// cannot be opened where it cannot. Nothing is asked of the disk.
+    fn recent_items(&self, ctx: &egui::Context) -> Vec<menus::Recent> {
+        let tr = translator(ctx);
+        let recents = self.recent_folders();
+        let name = |path: &Path| {
+            path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            )
+        };
+        let names: Vec<String> = recents.iter().map(|r| name(r.path)).collect();
+        recents
+            .iter()
+            .zip(&names)
+            .map(|(recent, own)| {
+                let shared = names.iter().filter(|n| *n == own).count() > 1;
+                let words = match recent.path.parent().filter(|_| shared) {
+                    Some(parent) => {
+                        let mut args = apertrust_ui::i18n::Args::new();
+                        args.set("name", own.clone());
+                        args.set("parent", name(parent));
+                        tr.text_with("menu-recent-in", Some(&args))
+                    }
+                    None => own.clone(),
+                };
+                let path = recent.path.display().to_string();
+                let tip = match recent.missing {
+                    Some(missing) => format!("{}\n{path}", library::missing_words(ctx, missing)),
+                    None => path,
+                };
+                menus::Recent { words, tip }
             })
             .collect()
     }
@@ -1752,12 +1803,19 @@ impl Shell {
     /// What the actions' availability depends on this frame; `photo` and `edited` come
     /// from the session mirror.
     fn state(&self, ctx: &egui::Context, photo: bool, edited: bool) -> State {
+        let mut recents = [None; recents::MOST];
+        for (place, recent) in recents.iter_mut().zip(self.recent_folders()) {
+            *place = Some(recent.missing.is_none());
+        }
         State {
             view: self.view,
             photo,
             edited,
             // One photo until the catalogue.
             photos: usize::from(photo),
+            // The app's, from the folder and the photo it holds ([`App::shell_state`]).
+            opened: false,
+            recents,
             tabs: &TABS_ENABLED,
             scale: ctx.zoom_factor(),
             dialog: self.about.is_open(),
@@ -1786,8 +1844,10 @@ impl Shell {
         };
         let mut request = None;
         let opened = actions::access_key(ctx, |letter| {
-            let request =
-                request.get_or_insert_with(|| menus::request(ctx, &self.keymap, state, anchor));
+            let request = request.get_or_insert_with(|| {
+                let recents = self.recent_items(ctx);
+                menus::request(ctx, &self.keymap, state, &recents, anchor)
+            });
             let menu = request.access_key(letter)?.to_owned();
             Some(request.clone().expanded(menu))
         });
@@ -1837,7 +1897,9 @@ impl Shell {
         if popup::is_open(ctx, id) {
             popup::close(ctx, id);
         } else if let Some(anchor) = TopPanel::menu_anchor(ctx) {
-            popup::open(ctx, id, menus::request(ctx, &self.keymap, state, anchor));
+            let recents = self.recent_items(ctx);
+            let request = menus::request(ctx, &self.keymap, state, &recents, anchor);
+            popup::open(ctx, id, request);
         }
     }
 
@@ -1966,6 +2028,15 @@ impl Shell {
             Intent::Settings => self.settings = true,
             Intent::Open => self.open = true,
             Intent::OpenFolder => self.open_folder = true,
+            Intent::OpenRecent(place) => {
+                let entry = self.recents.entries().nth(place);
+                self.open_recent = entry.map(|entry| entry.path.clone());
+            }
+            Intent::ClearRecent => {
+                self.recents.clear();
+                self.recents.save();
+            }
+            Intent::Close => self.close = true,
             Intent::Export => self.export_asked = true,
             Intent::ExportAgain => self.export_again = true,
             Intent::Menu => self.menu = true,
@@ -2249,10 +2320,20 @@ impl App {
             focused: true,
             storage_folders,
             storage_shown: storage::View::default(),
+            reopening: None,
         };
+        // Finder's files at the launch, which macOS hands over as it finishes launching,
+        // before the window, win over what was open last, as `--in-folder`'s do; any that
+        // come later open over it.
+        let mut in_folder = in_folder;
+        in_folder.extend(apertrust_display::take_opened_files().unwrap_or_default());
+        let session = &app.session;
+        let send = &mut |command| session.send(command);
         if let Some(open) = open {
-            let session = &app.session;
-            started(open, &mut app.mirror, &mut |command| session.send(command));
+            started(open, &mut app.mirror, send);
+        } else if in_folder.is_empty() {
+            let last = app.shell.recents.last();
+            app.reopening = reopen(last, app.keeper.reopen_last(), &mut app.mirror, send);
         }
         if !in_folder.is_empty() {
             app.opened.look(in_folder, &cc.egui_ctx);
@@ -2542,6 +2623,15 @@ impl App {
         choose_folder(path, &mut self.mirror, &mut |command| session.send(command));
     }
 
+    /// File › Close ([`close`]): what was open last is forgotten, and no longer reopens.
+    fn close(&mut self) {
+        let session = &self.session;
+        close(&mut self.mirror, &mut |command| session.send(command));
+        self.shell.recents.set_last(None);
+        self.shell.recents.save();
+        self.reopening = None;
+    }
+
     /// Takes in what the engine has reported since the last frame through the mirror
     /// (`mirror.rs`), the one place events enter, and does what it asks in reply. Run first
     /// in `logic`, which eframe calls before each frame and alone while the window is
@@ -2563,6 +2653,10 @@ impl App {
                 }
             }
         }
+        let session = &self.session;
+        reopened(&mut self.reopening, &mut self.mirror, &mut |command| {
+            session.send(command)
+        });
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -2759,8 +2853,10 @@ impl App {
         // opening, read-only until it is live (decision 77).
         let resettable = self.mirror.values.edited && self.mirror.takes_edits();
         let state = self.shell.state(ctx, open, resettable);
+        let folder = !matches!(self.mirror.folder.folder, folder::Folder::None);
         State {
             shown: !self.mirror.folder.order().is_empty(),
+            opened: folder || !matches!(self.mirror.photo, PhotoState::None),
             ..state
         }
     }
@@ -2811,6 +2907,12 @@ impl App {
             }
             if std::mem::take(&mut self.shell.export_again) {
                 self.export_again(ctx);
+            }
+            if let Some(path) = self.shell.open_recent.take() {
+                self.open_folder(path);
+            }
+            if std::mem::take(&mut self.shell.close) {
+                self.close();
             }
             if std::mem::take(&mut self.shell.show_log) {
                 let size = self.shell.log.size.map(egui::Vec2::from);
@@ -3208,11 +3310,9 @@ impl App {
         // read, why it could not be, or to choose a photo.
         let mut asked = Vec::new();
         if matches!(self.mirror.photo, PhotoState::None) {
-            let recent = self.shell.recent_folders();
             let keys = self.shell.open_keys(ui.ctx());
             let what = library::Empty::of(&self.mirror.folder.folder);
-            asked =
-                library::empty_state(ui, slot, what, &recent, &keys, self.places.home.as_deref());
+            asked = library::empty_state(ui, slot, what, &keys);
         }
 
         let photo_rect = placed.as_ref().map(|placed| placed.photo);
@@ -3583,7 +3683,8 @@ impl eframe::App for App {
         // The menus follow what ran: the keys, what can run now, the focus, the language.
         let state = self.state(&ctx);
         if let Some(menus) = &mut self.menus {
-            menus.update(&ctx, &self.shell.keymap, &state);
+            let recents = self.shell.recent_items(&ctx);
+            menus.update(&ctx, &self.shell.keymap, &state, &recents);
         }
         // The Mac's popup menus the frame asked for, shown from the run loop.
         popups::show(&ctx, frame);
@@ -3685,6 +3786,12 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.keeper.flush();
+        // What was open last, with the photo active in it, for the next start.
+        let last = self.shell.recents.last().cloned();
+        let photo = self.mirror.photo.path();
+        self.shell
+            .recents
+            .set_last(last.map(|last| with_photo(last, photo)));
         self.shell.recents.flush();
     }
 }
@@ -3749,6 +3856,105 @@ fn choose_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>)
     let source = Source::Folder(path.clone());
     let open = send(Command::Library(LibraryCommand::Open(source)));
     mirror.folder.choosing(path, open);
+}
+
+/// File › Close: the photo open closed, its edit saved as the session saves any photo it
+/// leaves, and the folder open closed, so the central panel shows where to start. Nothing
+/// that is not open is closed.
+fn close(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    if !matches!(mirror.photo, PhotoState::None) {
+        send(Command::Close);
+        mirror.closing();
+    }
+    if !matches!(mirror.folder.folder, folder::Folder::None) {
+        let close = send(Command::Library(LibraryCommand::Close));
+        mirror.folder.closing(close);
+    }
+}
+
+/// What was open last, reopening at the start: the library command that opens its folder,
+/// the photo to open once the folder lists it, and how many of the folder's photos have
+/// been looked through for it.
+#[derive(Debug, PartialEq)]
+struct Reopening {
+    open: u64,
+    photo: Option<PathBuf>,
+    looked: usize,
+}
+
+/// What the start opens with no path on the command line and no file from the system:
+/// where `on` (`library.reopen_last`), what was open last, `last`, its folder at once in
+/// folder mode and its photo once the folder lists it ([`reopened`]). Nothing is asked of
+/// the disk here: a folder that is gone fails as its reading does, and one on a slow share
+/// says it is being read.
+fn reopen(
+    last: Option<&recents::Last>,
+    on: bool,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) -> Option<Reopening> {
+    let last = last.filter(|_| on)?;
+    match last.kind {
+        recents::Kind::Folder => open_folder(last.path.clone(), mirror, send),
+    }
+    Some(Reopening {
+        open: mirror.folder.latest(),
+        photo: last.photo.as_ref().map(|name| last.path.join(name)),
+        looked: 0,
+    })
+}
+
+/// Follows what was open last as it reopens, after the events of a frame: the photo opens
+/// once its folder lists it, if no photo has been asked for meanwhile; a folder that could
+/// not be read, or whose reading was cancelled, is closed, so the central panel shows
+/// where to start with its recent marked. It ends there, and as another folder is asked
+/// for, or the listing ends without the photo.
+fn reopened(reopening: &mut Option<Reopening>, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    let Some(asked) = reopening else {
+        return;
+    };
+    if mirror.folder.latest() != asked.open {
+        *reopening = None;
+        return;
+    }
+    match &mirror.folder.folder {
+        folder::Folder::Opening { .. } => {}
+        folder::Folder::Open(listing) => {
+            let none_asked = matches!(mirror.photo, PhotoState::None);
+            let name = asked.photo.as_deref().and_then(Path::file_name);
+            let new = listing.photos.get(asked.looked..).unwrap_or_default();
+            let listed = new
+                .iter()
+                .any(|photo| Some(OsStr::new(&photo.name)) == name);
+            let waits = name.is_some() && !listing.done;
+            asked.looked = listing.photos.len();
+            match asked.photo.take() {
+                Some(photo) if listed && none_asked => {
+                    open_photo(photo, mirror, send);
+                    *reopening = None;
+                }
+                photo if none_asked && waits => asked.photo = photo,
+                _ => *reopening = None,
+            }
+        }
+        folder::Folder::Failed { .. } => {
+            let close = send(Command::Library(LibraryCommand::Close));
+            mirror.folder.closing(close);
+            *reopening = None;
+        }
+        folder::Folder::None | folder::Folder::Alone { .. } => *reopening = None,
+    }
+}
+
+/// What was open last, `last`, with `photo` active in it as the app ends: its file name
+/// where it is in that folder, none where no photo is or it is elsewhere.
+fn with_photo(last: recents::Last, photo: Option<&Path>) -> recents::Last {
+    let photo = photo.filter(|photo| photo.parent() == Some(last.path.as_path()));
+    let name = photo.and_then(Path::file_name);
+    recents::Last {
+        photo: name.map(|name| name.to_string_lossy().into_owned()),
+        ..last
+    }
 }
 
 /// What an open dialog's answer or a drop opens, or the path it refuses and why.
@@ -4202,7 +4408,7 @@ fn file_name(path: &std::path::Path) -> String {
 mod tests {
     use super::*;
     use crate::mirror::{reported, show};
-    use apertrust_engine::session::{Event, Mark, Photo};
+    use apertrust_engine::session::{Event, LibraryEvent, Mark, Photo};
     use apertrust_plugin::ImageContext;
     use apertrust_ui::components::{Section, SliderRow};
     use egui::accesskit::{Role, Toggled};
@@ -4854,6 +5060,245 @@ mod tests {
         let sent = started_with(Start::Folder(folder.clone()), &mut mirror::tests::mirror());
         let source = Source::Folder(folder);
         assert_eq!(sent, [Command::Library(LibraryCommand::Open(source))]);
+    }
+
+    /// A list of the commands sent, numbered from 1, and what sends to it.
+    fn sender(sent: &mut Vec<Command>) -> impl FnMut(Command) -> u64 + '_ {
+        |command| {
+            sent.push(command);
+            sent.len() as u64
+        }
+    }
+
+    fn listed(open: u64, names: &[&str], done: bool) -> Event {
+        let cell = |name: &&str| apertrust_engine::session::library::Photo {
+            name: (*name).to_owned(),
+            size: 1,
+            modified: None,
+            edit: EditState::None,
+        };
+        let photos = names.iter().map(cell).collect();
+        Event::Library(LibraryEvent::Listed { open, photos, done })
+    }
+
+    fn folder_opened(open: u64, folder: &Path) -> Event {
+        Event::Library(LibraryEvent::Opened {
+            open,
+            name: folder.file_name().unwrap().to_string_lossy().into_owned(),
+            folder: folder.to_owned(),
+        })
+    }
+
+    /// File › Close: the photo closed through the session, which saves its edit, and the
+    /// folder closed, so nothing is open and the central panel says where to start; what
+    /// the photo closed still sends is dropped. With nothing open, nothing is sent.
+    #[test]
+    fn close_closes_the_photo_and_the_folder_and_drops_what_the_photo_still_sends() {
+        let mut m = mirror::tests::mirror();
+        let mut sent = Vec::new();
+        let folder = PathBuf::from("/photos");
+        open_folder(folder.clone(), &mut m, &mut sender(&mut sent));
+        open_photo(folder.join("a.ARW"), &mut m, &mut sender(&mut sent));
+        m.apply(Event::Opened(mirror::tests::photo(2)));
+        sent.clear();
+        close(&mut m, &mut sender(&mut sent));
+        assert_eq!(
+            sent,
+            [Command::Close, Command::Library(LibraryCommand::Close)]
+        );
+        assert!(matches!(m.photo, PhotoState::None));
+        assert_eq!(m.folder.folder, folder::Folder::None);
+        // Browse's tree has no root after it.
+        assert_eq!(m.folder.root(), None);
+        assert_eq!(library::Empty::of(&m.folder.folder), library::Empty::Start);
+        m.apply(Event::Values(mirror::tests::report(1.0, 3)));
+        assert_eq!(m.shown(), Shown::Nothing);
+        assert!(matches!(m.photo, PhotoState::None));
+        // Another photo opened takes its events again.
+        let mut more = Vec::new();
+        open_photo(folder.join("a.ARW"), &mut m, &mut sender(&mut more));
+        m.apply(Event::Opened(mirror::tests::photo(1)));
+        assert!(matches!(m.photo, PhotoState::Open(_)));
+        // Nothing open: nothing to close.
+        let mut nothing = mirror::tests::mirror();
+        let mut none = Vec::new();
+        close(&mut nothing, &mut sender(&mut none));
+        assert!(none.is_empty());
+    }
+
+    fn last(photo: Option<&str>) -> recents::Last {
+        recents::Last {
+            kind: recents::Kind::Folder,
+            path: PathBuf::from("/photos/Wedding"),
+            photo: photo.map(str::to_owned),
+        }
+    }
+
+    /// At the start with nothing named, what was open last reopens while the setting is
+    /// on: its folder at once, its photo once the folder lists it. Off, or with nothing
+    /// kept, nothing opens.
+    #[test]
+    fn what_was_open_last_reopens_with_its_photo_once_listed() {
+        let kept = last(Some("b.ARW"));
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        assert_eq!(
+            reopen(Some(&kept), false, &mut m, &mut sender(&mut sent)),
+            None
+        );
+        assert_eq!(reopen(None, true, &mut m, &mut sender(&mut sent)), None);
+        assert!(sent.is_empty());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        let source = Source::Folder(kept.path.clone());
+        assert_eq!(sent, [Command::Library(LibraryCommand::Open(source))]);
+        // A way in: the tree's root.
+        assert_eq!(m.folder.root(), Some(kept.path.as_path()));
+        // Reading: nothing more yet; listed in chunks, the photo opens once it comes.
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &kept.path));
+        m.apply(listed(1, &["a.ARW"], false));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 1);
+        assert!(reopening.is_some());
+        m.apply(listed(1, &["b.ARW", "c.ARW"], false));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent[1..], [Command::Open(kept.path.join("b.ARW"))]);
+        assert_eq!(reopening, None);
+    }
+
+    /// The reopened folder's photo waits for nothing: a photo asked for meanwhile wins, a
+    /// listing that ends without it ends the wait, and a folder with no photo kept opens
+    /// none.
+    #[test]
+    fn a_photo_asked_for_meanwhile_or_gone_from_the_folder_is_not_reopened() {
+        let kept = last(Some("b.ARW"));
+        // Finder's file, or a click, before the listing reaches the photo.
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &kept.path));
+        open_photo(kept.path.join("a.ARW"), &mut m, &mut sender(&mut sent));
+        m.apply(listed(1, &["a.ARW", "b.ARW"], true));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 2, "{sent:?}");
+        assert_eq!(reopening, None);
+        // Gone from the folder.
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &kept.path));
+        m.apply(listed(1, &["a.ARW"], true));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 1);
+        assert_eq!(reopening, None);
+        // No photo kept.
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut reopening = reopen(Some(&last(None)), true, &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &kept.path));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!((sent.len(), reopening), (1, None));
+        // Another folder opened over it, as Finder's file's.
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        open_folder(
+            PathBuf::from("/photos/Other"),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        m.apply(folder_opened(2, Path::new("/photos/Other")));
+        m.apply(listed(2, &["b.ARW"], true));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!((sent.len(), reopening), (2, None));
+    }
+
+    /// A kept folder that is gone fails as its reading does, never waited for at the start,
+    /// and is closed: the central panel shows nothing open, its recent marked with why.
+    #[test]
+    fn a_kept_folder_that_is_gone_shows_nothing_open_its_recent_marked() {
+        let kept = last(Some("b.ARW"));
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut shell = opened_on("photos");
+        shell.remember_folder(kept.path.clone());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        let failed = Event::Library(LibraryEvent::Failed {
+            open: 1,
+            reason: "No such folder".to_owned(),
+        });
+        for reaction in m.apply(failed) {
+            if let Reaction::FolderFailed { path, reason } = reaction {
+                shell.missing.insert(path, reason);
+            }
+        }
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent[1..], [Command::Library(LibraryCommand::Close)]);
+        assert_eq!(reopening, None);
+        assert_eq!(library::Empty::of(&m.folder.folder), library::Empty::Start);
+        let rows = shell.recent_folders();
+        assert_eq!(
+            rows[0].missing,
+            Some(library::Missing::Failed("No such folder"))
+        );
+        // Open Recent draws it disabled, saying why.
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(state.recents[0], Some(false));
+        let items = shell.recent_items(&ctx);
+        assert_eq!(items[0].words, "Wedding");
+        assert!(
+            items[0].tip.ends_with("\n/photos/Wedding"),
+            "{}",
+            items[0].tip
+        );
+    }
+
+    /// What was open last is kept for a folder opened, with the photo active in it as the
+    /// app ends; never for a photo opened alone, whose folder never opens.
+    #[test]
+    fn what_was_open_last_is_a_folder_with_its_photo_never_a_photo_alone() {
+        let mut shell = opened_on("photos");
+        assert_eq!(shell.recents.last(), None);
+        let mut m = mirror::tests::mirror();
+        let alone = PathBuf::from("/photos/Wedding/a.ARW");
+        started(
+            Start::Photo(alone.clone()),
+            &mut m,
+            &mut sender(&mut Vec::new()),
+        );
+        for reaction in m.apply(Event::Opened(mirror::tests::photo(1))) {
+            if let Reaction::FolderOpened(path) = reaction {
+                shell.remember_folder(path);
+            }
+        }
+        assert_eq!(shell.recents.last(), None);
+        shell.remember_folder(PathBuf::from("/photos/Wedding"));
+        assert_eq!(shell.recents.last(), Some(&last(None)));
+        assert_eq!(with_photo(last(None), Some(&alone)), last(Some("a.ARW")));
+        let elsewhere = Path::new("/photos/Other/a.ARW");
+        assert_eq!(with_photo(last(Some("a.ARW")), Some(elsewhere)), last(None));
+        assert_eq!(with_photo(last(Some("a.ARW")), None), last(None));
+    }
+
+    /// Open Recent's items name each folder, with the folder it is in where two share a
+    /// name, and their paths in the tips.
+    #[test]
+    fn open_recent_s_items_name_the_folders_and_tell_two_of_one_name_apart() {
+        let mut shell = opened_on("photos");
+        for path in [
+            "/photos/Lisbon/Selects",
+            "/photos/Porto/Selects",
+            "/photos/Wedding",
+        ] {
+            shell.remember_folder(PathBuf::from(path));
+        }
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        let items = shell.recent_items(&ctx);
+        let words: Vec<&str> = items.iter().map(|item| item.words.as_str()).collect();
+        assert_eq!(words, ["Wedding", "Selects — Porto", "Selects — Lisbon"]);
+        assert_eq!(items[1].tip, "/photos/Porto/Selects");
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(
+            state.recents[..4],
+            [Some(true), Some(true), Some(true), None]
+        );
     }
 
     /// Open… from a photo alone opens folder mode: the photo chosen and its folder behind
@@ -6983,6 +7428,8 @@ mod tests {
         shell: Shell,
         photo: bool,
         edited: bool,
+        /// Whether a folder or a photo is open, as the app's mirror says: File › Close's.
+        anything_open: bool,
         /// Every action the keys asked for that could run.
         pressed: Vec<ActionId>,
         /// The hold actions held in the last frame.
@@ -7210,6 +7657,7 @@ mod tests {
                     shell: Shell::new(settings, Locale::EnGb, os),
                     photo: true,
                     edited: false,
+                    anything_open: false,
                     pressed: Vec::new(),
                     held: Vec::new(),
                     chosen: Vec::new(),
@@ -7240,7 +7688,10 @@ mod tests {
     impl Bench {
         /// The actions' availability, the shell's with the host's dialog, as the app has it.
         fn state(&self, ctx: &egui::Context) -> State {
-            let shell = self.shell.state(ctx, self.photo, self.edited);
+            let shell = State {
+                opened: self.anything_open,
+                ..self.shell.state(ctx, self.photo, self.edited)
+            };
             // The open dialog asking and an alert up, as `App::asking_modal`.
             let asking = self.dialog.asking || self.alerts.pending().is_some();
             with_dialogs(shell, asking, self.dialogs.shown())
@@ -10779,6 +11230,78 @@ mod tests {
         harness.run();
         alt(&mut harness, Key::E, Some("e"));
         assert!(!menu_line(&harness, item, "Reset").0);
+    }
+
+    /// File › Close: Ctrl+W on Windows and Linux, and the ☰'s File › Close, with something
+    /// open; with nothing open both rest.
+    #[test]
+    fn close_runs_by_ctrl_w_and_from_the_drawn_file_menu_with_something_open() {
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            let mut harness = bench(os);
+            harness.run();
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::W);
+            harness.run();
+            assert!(!harness.state().shell.close, "{os:?}: nothing open");
+            harness.state_mut().anything_open = true;
+            harness.run();
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::W);
+            harness.run();
+            assert!(
+                std::mem::take(&mut harness.state_mut().shell.close),
+                "{os:?}"
+            );
+            assert_eq!(harness.state().pressed, [ActionId::CLOSE], "{os:?}");
+            alt(&mut harness, Key::F, Some("f"));
+            harness
+                .get_by_role_and_label(Role::MenuItem, "Close")
+                .click();
+            harness.run();
+            assert!(harness.state().shell.close, "{os:?}");
+            assert_eq!(harness.state().chosen, [ActionId::CLOSE], "{os:?}");
+        }
+    }
+
+    /// The ☰'s File › Open Recent: the recents by name, a choice asking for its folder, a
+    /// missing one disabled, and Clear Menu emptying the list, after which Clear Menu alone
+    /// is there, disabled.
+    #[test]
+    fn the_drawn_open_recent_opens_a_recent_and_clear_menu_empties_it() {
+        let mut harness = bench(OperatingSystem::Nix);
+        let (wedding, gone) = (
+            PathBuf::from("/photos/Wedding"),
+            PathBuf::from("/photos/Gone"),
+        );
+        harness.state_mut().shell.remember_folder(gone.clone());
+        harness.state_mut().shell.remember_folder(wedding.clone());
+        let recents = &mut harness.state_mut().shell.recents;
+        recents.mark(recents::Kind::Folder, &gone, false);
+        harness.run();
+        let open_recent = |harness: &mut Harness<'_, Bench>| {
+            alt(harness, Key::F, Some("f"));
+            harness.key_press(Key::ArrowDown);
+            harness.key_press(Key::ArrowDown);
+            harness.key_press(Key::ArrowRight);
+            harness.run();
+            assert!(menu_open(harness, "Open Recent"));
+        };
+        open_recent(&mut harness);
+        let item = Role::MenuItem;
+        assert!(menu_line(&harness, item, "Wedding").0);
+        assert!(!menu_line(&harness, item, "Gone").0, "missing: disabled");
+        harness.get_by_role_and_label(item, "Wedding").click();
+        harness.run();
+        assert_eq!(harness.state().chosen, [ActionId::OPEN_RECENT[0]]);
+        assert_eq!(harness.state_mut().shell.open_recent.take(), Some(wedding));
+        open_recent(&mut harness);
+        harness.get_by_role_and_label(item, "Clear menu").click();
+        harness.run();
+        assert_eq!(harness.state().shell.recents.entries().count(), 0);
+        open_recent(&mut harness);
+        assert!(harness.query_by_label("Wedding").is_none());
+        assert!(
+            !menu_line(&harness, item, "Clear menu").0,
+            "nothing to clear"
+        );
     }
 
     #[test]

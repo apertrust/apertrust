@@ -317,6 +317,17 @@ of = "text"
 default = []
 applies = "at-once"
 
+# Whether the app reopens at its start what was open last, the folder and its photo active
+# (docs/gui.md, The start window), which state.toml keeps beside the recents. Read at the
+# start alone; a path on the command line, --in-folder and Finder's files win over it.
+[library.reopen_last]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "general"
+group = "start"
+
 # The grid panel's sort: its key, chosen in the grid bar's Sort or View › Sort By
 # (docs/gui.md, The grid bar). The app's mirror sorts the folder's photos by it.
 [grid_panel.sort]

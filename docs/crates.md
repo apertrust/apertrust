@@ -480,7 +480,11 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 
 **Thumbnails** (`src/thumbnails.rs`): the cells the panel drew without a thumbnail at the cell's size, each asked for once while it stays in sight, as one `LibraryCommand::Thumbnails`, at the cell's side in physical pixels rounded up to 128, 256, 512 or 1024 (`thumbnails::size_for`); a photo that comes back into sight without its thumbnail asked for again (`Asking`). Their textures (`Textures`), a cache derived from the mirror, made as they come by comparing the folder's generation, another size's standing in meanwhile, and dropped with the folder.
 
-**Empty states** (`library::empty_state`). The central panel shows them as a card: where to start, with both ways to open and the recent folders; reading; failed, with its reason; no raws. No photo chosen is one line on the surround, in the surround's text colour. With no photo open, the central panel is the folder's empty state.
+**Empty states** (`library::empty_state`). The central panel shows them as a card: reading; failed, with its reason and both ways to open; no raws. Nothing open ("No folder open", `browse-no-folder`) and no photo chosen are each one line on the surround, in the surround's text colour, with no card. With no photo open, the central panel is the folder's empty state. Snapshot `nothing-open`.
+
+**Open Recent and Close** (`docs/gui.md`, File). Open Recent is `menus.rs`'s `OPEN_RECENT`, whose `Entry::Recents` lists the recents `Shell::recent_items` hands in (`menus::Recent`: the folder's name, with its parent's where two share one, and the tip, its path after why it cannot be opened), each the registry's action for its place, `ActionId::OPEN_RECENT[i]` (`Intent::OpenRecent(i)`, enabled by `State::recents`, a missing one not), then Clear Menu (`clear-recent`). `menus::listed` gives what such a menu holds on every platform: the ☰ draws it, with the tips, and the Mac's `NativeMenus` fills the submenu afresh whenever it changes. Close (`close`, Ctrl+W off the Mac, `Intent::Close`, enabled by `State::opened`) runs `close` in `src/main.rs`: `Command::Close` and `Mirror::closing` for the photo, whose late events the mirror drops, `LibraryCommand::Close` and `FolderState::closing` for the folder, and what was open last forgotten.
+
+**Reopening what was open last** (`docs/gui.md`, The start window). `Reaction::FolderOpened` makes the folder what was open last (`Shell::remember_folder`, `Recents::set_last`); `on_exit` adds the photo active in it (`with_photo`). In `App::new`, with no path, no `--in-folder` and no file Finder handed over at the launch, and with `library.reopen_last` on (`Keeper::reopen_last`), `reopen` opens the folder; `reopened`, after each drain, opens its photo once the listing holds it and none was asked for meanwhile, and closes a folder whose reading failed, so the central panel says nothing is open, its recent marked.
 
 ### The recents
 
@@ -488,6 +492,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 
 - `Recents::open(file, old)` reads `state.toml` and starts its writer thread; where the file holds no list, `old`, settings' `library.recent_folders`, becomes it and is written at once. `Recents::nowhere` keeps nothing.
 - `entries()`, newest first, at most `MOST` (10), each an `Entry` of a `Kind` (`Folder`), a path and `opened`; `opened(kind, path)` moves one to the top, after the newest; `remove`, `repoint` and `clear` are Remove from the List, Locate…'s new path and Clear Menu.
+- `last()` and `set_last(last)`: what was open last (`Last`, a kind, a path and the photo's file name), `state.toml`'s `[last]`, merged by the writer as the list's changes are; none takes it out.
 - `save()` hands what changed to the writer, which merges each change into the file as it then is through `apertrust-base`'s `fs::write`, keeping what it could not write for the next merge; `flush()` waits for it, on exit.
 - `check()` asks whether each entry's path is there, a thread an entry and none for a path still being asked; `take()` marks the answers that have come without waiting, dropping one asked before its entry was opened again; `missing(kind, path)` says what was found.
 
@@ -698,7 +703,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Switched modules** (decision 32): a module's reset available only while the session reports it edited, a switched module while it is on, or while a change is pending; a switched module that is off told to screen readers as "Not applied", with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
-- **The ways in** (decision 46): the start window, what was open last reopened at the start, and File › Close ([docs/gui.md](gui.md), The start window).
+- **The ways in** (decision 46): the start window ([docs/gui.md](gui.md), The start window).
 
 ## apertrust-ui
 

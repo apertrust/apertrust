@@ -58,6 +58,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
 | Command | What it does | On the edit |
 | --- | --- | --- |
 | `Open(path)` | Opens a raw with the edit saved beside it, saving and closing the photo before it, in three stages (decision 77): `OpenPreview`, the opening photo's picture; `Opened` and `Values { live: false }` before the decode; then `Values { live: true }` and the first `Frame`, or `Failed(Open { open, .. })`, which may follow `Opened`. A newer `Open` cancels the older one's job ([events.md](events.md#a-photo-opening)) | no |
+| `Close` | Closes the photo open, as File › Close does, and cancels the open under way: its edit saved first where anything in it is not on disk, reported `Saved` or failed as any write is, and nothing else sent of it; with none open, nothing | no |
 | `Resize { width, height }` | The most physical pixels the photo may be shown in; renders again if it changed | no |
 | `SetControl { module, control, value, done }` | Sets a module's control, or a lossless view's coordinate (decision 2), which keeps it; its module's follow writes in the same change (decision 27); `done` on a gesture's last change, which saves | yes |
 | `ResetControl { module, control }` | A control, or a coordinate, back to its default for the photo, no longer kept | yes |

@@ -325,3 +325,65 @@ fn what_this_build_cannot_read_is_kept() {
     recents.flush();
     assert_eq!(text(&file), newer);
 }
+
+/// What was open last goes through `state.toml` beside the list and back, its photo with
+/// it, and goes once taken out; the list and the file's other keys stay as they are.
+#[test]
+fn what_was_open_last_is_kept_beside_the_list_and_taken_out() {
+    let (_dir, file) = state("last");
+    std::fs::write(&file, "version = 1\nother = 1\n").expect("written");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    assert_eq!(recents.last(), None);
+    recents.opened_at(Kind::Folder, folder("a"), 100);
+    let last = Last {
+        kind: Kind::Folder,
+        path: folder("a"),
+        photo: Some("IMG_2041.ARW".to_owned()),
+    };
+    recents.set_last(Some(last.clone()));
+    recents.flush();
+    let written = text(&file);
+    let kept = "[last]\nkind = \"folder\"\npath = \"/photos/a\"\nphoto = \"IMG_2041.ARW\"\n";
+    assert!(written.contains(kept), "{written}");
+    assert!(written.contains("other = 1"), "{written}");
+    let (mut again, _) = Recents::open(file.clone(), none);
+    assert_eq!(again.last(), Some(&last));
+    // A folder with no photo active has none.
+    let bare = Last {
+        photo: None,
+        ..last
+    };
+    again.set_last(Some(bare.clone()));
+    again.flush();
+    assert_eq!(Recents::open(file.clone(), none).0.last(), Some(&bare));
+    // Taken out, as File › Close does: the list stays.
+    again.set_last(None);
+    again.flush();
+    let (read, _) = Recents::open(file.clone(), none);
+    assert_eq!(read.last(), None);
+    assert_eq!(paths(&read), [folder("a")]);
+    assert!(!text(&file).contains("[last]"), "{}", text(&file));
+}
+
+/// Two Apertrusts on one folder: what was open last is whichever set it last, and the
+/// other's list is kept with it.
+#[test]
+fn what_was_open_last_is_the_last_set_of_two_instances() {
+    let (_dir, file) = state("last-two");
+    let (mut one, _) = Recents::open(file.clone(), none);
+    let (mut two, _) = Recents::open(file.clone(), none);
+    let last = |name: &str| Last {
+        kind: Kind::Folder,
+        path: folder(name),
+        photo: None,
+    };
+    one.set_last(Some(last("a")));
+    one.flush();
+    two.set_last(Some(last("b")));
+    two.flush();
+    one.opened_at(Kind::Folder, folder("c"), 100);
+    one.flush();
+    let (read, _) = Recents::open(file, none);
+    assert_eq!(read.last(), Some(&last("b")));
+    assert_eq!(paths(&read), [folder("c")]);
+}
