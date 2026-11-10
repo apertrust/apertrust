@@ -70,7 +70,7 @@ fn window_at(kept: &Kept, size: egui::Vec2) -> Harness<'static, Bench> {
 }
 
 /// A log of its own, keeping `chosen`'s domains, and the dispatch that logs to it.
-fn kept(chosen: Option<&[Domain]>) -> (Kept, Dispatch, MutexGuard<'static, ()>) {
+pub(crate) fn kept(chosen: Option<&[Domain]>) -> (Kept, Dispatch, MutexGuard<'static, ()>) {
     let serial = serial();
     let (kept, dispatch) = Kept::scoped::<&str>(&[]).expect("a log");
     kept.keep(chosen, String::new);

@@ -194,6 +194,9 @@ fn measure(photo: &Path, folder: &Path, options: &Options, engine: engine::Optio
         MODULES,
         apertrust_base::program!().version,
         engine.budget,
+        // The CLI writes no disk cache: none of its commands keeps anything there yet, and
+        // it creates no folder (decision 43).
+        None,
         move || {
             let _ = woken.send(());
         },

@@ -36,7 +36,7 @@ Shape a new command so it moves unchanged: plain data, no references, no GPU obj
 
 Built. A client starts a session and talks to it through its handle:
 
-- `Session::start(gpu, operations, modules, build, budget, wake)` starts the engine thread on `gpu` with the binaries' `OPERATIONS` and `MODULES`, the build that every edit written records (decision 44), the engine's memory budget (decision 12) and `wake`, which the session calls when events arrive ([events.md](events.md#one-outbox-per-session)).
+- `Session::start(gpu, operations, modules, build, budget, cache, wake)` starts the engine thread on `gpu` with the binaries' `OPERATIONS` and `MODULES`, the build that every edit written records (decision 44), the engine's memory budget (decision 12), the disk cache the binary opened with its limit, or none (decision 76; [cache.md](cache.md#through-the-session)), and `wake`, which the session calls when events arrive ([events.md](events.md#one-outbox-per-session)).
 - `Session::send(command) -> u64` sends a command and returns its number. It never waits.
 - `Session::events() -> Vec<Event>` drains the events that have arrived, oldest first. It never waits.
 - Dropping the handle ends the session: the edit commands still queued apply, rendering nothing, up to one that opens another photo; the edit is saved; then the jobs end, as the control's shutdown ends them.
@@ -72,6 +72,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
 | `RetryJob { job }` | Runs what a failed job offered to try again, once, as if sent now, its `Added` naming this command and the job it `retries`; refused for one with no retry kept, `NotRetryable` (decision 72) | no |
 | `Export { photos, settings, places }` | An export job, one at a time, its `Added` naming this command (decision 56) | no |
 | `PreviewExport { photos, settings, places }` | The Export dialog's lines, answered by `ExportPreview`; the preview before it is cancelled | no |
+| `CacheLimit(limit)` | The disk cache's limit as `cache.limited` and `cache.limit` now give it: lowered or turned on, an eviction, a `SystemBackground` job with no progress, unless one is queued; raised or turned off, none; with no cache, nothing (decision 76) | no |
 | `Library(LibraryCommand::Open(Source::Folder(path)))` | Opens a folder: a cancellable `UserBackground` job, its progress as `Event::Job`, `Added` naming this command, what it finds as `Event::Library` naming it too ([events.md](events.md#the-librarys-events)); the reading of the folder before it is cancelled. Opens no photo | no |
 | `Library(LibraryCommand::Close)` | Cancels the folder's reading and answers `LibraryEvent::Closed` naming this command | no |
 | `Library(LibraryCommand::Thumbnails { photos, size })` | The open folder's photos' thumbnails, by file name, at most `size` pixels on their longer side, the first the most wanted: a `SystemForeground` job each with no progress, deduplicated by photo and size, the newest asked first, each answered by `LibraryEvent::Thumbnail` naming the folder's open ([events.md](events.md#the-librarys-events)); a new open or a close cancels those not yet sent; nothing with no folder open | no |

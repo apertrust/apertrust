@@ -8,9 +8,9 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 ## Decision
 
-**One cache folder, split by kind, holding only what Apertrust can rebuild with no one's help and nothing lost.** Built: base's `cache`, the folder's choice with `--cache-dir` (or `--cachedir`) and `APERTRUST_CACHE_DIR`, and the settings `cache.limited`, `cache.limit` and `cache.unused_after`. The rest is planned, built with the library's steps 6 and 6b.
+**One cache folder, split by kind, holding only what Apertrust can rebuild with no one's help and nothing lost.** Built: base's `cache`, the folder's choice with `--cache-dir` (or `--cachedir`) and `APERTRUST_CACHE_DIR`, the settings `cache.limited`, `cache.limit` and `cache.unused_after`, the app opening the cache and handing it to its session, and the session's start walk and eviction. The rest is planned, built with the library's steps 6 and 6b.
 
-**The folder** ([0043](0043-settings-and-apertrusts-folders.md)): `--cache-dir DIR` (or darktable's `--cachedir`), then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given by flag or variable, then the platform's: `~/Library/Caches/Apertrust`, `%LOCALAPPDATA%\Apertrust\cache`, `$XDG_CACHE_HOME/apertrust`; Apertrust Dev's its own. `Folders` chooses it with the user data folder, the CLI finding it to read as it finds that one.
+**The folder** ([0043](0043-settings-and-apertrusts-folders.md)): `--cache-dir DIR` (or darktable's `--cachedir`), then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given by flag or variable, then the platform's: `~/Library/Caches/Apertrust`, `%LOCALAPPDATA%\Apertrust\cache`, `$XDG_CACHE_HOME/apertrust`; Apertrust Dev's its own. `Folders` chooses it with the user data folder, the CLI finding it to read as it finds that one. A program that writes the cache creates the folder as it opens it, writing and removing a file of its own there (`Cache::create`), the cache's first write: the app as it starts; the CLI, whose commands write no cache yet, not at all. **A folder that cannot be created or written** is warned of once, as the program starts, and the program runs with no disk cache: it never refuses to start for it, and never warns again for each write it would have made.
 
 **The kinds,** a closed list in base's `cache::KINDS` (each an id, its folder and its policy), as the settings schema is one list:
 
@@ -24,6 +24,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 - **Limited** kinds count together against one limit and are removed oldest last use first, unless the person chooses an unlimited cache.
 - **Kept** kinds are never removed by size: only by the person, or by the rule of their owner's step.
+- **Thumbnails are stored as JPEG at quality 90,** through the JPEG encoder export already uses, built with step 6.
 - Embeddings for search live inside a library's cache ([0055](0055-the-librarys-cache.md)). AI models are not cache: they are the AI page's downloads, placed with the AI work. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
 **One file per entry, the file system as the index.**
@@ -38,7 +39,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 **The limit,** two settings, owner `engine`, on Settings › Storage, group Cache, applied at once, each settable for one run by `--conf`:
 
 - `cache.limited`, a boolean, on by default: whether the limited kinds are kept within a limit. Off is Unlimited: nothing is evicted by size, and the Storage page and `cache info` still show every size and offer Clear.
-- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each that step 6 measures for the format it chooses.
+- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each that step 6 measures for its JPEGs.
 
 **Time:** nothing in the cache is removed by age. `cache.unused_after`, owner `engine`, a choice of `apertrust_base::cache::UnusedAfter` (`days_30`, `days_90`, `days_180`, `days_365`, `never`), default `days_90`, on the same page and group, is how long a library's cache may go unopened on this machine before it is marked and offered for removal; with `never` none is offered for its age.
 
@@ -46,9 +47,12 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 **Eviction,** a `SystemBackground` job of kind `cache-evict`, with no progress and never shown, one at a time (none added while one is queued or running):
 
-- added, while `cache.limited` is on, after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on; never while it is off;
+- added, while `cache.limited` is on, after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on (`Command::CacheLimit`, which the app sends as either setting changes); never while it is off, nor when the limit is raised;
+- a request while one is queued is that one's, which reads the limit as it runs; a request while one runs is folded into it, which walks and evicts once more before it ends;
 - it walks the limited kinds, then removes their entries oldest last use first, across kinds, until they hold at most 90% of the limit, so it does not run again at the next write;
-- its cost is the walk and the removals, 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, and paused by an export as darktable's crawler is ([0057](0057-jobs-as-darktables-control-jobs.md)).
+- its cost is the walk and the removals, 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, and paused by an export as darktable's crawler is ([0057](0057-jobs-as-darktables-control-jobs.md)), which is planned; it stops before its next removal as the session ends.
+
+**The start's walk,** a `SystemBackground` job of kind `cache-walk`, with no progress and never shown, added as the session starts: the tidy of old temporaries, then the walk, then an eviction where the limited kinds are past the limit. The walk's sizes and time and each eviction's removals, failures and time are `-d perf` lines.
 
 **Kept kinds' lifecycle:**
 
@@ -77,7 +81,7 @@ Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progres
 - `apertrust-cli cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
 - `--cache-dir DIR` (or `--cachedir`), global, as `--user-data-dir` is.
 
-**Where the code lives:** `apertrust_base::cache`, behind a `cache` feature: the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, and the commands' and events' types. Owners name their slots and versions: the library's thumbnails, library caches and local copies, the engine's pipelines. The engine opens no folder ([0043](0043-settings-and-apertrusts-folders.md)): each binary opens the cache and hands the session its handle, the golden harness none.
+**Where the code lives:** `apertrust_base::cache`, behind a `cache` feature: the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, and the commands' and events' types. Owners name their slots and versions: the library's thumbnails, library caches and local copies, the engine's pipelines. The engine opens no folder ([0043](0043-settings-and-apertrusts-folders.md)): a binary opens the cache and hands the session its handle with the limit (`CacheOptions`), the golden harness none; the engine's `session::cache` runs the start's walk and eviction.
 
 ## Options considered
 

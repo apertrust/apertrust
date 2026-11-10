@@ -95,6 +95,35 @@ fn the_kinds_are_the_decided_ones_each_in_its_own_folder() {
     assert_eq!(COPIES.policy(), Policy::Kept);
 }
 
+/// A program that writes the cache creates its folder, as its first write, and leaves
+/// nothing of its check in it; a folder that cannot be made is the error.
+#[test]
+fn a_cache_created_has_its_folder_and_one_that_cannot_be_made_is_an_error() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let path = folder.path().join("deep").join("cache");
+    let cache = Cache::create(&path).expect("the cache's folder is made");
+    assert_eq!(cache.folder(), path);
+    assert!(path.is_dir());
+    assert_eq!(files(&path), Vec::<String>::new());
+    // Again, on the folder that is there now.
+    Cache::create(&path).expect("the same folder again");
+    // A file where the folder should be, on every platform.
+    let file = folder.path().join("a file");
+    fs::write(&file, b"").unwrap();
+    assert!(Cache::create(&file).is_err());
+    assert!(Cache::create(file.join("cache")).is_err());
+}
+
+/// A folder that is there but cannot be written is the error too.
+#[cfg(unix)]
+#[test]
+fn a_cache_folder_that_cannot_be_written_is_an_error() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let path = folder.path().join("cache");
+    fs::create_dir(&path).unwrap();
+    with_mode(&path, 0o555, || assert!(Cache::create(&path).is_err()));
+}
+
 #[test]
 fn a_slots_name_is_its_fnv_hash_in_a_subfolder_of_its_first_byte() {
     // FNV-1a's published values: the name never changes between builds.

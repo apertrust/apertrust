@@ -853,6 +853,12 @@ impl Keeper {
         engine::Options::read(&self.store, &engine::Flags::default())
     }
 
+    /// The disk cache's limit as `cache.limited` and `cache.limit` give it now, which the
+    /// session takes as it starts and again each time it changes (decision 76).
+    pub fn cache_limit(&self) -> apertrust_base::cache::Limit {
+        engine::cache_limit(&self.store)
+    }
+
     /// Takes in a frame's settings at `now`, which the store writes once they have stood
     /// still for a second. Returns how long until they will have, for a frame then.
     pub fn frame(&mut self, now: Instant, settings: &Settings) -> Option<Duration> {

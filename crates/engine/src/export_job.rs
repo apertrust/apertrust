@@ -1302,6 +1302,7 @@ mod tests {
                 MODULES,
                 BUILD,
                 pipeline::BUDGET,
+                None,
                 Arc::new(wake),
                 synthetic,
             );

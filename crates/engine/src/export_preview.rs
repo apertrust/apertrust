@@ -1128,6 +1128,7 @@ mod tests {
             MODULES,
             "0.4.0+12~g1a2b3c4",
             pipeline::BUDGET,
+            None,
             Arc::new(wake),
             synthetic,
         );

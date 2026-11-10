@@ -110,7 +110,7 @@ The groundwork for orientation:
 
 ### The editing session
 
-`session` is an editing session on the engine thread: one photo, its edit and the viewport pipe. `Session::start` takes the memory budget, and every photo of the session is planned within it.
+`session` is an editing session on the engine thread: one photo, its edit and the viewport pipe. `Session::start` takes the memory budget, and every photo of the session is planned within it, and the disk cache, if any ([The cache](#the-cache)).
 
 **The photo.** It is reported as `Photo`, with its image context (decision 27) and the exposure time, f-number and focal length the raw's EXIF records, read as it decodes, for the caption under the photo. Its ISO is in its image context.
 
@@ -151,12 +151,21 @@ The groundwork for orientation:
 `settings`: the engine's settings, `engine.adapter` and `engine.memory_budget`, and the cache's, `cache.limited`, `cache.limit` and `cache.unused_after` (decision 76), generated from the schema by its `build.rs` as `settings::registry` (decision 43).
 
 - `settings::Options::read` turns a store a binary hands it, under the binary's own flags (`--adapter`), into `GpuOptions` and the budget. It logs each value, and where it came from, under `-d settings`.
-- `settings::cache_limit` turns a store's `cache.limited` and `cache.limit` into base's `cache::Limit`: `Unlimited` while the first is off, else the limit's GB as bytes, a GB 10⁹ of them. Nothing reads it yet.
+- `settings::cache_limit` turns a store's `cache.limited` and `cache.limit` into base's `cache::Limit`: `Unlimited` while the first is off, else the limit's GB as bytes, a GB 10⁹ of them. The app reads it for its session's start and each change (`Keeper::cache_limit`).
 - The engine opens no folder or settings file.
 
 ### Jobs
 
 `jobs` (decision 57): one `apertrust_base::jobs` control per session.
+
+### The cache
+
+`session::cache` (decision 76; [cache.md](cache.md#through-the-session)): the disk cache a binary hands `Session::start` as `CacheOptions`, the `Arc<Cache>` it opened and the limit its settings give, or none. The engine opens no folder; the app hands one, the CLI and the golden harness none.
+
+- **`cache-walk`,** a `SystemBackground` job with no progress, added as the session starts: base's `tidy`, then its `walk`, then an eviction asked for where the limited kinds are past the limit.
+- **`cache-evict`,** the same queue, never shown, one at a time: asked for after the start's walk and after a write past the limit (`Upkeep::check`, for the thumbnails' writes), and by `Command::CacheLimit(Limit)` where the limit is lowered or turned on; never while the cache is unlimited. A request while one is queued is that one's, which reads the limit as it runs; one while it runs is folded into it, which runs once more.
+- Only the engine thread adds them, since it owns the control: a worker asks it through the inbox (`Inbox::Evict`). As the session ends, an eviction under way stops before its next removal.
+- `-d perf` logs the walk's sizes, the temporaries tidied and its time, each kind under `verbose`, and each eviction's removals, failures and time; a cache that cannot be tidied, walked or evicted is a warning.
 
 - A job's body hands the engine thread `GpuTask`s through its `Tasks`. They are stepped one a turn, after the live frame, by darktable's queue order and ageing, with one step's work on the GPU at a time.
 - A cancelled job's task is dropped before its next step.
@@ -216,7 +225,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
-- **The cache** (decision 76): the handle each binary opens, the golden harness none; the start's walk and eviction as `SystemBackground` jobs, eviction past `cache.limit` while `cache.limited` is on, never while it is off, and `cache.unused_after`, engine settings; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
+- **The cache** (decision 76): the thumbnails written to it and read from it; eviction paused by an export; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
@@ -580,7 +589,7 @@ The actions registry and the default keyboard map:
 `settings.toml` in the user data folder that `apertrust_base::folders` chooses (decision 43):
 
 - `--user-data-dir DIR` or `=DIR`, `--config-dir` or `--configdir`, the last given; then `APERTRUST_USER_DATA_DIR`; then the platform's folder. A relative folder is taken from the current folder and created if missing.
-- `--cache-dir DIR` or `=DIR`, or `--cachedir`, the last given, names the cache folder, chosen with the user data folder and not yet opened.
+- `--cache-dir DIR` or `=DIR`, or `--cachedir`, the last given, names the cache folder, chosen with the user data folder. The app opens the cache there as it starts (`open_cache`, `Cache::create`), creating the folder; one that cannot be created or written is warned of once, under `settings`, and the app runs with no disk cache, never refused (decision 76). Its session gets it with the limit, and `Command::CacheLimit` each time Settings changes `cache.limited` or `cache.limit`.
 - It is opened by `Keeper::open_in`. A flag without its folder, or a folder given that cannot be created or written, stops the start; it never falls back to the platform's folder.
 - The folder separates settings only. Edits are where each root's id file says, beside the photos by default, never decided by this folder (decision 47).
 - `src/paths.rs` keeps only Pictures, through `directories`.
@@ -868,7 +877,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `folders` | `Folders` | the binaries (the app and the CLI) |
 | `fs` | the safe write | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
-| `cache` | the disk cache, `UnusedAfter` among it; turns on `fs` | the engine; the library and the CLI are to |
+| `cache` | the disk cache, `UnusedAfter` among it; turns on `fs` | the engine and the app; the library and the CLI are to |
 | (none) | `settings` | |
 
 ### Logging

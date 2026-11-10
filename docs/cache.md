@@ -2,7 +2,7 @@
 
 Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. No program opens the cache yet. The rest is planned: the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page's hand-built part and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. The app opens the cache as it starts and hands it to its session, which tidies and walks it as it starts and keeps it within the limit by eviction, as background jobs ([Through the session](#through-the-session)). The rest is planned: thumbnails written to the cache come with the library's step 6, the session's commands and events, the Storage page's hand-built part and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
 
 ## What goes in it
 
@@ -17,7 +17,9 @@ Chosen once, as the program starts, by `Folders` in `apertrust-base` ([settings.
 3. `<user data>/cache`, when the user data folder is given by flag or variable, since a development build changes kernels without bumping the thumbnails' render version and could otherwise show its thumbnails in the person's Apertrust;
 4. the platform's cache folder: `~/Library/Caches/Apertrust` on macOS, `%LOCALAPPDATA%\Apertrust\cache` on Windows, `$XDG_CACHE_HOME/apertrust` (`~/.cache/apertrust`) on Linux.
 
-Apertrust Dev has its own. A leading `~` and a relative folder are taken as for the user data folder, and one given empty, or with a `~` and no home folder, stops the start. The folder is chosen, never created or probed: the cache creates what it writes. The CLI finds it as the app does, and `-d settings` logs it with how it was chosen.
+Apertrust Dev has its own. A leading `~` and a relative folder are taken as for the user data folder, and one given empty, or with a `~` and no home folder, stops the start. `Folders` only chooses the folder, never creating or probing it, and `-d settings` logs it with how it was chosen; the CLI finds it as the app does.
+
+**Opening it.** A program that writes the cache opens it with `Cache::create`, which creates the folder where it is missing and writes and removes a file of its own there: the cache's first write. The app does so as it starts; the CLI's commands write no cache yet, so it opens none. A folder that cannot be created or written is warned of once, as the program starts, and the program runs with no disk cache: it never refuses to start, and is never warned of again for each write it would have made.
 
 ## Kinds
 
@@ -45,6 +47,7 @@ flowchart TD
 
 - **Limited** kinds count together against one limit and lose their oldest entries first, unless the person makes the cache unlimited.
 - **Kept** kinds are removed only by the person, or by their own step's rule.
+- **Thumbnails** are stored as JPEG at quality 90, through the JPEG encoder export uses (built with step 6).
 - **Elsewhere:** embeddings for search live inside a library's cache (decision 55). AI models are the AI page's downloads, not cache. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
 ## Entries
@@ -78,7 +81,7 @@ A library's cache is locked: a process that has it open holds an OS lock on its 
 Two settings of owner `engine`, declared in the settings schema ([settings.md](settings.md#user-data-folders)):
 
 - `cache.limited`, on by default. Off is **Unlimited**: nothing is evicted by size, and every size and Clear stay.
-- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each, which step 6 measures for the format it chooses.
+- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each, which step 6 measures for its JPEGs.
 
 Unlimited is the person's choice, never the default, and its size is always shown and can be cleared, where darktable's disk cache grows unseen.
 
@@ -86,9 +89,10 @@ Unlimited is the person's choice, never the default, and its size is always show
 
 While `cache.limited` is on, a `SystemBackground` job of kind `cache-evict`, with no progress and never shown, one at a time:
 
-- **added** after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on;
+- **added** after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on; never when it is raised or turned off;
+- **one at a time:** a request while one is queued is that one's, since it reads the limit as it runs; a request while one runs is folded into it, which walks and evicts once more before it ends;
 - **walks** the limited kinds, then removes their entries oldest last use first, across kinds, until they hold at most 90% of the limit, so it does not run again at the next write;
-- **costs** the walk and the removals, about 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, paused by an export as darktable's crawler is (decision 57).
+- **costs** the walk and the removals, about 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's; it stops before its next removal as the session ends. Planned: paused by an export, as darktable's crawler is (decision 57).
 
 ## Time and Never
 
@@ -112,7 +116,15 @@ What clearing would lose, or would make the person do again, lives in the user d
 
 ## Through the session
 
-The engine opens no folder: each binary opens the cache and hands the session its handle, the golden harness none. The session's part ([session-protocol.md](session-protocol.md#commands-planned), [events.md](events.md)):
+The engine opens no folder: a binary opens the cache and hands `Session::start` a `CacheOptions`, the `Arc<Cache>` and the limit its settings give, or none. The app hands one; the CLI, whose commands write no cache yet, and the golden harness hand none.
+
+**Built:**
+
+- **As the session starts,** a `cache-walk` job: the tidy of old temporaries, then the walk, then an eviction asked for where the limited kinds are past the limit.
+- **Eviction** ([above](#eviction)), asked for after the start's walk and after a write past the limit (`Upkeep::check`, which the thumbnails' writes call), and by `Command::CacheLimit(Limit)`, which the app sends each time Settings changes `cache.limited` or `cache.limit`, applied at once. Only the engine thread adds the jobs, since it owns the control: a worker asks it through the session's inbox.
+- **Logging:** `-d perf`, the walk's sizes, the temporaries tidied and its time (each kind's under `verbose`), and each eviction's entries and bytes removed, its failures and its time; a cache that cannot be tidied, walked or evicted is a warning, as is a folder that cannot be created or written as the program starts.
+
+**Planned** with step 6b ([session-protocol.md](session-protocol.md#commands-planned), [events.md](events.md)):
 
 - **`Command::Cache(CacheCommand)`:**
   - `Sizes`: walks the cache and answers;
@@ -123,12 +135,12 @@ The engine opens no folder: each binary opens the cache and hands the session it
 
 **The jobs** (decision 57):
 
-| Job | Queue | Shown |
-| --- | --- | --- |
-| The start's walk | `SystemBackground` | no |
-| `cache-evict` | `SystemBackground` | no |
-| `cache-clear`: Clear and Remove | `UserBackground`, cancellable, as Rebuild Cache | with a progress |
-| Conflict copies past 30 days removed, as the app starts | `SystemBackground` | no |
+| Job | Queue | Shown | |
+| --- | --- | --- | --- |
+| `cache-walk`, the start's tidy and walk | `SystemBackground` | no | built |
+| `cache-evict` | `SystemBackground` | no | built |
+| `cache-clear`: Clear and Remove | `UserBackground`, cancellable, as Rebuild Cache | with a progress | step 6b |
+| Conflict copies past 30 days removed, as the app starts | `SystemBackground` | no | step 13 |
 
 ## Settings › Storage
 
@@ -150,7 +162,11 @@ A hand-built page with rows from the schema ([gui.md](gui.md#the-settings-dialog
 
 ## Where the code lives
 
-`apertrust_base::cache`, behind a `cache` feature ([crates.md](crates.md#apertrust-base)): the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, `UnusedAfter`, and the commands' and events' types. Owners name their slots and versions: the library its thumbnails, library caches and local copies, the engine its pipelines.
+- `apertrust_base::cache`, behind a `cache` feature ([crates.md](crates.md#apertrust-base)): the kinds, the folder's layout and its creation (`Cache::create`), the entry's write, read and touch, the walk, eviction's order, clearing, `UnusedAfter`, and, planned, the commands' and events' types.
+- The engine's `session::cache` ([crates.md](crates.md#the-cache)): `CacheOptions`, the start's job and eviction's.
+- The app's `open_cache`, which opens it as the app starts.
+
+Owners name their slots and versions: the library its thumbnails, library caches and local copies, the engine its pipelines.
 
 ## Open questions
 

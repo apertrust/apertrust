@@ -249,6 +249,23 @@ impl Cache {
         }
     }
 
+    /// The cache in `folder`, as a program that writes it opens it: the folder created
+    /// where it is missing, then a file of this process's own written in it and removed,
+    /// since its permissions alone cannot tell, for a folder another user owns, a
+    /// read-only volume or an access list. That is the cache's first write: an error here
+    /// is the folder that cannot be created or written, and its caller runs with no disk
+    /// cache (decision 76).
+    pub fn create(folder: impl Into<PathBuf>) -> io::Result<Self> {
+        let cache = Self::open(folder);
+        fs::create_dir_all(&cache.folder)?;
+        let probe = cache
+            .folder
+            .join(format!(".apertrust-write-check-{}.tmp", std::process::id()));
+        let written = fs::write(&probe, b"");
+        let _ = fs::remove_file(&probe);
+        written.map(|()| cache)
+    }
+
     /// The cache folder.
     pub fn folder(&self) -> &Path {
         &self.folder
