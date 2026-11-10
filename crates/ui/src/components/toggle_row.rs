@@ -14,14 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The checkbox row, one line (`docs/gui.md`, How the rows are laid out): egui's checkbox,
-//! themed, at the start, its short label after it, which toggles it too. The box is outlined
-//! in `control_outline` at rest, so an unticked one reads on the panel, and in
-//! `text_secondary` under the pointer. Screen readers hear its full name; its promise is the
-//! tooltip.
+//! The checkbox row, one line (`docs/gui.md`, How the rows are laid out): the design
+//! system's [`Checkbox`] at the start, its short label after it, which toggles it too.
+//! Screen readers hear its full name; its promise is the tooltip.
 
-use egui::{Stroke, Ui};
+use egui::Ui;
 
+use super::Checkbox;
 use crate::theme;
 
 pub struct ToggleRow<'a> {
@@ -56,8 +55,8 @@ impl<'a> ToggleRow<'a> {
         self
     }
 
-    /// A disabled toggle is dimmed and ignores input: a control that can change nothing
-    /// on the photo.
+    /// A disabled toggle keeps its tick, drawn in `text_disabled` with its label, and
+    /// ignores input: a control that can change nothing on the photo.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
@@ -70,11 +69,9 @@ impl<'a> ToggleRow<'a> {
         let response = ui
             .horizontal(|ui| {
                 ui.set_min_height(t.sizes.panel_line);
-                let widgets = &mut ui.visuals_mut().widgets;
-                widgets.inactive.bg_stroke =
-                    Stroke::new(t.shape.hairline, t.colors.control_outline);
-                widgets.hovered.bg_stroke = Stroke::new(t.shape.hairline, t.colors.text_secondary);
-                ui.add_enabled(self.enabled, egui::Checkbox::new(&mut on, self.label))
+                Checkbox::new(&mut on, self.label)
+                    .enabled(self.enabled)
+                    .show(ui)
             })
             .inner;
         let name = self.name;

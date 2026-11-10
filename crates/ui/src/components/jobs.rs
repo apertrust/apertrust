@@ -54,7 +54,8 @@ use egui::{
     Sense, Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 
-use super::{IconButton, focus_ring, quiet_scroll};
+use super::plate::{Plate, Touch, paint_focus, paint_plate};
+use super::{Button, IconButton, quiet_scroll};
 use crate::i18n::{Args, Translator};
 use crate::{Icon, fonts, theme, translator};
 
@@ -417,9 +418,10 @@ impl<'a> Jobs<'a> {
         let response = ui.interact(rect, spinner_id(ui), Sense::click());
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
-            if response.hovered() {
-                painter.rect_filled(rect, t.shape.radius, t.colors.hover);
-            }
+            // An icon button's quiet plate and ring.
+            let touch = Touch::of(&ctx, &response, true, None);
+            paint_plate(painter, rect, Plate::Quiet, touch, &t);
+            paint_focus(painter, rect, t.shape.radius, touch, &t);
             if turning {
                 let turning = ui.style().animation_time > 0.0;
                 let time = turning.then(|| ui.input(|i| i.time));
@@ -435,9 +437,6 @@ impl<'a> Jobs<'a> {
                     Rect::from_center_size(rect.center(), Vec2::splat(size)),
                     t.colors.warning,
                 );
-            }
-            if response.has_focus() {
-                focus_ring(painter, rect, &t);
             }
         }
         let name = words.text("jobs-name");
@@ -505,8 +504,8 @@ impl<'a> Jobs<'a> {
                 let any = self.jobs.iter().any(|job| job.phase.cleared());
                 let footer = vec2(ui.available_width(), t.sizes.control);
                 ui.allocate_ui_with_layout(footer, Layout::right_to_left(Align::Center), |ui| {
-                    let clear = egui::Button::new(words.text("jobs-clear-finished"));
-                    if ui.add_enabled(any, clear).clicked() {
+                    let clear = words.text("jobs-clear-finished");
+                    if Button::new(&clear).enabled(any).show(ui).clicked() {
                         action = Some(ActivityAction::ClearFinished);
                     }
                 });
@@ -666,16 +665,13 @@ impl<'a> Jobs<'a> {
         let mut action = None;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(t.spacing.m, t.spacing.xs);
-            // At rest on the window's own surface, so they stand out of the sunken list;
-            // under the pointer and pressed as every button is.
-            let rest = &mut ui.visuals_mut().widgets.inactive;
-            (rest.bg_fill, rest.weak_bg_fill) = (t.colors.raised, t.colors.raised);
+            // The plate every button has, a step above the sunken list as above any ground.
             for (label, tip, done) in buttons {
-                let mut response = ui.add(egui::Button::new(label));
-                if let Some(tip) = tip {
-                    response = response.on_hover_text(tip);
+                let mut button = Button::new(&label);
+                if let Some(tip) = &tip {
+                    button = button.tip(tip);
                 }
-                if response.clicked() {
+                if button.show(ui).clicked() {
                     action = Some(done);
                 }
             }

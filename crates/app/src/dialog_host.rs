@@ -74,7 +74,7 @@ use std::time::Instant;
 use apertrust_display::ColorSpace;
 use apertrust_engine::session::ExportPreview;
 use apertrust_ui::alert;
-use apertrust_ui::components::{ActivityAction, Job, caption_button};
+use apertrust_ui::components::{ActivityAction, Button, Job, caption_button};
 use apertrust_ui::icons::Icon;
 use apertrust_ui::theme;
 use eframe::egui::os::OperatingSystem;
@@ -598,7 +598,7 @@ pub fn buttons(ui: &mut egui::Ui, words: &[&str]) -> Option<usize> {
         ui.add_space((ui.available_width() - width.unwrap_or(0.0)).max(0.0));
         let start = ui.cursor().min.x;
         for (i, words) in words.iter().enumerate() {
-            if ui.button(*words).clicked() {
+            if Button::new(words).show(ui).clicked() {
                 clicked = Some(i);
             }
         }

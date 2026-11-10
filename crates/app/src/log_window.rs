@@ -40,7 +40,7 @@ use std::task::Waker;
 use apertrust_base::log::{CAPACITY, Cursor, Domain, Kept, Line, Severity, Switches};
 use apertrust_base::settings::Choice;
 use apertrust_export::variables::DateTime;
-use apertrust_ui::components::{ToggleRow, quiet_scroll_rows};
+use apertrust_ui::components::{Button, ToggleRow, quiet_scroll_rows};
 use apertrust_ui::{Theme, fonts, theme, tr, translator};
 use eframe::egui::os::OperatingSystem;
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
@@ -230,7 +230,10 @@ impl Window {
                     .color(t.colors.text_secondary);
                 ui.add(egui::Label::new(text).wrap());
                 ui.add_space(t.spacing.xxs);
-                if ui.button(tr(&ctx, "log-open-settings")).clicked() {
+                if Button::new(&tr(&ctx, "log-open-settings"))
+                    .show(ui)
+                    .clicked()
+                {
                     asked = Some(Asked::Settings);
                 }
             });
@@ -473,7 +476,7 @@ impl Window {
             .into_iter()
             .enumerate()
         {
-            if right.button(words).clicked() {
+            if Button::new(&words).show(&mut right).clicked() {
                 pressed = Some(i);
             }
         }

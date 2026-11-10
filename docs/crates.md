@@ -655,7 +655,7 @@ The design system ([docs/gui.md](gui.md), decision 36): tokens and themes, fonts
 
 ### Tokens, themes, fonts and icons
 
-- Tokens by role; the dark (default), light and high-contrast themes in `crates/ui/themes`, checked for WCAG AA contrast, a menu's chosen line that shows on `raised` with its text readable on it (in high contrast and the themes extending it, the band 3:1 against `raised`, its text 7:1 and a disabled line 3:1), and a neutral photo surround.
+- Tokens by role; the dark (default), light and high-contrast themes in `crates/ui/themes`, checked for WCAG AA contrast, a menu's chosen line that shows on `raised` with its text readable on it (in high contrast and the themes extending it, the band 3:1 against `raised`, its text 7:1 and a disabled line 3:1), a button's words on its plate in each state, a ticked checkbox and its tick, a plate's edge where the theme draws one, and a neutral photo surround. Plates (`button`, `button_hover`, `button_pressed`, `button_edge`), a ticked box (`check`, `check_hover`, `check_pressed`, `check_mark`), a primary button's states (`accent_hover`, `accent_pressed`) and the focus ring's gap (`shape.focus_gap`) are tokens of their own; `Theme::apply` gives egui's own widgets the plate.
 - User theme files that extend a theme.
 - IBM Plex Sans, and IBM Plex Mono Regular for the log window's lines.
 - SVG icons rendered by resvg, their lines 1.25 points wide at every size (`STROKE`): Apertrust's own files, derived from Lucide's (release 1.70.0, each naming its source, `LICENSE-Lucide` beside them) or drawn in Lucide's style where it has none, mapped by `Icon::file`; and `Picture`, an SVG in its own colours, as About's logo.
@@ -695,7 +695,9 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - `ChoiceStyle::Boxed`, the default;
 - `Blended`, darktable's combobox: its option right-aligned with ⌄ after it, its stroke ending where slider values end, no box and no minimum width, the hover band across the row and the focus ring round it, and the kept marker a slider row has (`Choice::mark`, `ChoiceAction::ToggleKeep`).
 
-**Others:** `IconButton`, `Segmented`, `Swatches`, `ToggleRow` for a module's checkboxes, `ActionRow` for its buttons, drawn disabled until their tools come, and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
+**Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`), `IconButton` and `ToolButton`, the bars' quiet one, drawn from one plate and one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
+
+**Others:** `Segmented`, `Swatches`, `ToggleRow` for a module's checkboxes, `ActionRow` for its buttons, drawn disabled until their tools come, and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
 
 **`TextField` and `PathField`** (`components/text_field.rs`): a one-line text well, every edit reported whole, with a hint and an error outline. The path field has a list of variables with their descriptions, part of the row while the caret stands after `$(` and the letters of a name. A click, or ↓ ↑ and Enter, inserts one, closed; Escape closes the list alone (`PathOutput::list_open`).
 

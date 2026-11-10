@@ -16,12 +16,13 @@
 
 //! The action row, one line (`docs/gui.md`, How the rows are laid out): one of darktable's
 //! buttons in a module, an action that writes the module's controls and is never stored,
-//! as AgX's Auto tune levels and Set from above. egui's button, themed, at the start,
-//! holding the short label; screen readers hear its full name, and its promise is the
-//! tooltip. Until its tool comes a module's action is drawn disabled.
+//! as AgX's Auto tune levels and Set from above. The design system's [`Button`] at the
+//! start, holding the short label; screen readers hear its full name, and its promise is
+//! the tooltip. Until its tool comes a module's action is drawn disabled.
 
 use egui::Ui;
 
+use super::Button;
 use crate::theme;
 
 pub struct ActionRow<'a> {
@@ -54,8 +55,8 @@ impl<'a> ActionRow<'a> {
         self
     }
 
-    /// A disabled action is dimmed and ignores input: one whose tool has not come, or that
-    /// cannot run now.
+    /// A disabled action keeps its plate, its words in `text_disabled`, and ignores input:
+    /// one whose tool has not come, or that cannot run now.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
@@ -67,7 +68,7 @@ impl<'a> ActionRow<'a> {
         let response = ui
             .horizontal(|ui| {
                 ui.set_min_height(t.sizes.panel_line);
-                ui.add_enabled(self.enabled, egui::Button::new(self.label))
+                Button::new(self.label).enabled(self.enabled).show(ui)
             })
             .inner;
         let name = self.name;

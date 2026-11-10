@@ -645,7 +645,7 @@ fn window_in(locale: Locale, width: f32, jobs: Vec<Job>) -> Harness<'static, Win
                 // On the window's surface, inside its margin, as the app's window draws it.
                 let t = apertrust_ui::theme(ui.ctx());
                 let frame = egui::Frame::new()
-                    .fill(t.colors.raised)
+                    .fill(t.colors.panel)
                     .inner_margin(t.spacing.m);
                 let asked = frame.show(ui, |ui| {
                     Jobs::new(&jobs).file_manager(win.file_manager).window(ui)

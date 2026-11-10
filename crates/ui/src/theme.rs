@@ -161,7 +161,9 @@ pub struct Colors {
     /// The side panel and its sections.
     #[serde(with = "hex")]
     pub panel: Color32,
-    /// Menus, popovers and dialogs.
+    /// Menus and popovers, a step above the ground; dialog windows sit on `panel`. Also
+    /// behind an icon button drawn pressed, with a `border` hairline: a toggle with no
+    /// filled form that is on, and a button whose menu is open.
     #[serde(with = "hex")]
     pub raised: Color32,
     /// Over the window under About, Apertrust's own modal: translucent, so the window shows
@@ -207,6 +209,35 @@ pub struct Colors {
     /// against the panel and the well it is drawn on.
     #[serde(with = "hex")]
     pub control_outline: Color32,
+    /// The plate of what is pressed (`docs/gui.md`, Checkboxes, text buttons and icon
+    /// buttons): a text button's at rest, and an icon or quiet button's under the pointer.
+    /// A step apart from `sunken`, `panel` and `raised` alike, so it reads on any ground.
+    #[serde(with = "hex")]
+    pub button: Color32,
+    /// A text button's plate under the pointer, a step further from the ground; an
+    /// unticked checkbox's fill there.
+    #[serde(with = "hex")]
+    pub button_hover: Color32,
+    /// Any plate while pressed, a step back towards the ground; an unticked checkbox's fill
+    /// then.
+    #[serde(with = "hex")]
+    pub button_pressed: Color32,
+    /// The edge round every plate: transparent, so none, where plates part from the ground
+    /// by their tone; white in the high-contrast theme, whose grounds are all black.
+    #[serde(with = "hex")]
+    pub button_edge: Color32,
+    /// A ticked checkbox's fill: neutral, never the accent.
+    #[serde(with = "hex")]
+    pub check: Color32,
+    /// A ticked checkbox under the pointer.
+    #[serde(with = "hex")]
+    pub check_hover: Color32,
+    /// A ticked checkbox pressed.
+    #[serde(with = "hex")]
+    pub check_pressed: Color32,
+    /// The tick on a ticked checkbox.
+    #[serde(with = "hex")]
+    pub check_mark: Color32,
     /// Lines inside a control: a plot's grid, a tab row's rule.
     #[serde(with = "hex")]
     pub divider: Color32,
@@ -214,13 +245,19 @@ pub struct Colors {
     /// they read as a gap, not a drawn line.
     #[serde(with = "hex")]
     pub separator: Color32,
-    /// The fill of a primary button.
+    /// The fill of a primary button, a dialog's one.
     #[serde(with = "hex")]
     pub accent: Color32,
+    /// A primary button under the pointer.
+    #[serde(with = "hex")]
+    pub accent_hover: Color32,
+    /// A primary button pressed.
+    #[serde(with = "hex")]
+    pub accent_pressed: Color32,
     /// Accent-coloured text and marks on the panel: a selected tab, a link.
     #[serde(with = "hex")]
     pub accent_text: Color32,
-    /// Behind something selected or pressed.
+    /// Behind something selected.
     #[serde(with = "hex")]
     pub accent_subtle: Color32,
     #[serde(with = "hex")]
@@ -231,7 +268,8 @@ pub struct Colors {
     /// Behind selected text in a value field: neutral, since typing a value is no mode.
     #[serde(with = "hex")]
     pub field_selection: Color32,
-    /// Behind a control under the pointer.
+    /// The band behind a row under the pointer: a choice row, a slider's value, a list's
+    /// line. A button under the pointer takes a plate instead (`button`).
     #[serde(with = "hex")]
     pub hover: Color32,
     /// Behind the chosen line of a menu or dropdown: neutral, never the accent.
@@ -417,6 +455,9 @@ pub struct Shape {
     /// The corners of a tooltip, About, and egui's own windows and menus.
     pub popup_radius: f32,
     pub hairline: f32,
+    /// The ground left between a checkbox, a text button or an icon button and its focus
+    /// ring, so the ring never touches the control, nor an amber one.
+    pub focus_gap: f32,
     /// The faint edge of a menu, drawn popup or tooltip: a half point, a full one in the
     /// high-contrast theme.
     pub popup_hairline: f32,
@@ -582,6 +623,52 @@ impl Theme {
             ),
             ("accent_text", c.accent_text, "panel", c.panel, TEXT),
             ("text_on_accent", c.text_on_accent, "accent", c.accent, TEXT),
+            (
+                "text_on_accent",
+                c.text_on_accent,
+                "accent_hover",
+                c.accent_hover,
+                TEXT,
+            ),
+            (
+                "text_on_accent",
+                c.text_on_accent,
+                "accent_pressed",
+                c.accent_pressed,
+                TEXT,
+            ),
+            // A button's words on its plate in each state.
+            ("text", c.text, "button", c.button, TEXT),
+            ("text", c.text, "button_hover", c.button_hover, TEXT),
+            ("text", c.text, "button_pressed", c.button_pressed, TEXT),
+            // A ticked box is a control's part on every ground it is drawn on, and so is
+            // its tick on it in each state, a disabled one's included.
+            ("check", c.check, "panel", c.panel, CONTROL),
+            ("check", c.check, "raised", c.raised, CONTROL),
+            ("check", c.check, "sunken", c.sunken, CONTROL),
+            ("check_pressed", c.check_pressed, "panel", c.panel, CONTROL),
+            ("check_mark", c.check_mark, "check", c.check, CONTROL),
+            (
+                "check_mark",
+                c.check_mark,
+                "check_hover",
+                c.check_hover,
+                CONTROL,
+            ),
+            (
+                "check_mark",
+                c.check_mark,
+                "check_pressed",
+                c.check_pressed,
+                CONTROL,
+            ),
+            (
+                "check_mark",
+                c.check_mark,
+                "text_disabled",
+                c.text_disabled,
+                CONTROL,
+            ),
             ("channel_red", c.channel_red, "surface", c.surface, TEXT),
             ("channel_green", c.channel_green, "surface", c.surface, TEXT),
             ("channel_blue", c.channel_blue, "surface", c.surface, TEXT),
@@ -681,6 +768,14 @@ impl Theme {
                 CONTROL,
             ));
         }
+        // A plate's edge, where the theme draws one, carries the plate on the grounds it
+        // sits on: the high-contrast theme's, where plate and ground are both black.
+        if c.button_edge.a() > 0 {
+            menu_band.extend([
+                ("button_edge", c.button_edge, "panel", c.panel, CONTROL),
+                ("button_edge", c.button_edge, "raised", c.raised, CONTROL),
+            ]);
+        }
         let mut issues = Vec::new();
         if c.menu_hover == c.raised {
             issues.push(Issue::Unseen {
@@ -757,9 +852,19 @@ impl Theme {
             ("menu_edge", c.menu_edge),
             ("menu_shadow", c.menu_shadow),
             ("control_outline", c.control_outline),
+            ("button", c.button),
+            ("button_hover", c.button_hover),
+            ("button_pressed", c.button_pressed),
+            ("button_edge", c.button_edge),
+            ("check", c.check),
+            ("check_hover", c.check_hover),
+            ("check_pressed", c.check_pressed),
+            ("check_mark", c.check_mark),
             ("divider", c.divider),
             ("separator", c.separator),
             ("accent", c.accent),
+            ("accent_hover", c.accent_hover),
+            ("accent_pressed", c.accent_pressed),
             ("accent_text", c.accent_text),
             ("accent_subtle", c.accent_subtle),
             ("focus_ring", c.focus_ring),
@@ -839,12 +944,17 @@ impl Theme {
         v.selection.stroke = Stroke::new(1.0, c.text);
         v.text_cursor.stroke = Stroke::new(2.0, c.accent_text);
 
+        // egui's own widgets that are left, as a few of its buttons, take the design
+        // system's plate: `button` at rest, a step up under the pointer, a step back while
+        // pressed, edged only where the theme edges plates. egui shows a focused widget as
+        // active, so those few show focus as pressed; the design system's own controls draw
+        // a ring instead (`components::Button`).
         let w = &mut v.widgets;
         for (state, fill, border, text) in [
             (&mut w.noninteractive, c.panel, c.divider, c.text),
-            (&mut w.inactive, c.sunken, Color32::TRANSPARENT, c.text),
-            (&mut w.hovered, c.hover, c.border, c.text),
-            (&mut w.active, c.accent_subtle, c.focus_ring, c.text),
+            (&mut w.inactive, c.button, c.button_edge, c.text),
+            (&mut w.hovered, c.button_hover, c.button_edge, c.text),
+            (&mut w.active, c.button_pressed, c.button_edge, c.text),
             (&mut w.open, c.raised, c.border, c.text),
         ] {
             state.bg_fill = fill;
@@ -1031,6 +1141,72 @@ mod tests {
                 active >= hover * 1.25,
                 "{name}: {hover:.2} then {active:.2}"
             );
+        }
+    }
+
+    #[test]
+    fn a_plate_lifts_under_the_pointer_and_dips_when_pressed() {
+        // How far a plate's tone stands from the panel it is drawn on.
+        let apart = |c: &Colors, plate: Color32| contrast(plate, c.panel);
+        for which in [Builtin::Dark, Builtin::Light] {
+            let c = Theme::builtin(which).colors;
+            let [rest, hover, pressed] =
+                [c.button, c.button_hover, c.button_pressed].map(|plate| apart(&c, plate));
+            assert!(hover > rest && rest > pressed, "{which:?}");
+            assert!(pressed > 1.0, "{which:?}: a pressed plate still shows");
+            // A step apart from every ground, with no edge.
+            for ground in [c.sunken, c.panel, c.raised] {
+                assert_ne!(c.button, ground, "{which:?}");
+            }
+            assert_eq!(c.button_edge.a(), 0, "{which:?}");
+        }
+        // In high contrast every ground is black, and the edge carries the plate.
+        let c = Theme::builtin(Builtin::HighContrast).colors;
+        assert_eq!(c.button_edge.a(), 255);
+        assert!(contrast(c.button_edge, c.panel) >= TEXT_AAA);
+        // A theme that draws an edge too faint to see is named.
+        let faint = Theme::from_toml(
+            r##"
+            extends = "dark"
+            [colors]
+            button_edge = "#3A3A3A"
+            "##,
+        )
+        .unwrap();
+        assert!(matches!(
+            faint.check().as_slice(),
+            [
+                Issue::Contrast {
+                    token: "button_edge",
+                    against: "panel",
+                    ..
+                },
+                Issue::Contrast {
+                    token: "button_edge",
+                    against: "raised",
+                    ..
+                }
+            ]
+        ));
+    }
+
+    #[test]
+    fn egui_s_own_widgets_take_the_plate_with_no_stroke_when_pressed() {
+        for which in Builtin::ALL {
+            let theme = Theme::builtin(which);
+            let ctx = egui::Context::default();
+            set_theme(&ctx, theme.clone());
+            let c = &theme.colors;
+            let w = ctx.global_style().visuals.widgets.clone();
+            for (state, fill) in [
+                (w.inactive, c.button),
+                (w.hovered, c.button_hover),
+                (w.active, c.button_pressed),
+            ] {
+                assert_eq!(state.bg_fill, fill, "{which:?}");
+                assert_eq!(state.weak_bg_fill, fill, "{which:?}");
+                assert_eq!(state.bg_stroke.color, c.button_edge, "{which:?}");
+            }
         }
     }
 

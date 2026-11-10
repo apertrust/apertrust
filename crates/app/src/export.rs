@@ -54,8 +54,8 @@ use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode};
 use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{self, PatternError};
 use apertrust_ui::components::{
-    Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, PathField, SliderAction, SliderRow,
-    TextField, ValueField, Variable, group_label, quiet_scroll,
+    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, PathField, SliderAction,
+    SliderRow, TextField, ValueField, Variable, group_label, quiet_scroll,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, theme, tr, translator};
@@ -756,8 +756,8 @@ impl Export {
                 .error(problem.is_some())
                 .show(ui),
             );
-            ui.add_enabled(false, egui::Button::new(&choose))
-                .on_disabled_hover_text(tr(&ctx, "export-later"));
+            let later = tr(&ctx, "export-later");
+            Button::new(&choose).enabled(false).tip(&later).show(ui);
         });
         let output = output.expect("the path field draws");
         if let Some(text) = output.text {
@@ -773,7 +773,7 @@ impl Export {
                 let mut args = Args::new();
                 args.set("name", name.as_str());
                 let label = translator(&ctx).text_with("export-fix", Some(&args));
-                if ui.button(label).clicked() {
+                if Button::new(&label).show(ui).clicked() {
                     fix = Some(text.clone());
                 }
             }
@@ -1218,15 +1218,14 @@ impl Export {
         );
         row.add_space((row.available_width() - width.unwrap_or(0.0)).max(0.0));
         let start = row.cursor().min.x;
-        close = row.button(&close_words).clicked() || close;
-        let button = egui::Button::new(RichText::new(&export_words).color(t.colors.text_on_accent))
-            .fill(t.colors.accent);
-        let response = row.add_enabled(reason.is_none(), button);
-        let response = match &reason {
-            Some(why) => response.on_disabled_hover_text(why),
-            None => response,
-        };
-        export |= response.clicked();
+        close = Button::new(&close_words).show(&mut row).clicked() || close;
+        let mut button = Button::new(&export_words)
+            .primary(true)
+            .enabled(reason.is_none());
+        if let Some(why) = &reason {
+            button = button.tip(why);
+        }
+        export |= button.show(&mut row).clicked();
         let measured = row.min_rect().max.x - start;
         if width != Some(measured) {
             row.data_mut(|d| d.insert_temp(id, measured));
