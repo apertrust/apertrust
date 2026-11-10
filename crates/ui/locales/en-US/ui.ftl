@@ -21,6 +21,7 @@ job-export-cancelled =
         [1] Export canceled
        *[other] Export canceled: { $written } of { $total } photos exported
     }
+job-cache-clear-cancelled = Clearing canceled: { job-cache-entries } removed, { job-cache-size }
 
 ## The central bar
 

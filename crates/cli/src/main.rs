@@ -20,7 +20,8 @@
 //! `settings.toml` in its user data folder, the app's, found by `apertrust_base::folders`
 //! (`--user-data-dir`, then `APERTRUST_USER_DATA_DIR`, then the platform's), and never
 //! writes them: it creates nothing in finding the folder (`Folders::find_to_read`) and its
-//! store is read-only (decision 43). Only the commands that run the engine read them. A
+//! store is read-only (decision 43). Only the commands that run the engine read them, and
+//! `cache info` the cache's, `[cache]`. A
 //! flag of its own, `--adapter`, comes first, then `--conf KEY=VALUE`, which sets one for
 //! the run and is never written, then the file. `export` takes from the export settings
 //! what darktable-cli takes from darktablerc, the format's options, and its own flags give
@@ -66,6 +67,7 @@ use apertrust_raw::{CfaColor, Pixels, Rect};
 use clap::{Parser, Subcommand};
 
 mod beside;
+mod cache;
 mod library;
 
 /// The operations and the modules the CLI hands the engine, as the app hands them.
@@ -138,6 +140,14 @@ enum Command {
     Library {
         #[command(subcommand)]
         command: library::Command,
+    },
+    /// The disk cache's commands, run in this process with no GPU, in the cache folder
+    /// --cache-dir names, else APERTRUST_CACHE_DIR's, else the user data folder's cache
+    /// when that is given, else the platform's. Nothing is created: a folder that is
+    /// missing is an empty cache.
+    Cache {
+        #[command(subcommand)]
+        command: cache::Command,
     },
     /// Render a raw through the viewport pipe, time changes of the Exposure module's
     /// Exposure as a slider drag sends them, and optionally save the viewport image. The
@@ -393,8 +403,8 @@ fn main() -> Result<()> {
     });
     let folders = Folders::find_to_read(given, cache, apertrust_base::program!().dev)
         .map_err(|e| anyhow!("{e}"))?;
-    // The settings, read only by the commands that run the engine, `--conf`'s over the
-    // file's.
+    // The settings, read only by the commands that run the engine and by `cache`,
+    // `--conf`'s over the file's.
     let store = || settings(folders.as_ref()).with_overrides(&overrides);
     // The engine's, under the command's own flags, as its options; the developer's switch,
     // never a setting, lowers the binding after them.
@@ -407,6 +417,7 @@ fn main() -> Result<()> {
         Command::Gpu { adapter } => pollster::block_on(show_gpu(engine(&store(), adapter))),
         Command::Info { file } => show_info(&file),
         Command::Library { command } => library::run(command),
+        Command::Cache { command } => cache::run(command, folders.as_ref(), &store()),
         Command::Edit {
             file,
             flags,

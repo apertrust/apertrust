@@ -32,22 +32,38 @@
 //!   request while one runs is folded into it, which walks and evicts once more before it
 //!   ends. One that panics leaves eviction free for the next request.
 //!
+//! The client's own commands add two more:
+//!
+//! - **a `cache-walk` for the sizes,** on the same queue, one at a time, for
+//!   [`CacheCommand::Sizes`](apertrust_base::cache::CacheCommand::Sizes): the engine
+//!   thread answers at once with the handle's count where a walk has run, and the walk
+//!   answers again with what other processes did meanwhile;
+//! - **`cache-clear`,** on darktable's `UserBackground` queue with a progress, cancellable,
+//!   as darktable's Rebuild Cache, for
+//!   [`CacheCommand::Clear`](apertrust_base::cache::CacheCommand::Clear): its row's title,
+//!   detail and outcome are `job-cache-…` messages, and it answers the sizes as it ends.
+//!   One kind is cleared by one job at a time.
+//!
 //! Only the engine thread adds jobs, since it owns the control: a worker that finds the
 //! limit passed asks it through the session's inbox. As the session ends, the tidy, the
 //! walk and an eviction's listing stop before their next subfolder, and an eviction's
-//! removals before the next, so quitting never waits for a cold walk.
+//! removals before the next, so quitting never waits for a cold walk; a Clear, cancellable,
+//! stops before its next removal.
 //!
-//! Under `-d perf`, the walk's sizes and time and each eviction's removals, failures and
-//! time, with each kind's sizes under `-d verbose`; a cache that cannot be tidied, walked
-//! or evicted is warned of under `settings`, as its folder is logged.
+//! Under `-d perf`, the walk's sizes and time and each eviction's and Clear's removals,
+//! failures and time, with each kind's sizes under `-d verbose`; a cache that cannot be
+//! tidied, walked, evicted or cleared is warned of under `settings`, as its folder is
+//! logged.
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use apertrust_base::cache::{Cache, KINDS, Limit, Removed, Sizes};
-use apertrust_base::jobs::{Context, Control, Job, Queue};
+use apertrust_base::cache::{Cache, CacheEvent, KINDS, Kind, Limit, Removed, Sizes};
+use apertrust_base::jobs::{Context, Control, Failure, Job, JobId, Message, Queue};
+
+use super::{Event, SessionError};
 
 /// The disk cache a binary hands its session as it starts (decision 76).
 #[derive(Clone, Debug)]
@@ -86,6 +102,10 @@ pub(crate) enum Step {
 struct State {
     limit: Limit,
     eviction: Eviction,
+    /// The walk for the sizes, while it may not have ended.
+    sizing: Option<JobId>,
+    /// Each Clear with its kind, while it may not have ended.
+    clears: Vec<(Kind, JobId)>,
     /// The steps taken, in order, for a test.
     #[cfg(test)]
     steps: Vec<Step>,
@@ -99,6 +119,9 @@ struct State {
 
 /// How a worker asks the engine thread for an eviction: the session's inbox.
 pub(crate) type Ask = Arc<dyn Fn() + Send + Sync>;
+
+/// How the cache's jobs tell the client: the session's outbox.
+pub(crate) type Tell = Arc<dyn Fn(Event) + Send + Sync>;
 
 /// The session's keeper of its cache, cloned into each of the cache's jobs.
 #[derive(Clone)]
@@ -149,6 +172,8 @@ impl Upkeep {
             state: Arc::new(Mutex::new(State {
                 limit: options.limit,
                 eviction: Eviction::Running { again: false },
+                sizing: None,
+                clears: Vec::new(),
                 #[cfg(test)]
                 steps: Vec::new(),
                 #[cfg(test)]
@@ -342,6 +367,143 @@ impl Upkeep {
         &self.cache
     }
 
+    /// The sizes as the handle counts them, within the limit, once a walk has run.
+    pub(crate) fn counted(&self) -> Option<CacheEvent> {
+        let sizes = self.cache.sizes()?;
+        Some(CacheEvent::sizes(sizes, self.limit()))
+    }
+
+    /// [`CacheCommand::Sizes`](apertrust_base::cache::CacheCommand::Sizes), the command
+    /// numbered `command`, from the engine thread: a `cache-walk` that tells the sizes it
+    /// finds through `tell`, unless one is queued or running already, which answers this
+    /// command too. A walk that fails is told as [`SessionError::CacheWalk`].
+    pub(crate) fn walk_for_sizes(&self, command: u64, control: &Control, tell: Tell) {
+        let sizing = self.lock().sizing;
+        if sizing.is_some_and(|job| control.state(job).is_some()) {
+            return;
+        }
+        let upkeep = self.clone();
+        let job = Job::new(
+            "cache-walk",
+            "the cache's walk for its sizes",
+            move |context| {
+                let cancel = || context.cancelled() || upkeep.stop.load(Ordering::Relaxed);
+                #[cfg(test)]
+                drop(upkeep.hold.lock().unwrap_or_else(PoisonError::into_inner));
+                let started = Instant::now();
+                match upkeep.cache.walk(&cancel) {
+                    Ok(sizes) => {
+                        log_sizes(&sizes, upkeep.limit(), started.elapsed());
+                        tell(Event::Cache(CacheEvent::sizes(sizes, upkeep.limit())));
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                    Err(source) => {
+                        let folder = upkeep.cache.folder().display();
+                        tracing::warn!(target: "settings", "cache not walked: {folder}: {source}");
+                        tell(Event::Failed(SessionError::CacheWalk { command, source }));
+                    }
+                }
+                Ok(())
+            },
+        );
+        let job = control.add(Queue::SystemBackground, job);
+        self.lock().sizing = Some(job);
+    }
+
+    /// Whether a Clear of `kind` is queued or running, from the engine thread: one whose
+    /// job has ended is forgotten.
+    pub(crate) fn clearing(&self, kind: Kind, control: &Control) -> bool {
+        let mut state = self.lock();
+        state
+            .clears
+            .retain(|&(_, job)| control.state(job).is_some());
+        state.clears.iter().any(|&(cleared, _)| cleared == kind)
+    }
+
+    /// Notes that `job` clears `kind`, from the engine thread, as it adds it.
+    pub(crate) fn clears(&self, kind: Kind, job: JobId) {
+        self.lock().clears.push((kind, job));
+    }
+
+    /// The `cache-clear` job of [`CacheCommand::Clear`] of the limited `kind`, for the
+    /// engine thread to add on `UserBackground`: base's [`Cache::clear`], its progress the
+    /// row's bar and detail, its cancel the row's ✕ and the session's end. It tells the
+    /// sizes through `tell` as it ends, cancelled or not. Entries it could not remove fail
+    /// the job, `cache-remove`, as does a kind's folder that cannot be listed,
+    /// `cache-read`.
+    ///
+    /// [`CacheCommand::Clear`]: apertrust_base::cache::CacheCommand::Clear
+    pub(crate) fn clear_job(
+        &self,
+        kind: Kind,
+        tell: Tell,
+        #[cfg(test)] hold: Option<crate::export_job::testing::Hold>,
+    ) -> Job {
+        let upkeep = self.clone();
+        let title = Message::new("job-cache-clear").with("kind", kind.id());
+        let description = format!("clearing the cache's {}", kind.id());
+        Job::new("cache-clear", description, move |context| {
+            let cancel = || context.cancelled() || upkeep.stop.load(Ordering::Relaxed);
+            let progress = |done: u64, total: u64| {
+                context.set_progress(done, Some(total));
+                let detail = Message::new("job-cache-clear-now")
+                    .with("done", done)
+                    .with("total", total);
+                context.set_detail(Some(detail));
+                #[cfg(test)]
+                if let Some(hold) = &hold {
+                    hold.wait();
+                }
+            };
+            let started = Instant::now();
+            let cleared = upkeep.cache.clear(kind, &progress, &cancel);
+            if let Ok(removed) = &cleared {
+                log_clear(kind, removed, started.elapsed());
+                let id = if removed.cancelled {
+                    "job-cache-clear-cancelled"
+                } else {
+                    "job-cache-cleared"
+                };
+                let outcome = Message::new(id)
+                    .with("kind", kind.id())
+                    .with("entries", removed.entries);
+                context.set_outcome(with_size(outcome, removed.bytes));
+            }
+            upkeep.tell_sizes(&tell);
+            match cleared {
+                Ok(removed) if removed.failed > 0 && !removed.cancelled => {
+                    let reason = format!(
+                        "{} of the cache's {} could not be removed",
+                        removed.failed,
+                        kind.id()
+                    );
+                    Err(Failure::new("cache-remove", reason))
+                }
+                Ok(_) => Ok(()),
+                Err(error) => {
+                    let folder = upkeep.cache.kind_folder(kind);
+                    let folder = folder.display();
+                    tracing::warn!(target: "settings", "cache not cleared: {folder}: {error}");
+                    let reason = format!("the cache's {} cannot be listed: {error}", kind.id());
+                    Err(Failure::new("cache-read", reason))
+                }
+            }
+        })
+        .progress(title, true)
+    }
+
+    /// Tells the sizes as the handle counts them, walking first where no walk has run;
+    /// nothing should that walk fail, or the session end meanwhile.
+    fn tell_sizes(&self, tell: &Tell) {
+        let sizes = match self.cache.sizes() {
+            Some(sizes) => Some(sizes),
+            None => self.cache.walk(&|| self.stop.load(Ordering::Relaxed)).ok(),
+        };
+        if let Some(sizes) = sizes {
+            tell(Event::Cache(CacheEvent::sizes(sizes, self.limit())));
+        }
+    }
+
     /// Notes a step, for the tests.
     #[cfg(test)]
     fn took(&self, step: Step) {
@@ -386,6 +548,47 @@ fn log_walk(sizes: &Sizes, tidied: u64, limit: Limit, took: Duration) {
         let (entries, bytes) = (usage.entries, megabytes(usage.bytes));
         tracing::trace!(target: "perf", "cache {}: {entries} entries, {bytes}", kind.id());
     }
+}
+
+/// A walk for the sizes under `-d perf`: the limited kinds' total and the time.
+fn log_sizes(sizes: &Sizes, limit: Limit, took: Duration) {
+    let limited = sizes.limited();
+    let (entries, bytes) = (limited.entries, megabytes(limited.bytes));
+    let (limit, ms) = (shown(limit), milliseconds(took));
+    tracing::debug!(
+        target: "perf",
+        "cache walked for its sizes: {entries} entries, {bytes}, limit: {limit}, {ms:.1} ms"
+    );
+}
+
+/// A Clear under `-d perf`: its kind, what it removed, what it could not, and the time.
+fn log_clear(kind: Kind, removed: &Removed, took: Duration) {
+    let (entries, bytes, failed) = (removed.entries, megabytes(removed.bytes), removed.failed);
+    let ms = milliseconds(took);
+    let stopped = if removed.cancelled { ", stopped" } else { "" };
+    tracing::debug!(
+        target: "perf",
+        "cache cleared: {}, {entries} entries, {bytes}, failed: {failed}, {ms:.1} ms{stopped}",
+        kind.id()
+    );
+}
+
+/// `message` with `bytes` as a person reads a size: `$size` in `$unit`, `kb`, `mb` or
+/// `gb`, of 10³, 10⁶ and 10⁹ bytes as disks count them, with one decimal below 10 and
+/// none from there; the client words the unit.
+fn with_size(message: Message, bytes: u64) -> Message {
+    let (unit, scale) = match bytes {
+        1_000_000_000.. => ("gb", 1e9),
+        1_000_000.. => ("mb", 1e6),
+        _ => ("kb", 1e3),
+    };
+    let value = bytes as f64 / scale;
+    let size = if value < 10.0 {
+        (value * 10.0).round() / 10.0
+    } else {
+        value.round()
+    };
+    message.with("size", size).with("unit", unit)
 }
 
 /// An eviction under `-d perf`: what it removed, what it could not, and the time.

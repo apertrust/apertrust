@@ -4,7 +4,7 @@ The engine answers its clients with events: a photo opened, the values after a c
 
 **Status.** [Decision 59](decisions/0059-one-event-system.md) records the design, with the options considered.
 
-- **Built:** the session's side, in `crates/engine/src/session.rs` and `crates/engine/src/session/outbox.rs`; the app's reducer, in `crates/app/src/mirror.rs`; and the library's first events, a folder opened and listed and its photos' thumbnails, in `crates/library/src/ops.rs`, the session and `crates/app/src/folder.rs`.
+- **Built:** the session's side, in `crates/engine/src/session.rs` and `crates/engine/src/session/outbox.rs`; the app's reducer, in `crates/app/src/mirror.rs`; and the library's first events, a folder opened and listed and its photos' thumbnails, in `crates/library/src/ops.rs`, the session and `crates/app/src/folder.rs`; and the disk cache's sizes, `Event::Cache`, whose types are base's `cache` (decision 76).
 - **Built for decision 72:** base's job events, every field of a job's row, and their throttle ([A job's events](#a-jobs-events)); the export reporting its whole row through them; the session carrying them, each of a job's values a fact by job; the app folding them into its rows, in `crates/app/src/jobs.rs`.
 - **Planned:** `CollectionChanged`, notices for the user, the remote protocol, and the events of a photo opening in stages ([What is planned](#what-is-planned)).
 
@@ -46,6 +46,7 @@ The topics, `Fact`, as built:
 | `Detail(job)` | a job's `JobEvent::Detail`, by job |
 | `Destination(job)` | a job's `JobEvent::Destination`, by job |
 | `State(job)` | a job's `JobEvent::State`, by job |
+| `Cache` | `Event::Cache`, the whole disk cache |
 
 Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
 
@@ -66,6 +67,7 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 | `Export { job, status }` | notice | `job` | the export job's body | the export's record for scripts and the CLI: each photo's `Started` and `Done` with its result, then `Finished` with the counts ([engine.md](engine.md#export-jobs)); no client draws a row from it (decision 72) |
 | `ExportPreview { through, preview }` | fact | `through`, the `PreviewExport`'s | the preview job's body | the Export dialog's lines: each photo's file and what On conflict would do, the pattern's errors, the active photo's size, each folder's preflight |
 | `Library(LibraryEvent)` | notice | `open`, the number of the `Library` command that opened or closed the folder | the folder's job body and each thumbnail's, through the library's observer; `Closed` the engine thread | `Opened { name, folder }`; `Subfolders { names }`, once, before the photos; `Listed { photos, done }`, chunks of at most 256 photos, the last `done`; `Taken { times }`, the photos' capture times, after the last chunk; `Failed { reason }`; `Closed`; `Thumbnail { photo, size, image }`, one for each thumbnail asked for ([below](#the-librarys-events)) |
+| `Cache(CacheEvent)` | fact | none | engine thread, and the cache's walk and Clear jobs | the disk cache's sizes (decision 76; [cache.md](cache.md#through-the-session)): `Sizes { sizes, limited, limit }`, each kind's entries and bytes, the limited kinds' together and the limit, or `NoCache` for a session handed none; answering `CacheCommand::Sizes`, at once and again after a walk, and sent again as a Clear ends |
 | `Failed(SessionError)` | notice | `open` or `command` where it answers one | any | an error, in plain words ([Failures](#failures)) |
 
 **What `Values` holds** (decisions 17, 27, 28 and 30). For each module, in the modules' order:
@@ -82,14 +84,14 @@ Planned (decision 77): `live`, whether the photo's pipeline is ready and command
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `OpenPreview`, the opening photo's picture ([A photo opening](#a-photo-opening)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); `Cache`, a fact for each cache kind and each library's cache, their entries and bytes (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `OpenPreview`, the opening photo's picture ([A photo opening](#a-photo-opening)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 
 Decision 72: each job reports everything its row in the jobs window shows, so a client folds its events into the row with no code for any kind of job ([gui.md](gui.md#the-jobs-window)). The events are base's `JobEvent` (`apertrust_base::jobs::progress`), which the session sends as `Event::Job { event, command }`; their API for a job's body is in [engine.md](engine.md#bases-part-apertrust_basejobs).
 
 - **Built:** every event and field below, in base, with the throttle and the end's time.
-- **What each job reports today:** the export its whole row ([engine.md](engine.md#the-job)): its total, folder and queued detail as it is added, its title, detail and photos done per photo, its first file, and at its end its outcome, the failure that ended it or else its first photo's, and `Retry` unless cancelled or refused, its retry left with the session; every other job its title, progress and failure.
+- **What each job reports today:** the export its whole row ([engine.md](engine.md#the-job)): its total, folder and queued detail as it is added, its title, detail and photos done per photo, its first file, and at its end its outcome, the failure that ended it or else its first photo's, and `Retry` unless cancelled or refused, its retry left with the session; the cache's Clear its title, progress, detail, outcome and failure ([cache.md](cache.md#through-the-session)); every other job its title, progress and failure.
 - **What the session sends:** every event below as `Event::Job`, `Added` and `Ended` notices and each other a fact by job (`Fact::Progress`, `Title`, `Detail`, `Destination` and `State`, each naming the job), so a remote client's coalescing keeps the latest of each value of each job.
 - **What the app does with them:** its mirror folds them, each event setting its part of its job's row, an export and a folder's reading through the same code ([gui.md](gui.md#in-the-app)); Try again on a failed row sends `RetryJob`, and the new job's row takes the old one's place.
 
@@ -188,7 +190,9 @@ An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes i
 `Failed(SessionError)` carries errors in plain words, which the app shows and the CLI logs. Those that answer a command are wrapped with its number:
 
 - `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open. Planned, it may come after the open's `Opened`, when the decode or the upload fails (decision 77).
-- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable` or `NotRetryable`, and, planned, `NotLive`, a command on the edit while the photo is opening (decision 77).
+- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76), and, planned, `NotLive`, a command on the edit while the photo is opening (decision 77).
+
+- `CacheWalk { command, source }`: the walk for a `CacheCommand::Sizes` failed, its folder or a kind's not listed.
 
 The others stand alone:
 
@@ -207,7 +211,7 @@ The others stand alone:
 | --- | --- | --- |
 | Engine | its batch's events and scopes readings, readouts later, through the outbox | commands and its jobs' GPU tasks (the inbox) |
 | Edit writer | `Saved`, a failed save | the edits handed to it |
-| Job workers | `Job` events through the control's observer; their bodies' own (an export's `Export`, a preview's `ExportPreview`, a folder's reading's `Library` events, an open's `OpenPreview`, planned) through the outbox | `Context::wait`'s answers, later |
+| Job workers | `Job` events through the control's observer; their bodies' own (an export's `Export`, a preview's `ExportPreview`, a folder's reading's `Library` events, the cache's walk's and Clear's `Cache`, an open's `OpenPreview`, planned) through the outbox | `Context::wait`'s answers, later |
 | Library's threads, a root's queue (decision 53; planned) | `Library` events through its observer | its calls |
 | UI | commands | every event, drained in `App::logic` ([gui.md](gui.md#a-frame)) |
 | Server, tokio (later) | each connection's commands | the events, fanned out per connection ([session-protocol.md](session-protocol.md#remote-clients)) |

@@ -188,6 +188,40 @@ job-thumbnails = Creating thumbnails
 # A folder being read as it opens; $folder is its path.
 job-folder = Reading { $folder }
 
+## The cache's Clear: $kind is what it clears, thumbnails or pipelines; $done the entries
+## done of $total; $entries those it removed, $size and $unit how much they held, the unit
+## kb, mb or gb.
+
+job-cache-size =
+    { $size } { $unit ->
+        [kb] kB
+        [gb] GB
+       *[mb] MB
+    }
+job-cache-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } thumbnail
+               *[other] { $entries } thumbnails
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } pipeline
+               *[other] { $entries } pipelines
+            }
+    }
+# Its title, and the line under its bar.
+job-cache-clear =
+    { $kind ->
+        [thumbnails] Clearing the thumbnail cache
+       *[pipelines] Clearing the pipeline cache
+    }
+job-cache-clear-now = { $done } of { $total } removed
+# Its title once it has ended: "Cleared 2,104 thumbnails, 138 MB".
+job-cache-cleared = Cleared { job-cache-entries }, { job-cache-size }
+job-cache-clear-cancelled = Clearing cancelled: { job-cache-entries } removed, { job-cache-size }
+
 ## What an export job reports of itself for its row. $number is the photo under way,
 ## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
 ## File on disk; $photo a raw; $done the photos done; $count the photos waiting; $folder
@@ -250,6 +284,8 @@ job-cause-gone = the folder, or its disk, is no longer there
 job-cause-folder = the folder cannot be made or written to
 job-cause-write = the file could not be written
 job-cause-engine = the engine stopped unexpectedly
+job-cause-cache-remove = some of the cache's files could not be removed
+job-cause-cache-read = the cache's folder cannot be read
 
 ## A job's row in the jobs window: its lines and buttons. $folder is where its results go,
 ## $time when it ended on the local clock ("14:02"), $photo the item it failed on, $file the

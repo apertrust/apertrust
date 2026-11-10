@@ -15,7 +15,7 @@ clap.workspace = true
 # reads no platform folder (decision 43).
 directories.workspace = true
 pollster.workspace = true
-apertrust-base = { workspace = true, features = ["folders", "log"] }
+apertrust-base = { workspace = true, features = ["cache", "folders", "log"] }
 apertrust-engine.workspace = true
 apertrust-export.workspace = true
 apertrust-library.workspace = true
