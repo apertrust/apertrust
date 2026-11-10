@@ -160,7 +160,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`; `batch`, `serve` and `mcp` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`; `cache`, `batch`, `serve` and `mcp` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |
@@ -168,7 +168,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | `apertrust-display` | The window's platform code, FFI that may use `unsafe`: display colour, the window frame and menu bar where winit and muda cannot (decision 39), native popups (decision 40), modal dialogs and alerts (decision 41), and the Windows app's terminal, attached to at its start (`docs/packaging.md`, Windows) |
 | `apertrust-op-<id>` | One operation each, in `crates/op/<id>`: Slang kernel, generated WGSL, CPU-side setup, manifest and schema (decision 20) |
 | `apertrust-operations` | The list of built-in operations, in darktable's order |
-| `apertrust-base` | What every program sets up as it starts, nothing about images, colour, the GPU or the UI (decision 43): logging, version, folders, settings, the safe write, darktable's control jobs |
+| `apertrust-base` | What every program sets up as it starts, nothing about images, colour, the GPU or the UI (decision 43): logging, version, folders, settings, the safe write, darktable's control jobs; the disk cache, planned (decision 76) |
 | `apertrust-plugin` | The operation interface |
 | `apertrust-color` | Colour maths shared by operations, and numerical helpers two ports share (decision 65): Slang for kernels, Rust for setup |
 | `apertrust-modules` | Modules (decision 28): what the user edits with, bound to operation parameters; no egui, wgpu, engine or operation crate |

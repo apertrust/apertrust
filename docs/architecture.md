@@ -129,7 +129,7 @@ The server and MCP parts are library crates used by these two executables, not s
 | `apertrust-operations` | The explicit list of built-in operations | Phase 1 |
 | `apertrust-color` | Shared colour maths and numerical helpers: Slang for kernels, Rust for setups | Phase 1 |
 | `apertrust-raw` | Raw decoding with rawler, wrapped in Apertrust's own types | Phase 0 |
-| `apertrust-base` | What every program sets up as it starts: logging and the banner, the version, folders, settings, the safe write and jobs, each behind a feature ([settings.md](settings.md#where-it-lives)) | Phase 2 |
+| `apertrust-base` | What every program sets up as it starts: logging and the banner, the version, folders, settings, the safe write, jobs and, planned, the disk cache (decision 76), each behind a feature ([settings.md](settings.md#where-it-lives)) | Phase 2 |
 | `apertrust-export` | What an export writes and where, with no GPU: the export settings, darktable's size computation and variables, the file-on-disk rules, the JPEG and PNG writers (decision 56) | Phase 2 |
 | `apertrust-display` | The window's platform code where wgpu and winit stop: display colour ([gui.md](gui.md#display-colour)), the window frame (decision 39), the Mac's native popup menus (decision 40), dialogs and alerts (decision 41); an FFI crate allowed `unsafe` | Phase 0 |
 | `apertrust-modules` | Module definitions, bindings, transfer functions, their values and the built-in modules, depending on `apertrust-plugin` and `apertrust-color` only (decision 28) | Phase 2 |
@@ -177,7 +177,7 @@ Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#
 
 ### Settings and folders
 
-Every setting is declared once in `data/settings.schema.toml`, from which each owner's crate generates typed statics; `apertrust-base` holds the store, `--conf` and the user data folder. The engine never opens a folder or a settings file: the binaries read the store and hand it plain options. No build overwrites an edit a newer Apertrust wrote (decision 43).
+Every setting is declared once in `data/settings.schema.toml`, from which each owner's crate generates typed statics; `apertrust-base` holds the store, `--conf` and the user data folder. The engine never opens a folder or a settings file: the binaries read the store and hand it plain options. No build overwrites an edit a newer Apertrust wrote (decision 43). The cache folder, planned, holds only what can be rebuilt with nothing lost, each kind's size shown and cleared in Settings › Storage and by `apertrust-cli cache`, thumbnails and later previews kept within one limit, oldest removed first, library caches and local copies kept until the person removes them; what clearing would lose, root maps, pending changes and conflict copies, is in the user data folder (decision 76).
 
 Details: [settings.md](settings.md).
 

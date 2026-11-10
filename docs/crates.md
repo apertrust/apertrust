@@ -214,10 +214,11 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
+- **The cache** (decision 76): the handle each binary opens, the golden harness none; the start's walk and eviction as `SystemBackground` jobs, eviction past `cache.limit`, an engine setting; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview` and `library scan`; `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview` and `library scan`; `cache`, `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 
@@ -293,6 +294,13 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 - from the index, the photos with an edit, those that open view-only, and the sidecars that could not be read;
 - the leftover temporaries it removed;
 - the times, under `-d perf` (decisions 46 and 53).
+
+### Planned: cache
+
+Decision 76, with the library's step 6b. Both call `apertrust_base::cache` directly, with no session and no GPU, and take `--cache-dir DIR` (global) or `APERTRUST_CACHE_DIR`:
+
+- `cache info`: the cache folder and how it was chosen; `cache.limit` and the limited kinds' total; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, those unused for 90 days or not found marked. It walks the folder and writes nothing.
+- `cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
 
 ## apertrust-golden
 
@@ -855,6 +863,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `folders` | `Folders` | the binaries (the app and the CLI) |
 | `fs` | the safe write | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
+| `cache` (planned) | the disk cache | the engine, the library and the CLI |
 | (none) | `settings` | |
 
 ### Logging
@@ -947,7 +956,10 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 ### Planned
 
-The cache folder, with thumbnails (decision 43).
+**The cache folder and the cache,** with thumbnails (decisions 43 and 76):
+
+- `Folders` chooses the cache folder: `--cache-dir`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given, then the platform's; Apertrust Dev's its own.
+- `cache`, behind a `cache` feature: `KINDS`, each kind's id, folder and policy, limited (thumbnails, later pipelines, previews and AI results) or kept (library caches, local copies); a limited entry one file per slot, named by the slot's hash, holding its version, written whole through `fs` and replaced by a newer one; last use the file's modified time, set at most once a day; the walk, with each kind's entries and bytes, removing day-old temporaries; eviction oldest first to 90% of `cache.limit`; clearing a kind, a library's cache skipped while another process holds its lock; the types of `Command::Cache` and `Event::Cache`. No index file and no lock for limited kinds. Owners name their slots and versions.
 
 ## apertrust-plugin
 
@@ -1284,7 +1296,7 @@ flowchart TD
 3. One `Index` for rules, sorts, pages and full text: in memory for folder mode, a per-machine cache for a library, its engine chosen by spike L2 (`index`, decision 55).
 4. The operations, `LibraryCommand` and `LibraryEvent` (`ops`).
 
-It also holds roots by id file and photos by fingerprint (decision 53), change detection and two copies' comparison (decision 52), and the thumbnail cache's files.
+It also holds roots by id file and photos by fingerprint (decision 53), change detection and two copies' comparison (decision 52), and the slots and versions of the cache's thumbnails, library caches and local copies, over base's `cache` (decision 76).
 
 **Through the engine.** The engine's session serves its commands, so clients reach it through the session protocol (decisions 37, 53 and 57). The long ones run as jobs of its control on darktable's queues: a folder's reading `UserBackground`, thumbnails `SystemForeground`, and move, copy, rename, delete and Import… `UserForeground`, each call into a root on that root's queue. The engine uses its `sidecar` and `ops`.
 

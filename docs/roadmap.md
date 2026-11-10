@@ -146,7 +146,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [x] Thumbnails from the camera's embedded pictures in the grid panel.
 - [x] The grid bar's Sort and Zoom, the grid panel resized from its edge in whole rows or columns, and its position at the bottom, left or right.
 - [x] The thumbnail alone at its square's bottom centre, or filling it with square thumbnails, its rings round the picture and its marks on its corner; under it a caption of the file name, with the reject, rating and colour labels' line drawn once the ratings come; and the grid bar's Labels, which shows or hides the captions.
-- [ ] The thumbnail cache, and Apertrust's own rendered thumbnails.
+- [ ] The thumbnail cache, kept within a size limit, its size seen and cleared in Settings › Storage and from the command line (decision 76), and Apertrust's own rendered thumbnails.
 - [ ] Faster listing on network drives.
 - [ ] The edit file's next version: the photo's identity, and clocks for editing on several computers.
 - [ ] Several photos shown at once, the active one live and the rest still images, once spike W1 has measured it (decision 37).
@@ -287,7 +287,7 @@ Goal: reach and polish.
 
 ## The library's steps
 
-Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed before the next starts. Folder mode comes first, twenty steps in Phases 2 and 3 before any library exists; then the library, then the project.
+Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is reviewed before the next starts. Folder mode comes first, twenty steps in Phases 2 and 3 before any library exists; then the library, then the project.
 
 **Built, in Phase 2:**
 
@@ -308,7 +308,8 @@ Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed 
 **Remaining, in Phase 2:**
 
 - [ ] **Step 5.** (Its later part) The calls into a root on that root's queue (decisions 53 and 57), with step 10, when a folder is listed again while other calls into it run; `CollectionChanged` with darktable's reason and property, with the first change to a collection.
-- [ ] **Step 6.** Thumbnails, its remaining parts: the cache in the cache folder, keyed by fingerprint, edit hash, render version and size, with the cache folder itself and `--cache-dir`; then Apertrust's own rendered thumbnails, stills of the viewport pipe replacing the embedded picture, deduplicated by the edit too; nothing for cloud files not on the disk.
+- [ ] **Step 6.** Thumbnails, its remaining parts: the cache folder with `--cache-dir` and `APERTRUST_CACHE_DIR`, and base's `cache` (decision 76); the thumbnails kind, one file per photo, virtual copy and size, holding its edit hash and render version, replaced whole by a newer one; the walk as the session starts, `cache.limit` (4 GB) and eviction oldest first on `SystemBackground`; a cold walk timed on Windows and a hard disk; then Apertrust's own rendered thumbnails, stills of the viewport pipe replacing the embedded picture, deduplicated by the edit too; nothing for cloud files not on the disk.
+- [ ] **Step 6b.** The cache's control (decision 76): `Command::Cache` and `Event::Cache` through the session; Settings › Storage with the user data and cache folders, each kind's size and Clear, the limit's row and Show in Finder; `apertrust-cli cache info` and `cache clear [KIND...]`.
 - [ ] **Step 7.** Bulk listing (`getattrlistbulk`, `FindFirstFileExW`, `statx`; in an `apertrust-fs` crate only if it needs FFI that safe crates do not cover), timed against step 1 on the NAS; spike L1 folded in.
 - [ ] **Step 8.** Sidecar version 2's identity and clocks: the photo's name and fingerprint, its virtual copies (one at first) with ids and clock vectors, the machine id; version 1 still read. Written through the XMP layer.
 - [ ] **Step 9.** History in the sidecar: the session's undo and history saved as the log of steps and its end; Undo and Redo back after reopening; Compress History. Built with the session's undo, or right after it.
@@ -320,7 +321,7 @@ Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed 
 - [ ] **Step 10.** Outside changes: the open folder listed again on focus and every 30 s on network roots, watchers as hints; a copy only older replaced, the active photo taking the newer edit; every write a read first; until step 12 a diverged sidecar opens view-only.
 - [ ] **Step 11.** Virtual copies: New Virtual Copy and New Virtual Copy from Original, in the photo's one sidecar, named and numbered, deleted with a tombstone; darktable's duplicate manager's actions.
 - [ ] **Step 12.** Two virtual copies on divergence, named after the computer and time; spike L4's harness. Notices that are not jobs (`Event::Notice`) come with it, shown as darktable's `dt_control_log` shows its messages ([gui.md](gui.md#the-jobs-window)).
-- [ ] **Step 13.** Conflict copies found by content, handled by step 12's rule, kept 30 days in the cache, then removed.
+- [ ] **Step 13.** Conflict copies found by content, handled by step 12's rule, moved into the user data folder's `conflict-copies/` and removed 30 days later, never in the cache (decision 76); their count and size on Settings › Storage.
 - [ ] **Step 14.** Ratings, the reject and colour labels as history steps, combining field by field, written as darktable writes them, its labels and reject beside the standard XMP rating, so they read both ways; their details are settled as it is built.
 - [ ] **Step 15.** Keywords and darktable's metadata fields, combining likewise; darktable's XMP read for ratings, labels and keywords while a photo has no `.apxmp` (decision 51); the Keywords module, its list the folder's keywords with their properties and Recent in the user data folder's `keywords.toml`, and the Metadata module, darktable's image information and metadata editor in one (decision 73).
 - [ ] **Step 15b.** Filters in folder mode (decision 73): the index's rules and counts over the open folder, the Filters module; first file name, rating, colour label, history, date taken and file type, then camera, lens and exposure read with the capture times, then keywords and the metadata fields.
@@ -335,18 +336,18 @@ Decisions 46, 47, 52 to 55 and 71. Each step delivers one thing and is reviewed 
 - [ ] **Step 21.** Spike L2, the cache's engine, on the M4.
 - [ ] **Step 21b.** The storage interface (decision 54): every call into a root's files, the listing and the safe write among them, through one interface with the local-files backend, so the server's backend (decision 71) comes in beside it with nothing above it changing; in place before step 22 builds on the file system.
 - [ ] **Step 22.** The library file: New Library…, Open… of its file, Open Recent and the start window, a double-click; `.apertrust/`; a library made from the open folder in place; its model built from its files; a newer format view-only.
-- [ ] **Step 23.** Roots: Add Folder… with the root's id file, the root map per machine, finding by relative path then mounted volumes, Locate…; every root's tree in Folders, offline roots marked.
+- [ ] **Step 23.** Roots: Add Folder… with the root's id file, the root map per machine in the user data folder (decision 76), finding by relative path then mounted volumes, Locate…; every root's tree in Folders, offline roots marked.
 - [ ] **Step 24.** Albums: one file each, nested, combining entry by entry, cycles resolved; the Albums section; Add to Album.
 - [ ] **Step 25.** Smart albums: darktable's collect rules, filters and sorts, and "in album"; the Smart albums section; Filters' Save as Smart Album.
 - [ ] **Step 26.** The library's keyword list: darktable's hierarchy, synonyms and flags in `keywords.toml`, merging by path, used inside the library in place of the user data folder's.
-- [ ] **Step 27.** The per-machine cache, by spike L2: the `Index` saved and reopened, background rescans, Rebuild Cache, roots away browsed with their marks.
+- [ ] **Step 27.** The per-machine cache, by spike L2: the `Index` saved and reopened, background rescans, Rebuild Cache, roots away browsed with their marks; each library's cache on Settings › Storage and in `apertrust-cli cache`, those unused for 90 days or not found offered for removal, locked while open (decision 76).
 - [ ] **Step 28.** Full-text search.
 - [ ] **Step 29.** Import… into a library: in place as a root, or by copy into `Photos/`.
 - [ ] **Step 30.** Edits kept in the library: the setting, `.apertrust/edits/` mirrored by path, the root's id file naming the library; folder mode following it and saying so.
-- [ ] **Step 31.** Offline drives: changes waiting in the library; local copies.
+- [ ] **Step 31.** Offline drives: changes waiting in the library; local copies, the cache's kept kind `copies/`, and how they are cleared (decision 76).
 - [ ] **Step 32.** Import library… of a library: one album with its albums inside, by copy or reference, keywords by path, Keep both or Link, the cost first, the notice on the old one.
 - [ ] **Step 33.** Cloud files, after spike L3: the flags on Windows and macOS, materialisation off on macOS, cloud marks, Make Available Offline.
-- [ ] **Step 34.** Silent winners: each machine's last-written copy of each sidecar in the cache; iCloud's hidden versions through `NSFileVersion`.
+- [ ] **Step 34.** Silent winners: each machine's last-written copy of each sidecar in the user data folder (decision 76); iCloud's hidden versions through `NSFileVersion`.
 - [ ] **Step 35.** The whole of `LibraryCommand` and `LibraryEvent` in the session protocol, and `apertrust-cli library`'s commands; MCP's tools in Phase 6.
 
 **Phase 5, after the library, the project:**

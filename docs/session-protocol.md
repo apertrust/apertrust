@@ -86,6 +86,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
   - The long ones run as jobs of the session's control on darktable's queues: a folder's reading on `UserBackground`; thumbnails on `SystemForeground`; move, copy, rename, delete and Import… on `UserForeground`. Each call into a root runs on that root's queue (decisions 53 and 57).
   - The first three, `Open(Source::Folder)`, `Close` and `Thumbnails`, are built ([Commands](#commands)). `Show` and `Page` are planned; meanwhile the client keeps the photos listed and asks for the thumbnails of the cells it draws.
   - Clients see `PhotoRef`, `Target` and `Rules`, never the library's lower layers ([library.md](library.md#planned)). Its events are `Event::Library(LibraryEvent)` ([events.md](events.md#lower-crates-report-through-an-observer)).
+- **The cache's commands**, `Command::Cache(CacheCommand)` (decision 76): `Sizes`, walking the cache and answering a fact for each kind and each library's cache in `Event::Cache`; `Clear { kind }` and `Remove { library }`, a cancellable `UserBackground` job with a progress. Their types are `apertrust-base`'s `cache`, as the jobs' are its `jobs`.
 - **Undo and Redo**, asked by the client; history lives in the session (Phase 2; decision 47).
 - **`Sync`** and the handshake, for remote clients ([below](#remote-clients)).
 - **Masks and layers**, `render_viewport(region, zoom)`, later phases.
