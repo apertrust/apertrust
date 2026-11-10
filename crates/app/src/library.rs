@@ -64,8 +64,12 @@ pub enum Action {
     OpenFolder,
     /// File › Open…'s dialog.
     OpenFiles,
-    /// A folder, a subfolder of the open one, its parent or a recent one, opened at once.
+    /// A recent folder, or a photo alone's folder by Open This Folder, opened at once: a way
+    /// in, which makes it the tree's root.
     Open(PathBuf),
+    /// A folder in the tree, the root or one inside it, chosen: the grid panel shows its
+    /// photos, and the tree keeps its root.
+    Choose(PathBuf),
     /// Browse's header: open or close it.
     Toggle,
     /// The Folders group's row: open or close it.
@@ -212,18 +216,24 @@ fn row(ui: &mut egui::Ui, label: &str, tip: &str, missing: Option<Missing<'_>>) 
     }
 }
 
-/// What Browse draws from: the folder open, the recents, which of its parts are open and
-/// the keys of the two ways to open.
+/// What Browse draws from: the active folder and the tree's root, the recents, which of its
+/// parts are open and the keys of the two ways to open.
 pub struct Browse<'a> {
+    /// The active folder, whose photos the grid panel shows.
     pub folder: &'a Folder,
+    /// The tree's root, the folder a way in opened, which stays as folders are chosen in the
+    /// tree (`FolderState::root`).
+    pub root: Option<&'a Path>,
+    /// The root's photo count, once a listing of it has given every photo.
+    pub root_count: Option<usize>,
     /// The recents' folders, newest first.
     pub recent: &'a [Recent<'a>],
     pub open: Open,
-    /// The folders the person opened (true) or closed (false) in the tree this run; the open
-    /// folder starts open and the others closed.
+    /// The folders the person opened (true) or closed (false) in the tree this run; the root
+    /// starts open and the others closed.
     pub tree: &'a BTreeMap<PathBuf, bool>,
-    /// The subfolders of folders inside the open one as the library listed them, by path, or
-    /// why it could not.
+    /// The subfolders of the folders in the root's tree as the library listed them, by path,
+    /// or why it could not.
     pub inside: &'a HashMap<PathBuf, Result<Vec<String>, String>>,
     pub keys: &'a Keys,
     /// The person's home folder, which tooltips write as `~`.
@@ -236,24 +246,43 @@ const LEVEL_INDENT: f32 = 12.0;
 /// The side of a tree row's folder icon.
 const ROW_ICON: f32 = 16.0;
 
-/// The folder the tree is about: its path, its photo count where the listing has given
-/// every photo, and its subfolders' names.
-fn shown(folder: &Folder) -> Option<(&Path, Option<usize>, &[String])> {
+/// The active folder: open, or being opened.
+fn shown(folder: &Folder) -> Option<&Path> {
     match folder {
-        Folder::Open(listing) => Some((
-            &listing.path,
-            listing.done.then_some(listing.photos.len()),
-            &listing.subfolders,
-        )),
-        Folder::Opening { path } => Some((path, None, &[])),
+        Folder::Open(listing) => Some(&listing.path),
+        Folder::Opening { path } => Some(path),
         Folder::None | Folder::Failed { .. } | Folder::Alone { .. } => None,
+    }
+}
+
+impl Browse<'_> {
+    /// The photo count of the folder at `path` where it is known: the active folder's once
+    /// its listing has given every photo, else the root's as its own listing gave it.
+    fn count(&self, path: &Path) -> Option<usize> {
+        match self.folder {
+            Folder::Open(listing) if listing.path == path && listing.done => {
+                Some(listing.photos.len())
+            }
+            _ => self.root_count.filter(|_| self.root == Some(path)),
+        }
+    }
+
+    /// The subfolders of the folder at `path`, as far as they are known: the active
+    /// folder's from its listing, the others' as the library listed them.
+    fn subfolders(&self, path: &Path) -> Option<Inside<'_>> {
+        match self.folder {
+            Folder::Open(listing) if listing.path == path => {
+                Some(Inside::Listed(&listing.subfolders))
+            }
+            _ => self.inside.get(path).map(Inside::of),
+        }
     }
 }
 
 /// The Photos tab's Browse section (decision 73), in folder mode's form: its top line,
 /// what is open, a box listing the recents to choose from, with ＋ beside it; then its
-/// Folders group, the open folder's tree with the way up to its parent; ⋯ holds Show in
-/// Finder. Each part is open or closed as `browse.open` says. Albums and Smart albums join
+/// Folders group, the tree of the folder opened, its root, with nothing above it; ⋯ holds
+/// Show in Finder. Each part is open or closed as `browse.open` says. Albums and Smart albums join
 /// Folders with the library (Phase 5); folder mode never shows them.
 ///
 /// For a photo alone, as the wireframe's one-photo column draws it, the top line names the
@@ -264,7 +293,7 @@ pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     let words = translator(ui.ctx());
     let mut actions = Vec::new();
     let title = words.text("section-browse");
-    let open = shown(browse.folder).map(|(path, ..)| path.to_owned());
+    let open = shown(browse.folder).map(Path::to_owned);
     let alone = alone(browse.folder);
     let reveal = Item::new("reveal", words.text(jobs::FILE_MANAGER.show_message()))
         .enabled(open.is_some() || alone.is_some());
@@ -316,37 +345,38 @@ fn alone(folder: &Folder) -> Option<(&Path, &Path)> {
     }
 }
 
-/// What the top line's box says, as the wireframe draws it: the open folder, "Folder:
-/// 2026-10 Lisbon", its name cut in its middle to fit `width` in `font`, its count on its
-/// row in the tree; that it is being read; the name of a photo alone; or, with none open
-/// or the last open failed, that none is. Returns it cut, and whole.
+/// What the top line's box says, as the wireframe draws it: the folder opened, the tree's
+/// root, "Folder: 2026-10 Lisbon", whichever folder in its tree is chosen, its name cut in
+/// its middle to fit `width` in `font`, its count on its row in the tree; that it is being
+/// read; the name of a photo alone; or, with none open or the last open failed, that none
+/// is. Returns it cut, and whole.
 fn open_line(
     ctx: &egui::Context,
     painter: &egui::Painter,
-    folder: &Folder,
+    browse: &Browse<'_>,
     font: &egui::FontId,
     width: f32,
 ) -> (String, String) {
     let words = translator(ctx);
+    // The root is read while it is the active folder and its last chunk has not come.
+    let reading = match browse.folder {
+        Folder::Open(listing) => !listing.done && browse.root == Some(&listing.path),
+        Folder::Opening { path } => browse.root == Some(path),
+        Folder::None | Folder::Failed { .. } | Folder::Alone { .. } => false,
+    };
     let line = |name: &str| -> String {
         let mut args = Args::new();
         args.set("name", name);
-        match folder {
-            Folder::Open(listing) if listing.done => {
-                words.text_with("browse-open-folder", Some(&args))
-            }
-            Folder::Open(_) | Folder::Opening { .. } => {
-                words.text_with("folders-reading", Some(&args))
-            }
-            Folder::Alone { .. } => name.to_owned(),
-            Folder::None | Folder::Failed { .. } => words.text("browse-no-folder"),
+        match (browse.root, browse.folder) {
+            (_, Folder::Alone { .. }) => name.to_owned(),
+            (None, _) => words.text("browse-no-folder"),
+            (Some(_), _) if reading => words.text_with("folders-reading", Some(&args)),
+            (Some(_), _) => words.text_with("browse-open-folder", Some(&args)),
         }
     };
-    let whole_name = match folder {
-        Folder::Open(listing) => listing.name.clone(),
-        Folder::Opening { path } => name(path),
+    let whole_name = match browse.folder {
         Folder::Alone { photo, .. } => photo.name.clone(),
-        Folder::None | Folder::Failed { .. } => String::new(),
+        _ => browse.root.map(name).unwrap_or_default(),
     };
     let whole = line(&whole_name);
     // The name takes what the rest of the line leaves.
@@ -376,7 +406,7 @@ fn top_line(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
         let (_, whole) = open_line(
             &ctx,
             ui.painter(),
-            browse.folder,
+            browse,
             &egui::FontId::default(),
             f32::INFINITY,
         );
@@ -389,14 +419,12 @@ fn top_line(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
             ChoiceBox::new(&name, &whole)
                 .icon(icon)
                 .show(ui, width, |painter, font, room| {
-                    open_line(&ctx, painter, browse.folder, font, room).0
+                    open_line(&ctx, painter, browse, font, room).0
                 });
         // Its count, which the tree's row shows, said with it.
-        if let Folder::Open(listing) = browse.folder
-            && listing.done
-        {
+        if let Some(count) = browse.root.and_then(|root| browse.count(root)) {
             let mut args = Args::new();
-            args.set("count", listing.photos.len() as f64);
+            args.set("count", count as f64);
             let count = words.text_with("photo-count", Some(&args));
             ctx.accesskit_node_builder(response.id, |node| node.set_description(count));
         }
@@ -455,7 +483,7 @@ fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
 }
 
 /// The recents' list under the top line's box, with the paths its items stand for: each
-/// folder by its name, the open one checked, its path in its tooltip; a missing one marked,
+/// folder by its name, the tree's root checked, its path in its tooltip; a missing one marked,
 /// as a submenu whose first line says why, disabled, then Try Again where its opening
 /// failed this run, Locate… and Remove from the List.
 fn recents_menu(ctx: &egui::Context, browse: &Browse<'_>) -> (Vec<Entry>, Vec<PathBuf>) {
@@ -464,7 +492,7 @@ fn recents_menu(ctx: &egui::Context, browse: &Browse<'_>) -> (Vec<Entry>, Vec<Pa
         let none = Item::new("none", words.text("browse-recents-none")).enabled(false);
         return (vec![Entry::Item(none)], Vec::new());
     }
-    let open = shown(browse.folder).map(|(path, ..)| path);
+    let open = browse.root;
     let entries = browse
         .recent
         .iter()
@@ -530,9 +558,9 @@ fn missing_words(ctx: &egui::Context, why: Missing<'_>) -> String {
 
 /// One row of the tree: set in by its `level`, from 1; a chevron where it has subfolders
 /// shown or hidden; the folder's icon, its name cut in its middle and its photo count at
-/// the end where known. The open folder's is chosen, on `list_chosen`. To screen readers a
-/// tree item with its level, chosen and open state, described by its count where known and
-/// its path, as its tooltip writes it.
+/// the end where known. The active folder's is chosen, on `list_chosen`. To screen readers a
+/// tree item with its level, the root's 0, chosen (selected) and open state, described by
+/// its count where known and its path, as its tooltip writes it.
 struct TreeRow<'a> {
     level: usize,
     name: &'a str,
@@ -637,7 +665,7 @@ impl TreeRow<'_> {
 }
 
 /// A folder row's right-click menu: Show in Folder, named as the platform's file manager
-/// is (Show in Finder on the Mac), and Open.
+/// is (Show in Finder on the Mac), and Open, which chooses it as a click does.
 fn row_menu(ui: &egui::Ui, response: &egui::Response, name: &str, path: &Path) -> Option<Action> {
     let words = translator(ui.ctx());
     let mut args = Args::new();
@@ -654,16 +682,16 @@ fn row_menu(ui: &egui::Ui, response: &egui::Response, name: &str, path: &Path) -
     })?;
     match chosen.as_str() {
         "show" => Some(Action::ShowInFolder(path.to_owned())),
-        "open" => Some(Action::Open(path.to_owned())),
+        "open" => Some(Action::Choose(path.to_owned())),
         _ => None,
     }
 }
 
-/// The Folders group's rows: the way up to the open folder's parent, a row naming it after
-/// ‹; then the tree, the open folder chosen at its top with its photo count and, while it
-/// is open, its subfolders a level in, each with its own while open. A click opens a
-/// folder, the chevron or ← and → show or hide a folder's subfolders, and a right-click
-/// holds Show in Folder and Open.
+/// The Folders group's rows: the tree of the folder opened, its root at the top with its
+/// photo count and nothing above it, and, while a folder is open, its subfolders a level in,
+/// each with its own while open; the active folder chosen. A click chooses a folder, the
+/// tree staying as it is, the chevron or ← and → show or hide a folder's subfolders, and a
+/// right-click holds Show in Folder and Open. A photo alone has Open This Folder in its place.
 fn tree(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
     let words = translator(ui.ctx());
     // A photo alone has no tree: its folder is offered instead.
@@ -677,40 +705,24 @@ fn tree(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
         return;
     }
     // With none open, the top line says so, and the tree shows nothing.
-    let Some((path, count, subfolders)) = shown(browse.folder) else {
+    let Some(root) = browse.root else {
         return;
     };
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        let parent_name = name(parent);
-        let mut args = Args::new();
-        args.set("name", parent_name.as_str());
-        let up = words.text_with("browse-parent", Some(&args));
-        let response =
-            up_row(ui, &parent_name, &up).on_hover_text(export::shown(parent, browse.home));
-        if response.clicked() {
-            actions.push(Action::Open(parent.to_owned()));
-        }
-        actions.extend(row_menu(ui, &response, &parent_name, parent));
-    }
     let folders = words.text("browse-folders");
-    let open = Branch {
-        path,
-        name: &name(path),
+    let top = Branch {
+        path: root,
+        name: &name(root),
         level: 1,
-        count,
-        listed: Some(Inside::Listed(subfolders)),
-        chosen: true,
     };
     ui.scope_builder(
         UiBuilder::new()
             .id_salt("browse tree")
             .accessibility_role(egui::Role::Tree)
             .accessibility_label(&folders),
-        |ui| open.show(ui, browse, actions),
+        |ui| top.show(ui, browse, actions),
     );
 }
 
-/// A folder in the tree, with what is known of its subfolders.
 /// What the library said of a folder's subfolders.
 #[derive(Clone, Copy)]
 enum Inside<'a> {
@@ -728,16 +740,11 @@ impl<'a> Inside<'a> {
     }
 }
 
+/// A folder in the tree.
 struct Branch<'a> {
     path: &'a Path,
     name: &'a str,
     level: usize,
-    count: Option<usize>,
-    /// Its subfolders as listed, or why they could not be, or None until the library has
-    /// listed them.
-    listed: Option<Inside<'a>>,
-    /// Whether it is the open folder, chosen at the tree's top.
-    chosen: bool,
 }
 
 impl Branch<'_> {
@@ -746,11 +753,14 @@ impl Branch<'_> {
     /// ([`Action::Ask`]), so a folder left open is asked again after the folder is opened
     /// again. Where they could not be listed, the reason and Try Again, its chevron kept: a
     /// share down a moment is not a folder with none. Open or closed as the person left it
-    /// this run, else open for the open folder and closed for the others; a folder listed
-    /// with no subfolders has no chevron.
+    /// this run, else open for the root and closed for the others; a folder listed with no
+    /// subfolders has no chevron. Chosen where it is the active folder.
     fn show(self, ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
-        let open = browse.tree.get(self.path).copied().unwrap_or(self.chosen);
-        let chevron = match self.listed {
+        let listed = browse.subfolders(self.path);
+        let chosen = shown(browse.folder) == Some(self.path);
+        let root = browse.root == Some(self.path);
+        let open = browse.tree.get(self.path).copied().unwrap_or(root);
+        let chevron = match listed {
             Some(Inside::Listed([])) => None,
             _ => Some(open),
         };
@@ -758,10 +768,10 @@ impl Branch<'_> {
         let (response, on_chevron) = TreeRow {
             level: self.level,
             name: self.name,
-            count: self.count,
+            count: browse.count(self.path),
             shown: &shown,
             expanded: chevron,
-            chosen: self.chosen,
+            chosen,
         }
         .show(ui);
         let response = response.on_hover_text(shown);
@@ -776,14 +786,14 @@ impl Branch<'_> {
         let toggle = on_chevron || (chevron.is_some() && ((left && open) || (right && !open)));
         if toggle {
             actions.push(Action::ToggleTree(self.path.to_owned()));
-        } else if response.clicked() && !self.chosen {
-            actions.push(Action::Open(self.path.to_owned()));
+        } else if response.clicked() && !chosen {
+            actions.push(Action::Choose(self.path.to_owned()));
         }
         actions.extend(row_menu(ui, &response, self.name, self.path));
         if chevron != Some(true) {
             return;
         }
-        let names = match self.listed {
+        let names = match listed {
             Some(Inside::Listed(names)) => names,
             Some(Inside::Unreadable(why)) => {
                 if retry_row(ui, self.level + 1, why) {
@@ -799,14 +809,10 @@ impl Branch<'_> {
         };
         for sub in names {
             let full = self.path.join(sub);
-            let listed = browse.inside.get(&full).map(Inside::of);
             Branch {
                 path: &full,
                 name: sub,
                 level: self.level + 1,
-                count: None,
-                listed,
-                chosen: false,
             }
             .show(ui, browse, actions);
         }
@@ -858,41 +864,6 @@ fn reading_row(ui: &mut egui::Ui, level: usize) {
         painter.galley(at, galley, t.colors.text_secondary);
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &words));
-}
-
-/// The way up: ‹ and the parent's name in `text_secondary`, a button named `up` ("Up to
-/// 2026") for screen readers.
-fn up_row(ui: &mut egui::Ui, parent: &str, up: &str) -> egui::Response {
-    let t = theme(ui.ctx());
-    let size = vec2(ui.available_width(), t.sizes.panel_line);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    if ui.is_rect_visible(rect) {
-        let painter = ui.painter();
-        let band = rect.expand2(vec2(t.spacing.xs, 0.0));
-        if response.hovered() {
-            painter.rect_filled(band, t.shape.radius, t.colors.hover);
-        }
-        let side = Icon::Back.size();
-        let at = Rect::from_min_size(
-            pos2(rect.left(), rect.center().y - side / 2.0),
-            vec2(side, side),
-        );
-        Icon::Back.paint(painter, at, t.colors.text_secondary);
-        let x = at.right() + t.spacing.xs;
-        let font = egui::FontId::proportional(t.text.body);
-        let shown = middle_cut(painter, parent, "", &font, (rect.right() - x).max(0.0));
-        let galley = painter.layout_no_wrap(shown, font, t.colors.text_secondary);
-        painter.galley(
-            pos2(x, rect.center().y - galley.size().y / 2.0),
-            galley,
-            t.colors.text_secondary,
-        );
-        if response.has_focus() {
-            focus_ring_centred(painter, band, &t);
-        }
-    }
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, up));
-    response
 }
 
 /// Open This Folder, a photo alone's one row in Folders, as the wireframe draws it: the
@@ -1171,11 +1142,13 @@ mod tests {
             let (folder, recent, keys) = (folder(), recent(), keys());
             // The open folder closed where `tree` is false.
             let mut kept = BTreeMap::new();
-            if let Some((path, ..)) = shown(&folder).filter(|_| !tree) {
+            if let Some(path) = shown(&folder).filter(|_| !tree) {
                 kept.insert(path.to_owned(), false);
             }
             let browse = Browse {
                 folder: &folder,
+                root: shown(&folder),
+                root_count: None,
                 recent: &recent,
                 open,
                 tree: &kept,
@@ -1191,8 +1164,9 @@ mod tests {
         browsed(egui::vec2(320.0, 700.0), wedding, recent, OPEN_ALL, true)
     }
 
-    /// The tree: the open folder chosen at its top, its subfolders a level in, each with its
-    /// level, the open folder's open state and its count, for screen readers.
+    /// The tree: the folder opened at its top, chosen, its subfolders a level in, each with
+    /// its level, the root's open state and its count, for screen readers; a click on a
+    /// subfolder chooses it.
     #[test]
     fn the_tree_holds_the_open_folder_and_its_subfolders_a_level_in() {
         let mut harness = wedding_browsed();
@@ -1219,7 +1193,7 @@ mod tests {
         harness.run();
         assert_eq!(
             *harness.state(),
-            [Action::Open(PathBuf::from("/photos/Wedding/Edits"))]
+            [Action::Choose(PathBuf::from("/photos/Wedding/Edits"))]
         );
         // → and ← on the open folder show and hide its subfolders.
         harness
@@ -1259,6 +1233,8 @@ mod tests {
             let (folder, keys, tree, inside) = (listed(), keys(), opened(), listed_inside());
             let browse = Browse {
                 folder: &folder,
+                root: shown(&folder),
+                root_count: None,
                 recent: &[],
                 open: OPEN_ALL,
                 tree: &tree,
@@ -1315,6 +1291,8 @@ mod tests {
                 let (folder, keys) = (wedding(), keys());
                 let browse = Browse {
                     folder: &folder,
+                    root: shown(&folder),
+                    root_count: None,
                     recent: &[],
                     open: OPEN_ALL,
                     tree: &tree,
@@ -1346,6 +1324,8 @@ mod tests {
             let (folder, keys) = (wedding(), keys());
             let browse = Browse {
                 folder: &folder,
+                root: shown(&folder),
+                root_count: None,
                 recent: &[],
                 open: OPEN_ALL,
                 tree: &tree,
@@ -1375,27 +1355,113 @@ mod tests {
         assert!(harness.query_by_label("Edits").is_none());
     }
 
-    /// Above the tree, the way up: a row naming the parent, which opens it.
+    /// The folder opened is the tree's root, with nothing above it: no way up to its parent.
     #[test]
-    fn the_parent_s_row_opens_the_parent() {
+    fn nothing_is_above_the_root() {
         let mut harness = wedding_browsed();
         harness.run();
+        assert!(harness.query_by_label_contains("Up to").is_none());
+        assert!(harness.query_by_label("photos").is_none());
+        let rows: Vec<String> = harness
+            .get_all_by_role(Role::TreeItem)
+            .filter_map(|row| row.accesskit_node().label())
+            .collect();
+        assert_eq!(rows, ["Wedding", "Edits", "Selects"]);
+    }
+
+    /// With a subfolder chosen, the root stays at the tree's top and in the top line, with
+    /// its count and checked among the recents; the chosen folder is selected, with its own
+    /// count, and a click on the root or a sibling chooses that one.
+    #[test]
+    fn a_chosen_subfolder_leaves_the_root_at_the_top() {
+        let portraits = Path::new("/photos/Portraits");
+        let edits = portraits.join("Edits");
+        let chosen = {
+            let edits = edits.clone();
+            move || {
+                let Folder::Open(mut listing) = listing(7, true) else {
+                    unreachable!()
+                };
+                listing.name = "Edits".to_owned();
+                listing.path = edits.clone();
+                listing.subfolders = vec!["Picks".to_owned()];
+                Folder::Open(listing)
+            }
+        };
+        let mut harness = sized(egui::vec2(320.0, 700.0), move |ui, actions| {
+            let (folder, keys, recent) = (chosen(), keys(), recent());
+            let names = vec!["Edits".to_owned(), "Selects".to_owned()];
+            let inside = HashMap::from([(portraits.to_owned(), Ok(names))]);
+            let browse = Browse {
+                folder: &folder,
+                root: Some(portraits),
+                root_count: Some(120),
+                recent: &recent,
+                open: OPEN_ALL,
+                tree: &BTreeMap::new(),
+                inside: &inside,
+                keys: &keys,
+                home: None,
+            };
+            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+        });
+        harness.run();
+        let what = harness.get_by_role_and_label(Role::ComboBox, "What is open");
+        assert_eq!(
+            what.accesskit_node().value().as_deref(),
+            Some("Folder: Portraits")
+        );
+        assert_eq!(
+            what.accesskit_node().data().description(),
+            Some("120 photos")
+        );
+        let root = harness.get_by_role_and_label(Role::TreeItem, "Portraits");
+        let node = root.accesskit_node();
+        assert_eq!(node.data().level(), Some(0));
+        assert_eq!(node.data().is_selected(), Some(false));
+        assert_eq!(node.data().is_expanded(), Some(true));
+        assert_eq!(node.data().description(), Some("120 photos, /photos/Portraits"));
+        let active = harness.get_by_role_and_label(Role::TreeItem, "Edits");
+        let node = active.accesskit_node();
+        assert_eq!(node.data().level(), Some(1));
+        assert_eq!(node.data().is_selected(), Some(true));
+        assert_eq!(node.data().description(), Some("7 photos, /photos/Portraits/Edits"));
+        // A sibling has no count, only its path.
+        let sibling = harness.get_by_role_and_label(Role::TreeItem, "Selects");
+        let said = sibling
+            .accesskit_node()
+            .data()
+            .description()
+            .map(str::to_owned);
+        assert_eq!(said.as_deref(), Some("/photos/Portraits/Selects"));
+        // The root among the recents is the one checked.
         harness
-            .get_by_role_and_label(Role::Button, "Up to photos")
+            .get_by_role_and_label(Role::ComboBox, "What is open")
             .click();
         harness.run();
-        assert_eq!(*harness.state(), [Action::Open(PathBuf::from("/photos"))]);
-        // A folder at the top of its disk has none.
-        let root = || {
-            let Folder::Open(mut listing) = listing(1, true) else {
-                unreachable!()
-            };
-            listing.path = PathBuf::from("/");
-            Folder::Open(listing)
-        };
-        let mut top = browsed(egui::vec2(320.0, 700.0), root, Vec::new, OPEN_ALL, true);
-        top.run();
-        assert!(top.query_by_label_contains("Up to").is_none());
+        let toggled: Vec<_> = harness
+            .get_all_by_label("Portraits")
+            .filter_map(|node| node.accesskit_node().data().toggled())
+            .collect();
+        assert_eq!(toggled, [egui::accesskit::Toggled::True]);
+        harness.key_press(egui::Key::Escape);
+        harness.run();
+        harness.state_mut().clear();
+        harness
+            .get_by_role_and_label(Role::TreeItem, "Portraits")
+            .click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::TreeItem, "Selects")
+            .click();
+        harness.run();
+        assert_eq!(
+            *harness.state(),
+            [
+                Action::Choose(portraits.to_owned()),
+                Action::Choose(portraits.join("Selects")),
+            ]
+        );
     }
 
     /// The top line says what is open, and its list holds the recents: choosing one opens
@@ -1445,6 +1511,8 @@ mod tests {
             }
             let browse = Browse {
                 folder: &folder,
+                root: shown(&folder),
+                root_count: None,
                 recent: &recent,
                 open: OPEN_ALL,
                 tree: &BTreeMap::new(),
@@ -1562,7 +1630,7 @@ mod tests {
             harness.run();
             assert_eq!(
                 *harness.state(),
-                [Action::Open(PathBuf::from("/photos/Wedding/Edits"))],
+                [Action::Choose(PathBuf::from("/photos/Wedding/Edits"))],
                 "{key:?}"
             );
         }
@@ -1758,7 +1826,7 @@ mod tests {
         }
     }
 
-    /// A folder row's right-click holds Show in Folder and Open.
+    /// A folder row's right-click holds Show in Folder and Open, which chooses it.
     #[test]
     fn a_folder_row_s_right_click_shows_it_in_its_folder_or_opens_it() {
         let show = translator(&egui::Context::default()).text(jobs::FILE_MANAGER.show_message());
@@ -1769,7 +1837,7 @@ mod tests {
             ),
             (
                 "Open",
-                Action::Open(PathBuf::from("/photos/Wedding/Selects")),
+                Action::Choose(PathBuf::from("/photos/Wedding/Selects")),
             ),
         ] {
             let mut harness = wedding_browsed();
@@ -1827,7 +1895,7 @@ mod tests {
         let mut harness = browsed(egui::vec2(320.0, 700.0), wedding, recent, open, true);
         harness.run();
         harness.get_by_role_and_label(Role::ComboBox, "What is open");
-        for hidden in ["Wedding", "Edits", "Up to photos"] {
+        for hidden in ["Wedding", "Edits"] {
             assert!(harness.query_by_label(hidden).is_none(), "{hidden}");
         }
     }
@@ -2044,6 +2112,8 @@ mod tests {
                     let tree = BTreeMap::from([(day, true)]);
                     let browse = Browse {
                         folder: &folder,
+                        root: shown(&folder),
+                        root_count: None,
                         recent: &recent,
                         open: OPEN_ALL,
                         tree: &tree,
@@ -2069,6 +2139,8 @@ mod tests {
                 let (folder, recent, keys) = (alone(), recent(), keys());
                 let browse = Browse {
                     folder: &folder,
+                    root: None,
+                    root_count: None,
                     recent: &recent,
                     open: OPEN_ALL,
                     tree: &BTreeMap::new(),

@@ -71,8 +71,10 @@ pub enum LibraryCommand {
     /// most `size` pixels on their longer side, the first the most wanted; answered by a
     /// [`LibraryEvent::Thumbnail`] for each. A new open or a close drops those not yet sent.
     Thumbnails { photos: Vec<String>, size: u32 },
-    /// Lists the subfolders of `folder`, one inside the open folder's tree, as Browse opens
-    /// it; answered by [`LibraryEvent::SubfoldersOf`]. A new open or a close drops it.
+    /// Lists the subfolders of `folder`, one inside the tree of the folder opened, as Browse
+    /// opens it: the tree's root is the first folder opened, kept while each later open lies
+    /// inside it ([`inside`]). Answered by [`LibraryEvent::SubfoldersOf`]. A new open or a
+    /// close drops it.
     Subfolders { folder: PathBuf },
 }
 
@@ -205,13 +207,13 @@ pub enum Ended {
     Failed,
 }
 
-/// Lists the subfolders of `folder`, inside the open folder `root`, for the open numbered
+/// Lists the subfolders of `folder`, inside the tree's root `root`, for the open numbered
 /// `open`, telling `observer` once with [`LibraryEvent::SubfoldersOf`]: a folders-only
 /// listing on the listing's own thread ([`listing::subfolders`]), by its rules for hidden
 /// names, names that are not text and links, waited for while `cancel` is asked. A folder
 /// that cannot be listed says why. A `folder` outside `root`, relative, or with a `..` in
-/// it is refused with a warning and nothing sent, so a client lists only the open folder's
-/// tree. A blocking call, made by a job's body; once `cancel` answers true nothing is
+/// it is refused with a warning and nothing sent, so a client lists only the tree of a
+/// folder it opened. A blocking call, made by a job's body; once `cancel` answers true nothing is
 /// sent.
 ///
 /// [`listing::subfolders`]: crate::listing::subfolders
@@ -224,7 +226,7 @@ pub fn subfolders(
 ) -> Ended {
     if !inside(root, folder) {
         tracing::warn!(
-            "{}: not inside the open folder {}; not listed",
+            "{}: not inside the folder opened, {}; not listed",
             folder.display(),
             root.display()
         );
@@ -249,7 +251,7 @@ pub fn subfolders(
 
 /// Whether `folder` is `root` or a folder inside it, both absolute, with no `..` that could
 /// lead out of it.
-fn inside(root: &Path, folder: &Path) -> bool {
+pub fn inside(root: &Path, folder: &Path) -> bool {
     let up = |path: &Path| {
         path.components()
             .any(|part| matches!(part, std::path::Component::ParentDir))

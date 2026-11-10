@@ -402,7 +402,6 @@ browse-locate-title = Wskaż folder
 browse-plus = Nowy lub otwórz
 action-new-library = Nowa biblioteka…
 action-new-project = Nowy projekt…
-browse-parent = W górę do { $name }
 browse-folder-menu = Menu folderu { $name }
 browse-open-row = Otwórz
 browse-open-this-folder = Otwórz ten folder

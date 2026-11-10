@@ -400,7 +400,6 @@ browse-locate-title = Знайти теку
 browse-plus = Створити або відкрити
 action-new-library = Нова бібліотека…
 action-new-project = Новий проєкт…
-browse-parent = Угору до { $name }
 browse-folder-menu = Меню теки { $name }
 browse-open-row = Відкрити
 browse-open-this-folder = Відкрити цю теку

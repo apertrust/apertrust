@@ -20,7 +20,13 @@
 //!
 //! - **The number:** every `LibraryEvent` names the `Command::Library` it answers, and the app
 //!   keeps the number of its latest open or close ([`FolderState::opening`],
-//!   [`FolderState::closing`]); an event naming another is an earlier command's and dropped.
+//!   [`FolderState::choosing`], [`FolderState::closing`]); an event naming another is an
+//!   earlier command's and dropped.
+//! - **The root and the active folder:** a way in (Open Folder…, Open…, a drop, a recent,
+//!   Open This Folder, the command line) opens a folder that becomes Browse's root, at the
+//!   top of its tree, and only it enters the recents ([`Outcome::Opened`]). A folder chosen
+//!   in the tree is opened too, the library listing its photos, but the root, the
+//!   subfolders listed and the recents stay as they were (`docs/gui.md`, Browse).
 //! - **The photos** accumulate from the `Listed` chunks, in the listing's order, until one says
 //!   `done`.
 //! - **A failure** is `Failed`, or the reading's job ending cancelled (the jobs window's
@@ -144,20 +150,51 @@ pub struct FolderState {
     order: Vec<usize>,
     /// Each photo's place in [`FolderState::order`], by its place in the listing.
     place: Vec<usize>,
-    /// The subfolders of folders inside the open one that Browse's tree opened, by path, as
-    /// the library listed them (`LibraryEvent::SubfoldersOf`).
+    /// The subfolders of the folders in the root's tree, by path, as the library listed them:
+    /// the root's and each chosen folder's with their opens (`LibraryEvent::Subfolders`), the
+    /// others' as Browse's tree asked (`LibraryEvent::SubfoldersOf`).
     inside: HashMap<PathBuf, Result<Vec<String>, String>>,
-    /// The folders inside it whose subfolders were asked for, so each is asked once.
+    /// The folders inside it whose subfolders were asked for, so each is asked once an open.
     asked: HashSet<PathBuf>,
+    /// Browse's root: the folder a way in opened, at the top of the tree, which a folder
+    /// chosen in the tree keeps; none with nothing open, and once a way in failed.
+    root: Option<PathBuf>,
+    /// The root's photo count, once a listing of it has given every photo.
+    root_count: Option<usize>,
+    /// Whether the latest open is a way in, which set the root, rather than a folder chosen
+    /// in the tree.
+    way_in: bool,
 }
 
 impl FolderState {
-    /// The folder at `path` is asked for by the command numbered `number`.
+    /// The folder at `path` is asked for by the command numbered `number`, a way in: it is
+    /// the root from now on, and what was listed of the tree before is dropped.
     pub fn opening(&mut self, path: PathBuf, number: u64) {
+        self.root = Some(path.clone());
+        self.root_count = None;
+        self.way_in = true;
+        self.inside.clear();
+        self.ask(path, number);
+    }
+
+    /// The folder at `path`, the root or one inside its tree, is chosen in Browse's tree and
+    /// asked for by the command numbered `number`: the grid panel shows its photos, and the
+    /// root and the subfolders listed stay. Those asked for are asked again, since the open
+    /// cancels their listing.
+    pub fn choosing(&mut self, path: PathBuf, number: u64) {
+        if self.root.is_none() {
+            self.opening(path, number);
+        } else {
+            self.way_in = false;
+            self.ask(path, number);
+        }
+    }
+
+    /// The folder at `path` is asked for by the command numbered `number`.
+    fn ask(&mut self, path: PathBuf, number: u64) {
         self.latest = number;
         self.job = None;
         self.folder = Folder::Opening { path };
-        self.inside.clear();
         self.asked.clear();
         self.generation += 1;
         self.reorder();
@@ -195,6 +232,8 @@ impl FolderState {
         self.latest = number;
         self.job = None;
         self.folder = Folder::None;
+        self.root = None;
+        self.root_count = None;
         self.generation += 1;
         self.reorder();
     }
@@ -347,8 +386,19 @@ impl FolderState {
         self.asked.remove(folder);
     }
 
-    /// The folder shown: the open one, or the one being opened; none for a photo alone,
-    /// whose folder is not listed.
+    /// Browse's root, at the top of its tree: the folder a way in opened, while it is being
+    /// read, open, or a folder chosen in its tree is.
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
+    /// The root's photo count, once a listing of it has given every photo.
+    pub fn root_count(&self) -> Option<usize> {
+        self.root_count
+    }
+
+    /// The folder shown, the active folder, whose photos the grid panel shows: the open one,
+    /// or the one being opened; none for a photo alone, whose folder is not listed.
     pub fn shown(&self) -> Option<&Path> {
         match &self.folder {
             Folder::Open(listing) => Some(&listing.path),
@@ -403,11 +453,13 @@ impl FolderState {
                     thumbnails: HashMap::new(),
                 });
                 self.reorder();
-                Some(Outcome::Opened(folder.clone()))
+                self.way_in.then(|| Outcome::Opened(folder.clone()))
             }
             LibraryEvent::Subfolders { names, .. } => {
                 if let Folder::Open(listing) = &mut self.folder {
                     listing.subfolders = names.clone();
+                    let listed = Ok(names.clone());
+                    self.inside.insert(listing.path.clone(), listed);
                 }
                 None
             }
@@ -428,6 +480,9 @@ impl FolderState {
                 if let Folder::Open(listing) = &mut self.folder {
                     listing.photos.extend(photos.iter().cloned());
                     listing.done |= *done;
+                    if *done && self.root.as_ref() == Some(&listing.path) {
+                        self.root_count = Some(listing.photos.len());
+                    }
                     self.reorder();
                 }
                 None
@@ -451,6 +506,7 @@ impl FolderState {
                     path: path.clone(),
                     reason: Some(reason.clone()),
                 };
+                self.unroot();
                 self.reorder();
                 Some(Outcome::Failed {
                     path,
@@ -477,6 +533,15 @@ impl FolderState {
         }
     }
 
+    /// A way in that failed or was cancelled leaves no root: nothing is open. A folder chosen
+    /// in the tree that failed leaves the tree as it was.
+    fn unroot(&mut self) {
+        if self.way_in {
+            self.root = None;
+            self.root_count = None;
+        }
+    }
+
     /// The reading's job: noted when it is added for the latest command, and, ending
     /// cancelled before the folder is all listed, as the jobs window's Cancel does, the open
     /// is over.
@@ -497,6 +562,7 @@ impl FolderState {
                     _ => return,
                 };
                 self.folder = Folder::Failed { path, reason: None };
+                self.unroot();
                 self.generation += 1;
                 self.reorder();
             }
@@ -703,6 +769,66 @@ mod tests {
         assert!(!state.ask_inside(&edits));
         state.forget_inside(&edits);
         assert!(state.ask_inside(&edits));
+    }
+
+    fn failed(open: u64) -> Event {
+        Event::Library(LibraryEvent::Failed {
+            open,
+            reason: "gone".to_owned(),
+        })
+    }
+
+    /// A folder chosen in the tree is opened, and the grid panel shows it, but the root,
+    /// its count, the subfolders listed and the recents stay; what was asked is asked again,
+    /// since the open cancels its listing. A way in makes a new root, enters the recents and
+    /// drops what was listed of the tree before.
+    #[test]
+    fn a_folder_chosen_in_the_tree_keeps_the_root_and_a_way_in_moves_it() {
+        let mut state = FolderState::default();
+        let wedding = PathBuf::from("/photos/Wedding");
+        let (edits, selects) = (wedding.join("Edits"), wedding.join("Selects"));
+        state.opening(wedding.clone(), 1);
+        assert_eq!(state.root(), Some(wedding.as_path()));
+        let way_in = state.apply(&opened(1, "/photos/Wedding"));
+        assert_eq!(way_in, Some(Outcome::Opened(wedding.clone())));
+        let names = vec!["Edits".to_owned(), "Selects".to_owned()];
+        let subfolders = LibraryEvent::Subfolders {
+            open: 1,
+            names: names.clone(),
+        };
+        state.apply(&Event::Library(subfolders));
+        state.apply(&listed(1, &["a.ARW", "b.ARW"], true));
+        assert_eq!(state.root_count(), Some(2));
+        assert!(state.ask_inside(&selects));
+
+        state.choosing(edits.clone(), 2);
+        assert_eq!(state.shown(), Some(edits.as_path()));
+        assert_eq!(state.apply(&opened(2, "/photos/Wedding/Edits")), None);
+        state.apply(&listed(2, &["c.ARW"], true));
+        assert_eq!(listing(&state).path, edits);
+        assert_eq!(state.root(), Some(wedding.as_path()));
+        assert_eq!(state.root_count(), Some(2));
+        assert_eq!(state.inside().get(&wedding), Some(&Ok(names)));
+        assert!(state.ask_inside(&selects), "asked again");
+        // Back to the root, chosen: still not a way in.
+        state.choosing(wedding.clone(), 3);
+        assert_eq!(state.apply(&opened(3, "/photos/Wedding")), None);
+        // A choice that fails leaves the tree as it was.
+        state.choosing(selects.clone(), 4);
+        state.apply(&failed(4));
+        assert_eq!(state.root(), Some(wedding.as_path()));
+
+        let portraits = PathBuf::from("/photos/Portraits");
+        state.opening(portraits.clone(), 5);
+        assert_eq!(state.root(), Some(portraits.as_path()));
+        assert_eq!(state.root_count(), None);
+        assert!(state.inside().is_empty());
+        let way_in = state.apply(&opened(5, "/photos/Portraits"));
+        assert_eq!(way_in, Some(Outcome::Opened(portraits)));
+        // A way in that fails leaves no root.
+        state.opening(PathBuf::from("/photos/Gone"), 6);
+        state.apply(&failed(6));
+        assert_eq!(state.root(), None);
     }
 
     #[test]
