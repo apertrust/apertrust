@@ -442,7 +442,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 
 **Thumbnails** (`src/thumbnails.rs`): the cells the panel drew without a thumbnail at the cell's size, each asked for once while it stays in sight, as one `LibraryCommand::Thumbnails`, at the cell's side in physical pixels rounded up to 128, 256, 512 or 1024 (`thumbnails::size_for`); a photo that comes back into sight without its thumbnail asked for again (`Asking`). Their textures (`Textures`), a cache derived from the mirror, made as they come by comparing the folder's generation, another size's standing in meanwhile, and dropped with the folder.
 
-**Empty states.** The central panel shows them as a card (`library::empty_state`): where to start, with both ways to open and the recent folders; reading; failed, with its reason; no raws; no photo chosen. With no photo open, the central panel is the folder's empty state.
+**Empty states** (`library::empty_state`). The central panel shows them as a card: where to start, with both ways to open and the recent folders; reading; failed, with its reason; no raws. No photo chosen is one line on the surround, in the surround's text colour. With no photo open, the central panel is the folder's empty state.
 
 ### The side panel
 
