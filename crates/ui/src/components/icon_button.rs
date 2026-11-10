@@ -18,10 +18,15 @@
 //! slider's quad. Its name is its tooltip and what screen readers say; the keys that run
 //! it, given by the app's actions registry, follow the name in the tooltip and are
 //! reported to screen readers as its shortcut.
+//!
+//! Icon buttons are quiet (`docs/gui.md`, Checkboxes, text buttons and icon buttons): no
+//! plate at rest, `button` under the pointer, `button_pressed` while pressed, the focus
+//! ring after a key. So is a word on a bar, [`ToolButton`].
 
 use egui::{Popup, Rect, Response, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, vec2};
 
-use super::{focus_ring, icon_colour, icon_lit, report_shortcut};
+use super::plate::{ButtonState, Plate, Touch, paint_focus, paint_plate, undimmed_painter};
+use super::{icon_colour, report_shortcut};
 use crate::{Icon, popup, theme};
 
 pub struct IconButton<'a> {
@@ -32,6 +37,7 @@ pub struct IconButton<'a> {
     shortcut: Option<&'a str>,
     size: Option<f32>,
     tip: Option<&'a str>,
+    state: Option<ButtonState>,
 }
 
 impl<'a> IconButton<'a> {
@@ -45,7 +51,15 @@ impl<'a> IconButton<'a> {
             shortcut: None,
             size: None,
             tip: None,
+            state: None,
         }
+    }
+
+    /// Draws it in `state` whatever the pointer and the keys do, as the gallery shows each
+    /// state.
+    pub fn state(mut self, state: ButtonState) -> Self {
+        self.state = Some(state);
+        self
     }
 
     /// The tooltip, translated, in place of the name: a button whose tooltip says more,
@@ -56,7 +70,8 @@ impl<'a> IconButton<'a> {
     }
 
     /// A toggle: while `on`, its icon filled where the icon has a filled form (a view
-    /// toggle), else drawn pressed in a box (a quad's picker).
+    /// toggle), with no plate; else drawn pressed, `raised` with a `border` hairline (a
+    /// quad's picker), as a button whose menu is open is.
     pub fn toggled(mut self, on: bool) -> Self {
         self.toggled = Some(on);
         self
@@ -85,7 +100,8 @@ impl<'a> IconButton<'a> {
         let side = self
             .size
             .unwrap_or_else(|| (self.icon.size() + 8.0).max(t.sizes.control));
-        let sense = if self.enabled {
+        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
+        let sense = if enabled {
             Sense::click()
         } else {
             Sense::hover()
@@ -93,11 +109,14 @@ impl<'a> IconButton<'a> {
         let (rect, response) = ui.allocate_exact_size(vec2(side, side), sense);
         let on = self.toggled == Some(true);
         // A toggle whose icon has a filled form shows it on by that alone; one without, a
-        // quad's picker or a menu's button, is drawn pressed, in a box.
+        // quad's picker, and a button whose menu is open, are drawn pressed, in a box.
         let filled = self.icon.filled() != self.icon;
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
-            if on && !filled {
+            let painter = &undimmed_painter(ui);
+            let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
+            let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&response))
+                || popup::is_open(ui.ctx(), popup::button_menu(response.id));
+            if enabled && ((on && !filled) || open) {
                 painter.rect(
                     rect,
                     t.shape.radius,
@@ -105,18 +124,14 @@ impl<'a> IconButton<'a> {
                     Stroke::new(t.shape.hairline, t.colors.border),
                     StrokeKind::Inside,
                 );
-            } else if self.enabled && response.hovered() {
-                painter.rect_filled(rect, t.shape.radius, t.colors.hover);
+            } else {
+                // Quiet: no plate at rest, `button` under the pointer, `button_pressed`
+                // pressed.
+                paint_plate(painter, rect, Plate::Quiet, touch, &t);
             }
             // Secondary text at rest, text while lit: under the pointer, pressed, focused
             // by a key or with its menu open. A toggle that is on shows it in text.
-            let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&response))
-                || popup::is_open(ui.ctx(), popup::button_menu(response.id));
-            let colour = icon_colour(
-                &t,
-                self.enabled,
-                on || open || icon_lit(ui.ctx(), &response),
-            );
+            let colour = icon_colour(&t, enabled, on || open || touch.lit());
             let size = self.icon.size();
             let icon = if on { self.icon.filled() } else { self.icon };
             icon.paint(
@@ -124,11 +139,9 @@ impl<'a> IconButton<'a> {
                 Rect::from_center_size(rect.center(), vec2(size, size)),
                 colour,
             );
-            if response.has_focus() {
-                focus_ring(painter, rect, &t);
-            }
+            paint_focus(painter, rect, t.shape.radius, touch, &t);
         }
-        let (name, enabled, toggled) = (self.name, self.enabled, self.toggled);
+        let (name, toggled) = (self.name, self.toggled);
         response.widget_info(|| match toggled {
             Some(on) => WidgetInfo::selected(Role::Button, enabled, on, name),
             None => WidgetInfo::labeled(Role::Button, enabled, name),
@@ -145,13 +158,16 @@ impl<'a> IconButton<'a> {
     }
 }
 
-/// A button with a word, and an icon before it: Import…, Export…, Reset.
+/// A button with a word, and an icon before it, on a bar: Import…, Export…, Reset. Quiet,
+/// as icon buttons are: a plate only while touched, since plates in a row of them would
+/// make a wall of boxes.
 pub struct ToolButton<'a> {
     icon: Option<Icon>,
     text: &'a str,
     enabled: bool,
     tip: Option<&'a str>,
     shortcut: Option<&'a str>,
+    state: Option<ButtonState>,
 }
 
 impl<'a> ToolButton<'a> {
@@ -163,7 +179,15 @@ impl<'a> ToolButton<'a> {
             enabled: true,
             tip: None,
             shortcut: None,
+            state: None,
         }
+    }
+
+    /// Draws it in `state` whatever the pointer and the keys do, as the gallery shows each
+    /// state.
+    pub fn state(mut self, state: ButtonState) -> Self {
+        self.state = Some(state);
+        self
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
@@ -207,7 +231,8 @@ impl<'a> ToolButton<'a> {
 
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
-        let colour = if self.enabled {
+        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
+        let colour = if enabled {
             t.colors.text
         } else {
             t.colors.text_disabled
@@ -218,26 +243,24 @@ impl<'a> ToolButton<'a> {
             colour,
         );
         let size = vec2(self.width_of(galley.size().x, &t), t.sizes.top_bar - 14.0);
-        let sense = if self.enabled {
+        let sense = if enabled {
             Sense::click()
         } else {
             Sense::hover()
         };
         let (rect, response) = ui.allocate_exact_size(size, sense);
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
-            if self.enabled && response.hovered() {
-                painter.rect_filled(rect, t.shape.radius, t.colors.hover);
-            }
+            let painter = &undimmed_painter(ui);
+            let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
+            paint_plate(painter, rect, Plate::Quiet, touch, &t);
             let mut x = rect.left() + t.spacing.m;
             if let Some(icon) = self.icon {
                 let s = icon.size();
                 // Only the icon is a step quieter; the word keeps the text colour.
-                let lit = icon_lit(ui.ctx(), &response);
                 icon.paint(
                     painter,
                     Rect::from_min_size(egui::pos2(x, rect.center().y - s / 2.0), vec2(s, s)),
-                    icon_colour(&t, self.enabled, lit),
+                    icon_colour(&t, enabled, touch.lit()),
                 );
                 x += s + t.spacing.s;
             }
@@ -246,11 +269,9 @@ impl<'a> ToolButton<'a> {
                 galley,
                 colour,
             );
-            if response.has_focus() {
-                focus_ring(painter, rect, &t);
-            }
+            paint_focus(painter, rect, t.shape.radius, touch, &t);
         }
-        let (text, enabled) = (self.text, self.enabled);
+        let text = self.text;
         response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
         match (self.tip, self.shortcut) {
             (tip, Some(keys)) => {

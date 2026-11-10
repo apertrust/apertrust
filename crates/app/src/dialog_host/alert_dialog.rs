@@ -68,7 +68,7 @@ impl Dialog for AlertDialog {
 
     fn look(&self, t: &apertrust_ui::Theme) -> Look {
         Look {
-            background: t.colors.raised,
+            background: t.colors.panel,
             margin: t.spacing.l,
         }
     }

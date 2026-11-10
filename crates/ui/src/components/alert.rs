@@ -28,8 +28,9 @@
 //! window it is drawn in is that node already ([`AlertBody::in_alert_window`]).
 
 use egui::accesskit::Role as AccessRole;
-use egui::{Button, Key, Label, Modifiers, RichText, Ui, WidgetInfo};
+use egui::{Key, Label, Modifiers, RichText, Ui, WidgetInfo};
 
+use super::{Button, Checkbox};
 use crate::alert::{Request, Role};
 use crate::theme;
 
@@ -126,7 +127,7 @@ impl<'a> AlertBody<'a> {
                 let on_box = last.is_some_and(|id| ui.memory(|m| m.has_focus(id)));
                 enter_on_box =
                     on_box && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
-                let id = ui.checkbox(&mut *self.ticked, label).id;
+                let id = Checkbox::new(&mut *self.ticked, label).show(ui).id;
                 ui.data_mut(|d| d.insert_temp(key, id));
             }
             pressed = self.buttons(ui);
@@ -158,10 +159,10 @@ impl<'a> AlertBody<'a> {
         })
     }
 
-    /// The buttons at the end of a row, in the platform's order. Their width is the last
-    /// pass's, and a pass that finds it changed is drawn again.
+    /// The buttons at the end of a row, in the platform's order: the default the primary
+    /// one, unless it is destructive, whose words stay `text` as any button's. Their width
+    /// is the last pass's, and a pass that finds it changed is drawn again.
     fn buttons(&self, ui: &mut Ui) -> Option<usize> {
-        let t = theme(ui.ctx());
         let id = ui.make_persistent_id("alert buttons");
         let width: Option<f32> = ui.data(|d| d.get_temp(id));
         let mut clicked = None;
@@ -171,16 +172,12 @@ impl<'a> AlertBody<'a> {
             let request = self.request;
             for i in self.order.arrange(request.buttons.len(), request.default) {
                 let button = &request.buttons[i];
-                let mut text = RichText::new(&button.label);
-                let widget = match (i, button.role) {
-                    (_, Role::Destructive) => Button::new(text.color(t.colors.error)),
-                    (i, _) if i == request.default => {
-                        text = text.color(t.colors.text_on_accent);
-                        Button::new(text).fill(t.colors.accent)
-                    }
-                    _ => Button::new(text),
-                };
-                if ui.add(widget).clicked() {
+                let primary = i == request.default && button.role != Role::Destructive;
+                if Button::new(&button.label)
+                    .primary(primary)
+                    .show(ui)
+                    .clicked()
+                {
                     clicked = Some(i);
                 }
             }

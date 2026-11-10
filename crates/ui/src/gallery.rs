@@ -24,14 +24,15 @@ use std::ops::RangeInclusive;
 use egui::{Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, vec2};
 
 use crate::components::{
-    ActionRow, Available, Axis, CellPicture, CellRating, CellStatus, CentralBar, CentralBarAction,
-    Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup, ColourLabel, ColourLabels, Curve,
-    CurveAction, Equalizer, EqualizerAction, FileManager, GridCell, GridPanel, GridPanelAction,
-    Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin,
-    Mark, Marker, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption,
-    PhotoFrame, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
-    ToggleRow, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom, group_label,
+    ActionRow, Available, Axis, Button, ButtonState, CellPicture, CellRating, CellStatus,
+    CentralBar, CentralBarAction, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped,
+    CollapsibleGroup, ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction,
+    FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
+    JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
+    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, Quad, SaveState, Scale, Scope,
+    ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
+    Swatches, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction,
+    Track, VectorscopeBins, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -131,6 +132,9 @@ impl Gallery {
         });
         checks(ui, &t);
         ui.add_space(t.spacing.l);
+        heading(ui, "Checkboxes, text buttons and icon buttons");
+        button_states(ui, &t);
+        ui.add_space(t.spacing.l);
         heading(ui, "Controls");
         controls(ui, &t, &mut self.demo);
         ui.add_space(t.spacing.l);
@@ -166,6 +170,91 @@ impl Gallery {
         heading(ui, "Spacing");
         spacing(ui, &t);
     }
+}
+
+/// Each state of the three pressable controls side by side, pinned with their `state`
+/// (`docs/gui.md`, Checkboxes, text buttons and icon buttons): a column a state, a row a
+/// control, then an icon toggle's own looks. The live ones are under Controls. Short words,
+/// so the five states fit the snapshots' width.
+fn button_states(ui: &mut Ui, t: &Theme) {
+    const COLUMN: f32 = 84.0;
+    let label = |ui: &mut Ui, text: &str| {
+        ui.allocate_ui(vec2(COLUMN, t.sizes.control), |ui| {
+            ui.set_width(COLUMN);
+            ui.label(RichText::new(text).color(t.colors.text_secondary));
+        });
+    };
+    let row = |ui: &mut Ui, name: &str, cell: &mut dyn FnMut(&mut Ui, ButtonState)| {
+        ui.push_id(name, |ui| {
+            ui.horizontal(|ui| {
+                label(ui, name);
+                for state in ButtonState::ALL {
+                    ui.allocate_ui(vec2(COLUMN, t.sizes.top_bar - 14.0), |ui| {
+                        ui.set_width(COLUMN);
+                        ui.push_id(state, |ui| cell(ui, state));
+                    });
+                }
+            });
+        });
+    };
+    ui.horizontal(|ui| {
+        label(ui, "");
+        for state in ButtonState::ALL {
+            label(ui, &format!("{state:?}"));
+        }
+    });
+    for ticked in [false, true] {
+        let name = if ticked { "Ticked" } else { "Unticked" };
+        row(ui, name, &mut |ui, state| {
+            let mut on = ticked;
+            Checkbox::new(&mut on, "Guides").state(state).show(ui);
+        });
+    }
+    row(ui, "Button", &mut |ui, state| {
+        Button::new("Close").state(state).show(ui);
+    });
+    row(ui, "Primary", &mut |ui, state| {
+        Button::new("Export").primary(true).state(state).show(ui);
+    });
+    row(ui, "Quiet", &mut |ui, state| {
+        ToolButton::new("Reset")
+            .icon(Icon::Reset)
+            .state(state)
+            .show(ui);
+    });
+    row(ui, "Icon button", &mut |ui, state| {
+        IconButton::new(Icon::Reset, "Reset Exposure")
+            .state(state)
+            .show(ui);
+    });
+    // A toggle: off, on with its filled form, and on under the pointer; a picker on, which
+    // has no filled form, drawn pressed in a box, as a button whose menu is open is.
+    ui.horizontal(|ui| {
+        label(ui, "Icon toggle");
+        let toggles = [
+            ("Guides, off", Icon::Grid, false, ButtonState::Rest),
+            ("Guides, on", Icon::Grid, true, ButtonState::Rest),
+            ("Guides, on, hover", Icon::Grid, true, ButtonState::Hover),
+            ("Picker, on", Icon::Pick, true, ButtonState::Rest),
+        ];
+        for (name, icon, on, state) in toggles {
+            ui.allocate_ui(vec2(COLUMN, t.sizes.top_bar - 14.0), |ui| {
+                ui.set_width(COLUMN);
+                IconButton::new(icon, name)
+                    .size(28.0)
+                    .toggled(on)
+                    .state(state)
+                    .show(ui);
+            });
+        }
+    });
+    ui.label(
+        RichText::new(
+            "Icon toggle: off; on, its filled form; on under the pointer; a picker on, with no \
+             filled form, drawn pressed, as a button whose menu is open is.",
+        )
+        .color(t.colors.text_secondary),
+    );
 }
 
 /// Exposure, −4 to +4 EV, at its minimum, its default and its maximum, the marker in use
@@ -1762,7 +1851,7 @@ fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let jobs = sample_jobs();
     let mut asked = None;
     Frame::popup(ui.style())
-        .fill(t.colors.raised)
+        .fill(t.colors.panel)
         .inner_margin(t.spacing.m)
         .show(ui, |ui| {
             ui.set_width(380.0);

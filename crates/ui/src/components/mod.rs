@@ -22,13 +22,17 @@
 //! reads the theme and the language from the context, and reports its role, its full
 //! name and its value to AccessKit, so screen readers and the interaction tests find it.
 //!
-//! Checkboxes and text buttons are egui's own, themed. Menus are the popup service's
-//! plain lists, never egui's `Popup`.
+//! Checkboxes, text buttons and icon buttons are the design system's own ([`Checkbox`],
+//! [`Button`], [`IconButton`], [`ToolButton`]), drawn from one plate and one focus ring;
+//! the few egui buttons left take the plate through the theme. Menus are the popup
+//! service's plain lists, never egui's `Popup`.
 
 mod action_row;
 mod alert;
+mod button;
 mod buttons_row;
 mod central_bar;
+mod checkbox;
 mod choice;
 mod collapsible_group;
 mod curve;
@@ -41,6 +45,7 @@ mod icon_button;
 mod jobs;
 mod marker;
 mod photo_frame;
+mod plate;
 mod section;
 mod segmented;
 mod side_panel;
@@ -54,8 +59,10 @@ mod value_field;
 
 pub use action_row::ActionRow;
 pub use alert::{AlertBody, AlertResponse, ButtonOrder};
+pub use button::Button;
 pub use buttons_row::{ButtonsAction, ButtonsRow};
 pub use central_bar::{CentralBar, CentralBarAction, Toggle, Zoom};
+pub use checkbox::Checkbox;
 pub use choice::{Choice, ChoiceAction, ChoiceStyle};
 pub use collapsible_group::CollapsibleGroup;
 pub use curve::{Axis, Curve, CurveAction};
@@ -83,6 +90,7 @@ pub use photo_frame::{
     CAPTION_GAP, CAPTION_HEIGHT, CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption,
     PhotoFrame, Placed,
 };
+pub use plate::ButtonState;
 pub use section::{Section, SectionAction, SectionOutput};
 pub use segmented::Segmented;
 pub use side_panel::{
@@ -253,8 +261,8 @@ fn focus_ring(painter: &Painter, rect: Rect, t: &Theme) {
 }
 
 /// The ring centred on `rect`'s edge, while focus rings show: around a whole row, whose
-/// neighbours an outside ring would run into.
-fn focus_ring_centred(painter: &Painter, rect: Rect, t: &Theme) {
+/// neighbours an outside ring would run into, as a list's line in the app is.
+pub fn focus_ring_centred(painter: &Painter, rect: Rect, t: &Theme) {
     ring(painter, rect, t, StrokeKind::Middle);
 }
 

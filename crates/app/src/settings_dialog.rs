@@ -73,9 +73,6 @@ const CONTROL: f32 = 220.0;
 /// Every choice box, number field and text field of a page is this wide, or as wide as
 /// its widest choice needs, up to [`CONTROL`]: one width, so their ends line up.
 const CONTROL_WIDTH: f32 = 180.0;
-/// How far in from its start egui draws a checkbox's box with no text, measured on the
-/// dialog's snapshots. It goes with the checkbox's own look in the design system.
-const CHECKBOX_INSET: f32 = 2.0;
 /// The dot's radius, as darktable's. A token to come.
 const DOT_RADIUS: f32 = 3.0;
 
@@ -702,16 +699,10 @@ fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option
     match row.kind {
         Kind::Boolean => {
             let on = row.value.as_ref().and_then(Value::as_bool).unwrap_or(false);
-            // The row starts as far before the column as egui draws the box in, so the box
-            // starts on it.
-            let inset = CHECKBOX_INSET;
-            let rect = ui.max_rect();
+            // The box at the column's start, where the checkbox draws it.
             let mut toggle = ui.new_child(
                 UiBuilder::new()
-                    .max_rect(Rect::from_min_max(
-                        pos2(rect.left() - inset, rect.top()),
-                        rect.max,
-                    ))
+                    .max_rect(ui.max_rect())
                     .layout(Layout::left_to_right(Align::Center)),
             );
             ToggleRow::new("", on)
@@ -807,13 +798,10 @@ fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option
             let line = t.sizes.panel_line;
             let mut toggled = None;
             for (id, name) in ids.iter().zip(&names) {
-                // Each box drawn as a boolean's, with no words of its own, so it starts
-                // where a boolean's does: egui places a box with words further in.
+                // Each box drawn as a boolean's, with no words of its own, at the column's
+                // start.
                 let at = ui.cursor().min;
-                let rect = Rect::from_min_size(
-                    pos2(at.x - CHECKBOX_INSET, at.y),
-                    vec2(ui.max_rect().width() + CHECKBOX_INSET, line),
-                );
+                let rect = Rect::from_min_size(at, vec2(ui.max_rect().width(), line));
                 let mut toggle = ui.new_child(
                     UiBuilder::new()
                         .max_rect(rect)
@@ -829,7 +817,7 @@ fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option
                     FontId::proportional(t.text.body),
                     t.colors.text,
                 );
-                // As far after the box as egui puts a checkbox's own words.
+                // As far after the box as a checkbox puts its own words.
                 let spacing = toggle.spacing();
                 let start = at.x + spacing.icon_width + spacing.icon_spacing;
                 let words = Rect::from_min_size(

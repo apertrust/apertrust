@@ -23,7 +23,7 @@
 //! On About a click anywhere but on its buttons closes it, and so does Esc; on Credits and
 //! Licence only a click outside closes it, and Esc or the back button goes back.
 
-use apertrust_ui::components::{IconButton, quiet_scroll};
+use apertrust_ui::components::{Button, IconButton, quiet_scroll};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Icon, Picture, fonts, theme, tr, translator};
 use eframe::egui::{self, Key, Modifiers, Role, Sense, UiBuilder, WidgetInfo};
@@ -243,7 +243,7 @@ impl About {
             ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
             let mut step = Step::Stay;
             for ((page, _), name) in pages.into_iter().zip(&names) {
-                let button = ui.button(name);
+                let button = Button::new(name).show(ui);
                 if self.take_focus(page) {
                     button.request_focus();
                 }

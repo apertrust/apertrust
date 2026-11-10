@@ -596,8 +596,8 @@ enum Close {
 }
 
 /// The jobs window in the dialog host, the host's second slot: modeless on every platform,
-/// kept where it was left, on the raised surface; no key of its own closes it, Close Window
-/// doing so on the Mac while it has the focus.
+/// kept where it was left, on `panel` as every dialog window is; no key of its own closes
+/// it, Close Window doing so on the Mac while it has the focus.
 impl Dialog for Window {
     fn id(&self) -> &'static str {
         "jobs"
@@ -613,7 +613,7 @@ impl Dialog for Window {
 
     fn look(&self, t: &Theme) -> Look {
         Look {
-            background: t.colors.raised,
+            background: t.colors.panel,
             margin: t.spacing.m,
         }
     }
