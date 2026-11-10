@@ -168,7 +168,7 @@ darktable's library is kept feature by feature, with 24 deviations, each for a r
 
 ### In the window
 
-Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid panel shows and describes the photos in it. Its modules are Browse, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Browse keeps one name in every mode, its top line showing what is open: in folder mode the open folder's name and count ("Wedding 2026-10 · 120 photos"), in a library or a project its name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
+Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid panel shows and describes the photos in it. Its modules are Browse, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Browse keeps one name in every mode, its top line showing what is open: in folder mode the open folder ("Folder: Wedding 2026-10"), its count on its row in Folders' tree, in a library or a project its name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
 
 **The sections by mode:**
 
@@ -184,7 +184,7 @@ Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid 
 - **Keywords** are one module, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
 - **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
 
-- **Built:** File › Open Folder… and Folders in the first tab, still named Library in code and messages until the rename lands (Open Folder…, the open folder's name with its photo count, its subfolders, the recent folders, `library.recent_folders` in settings); the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
+- **Built:** File › Open Folder… and the Photos tab's Browse, in folder mode's form: its top line, what is open, listing the recents kept in the user data folder's `state.toml`, with ＋ and ⋯, and Folders alone, the open folder's tree with its count, its subfolders and the way up to its parent; the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
 - `apertrust-library` owns the folders, their listing and the sidecars' metadata, and the thumbnail cache's files ([Thumbnails](#thumbnails)).
 - Offline, in the cloud, missing and view-only photos, and a project's roles, carry marks of their own ([gui.md](gui.md#the-photos-tabs-marks)).
 
@@ -216,7 +216,7 @@ flowchart TB
 | 1. Files | Bytes in, values out, and back: the `.apxmp` text layer with the comparison of two copies, over the XMP layer, and the library's TOML files (`Name.aplibrary` or `Name.approject`, and `.apertrust/`'s roots, albums, smart albums and keywords); no folders listed, no threads; every call into a root's files through the storage interface | `sidecar`, `xmp`; `files`; below them `storage` and `apertrust_base::fs` | `sidecar` (version 1) and `xmp` built; `files`, the comparison and `storage` planned |
 | 2. Model | The open `Library` (a folder, a library or a project), its roots, photos, virtual copies, albums, smart albums and keywords; every change applied here, written through layer 1, reported as events | `model` | Planned |
 | 3. Index | Rules, sorts, pages and full text: one `Index`, in memory for folder mode, saved as a library's cache (decision 55); always rebuilt from the layers below | `index`, `listing` | The folder's listing and its sidecars read, in memory, built; rules, sorts, pages and full text planned |
-| 4. Operations | `LibraryCommand` (about forty in the end) and `LibraryEvent` (about twenty) in the session protocol | `ops` | Opening and closing a folder, and its photos' thumbnails, built |
+| 4. Operations | `LibraryCommand` (about forty in the end) and `LibraryEvent` (about twenty) in the session protocol | `ops` | Opening and closing a folder, a folder's subfolders for Browse's tree, and its photos' thumbnails, built |
 
 Layer 1 alone knows file layouts; layer 3 alone the cache's engine; the storage interface alone where the bytes are. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
 
@@ -258,6 +258,7 @@ Decision 54's layer 4, in `crates/library/src/ops.rs`. Clients see only `Library
 | `LibraryCommand::Open(Source)` | `Source::Folder(PathBuf)`, a folder in folder mode: its photos, not its subfolders' | Opens the folder in place of the one open, whose reading stops. A cancellable job reads it; its events follow. Opening a folder opens no photo: `Command::Open` does. |
 | `LibraryCommand::Close` | none | Closes the folder open, stopping its reading; answered at once by `LibraryEvent::Closed`. |
 | `LibraryCommand::Thumbnails` | `photos: Vec<String>`, the open folder's photos by file name, the first the most wanted; `size: u32`, the most pixels on a thumbnail's longer side | Asks for the photos' thumbnails, each a job of its own ([Jobs and queues](#jobs-and-queues)), each answered by `LibraryEvent::Thumbnail`. A new `Open` or a `Close` cancels those not yet sent; with no folder open nothing is read. |
+| `LibraryCommand::Subfolders` | `folder: PathBuf`, a folder inside the open folder's tree | Lists its subfolders for Browse's tree, a cancellable job on `UserBackground` as the open folder's reading ([Jobs and queues](#jobs-and-queues)), answered by `LibraryEvent::SubfoldersOf`; a folder outside the open folder's tree is refused. A new `Open` or a `Close` cancels it; with no folder open nothing is listed. |
 
 `Source` has one variant today; a library and a project join it in Phase 5.
 
@@ -269,6 +270,7 @@ Every event names the open or close it is about in its `open` field, read by `Li
 | --- | --- | --- |
 | `Opened` | `open`, `name: String`, `folder: PathBuf` | The folder was listed and its sidecars read: its name, the last part of its path, and the path as asked for. |
 | `Subfolders` | `open`, `names: Vec<String>` | The folder's subfolders, hidden ones left out, a link to a folder counted as one, as the system's file browser sorts them ([Subfolders and their order](#subfolders-and-their-order)); sent once, before the photos, empty where there is none. |
+| `SubfoldersOf` | `open`, `folder: PathBuf`, `names: Vec<String>`, `unreadable: Option<String>` | The subfolders of `folder`, as `LibraryCommand::Subfolders` asked, in the open folder's number: hidden ones left out, as the system's file browser sorts them, empty where there is none. `unreadable: Option<String>` says why the folder could not be listed, its `names` empty then. |
 | `Listed` | `open`, `photos: Vec<Photo>`, `done: bool` | More of the folder's photos, in name order across chunks, at most `ops::CHUNK` (256) each; the last says `done`, and an empty folder sends one, empty and done. |
 | `Taken` | `open`, `times: Vec<Option<DateTime>>` | When each photo was taken, sent once after the last chunk: one for each photo listed, in the listing's order, the camera's clock from the raw's EXIF (`apertrust_raw::DateTime`), `None` where it holds none or cannot be read. Read 16 at a time once every photo is sent, so the photos show first. |
 | `Failed` | `open`, `reason: String` | The folder could not be listed, in plain words: missing, no folder, unreadable, or gone while it was read. It ends the open, in place of `Opened`. |
@@ -311,6 +313,12 @@ Each thumbnail asked for is a job on darktable's `SystemForeground` queue, as da
 
 A new `Open` or a `Close` cancels every thumbnail asked for before it.
 
+Each `LibraryCommand::Subfolders` is a job on `UserBackground`, beside the folder's reading:
+
+- kind `subfolders`, cancellable, with no progress;
+- its body `ops::subfolders`, handed the open folder, an observer and a cancel closure as the folder's is, which refuses a folder outside the open folder's tree, relative or holding a `..`, and lists through layer 3, `listing::subfolders`: a folders-only listing on the listing's own thread, waited for while the cancel is asked every 20 ms, so a share that hangs holds only that thread, never a worker or the quit;
+- a new `Open` or a `Close` cancels it, and with no folder open it is not added.
+
 The library's other long commands are to run on darktable's queues too: move, copy, rename, delete and Import… on `UserForeground`; each call into a root on that root's queue with its deadline (decisions 53 and 57, planned).
 
 ### Order, chunks and done
@@ -325,7 +333,7 @@ The cancel closure is asked between calls into the folder, while the listing is 
 
 ### Kinds of event
 
-All six are notices ([events.md](events.md#facts-and-notices)): each is about one open and comes once. A chunk is part of a listing, never the whole of a topic, `Subfolders`, though whole, is sent once an open, as `Opened` is, and a thumbnail answers one ask. The remote protocol's `Sync` is to send the open folder's listing again to a client that joins late ([session-protocol.md](session-protocol.md#remote-clients)).
+All eight are notices ([events.md](events.md#facts-and-notices)): each is about one open and comes once. A chunk is part of a listing, never the whole of a topic, `Subfolders`, though whole, is sent once an open, as `Opened` is, and a thumbnail answers one ask. The remote protocol's `Sync` is to send the open folder's listing again to a client that joins late ([session-protocol.md](session-protocol.md#remote-clients)).
 
 ### Opening a folder, end to end
 

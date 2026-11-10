@@ -241,6 +241,28 @@ pub fn fit(widths: &Widths, available: f32) -> CaptionFit {
     last.expect("the steps are never empty")
 }
 
+/// `stem` and `tail` together where they fit in `width` in `font`, else `stem` cut in its
+/// middle with … and `tail` kept whole after it (`docs/gui.md`, Names), as a file name
+/// keeps its extension. At worst one character of `stem` is left.
+pub fn middle_cut(painter: &Painter, stem: &str, tail: &str, font: &FontId, width: f32) -> String {
+    let fits = |text: &str| {
+        painter
+            .layout_no_wrap(text.to_owned(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+            <= width
+    };
+    let whole = format!("{stem}{tail}");
+    if fits(&whole) {
+        return whole;
+    }
+    (1..stem.chars().count())
+        .rev()
+        .map(|chars| cut(stem, tail, chars))
+        .find(|text| fits(text))
+        .unwrap_or_else(|| cut(stem, tail, 1))
+}
+
 /// `stem` cut in its middle to `chars` characters, an ellipsis among them, with `tail`
 /// (the extension and the copy) kept after it; `stem` as it is when it has no more.
 pub(super) fn cut(stem: &str, tail: &str, chars: usize) -> String {
@@ -644,6 +666,49 @@ mod tests {
             name: CaptionName::Whole,
         };
         assert_eq!(w.needed(all), 2.0 * 174.0 + 80.0 + 24.0);
+    }
+
+    /// The cut measured in a font: whole where it fits, else cut in its middle to fit, the
+    /// tail kept whole.
+    #[test]
+    fn a_name_is_cut_in_its_middle_to_fit_a_width_keeping_its_tail() {
+        let ctx = egui::Context::default();
+        crate::install(&ctx, Theme::default());
+        // Fonts take effect from the next pass; no renderer takes the atlas's updates here.
+        for pass in 0..2 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                if pass == 0 {
+                    return;
+                }
+                let painter = ui.painter().clone();
+                let font = FontId::proportional(13.0);
+                let width = |text: &str| {
+                    painter
+                        .layout_no_wrap(text.to_owned(), font.clone(), egui::Color32::WHITE)
+                        .size()
+                        .x
+                };
+                let (stem, tail) = ("2026-10 Lisbon and Sintra", " · 212 photos");
+                let whole = format!("{stem}{tail}");
+                assert_eq!(
+                    middle_cut(&painter, stem, tail, &font, width(&whole)),
+                    whole
+                );
+                let room = width(&whole) * 0.7;
+                let cut = middle_cut(&painter, stem, tail, &font, room);
+                assert!(
+                    cut.ends_with(tail) && cut.starts_with("2026") && cut.contains('…'),
+                    "{cut}"
+                );
+                assert!(width(&cut) <= room, "{cut}");
+                // At worst one character of the stem is left.
+                assert_eq!(
+                    middle_cut(&painter, stem, tail, &font, 1.0),
+                    format!("…{tail}")
+                );
+            });
+            output.textures_delta.clear();
+        }
     }
 
     #[test]

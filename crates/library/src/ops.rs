@@ -20,8 +20,9 @@
 //! of its control (decision 57). Plain data, so they can move into the protocol.
 //!
 //! Built so far: opening a folder ([`open`]), which reports the folder, its subfolders and
-//! its photos, each with what its sidecar says, then their capture times, closing it, and
-//! its photos' thumbnails
+//! its photos, each with what its sidecar says, then their capture times, closing it,
+//! listing a subfolder's own subfolders for Browse's tree ([`subfolders`]), and its photos'
+//! thumbnails
 //! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own. The
 //! session runs [`open`] and [`thumbnail`] as jobs' bodies and hands each an observer,
 //! which turns each [`LibraryEvent`] into its own event, and a cancel closure, the job's;
@@ -70,6 +71,9 @@ pub enum LibraryCommand {
     /// most `size` pixels on their longer side, the first the most wanted; answered by a
     /// [`LibraryEvent::Thumbnail`] for each. A new open or a close drops those not yet sent.
     Thumbnails { photos: Vec<String>, size: u32 },
+    /// Lists the subfolders of `folder`, one inside the open folder's tree, as Browse opens
+    /// it; answered by [`LibraryEvent::SubfoldersOf`]. A new open or a close drops it.
+    Subfolders { folder: PathBuf },
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -85,6 +89,17 @@ pub enum LibraryEvent {
     /// The folder's subfolders, hidden ones left out, as the system's file browser sorts
     /// them; sent once, before the photos, empty where there is none.
     Subfolders { open: u64, names: Vec<String> },
+    /// The subfolders of `folder`, as [`LibraryCommand::Subfolders`] asked, in the open
+    /// numbered `open`: hidden ones left out, as the system's file browser sorts them,
+    /// empty where there is none. `unreadable` says why the folder could not be listed, in
+    /// plain words, its `names` empty then: a share that is down a moment is not a folder
+    /// with no subfolders.
+    SubfoldersOf {
+        open: u64,
+        folder: PathBuf,
+        names: Vec<String>,
+        unreadable: Option<String>,
+    },
     /// More of the folder's photos, in name order across chunks, at most [`CHUNK`] each;
     /// the last says `done`, and an empty folder sends one, empty and done.
     Listed {
@@ -126,6 +141,7 @@ impl LibraryEvent {
         match *self {
             LibraryEvent::Opened { open, .. }
             | LibraryEvent::Subfolders { open, .. }
+            | LibraryEvent::SubfoldersOf { open, .. }
             | LibraryEvent::Listed { open, .. }
             | LibraryEvent::Failed { open, .. }
             | LibraryEvent::Taken { open, .. }
@@ -187,6 +203,62 @@ pub enum Ended {
     Cancelled,
     /// It sent [`LibraryEvent::Failed`].
     Failed,
+}
+
+/// Lists the subfolders of `folder`, inside the open folder `root`, for the open numbered
+/// `open`, telling `observer` once with [`LibraryEvent::SubfoldersOf`]: a folders-only
+/// listing on the listing's own thread ([`listing::subfolders`]), by its rules for hidden
+/// names, names that are not text and links, waited for while `cancel` is asked. A folder
+/// that cannot be listed says why. A `folder` outside `root`, relative, or with a `..` in
+/// it is refused with a warning and nothing sent, so a client lists only the open folder's
+/// tree. A blocking call, made by a job's body; once `cancel` answers true nothing is
+/// sent.
+///
+/// [`listing::subfolders`]: crate::listing::subfolders
+pub fn subfolders(
+    open: u64,
+    root: &Path,
+    folder: &Path,
+    observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Ended {
+    if !inside(root, folder) {
+        tracing::warn!(
+            "{}: not inside the open folder {}; not listed",
+            folder.display(),
+            root.display()
+        );
+        return Ended::Failed;
+    }
+    let (names, unreadable) = match crate::listing::subfolders(folder, cancel) {
+        Ok(Some(names)) => (names, None),
+        Ok(None) => return Ended::Cancelled,
+        Err(error) => (Vec::new(), Some(error.to_string())),
+    };
+    if cancel() {
+        return Ended::Cancelled;
+    }
+    observer(LibraryEvent::SubfoldersOf {
+        open,
+        folder: folder.to_owned(),
+        names,
+        unreadable,
+    });
+    Ended::Listed
+}
+
+/// Whether `folder` is `root` or a folder inside it, both absolute, with no `..` that could
+/// lead out of it.
+fn inside(root: &Path, folder: &Path) -> bool {
+    let up = |path: &Path| {
+        path.components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    };
+    root.is_absolute()
+        && folder.is_absolute()
+        && !up(root)
+        && !up(folder)
+        && folder.starts_with(root)
 }
 
 /// Opens `source` for the command numbered `open`, telling `observer` what it finds, in
@@ -514,6 +586,99 @@ mod tests {
             fs::create_dir(dir.path().join(sub)).unwrap();
         }
         dir
+    }
+
+    /// A folder's subfolders, listed alone: their names in the file browser's order, the
+    /// hidden one, the files and the raws left out; a folder that cannot be listed says so;
+    /// nothing once cancelled.
+    #[test]
+    fn a_folder_s_subfolders_are_listed_alone() {
+        let dir = folder();
+        let root = dir.path();
+        fs::create_dir(root.join("Day 10").join("Morning")).unwrap();
+        let heard = Mutex::new(Vec::new());
+        let listen = |event| heard.lock().unwrap().push(event);
+        assert_eq!(subfolders(7, root, root, &listen, &|| false), Ended::Listed);
+        let gone = root.join("gone");
+        assert_eq!(
+            subfolders(7, root, &gone, &listen, &|| false),
+            Ended::Listed
+        );
+        assert_eq!(
+            subfolders(7, root, root, &listen, &|| true),
+            Ended::Cancelled
+        );
+        let heard = heard.into_inner().unwrap();
+        assert_eq!(
+            heard[0],
+            LibraryEvent::SubfoldersOf {
+                open: 7,
+                folder: root.to_owned(),
+                names: vec!["Archive".into(), "day 2".into(), "Day 10".into()],
+                unreadable: None,
+            }
+        );
+        let LibraryEvent::SubfoldersOf {
+            names, unreadable, ..
+        } = &heard[1]
+        else {
+            panic!("{heard:?}");
+        };
+        assert!(names.is_empty() && unreadable.is_some(), "{heard:?}");
+        assert_eq!(heard.len(), 2);
+    }
+
+    /// Only the open folder's tree is listed: a folder outside it, a relative one and one
+    /// with a `..` are refused, and nothing is sent.
+    #[test]
+    fn only_a_folder_inside_the_open_one_is_listed() {
+        let dir = folder();
+        let root = dir.path();
+        let heard = Mutex::new(Vec::new());
+        let listen = |event| heard.lock().unwrap().push(event);
+        let outside = root.parent().unwrap().to_owned();
+        for folder in [
+            outside,
+            root.join("Archive").join("..").join(".."),
+            PathBuf::from("Archive"),
+        ] {
+            assert_eq!(
+                subfolders(7, root, &folder, &listen, &|| false),
+                Ended::Failed,
+                "{folder:?}"
+            );
+        }
+        assert!(heard.into_inner().unwrap().is_empty());
+    }
+
+    /// Links count as what they point to: one to a folder is listed, one to a file or a
+    /// broken one is not; a name that is not text is not listed either.
+    #[cfg(unix)]
+    #[test]
+    fn links_and_names_that_are_not_text_follow_the_listing_s_rules() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join("Real")).unwrap();
+        fs::write(root.join("file.txt"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("Real"), root.join("To a folder")).unwrap();
+        std::os::unix::fs::symlink(root.join("file.txt"), root.join("To a file")).unwrap();
+        std::os::unix::fs::symlink(root.join("nowhere"), root.join("Broken")).unwrap();
+        let not_text = std::ffi::OsStr::from_bytes(b"bad\xff");
+        // Some file systems, as APFS, refuse such a name: then there is nothing to test.
+        let made = fs::create_dir(root.join(not_text)).is_ok();
+        let heard = Mutex::new(Vec::new());
+        let listen = |event| heard.lock().unwrap().push(event);
+        subfolders(7, root, root, &listen, &|| false);
+        let heard = heard.into_inner().unwrap();
+        let LibraryEvent::SubfoldersOf { names, .. } = &heard[0] else {
+            panic!("{heard:?}");
+        };
+        assert_eq!(
+            names,
+            &["Real", "To a folder"],
+            "made a non-text name: {made}"
+        );
     }
 
     #[test]

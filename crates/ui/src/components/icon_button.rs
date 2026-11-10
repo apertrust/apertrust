@@ -95,11 +95,17 @@ impl<'a> IconButton<'a> {
         self
     }
 
+    /// The side of its square, as [`show`](Self::show) draws it: its size where given, else
+    /// its icon and 4 points round it, at least a control's height.
+    pub fn side(&self, ui: &Ui) -> f32 {
+        let t = theme(ui.ctx());
+        self.size
+            .unwrap_or_else(|| (self.icon.size() + 8.0).max(t.sizes.control))
+    }
+
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
-        let side = self
-            .size
-            .unwrap_or_else(|| (self.icon.size() + 8.0).max(t.sizes.control));
+        let side = self.side(ui);
         let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let sense = if enabled {
             Sense::click()

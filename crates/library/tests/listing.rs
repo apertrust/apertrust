@@ -313,6 +313,7 @@ fn a_deadline_passed_is_reported_once_and_listing_goes_on() {
         Options {
             deadline: Some(Duration::ZERO),
             chunk: 10,
+            ..Options::default()
         },
     );
     let mut passed = 0;
@@ -439,6 +440,7 @@ fn nothing_follows_the_end_even_with_a_deadline_that_passes_during_it() {
             Options {
                 deadline: Some(took.mul_f64(0.5 + f64::from(round % 100) / 50.0)),
                 chunk: 5,
+                ..Options::default()
             },
         );
         let mut ended = false;

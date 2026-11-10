@@ -33,7 +33,7 @@
 #   setting with no value until its owner keeps one has none, and says optional = true.
 # - applies: "at-once", "next-photo" or "after-restart".
 # - page and group: the Settings dialog's page that shows it as a row (general, import,
-#   library, editing, processing, storage, shortcuts, presets or ai) and the titled group
+#   photos, editing, processing, storage, shortcuts, presets or ai) and the titled group
 #   on it (snake_case), each with the other; neither for what the app keeps by itself,
 #   which the dialog never shows. A page's groups and rows are in this file's order.
 # - requires: on a setting with a page, the id of another boolean setting on a page, which
@@ -298,7 +298,7 @@ default = {}
 applies = "at-once"
 
 # The collapsible groups the user opened or closed, by module and group, the same for
-# every photo; the others start closed (decision 29).
+# every photo; the others start closed (decision 29), but Browse's Folders, open.
 [edit.groups]
 owner = "app"
 kind = "table"
@@ -307,9 +307,9 @@ of = { kind = "table", by = "groups", of = "boolean" }
 default = {}
 applies = "at-once"
 
-# The folders opened, newest first, at most ten: File › Open Recent's list and the Library
-# tab's recent folders (docs/gui.md, File). Paths as text. Kept here until the small state
-# file of their own that the plan names exists.
+# The folders an earlier build opened, newest first, at most ten. Read only for their move
+# into state.toml where it has no list yet (apertrust_base::recents, docs/settings.md),
+# then left as it is; never written. Paths as text.
 [library.recent_folders]
 owner = "app"
 kind = "list"
@@ -357,7 +357,7 @@ owner = "app"
 kind = "boolean"
 default = false
 applies = "at-once"
-page = "library"
+page = "photos"
 group = "thumbnails"
 
 # Where the grid panel is: along the bottom, or a column at the left or right, from the

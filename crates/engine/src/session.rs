@@ -1293,6 +1293,9 @@ struct Engine {
     /// The thumbnail jobs asked for of that folder that may not have ended, which the next
     /// open or a close cancels.
     thumbnails: Vec<JobId>,
+    /// The jobs listing subfolders inside that folder's tree, which the next open or a close
+    /// cancels.
+    subfolders: Vec<JobId>,
     /// Holds the next export's renders for a test.
     #[cfg(test)]
     export_hold: Option<export_job::testing::Hold>,
@@ -1647,6 +1650,7 @@ impl Engine {
             folder: None,
             shown: None,
             thumbnails: Vec::new(),
+            subfolders: Vec::new(),
             #[cfg(test)]
             export_hold: None,
             #[cfg(test)]
@@ -2630,13 +2634,17 @@ impl Engine {
                 self.thumbnails(photos, size);
                 return;
             }
+            LibraryCommand::Subfolders { folder } => {
+                self.subfolders(folder);
+                return;
+            }
             LibraryCommand::Open(source) => Some(source),
             LibraryCommand::Close => None,
         };
         if let Some(older) = self.folder.take() {
             self.jobs.control.cancel(older);
         }
-        for job in self.thumbnails.drain(..) {
+        for job in self.thumbnails.drain(..).chain(self.subfolders.drain(..)) {
             self.jobs.control.cancel(job);
         }
         let open = self.applied;
@@ -2665,6 +2673,35 @@ impl Engine {
             .progress(message, true)
         });
         self.folder = Some(job);
+    }
+
+    /// [`LibraryCommand::Subfolders`]: `folder`'s subfolders listed by a job on darktable's
+    /// `UserBackground` queue, as the open folder's reading is, cancellable, answered as
+    /// [`Event::Library`] in the open folder's number; the library refuses a folder outside
+    /// the open one's tree. Nothing with no folder open.
+    fn subfolders(&mut self, folder: PathBuf) {
+        let Some((open, root)) = self.shown.clone() else {
+            return;
+        };
+        let control = &self.jobs.control;
+        self.subfolders.retain(|&job| control.state(job).is_some());
+        let outbox = self.jobs.outbox.clone();
+        let description = format!("listing the subfolders of {}", folder.display());
+        // A test holds it with the folder's hold, which no reading has taken.
+        #[cfg(test)]
+        let hold = self.folder_hold.take();
+        let job = self.jobs.add(self.applied, Queue::UserBackground, |_| {
+            jobs::Job::new("subfolders", description, move |context| {
+                #[cfg(test)]
+                if let Some(hold) = &hold {
+                    hold.wait();
+                }
+                let tell = |event| outbox.send(Event::Library(event));
+                library::subfolders(open, &root, &folder, &tell, &|| context.cancelled());
+                Ok(())
+            })
+        });
+        self.subfolders.push(job);
     }
 
     /// [`Command::Cache`], the command numbered [`Self::applied`] (decision 76): the limit
@@ -8394,6 +8431,7 @@ mod tests {
             Event::Library(event) => match event {
                 LibraryEvent::Opened { .. }
                 | LibraryEvent::Subfolders { .. }
+                | LibraryEvent::SubfoldersOf { .. }
                 | LibraryEvent::Listed { .. }
                 | LibraryEvent::Failed { .. }
                 | LibraryEvent::Taken { .. }
@@ -8725,6 +8763,94 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, Event::Opened(_) | Event::Values(_)))
         );
+        drop(session);
+        remove(&path);
+    }
+
+    /// A subfolder's subfolders are listed by a job of their own with no progress, answered
+    /// in the open folder's number; with no folder open, nothing is listed.
+    #[test]
+    fn a_subfolder_s_subfolders_are_listed_as_a_job_in_the_open_s_number() {
+        let gpu = gpu();
+        let (folder, path) = photo_folder("library-subfolders");
+        let day = folder.join("Day 1");
+        std::fs::create_dir(day.join("Morning")).unwrap();
+        std::fs::create_dir(day.join(".hidden")).unwrap();
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let mut events = Vec::new();
+        let open = session.send(open_folder(&folder));
+        follow(&session, &wakes, &mut events, open, ended);
+
+        session.send(Command::Library(LibraryCommand::Subfolders {
+            folder: day.clone(),
+        }));
+        // A job with no progress, which shows in no job event: its answer alone comes.
+        let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::SubfoldersOf { .. }));
+        events.extend(until(&session, &wakes, listed));
+        let listed: Vec<_> = library_of(&events, open)
+            .into_iter()
+            .filter(|e| matches!(e, LibraryEvent::SubfoldersOf { .. }))
+            .collect();
+        assert_eq!(
+            listed,
+            [&LibraryEvent::SubfoldersOf {
+                open,
+                folder: day.clone(),
+                names: vec!["Morning".to_owned()],
+                unreadable: None,
+            }]
+        );
+
+        // Closed, the folder's tree is gone: nothing is asked.
+        let close = session.send(Command::Library(LibraryCommand::Close));
+        let closed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == close);
+        events.extend(until(&session, &wakes, closed));
+        events.clear();
+        session.send(Command::Library(LibraryCommand::Subfolders { folder: day }));
+        let again = session.send(open_folder(&folder));
+        follow(&session, &wakes, &mut events, again, ended);
+        let late = |e: &Event| matches!(e, Event::Library(LibraryEvent::SubfoldersOf { .. }));
+        assert!(!events.iter().any(late), "{events:?}");
+        drop(session);
+        remove(&path);
+    }
+
+    /// A subfolders job under way is cancelled by a new open and by a close: neither its
+    /// answer nor a job event of its own comes.
+    #[test]
+    fn a_new_open_or_a_close_cancels_a_subfolders_job_under_way() {
+        let gpu = gpu();
+        let (folder, path) = photo_folder("library-subfolders-cancel");
+        let day = folder.join("Day 1");
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let mut events = Vec::new();
+        for close in [false, true] {
+            let open = session.send(open_folder(&folder));
+            follow(&session, &wakes, &mut events, open, ended);
+            events.clear();
+            // Held as it begins, with the hold no reading takes before it.
+            let (hold, begun, permit) = export_job::testing::Hold::new();
+            session.send(Command::HoldFolder(hold));
+            let asked = session.send(Command::Library(LibraryCommand::Subfolders {
+                folder: day.clone(),
+            }));
+            begun.recv_timeout(TEST_WAIT).expect("the listing begins");
+            if close {
+                let closed = session.send(Command::Library(LibraryCommand::Close));
+                let is = |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == closed);
+                events.extend(until(&session, &wakes, is));
+            } else {
+                session.send(open_folder(&folder));
+            }
+            drop(permit);
+            // A reading after it, on the same queue, ends once the held job has run out.
+            let after = session.send(open_folder(&folder));
+            follow(&session, &wakes, &mut events, after, ended);
+            let answered =
+                |e: &Event| matches!(e, Event::Library(LibraryEvent::SubfoldersOf { .. }));
+            assert!(!events.iter().any(answered), "close {close}: {events:?}");
+            assert!(of_job(&events, asked).is_none(), "close {close}");
+        }
         drop(session);
         remove(&path);
     }

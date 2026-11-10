@@ -19,9 +19,9 @@
 //! (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    ActionRow, Button, Checkbox, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton,
-    Mark, Marker, Quad, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
-    ToggleRow,
+    ActionRow, Button, Checkbox, Choice, ChoiceAction, ChoiceBox, ChoiceStyle, CollapsibleGroup,
+    IconButton, Mark, Marker, Quad, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
+    Swatches, ToggleRow,
 };
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::Role;
@@ -3278,4 +3278,56 @@ fn controls_in_a_disabled_parent_draw_as_disabled() {
     // The ticked box filled with text_disabled, the button keeping its plate, both whole.
     assert!(fills.contains(&c.text_disabled), "{fills:?}");
     assert!(fills.contains(&c.button), "{fills:?}");
+}
+
+/// A Boxed choice's box alone: a combo box named and valued, its value whole in its tooltip
+/// where the box cuts it, and disabled where it cannot open.
+#[test]
+fn a_choice_box_is_a_named_combo_box_whose_tooltip_holds_what_it_cuts() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 120.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::default());
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        })
+        .build_ui_state(
+            |ui, clicked: &mut bool| {
+                let value = "Folder: 2026-10 Lisbon";
+                let whole = ChoiceBox::new("What is open", value)
+                    .icon(Icon::Folder)
+                    .show(ui, 240.0, |_, _, _| value.to_owned());
+                *clicked |= whole.clicked();
+                // Cut by the caller's fit, the value is the box's tooltip.
+                ChoiceBox::new("Cut", value)
+                    .show(ui, 240.0, |_, _, _| "Folder: 2026…bon".to_owned());
+                ChoiceBox::new("Disabled", value)
+                    .enabled(false)
+                    .show(ui, 240.0, |_, _, _| value.to_owned());
+            },
+            false,
+        );
+    harness.run();
+    let open = harness.get_by_role_and_label(Role::ComboBox, "What is open");
+    assert_eq!(
+        open.accesskit_node().value().as_deref(),
+        Some("Folder: 2026-10 Lisbon")
+    );
+    assert!(!open.accesskit_node().is_disabled());
+    open.click();
+    harness.run();
+    assert!(*harness.state());
+    let disabled = harness.get_by_role_and_label(Role::ComboBox, "Disabled");
+    assert!(disabled.accesskit_node().is_disabled());
+    // A box that shows its value whole has no tooltip of it.
+    harness
+        .get_by_role_and_label(Role::ComboBox, "What is open")
+        .hover();
+    harness.run();
+    assert_eq!(
+        harness.query_all_by_label("Folder: 2026-10 Lisbon").count(),
+        0
+    );
+    harness.get_by_role_and_label(Role::ComboBox, "Cut").hover();
+    harness.run();
+    harness.get_by_label("Folder: 2026-10 Lisbon");
 }

@@ -147,6 +147,9 @@ pub struct Options {
     pub chunk: usize,
     /// When to report a listing that is still running; `None` never reports.
     pub deadline: Option<Duration>,
+    /// Lists the subfolders alone: no raw or sidecar is listed or measured, and nothing is
+    /// removed, as Browse's tree looks inside a folder ([`subfolders`]).
+    pub folders_only: bool,
 }
 
 impl Default for Options {
@@ -154,6 +157,40 @@ impl Default for Options {
         Self {
             chunk: 256,
             deadline: None,
+            folders_only: false,
+        }
+    }
+}
+
+/// How often a caller waiting on a listing asks its cancel.
+const CANCEL_POLL: Duration = Duration::from_millis(20);
+
+/// The subfolders of `folder`, by the listing's own rules (hidden names and names that are
+/// not text left out, a link counting as what it points to), in [`browser_order`]: a
+/// folders-only listing on its worker thread, waited for while `cancel` is asked every
+/// 20 ms, so a folder on a share that hangs holds only the listing's own thread, and the
+/// caller returns once cancelled. `None` when cancelled.
+pub fn subfolders(
+    folder: &Path,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<Option<Vec<String>>, Error> {
+    let options = Options {
+        folders_only: true,
+        ..Options::default()
+    };
+    let listing = Listing::start(folder, options);
+    let mut names = Vec::new();
+    loop {
+        if cancel() {
+            return Ok(None);
+        }
+        match listing.events().recv_timeout(CANCEL_POLL) {
+            Ok(Event::Subfolders(mut more)) => names.append(&mut more),
+            Ok(Event::Done(summary)) if summary.cancelled => return Ok(None),
+            Ok(Event::Done(_)) => return Ok(Some(names)),
+            Ok(Event::Failed(error)) => return Err(error),
+            Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Err(Error::Stopped),
         }
     }
 }
@@ -185,6 +222,7 @@ impl Listing {
         let job = Job {
             folder: folder.into(),
             chunk: options.chunk.max(1),
+            folders_only: options.folders_only,
             cancel: cancel.clone(),
             tx,
             started: Instant::now(),
@@ -273,6 +311,7 @@ impl Deadline {
 struct Job {
     folder: PathBuf,
     chunk: usize,
+    folders_only: bool,
     cancel: Arc<AtomicBool>,
     tx: SyncSender<Event>,
     started: Instant,
@@ -348,6 +387,9 @@ impl Job {
         else {
             return Ok(None);
         };
+        if self.folders_only {
+            raws.clear();
+        }
         raws.sort_unstable();
         let raw_names: HashSet<&str> = raws.iter().map(String::as_str).collect();
 
@@ -387,7 +429,7 @@ impl Job {
         }
 
         let mut orphans = Vec::new();
-        let mut sidecars: Vec<&String> = sidecars.iter().collect();
+        let mut sidecars: Vec<&String> = sidecars.iter().filter(|_| !self.folders_only).collect();
         sidecars.sort_unstable();
         for name in sidecars {
             if self.stopped(&mut summary) {
@@ -441,6 +483,10 @@ impl Job {
                 summary.not_text += 1;
                 continue;
             };
+            if name.starts_with('.') && self.folders_only {
+                summary.hidden += 1;
+                continue;
+            }
             if name.starts_with('.') {
                 // The one thing Apertrust removes from a person's folder (decision 53):
                 // its own writer's leftovers, by their name and age alone.

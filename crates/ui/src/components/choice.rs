@@ -362,29 +362,16 @@ impl<'a> Choice<'a> {
                     focus_ring_centred(painter, row.expand2(vec2(t.spacing.xs, 0.0)), &t);
                 }
             } else {
-                painter.rect_filled(option, t.shape.radius_small, t.colors.sunken);
-                painter.galley(
-                    pos2(
-                        option.left() + field_inset(&t),
-                        option.center().y - chosen.size().y / 2.0,
-                    ),
-                    chosen,
-                    text,
-                );
-                Icon::ChevronDown.paint(
+                let colours = (text, secondary);
+                paint_box(
                     painter,
-                    Rect::from_center_size(
-                        pos2(
-                            option.right() - CHEVRON_END - chevron / 2.0,
-                            option.center().y,
-                        ),
-                        vec2(chevron, chevron),
-                    ),
-                    secondary,
+                    &t,
+                    option,
+                    chosen,
+                    None,
+                    colours,
+                    response.has_focus(),
                 );
-                if response.has_focus() {
-                    focus_ring(painter, option, &t);
-                }
             }
         }
         let name = self.name;
@@ -504,6 +491,137 @@ impl<'a> Choice<'a> {
                 .on_disabled_hover_text(tip);
         }
         action
+    }
+}
+
+/// A Boxed choice's box alone, as wide as the caller gives it, which the caller hangs a
+/// list of its own from with [`pull_down`](super::pull_down): Browse's top line, whose
+/// list holds submenus a [`Choice`]'s cannot. It looks as the Boxed row's box does: the
+/// sunken field, its text in the small size after an icon where it has one, ⌄ at its end,
+/// the focus ring round it, and no band under the pointer; to screen readers a combo box
+/// with its name and value.
+pub struct ChoiceBox<'a> {
+    name: &'a str,
+    value: &'a str,
+    icon: Option<Icon>,
+    enabled: bool,
+}
+
+impl<'a> ChoiceBox<'a> {
+    /// `name` is what screen readers call it, `value` what it says whole, translated.
+    pub fn new(name: &'a str, value: &'a str) -> Self {
+        ChoiceBox {
+            name,
+            value,
+            icon: None,
+            enabled: true,
+        }
+    }
+
+    /// An icon before its text, in `text_secondary`.
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// Whether it can be opened, as it can by default: drawn disabled where it cannot, as
+    /// a disabled `Choice`'s box is, reporting no click.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    /// Draws it `width` wide, its text what `fit` makes of the value for the room left in
+    /// the small font, the value whole in its tooltip where `fit` cut it.
+    pub fn show(
+        self,
+        ui: &mut Ui,
+        width: f32,
+        fit: impl FnOnce(&egui::Painter, &FontId, f32) -> String,
+    ) -> egui::Response {
+        let t = theme(ui.ctx());
+        let sense = if self.enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        let (rect, response) = ui.allocate_exact_size(vec2(width, t.sizes.field), sense);
+        let small = FontId::proportional(t.text.small);
+        let icon_room = self.icon.map_or(0.0, |_| icon_side(&t) + t.spacing.xs);
+        let room = (rect.width() - box_padding(&t) - icon_room).max(0.0);
+        let shown = fit(ui.painter(), &small, room);
+        let colours = if self.enabled {
+            (t.colors.text, t.colors.text_secondary)
+        } else {
+            (t.colors.text_disabled, t.colors.text_disabled)
+        };
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter();
+            let galley = painter.layout_no_wrap(shown.clone(), small, colours.0);
+            paint_box(
+                painter,
+                &t,
+                rect,
+                galley,
+                self.icon,
+                colours,
+                response.has_focus(),
+            );
+        }
+        let (name, value, enabled) = (self.name, self.value, self.enabled);
+        response.widget_info(|| {
+            let mut info = WidgetInfo::labeled(Role::ComboBox, enabled, name);
+            info.current_text_value = Some(value.to_owned());
+            info
+        });
+        if shown != value {
+            response.on_hover_text(value).on_disabled_hover_text(value)
+        } else {
+            response
+        }
+    }
+}
+
+/// The side of an icon before a box's text: the small text's size and a little.
+fn icon_side(t: &Theme) -> f32 {
+    t.text.small + t.spacing.xxs
+}
+
+/// A Boxed choice's box in `rect`, as `Choice` and [`ChoiceBox`] draw it: the sunken field,
+/// `shown` after `icon` where there is one, ⌄ at its end, `CHEVRON_END` in, and the focus
+/// ring round it while `focused`; its text in `colours.0`, its icon and ⌄ in `colours.1`,
+/// which say whether it is enabled.
+fn paint_box(
+    painter: &egui::Painter,
+    t: &Theme,
+    rect: Rect,
+    shown: std::sync::Arc<egui::Galley>,
+    icon: Option<Icon>,
+    colours: (Color32, Color32),
+    focused: bool,
+) {
+    let (text, secondary) = colours;
+    painter.rect_filled(rect, t.shape.radius_small, t.colors.sunken);
+    let middle = rect.center().y;
+    let mut x = rect.left() + field_inset(t);
+    if let Some(icon) = icon {
+        let side = icon_side(t);
+        let at = Rect::from_min_size(pos2(x, middle - side / 2.0), vec2(side, side));
+        icon.paint(painter, at, secondary);
+        x += side + t.spacing.xs;
+    }
+    painter.galley(pos2(x, middle - shown.size().y / 2.0), shown, text);
+    let chevron = Icon::ChevronDown.size();
+    Icon::ChevronDown.paint(
+        painter,
+        Rect::from_center_size(
+            pos2(rect.right() - CHEVRON_END - chevron / 2.0, middle),
+            vec2(chevron, chevron),
+        ),
+        secondary,
+    );
+    if focused {
+        focus_ring(painter, rect, t);
     }
 }
 

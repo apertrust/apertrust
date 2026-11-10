@@ -273,7 +273,7 @@ pub static MENUS: [Menu; 7] = [
                 Entry::Submenu(&GRID_POSITION),
             ],
             &[
-                item(ActionId::LIBRARY),
+                item(ActionId::SHOW_BROWSE),
                 Entry::Submenu(&PANEL_TAB),
                 Entry::Submenu(&INTERFACE_SIZE),
                 Entry::Submenu(&BACKGROUND),
@@ -1138,7 +1138,7 @@ mod tests {
         // A value field keeps Cmd+Z and every plain key, but not Cmd+, nor Cmd+Q.
         assert_eq!(key(ActionId::UNDO, Focus::None), Some(command(Key::Z)));
         assert_eq!(key(ActionId::UNDO, Focus::Text), None);
-        assert_eq!(key(ActionId::LIBRARY, Focus::Text), None);
+        assert_eq!(key(ActionId::SHOW_BROWSE, Focus::Text), None);
         assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Text), None);
         assert_eq!(
             key(ActionId::SETTINGS, Focus::Text),

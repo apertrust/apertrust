@@ -44,7 +44,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `rotate-left`, `rotate-right` | Lucide's `rotate-ccw-square` and `rotate-cw-square` |
 | `flip-horizontal`, `flip-vertical` | Lucide's `triangles-centerline-dashed-vertical` and `triangles-centerline-dashed-horizontal` |
 | `history`, `history-filled` | Lucide's `rotate-ccw-clock` |
-| `library`, `library-filled` | Lucide's `folder` |
+| `folder`, `folder-filled` | Lucide's `folder` |
 | `metadata`, `metadata-filled` | Lucide's `tag` |
 | `base`, `color`, `correct`, `effect` and their filled forms | Drawn for Apertrust: darktable's module group shapes (decision 38) |
 | `histogram`, `waveform`, `parade`, `vectorscope`, `log-scale`, `clip-shadows`, `clip-highlights` | Drawn for Apertrust: the scopes' graphs and toggles |

@@ -63,7 +63,7 @@ pub use button::Button;
 pub use buttons_row::{ButtonsAction, ButtonsRow};
 pub use central_bar::{CentralBar, CentralBarAction, Toggle, Zoom};
 pub use checkbox::Checkbox;
-pub use choice::{Choice, ChoiceAction, ChoiceStyle};
+pub use choice::{Choice, ChoiceAction, ChoiceBox, ChoiceStyle};
 pub use collapsible_group::CollapsibleGroup;
 pub use curve::{Axis, Curve, CurveAction};
 pub use equalizer::{Equalizer, EqualizerAction, MaskHistogram, Settle};
@@ -88,7 +88,7 @@ pub use jobs::{
 pub use marker::{Marker, marker, set_marker};
 pub use photo_frame::{
     CAPTION_GAP, CAPTION_HEIGHT, CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption,
-    PhotoFrame, Placed,
+    PhotoFrame, Placed, middle_cut,
 };
 pub use plate::ButtonState;
 pub use section::{Section, SectionAction, SectionOutput};
@@ -118,7 +118,7 @@ use crate::popup::{self, Answer, Entry, Request};
 /// ↓ while it has the focus, opens it, and a second press closes it. `entries` is built
 /// only as it opens. Returns the id of the item chosen this frame; the focus goes back to
 /// the button as the service gives it. Drawn, and answered, in the frame it opens in.
-fn pull_down(
+pub fn pull_down(
     ui: &egui::Ui,
     button: &Response,
     name: &str,
@@ -142,6 +142,44 @@ fn pull_down(
             let request = Request::pull_down(button.rect, name, entries()).opened_by(button.id);
             popup::open(ctx, id, request);
         }
+    }
+    if popup::is_open(ctx, id) {
+        popup::show(ctx);
+    }
+    match popup::answer(ctx, id) {
+        Some(Answer::Chosen(chosen)) => Some(chosen),
+        _ => None,
+    }
+}
+
+/// The menu of the control `response` belongs to, a pull-down of the popup service's
+/// opening at the pointer as the control is right-clicked, or under it as the keyboard's
+/// menu key or Shift+F10 is pressed while it has the focus (`docs/gui.md`, Popups). `name`
+/// is what screen readers call it, `entries` built only as it opens. Returns the id of the
+/// item chosen this frame.
+pub fn context_menu(
+    ui: &egui::Ui,
+    response: &Response,
+    name: &str,
+    entries: impl FnOnce() -> Vec<Entry>,
+) -> Option<String> {
+    let ctx = ui.ctx();
+    let id = response.id.with("context menu");
+    let keys = response.has_focus()
+        && ui.input_mut(|i| {
+            i.consume_key(Modifiers::NONE, Key::Menu) || i.consume_key(Modifiers::SHIFT, Key::F10)
+        });
+    if response.secondary_clicked() || keys {
+        let at = if keys {
+            response.rect.left_bottom()
+        } else {
+            response
+                .interact_pointer_pos()
+                .unwrap_or(response.rect.left_bottom())
+        };
+        let anchor = Rect::from_min_size(at, egui::Vec2::ZERO);
+        let request = Request::pull_down(anchor, name, entries()).opened_by(response.id);
+        popup::open(ctx, id, request);
     }
     if popup::is_open(ctx, id) {
         popup::show(ctx);

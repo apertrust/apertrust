@@ -513,7 +513,7 @@ fn only_the_section_under_the_pointer_peeks() {
     assert_eq!(*harness.state(), [false, false]);
 }
 
-/// Edit's tabs (decision 38), Library and History drawn disabled until something is
+/// Edit's tabs (decision 38), Photos and History drawn disabled until something is
 /// behind them, each with its key.
 fn tab_bar(width: f32) -> Harness<'static, (usize, bool, Vec<TabBarAction>)> {
     Harness::builder()
@@ -525,7 +525,7 @@ fn tab_bar(width: f32) -> Harness<'static, (usize, bool, Vec<TabBarAction>)> {
         .build_ui_state(
             |ui, state: &mut (usize, bool, Vec<TabBarAction>)| {
                 let tabs: Vec<PanelTab> = [
-                    (Icon::Library, "Library", false),
+                    (Icon::Folder, "Photos", false),
                     (Icon::Base, "Base", true),
                     (Icon::Color, "Colour", true),
                     (Icon::Correct, "Correct", true),
@@ -580,31 +580,31 @@ fn tabs_that_do_not_fit_are_in_the_more_menu() {
     assert_eq!(harness.state().2, vec![TabBarAction::Select(4)]);
 }
 
-/// Library and History, with nothing behind them yet: drawn disabled, reported so to
+/// Photos and History, with nothing behind them yet: drawn disabled, reported so to
 /// screen readers, never chosen, in the bar or under », and saying they are to come,
 /// with no key.
 #[test]
 fn a_tab_with_nothing_behind_it_cannot_be_chosen_and_says_it_is_to_come() {
     let mut harness = tab_bar(440.0);
     harness.run();
-    let library = harness.get_by_role_and_label(Role::Tab, "Library");
-    assert!(library.accesskit_node().is_disabled());
-    assert_eq!(library.accesskit_node().data().keyboard_shortcut(), None);
+    let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
+    assert!(photos.accesskit_node().is_disabled());
+    assert_eq!(photos.accesskit_node().data().keyboard_shortcut(), None);
     let base = harness.get_by_role_and_label(Role::Tab, "Base");
     assert!(!base.accesskit_node().is_disabled());
     assert_eq!(
         base.accesskit_node().data().keyboard_shortcut(),
         Some("Ctrl+2")
     );
-    harness.get_by_role_and_label(Role::Tab, "Library").click();
+    harness.get_by_role_and_label(Role::Tab, "Photos").click();
     harness.run();
     assert_eq!(harness.state().0, 1);
     assert!(harness.state().2.is_empty());
-    harness.get_by_role_and_label(Role::Tab, "Library").hover();
+    harness.get_by_role_and_label(Role::Tab, "Photos").hover();
     harness.run();
     assert!(
         harness
-            .query_by_label("Library: coming in a later version")
+            .query_by_label("Photos: coming in a later version")
             .is_some()
     );
     // History is under » in a narrow bar, disabled there too.
@@ -746,7 +746,7 @@ fn customise_tabs_is_a_disabled_item_while_it_cannot_run() {
 
 /// Edit's tabs, as the app has them (decision 38).
 const TAB_IDS: [(Icon, &str); 6] = [
-    (Icon::Library, "tab-library"),
+    (Icon::Folder, "tab-photos"),
     (Icon::Base, "tab-base"),
     (Icon::Color, "tab-color"),
     (Icon::Correct, "tab-correct"),
@@ -869,7 +869,7 @@ fn tab_names_that_fit_keep_the_theme_s_size() {
     let mut harness = named_tabs(Locale::EnGb);
     harness.run();
     let caption = Theme::default().text.caption;
-    for name in ["Library", "Base", "Colour", "Correct", "Effect", "History"] {
+    for name in ["Photos", "Base", "Colour", "Correct", "Effect", "History"] {
         let drawn = drawn_name(&harness, name);
         assert!(!drawn.galley.elided, "{name} is shortened");
         let format = &drawn.galley.job.sections[0].format;

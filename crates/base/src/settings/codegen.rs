@@ -60,7 +60,7 @@ const APPLIES: [(&str, &str); 3] = [
 const PAGES: [(&str, &str); 9] = [
     ("general", "General"),
     ("import", "Import"),
-    ("library", "Library"),
+    ("photos", "Photos"),
     ("editing", "Editing"),
     ("processing", "Processing"),
     ("storage", "Storage"),
@@ -926,7 +926,7 @@ mod tests {
     #[rustfmt::skip]
     fn a_page_the_dialog_does_not_have_or_a_group_off_a_page_is_refused() {
         each_refused(&[
-            ("boolean", "default = true\npage = \"darkroom\"\ngroup = \"x\"\n", "6: [scale]: page is one of the dialog's: general, import, library, editing, processing, storage, shortcuts, presets, ai"),
+            ("boolean", "default = true\npage = \"darkroom\"\ngroup = \"x\"\n", "6: [scale]: page is one of the dialog's: general, import, photos, editing, processing, storage, shortcuts, presets, ai"),
             ("boolean", "default = true\ngroup = \"interface\"\n", "6: [scale]: a group is on a page: give its page too"),
             ("boolean", "default = true\npage = \"general\"\n", "6: [scale]: a page holds its rows in groups: give its group too"),
             ("boolean", "default = true\npage = \"general\"\ngroup = \"Inter face\"\n", "7: [scale]: group is snake_case: a to z, 0 to 9 and _, a letter first"),

@@ -182,9 +182,6 @@ pub mod registry {
     }
 }
 
-/// How many recent folders are kept (`docs/gui.md`, File › Open Recent).
-pub const RECENT_FOLDERS: usize = 10;
-
 /// What the app keeps between runs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
@@ -216,8 +213,6 @@ pub struct Settings {
     pub scopes: ScopeView,
     /// How the grid panel shows the folder's photos.
     pub grid: Grid,
-    /// The folders opened, newest first, at most [`RECENT_FOLDERS`].
-    pub recent_folders: Vec<PathBuf>,
     /// The keys that differ from the defaults, by action id, in `Shortcut::text`'s form,
     /// with what the keymap could not use as it was read; an empty list leaves an action
     /// without a key.
@@ -261,7 +256,6 @@ impl Default for Settings {
                 highlight_clipping: SCOPES_HIGHLIGHT_CLIPPING.default(),
             },
             grid: Grid::default(),
-            recent_folders: Vec::new(),
             keys: BTreeMap::new(),
             export: Values::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
@@ -345,12 +339,6 @@ impl Settings {
                 labels: store.get(&GRID_PANEL_LABELS),
                 square_thumbnails: store.get(&GRID_PANEL_SQUARE_THUMBNAILS),
             },
-            recent_folders: store
-                .get(&LIBRARY_RECENT_FOLDERS)
-                .into_iter()
-                .map(PathBuf::from)
-                .take(RECENT_FOLDERS)
-                .collect(),
             keys: store.get(&KEYS),
             export: Values::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
@@ -484,13 +472,6 @@ impl Settings {
         }
         if grid.square_thumbnails != before.square_thumbnails {
             store.set(&GRID_PANEL_SQUARE_THUMBNAILS, grid.square_thumbnails);
-        }
-        if s.recent_folders != was.recent_folders {
-            let folders = s.recent_folders.iter();
-            store.set(
-                &LIBRARY_RECENT_FOLDERS,
-                folders.map(|f| f.to_string_lossy().into_owned()).collect(),
-            );
         }
         if s.keys != was.keys {
             store.set(&KEYS, s.keys.clone());
@@ -816,6 +797,14 @@ impl Keeper {
         self.store.value(setting)
     }
 
+    /// The recent folders an earlier build kept in settings, `library.recent_folders`,
+    /// newest first: read only for their move into `state.toml`, where it has no list yet
+    /// ([`crate::recents`]), and never written.
+    pub fn old_recent_folders(&self) -> Vec<PathBuf> {
+        let folders = self.store.get(&LIBRARY_RECENT_FOLDERS).into_iter();
+        folders.map(PathBuf::from).collect()
+    }
+
     /// The Settings dialog's page last shown.
     pub fn page(&self) -> apertrust_base::settings::Page {
         self.store.get(&SETTINGS_WINDOW_PAGE)
@@ -1012,7 +1001,6 @@ mod tests {
                 labels: false,
                 square_thumbnails: true,
             },
-            recent_folders: vec![PathBuf::from("/photos/b"), PathBuf::from("/photos/a")],
             keys: BTreeMap::from([
                 ("undo".to_owned(), vec!["Ctrl+K".to_owned()]),
                 ("quit".to_owned(), Vec::new()),
@@ -1044,6 +1032,29 @@ mod tests {
         let (mut keeper, _) = Keeper::open(folder.storage());
         keeper.frame(Instant::now(), changed);
         keeper.flush();
+    }
+
+    /// The recent folders an earlier build kept are read for their move, and left in the
+    /// file as they are when the settings are written again.
+    #[test]
+    fn the_old_recent_folders_are_read_for_the_move_and_left_alone() {
+        let folder = Folder::new("old-recents");
+        let text = "version = 1\n\n[library]\nrecent_folders = [\"/photos/b\", \"/photos/a\"]\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let old = [PathBuf::from("/photos/b"), PathBuf::from("/photos/a")];
+        assert_eq!(keeper.old_recent_folders(), old);
+        let changed = Settings {
+            tab_names: !settings.tab_names,
+            ..settings
+        };
+        keeper.frame(Instant::now(), &changed);
+        keeper.flush();
+        assert!(
+            folder
+                .text()
+                .contains("recent_folders = [\"/photos/b\", \"/photos/a\"]")
+        );
     }
 
     /// The settings `text` holds, with what the store and the app warned of, each by the
@@ -1118,7 +1129,6 @@ mod tests {
                     labels: true,
                     square_thumbnails: false,
                 },
-                recent_folders: Vec::new(),
                 keys: BTreeMap::new(),
                 export: Values::default(),
                 ask_before_overwrite: true,
@@ -1142,15 +1152,16 @@ mod tests {
 
     /// The settings the app's own settings write: the app's and the export settings the
     /// Export dialog keeps. The engine's, and the page Settings last showed, the Settings
-    /// dialog keeps through the keeper (`Keeper::apply`).
+    /// dialog keeps through the keeper (`Keeper::apply`); the old recent folders are only
+    /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
-        let page = SETTINGS_WINDOW_PAGE.id;
+        let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
         registry::ALL
             .iter()
             .chain(export)
             .map(|s| s.id())
-            .filter(move |id| *id != page)
+            .filter(move |id| *id != page && *id != old)
     }
 
     /// Every setting of the schema is one of the app's or the export's, written once it
@@ -1259,9 +1270,6 @@ scale_factor = 2.0
 [keys]
 quit = []
 undo = [\"Ctrl+K\"]
-
-[library]
-recent_folders = [\"/photos/b\", \"/photos/a\"]
 
 [log]
 domains = [\"gpu\", \"memory\"]

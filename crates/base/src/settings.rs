@@ -249,7 +249,7 @@ impl Number {
 pub enum Page {
     General,
     Import,
-    Library,
+    Photos,
     Editing,
     Processing,
     Storage,
@@ -262,7 +262,7 @@ impl Page {
     pub const ALL: [Page; 9] = [
         Page::General,
         Page::Import,
-        Page::Library,
+        Page::Photos,
         Page::Editing,
         Page::Processing,
         Page::Storage,
@@ -276,7 +276,7 @@ impl Page {
         match self {
             Page::General => "general",
             Page::Import => "import",
-            Page::Library => "library",
+            Page::Photos => "photos",
             Page::Editing => "editing",
             Page::Processing => "processing",
             Page::Storage => "storage",
@@ -292,7 +292,7 @@ impl Choice for Page {
     const OPTIONS: &'static [(Page, &'static str)] = &[
         (Page::General, Page::General.id()),
         (Page::Import, Page::Import.id()),
-        (Page::Library, Page::Library.id()),
+        (Page::Photos, Page::Photos.id()),
         (Page::Editing, Page::Editing.id()),
         (Page::Processing, Page::Processing.id()),
         (Page::Storage, Page::Storage.id()),

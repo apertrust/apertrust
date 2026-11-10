@@ -23,8 +23,8 @@ status-saved = Saved
 ## The side panel's tabs
 
 # Edit's tabs: darktable's four module groups, base, color, correct and effect, between
-# Apertrust's own Library and History (decision 38).
-tab-library = Library
+# Apertrust's own Photos and History (decision 38).
+tab-photos = Photos
 tab-base = Base
 tab-color = Colour
 tab-correct = Correct
@@ -471,22 +471,46 @@ grid-thumbnail-size-tip =
 # Its Labels button, which shows the captions under the thumbnails or hides them.
 grid-labels = Labels
 
-## Folder mode: File › Open Folder…, the Library tab's Folders and the empty states
+## Folder mode: File › Open Folder…, the Photos tab's Browse and the empty states
 
 action-open-folder = Open Folder…
 # The title of the platform's folder dialog, where it shows one.
 open-folder-title = Open Folder
-# The Library tab's sections. Albums and Smart albums come with the library.
-section-folders = Folders
-section-albums = Albums
-section-smart-albums = Smart albums
-# The open folder in Folders: its name and how many photos it holds.
-folders-current = { $name } · { photo-count }
+# The Photos tab's first section, which chooses what the grid panel shows, and its group
+# of folders. Albums and Smart albums join it with the library.
+section-browse = Browse
+browse-folders = Folders
+# The top line's box: what screen readers call it, its words for a folder, or for none.
+browse-open-name = What is open
+browse-open-folder = Folder: { $name }
+browse-no-folder = No folder open
+# The box's list, the recents: with none; a missing one, marked, and what it offers.
+browse-recents-none = No recent folders
+browse-recent-missing = { $name }, not found
+browse-try-again = Try Again
+browse-locate = Locate…
+browse-remove = Remove from the List
+# The title of the platform's folder dialog Locate… opens.
+browse-locate-title = Locate Folder
+# ＋ beside the box, and its items that come with the library.
+browse-plus = New or open
+action-new-library = New Library…
+action-new-project = New Project…
+# The tree: the way up to the open folder's parent, a folder row's right-click menu, whose
+# Show in Folder is named as the platform's file manager is.
+browse-parent = Up to { $name }
+browse-folder-menu = { $name } menu
+browse-open-row = Open
+# Under a folder in the tree whose subfolders are being listed.
+browse-reading = Reading…
+# Under a folder in the tree whose subfolders could not be listed; the reason is in its tooltip.
+browse-unreadable = Could not be read. Try Again
+# The top line while the open folder is read.
 folders-reading = Reading { $name }…
-folders-subfolders = Subfolders
-folders-recent = Recent folders
 # The tooltip of a recent folder that could not be opened when it was tried.
 folders-recent-missing = This folder could not be opened. { $reason }
+# The tooltip of a recent folder that is no longer where it was.
+folders-recent-gone = This folder is no longer there.
 # The central panel and the grid panel with nothing open: where to start.
 start-title = Open a folder to start
 start-recent = Recent folders
@@ -512,7 +536,7 @@ settings-reset = Reset
 # The pages, listed at the dialog's start, and what a page that holds nothing yet says.
 settings-page-general = General
 settings-page-import = Import
-settings-page-library = Library
+settings-page-photos = Photos
 settings-page-editing = Editing
 settings-page-processing = Processing
 settings-page-storage = Storage
@@ -680,7 +704,8 @@ about-back = Back
 # File › Open Image…: one raw, in place of the photo open.
 action-open = Open Image…
 action-view-edit = Switch to Edit
-action-view-library = Switch to Library
+# View › Browse: the first tab holding Browse.
+action-show-browse = Browse
 # The side panel's tabs by position, whatever they hold.
 action-panel-tab-1 = Side-panel tab 1
 action-panel-tab-2 = Side-panel tab 2

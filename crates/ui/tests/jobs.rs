@@ -846,10 +846,10 @@ fn a_job_with_no_total_has_a_bar_with_no_value_that_holds_still_without_motion()
 fn each_kind_has_its_icon_and_a_kind_not_listed_a_generic_one() {
     assert_eq!(kind_icon("export"), Icon::Export);
     assert_eq!(kind_icon("import"), Icon::Import);
-    assert_eq!(kind_icon("folder"), Icon::Library);
+    assert_eq!(kind_icon("folder"), Icon::Folder);
     let generic = kind_icon("a kind from a later release");
     assert_eq!(kind_icon(""), generic);
-    assert!(![Icon::Export, Icon::Import, Icon::Library].contains(&generic));
+    assert!(![Icon::Export, Icon::Import, Icon::Folder].contains(&generic));
 }
 
 /// The rows' list: as tall as its rows up to five, and with more, as tall as the first five,

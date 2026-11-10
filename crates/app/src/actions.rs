@@ -78,7 +78,8 @@ impl ActionId {
     pub const APPLY_EDIT: ActionId = ActionId("apply-edit");
     pub const COPY_APPLY_PARTS: ActionId = ActionId("copy-apply-parts");
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
-    pub const LIBRARY: ActionId = ActionId("view-library");
+    /// View › Browse: the first tab holding Browse.
+    pub const SHOW_BROWSE: ActionId = ActionId("show-browse");
     /// The side panel's tabs by position, whatever the user puts in them.
     pub const PANEL_TABS: [ActionId; 5] = [
         ActionId("panel-tab-1"),
@@ -142,9 +143,12 @@ impl ActionId {
     ];
 }
 
-/// The views. Only Edit is built; Library is named so that its key is kept.
+/// The old views enum, from before the one view (decision 37), to be removed: only Edit
+/// is built.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
+    // Only the tests' scopes name it now, until the enum goes.
+    #[allow(dead_code)]
     Library,
     Edit,
 }
@@ -608,12 +612,12 @@ pub static ACTIONS: [Action; 58] = [
         emits: Emit::Intent(Intent::View(View::Edit)),
     },
     Action {
-        id: ActionId::LIBRARY,
-        message: "action-view-library",
+        id: ActionId::SHOW_BROWSE,
+        message: "action-show-browse",
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.view != View::Library,
+        available: always,
         emits: Emit::Later,
     },
     Action {
