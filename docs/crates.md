@@ -160,11 +160,11 @@ The groundwork for orientation:
 
 ### The cache
 
-`session::cache` (decision 76; [cache.md](cache.md#through-the-session)): the disk cache a binary hands `Session::start` as `CacheOptions`, the `Arc<Cache>` it opened and the limit its settings give, or none. The engine opens no folder; the app hands one, the CLI and the golden harness none.
+`session::cache` (decision 76; [cache.md](cache.md#through-the-session)): the disk cache a binary hands `Session::start` as `CacheOptions`, the `Arc<Cache>` it opened and the limit its settings give, or none. The engine opens no folder; the app hands one, the CLI none, and the golden harness starts no session.
 
-- **`cache-walk`,** a `SystemBackground` job with no progress, added as the session starts: base's `tidy`, then its `walk`, then an eviction asked for where the limited kinds are past the limit.
-- **`cache-evict`,** the same queue, never shown, one at a time: asked for after the start's walk and after a write past the limit (`Upkeep::check`, for the thumbnails' writes), and by `Command::CacheLimit(Limit)` where the limit is lowered or turned on; never while the cache is unlimited. A request while one is queued is that one's, which reads the limit as it runs; one while it runs is folded into it, which runs once more.
-- Only the engine thread adds them, since it owns the control: a worker asks it through the inbox (`Inbox::Evict`). As the session ends, an eviction under way stops before its next removal.
+- **`cache-walk`,** a `SystemBackground` job with no progress, added as the session starts: base's `tidy`, then its `walk`, then, where the limited kinds are past the limit, eviction in the same job. It counts as an eviction running, so a limit lowered meanwhile is folded into it.
+- **`cache-evict`,** the same queue, never shown, one at a time: asked for after a write past the limit (`Upkeep::check`, for the thumbnails' writes), and by `Command::Cache(CacheCommand::Limit(limit))` where the limit is lowered or turned on; never while the cache is unlimited. A request while one is queued is that one's, which reads the limit as it runs; one while it runs is folded into it, which runs once more. A guard puts eviction back to idle should a job panic, so the next request still adds one.
+- Only the engine thread adds them, since it owns the control: a worker asks it through the inbox (`Inbox::Evict`), one arriving after the session's `Stop` dropped. As the session ends, its stop flag is the cancel of base's `tidy`, `walk` and eviction's listing, asked before each subfolder, and of eviction's removals, so quitting never waits for a cold walk.
 - `-d perf` logs the walk's sizes, the temporaries tidied and its time, each kind under `verbose`, and each eviction's removals, failures and time; a cache that cannot be tidied, walked or evicted is a warning.
 
 - A job's body hands the engine thread `GpuTask`s through its `Tasks`. They are stepped one a turn, after the live frame, by darktable's queue order and ageing, with one step's work on the GPU at a time.
@@ -589,7 +589,7 @@ The actions registry and the default keyboard map:
 `settings.toml` in the user data folder that `apertrust_base::folders` chooses (decision 43):
 
 - `--user-data-dir DIR` or `=DIR`, `--config-dir` or `--configdir`, the last given; then `APERTRUST_USER_DATA_DIR`; then the platform's folder. A relative folder is taken from the current folder and created if missing.
-- `--cache-dir DIR` or `=DIR`, or `--cachedir`, the last given, names the cache folder, chosen with the user data folder. The app opens the cache there as it starts (`open_cache`, `Cache::create`), creating the folder; one that cannot be created or written is warned of once, under `settings`, and the app runs with no disk cache, never refused (decision 76). Its session gets it with the limit, and `Command::CacheLimit` each time Settings changes `cache.limited` or `cache.limit`.
+- `--cache-dir DIR` or `=DIR`, or `--cachedir`, the last given, names the cache folder, chosen with the user data folder. The app opens the cache there as it starts (`open_cache`, `Cache::create`), creating the folder; one that cannot be created or written is warned of once, under `settings`, and the app runs with no disk cache, never refused (decision 76). Its session gets it with the limit, and `Command::Cache(CacheCommand::Limit(limit))` each time Settings changes `cache.limited` or `cache.limit` (`changed`).
 - It is opened by `Keeper::open_in`. A flag without its folder, or a folder given that cannot be created or written, stops the start; it never falls back to the platform's folder.
 - The folder separates settings only. Edits are where each root's id file says, beside the photos by default, never decided by this folder (decision 47).
 - `src/paths.rs` keeps only Pictures, through `directories`.
@@ -974,7 +974,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 **The cache folder and the cache,** with thumbnails (decisions 43 and 76; [cache.md](cache.md)):
 
-- `cache`, beside what its feature holds: clearing library caches, one skipped while another process holds its `lock` file; the types of `Command::Cache` and `Event::Cache`.
+- `cache`, beside what its feature holds: clearing library caches, one skipped while another process holds its `lock` file; `CacheCommand`'s other variants, `Sizes`, `Clear { kind }` and `Remove { library }`, beside `Limit`, and `Event::Cache`'s types.
 
 ## apertrust-plugin
 

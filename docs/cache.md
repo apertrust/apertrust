@@ -64,7 +64,8 @@ There is no index file. Sizes come from a walk of each limited kind: one listing
 
 - **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s.
 - **When:** once as the session starts, then before each eviction and each time the Storage page asks. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
-- **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts; a walk writes nothing.
+- **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts, with the write checks `Cache::create` left in the cache folder; a walk writes nothing.
+- **Stopping:** the walk, the tidy and eviction's listing ask their cancel before each subfolder, and eviction before each removal, so a program that quits never waits for a cold walk; a walk stopped keeps no sizes.
 
 ## Two processes at once
 
@@ -89,8 +90,8 @@ Unlimited is the person's choice, never the default, and its size is always show
 
 While `cache.limited` is on, a `SystemBackground` job of kind `cache-evict`, with no progress and never shown, one at a time:
 
-- **added** after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on; never when it is raised or turned off;
-- **one at a time:** a request while one is queued is that one's, since it reads the limit as it runs; a request while one runs is folded into it, which walks and evicts once more before it ends;
+- **run** by the start's walk itself where the cache is past the limit, the walk counting as an eviction running; **added** after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on; never when it is raised or turned off;
+- **one at a time:** a request while one is queued is that one's, since it reads the limit as it runs; a request while one runs, the start's walk among them, is folded into it, which walks and evicts once more before it ends; one that panics leaves the next request free to add another;
 - **walks** the limited kinds, then removes their entries oldest last use first, across kinds, until they hold at most 90% of the limit, so it does not run again at the next write;
 - **costs** the walk and the removals, about 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's; it stops before its next removal as the session ends. Planned: paused by an export, as darktable's crawler is (decision 57).
 
@@ -116,17 +117,18 @@ What clearing would lose, or would make the person do again, lives in the user d
 
 ## Through the session
 
-The engine opens no folder: a binary opens the cache and hands `Session::start` a `CacheOptions`, the `Arc<Cache>` and the limit its settings give, or none. The app hands one; the CLI, whose commands write no cache yet, and the golden harness hand none.
+The engine opens no folder: a binary opens the cache and hands `Session::start` a `CacheOptions`, the `Arc<Cache>` and the limit its settings give, or none. The app hands one; the CLI, whose commands write no cache yet, hands none, and the golden harness starts no session.
 
 **Built:**
 
-- **As the session starts,** a `cache-walk` job: the tidy of old temporaries, then the walk, then an eviction asked for where the limited kinds are past the limit.
-- **Eviction** ([above](#eviction)), asked for after the start's walk and after a write past the limit (`Upkeep::check`, which the thumbnails' writes call), and by `Command::CacheLimit(Limit)`, which the app sends each time Settings changes `cache.limited` or `cache.limit`, applied at once. Only the engine thread adds the jobs, since it owns the control: a worker asks it through the session's inbox.
+- **As the session starts,** a `cache-walk` job: the tidy of old temporaries, then the walk, then eviction in the same job where the limited kinds are past the limit.
+- **Eviction** ([above](#eviction)), asked for after a write past the limit (`Upkeep::check`, which the thumbnails' writes call), and by `Command::Cache(CacheCommand::Limit(limit))`, which the app sends each time Settings changes `cache.limited` or `cache.limit`, applied at once. Only the engine thread adds the jobs, since it owns the control: a worker asks it through the session's inbox.
+- **The session's end** is the cancel of the tidy, the walk and eviction ([Sizes and the walk](#sizes-and-the-walk)), so quitting returns promptly.
 - **Logging:** `-d perf`, the walk's sizes, the temporaries tidied and its time (each kind's under `verbose`), and each eviction's entries and bytes removed, its failures and its time; a cache that cannot be tidied, walked or evicted is a warning, as is a folder that cannot be created or written as the program starts.
 
 **Planned** with step 6b ([session-protocol.md](session-protocol.md#commands-planned), [events.md](events.md)):
 
-- **`Command::Cache(CacheCommand)`:**
+- **`Command::Cache(CacheCommand)`,** `Limit` built, and these variants beside it:
   - `Sizes`: walks the cache and answers;
   - `Clear { kind }`: removes the kind's entries listed as it starts;
   - `Remove { library }`: removes one library's cache, skipped and said so while another process has it open.

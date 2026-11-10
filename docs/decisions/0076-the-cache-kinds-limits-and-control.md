@@ -47,12 +47,12 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 **Eviction,** a `SystemBackground` job of kind `cache-evict`, with no progress and never shown, one at a time (none added while one is queued or running):
 
-- added, while `cache.limited` is on, after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on (`Command::CacheLimit`, which the app sends as either setting changes); never while it is off, nor when the limit is raised;
-- a request while one is queued is that one's, which reads the limit as it runs; a request while one runs is folded into it, which walks and evicts once more before it ends;
+- while `cache.limited` is on: run by the start's walk where the cache is past the limit; added after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on (`Command::Cache(CacheCommand::Limit(limit))`, which the app sends as either setting changes); never while it is off, nor when the limit is raised;
+- a request while one is queued is that one's, which reads the limit as it runs; a request while one runs, the start's walk counting as one, is folded into it, which walks and evicts once more before it ends; one that panics leaves the next request free;
 - it walks the limited kinds, then removes their entries oldest last use first, across kinds, until they hold at most 90% of the limit, so it does not run again at the next write;
-- its cost is the walk and the removals, 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, and paused by an export as darktable's crawler is ([0057](0057-jobs-as-darktables-control-jobs.md)), which is planned; it stops before its next removal as the session ends.
+- its cost is the walk and the removals, 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, and paused by an export as darktable's crawler is ([0057](0057-jobs-as-darktables-control-jobs.md)), which is planned; as the session ends it stops before its next subfolder or removal, as the walk and the tidy do, so quitting never waits for a cold walk.
 
-**The start's walk,** a `SystemBackground` job of kind `cache-walk`, with no progress and never shown, added as the session starts: the tidy of old temporaries, then the walk, then an eviction where the limited kinds are past the limit. The walk's sizes and time and each eviction's removals, failures and time are `-d perf` lines.
+**The start's walk,** a `SystemBackground` job of kind `cache-walk`, with no progress and never shown, added as the session starts: the tidy of old temporaries and of the write checks `Cache::create` left, then the walk, then eviction in the same job where the limited kinds are past the limit. The walk's sizes and time and each eviction's removals, failures and time are `-d perf` lines.
 
 **Kept kinds' lifecycle:**
 
@@ -73,7 +73,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 - each library's cache with the library's name, its last path, when it was last opened and its size, those unused for `cache.unused_after` or not found marked, each with Remove;
 - the conflict copies' count and size, with Show in Finder, and no Clear.
 
-Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progress, cancellable, as Rebuild Cache is ([0057](0057-jobs-as-darktables-control-jobs.md)), removing the entries listed as it starts; a library cache another process has open is skipped and said so. The page reaches the cache through the session: `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`) and `Event::Cache`, a fact for each kind and each library's cache, their types in base's `cache` as the jobs' events are in its `jobs`.
+Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progress, cancellable, as Rebuild Cache is ([0057](0057-jobs-as-darktables-control-jobs.md)), removing the entries listed as it starts; a library cache another process has open is skipped and said so. The page reaches the cache through the session: `Command::Cache`, its `CacheCommand` holding `Limit` now and with step 6b `Sizes`, `Clear { kind }` and `Remove { library }`, and `Event::Cache`, a fact for each kind and each library's cache, their types in base's `cache` as the jobs' events are in its `jobs`.
 
 **The CLI,** with no session and no GPU, calling base's `cache` directly, as `library scan` builds an index in its own process:
 

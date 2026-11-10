@@ -17,28 +17,31 @@
 //! The session's part of the disk cache (decision 76; `docs/cache.md`, Through the
 //! session). The engine opens no folder (decision 43): a binary opens the cache on the
 //! folder it chose and hands it to the session with the limit its settings give, as
-//! [`CacheOptions`]; the golden harness hands none. The session keeps it within the limit
-//! with two jobs on darktable's `SystemBackground` queue, neither with a progress, so
-//! neither is ever shown:
+//! [`CacheOptions`]; the CLI hands none, and the golden harness starts no session. The
+//! session keeps it within the limit with two jobs on darktable's `SystemBackground`
+//! queue, neither with a progress, so neither is ever shown:
 //!
 //! - **`cache-walk`,** added as the session starts: the tidy of old temporaries, then the
 //!   walk, whose sizes the handle then keeps up to date with its own writes and removals,
-//!   then an eviction asked for where the limited kinds are past the limit;
-//! - **`cache-evict`,** one at a time, asked for after the start's walk and after a write
-//!   that leave the limited kinds past the limit ([`Upkeep::check`]), and when the limit is
-//!   lowered or turned on ([`Upkeep::set_limit`]); never while the cache is unlimited. A
-//!   request while one is queued is that one's, which reads the limit as it runs; a
+//!   then, where the limited kinds are past the limit, an eviction in the same job. It
+//!   counts as an eviction running, so a request meanwhile is folded into it;
+//! - **`cache-evict`,** one at a time, asked for after a write that leaves the limited
+//!   kinds past the limit ([`Upkeep::check`]), and when the limit is lowered or turned on
+//!   ([`CacheCommand::Limit`](apertrust_base::cache::CacheCommand::Limit), [`Upkeep::set_limit`]); never while the cache is unlimited.
+//!   A request while one is queued is that one's, which reads the limit as it runs; a
 //!   request while one runs is folded into it, which walks and evicts once more before it
-//!   ends.
+//!   ends. One that panics leaves eviction free for the next request.
 //!
 //! Only the engine thread adds jobs, since it owns the control: a worker that finds the
-//! limit passed asks it through the session's inbox. As the session ends, an eviction
-//! under way stops before its next removal.
+//! limit passed asks it through the session's inbox. As the session ends, the tidy, the
+//! walk and an eviction's listing stop before their next subfolder, and an eviction's
+//! removals before the next, so quitting never waits for a cold walk.
 //!
 //! Under `-d perf`, the walk's sizes and time and each eviction's removals, failures and
 //! time, with each kind's sizes under `-d verbose`; a cache that cannot be tidied, walked
 //! or evicted is warned of under `settings`, as its folder is logged.
 
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -53,12 +56,12 @@ pub struct CacheOptions {
     /// ([`Cache::create`]).
     pub cache: Arc<Cache>,
     /// The limit as the settings give it as the session starts
-    /// ([`crate::settings::cache_limit`]); [`Command::CacheLimit`](super::Command::CacheLimit)
-    /// changes it.
+    /// ([`crate::settings::cache_limit`]);
+    /// [`CacheCommand::Limit`](apertrust_base::cache::CacheCommand::Limit) changes it.
     pub limit: Limit,
 }
 
-/// Where eviction stands: one job at a time.
+/// Where eviction stands: one job at a time, the start's walk counting as one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Eviction {
     Idle,
@@ -89,6 +92,9 @@ struct State {
     /// How many eviction jobs were added, for a test.
     #[cfg(test)]
     added: usize,
+    /// Makes the next eviction's pass panic, for a test.
+    #[cfg(test)]
+    panic: bool,
 }
 
 /// How a worker asks the engine thread for an eviction: the session's inbox.
@@ -100,11 +106,23 @@ pub(crate) struct Upkeep {
     cache: Arc<Cache>,
     state: Arc<Mutex<State>>,
     ask: Ask,
-    /// Set as the session ends: an eviction under way stops before its next removal.
+    /// Set as the session ends: the tidy, the walk and an eviction stop.
     stop: Arc<AtomicBool>,
-    /// Held by a test to keep an eviction running, each pass waiting for it.
+    /// Held by a test to keep the start's job or an eviction's pass waiting for it.
     #[cfg(test)]
     hold: Arc<Mutex<()>>,
+}
+
+/// Puts eviction back to idle should a job's body panic, so the next request adds one.
+struct Unwinding<'a>(&'a Upkeep);
+
+impl Drop for Unwinding<'_> {
+    fn drop(&mut self) {
+        // On a normal end the job has set it, under the lock that folds a request in.
+        if std::thread::panicking() {
+            self.0.lock().eviction = Eviction::Idle;
+        }
+    }
 }
 
 impl Upkeep {
@@ -118,54 +136,83 @@ impl Upkeep {
         ask: Ask,
         stop: Arc<AtomicBool>,
     ) -> Upkeep {
-        let upkeep = Upkeep {
+        let upkeep = Upkeep::new(options, ask, stop);
+        upkeep.start_walk(control);
+        upkeep
+    }
+
+    /// The keeper, its walk not yet added: counted as an eviction running from now, so a
+    /// request before the walk ends is folded into it.
+    fn new(options: CacheOptions, ask: Ask, stop: Arc<AtomicBool>) -> Upkeep {
+        Upkeep {
             cache: options.cache,
             state: Arc::new(Mutex::new(State {
                 limit: options.limit,
-                eviction: Eviction::Idle,
+                eviction: Eviction::Running { again: false },
                 #[cfg(test)]
                 steps: Vec::new(),
                 #[cfg(test)]
                 added: 0,
+                #[cfg(test)]
+                panic: false,
             })),
             ask,
             stop,
             #[cfg(test)]
             hold: Arc::default(),
-        };
-        let start = upkeep.clone();
-        let job = Job::new("cache-walk", "the cache's tidy and walk", move |_| {
-            start.tidy_and_walk();
+        }
+    }
+
+    /// Adds the start's `cache-walk`.
+    fn start_walk(&self, control: &Control) {
+        let start = self.clone();
+        let job = Job::new("cache-walk", "the cache's tidy and walk", move |context| {
+            start.tidy_and_walk(context);
             Ok(())
         });
         control.add(Queue::SystemBackground, job);
-        upkeep
     }
 
-    /// The start's job: the tidy, then the walk, then an eviction where the limited kinds
-    /// are past the limit.
-    fn tidy_and_walk(&self) {
+    /// The start's job: the tidy, then the walk, then eviction where the limited kinds are
+    /// past the limit or a request came meanwhile.
+    fn tidy_and_walk(&self, context: &Context<'_>) {
+        let _unwinding = Unwinding(self);
+        let cancel = || context.cancelled() || self.stop.load(Ordering::Relaxed);
+        #[cfg(test)]
+        drop(self.hold.lock().unwrap_or_else(PoisonError::into_inner));
         let started = Instant::now();
         let folder = self.cache.folder().display();
         #[cfg(test)]
         self.took(Step::Tidy);
-        let tidied = self.cache.tidy().unwrap_or_else(|error| {
-            tracing::warn!(target: "settings", "cache not tidied: {folder}: {error}");
-            0
-        });
+        let tidied = match self.cache.tidy(&cancel) {
+            Ok(tidied) => tidied,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                return self.idle();
+            }
+            Err(error) => {
+                tracing::warn!(target: "settings", "cache not tidied: {folder}: {error}");
+                0
+            }
+        };
         #[cfg(test)]
         self.took(Step::Walk);
-        match self.cache.walk() {
+        match self.cache.walk(&cancel) {
             Ok(sizes) => log_walk(&sizes, tidied, self.limit(), started.elapsed()),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                return self.idle();
+            }
             Err(error) => tracing::warn!(target: "settings", "cache not walked: {folder}: {error}"),
         }
+        // Running still, so the check folds its own request in.
         self.check();
+        self.evict_while_asked(&cancel);
     }
 
     /// Asks for an eviction where the limited kinds are past the limit as the handle counts
     /// them, from any thread: after the start's walk, and after each write to a limited
-    /// kind, the thumbnails' with the library's step 6. Nothing while the cache is
-    /// unlimited, or before its walk.
+    /// kind, the thumbnails' with the library's step 6. One running takes it in; one
+    /// queued is it; otherwise the engine thread is asked to add one. Nothing while the
+    /// cache is unlimited, or before its walk.
     pub(crate) fn check(&self) {
         let Limit::Bytes(limit) = self.limit() else {
             return;
@@ -174,8 +221,19 @@ impl Upkeep {
             .cache
             .sizes()
             .is_some_and(|sizes| sizes.limited().bytes > limit);
-        if past {
-            (self.ask)();
+        if !past {
+            return;
+        }
+        let mut state = self.lock();
+        match state.eviction {
+            Eviction::Queued | Eviction::Running { again: true } => {}
+            Eviction::Running { again: false } => {
+                state.eviction = Eviction::Running { again: true };
+            }
+            Eviction::Idle => {
+                drop(state);
+                (self.ask)();
+            }
         }
     }
 
@@ -195,7 +253,8 @@ impl Upkeep {
     }
 
     /// Adds a `cache-evict` job, from the engine thread, unless one is queued already or
-    /// the cache is unlimited; one running takes the request in and runs once more.
+    /// the cache is unlimited; one running, the start's walk among them, takes the request
+    /// in and runs once more.
     pub(crate) fn evict(&self, control: &Control) {
         let mut state = self.lock();
         if state.limit == Limit::Unlimited {
@@ -223,25 +282,42 @@ impl Upkeep {
         control.add(Queue::SystemBackground, job);
     }
 
-    /// The eviction's job: walks the limited kinds and removes the oldest past the limit,
-    /// as it stands as each pass begins, then again while a request came meanwhile.
+    /// The eviction's job: its own request, then any that came meanwhile.
     fn run_eviction(&self, context: &Context<'_>) {
+        let _unwinding = Unwinding(self);
         let cancel = || context.cancelled() || self.stop.load(Ordering::Relaxed);
+        self.lock().eviction = Eviction::Running { again: true };
+        self.evict_while_asked(&cancel);
+    }
+
+    /// Walks the limited kinds and removes the oldest past the limit, as it stands as each
+    /// pass begins, while a request came since the last; then idle, under the lock a
+    /// request takes, so none is lost.
+    fn evict_while_asked(&self, cancel: &(dyn Fn() -> bool + Sync)) {
         loop {
             let limit = {
                 let mut state = self.lock();
+                if state.eviction != (Eviction::Running { again: true }) || cancel() {
+                    state.eviction = Eviction::Idle;
+                    return;
+                }
                 state.eviction = Eviction::Running { again: false };
                 state.limit
             };
             #[cfg(test)]
             drop(self.hold.lock().unwrap_or_else(PoisonError::into_inner));
+            #[cfg(test)]
+            {
+                let panic = std::mem::take(&mut self.lock().panic);
+                assert!(!panic, "an eviction panicked, as a test asked");
+            }
             if let Limit::Bytes(_) = limit
                 && !cancel()
             {
                 #[cfg(test)]
                 self.took(Step::Evict);
                 let started = Instant::now();
-                match self.cache.evict(limit, &cancel) {
+                match self.cache.evict(limit, cancel) {
                     Ok(removed) => log_eviction(&removed, limit, started.elapsed()),
                     Err(error) => {
                         let folder = self.cache.folder().display();
@@ -249,13 +325,12 @@ impl Upkeep {
                     }
                 }
             }
-            let mut state = self.lock();
-            if state.eviction == (Eviction::Running { again: true }) && !cancel() {
-                continue;
-            }
-            state.eviction = Eviction::Idle;
-            return;
         }
+    }
+
+    /// Eviction idle, the job stopped.
+    fn idle(&self) {
+        self.lock().eviction = Eviction::Idle;
     }
 
     fn limit(&self) -> Limit {

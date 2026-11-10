@@ -89,7 +89,7 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use apertrust_base::cache::Limit;
+pub use apertrust_base::cache::CacheCommand;
 use apertrust_base::jobs::Control;
 pub use apertrust_export::{ExportSettings, Places};
 /// The library's commands and events and what they carry (decision 54, layer 4).
@@ -248,12 +248,13 @@ pub enum Command {
     /// [`LibraryEvent::Thumbnail`], naming the open of its folder. A new open or a close
     /// cancels those not yet sent; with no folder open nothing is read.
     Library(LibraryCommand),
-    /// The cache's limit as `cache.limited` and `cache.limit` now give it
-    /// ([`crate::settings::cache_limit`], decision 76), for a setting that applies at
-    /// once: a limit lowered or turned on adds an eviction, a `SystemBackground` job with
-    /// no progress, unless one is queued already; one running takes it in and runs once
-    /// more. A limit raised, the same or turned off adds none. With no cache, nothing.
-    CacheLimit(Limit),
+    /// A command of the disk cache's (decision 76). [`CacheCommand::Limit`], the limit as
+    /// `cache.limited` and `cache.limit` now give it ([`crate::settings::cache_limit`]),
+    /// for settings that apply at once: lowered or turned on, an eviction, a
+    /// `SystemBackground` job with no progress, unless one is queued already; one running,
+    /// the start's walk among them, takes it in and runs once more. Raised, the same or
+    /// turned off, none. With no cache, nothing.
+    Cache(CacheCommand),
     /// A test's synthetic GPU job, started as a command starts a job.
     #[cfg(test)]
     Synthetic(crate::jobs::testing::Synthetic),
@@ -285,7 +286,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::Export { .. }
         | Command::PreviewExport { .. }
         | Command::Library(_)
-        | Command::CacheLimit(_) => false,
+        | Command::Cache(_) => false,
         #[cfg(test)]
         Command::Synthetic(_)
         | Command::HoldExport(_)
@@ -1362,7 +1363,9 @@ impl Jobs {
                 while !stopping.is_finished() {
                     #[cfg(test)]
                     assert!(!panics, "the jobs' end panicked, as a test asked");
-                    // The session sends nothing after its `Stop`; the tasks still come.
+                    // The session sends nothing after its `Stop`; the tasks still come,
+                    // and a worker's `Inbox::Evict` may too, which is dropped: no job is
+                    // added once the session ends.
                     if let Ok(Inbox::Task(waiting)) = inbox.recv_timeout(POLL_INTERVAL) {
                         background.add(waiting);
                     }
@@ -1770,7 +1773,7 @@ impl Engine {
                     self.library(command, &mut events);
                     Ok(())
                 }
-                Command::CacheLimit(limit) => {
+                Command::Cache(CacheCommand::Limit(limit)) => {
                     if let Some(cache) = &self.cache {
                         cache.set_limit(limit, &self.jobs.control);
                     }
@@ -1998,7 +2001,7 @@ impl Engine {
             | Command::Export { .. }
             | Command::PreviewExport { .. }
             | Command::Library(_)
-            | Command::CacheLimit(_) => {
+            | Command::Cache(_) => {
                 return Ok(Effect::default());
             }
             #[cfg(test)]
@@ -6645,12 +6648,12 @@ mod tests {
     }
 
     /// The session keeps the disk cache it is handed within its limit (decision 76): the
-    /// start's walk finds it past the limit and asks the engine thread for an eviction,
-    /// and a limit lowered by `CacheLimit` evicts again; a session with none starts as
-    /// every other test's does.
+    /// start's walk finds it past the limit and evicts, and a limit lowered by
+    /// `CacheCommand::Limit` evicts again; a session with none starts as every other
+    /// test's does.
     #[test]
     fn the_session_keeps_the_cache_it_is_handed_within_its_limit() {
-        use apertrust_base::cache::{Cache, THUMBNAILS};
+        use apertrust_base::cache::{Cache, Limit, THUMBNAILS};
         // An entry's file: its mark, the version's length, the version and its bytes.
         const ENTRY: u64 = 4 + 4 + 1 + 1000;
         let gpu = gpu();
@@ -6686,9 +6689,9 @@ mod tests {
             }
         };
         within(5 * ENTRY);
-        session.send(Command::CacheLimit(Limit::Bytes(2 * ENTRY)));
+        session.send(Command::Cache(CacheCommand::Limit(Limit::Bytes(2 * ENTRY))));
         within(2 * ENTRY);
-        assert_eq!(cache.walk().unwrap().limited().entries, 1);
+        assert_eq!(cache.walk(&|| false).unwrap().limited().entries, 1);
         drop(session);
         remove(&photo);
     }

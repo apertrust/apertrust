@@ -692,4 +692,4 @@ pub fn save_folder(last: Option<&Path>, downloads: Option<&Path>) -> Option<Path
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;

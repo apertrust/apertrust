@@ -26,13 +26,17 @@
 //!   the file's modified time, set as it is written and as it is read, at most once a day.
 //! - [`Cache::walk`] gives each kind's [`Usage`] and writes nothing; [`Cache::sizes`] is
 //!   the last walk's with the handle's own writes and removals since; [`Cache::tidy`]
-//!   removes the temporaries a crash left.
+//!   removes the temporaries a crash left, and the write checks [`Cache::create`] left.
+//! - Each listing of the cache, the walk's, the tidy's, eviction's and clearing's, asks
+//!   its `cancel` before each subfolder, so a program that quits never waits for a cold
+//!   walk; a walk or a tidy cancelled is [`io::ErrorKind::Interrupted`].
 //! - [`Cache::evict`] removes the oldest limited entries to 90% of the limit once they are
 //!   past it, and [`Cache::clear`] a limited kind's entries, both cancellable.
 //! - An item that cannot be read or removed is passed over, and a removal counted as
 //!   failed: only a kind's own folder that cannot be listed is an error.
 //! - [`UnusedAfter`], the [`Choice`] of the engine's setting `cache.unused_after`; the
 //!   engine turns `cache.limited` and `cache.limit` into a [`Limit`].
+//! - [`CacheCommand`], what a client asks of the cache through its session.
 //!
 //! No index file and no lock for limited kinds:
 //!
@@ -136,6 +140,11 @@ const EVICT_TO_TENTHS: u64 = 9;
 /// entry of this build's and reads as none.
 const MAGIC: [u8; 4] = *b"APC1";
 
+/// How the file [`Cache::create`] writes to see whether the folder can be written starts
+/// and ends, the process's number between: one a crash left there, [`Cache::tidy`]
+/// removes.
+const PROBE: (&str, &str) = (".apertrust-write-check-", ".tmp");
+
 /// How much the limited kinds may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Limit {
@@ -143,6 +152,16 @@ pub enum Limit {
     Unlimited,
     /// At most this many bytes: `cache.limit`.
     Bytes(u64),
+}
+
+/// What a client asks of the cache through its session, `Command::Cache` (decision 76;
+/// `docs/cache.md`, Through the session). Step 6b adds the sizes, clearing a kind and
+/// removing a library's cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheCommand {
+    /// The limit as `cache.limited` and `cache.limit` now give it, applied at once:
+    /// lowered or turned on, an eviction; raised, the same or turned off, none.
+    Limit(Limit),
 }
 
 /// How long a library's cache may go unopened on this machine before the Storage page
@@ -258,9 +277,10 @@ impl Cache {
     pub fn create(folder: impl Into<PathBuf>) -> io::Result<Self> {
         let cache = Self::open(folder);
         fs::create_dir_all(&cache.folder)?;
+        let (start, end) = PROBE;
         let probe = cache
             .folder
-            .join(format!(".apertrust-write-check-{}.tmp", std::process::id()));
+            .join(format!("{start}{}{end}", std::process::id()));
         let written = fs::write(&probe, b"");
         let _ = fs::remove_file(&probe);
         written.map(|()| cache)
@@ -353,20 +373,22 @@ impl Cache {
     /// subfolder; each kept kind's entries, the items in its folder, and every byte under
     /// them. An item that cannot be read is passed over; a kind's folder that cannot be
     /// listed is the error. The handle keeps the result, which [`Cache::sizes`] then keeps
-    /// up to date with its own writes and removals.
-    pub fn walk(&self) -> io::Result<Sizes> {
+    /// up to date with its own writes and removals. `cancel` is asked before each
+    /// subfolder and each kept entry; once it answers true, the walk stops,
+    /// [`io::ErrorKind::Interrupted`], and keeps nothing.
+    pub fn walk(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Sizes> {
         let mut sizes = Sizes::default();
         for kind in KINDS {
             *sizes.of_mut(kind) = match kind.policy {
                 Policy::Limited => {
-                    self.scan(kind)?
+                    self.scan(kind, cancel)?
                         .iter()
                         .fold(Usage::default(), |usage, entry| Usage {
                             entries: usage.entries + 1,
                             bytes: usage.bytes + entry.bytes,
                         })
                 }
-                Policy::Kept => kept_usage(&self.kind_folder(kind))?,
+                Policy::Kept => kept_usage(&self.kind_folder(kind), cancel)?,
             };
         }
         *self.lock() = Some(sizes);
@@ -380,13 +402,18 @@ impl Cache {
     }
 
     /// Removes the temporaries more than a day old that writes left in the limited kinds'
-    /// subfolders, by name, as the session does as it starts; how many it removed. One that
-    /// cannot be removed is left for the next time.
-    pub fn tidy(&self) -> io::Result<u64> {
+    /// subfolders, by name, and the write checks [`Cache::create`] left in the cache folder
+    /// itself, as the session does as it starts; how many it removed. One that cannot be
+    /// removed is left for the next time. `cancel` is asked before each subfolder; once it
+    /// answers true, the tidy stops, [`io::ErrorKind::Interrupted`].
+    pub fn tidy(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<u64> {
         let now = SystemTime::now();
-        let mut removed = 0;
+        let mut removed = self.tidy_probes();
         for kind in limited_kinds() {
             for subfolder in self.subfolders(kind)? {
+                if cancel() {
+                    return Err(interrupted());
+                }
                 let Ok(files) = fs::read_dir(&subfolder) else {
                     continue;
                 };
@@ -415,7 +442,16 @@ impl Cache {
         };
         let mut entries = Vec::new();
         for kind in limited_kinds() {
-            entries.extend(self.scan(kind)?);
+            match self.scan(kind, cancel) {
+                Ok(found) => entries.extend(found),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    return Ok(Removed {
+                        cancelled: true,
+                        ..Removed::default()
+                    });
+                }
+                Err(error) => return Err(error),
+            }
         }
         let mut held: u64 = entries.iter().map(|entry| entry.bytes).sum();
         if held <= limit {
@@ -473,7 +509,16 @@ impl Cache {
                 format!("the cache's {} are not cleared yet", kind.id),
             ));
         }
-        let entries = self.scan(kind)?;
+        let entries = match self.scan(kind, cancel) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                return Ok(Removed {
+                    cancelled: true,
+                    ..Removed::default()
+                });
+            }
+            Err(error) => return Err(error),
+        };
         let total = entries.len() as u64;
         progress(0, total);
         let mut removed = Removed::default();
@@ -522,9 +567,14 @@ impl Cache {
 
     /// The limited `kind`'s entries, one listing per subfolder, temporaries left out.
     /// A subfolder or a file that cannot be read, or has gone meanwhile, is passed over.
-    fn scan(&self, kind: Kind) -> io::Result<Vec<Entry>> {
+    /// `cancel` is asked before each subfolder: once it answers true, the scan stops,
+    /// [`io::ErrorKind::Interrupted`].
+    fn scan(&self, kind: Kind, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Vec<Entry>> {
         let mut entries = Vec::new();
         for subfolder in self.subfolders(kind)? {
+            if cancel() {
+                return Err(interrupted());
+            }
             let Ok(files) = fs::read_dir(&subfolder) else {
                 continue;
             };
@@ -547,6 +597,29 @@ impl Cache {
             }
         }
         Ok(entries)
+    }
+
+    /// Removes the write checks [`Cache::create`] left in the cache folder, any process's
+    /// a crash cut short; how many. One that cannot be removed is left.
+    fn tidy_probes(&self) -> u64 {
+        let Ok(files) = fs::read_dir(&self.folder) else {
+            return 0;
+        };
+        let (start, end) = PROBE;
+        let mut removed = 0;
+        for file in files.flatten() {
+            let name = file.file_name();
+            let probe = name.to_str().is_some_and(|name| {
+                name.strip_prefix(start)
+                    .and_then(|rest| rest.strip_suffix(end))
+                    .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
+            });
+            let plain = file.file_type().is_ok_and(|kind| kind.is_file());
+            if probe && plain && fs::remove_file(file.path()).is_ok() {
+                removed += 1;
+            }
+        }
+        removed
     }
 
     /// Changes `kind`'s usage with `change`, once a walk has found it.
@@ -639,15 +712,23 @@ fn listing(folder: &Path) -> io::Result<Option<fs::ReadDir>> {
     }
 }
 
+/// The error of a listing its `cancel` stopped.
+fn interrupted() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, "cancelled")
+}
+
 /// A kept kind's usage: the items in its folder, and every byte of the files under them,
 /// links not followed. Only the folder's own listing is an error; an item that cannot be
-/// read is passed over.
-fn kept_usage(folder: &Path) -> io::Result<Usage> {
+/// read is passed over. `cancel` is asked before each item.
+fn kept_usage(folder: &Path, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Usage> {
     let mut usage = Usage::default();
     let Some(items) = listing(folder)? else {
         return Ok(usage);
     };
     for item in items.flatten() {
+        if cancel() {
+            return Err(interrupted());
+        }
         usage.entries += 1;
         usage.bytes += bytes_under(&item.path());
     }

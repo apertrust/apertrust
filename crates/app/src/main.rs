@@ -65,6 +65,8 @@ mod popups;
 mod scopes;
 mod settings;
 mod settings_dialog;
+#[cfg(test)]
+mod testing;
 mod thumbnails;
 mod viewport;
 
@@ -82,8 +84,8 @@ use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, Source};
 use apertrust_engine::session::{
-    CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand, Places, Session, Values,
-    ViewOnly,
+    CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand, Places,
+    Session, Values, ViewOnly,
 };
 use apertrust_modules::Module;
 use apertrust_ui::components::{
@@ -1872,6 +1874,15 @@ fn open_cache(folder: &Path) -> Option<Arc<Cache>> {
     }
 }
 
+/// The disk cache's limit `now` where it differs from the `last` the session was given,
+/// which then becomes it; none where it is the same.
+fn changed(last: &mut Limit, now: Limit) -> Option<Limit> {
+    (now != *last).then(|| {
+        *last = now;
+        now
+    })
+}
+
 /// What the user changed in Settings, kept by `keeper` with the rest of settings and shown
 /// by the shell in the main window, `ctx`'s, in the order changed.
 fn apply_settings(
@@ -2016,10 +2027,9 @@ impl App {
     /// Gives the session the disk cache's limit where Settings changed it, applied at once:
     /// the session evicts where it is lowered or turned on (decision 76).
     fn follow_cache_limit(&mut self) {
-        let limit = self.keeper.cache_limit();
-        if limit != self.cache_limit {
-            self.cache_limit = limit;
-            self.session.send(Command::CacheLimit(limit));
+        if let Some(limit) = changed(&mut self.cache_limit, self.keeper.cache_limit()) {
+            self.session
+                .send(Command::Cache(CacheCommand::Limit(limit)));
         }
     }
 
@@ -3641,7 +3651,7 @@ mod tests {
         // A file where the cache folder should be, on every platform.
         let file = folder.join("cache");
         std::fs::write(&file, b"").unwrap();
-        let (kept, dispatch, _serial) = crate::log_window::tests::kept(Some(&[]));
+        let (kept, dispatch, _serial) = crate::testing::kept(Some(&[]));
         let cache = tracing::dispatcher::with_default(&dispatch, || open_cache(&file));
         assert!(cache.is_none());
         let read = kept.read(&mut Default::default());
@@ -3660,6 +3670,34 @@ mod tests {
         assert_eq!(cache.folder(), made);
         assert!(made.is_dir());
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The session is given the cache's limit again only where Settings changed it: lowered,
+    /// turned off, or reset to its default.
+    #[test]
+    fn the_cache_s_limit_is_sent_again_only_when_it_changes() {
+        let folder = settings::testing::Folder::new("cache-limit");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let mut last = keeper.cache_limit();
+        assert_eq!(last, Limit::Bytes(4_000_000_000));
+        let mut set = |id, value: Option<toml::Value>| {
+            keeper.apply(&settings, id, value.as_ref());
+            keeper.cache_limit()
+        };
+        let lowered = set("cache.limit", Some(2.0.into()));
+        assert_eq!(
+            changed(&mut last, lowered),
+            Some(Limit::Bytes(2_000_000_000))
+        );
+        let same = set("cache.limit", Some(2.0.into()));
+        assert_eq!(changed(&mut last, same), None);
+        let off = set("cache.limited", Some(false.into()));
+        assert_eq!(changed(&mut last, off), Some(Limit::Unlimited));
+        let on = set("cache.limited", None);
+        assert_eq!(changed(&mut last, on), Some(Limit::Bytes(2_000_000_000)));
+        let reset = set("cache.limit", None);
+        assert_eq!(changed(&mut last, reset), Some(Limit::Bytes(4_000_000_000)));
+        assert_eq!(last, Limit::Bytes(4_000_000_000));
     }
 
     #[test]

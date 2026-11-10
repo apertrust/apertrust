@@ -58,6 +58,8 @@ struct Session {
     upkeep: Upkeep,
     control: Control,
     asks: mpsc::Receiver<()>,
+    /// The session's end, for the cache's jobs.
+    stop: Arc<AtomicBool>,
     /// A stale temporary left before the start, for its tidy.
     temporary: PathBuf,
     _folder: Folder,
@@ -67,6 +69,13 @@ impl Session {
     /// The cache in a folder named after `name`, holding `entries` thumbnails, kept
     /// within `limit` from its start.
     fn start(name: &str, entries: u64, limit: Limit) -> Session {
+        let session = Session::new(name, entries, limit);
+        session.upkeep.start_walk(&session.control);
+        session
+    }
+
+    /// [`Session::start`] before the start's walk is added, so a test can hold it first.
+    fn new(name: &str, entries: u64, limit: Limit) -> Session {
         let folder = Folder::new(name);
         let cache = Arc::new(Cache::open(folder.0.join("cache")));
         write(&cache, 0..entries);
@@ -80,12 +89,14 @@ impl Session {
             cache: Arc::clone(&cache),
             limit,
         };
-        let upkeep = Upkeep::start(options, &control, ask, Arc::default());
+        let stop = Arc::new(AtomicBool::new(false));
+        let upkeep = Upkeep::new(options, ask, Arc::clone(&stop));
         Session {
             cache,
             upkeep,
             control,
             asks,
+            stop,
             temporary,
             _folder: folder,
         }
@@ -111,6 +122,22 @@ impl Session {
         }
     }
 
+    /// Waits until eviction stands at `eviction`.
+    fn until(&self, eviction: Eviction) {
+        let deadline = Instant::now() + WAIT;
+        while self.eviction() != eviction {
+            assert!(
+                Instant::now() < deadline,
+                "eviction reaches {eviction:?} in time"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn set_limit(&self, limit: Limit) {
+        self.upkeep.set_limit(limit, &self.control);
+    }
+
     fn steps(&self) -> Vec<Step> {
         self.upkeep.lock().steps.clone()
     }
@@ -128,6 +155,15 @@ impl Session {
     fn held(&self) -> u64 {
         self.cache.sizes().expect("walked").limited().bytes
     }
+
+    /// The limited kinds' entries as a walk finds them now.
+    fn entries(&self) -> u64 {
+        self.cache.walk(&never).unwrap().limited().entries
+    }
+}
+
+fn never() -> bool {
+    false
 }
 
 /// Thumbnails for the slots `slots`, each [`ENTRY`] bytes.
@@ -157,19 +193,16 @@ fn stale_temporary(cache: &Cache) -> PathBuf {
 }
 
 /// The start's job tidies, then walks, then evicts where the limited kinds are past the
-/// limit, to 90% of it; within the limit it evicts nothing.
+/// limit, to 90% of it, in the same job; within the limit it evicts nothing.
 #[test]
 fn the_start_tidies_then_walks_then_evicts_past_the_limit() {
     let session = Session::start("start-past", 10, Limit::Bytes(5 * ENTRY));
     session.settle();
     assert_eq!(session.steps(), [Step::Tidy, Step::Walk, Step::Evict]);
     assert!(!session.temporary.exists(), "the start's tidy removes it");
-    assert_eq!(session.added(), 1);
+    assert_eq!(session.added(), 0, "the start's job evicts itself");
     assert!(session.held() <= 5 * ENTRY * 9 / 10, "{}", session.held());
-    assert_eq!(
-        session.cache.walk().unwrap().limited().bytes,
-        session.held()
-    );
+    assert_eq!(session.entries() * ENTRY, session.held());
     assert_eq!(session.eviction(), Eviction::Idle);
 
     let within = Session::start("start-within", 10, Limit::Bytes(10 * ENTRY));
@@ -177,6 +210,26 @@ fn the_start_tidies_then_walks_then_evicts_past_the_limit() {
     assert_eq!(within.steps(), [Step::Tidy, Step::Walk]);
     assert_eq!(within.added(), 0);
     assert_eq!(within.held(), 10 * ENTRY);
+    assert_eq!(within.eviction(), Eviction::Idle);
+}
+
+/// The start's walk counts as an eviction running: a limit lowered during it is folded
+/// in, evicted once the walk is done, with no job beside it.
+#[test]
+fn a_limit_lowered_during_the_start_s_walk_is_folded_into_it() {
+    let session = Session::new("during-walk", 10, Limit::Bytes(20 * ENTRY));
+    let hold = session.upkeep.hold.lock().unwrap();
+    session.upkeep.start_walk(&session.control);
+    session.set_limit(Limit::Bytes(5 * ENTRY));
+    assert_eq!(session.added(), 0);
+    assert_eq!(session.eviction(), Eviction::Running { again: true });
+    drop(hold);
+    session.settle();
+    assert_eq!(session.steps(), [Step::Tidy, Step::Walk, Step::Evict]);
+    assert_eq!(session.added(), 0);
+    assert!(session.held() <= 5 * ENTRY * 9 / 10, "{}", session.held());
+    assert_eq!(session.entries() * ENTRY, session.held());
+    assert_eq!(session.eviction(), Eviction::Idle);
 }
 
 /// A limit lowered evicts at once; one raised, or the same again, does not.
@@ -186,25 +239,17 @@ fn a_lowered_limit_evicts_and_a_raised_one_does_not() {
     session.settle();
     assert_eq!(session.steps(), [Step::Tidy, Step::Walk]);
 
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(40 * ENTRY), &session.control);
+    session.set_limit(Limit::Bytes(40 * ENTRY));
     session.settle();
     assert_eq!(session.added(), 0);
 
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(5 * ENTRY), &session.control);
+    session.set_limit(Limit::Bytes(5 * ENTRY));
     session.settle();
     assert_eq!(session.steps(), [Step::Tidy, Step::Walk, Step::Evict]);
     assert!(session.held() <= 5 * ENTRY * 9 / 10, "{}", session.held());
 
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(5 * ENTRY), &session.control);
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(6 * ENTRY), &session.control);
+    session.set_limit(Limit::Bytes(5 * ENTRY));
+    session.set_limit(Limit::Bytes(6 * ENTRY));
     session.settle();
     assert_eq!(session.added(), 1);
 }
@@ -218,7 +263,7 @@ fn an_unlimited_cache_is_never_evicted_until_its_limit_is_turned_on() {
     assert_eq!(session.steps(), [Step::Tidy, Step::Walk]);
     session.upkeep.check();
     session.upkeep.evict(&session.control);
-    session.upkeep.set_limit(Limit::Unlimited, &session.control);
+    session.set_limit(Limit::Unlimited);
     session.settle();
     assert_eq!(session.added(), 0);
     assert_eq!(session.held(), 10 * ENTRY);
@@ -229,15 +274,13 @@ fn an_unlimited_cache_is_never_evicted_until_its_limit_is_turned_on() {
     session.settle();
     assert_eq!(session.added(), 0);
 
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(5 * ENTRY), &session.control);
+    session.set_limit(Limit::Bytes(5 * ENTRY));
     session.settle();
     assert_eq!(session.steps(), [Step::Tidy, Step::Walk, Step::Evict]);
     assert!(session.held() <= 5 * ENTRY * 9 / 10, "{}", session.held());
 
     // Turned off again, nothing more.
-    session.upkeep.set_limit(Limit::Unlimited, &session.control);
+    session.set_limit(Limit::Unlimited);
     write(&session.cache, 20..30);
     session.upkeep.check();
     session.settle();
@@ -268,18 +311,10 @@ fn requests_while_an_eviction_runs_are_folded_into_it() {
     let session = Session::start("folded", 10, Limit::Bytes(20 * ENTRY));
     session.settle();
     let hold = session.upkeep.hold.lock().unwrap();
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(5 * ENTRY), &session.control);
-    let deadline = Instant::now() + WAIT;
-    while session.eviction() != (Eviction::Running { again: false }) {
-        assert!(Instant::now() < deadline, "the eviction starts in time");
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    session.set_limit(Limit::Bytes(5 * ENTRY));
+    session.until(Eviction::Running { again: false });
     session.upkeep.evict(&session.control);
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(3 * ENTRY), &session.control);
+    session.set_limit(Limit::Bytes(3 * ENTRY));
     session.upkeep.evict(&session.control);
     assert_eq!(session.eviction(), Eviction::Running { again: true });
     drop(hold);
@@ -300,34 +335,58 @@ fn a_request_while_an_eviction_is_queued_adds_none() {
     session.settle();
     session.upkeep.lock().eviction = Eviction::Queued;
     session.upkeep.evict(&session.control);
-    session
-        .upkeep
-        .set_limit(Limit::Bytes(5 * ENTRY), &session.control);
+    session.set_limit(Limit::Bytes(5 * ENTRY));
     assert_eq!(session.added(), 0);
     assert_eq!(session.eviction(), Eviction::Queued);
 }
 
-/// As the session ends, an eviction under way stops before its next removal.
+/// An eviction that panics leaves eviction free: the next request adds a job that runs.
+#[test]
+fn an_eviction_that_panics_leaves_the_next_one_free() {
+    let session = Session::start("panicked", 10, Limit::Bytes(20 * ENTRY));
+    session.settle();
+    session.upkeep.lock().panic = true;
+    session.set_limit(Limit::Bytes(5 * ENTRY));
+    session.settle();
+    assert_eq!(session.eviction(), Eviction::Idle);
+    assert_eq!(session.entries(), 10, "the panicking pass removed nothing");
+    session.set_limit(Limit::Bytes(3 * ENTRY));
+    session.settle();
+    assert_eq!(session.added(), 2);
+    assert_eq!(session.steps(), [Step::Tidy, Step::Walk, Step::Evict]);
+    assert!(session.held() <= 3 * ENTRY * 9 / 10, "{}", session.held());
+}
+
+/// Quitting during the start's job stops it before its next subfolder: no walk is kept,
+/// and the job ends at once.
+#[test]
+fn quitting_stops_the_start_s_walk() {
+    let session = Session::new("quit-walk", 10, Limit::Bytes(5 * ENTRY));
+    let hold = session.upkeep.hold.lock().unwrap();
+    session.upkeep.start_walk(&session.control);
+    session.stop.store(true, Ordering::Relaxed);
+    drop(hold);
+    let started = Instant::now();
+    session.settle();
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(session.steps(), [Step::Tidy]);
+    assert_eq!(session.cache.sizes(), None, "no walk is kept");
+    assert_eq!(session.eviction(), Eviction::Idle);
+    assert_eq!(session.entries(), 10);
+}
+
+/// As the session ends, an eviction under way stops: it removes less than a full pass.
 #[test]
 fn an_eviction_stops_as_the_session_ends() {
-    let folder = Folder::new("stopped");
-    let cache = Arc::new(Cache::open(folder.0.join("cache")));
-    write(&cache, 0..10);
-    let control = Control::start(|_| {});
-    let stop = Arc::new(AtomicBool::new(true));
-    let options = CacheOptions {
-        cache: Arc::clone(&cache),
-        limit: Limit::Bytes(20 * ENTRY),
-    };
-    let upkeep = Upkeep::start(options, &control, Arc::new(|| {}), stop);
-    upkeep.set_limit(Limit::Bytes(5 * ENTRY), &control);
-    let deadline = Instant::now() + WAIT;
-    while control.pending() > 0 {
-        assert!(Instant::now() < deadline, "the cache's jobs end in time");
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert_eq!(upkeep.lock().added, 1);
-    assert_eq!(upkeep.lock().steps, [Step::Tidy, Step::Walk]);
-    assert_eq!(upkeep.lock().eviction, Eviction::Idle);
-    assert_eq!(cache.walk().unwrap().limited().entries, 10);
+    let session = Session::start("stopped", 10, Limit::Bytes(20 * ENTRY));
+    session.settle();
+    let hold = session.upkeep.hold.lock().unwrap();
+    session.set_limit(Limit::Bytes(5 * ENTRY));
+    session.until(Eviction::Running { again: false });
+    session.stop.store(true, Ordering::Relaxed);
+    drop(hold);
+    session.settle();
+    assert_eq!(session.eviction(), Eviction::Idle);
+    // A full pass leaves 4.
+    assert!(session.entries() > 4, "{}", session.entries());
 }
