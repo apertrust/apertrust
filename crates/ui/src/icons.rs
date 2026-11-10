@@ -118,6 +118,8 @@ pub enum Icon {
     History,
     Folder,
     Metadata,
+    /// One photo: Browse's top line while a photo is open alone.
+    Photo,
     /// The scopes' graphs: the histogram, the waveform, the RGB parade, the vectorscope.
     Histogram,
     Waveform,
@@ -157,7 +159,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 73] = [
+    pub const ALL: [Icon; 74] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -205,6 +207,7 @@ impl Icon {
         Icon::History,
         Icon::Folder,
         Icon::Metadata,
+        Icon::Photo,
         Icon::Histogram,
         Icon::Waveform,
         Icon::Parade,
@@ -365,6 +368,7 @@ impl Icon {
             Icon::History => derived!("history", "rotate-ccw-clock", 22.0),
             Icon::Folder => derived!("folder", "folder", 22.0),
             Icon::Metadata => derived!("metadata", "tag", 22.0),
+            Icon::Photo => derived!("photo", "image", 14.0),
             Icon::Histogram => own!("histogram", 14.0),
             Icon::Waveform => own!("waveform", 14.0),
             Icon::Parade => own!("parade", 14.0),

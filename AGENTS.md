@@ -99,7 +99,7 @@ tools/compare-cpu.sh [--raws 40d,7rv,xt5] [--paths dt-cpu,dt-opencl,software,gpu
 tools/compare-cpu.sh --raws 7rv --add toneequal-eigf,bilat [--size PX --hq BOOL] [--wait-quiet PERCENT] --runs 5
 
 # The app and the design system
-cargo run --release -p apertrust -- [--user-data-dir DIR] FILE
+cargo run --release -p apertrust -- [--user-data-dir DIR] [FILE | FOLDER]   # a raw alone, or a folder
 cargo run -p apertrust-ui --example gallery    # tokens, themes, icons, components
 UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test gallery   # accept changed snapshots; review them like golden images
 ```
