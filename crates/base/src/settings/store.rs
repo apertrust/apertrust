@@ -982,6 +982,7 @@ mod tests {
             applies: Applies::AtOnce,
             page: None,
             group: None,
+            requires: None,
             place: 0,
             line: 0,
         }

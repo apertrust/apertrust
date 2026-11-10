@@ -97,6 +97,17 @@ struct Cli {
         overrides_with = "user_data_dir"
     )]
     user_data_dir: Option<PathBuf>,
+    /// The cache folder, in place of APERTRUST_CACHE_DIR's, else the user data folder's
+    /// cache when that is given, else the platform's. Nothing is created. A leading ~ is
+    /// the home folder. The last given counts.
+    #[arg(
+        long,
+        global = true,
+        value_name = "DIR",
+        visible_alias = "cachedir",
+        overrides_with = "cache_dir"
+    )]
+    cache_dir: Option<PathBuf>,
     /// Set an engine or export setting for this run only, as darktable's --conf, never
     /// written: KEY is its id in settings.toml, such as engine.memory_budget or
     /// export.jpeg.quality, and VALUE as the file holds it, but text without quotes. Before
@@ -373,11 +384,15 @@ fn main() -> Result<()> {
     // or probed in it, and one given that is missing or cannot be read stops the start,
     // never falling back to the platform's (decision 43). Its error once, cause and all.
     let given = cli.user_data_dir.clone().map(|folder| Given {
-        flag: user_data_flag(std::env::args_os()),
+        flag: flag_named(&folders::FLAGS, std::env::args_os()),
         folder,
     });
-    let folders =
-        Folders::find_to_read(given, apertrust_base::program!().dev).map_err(|e| anyhow!("{e}"))?;
+    let cache = cli.cache_dir.clone().map(|folder| Given {
+        flag: flag_named(&folders::CACHE_FLAGS, std::env::args_os()),
+        folder,
+    });
+    let folders = Folders::find_to_read(given, cache, apertrust_base::program!().dev)
+        .map_err(|e| anyhow!("{e}"))?;
     // The settings, read only by the commands that run the engine, `--conf`'s over the
     // file's.
     let store = || settings(folders.as_ref()).with_overrides(&overrides);
@@ -516,16 +531,17 @@ fn settings(folders: Option<&Folders>) -> Store {
     }
 }
 
-/// The flag that named the user data folder, for the log and errors: the last of
-/// `folders::FLAGS` in `args`, alone or as `FLAG=DIR`, since clap keeps no alias's name.
-fn user_data_flag(args: impl IntoIterator<Item = OsString>) -> &'static str {
-    let mut named = folders::FLAGS[0];
+/// The flag that named a folder, for the log and errors: the last of `flags`
+/// (`folders::FLAGS` or `folders::CACHE_FLAGS`) in `args`, alone or as `FLAG=DIR`, since
+/// clap keeps no alias's name; the first of them where none is there.
+fn flag_named(flags: &[&'static str], args: impl IntoIterator<Item = OsString>) -> &'static str {
+    let mut named = flags[0];
     for arg in args {
         if arg == "--" {
             break;
         }
         let bytes = arg.as_encoded_bytes();
-        let flag = folders::FLAGS.into_iter().find(|flag| {
+        let flag = flags.iter().copied().find(|flag| {
             let rest = bytes.strip_prefix(flag.as_bytes());
             rest.is_some_and(|rest| rest.first().is_none_or(|&b| b == b'='))
         });
@@ -2603,7 +2619,7 @@ mod tests {
     fn the_user_data_folder_is_named_by_any_of_its_flags_the_last_counting() {
         let parsed = |args: &[&str]| {
             let cli = Cli::try_parse_from(args).expect("parsed");
-            let flag = user_data_flag(args.iter().map(OsString::from));
+            let flag = flag_named(&folders::FLAGS, args.iter().map(OsString::from));
             (cli.user_data_dir, flag)
         };
         for flag in folders::FLAGS {
@@ -2654,5 +2670,39 @@ mod tests {
         }
         // None given: the variable's, then the platform's (`Folders::find`).
         assert_eq!(parsed(&["apertrust-cli", "gpu"]).0, None);
+    }
+
+    /// `--cache-dir` or darktable's `--cachedir`, apart or joined, before the command or
+    /// after it, the last counting and named; one without its folder is refused.
+    #[test]
+    fn the_cache_folder_is_named_by_its_flag_the_last_counting() {
+        let parsed = |args: &[&str]| {
+            let cli = Cli::try_parse_from(args).expect("parsed");
+            let flag = flag_named(&folders::CACHE_FLAGS, args.iter().map(OsString::from));
+            (cli.cache_dir, flag)
+        };
+        let args = [
+            "apertrust-cli",
+            "--cache-dir",
+            "one",
+            "gpu",
+            "--cachedir=two",
+        ];
+        assert_eq!(parsed(&args), (Some(PathBuf::from("two")), "--cachedir"));
+        let args = [
+            "apertrust-cli",
+            "--cachedir",
+            "one",
+            "gpu",
+            "--cache-dir=two",
+        ];
+        assert_eq!(parsed(&args), (Some(PathBuf::from("two")), "--cache-dir"));
+        assert_eq!(parsed(&["apertrust-cli", "gpu"]).0, None);
+        for args in [
+            ["apertrust-cli", "gpu", "--cache-dir"].as_slice(),
+            &["apertrust-cli", "--cachedir=", "gpu"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err(), "{args:?}");
+        }
     }
 }

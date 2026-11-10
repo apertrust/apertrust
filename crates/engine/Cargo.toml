@@ -12,9 +12,10 @@ publish.workspace = true
 bytemuck.workspace = true
 # Its settings part, for the store the binaries hand the engine's settings and the types
 # of its generated statics, and its jobs, darktable's control, which the session runs
-# (decision 57): never its folders, so the engine finds no settings file itself
-# (decision 43).
-apertrust-base = { workspace = true, features = ["jobs"] }
+# (decision 57), and its cache, whose `UnusedAfter` a setting of its takes and whose
+# `Limit` its settings give (decision 76): never its folders, so the engine finds no
+# settings file itself (decision 43).
+apertrust-base = { workspace = true, features = ["jobs", "cache"] }
 apertrust-color.workspace = true
 # What an export writes and where, which its session's export jobs use (decision 56).
 apertrust-export.workspace = true

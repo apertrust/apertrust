@@ -94,7 +94,8 @@ fn run_status(
         .args(["-d", "settings"])
         .args(args)
         .env_remove("RUST_LOG")
-        .env_remove("APERTRUST_USER_DATA_DIR");
+        .env_remove("APERTRUST_USER_DATA_DIR")
+        .env_remove("APERTRUST_CACHE_DIR");
     if let Some(variable) = variable {
         command.env("APERTRUST_USER_DATA_DIR", variable);
     }
@@ -552,4 +553,67 @@ fn a_setting_that_names_no_adapter_falls_back_and_a_flag_is_refused() {
         stderr.contains("no GPU adapter name contains \"nor this\""),
         "{stderr}"
     );
+}
+
+/// The cache folder `-d settings` names: `--cache-dir`'s or darktable's `--cachedir`'s, the
+/// last given, before or after the command, then `APERTRUST_CACHE_DIR`'s, then the user
+/// data folder's when that is given; created nowhere, a relative one not in the current
+/// folder either.
+#[test]
+fn the_cache_folder_is_named_and_never_created() {
+    let folder = Folder::new("cache");
+    let current = Folder::new("cache-current");
+    let dir = folder.0.display().to_string();
+    let cache = folder.0.join("cache");
+    let given = cache.display().to_string();
+    // Each run in a current folder of the test's own, where a relative folder would land.
+    let run_here = |args: &[&str], variable: Option<&Path>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_apertrust-cli"));
+        command
+            .current_dir(&current.0)
+            .args(["-d", "settings"])
+            .args(args)
+            .env_remove("RUST_LOG")
+            .env("APERTRUST_USER_DATA_DIR", &folder.0)
+            .env_remove("APERTRUST_CACHE_DIR");
+        if let Some(variable) = variable {
+            command.env("APERTRUST_CACHE_DIR", variable);
+        }
+        let stderr = command.output().expect("the CLI runs").stderr;
+        String::from_utf8_lossy(&stderr).into_owned()
+    };
+    let named = |stderr: &str, from: &str| {
+        let line = format!("cache folder: {}, from: {from}", cache.display());
+        logged(stderr, &line)
+    };
+    let joined = format!("--cachedir={given}");
+    let last_apart = [
+        "--cachedir",
+        "elsewhere",
+        "--cache-dir",
+        &given,
+        "info",
+        "x.CR2",
+    ];
+    let last_joined = ["--cache-dir", "elsewhere", "info", &joined, "x.CR2"];
+    for (args, flag) in [
+        (last_apart.as_slice(), "--cache-dir"),
+        (&last_joined, "--cachedir"),
+    ] {
+        let stderr = run_here(args, None);
+        assert!(named(&stderr, flag), "{args:?}: {stderr}");
+    }
+    let stderr = run_here(&["--user-data-dir", &dir, "info", "x.CR2"], None);
+    assert!(named(&stderr, "the user data folder"), "{stderr}");
+    let stderr = run_here(&["info", "x.CR2"], Some(&cache));
+    assert!(named(&stderr, "APERTRUST_CACHE_DIR"), "{stderr}");
+    // `elsewhere` alone is the current folder's, and is not made there either.
+    let stderr = run_here(&["--cachedir", "elsewhere", "info", "x.CR2"], None);
+    // As the CLI finds its current folder: with links resolved, as macOS's temporary one.
+    let here = std::fs::canonicalize(&current.0).expect("the current folder");
+    let elsewhere = here.join("elsewhere");
+    let line = format!("cache folder: {}, from: --cachedir", elsewhere.display());
+    assert!(logged(&stderr, &line), "{stderr}");
+    assert!(!cache.exists() && !elsewhere.exists());
+    assert_eq!(std::fs::read_dir(&current.0).expect("there").count(), 0);
 }

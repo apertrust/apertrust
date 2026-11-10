@@ -105,7 +105,7 @@ use modules::{Change, Panels, Pending};
 use settings::{Keeper, Settings};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
-/// [--conf KEY=VALUE]... [FILE]`.
+/// [--cache-dir DIR] [--conf KEY=VALUE]... [FILE]`.
 #[derive(Debug, Default, PartialEq)]
 struct Arguments {
     /// The raw to open.
@@ -118,14 +118,18 @@ struct Arguments {
     /// folder, which `apertrust_base::folders` expands. Until edits are kept
     /// in it, it separates settings only: edits are still written beside the photos.
     user_data: Option<Given>,
+    /// The cache folder, in place of the variable's, the user data folder's or the
+    /// platform's: `--cache-dir DIR` or `--cache-dir=DIR`, or darktable's `--cachedir` the
+    /// same way (`folders::CACHE_FLAGS`), the last given.
+    cache: Option<Given>,
     /// `--conf KEY=VALUE` or `--conf=KEY=VALUE`, darktable's, each a setting's value for
     /// this run, in the order given, which `settings::overrides` reads (decision 43).
     conf: Vec<String>,
 }
 
 /// Reads `args`, the command line after the program's name. A flag of the user data
-/// folder without one is an error, so that the platform's is never used in its place, as
-/// is `--conf` without its setting.
+/// folder or the cache folder without one is an error, so that another is never used in
+/// its place, as is `--conf` without its setting.
 fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, String> {
     let mut args = args.into_iter();
     let mut arguments = Arguments::default();
@@ -140,14 +144,14 @@ fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, Stri
             arguments.conf.push(utf8(given)?);
         } else if let Some(given) = conf_joined(&arg) {
             arguments.conf.push(given?);
-        } else if let Some(flag) = folders::FLAGS.into_iter().find(|flag| arg == *flag) {
+        } else if let Some(flag) = FOLDER_FLAGS.into_iter().find(|flag| arg == *flag) {
             let folder = args
                 .next()
                 .ok_or_else(|| format!("{flag} needs a folder"))?;
-            let folder = PathBuf::from(folder);
-            arguments.user_data = Some(Given { flag, folder });
+            arguments.named(flag, PathBuf::from(folder));
         } else if let Some(given) = joined(&arg) {
-            arguments.user_data = Some(given?);
+            let (flag, folder) = given?;
+            arguments.named(flag, folder);
         } else if arguments.path.is_none() {
             arguments.path = Some(PathBuf::from(arg));
         }
@@ -155,20 +159,39 @@ fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, Stri
     Ok(arguments)
 }
 
-/// `arg` as `FLAG=DIR`, for a flag of the user data folder: the folder given, or an error
-/// for one whose name is not UTF-8, which goes after a space instead; None for any other
-/// argument.
-fn joined(arg: &OsStr) -> Option<Result<Given, String>> {
+/// The flags that name a folder: the user data folder's (`folders::FLAGS`), then the cache
+/// folder's (`folders::CACHE_FLAGS`).
+const FOLDER_FLAGS: [&str; 5] = [
+    folders::FLAGS[0],
+    folders::FLAGS[1],
+    folders::FLAGS[2],
+    folders::CACHE_FLAGS[0],
+    folders::CACHE_FLAGS[1],
+];
+
+impl Arguments {
+    /// Takes the folder `flag`, one of [`FOLDER_FLAGS`], names: the last given counts.
+    fn named(&mut self, flag: &'static str, folder: PathBuf) {
+        let given = Some(Given { flag, folder });
+        if folders::CACHE_FLAGS.contains(&flag) {
+            self.cache = given;
+        } else {
+            self.user_data = given;
+        }
+    }
+}
+
+/// `arg` as `FLAG=DIR`, for a flag of [`FOLDER_FLAGS`]: the flag and the folder given, or
+/// an error for one whose name is not UTF-8, which goes after a space instead; None for any
+/// other argument.
+fn joined(arg: &OsStr) -> Option<Result<(&'static str, PathBuf), String>> {
     let bytes = arg.as_encoded_bytes();
-    let flag = folders::FLAGS.into_iter().find(|flag| {
+    let flag = FOLDER_FLAGS.into_iter().find(|flag| {
         let rest = bytes.strip_prefix(flag.as_bytes());
         rest.is_some_and(|rest| rest.first() == Some(&b'='))
     })?;
     Some(match arg.to_str() {
-        Some(arg) => Ok(Given {
-            flag,
-            folder: PathBuf::from(&arg[flag.len() + 1..]),
-        }),
+        Some(arg) => Ok((flag, PathBuf::from(&arg[flag.len() + 1..]))),
         None => Err(format!(
             "{flag}=: a folder whose name is not UTF-8 goes after a space, as {flag} DIR"
         )),
@@ -230,6 +253,7 @@ fn main() -> eframe::Result {
         path,
         domains,
         user_data,
+        cache,
         conf,
     } = match arguments(std::env::args_os().skip(1)) {
         Ok(arguments) => arguments,
@@ -259,9 +283,10 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     };
-    // The user data folder, before its settings are read. One given that cannot be used
-    // stops the start, never falling back to the platform's (decision 43).
-    let folders = match Folders::find(user_data, apertrust_base::program!().dev) {
+    // The user data folder, before its settings are read, and the cache folder. One given
+    // that cannot be used stops the start, never falling back to the platform's
+    // (decision 43).
+    let folders = match Folders::find(user_data, cache, apertrust_base::program!().dev) {
         Ok(folders) => folders,
         Err(error) => {
             eprintln!("apertrust: {error}");
@@ -3926,6 +3951,7 @@ mod tests {
                 path: Some(PathBuf::from("photo.ARW")),
                 domains: vec!["settings".to_owned()],
                 user_data: given("--user-data-dir", "dev"),
+                cache: None,
                 conf: Vec::new(),
             })
         );
@@ -3955,6 +3981,33 @@ mod tests {
         );
         // None given: the variable's or the platform's.
         assert_eq!(read(&["photo.ARW"]).expect("read").user_data, None);
+    }
+
+    /// `--cache-dir` or darktable's `--cachedir`, in either form, the last given, beside the
+    /// user data folder's flags; one without its folder stops the start.
+    #[test]
+    fn the_command_line_names_the_cache_folder() {
+        let given = |flag, folder: &str| {
+            let folder = PathBuf::from(folder);
+            Some(Given { flag, folder })
+        };
+        let line = ["--cache-dir", "one", "--configdir=dev", "photo.ARW"];
+        let read_ = read(&line).expect("read");
+        assert_eq!(read_.cache, given("--cache-dir", "one"));
+        assert_eq!(read_.user_data.map(|given| given.flag), Some("--configdir"));
+        assert_eq!(read_.path, Some(PathBuf::from("photo.ARW")));
+        for flag in folders::CACHE_FLAGS {
+            let apart = read(&[flag, "dev"]).expect("read");
+            assert_eq!(apart.cache, given(flag, "dev"));
+            assert_eq!(read(&[&format!("{flag}=dev")]), Ok(apart));
+        }
+        let last = read(&["--cache-dir", "one", "photo.ARW", "--cachedir=~/two"]);
+        assert_eq!(last.expect("read").cache, given("--cachedir", "~/two"));
+        assert_eq!(
+            read(&["photo.ARW", "--cachedir"]),
+            Err("--cachedir needs a folder".to_owned())
+        );
+        assert_eq!(read(&["photo.ARW"]).expect("read").cache, None);
     }
 
     /// `--conf KEY=VALUE` in either form, each kept in order for the settings to read, the
@@ -4006,11 +4059,16 @@ mod tests {
             "photo.ARW".into(),
         ];
         let given = arguments(line).expect("read").user_data;
-        let folders = Folders::find(given, false)
+        let folders = Folders::find(given, None, false)
             .expect("usable")
             .expect("a folder");
         assert_eq!(folders.user_data(), folder);
         assert!(folder.is_dir());
+        // Its cache with it, unless the variable names another, chosen and not yet made.
+        if std::env::var_os(folders::CACHE_VARIABLE).is_none() {
+            assert_eq!(folders.cache(), folder.join("cache"));
+            assert!(!folders.cache().exists());
+        }
         let none = settings::overrides(&[]).expect("none");
         let (mut keeper, settings) = Keeper::open_in(Some(&folders), &none);
         assert_eq!(settings, Settings::default());

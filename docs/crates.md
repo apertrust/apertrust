@@ -148,9 +148,10 @@ The groundwork for orientation:
 
 ### Settings
 
-`settings`: the engine's settings, `engine.adapter` and `engine.memory_budget`, generated from the schema by its `build.rs` as `settings::registry` (decision 43).
+`settings`: the engine's settings, `engine.adapter` and `engine.memory_budget`, and the cache's, `cache.limited`, `cache.limit` and `cache.unused_after` (decision 76), generated from the schema by its `build.rs` as `settings::registry` (decision 43).
 
 - `settings::Options::read` turns a store a binary hands it, under the binary's own flags (`--adapter`), into `GpuOptions` and the budget. It logs each value, and where it came from, under `-d settings`.
+- `settings::cache_limit` turns a store's `cache.limited` and `cache.limit` into base's `cache::Limit`: `Unlimited` while the first is off, else the limit's GB as bytes, a GB 10⁹ of them. Nothing reads it yet.
 - The engine opens no folder or settings file.
 
 ### Jobs
@@ -226,6 +227,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
   - The folder is found for reading (`Folders::find_to_read`): nothing is created or probed, and one given that is missing is an error.
   - The settings are read through a read-only store, by the commands that run the engine.
   - The budget applies to `export` and `preview`.
+- **`--cache-dir DIR`**, or darktable's `--cachedir`, or `APERTRUST_CACHE_DIR`; else the user data folder's `cache` when that is given, else the platform's cache folder. Chosen and logged under `-d settings`, never created; read by the `cache` commands once they come.
 - **`--adapter NAME`** comes before the file. A name that matches no adapter is an error, while a setting that names none falls back to wgpu's choice (decision 43).
 - **`--conf KEY=VALUE`**: a setting for this run only, as darktable's `--conf`, never written.
   - Global and repeatable; the last value for a key counts.
@@ -297,7 +299,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 
 ### Planned: cache
 
-Decision 76, with the library's step 6b ([cache.md](cache.md#the-cli)). Both call `apertrust_base::cache` directly, with no session and no GPU, and take `--cache-dir DIR` (global) or `APERTRUST_CACHE_DIR`:
+Decision 76, with the library's step 6b ([cache.md](cache.md#the-cli)). Both call `apertrust_base::cache` directly, with no session and no GPU, and take `--cache-dir DIR` or `--cachedir` (global) or `APERTRUST_CACHE_DIR`:
 
 - `cache info`: the cache folder and how it was chosen; `cache.limit`, or `unlimited` while `cache.limited` is off, and the limited kinds' total; `cache.unused_after`; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, those unopened for `cache.unused_after` or not found marked. It walks the folder and writes nothing.
 - `cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
@@ -576,6 +578,7 @@ The actions registry and the default keyboard map:
 `settings.toml` in the user data folder that `apertrust_base::folders` chooses (decision 43):
 
 - `--user-data-dir DIR` or `=DIR`, `--config-dir` or `--configdir`, the last given; then `APERTRUST_USER_DATA_DIR`; then the platform's folder. A relative folder is taken from the current folder and created if missing.
+- `--cache-dir DIR` or `=DIR`, or `--cachedir`, the last given, names the cache folder, chosen with the user data folder and not yet opened.
 - It is opened by `Keeper::open_in`. A flag without its folder, or a folder given that cannot be created or written, stops the start; it never falls back to the platform's folder.
 - The folder separates settings only. Edits are where each root's id file says, beside the photos by default, never decided by this folder (decision 47).
 - `src/paths.rs` keeps only Pictures, through `directories`.
@@ -863,7 +866,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `folders` | `Folders` | the binaries (the app and the CLI) |
 | `fs` | the safe write | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
-| `cache` | the disk cache; turns on `fs` | none yet; the engine, the library and the CLI are to |
+| `cache` | the disk cache, `UnusedAfter` among it; turns on `fs` | the engine; the library and the CLI are to |
 | (none) | `settings` | |
 
 ### Logging
@@ -897,15 +900,16 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - its `Kind`: boolean, number, choice, text, and lists and `Table`s of any kind. Whole numbers, folders, units, pages and platforms come with the first setting that needs one;
 - `DefaultValue`, a value or `Computed`;
 - `Owner` (`App`, `Engine`, `Export`, `Module`) and `Applies`;
-- a number's `above`, an exclusive minimum.
+- a number's `above`, an exclusive minimum;
+- `requires`, the boolean setting whose row must be on for its own to be enabled.
 
 `Choice` is a type's options, each with its stable id.
 
-**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's two (`engine.adapter`, `engine.memory_budget`) and the export settings (`export.*`, decision 56). None is on a page yet; the language and the side panel's width are computed, and the window's place is `optional`.
+**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) and the export settings (`export.*`, decision 56). The language and the side panel's width are computed, and the window's place is `optional`.
 
 **The generator**, `settings::codegen`, reads the schema with toml_edit, in the file's order.
 
-- It refuses, naming the line: an unknown field, a wrong kind or field, a default out of range, a missing default on a setting not `optional`, and an id that is not snake_case or not under a header of its own.
+- It refuses, naming the line: an unknown field, a wrong kind or field, a default out of range, a missing default on a setting not `optional`, an id that is not snake_case or not under a header of its own, and a `requires` on a setting with no page, or naming no other boolean setting on a page.
 - It writes one owner's settings into `OUT_DIR` as typed statics, each doc comment its note and its line.
 - A choice's default that is none of its type's ids, two ids with one name, and a type that is no `Choice` stop the build where the static compiles.
 - The app's `build.rs` generates its own `settings::registry`, from which `Settings::default()`, `SCALES`, `PANEL_WIDTHS` and the window's first size come. The engine generates `apertrust_engine::settings::registry`, and `apertrust-export` `apertrust_export::settings::registry`.
@@ -932,6 +936,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - One given by flag or variable that cannot be created or written is an `Error` that stops the start, never falling back to the platform's. The platform's own failure is only warned of.
 - For a program that only reads, the CLI, `Folders::find_to_read` creates and probes nothing. One given that is missing or cannot be read is an `Error`; a missing platform folder is left missing.
 - `-d settings` logs the folder and how it was chosen (`Chosen`). `Folders::settings` is its `settings.toml`.
+- The cache folder (decision 76) is chosen by `--cache-dir` or darktable's `--cachedir` (`CACHE_FLAGS`, read into a `Given`), then `APERTRUST_CACHE_DIR` (`CACHE_VARIABLE`, empty as unset), then `<user data>/cache` when the user data folder was given by flag or variable, then the platform's cache folder, Apertrust Dev's its own. `~` and a relative folder are taken as for the user data folder; it is never created or probed. `Folders::cache` and `Folders::cache_chosen` (`CacheChosen`) give it, and `-d settings` logs it after the user data folder. `find` and `find_to_read` take it beside the user data folder's `Given`.
 
 ### The safe write
 
@@ -958,8 +963,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 **The cache folder and the cache,** with thumbnails (decisions 43 and 76; [cache.md](cache.md)):
 
-- `Folders` chooses the cache folder: `--cache-dir`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given, then the platform's; Apertrust Dev's its own.
-- `cache`, beside what its feature holds: `UnusedAfter`, `cache.unused_after`'s `Choice`; clearing library caches, one skipped while another process holds its `lock` file; the types of `Command::Cache` and `Event::Cache`.
+- `cache`, beside what its feature holds: clearing library caches, one skipped while another process holds its `lock` file; the types of `Command::Cache` and `Event::Cache`.
 
 ## apertrust-plugin
 

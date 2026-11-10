@@ -330,6 +330,10 @@ pub trait Declared: Sync {
     /// The Settings dialog's page that shows it, and its group there; None for neither.
     fn page(&self) -> Option<(Page, &'static str)>;
 
+    /// The boolean setting, by id, whose row must be on for its own to be enabled; None
+    /// for most.
+    fn requires(&self) -> Option<&'static str>;
+
     /// Its place among every owner's settings, in the schema's order.
     fn place(&self) -> u32;
 
@@ -383,6 +387,10 @@ impl<T: Stored> Declared for Setting<T> {
 
     fn page(&self) -> Option<(Page, &'static str)> {
         Some((self.page?, self.group?))
+    }
+
+    fn requires(&self) -> Option<&'static str> {
+        self.requires
     }
 
     fn place(&self) -> u32 {

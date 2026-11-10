@@ -92,6 +92,7 @@ unit-kelvin = K
 unit-pixels = px
 unit-iso = ISO
 unit-mib = МіБ
+unit-gb = ГБ
 
 ## Значення з одиницею, як його показує повзунок і чують екранні читачі; $value уже у
 ## форматі чисел мови; одиниці як у uk.po darktable
@@ -385,6 +386,7 @@ settings-group-thumbnails = Мініатюри
 settings-group-side-panel = Бічна панель
 settings-group-gpu = GPU
 settings-group-diagnostics = Діагностика
+settings-group-cache = Кеш
 setting-theme-label = Тема
 setting-theme-option-dark = Темна
 setting-theme-option-light = Світла
@@ -401,6 +403,17 @@ setting-side-panel-tab-names-label = Показувати назви вклад�
 setting-engine-adapter-label = Відеокарта
 setting-engine-adapter-hint = Автоматично
 setting-engine-memory-budget-label = Бюджет пам'яті
+setting-cache-limited-label = Обмежити розмір кешу
+setting-cache-limited-help = Якщо вимкнено, кеш не обмежений: з нього нічого не видаляється, щоб утримати його в межах розміру.
+setting-cache-limit-label = Обмеження кешу
+setting-cache-limit-help = Понад цей розмір видаляються мініатюри, якими давно не користувалися; за потреби їх буде створено знову.
+setting-cache-unused-after-label = Кеші бібліотек без використання
+setting-cache-unused-after-help = Кеш бібліотеки, який на цьому комп'ютері не відкривали стільки часу, буде запропоновано видалити. Без вас нічого не видаляється.
+setting-cache-unused-after-option-days_30 = 30 днів
+setting-cache-unused-after-option-days_90 = 90 днів
+setting-cache-unused-after-option-days_180 = 180 днів
+setting-cache-unused-after-option-days_365 = 365 днів
+setting-cache-unused-after-option-never = Ніколи
 setting-log-keep-label = Вести журнал цього сеансу
 setting-log-keep-help = Зберігає журнал цього сеансу в пам'яті з моменту ввімкнення, для Довідка › Показати журнал. Щоб вести журнал від самого початку, перезапустіть Apertrust. У файл нічого не записується, доки ви його не збережете.
 setting-log-domains-label = Журнал
