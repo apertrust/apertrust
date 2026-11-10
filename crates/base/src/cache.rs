@@ -25,7 +25,8 @@
 //!   version goes at once; a read returns the bytes only for the version asked. Last use is
 //!   the file's modified time, set as it is written and as it is read, at most once a day.
 //! - [`Cache::walk`] gives each kind's [`Usage`] and writes nothing; [`Cache::sizes`] is
-//!   the last walk's with the handle's own writes and removals since; [`Cache::tidy`]
+//!   the last walk's with the handle's own writes and removals since, a walk that the
+//!   handle's own eviction or clear overlapped keeping nothing; [`Cache::tidy`]
 //!   removes the temporaries a crash left, and the write checks [`Cache::create`] left.
 //! - Each listing of the cache, the walk's, the tidy's, eviction's and clearing's, asks
 //!   its `cancel` before each subfolder, so a program that quits never waits for a cold
@@ -36,7 +37,8 @@
 //!   failed: only a kind's own folder that cannot be listed is an error.
 //! - [`UnusedAfter`], the [`Choice`] of the engine's setting `cache.unused_after`; the
 //!   engine turns `cache.limited` and `cache.limit` into a [`Limit`].
-//! - [`CacheCommand`], what a client asks of the cache through its session.
+//! - [`CacheCommand`], what a client asks of the cache through its session, and
+//!   [`CacheEvent`], what the session answers.
 //!
 //! No index file and no lock for limited kinds:
 //!
@@ -129,6 +131,11 @@ pub const COPIES: Kind = Kind {
 /// Every kind, a closed list.
 pub const KINDS: [Kind; 4] = [THUMBNAILS, PIPELINES, LIBRARIES, COPIES];
 
+/// The kind whose [`Kind::id`] is `id`, as `apertrust-cli cache clear` names it.
+pub fn kind(id: &str) -> Option<Kind> {
+    KINDS.into_iter().find(|kind| kind.id == id)
+}
+
 /// How long a read leaves an entry's last use alone: it is set at most once a day.
 pub const TOUCH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -155,13 +162,46 @@ pub enum Limit {
 }
 
 /// What a client asks of the cache through its session, `Command::Cache` (decision 76;
-/// `docs/cache.md`, Through the session). Step 6b adds the sizes, clearing a kind and
-/// removing a library's cache.
+/// `docs/cache.md`, Through the session). Removing a library's cache comes with the
+/// libraries' caches and their lock (the library's step 27).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheCommand {
     /// The limit as `cache.limited` and `cache.limit` now give it, applied at once:
     /// lowered or turned on, an eviction; raised, the same or turned off, none.
     Limit(Limit),
+    /// The cache's sizes, answered as a [`CacheEvent`]: at once from the handle's count
+    /// where a walk has run, then again once a walk has counted what other processes did.
+    Sizes,
+    /// Removes the limited `kind`'s entries listed as it starts, as a job the person sees
+    /// and can cancel; a kept kind is refused. The sizes are answered again as it ends.
+    Clear { kind: Kind },
+}
+
+/// What a session tells of its cache, `Event::Cache` (decision 76): a fact, the whole of
+/// the cache, each answer superseding the last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheEvent {
+    /// Each kind's entries and bytes, the limited kinds' together, and the limit they are
+    /// kept within.
+    Sizes {
+        sizes: Sizes,
+        limited: Usage,
+        limit: Limit,
+    },
+    /// The session has no disk cache: its client handed it none, as the CLI's does, or
+    /// the folder could not be written as the program started.
+    NoCache,
+}
+
+impl CacheEvent {
+    /// The event of `sizes`, kept within `limit`.
+    pub fn sizes(sizes: Sizes, limit: Limit) -> Self {
+        CacheEvent::Sizes {
+            sizes,
+            limited: sizes.limited(),
+            limit,
+        }
+    }
 }
 
 /// How long a library's cache may go unopened on this machine before the Storage page
@@ -245,9 +285,33 @@ pub struct Removed {
 #[derive(Debug)]
 pub struct Cache {
     folder: PathBuf,
+    count: Mutex<Count>,
+}
+
+/// A handle's count of its cache, and how its own removals stand, which a walk compares.
+#[derive(Debug, Default)]
+struct Count {
     /// The last walk's sizes with this handle's writes and removals since; `None` before
     /// the first walk.
-    sizes: Mutex<Option<Sizes>>,
+    sizes: Option<Sizes>,
+    /// The generation of this handle's removals: raised as each eviction or clear begins
+    /// removing and again once it has counted what it removed.
+    generation: u64,
+    /// The evictions and clears removing now.
+    removing: u32,
+}
+
+/// An eviction's or a clear's removals under way, from just before its first removal to
+/// just after its count: a walk that overlaps them keeps nothing, since it may have seen
+/// some of them and the count takes away all.
+struct Removing<'a>(&'a Cache);
+
+impl Drop for Removing<'_> {
+    fn drop(&mut self) {
+        let mut count = self.0.lock();
+        count.removing -= 1;
+        count.generation += 1;
+    }
 }
 
 /// A limited entry found by a walk.
@@ -264,7 +328,7 @@ impl Cache {
     pub fn open(folder: impl Into<PathBuf>) -> Self {
         Self {
             folder: folder.into(),
-            sizes: Mutex::new(None),
+            count: Mutex::default(),
         }
     }
 
@@ -395,10 +459,16 @@ impl Cache {
     /// subfolder; each kept kind's entries, the items in its folder, and every byte under
     /// them. An item that cannot be read is passed over; a kind's folder that cannot be
     /// listed is the error. The handle keeps the result, which [`Cache::sizes`] then keeps
-    /// up to date with its own writes and removals. `cancel` is asked before each
+    /// up to date with its own writes and removals, and returns it; `None`, keeping
+    /// nothing, where an eviction or a clear of this handle's removed meanwhile, since the
+    /// walk may have seen part of what its count takes away. `cancel` is asked before each
     /// subfolder and each kept entry; once it answers true, the walk stops,
     /// [`io::ErrorKind::Interrupted`], and keeps nothing.
-    pub fn walk(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Sizes> {
+    pub fn walk(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Option<Sizes>> {
+        let started = {
+            let count = self.lock();
+            (count.removing == 0).then_some(count.generation)
+        };
         let mut sizes = Sizes::default();
         for kind in KINDS {
             *sizes.of_mut(kind) = match kind.policy {
@@ -413,14 +483,18 @@ impl Cache {
                 Policy::Kept => kept_usage(&self.kind_folder(kind), cancel)?,
             };
         }
-        *self.lock() = Some(sizes);
-        Ok(sizes)
+        let mut count = self.lock();
+        if started != Some(count.generation) || count.removing > 0 {
+            return Ok(None);
+        }
+        count.sizes = Some(sizes);
+        Ok(Some(sizes))
     }
 
     /// The sizes as the last walk found them, with this handle's own writes and removals
     /// since; another process's are counted at the next walk. `None` before the first walk.
     pub fn sizes(&self) -> Option<Sizes> {
-        *self.lock()
+        self.lock().sizes
     }
 
     /// Removes the temporaries more than a day old that writes left in the limited kinds'
@@ -485,6 +559,7 @@ impl Cache {
         let target = (u128::from(limit) * u128::from(EVICT_TO_TENTHS) / 10) as u64;
         let mut removed = Removed::default();
         let mut taken = Sizes::default();
+        let _removing = self.removing();
         for entry in &entries {
             if held <= target {
                 break;
@@ -544,6 +619,7 @@ impl Cache {
         let total = entries.len() as u64;
         progress(0, total);
         let mut removed = Removed::default();
+        let _removing = self.removing();
         for (done, entry) in (1..).zip(&entries) {
             if cancel() {
                 removed.cancelled = true;
@@ -646,14 +722,22 @@ impl Cache {
 
     /// Changes `kind`'s usage with `change`, once a walk has found it.
     fn count(&self, kind: Kind, change: impl FnOnce(&mut Usage)) {
-        if let Some(sizes) = self.lock().as_mut() {
+        if let Some(sizes) = self.lock().sizes.as_mut() {
             change(sizes.of_mut(kind));
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Sizes>> {
-        // The sizes stay whole whatever panicked while they were held.
-        self.sizes.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Removals beginning, until what this returns drops, after their count.
+    fn removing(&self) -> Removing<'_> {
+        let mut count = self.lock();
+        count.removing += 1;
+        count.generation += 1;
+        Removing(self)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Count> {
+        // The count stays whole whatever panicked while it was held.
+        self.count.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

@@ -145,7 +145,12 @@ impl Bench {
 
     /// The thumbnails the cache holds.
     fn entries(&self) -> u64 {
-        self.cache.walk(&|| false).unwrap().of(THUMBNAILS).entries
+        self.cache
+            .walk(&|| false)
+            .unwrap()
+            .unwrap()
+            .of(THUMBNAILS)
+            .entries
     }
 }
 
@@ -287,7 +292,12 @@ fn the_picture_is_sent_before_it_is_written() {
     let told = Mutex::new(0);
     let cache = Arc::clone(&bench.cache);
     let tell = |_: LibraryEvent| {
-        let entries = cache.walk(&|| false).unwrap().of(THUMBNAILS).entries;
+        let entries = cache
+            .walk(&|| false)
+            .unwrap()
+            .unwrap()
+            .of(THUMBNAILS)
+            .entries;
         assert_eq!(entries, 0, "nothing written before the picture is sent");
         *told.lock().unwrap() += 1;
     };

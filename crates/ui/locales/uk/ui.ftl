@@ -145,6 +145,42 @@ job-delete = Видалення { $done } / { $total }
 job-thumbnails = Створення мініатюр
 job-folder = Читання { $folder }
 
+## Очищення кешу: $kind — що очищається, thumbnails чи pipelines; $done — видалено записів
+## із $total; $entries — скільки видалено, $size і $unit — скільки вони займали, одиниця
+## kb, mb чи gb.
+
+job-cache-size =
+    { $size } { $unit ->
+        [kb] кБ
+        [gb] ГБ
+       *[mb] МБ
+    }
+job-cache-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } мініатюру
+                [few] { $entries } мініатюри
+                [many] { $entries } мініатюр
+               *[other] { $entries } мініатюри
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } конвеєр
+                [few] { $entries } конвеєри
+                [many] { $entries } конвеєрів
+               *[other] { $entries } конвеєра
+            }
+    }
+job-cache-clear =
+    { $kind ->
+        [thumbnails] Очищення кешу мініатюр
+       *[pipelines] Очищення кешу конвеєрів
+    }
+job-cache-clear-now = Видалено { $done } із { $total }
+job-cache-cleared = Видалено { job-cache-entries }, { job-cache-size }
+job-cache-clear-cancelled = Очищення скасовано: видалено { job-cache-entries }, { job-cache-size }
+
 job-export-photo =
     Експортування { $number } / { $total } до { $storage ->
        *[disk] файлу на диску
@@ -194,6 +230,8 @@ job-cause-gone = папки або її диска більше немає
 job-cause-folder = папку не вдається створити або записати до неї
 job-cause-write = не вдалося записати файл
 job-cause-engine = рушій несподівано зупинився
+job-cause-cache-remove = деякі файли кешу не вдалося видалити
+job-cause-cache-read = не вдалося прочитати теку кешу
 
 ## Рядок завдання у вікні завдань: рядки і кнопки
 
@@ -428,6 +466,62 @@ setting-log-domains-option-settings = Налаштування
 setting-log-domains-option-control = Керування
 setting-log-domains-option-event = Події
 setting-log-domains-option-verbose = Докладно
+
+## Налаштування › Сховище, його частина, зроблена вручну (рішення 76). $flag і $variable
+## — що вибрало теку; $kind — thumbnails, pipelines чи libraries; $entries, $size і $unit —
+## як в очищенні кешу; $limit — обмеження в ГБ.
+
+settings-group-folders = Теки
+settings-group-cache-contents = У кеші
+settings-storage-user-data = Тека даних користувача
+settings-storage-cache = Тека кешу
+settings-storage-chosen-flag = Задано через { $flag }
+settings-storage-chosen-variable = Задано через { $variable }
+settings-storage-chosen-user-data = Усередині теки даних користувача
+settings-storage-chosen-platform = Системна тека
+settings-storage-none = Немає: система не дає теки
+settings-storage-show-tip = Відкрити цю теку
+settings-storage-show-name = { $show }: { $folder }
+settings-storage-kind-thumbnails = Мініатюри
+settings-storage-kind-pipelines = Конвеєри
+settings-storage-kind-libraries = Кеші бібліотек
+settings-storage-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } мініатюра
+                [few] { $entries } мініатюри
+                [many] { $entries } мініатюр
+               *[other] { $entries } мініатюри
+            }
+        [libraries]
+            { $entries ->
+                [one] { $entries } бібліотека
+                [few] { $entries } бібліотеки
+                [many] { $entries } бібліотек
+               *[other] { $entries } бібліотеки
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } конвеєр
+                [few] { $entries } конвеєри
+                [many] { $entries } конвеєрів
+               *[other] { $entries } конвеєра
+            }
+    }
+settings-storage-usage = { settings-storage-entries }, { job-cache-size }
+settings-storage-total = Разом
+settings-storage-total-limit = { job-cache-size } із { $limit } ГБ
+settings-storage-total-unlimited = { job-cache-size }, без обмеження
+settings-storage-counting = Підрахунок…
+settings-storage-clear = Очистити
+settings-storage-clear-thumbnails = Очистити мініатюри
+settings-storage-clear-pipelines = Очистити конвеєри
+settings-storage-clear-tip = Видаляються з диска й створюються знову за потреби
+settings-storage-no-cache = Дискового кешу немає: його теку не вдалося записати під час запуску Apertrust, тож між запусками нічого не зберігається.
+settings-storage-refused-clearing = Їх уже очищують.
+settings-storage-refused-no-cache = Немає дискового кешу, який можна очистити.
+settings-storage-refused = Їх не вдалося очистити.
 
 ## Вікно журналу, Довідка › Показати журнал; його фільтри — варіанти рядка «Журнал»
 

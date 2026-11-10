@@ -188,6 +188,40 @@ job-thumbnails = Creating thumbnails
 # A folder being read as it opens; $folder is its path.
 job-folder = Reading { $folder }
 
+## The cache's Clear: $kind is what it clears, thumbnails or pipelines; $done the entries
+## done of $total; $entries those it removed, $size and $unit how much they held, the unit
+## kb, mb or gb.
+
+job-cache-size =
+    { $size } { $unit ->
+        [kb] kB
+        [gb] GB
+       *[mb] MB
+    }
+job-cache-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } thumbnail
+               *[other] { $entries } thumbnails
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } pipeline
+               *[other] { $entries } pipelines
+            }
+    }
+# Its title, and the line under its bar.
+job-cache-clear =
+    { $kind ->
+        [thumbnails] Clearing the thumbnail cache
+       *[pipelines] Clearing the pipeline cache
+    }
+job-cache-clear-now = { $done } of { $total } removed
+# Its title once it has ended: "Cleared 2,104 thumbnails, 138 MB".
+job-cache-cleared = Cleared { job-cache-entries }, { job-cache-size }
+job-cache-clear-cancelled = Clearing cancelled: { job-cache-entries } removed, { job-cache-size }
+
 ## What an export job reports of itself for its row. $number is the photo under way,
 ## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
 ## File on disk; $photo a raw; $done the photos done; $count the photos waiting; $folder
@@ -250,6 +284,8 @@ job-cause-gone = the folder, or its disk, is no longer there
 job-cause-folder = the folder cannot be made or written to
 job-cause-write = the file could not be written
 job-cause-engine = the engine stopped unexpectedly
+job-cause-cache-remove = some of the cache's files could not be removed
+job-cause-cache-read = the cache's folder cannot be read
 
 ## A job's row in the jobs window: its lines and buttons. $folder is where its results go,
 ## $time when it ended on the local clock ("14:02"), $photo the item it failed on, $file the
@@ -535,6 +571,57 @@ setting-log-domains-option-settings = Settings
 setting-log-domains-option-control = Control
 setting-log-domains-option-event = Events
 setting-log-domains-option-verbose = Verbose
+
+## Settings › Storage, its hand-built part (decision 76). $flag and $variable name what
+## chose a folder; $kind is thumbnails, pipelines or libraries; $entries, $size and $unit
+## as the cache's Clear has them; $limit the limit in GB.
+
+settings-group-folders = Folders
+settings-group-cache-contents = In the cache
+settings-storage-user-data = User data folder
+settings-storage-cache = Cache folder
+settings-storage-chosen-flag = Chosen by { $flag }
+settings-storage-chosen-variable = Chosen by { $variable }
+settings-storage-chosen-user-data = Inside the user data folder
+settings-storage-chosen-platform = The system's folder
+settings-storage-none = None: the system gives no folder
+settings-storage-show-tip = Open this folder
+# Show's full name for screen readers: $show is its words, $folder the line's label.
+settings-storage-show-name = { $show }: { $folder }
+settings-storage-kind-thumbnails = Thumbnails
+settings-storage-kind-pipelines = Pipelines
+settings-storage-kind-libraries = Library caches
+settings-storage-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } thumbnail
+               *[other] { $entries } thumbnails
+            }
+        [libraries]
+            { $entries ->
+                [one] { $entries } library
+               *[other] { $entries } libraries
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } pipeline
+               *[other] { $entries } pipelines
+            }
+    }
+settings-storage-usage = { settings-storage-entries }, { job-cache-size }
+settings-storage-total = Total
+settings-storage-total-limit = { job-cache-size } of { $limit } GB
+settings-storage-total-unlimited = { job-cache-size }, unlimited
+settings-storage-counting = Counting…
+settings-storage-clear = Clear
+settings-storage-clear-thumbnails = Clear the thumbnails
+settings-storage-clear-pipelines = Clear the pipelines
+settings-storage-clear-tip = Removed from the disk, and made again when needed
+settings-storage-no-cache = There is no disk cache: its folder could not be written as Apertrust started, so nothing is kept between runs.
+settings-storage-refused-clearing = These are being cleared already.
+settings-storage-refused-no-cache = There is no disk cache to clear.
+settings-storage-refused = They could not be cleared.
 
 ## The log window, Help › Show Log (docs/gui.md, The log window); its filters are the
 ## Log row's options. $count, $kept and $shown are numbers of lines.

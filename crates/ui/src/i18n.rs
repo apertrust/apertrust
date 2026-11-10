@@ -40,6 +40,16 @@ use unic_langid::LanguageIdentifier;
 
 pub use fluent_bundle::FluentArgs as Args;
 
+/// `value` for a message's variable, written in the language's numbers with at least
+/// `at_least` decimals, as a size's "1.0 MB" and "1,5 МБ".
+pub fn decimals(value: f64, at_least: usize) -> FluentValue<'static> {
+    let options = fluent_bundle::types::FluentNumberOptions {
+        minimum_fraction_digits: Some(at_least),
+        ..Default::default()
+    };
+    FluentValue::Number(fluent_bundle::types::FluentNumber::new(value, options))
+}
+
 /// The languages of the interface, and the pseudo-locale that tests layouts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Locale {
@@ -469,6 +479,21 @@ mod tests {
         assert_eq!(count(&pl, 1.5), "1,5 zdjęcia");
     }
 
+    /// A number given with at least a decimal keeps it, in each language's numbers.
+    #[test]
+    fn a_number_with_its_decimals_keeps_them() {
+        let size = |locale, value| {
+            let mut args = Args::new();
+            args.set("size", decimals(value, 1));
+            args.set("unit", "mb");
+            Translator::new(locale).text_with("job-cache-size", Some(&args))
+        };
+        assert_eq!(size(Locale::EnGb, 1.0), "1.0 MB");
+        assert_eq!(size(Locale::EnGb, 5.0), "5.0 MB");
+        assert_eq!(size(Locale::Uk, 1.5), "1,5 МБ");
+        assert_eq!(size(Locale::Pl, 1.5), "1,5 MB");
+    }
+
     #[test]
     fn numbers_in_messages_are_grouped_in_each_language_s_way() {
         assert_eq!(
@@ -799,6 +824,13 @@ mod tests {
                 args.set("storage", "disk");
                 args.set("written", 10);
                 args.set("skipped", 1);
+                // The cache's Clear: what it clears, how many and in what unit.
+                args.set("kind", "thumbnails");
+                args.set("entries", 2104);
+                args.set("unit", "mb");
+                // Settings › Storage's: the cache's limit, and Show's words.
+                args.set("limit", 4);
+                args.set("show", "Show in Finder");
                 // The Export dialog's.
                 args.set("source", "IMG_2041.ARW");
                 args.set("names", "$(OPENCL.ACTIVATED)");

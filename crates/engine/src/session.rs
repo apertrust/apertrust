@@ -91,7 +91,8 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-pub use apertrust_base::cache::CacheCommand;
+pub use apertrust_base::cache::{CacheCommand, CacheEvent};
+use apertrust_base::cache::{Kind, Policy};
 use apertrust_base::jobs::Control;
 pub use apertrust_export::{ExportSettings, Places};
 /// The library's commands and events and what they carry (decision 54, layer 4).
@@ -119,8 +120,8 @@ use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
 pub use crate::sidecar::ViewOnly;
-pub use cache::CacheOptions;
 use cache::Upkeep;
+pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
 pub(crate) use open::Load;
 use open::{Decodes, Stage};
 use outbox::Drain;
@@ -258,12 +259,22 @@ pub enum Command {
     /// [`LibraryEvent::Thumbnail`], naming the open of its folder. A new open or a close
     /// cancels those not yet sent; with no folder open nothing is read.
     Library(LibraryCommand),
-    /// A command of the disk cache's (decision 76). [`CacheCommand::Limit`], the limit as
-    /// `cache.limited` and `cache.limit` now give it ([`crate::settings::cache_limit`]),
-    /// for settings that apply at once: lowered or turned on, an eviction, a
-    /// `SystemBackground` job with no progress, unless one is queued already; one running,
-    /// the start's walk among them, takes it in and runs once more. Raised, the same or
-    /// turned off, none. With no cache, nothing.
+    /// A command of the disk cache's (decision 76).
+    ///
+    /// - [`CacheCommand::Limit`], the limit as `cache.limited` and `cache.limit` now give
+    ///   it ([`crate::settings::cache_limit`]), for settings that apply at once: lowered or
+    ///   turned on, an eviction, a `SystemBackground` job with no progress, unless one is
+    ///   queued already; one running, the start's walk among them, takes it in and runs
+    ///   once more. Raised, the same or turned off, none. With no cache, nothing.
+    /// - [`CacheCommand::Sizes`], answered as [`Event::Cache`]: at once with the sizes the
+    ///   handle counts where a walk has run, then by a `SystemBackground` walk, one at a
+    ///   time, with what other processes did meanwhile. With no cache,
+    ///   [`CacheEvent::NoCache`].
+    /// - [`CacheCommand::Clear`], a limited kind's entries removed by a cancellable job on
+    ///   darktable's `UserBackground` queue, its progress as [`Event::Job`], its `Added`
+    ///   naming this command, the sizes answered again as it ends. Refused for a kept
+    ///   kind ([`SessionError::CacheKept`]), for a kind a Clear is clearing already
+    ///   ([`SessionError::CacheClearing`]) and with no cache ([`SessionError::NoCache`]).
     Cache(CacheCommand),
     /// A test's synthetic GPU job, started as a command starts a job.
     #[cfg(test)]
@@ -284,6 +295,10 @@ pub enum Command {
     /// Holds the next open's decode, the decode slot taken, for a test.
     #[cfg(test)]
     HoldDecode(export_job::testing::Hold),
+    /// Holds the next [`CacheCommand::Clear`] at each progress it tells, before each
+    /// removal, for a test.
+    #[cfg(test)]
+    HoldClear(export_job::testing::Hold),
 }
 
 /// Whether `command` acts on the open photo's edit, as every command does but these: the
@@ -307,7 +322,8 @@ fn on_edit(command: &Command) -> bool {
         | Command::HoldPreview(_)
         | Command::HoldFolder(_)
         | Command::HoldThumbnails(_)
-        | Command::HoldDecode(_) => false,
+        | Command::HoldDecode(_)
+        | Command::HoldClear(_) => false,
         _ => true,
     }
 }
@@ -378,6 +394,10 @@ pub enum Event {
     /// What a [`Command::Library`] found or did, each naming the command it answers: a
     /// client keeps the number of its latest open or close and drops the rest.
     Library(LibraryEvent),
+    /// The disk cache's sizes, each kind's, the limited kinds' together and the limit, or
+    /// that the session has none (decision 76): a fact, the whole cache, answering
+    /// [`CacheCommand::Sizes`] and sent again as a [`CacheCommand::Clear`] ends.
+    Cache(CacheEvent),
     Failed(SessionError),
 }
 
@@ -414,6 +434,8 @@ pub enum Fact {
     Destination(JobId),
     /// A job's state while it lives, by job.
     State(JobId),
+    /// The disk cache's sizes: [`Event::Cache`].
+    Cache,
 }
 
 impl Event {
@@ -425,6 +447,7 @@ impl Event {
             Event::Frame(_) => Fact::Frame,
             Event::Scopes(_) => Fact::Scopes,
             Event::ExportPreview { .. } => Fact::ExportPreview,
+            Event::Cache(_) => Fact::Cache,
             // Each of a job's values is a topic of its own, since each event carries only
             // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
@@ -692,6 +715,20 @@ pub enum SessionError {
     /// retry was used already, or one older than the latest [`RETRIES_KEPT`].
     #[error("job {job} cannot be tried again")]
     NotRetryable { job: JobId },
+    /// [`CacheCommand::Clear`] named a kept kind, which only its owner's rule or the
+    /// person's Remove takes away (decision 76): nothing is removed.
+    #[error("the cache's {} are kept, never cleared: Clear takes a limited kind", kind.id())]
+    CacheKept { kind: Kind },
+    /// [`CacheCommand::Clear`] named a kind a Clear is clearing already: that one goes on.
+    #[error("the cache's {} are being cleared already", kind.id())]
+    CacheClearing { kind: Kind },
+    /// [`CacheCommand::Clear`] with no disk cache: the client handed the session none.
+    #[error("there is no disk cache")]
+    NoCache,
+    /// The walk for the [`CacheCommand::Sizes`] numbered `command` failed: the cache's
+    /// folder, or a kind's, cannot be listed.
+    #[error("the cache cannot be walked: {source}")]
+    CacheWalk { command: u64, source: io::Error },
     /// A bug in the engine: what it was doing is dropped, the photo with it.
     #[error("the engine failed: {0}")]
     Panicked(String),
@@ -1280,6 +1317,9 @@ struct Engine {
     /// How many kernels the session has compiled, for a test.
     #[cfg(test)]
     compiled: usize,
+    /// Holds the next Clear of the cache, for a test.
+    #[cfg(test)]
+    clear_hold: Option<export_job::testing::Hold>,
 }
 
 /// The session's jobs (decision 57): its control, and the GPU tasks their bodies hand
@@ -1623,6 +1663,8 @@ impl Engine {
             uploaded: Vec::new(),
             #[cfg(test)]
             compiled: 0,
+            #[cfg(test)]
+            clear_hold: None,
         };
         (engine, rejected)
     }
@@ -1850,12 +1892,7 @@ impl Engine {
                     self.library(command, &mut events);
                     Ok(())
                 }
-                Command::Cache(CacheCommand::Limit(limit)) => {
-                    if let Some(cache) = &self.cache {
-                        cache.set_limit(limit, &self.jobs.control);
-                    }
-                    Ok(())
-                }
+                Command::Cache(command) => self.cache(command, &mut events),
                 #[cfg(test)]
                 Command::HoldExport(hold) => {
                     self.export_hold = Some(hold);
@@ -1879,6 +1916,11 @@ impl Engine {
                 #[cfg(test)]
                 Command::HoldDecode(hold) => {
                     self.decode_hold = Some(hold);
+                    Ok(())
+                }
+                #[cfg(test)]
+                Command::HoldClear(hold) => {
+                    self.clear_hold = Some(hold);
                     Ok(())
                 }
                 command => self.apply_edit(command).map(|effect| {
@@ -2097,7 +2139,8 @@ impl Engine {
             | Command::HoldPreview(_)
             | Command::HoldFolder(_)
             | Command::HoldThumbnails(_)
-            | Command::HoldDecode(_) => {
+            | Command::HoldDecode(_)
+            | Command::HoldClear(_) => {
                 return Ok(Effect::default());
             }
         };
@@ -2622,6 +2665,57 @@ impl Engine {
             .progress(message, true)
         });
         self.folder = Some(job);
+    }
+
+    /// [`Command::Cache`], the command numbered [`Self::applied`] (decision 76): the limit
+    /// applied; the sizes told at once where the handle counts them, then walked again; a
+    /// limited kind cleared by a cancellable `UserBackground` job, as darktable's Rebuild
+    /// Cache runs. With no cache, a limit is nothing, the sizes say so in `events` and a
+    /// Clear is refused.
+    fn cache(
+        &mut self,
+        command: CacheCommand,
+        events: &mut Vec<Event>,
+    ) -> Result<(), SessionError> {
+        let Some(upkeep) = &self.cache else {
+            return match command {
+                CacheCommand::Limit(_) => Ok(()),
+                CacheCommand::Sizes => {
+                    events.push(Event::Cache(CacheEvent::NoCache));
+                    Ok(())
+                }
+                CacheCommand::Clear { .. } => Err(SessionError::NoCache),
+            };
+        };
+        let outbox = self.jobs.outbox.clone();
+        let tell: cache::Tell = Arc::new(move |event| outbox.send(event));
+        match command {
+            CacheCommand::Limit(limit) => upkeep.set_limit(limit, &self.jobs.control),
+            CacheCommand::Sizes => {
+                // Sent before the walk is added, so its answer never comes first.
+                if let Some(counted) = upkeep.counted() {
+                    tell(Event::Cache(counted));
+                }
+                upkeep.walk_for_sizes(self.applied, &self.jobs.control, tell);
+            }
+            CacheCommand::Clear { kind } => {
+                if kind.policy() == Policy::Kept {
+                    return Err(SessionError::CacheKept { kind });
+                }
+                if upkeep.clearing(kind, &self.jobs.control) {
+                    return Err(SessionError::CacheClearing { kind });
+                }
+                let job = upkeep.clear_job(
+                    kind,
+                    tell,
+                    #[cfg(test)]
+                    self.clear_hold.take(),
+                );
+                let job = self.jobs.add(self.applied, Queue::UserBackground, |_| job);
+                upkeep.clears(kind, job);
+            }
+        }
+        Ok(())
     }
 
     /// [`LibraryCommand::Thumbnails`]: each of the folder's `photos` a job on darktable's
@@ -7636,9 +7730,335 @@ mod tests {
         within(5 * ENTRY);
         session.send(Command::Cache(CacheCommand::Limit(Limit::Bytes(2 * ENTRY))));
         within(2 * ENTRY);
-        assert_eq!(cache.walk(&|| false).unwrap().limited().entries, 1);
+        assert_eq!(cache.walk(&|| false).unwrap().unwrap().limited().entries, 1);
         drop(session);
         remove(&photo);
+    }
+
+    /// The bytes of each thumbnail [`with_cache`] writes: its mark, the version's length, a
+    /// one-byte version and a thousand bytes.
+    const CACHED: u64 = 4 + 4 + 1 + 1000;
+
+    /// The limit [`with_cache`]'s sessions keep their cache within, far past what they hold.
+    const ROOMY: apertrust_base::cache::Limit = apertrust_base::cache::Limit::Bytes(1 << 30);
+
+    /// Thumbnails for the slots `slots` in `cache`, each [`CACHED`] bytes.
+    fn cache_thumbnails(cache: &apertrust_base::cache::Cache, slots: std::ops::Range<u64>) {
+        for slot in slots {
+            let entry = cache.write(
+                apertrust_base::cache::THUMBNAILS,
+                &slot.to_le_bytes(),
+                b"v",
+                &[0; 1000],
+            );
+            entry.expect("an entry is written");
+        }
+    }
+
+    /// A session handed a cache of `entries` thumbnails in a folder of the test's own,
+    /// within [`ROOMY`], once its start's walk has counted them: the session, its wakes, the
+    /// cache, and a path in the folder for [`remove`].
+    fn with_cache(
+        gpu: &GpuContext,
+        name: &str,
+        entries: u64,
+    ) -> (
+        Session,
+        Receiver<()>,
+        Arc<apertrust_base::cache::Cache>,
+        PathBuf,
+    ) {
+        let photo = scratch(name);
+        let cache = apertrust_base::cache::Cache::create(photo.parent().unwrap().join("cache"));
+        let cache = Arc::new(cache.expect("a cache"));
+        cache_thumbnails(&cache, 0..entries);
+        let (woken, wakes) = mpsc::channel();
+        let wake = move || {
+            let _ = woken.send(());
+        };
+        let options = CacheOptions {
+            cache: Arc::clone(&cache),
+            limit: ROOMY,
+        };
+        let session = Session::spawn(
+            gpu.clone(),
+            OPERATIONS,
+            &[],
+            BUILD,
+            pipeline::BUDGET,
+            Some(options),
+            Arc::new(wake),
+            open::testing::loading(synthetic),
+        );
+        let deadline = Instant::now() + TEST_WAIT;
+        while cache.sizes().is_none() {
+            assert!(Instant::now() < deadline, "the start's walk ends in time");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        (session, wakes, cache, photo)
+    }
+
+    /// The thumbnails' usage an [`Event::Cache`] tells.
+    fn thumbnails_told(event: &Event) -> Option<apertrust_base::cache::Usage> {
+        match event {
+            Event::Cache(CacheEvent::Sizes { sizes, .. }) => {
+                Some(sizes.of(apertrust_base::cache::THUMBNAILS))
+            }
+            _ => None,
+        }
+    }
+
+    /// The error the command numbered `command` was refused with, among `events`.
+    fn refusal(events: &[Event], command: u64) -> Option<&SessionError> {
+        events.iter().find_map(|e| match e {
+            Event::Failed(SessionError::Refused { command: c, error }) if *c == command => {
+                Some(&**error)
+            }
+            _ => None,
+        })
+    }
+
+    /// `Sizes` is answered at once with what the session's handle counts, then again by a
+    /// walk, which counts what another process wrote meanwhile; its answer comes last, so
+    /// it is the fact a client keeps.
+    #[test]
+    fn sizes_are_told_from_the_count_at_once_then_walked_again() {
+        use apertrust_base::cache::{Cache, Usage};
+        let gpu = gpu();
+        let (session, wakes, cache, photo) = with_cache(&gpu, "cache-sizes", 4);
+        cache_thumbnails(&Cache::open(cache.folder()), 4..6);
+
+        session.send(Command::Cache(CacheCommand::Sizes));
+        let six = |e: &Event| thumbnails_told(e).is_some_and(|usage| usage.entries == 6);
+        let events = until(&session, &wakes, six);
+        let told: Vec<_> = events.iter().filter_map(thumbnails_told).collect();
+        let usage = |entries| Usage {
+            entries,
+            bytes: entries * CACHED,
+        };
+        assert_eq!(told, [usage(4), usage(6)]);
+        let Some(Event::Cache(CacheEvent::Sizes { limited, limit, .. })) = events.last() else {
+            panic!("the walk's answer comes last: {events:?}");
+        };
+        assert_eq!((*limited, *limit), (usage(6), ROOMY));
+        drop(session);
+        remove(&photo);
+    }
+
+    /// A Clear is a cancellable `UserBackground` job, its row's title, progress, detail
+    /// and outcome its own messages, and as it ends it tells the sizes again, with the
+    /// kind empty.
+    #[test]
+    fn a_clear_is_a_job_with_a_row_and_tells_the_sizes_as_it_ends() {
+        use apertrust_base::cache::{THUMBNAILS, Usage};
+        let gpu = gpu();
+        let (session, wakes, cache, photo) = with_cache(&gpu, "cache-clear", 10);
+
+        let clear = session.send(Command::Cache(CacheCommand::Clear { kind: THUMBNAILS }));
+        let mut events = Vec::new();
+        let (job, own) = follow(&session, &wakes, &mut events, clear, ended);
+        assert_eq!(
+            own.first(),
+            Some(&JobEvent::Added {
+                job,
+                kind: "cache-clear",
+                queue: Some(Queue::UserBackground),
+                title: Message::new("job-cache-clear").with("kind", "thumbnails"),
+                cancellable: true,
+                destination: None,
+                detail: None,
+                progress: jobs::Progress::default(),
+                retries: None,
+            })
+        );
+        let progress: Vec<_> = own
+            .iter()
+            .filter_map(|e| match e {
+                JobEvent::Progress { done, total, .. } => Some(jobs::Progress {
+                    done: *done,
+                    total: *total,
+                }),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            progress.first().map(|p| p.total),
+            Some(Some(10)),
+            "{progress:?}"
+        );
+        let done = jobs::Progress {
+            done: 10,
+            total: Some(10),
+        };
+        assert_eq!(progress.last(), Some(&done));
+        let detail = own.iter().rev().find_map(|e| match e {
+            JobEvent::Detail { detail, .. } => Some(detail.clone()),
+            _ => None,
+        });
+        let now = Message::new("job-cache-clear-now")
+            .with("done", 10u64)
+            .with("total", 10u64);
+        assert_eq!(detail, Some(Some(now)));
+        // 10,090 bytes: 10 kB.
+        let cleared = Message::new("job-cache-cleared")
+            .with("kind", "thumbnails")
+            .with("entries", 10u64)
+            .with(
+                "size",
+                crate::jobs::Argument::Decimals {
+                    value: 10.0,
+                    at_least: 0,
+                },
+            )
+            .with("unit", "kb");
+        assert!(
+            matches!(
+                own.last(),
+                Some(JobEvent::Ended {
+                    state: State::Finished,
+                    outcome: Some(outcome),
+                    failure: None,
+                    ..
+                }) if *outcome == cleared
+            ),
+            "{own:?}"
+        );
+        // The sizes, before the job's end, the kind empty.
+        let told = events.iter().filter_map(thumbnails_told).next_back();
+        assert_eq!(told, Some(Usage::default()));
+        assert_eq!(
+            cache.walk(&|| false).unwrap().unwrap().of(THUMBNAILS),
+            Usage::default()
+        );
+        drop(session);
+        remove(&photo);
+    }
+
+    /// A Clear cancelled stops before its next removal: the entries it reached are gone,
+    /// the rest stay, and its outcome and the sizes say so.
+    #[test]
+    fn a_clear_cancelled_stops_before_its_next_removal() {
+        use apertrust_base::cache::{THUMBNAILS, Usage};
+        let gpu = gpu();
+        let (session, wakes, cache, photo) = with_cache(&gpu, "cache-clear-cancelled", 10);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldClear(hold));
+        let clear = session.send(Command::Cache(CacheCommand::Clear { kind: THUMBNAILS }));
+        // Held as it tells none done, then after each of two removals.
+        for _ in 0..2 {
+            begun
+                .recv_timeout(TEST_WAIT)
+                .expect("the clear tells its progress");
+            permit.send(()).unwrap();
+        }
+        begun
+            .recv_timeout(TEST_WAIT)
+            .expect("the clear tells its progress");
+        let mut events = Vec::new();
+        let (job, _) = follow(&session, &wakes, &mut events, clear, |_| true);
+        session.send(Command::CancelJob { job });
+        let stopping = |e: &JobEvent| {
+            matches!(
+                e,
+                JobEvent::State {
+                    state: State::Cancelled,
+                    ..
+                }
+            )
+        };
+        follow(&session, &wakes, &mut events, clear, stopping);
+        drop(permit);
+
+        let (_, own) = follow(&session, &wakes, &mut events, clear, ended);
+        let cancelled = Message::new("job-cache-clear-cancelled")
+            .with("kind", "thumbnails")
+            .with("entries", 2u64)
+            .with(
+                "size",
+                crate::jobs::Argument::Decimals {
+                    value: 2.0,
+                    at_least: 1,
+                },
+            )
+            .with("unit", "kb");
+        assert!(
+            matches!(
+                own.last(),
+                Some(JobEvent::Ended {
+                    state: State::Cancelled,
+                    outcome: Some(outcome),
+                    failure: None,
+                    ..
+                }) if *outcome == cancelled
+            ),
+            "{own:?}"
+        );
+        let left = Usage {
+            entries: 8,
+            bytes: 8 * CACHED,
+        };
+        let told = events.iter().filter_map(thumbnails_told).next_back();
+        assert_eq!(told, Some(left));
+        assert_eq!(cache.walk(&|| false).unwrap().unwrap().of(THUMBNAILS), left);
+        drop(session);
+        remove(&photo);
+    }
+
+    /// A Clear is refused for a kept kind, for a kind a Clear is clearing already, and
+    /// with no cache, where the sizes say there is none.
+    #[test]
+    fn a_clear_is_refused_for_a_kept_kind_one_under_way_and_no_cache() {
+        use apertrust_base::cache::{LIBRARIES, THUMBNAILS};
+        let gpu = gpu();
+        let (session, wakes, _cache, photo) = with_cache(&gpu, "cache-refused", 3);
+        let kept = session.send(Command::Cache(CacheCommand::Clear { kind: LIBRARIES }));
+        let events = until(
+            &session,
+            &wakes,
+            |e| matches!(e, Event::Failed(SessionError::Refused { command, .. }) if *command == kept),
+        );
+        assert!(
+            matches!(
+                refusal(&events, kept),
+                Some(SessionError::CacheKept { kind }) if *kind == LIBRARIES
+            ),
+            "{events:?}"
+        );
+
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldClear(hold));
+        let first = session.send(Command::Cache(CacheCommand::Clear { kind: THUMBNAILS }));
+        begun.recv_timeout(TEST_WAIT).expect("the clear begins");
+        let again = session.send(Command::Cache(CacheCommand::Clear { kind: THUMBNAILS }));
+        let mut events = until(
+            &session,
+            &wakes,
+            |e| matches!(e, Event::Failed(SessionError::Refused { command, .. }) if *command == again),
+        );
+        assert!(
+            matches!(
+                refusal(&events, again),
+                Some(SessionError::CacheClearing { kind }) if *kind == THUMBNAILS
+            ),
+            "{events:?}"
+        );
+        drop(permit);
+        follow(&session, &wakes, &mut events, first, ended);
+        drop(session);
+        remove(&photo);
+
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let none = session.send(Command::Cache(CacheCommand::Clear { kind: THUMBNAILS }));
+        session.send(Command::Cache(CacheCommand::Sizes));
+        let events = until(&session, &wakes, |e| matches!(e, Event::Cache(_)));
+        assert!(
+            matches!(refusal(&events, none), Some(SessionError::NoCache)),
+            "{events:?}"
+        );
+        assert!(matches!(
+            events.last(),
+            Some(Event::Cache(CacheEvent::NoCache))
+        ));
     }
 
     #[test]
@@ -7980,6 +8400,9 @@ mod tests {
                 | LibraryEvent::Closed { .. }
                 | LibraryEvent::Thumbnail { .. } => Topic::Notice,
             },
+            Event::Cache(event) => match event {
+                CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),
+            },
             Event::Failed(_) => Topic::Notice,
         }
     }
@@ -8046,6 +8469,11 @@ mod tests {
                 }),
             },
             Event::Failed(SessionError::Stopped),
+            Event::Cache(CacheEvent::NoCache),
+            Event::Cache(CacheEvent::sizes(
+                Default::default(),
+                apertrust_base::cache::Limit::Unlimited,
+            )),
         ]);
         let folder = path.parent().unwrap().to_owned();
         events.extend(
@@ -8110,7 +8538,7 @@ mod tests {
             assert!(line.ends_with(kind), "{line}");
         }
         // Every variant, the ones a session sent among them, and every job event.
-        assert_eq!(seen.len(), 11, "{events:?}");
+        assert_eq!(seen.len(), 12, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.

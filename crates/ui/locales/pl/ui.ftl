@@ -145,6 +145,42 @@ job-delete = Usuwanie { $done } / { $total }
 job-thumbnails = Tworzenie miniatur
 job-folder = Odczytywanie { $folder }
 
+## Czyszczenie pamięci podręcznej: $kind to, co jest czyszczone, thumbnails lub pipelines;
+## $done to usunięte wpisy z $total; $entries to wpisy usunięte, $size i $unit, ile
+## zajmowały, jednostka kb, mb lub gb.
+
+job-cache-size =
+    { $size } { $unit ->
+        [kb] kB
+        [gb] GB
+       *[mb] MB
+    }
+job-cache-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } miniaturę
+                [few] { $entries } miniatury
+                [many] { $entries } miniatur
+               *[other] { $entries } miniatury
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } potok
+                [few] { $entries } potoki
+                [many] { $entries } potoków
+               *[other] { $entries } potoku
+            }
+    }
+job-cache-clear =
+    { $kind ->
+        [thumbnails] Czyszczenie pamięci podręcznej miniatur
+       *[pipelines] Czyszczenie pamięci podręcznej potoków
+    }
+job-cache-clear-now = Usunięto { $done } z { $total }
+job-cache-cleared = Usunięto { job-cache-entries }, { job-cache-size }
+job-cache-clear-cancelled = Czyszczenie anulowane. Usunięto { job-cache-entries }, { job-cache-size }
+
 job-export-photo =
     Eksportowanie { $number } / { $total } do { $storage ->
        *[disk] pliku na dysku
@@ -196,6 +232,8 @@ job-cause-gone = folderu lub jego dysku już nie ma
 job-cause-folder = nie można utworzyć folderu ani zapisać w nim
 job-cause-write = nie udało się zapisać pliku
 job-cause-engine = silnik nieoczekiwanie się zatrzymał
+job-cause-cache-remove = nie udało się usunąć niektórych plików pamięci podręcznej
+job-cause-cache-read = nie można odczytać folderu pamięci podręcznej
 
 ## Wiersz zadania w oknie zadań: wiersze i przyciski
 
@@ -430,6 +468,62 @@ setting-log-domains-option-settings = Ustawienia
 setting-log-domains-option-control = Sterowanie
 setting-log-domains-option-event = Zdarzenia
 setting-log-domains-option-verbose = Szczegółowo
+
+## Ustawienia › Przechowywanie, jego część zbudowana ręcznie (decyzja 76). $flag i $variable
+## to to, co wskazało folder; $kind to thumbnails, pipelines lub libraries; $entries, $size
+## i $unit jak w czyszczeniu pamięci podręcznej; $limit to limit w GB.
+
+settings-group-folders = Foldery
+settings-group-cache-contents = W pamięci podręcznej
+settings-storage-user-data = Folder danych użytkownika
+settings-storage-cache = Folder pamięci podręcznej
+settings-storage-chosen-flag = Wskazany przez { $flag }
+settings-storage-chosen-variable = Wskazany przez { $variable }
+settings-storage-chosen-user-data = Wewnątrz folderu danych użytkownika
+settings-storage-chosen-platform = Folder systemowy
+settings-storage-none = Brak: system nie podaje folderu
+settings-storage-show-tip = Otwórz ten folder
+settings-storage-show-name = { $show }: { $folder }
+settings-storage-kind-thumbnails = Miniatury
+settings-storage-kind-pipelines = Potoki
+settings-storage-kind-libraries = Pamięci podręczne bibliotek
+settings-storage-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } miniatura
+                [few] { $entries } miniatury
+                [many] { $entries } miniatur
+               *[other] { $entries } miniatury
+            }
+        [libraries]
+            { $entries ->
+                [one] { $entries } biblioteka
+                [few] { $entries } biblioteki
+                [many] { $entries } bibliotek
+               *[other] { $entries } biblioteki
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } potok
+                [few] { $entries } potoki
+                [many] { $entries } potoków
+               *[other] { $entries } potoku
+            }
+    }
+settings-storage-usage = { settings-storage-entries }, { job-cache-size }
+settings-storage-total = Razem
+settings-storage-total-limit = { job-cache-size } z { $limit } GB
+settings-storage-total-unlimited = { job-cache-size }, bez limitu
+settings-storage-counting = Liczenie…
+settings-storage-clear = Wyczyść
+settings-storage-clear-thumbnails = Wyczyść miniatury
+settings-storage-clear-pipelines = Wyczyść potoki
+settings-storage-clear-tip = Usuwane z dysku i tworzone ponownie w razie potrzeby
+settings-storage-no-cache = Brak pamięci podręcznej na dysku: przy uruchomieniu Apertrust nie udało się zapisać jej folderu, więc nic nie jest zachowywane między uruchomieniami.
+settings-storage-refused-clearing = Są już czyszczone.
+settings-storage-refused-no-cache = Nie ma pamięci podręcznej do wyczyszczenia.
+settings-storage-refused = Nie udało się ich wyczyścić.
 
 ## Okno dziennika, Pomoc › Pokaż dziennik; jego filtry to opcje wiersza „Dziennik”
 

@@ -218,6 +218,7 @@ fn kind(event: &Event) -> &'static str {
             LibraryEvent::Closed { .. } => "Library Closed",
             LibraryEvent::Thumbnail { .. } => "Library Thumbnail",
         },
+        Event::Cache(_) => "Cache",
         Event::Failed(_) => "Failed",
     }
 }
@@ -259,7 +260,10 @@ impl fmt::Display for Line<'_> {
             Event::Failed(SessionError::Refused { command, .. }) => {
                 write!(f, ", refused command {command}")?
             }
-            Event::Failed(_) => {}
+            Event::Failed(SessionError::CacheWalk { command, .. }) => {
+                write!(f, ", command {command}")?
+            }
+            Event::Cache(_) | Event::Failed(_) => {}
         }
         match event.topic() {
             Topic::Fact(_) => f.write_str(", a fact"),

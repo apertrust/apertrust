@@ -91,6 +91,8 @@ cargo run --release -p apertrust-cli -- export FILE... [-o PATTERN] [--width W -
 cargo run --release -p apertrust-cli -- preview FILE [--width W --height H] [--exposure EV] [--png OUT] [--join OPERATION] [--scopes[=totals|histogram|waveform|vectorscope]]
 cargo run --release -p apertrust-cli -- -d perf preview FILE --beside-export ROUNDS [--changes N] [--interval MS]
 cargo run --release -p apertrust-cli -- library scan DIR                       # one folder's raws, sidecars, edits
+cargo run -p apertrust-cli -- [--cache-dir DIR] cache info                     # the disk cache's folder, limit and sizes
+cargo run -p apertrust-cli -- [--cache-dir DIR] cache clear [KIND...]          # thumbnails, pipelines; none: every limited kind
 cargo run --release -p apertrust-cli -- --max-binding 128 export FILE -o OUT.png   # as on lavapipe
 cargo run -p apertrust-cli -- --conf engine.memory_budget=1024 -d settings gpu     # a setting for one run
 tools/compare-cpu.sh [--raws 40d,7rv,xt5] [--paths dt-cpu,dt-opencl,software,gpu] [--runs N]
@@ -161,7 +163,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`; `cache`, `batch`, `serve` and `mcp` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `batch`, `serve` and `mcp` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |

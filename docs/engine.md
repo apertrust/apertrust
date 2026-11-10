@@ -1191,7 +1191,7 @@ flowchart TD
 - **The session's end.** The edit is saved, then `Control::shutdown` runs on a short-lived thread of its own while the engine thread keeps stepping the tasks the workers hand it until every worker has ended. So a body that cannot be cancelled and still waits for the engine thread finishes, and the drop never hangs.
   - After a panic, saving the edit or stepping tasks at the end, the inbox and the waiting tasks go before the control waits for its workers, so their bodies hear `Stopped`, and the panic goes on once the workers have ended.
   - After a panic elsewhere on the engine thread the inbox is dropped first and the tasks before the control.
-- **Callers.** The export is the first job a client starts (`Command::Export`, [Export jobs](#export-jobs)), beside the Export dialog's preview and a folder's reading. The disk cache's `cache-walk` and `cache-evict` are `SystemBackground` jobs with no progress, the latter asked for by `Command::Cache(CacheCommand::Limit(limit))` and by a write past the limit ([cache.md](cache.md#through-the-session)). The tests' synthetic job stays behind a test-only command.
+- **Callers.** The export is the first job a client starts (`Command::Export`, [Export jobs](#export-jobs)), beside the Export dialog's preview and a folder's reading. The disk cache's `cache-walk` and `cache-evict` are `SystemBackground` jobs with no progress, the latter asked for by `Command::Cache(CacheCommand::Limit(limit))` and by a write past the limit, the former also by `CacheCommand::Sizes`; its `Clear { kind }` is a `cache-clear` job on `UserBackground` with a progress, cancellable ([cache.md](cache.md#through-the-session)). The tests' synthetic job stays behind a test-only command.
 
 ### Differences from darktable
 

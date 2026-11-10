@@ -51,6 +51,7 @@ use toml::Value;
 
 use crate::dialog_host::{Asks, Dialog, Form, Keys, Look, Output};
 use crate::settings::{self, Keeper, Position};
+use crate::storage;
 
 /// The dialog's width, in points, as its design has it.
 pub const WIDTH: f32 = 960.0;
@@ -133,6 +134,16 @@ pub struct Settings {
     /// the Mac's window, which its own close button and Cmd+W close, as Apple's Settings
     /// windows have it.
     pub close_button: bool,
+    /// Storage's hand-built part, as the app last handed it.
+    storage: storage::View,
+    /// The kinds whose Clear was pressed since the app last handed the view, disabled
+    /// meanwhile, so a second press never asks again.
+    pressed: Vec<apertrust_base::cache::Kind>,
+    /// Whether Storage asked for the sizes since it was last shown.
+    sizes_asked: bool,
+    /// Whether its window had the focus at the last frame, so Storage asks for the sizes
+    /// again as it comes back.
+    focused: bool,
 }
 
 /// What the user changed in the dialog: a setting set to a value, as `settings.toml` keeps
@@ -159,6 +170,8 @@ impl Change {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Asked {
     pub change: Option<Change>,
+    /// What Storage asked, after the change.
+    pub storage: Vec<storage::Asked>,
     /// Its Close button was pressed.
     pub close: bool,
 }
@@ -202,8 +215,10 @@ impl Dialog for Settings {
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
         let open = self.menu_open(ui.ctx());
         let asked = self.frame(ui);
+        let change = asked.change.map(Output::Settings);
+        let storage = asked.storage.into_iter().map(Output::Storage);
         Asks {
-            output: asked.change.map(Output::Settings),
+            outputs: change.into_iter().chain(storage).collect(),
             close: asked.close,
             keeps_escape: open,
         }
@@ -226,12 +241,34 @@ impl Settings {
             rows,
             page: Page::General,
             close_button,
+            storage: storage::View::default(),
+            pressed: Vec::new(),
+            sizes_asked: false,
+            focused: true,
         };
         let kept = keeper.page();
         if dialog.holds(kept) {
             dialog.page = kept;
         }
         dialog
+    }
+
+    /// The dialog with Storage's hand-built part showing `view`.
+    pub fn with_storage(mut self, view: storage::View) -> Settings {
+        self.set_storage(view);
+        self
+    }
+
+    /// What Storage's hand-built part shows.
+    pub fn storage(&self) -> &storage::View {
+        &self.storage
+    }
+
+    /// Storage's hand-built part showing `view`, as the app hands it after a press: a
+    /// Clear pressed since is the view's to disable now.
+    pub fn set_storage(&mut self, view: storage::View) {
+        self.storage = view;
+        self.pressed.clear();
     }
 
     /// Whether `page` holds a row, so it can be chosen.
@@ -297,9 +334,14 @@ impl Settings {
                                 t.spacing.l as i8,
                             ))
                             .show(ui, |ui| {
-                                if let Some(change) = self.page_rows(ui, &t) {
+                                let (change, storage) = self.page_rows(ui, &t);
+                                if let Some(change) = change {
                                     asked.change = Some(change);
                                 }
+                                if let Some(storage::Asked::Clear(kind)) = &storage {
+                                    self.pressed.push(*kind);
+                                }
+                                asked.storage.extend(storage);
                             });
                     },
                 );
@@ -307,6 +349,16 @@ impl Settings {
         });
         if let Some(change) = &asked.change {
             self.take(change, &ctx);
+        }
+        // Storage asks for the sizes each time it is shown, and as its window comes back
+        // to the front.
+        let focused = ctx.input(|i| i.focused);
+        let was = std::mem::replace(&mut self.focused, focused);
+        let back = focused && !was;
+        if self.page != Page::Storage {
+            self.sizes_asked = false;
+        } else if !std::mem::replace(&mut self.sizes_asked, true) || back {
+            asked.storage.push(storage::Asked::Sizes);
         }
         if self.close_button {
             let (line, _) = ui.allocate_exact_size(vec2(WIDTH, 1.0), Sense::hover());
@@ -451,8 +503,9 @@ impl Settings {
     }
 
     /// The shown page's groups, each under its title, in the order of their first rows,
-    /// and their rows. Returns what the user changed.
-    fn page_rows(&self, ui: &mut Ui, t: &Theme) -> Option<Change> {
+    /// and their rows; on Storage, its Folders group first and its In the cache group last.
+    /// Returns what the user changed, and what Storage asked.
+    fn page_rows(&self, ui: &mut Ui, t: &Theme) -> (Option<Change>, Option<storage::Asked>) {
         let ctx = ui.ctx().clone();
         let mut groups: Vec<&str> = Vec::new();
         for row in self.rows.iter().filter(|row| row.page == self.page) {
@@ -463,29 +516,35 @@ impl Settings {
         let title = FontId::new(t.text.section_title, FontFamily::Name(fonts::MEDIUM.into()));
         let content = ui.available_width();
         let words = translator(&ctx);
-        let labels: Vec<String> = self
+        let storage = self.page == Page::Storage;
+        let mut labels: Vec<String> = self
             .rows
             .iter()
             .filter(|row| row.page == self.page)
             .map(|row| label_of(&words, row))
             .collect();
+        if storage {
+            labels.extend(storage::labels(&words));
+        }
         let label_width = label_column(ui, t, &labels, content);
         let control_width = control_column(ui, &self.rows, self.page);
+        let lines = storage::Widths {
+            label: label_width,
+            content,
+            value: label_width + t.spacing.xl + DOT + t.spacing.xs,
+        };
         let mut change = None;
+        let mut asked = None;
+        if storage {
+            group_title(ui, t, &tr(&ctx, "settings-group-folders"), &title, content);
+            asked = storage::folders(ui, t, &self.storage, lines);
+        }
         for (i, group) in groups.into_iter().enumerate() {
-            if i > 0 {
+            if i > 0 || storage {
                 ui.add_space(t.spacing.l);
             }
-            // The title, on a line of its own with its text centred in it.
             let name = tr(&ctx, &format!("settings-group-{}", group.replace('_', "-")));
-            let (line, response) =
-                ui.allocate_exact_size(vec2(content, GROUP_LINE), Sense::hover());
-            let galley =
-                ui.painter()
-                    .layout_no_wrap(name.clone(), title.clone(), t.colors.text_strong);
-            let at = pos2(line.left(), line.center().y - galley.size().y / 2.0);
-            ui.painter().galley(at, galley, t.colors.text_strong);
-            response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &name));
+            group_title(ui, t, &name, &title, content);
             let rows = self.rows.iter().filter(|row| row.group == group);
             for row in rows.filter(|row| row.page == self.page) {
                 let widths = (label_width, control_width, content);
@@ -494,8 +553,29 @@ impl Settings {
                 }
             }
         }
-        change
+        if storage {
+            ui.add_space(t.spacing.l);
+            let name = tr(&ctx, "settings-group-cache-contents");
+            group_title(ui, t, &name, &title, content);
+            let pressed = &self.pressed;
+            if let Some(contents) = storage::contents(ui, t, &self.storage, pressed, lines) {
+                asked = Some(contents);
+            }
+        }
+        (change, asked)
     }
+}
+
+/// A group's title, `name`, on a line of its own across `content`, its text centred in
+/// it.
+fn group_title(ui: &mut Ui, t: &Theme, name: &str, font: &FontId, content: f32) {
+    let (line, response) = ui.allocate_exact_size(vec2(content, GROUP_LINE), Sense::hover());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(name.to_owned(), font.clone(), t.colors.text_strong);
+    let at = pos2(line.left(), line.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, t.colors.text_strong);
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name));
 }
 
 /// The id of `page`'s line in the list.
@@ -934,8 +1014,10 @@ mod tests {
             .build_ui_state(
                 |ui, bench: &mut Bench| {
                     let drawn = dialog_host::draw(ui, &mut bench.content);
-                    if let Some(Output::Settings(change)) = drawn.output {
-                        bench.changes.push(change);
+                    for output in drawn.outputs {
+                        if let Output::Settings(change) = output {
+                            bench.changes.push(change);
+                        }
                     }
                 },
                 Bench {
@@ -1413,10 +1495,12 @@ mod tests {
         harness.snapshot("settings-processing-dark");
     }
 
-    /// Storage's rows from the schema, the cache's three, at their defaults.
+    /// Storage: its folders, the cache's three rows from the schema at their defaults, and
+    /// what the cache holds, as the session answered.
     #[test]
     fn the_storage_page_in_the_dark_theme() {
         let mut harness = dialog();
+        harness.state_mut().content.storage = crate::storage::tests::sample();
         harness.get_by_label("Storage").click();
         harness.event(Event::PointerGone);
         harness.run();

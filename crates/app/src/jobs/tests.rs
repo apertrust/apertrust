@@ -21,7 +21,7 @@
 use std::time::Duration;
 
 use apertrust_base::jobs::{Control, Job as ControlJob};
-use apertrust_engine::session::Cause;
+use apertrust_engine::session::{CACHE_READ, CACHE_REMOVE, Cause};
 use apertrust_ui::components::JobPhase;
 use apertrust_ui::{Builtin, Locale, Theme};
 use eframe::egui::accesskit::Role;
@@ -730,10 +730,13 @@ fn every_cause_the_engine_names_has_words_in_every_language() {
         Cause::Write,
         Cause::Engine,
     ];
+    // The cache's Clear names its own two (decision 76).
+    let codes = causes.map(|cause| cause.id()).into_iter();
+    let codes: Vec<_> = codes.chain([CACHE_REMOVE, CACHE_READ]).collect();
     for locale in [Locale::EnGb, Locale::Uk, Locale::Pl] {
         let words = Translator::new(locale);
-        for cause in causes {
-            let id = format!("job-cause-{}", cause.id());
+        for cause in &codes {
+            let id = format!("job-cause-{cause}");
             assert!(words.has(&id), "{locale:?}: {id}");
             let text = words.text(&id);
             assert!(!text.ends_with('.'), "{id}: no full stop: {text}");
@@ -744,6 +747,106 @@ fn every_cause_the_engine_names_has_words_in_every_language() {
         cause_words(&english(), "from-the-future", "it broke."),
         "it broke"
     );
+}
+
+/// A size the session gives with its decimal keeps it on the row: "1.0 MB".
+#[test]
+fn a_size_with_its_decimal_keeps_it_on_the_row() {
+    let size = apertrust_engine::jobs::Argument::Decimals {
+        value: 1.0,
+        at_least: 1,
+    };
+    let outcome = Message::new("job-cache-cleared")
+        .with("kind", "thumbnails")
+        .with("entries", 3)
+        .with("size", size)
+        .with("unit", "mb");
+    let expected = JobMessage::new("job-cache-cleared")
+        .text("kind", "thumbnails")
+        .number("entries", 3.0)
+        .decimals("size", 1.0, 1)
+        .text("unit", "mb");
+    assert_eq!(job_message(&outcome), expected);
+}
+
+/// The cache's Clear words its title, its detail and its outcome in every language, the
+/// count's form and the size's unit the language's own (decision 76).
+#[test]
+fn a_cache_clear_s_row_reads_in_every_language() {
+    let say = |words: &Translator, id: &str, kind: &str, numbers: &[(&str, f64)], unit| {
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("kind", kind);
+        args.set("unit", unit);
+        for (name, value) in numbers {
+            args.set(*name, *value);
+        }
+        words.text_with(id, Some(&args))
+    };
+    let cleared = [("entries", 2104.0), ("size", 138.0)];
+    let en = english();
+    assert_eq!(
+        say(&en, "job-cache-clear", "thumbnails", &[], "mb"),
+        "Clearing the thumbnail cache"
+    );
+    let now = [("done", 1200.0), ("total", 2104.0)];
+    assert_eq!(
+        say(&en, "job-cache-clear-now", "thumbnails", &now, "mb"),
+        "1,200 of 2,104 removed"
+    );
+    assert_eq!(
+        say(&en, "job-cache-cleared", "thumbnails", &cleared, "mb"),
+        "Cleared 2,104 thumbnails, 138 MB"
+    );
+    let one = [("entries", 1.0), ("size", 4.2)];
+    assert_eq!(
+        say(&en, "job-cache-cleared", "thumbnails", &one, "kb"),
+        "Cleared 1 thumbnail, 4.2 kB"
+    );
+    assert_eq!(
+        say(&en, "job-cache-clear-cancelled", "pipelines", &one, "gb"),
+        "Clearing cancelled: 1 pipeline removed, 4.2 GB"
+    );
+    let us = Translator::new(Locale::EnUs);
+    assert_eq!(
+        say(
+            &us,
+            "job-cache-clear-cancelled",
+            "thumbnails",
+            &cleared,
+            "mb"
+        ),
+        "Clearing canceled: 2,104 thumbnails removed, 138 MB"
+    );
+    let uk = Translator::new(Locale::Uk);
+    assert_eq!(
+        say(&uk, "job-cache-cleared", "thumbnails", &cleared, "mb"),
+        "Видалено 2\u{a0}104 мініатюри, 138 МБ"
+    );
+    let pl = Translator::new(Locale::Pl);
+    assert_eq!(
+        say(&pl, "job-cache-cleared", "thumbnails", &cleared, "mb"),
+        // Polish groups from five digits.
+        "Usunięto 2104 miniatury, 138 MB"
+    );
+    for words in [&uk, &pl] {
+        for id in [
+            "job-cache-clear",
+            "job-cache-clear-now",
+            "job-cache-cleared",
+            "job-cache-clear-cancelled",
+        ] {
+            for kind in ["thumbnails", "pipelines"] {
+                let numbers = [
+                    ("done", 3.0),
+                    ("total", 5.0),
+                    ("entries", 3.0),
+                    ("size", 1.5),
+                ];
+                let text = say(words, id, kind, &numbers, "kb");
+                assert!(!text.is_empty() && !text.contains('{'), "{id}: {text}");
+            }
+        }
+    }
 }
 
 /// The window as the host draws it in its own window, and what each frame asked.
@@ -808,7 +911,7 @@ fn what_is_pressed_in_the_window_reaches_the_app_as_an_output() {
         .state()
         .asked
         .iter()
-        .filter_map(|drawn| drawn.output.clone())
+        .flat_map(|drawn| drawn.outputs.clone())
         .collect();
     assert_eq!(
         outputs,
@@ -839,7 +942,7 @@ fn a_failed_row_that_offers_it_draws_try_again_which_reaches_the_app() {
         .state()
         .asked
         .iter()
-        .filter_map(|drawn| drawn.output.clone())
+        .flat_map(|drawn| drawn.outputs.clone())
         .collect();
     assert_eq!(
         outputs,
