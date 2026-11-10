@@ -16,7 +16,44 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Whether there is code to analyse: on main and the weekly run always; on a pull request
+  # unless every file it changes is in .github/docs-only-paths.txt, as CI's `platforms` job
+  # decides, or when it is labelled `full-ci`.
+  changes:
+    name: Choose what runs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    timeout-minutes: 15
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ] &&
+            ! gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx full-ci &&
+            [ -z "$(tools/check-docs-paths.sh --code "$BASE...$HEAD")" ]; then
+            echo "Documentation only: CodeQL is skipped."
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   analyze:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

@@ -1,6 +1,6 @@
 # The documentation a pull request may change and still skip the code's checks (decision
-# 70): when every file it changes is matched here, CI's lint, clippy and tests are
-# skipped. CI's `platforms` job and tools/check-docs-paths.sh both read this file.
+# 70): when every file it changes is matched here, CI's lint, clippy and tests and CodeQL's analysis are
+# skipped. CI's `platforms` job, CodeQL's `changes` job and tools/check-docs-paths.sh read it.
 #
 # One glob a line, matched as git's glob pathspecs, from the repository's root: `*` stays
 # within a folder, `**` crosses folders. A `!` line takes files out again. A `#` starts
