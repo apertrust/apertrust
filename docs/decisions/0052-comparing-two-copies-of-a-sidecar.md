@@ -18,9 +18,9 @@ People edit on more than one computer, through a share, a sync service or a driv
 
 - before every write: the writer reads the file again if it changed since this machine last read it, and writes only if the bytes differ;
 - when a sidecar changes outside Apertrust: the active photo takes the newer edit, a module being dragged stays the person's, and a diverged photo stays on screen with the other edit arriving as a virtual copy;
-- conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp` and whose `apertrust:photo` and fingerprint match a photo there, compared, kept in the cache 30 days and removed; its content decides, not its name;
+- conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp` and whose `apertrust:photo` and fingerprint match a photo there, compared, kept 30 days in the user data folder's `conflict-copies/` and removed ([0076](0076-the-cache-kinds-limits-and-control.md)); its content decides, not its name;
 - a server root's sidecar, whenever this machine and the server exchange it, the server being one more copy ([0071](0071-a-self-hosted-server-with-sync.md), planned);
-- later: silent winners, each machine keeping in its cache the last copy of each sidecar it wrote, and iCloud's hidden versions.
+- later: silent winners, each machine keeping in its user data folder the last copy of each sidecar it wrote ([0076](0076-the-cache-kinds-limits-and-control.md)), and iCloud's hidden versions.
 
 **Convergence:** comparing the same copies gives the same bytes on every machine, so after one round nothing is written again.
 

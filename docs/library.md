@@ -573,7 +573,7 @@ Only sidecars, a library's files and a root's id file are written into the perso
 Planned.
 
 - **A NAS:** each root's calls run on a queue of their own, showing "Waiting for Main-Storage…" after 2 s and "Not responding" after 30 s, retried every 2 minutes, so the interface never waits for a share, as darktable does on a sleeping one.
-- **Offline drives:** their photos keep their thumbnails with an offline mark. Ratings, labels, keywords and metadata still change, held in the library's `.apertrust/pending/` until the drive returns; edits need a local copy, the raw copied into the cache by fingerprint.
+- **Offline drives:** their photos keep their thumbnails with an offline mark. Ratings, labels, keywords and metadata still change, held in the library's `.apertrust/pending/` until the drive returns; edits need a local copy, the raw copied into the cache's kept kind `copies/` by fingerprint, never removed by size (decision 76).
 - **Cloud folders:** a file not on the disk is never read in the background, macOS's materialisation turned off on the library's threads. Placeholders are told by Windows' recall attributes and macOS's `SF_DATALESS`. Such a photo shows its name, size and a cloud mark, and a thumbnail once it is local, by opening it or Make Available Offline. Spike L3 checks each provider.
 
 ### Comparing two copies
@@ -589,9 +589,9 @@ Decision 52, planned (steps 10 to 13).
 - **When copies are compared:**
   - before every write, the writer reading the file again if it changed since this machine last read it, and writing only if the bytes differ;
   - when a sidecar changes outside Apertrust, the active photo taking a newer edit, a module being dragged staying the person's;
-  - for conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp`, and whose `apertrust:photo` and fingerprint match a photo there, is compared, kept in the cache for 30 days and removed, its content deciding, not its name;
+  - for conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp`, and whose `apertrust:photo` and fingerprint match a photo there, is compared, kept 30 days in the user data folder's `conflict-copies/` and removed, its content deciding, not its name (decision 76);
   - for a server root, whenever this machine and the server exchange a sidecar, the server being one more copy ([A server](#a-server));
-  - later, silent winners: each machine keeping in its cache the last copy of each sidecar it wrote, and iCloud's hidden versions.
+  - later, silent winners: each machine keeping in its user data folder the last copy of each sidecar it wrote (decision 76), and iCloud's hidden versions.
 - **Convergence:** comparing the same copies gives the same bytes on every machine, so after one round nothing is written again; spike L4's harness of simulated machines and syncs holds it.
 - **A library's own files** combine entry by entry, the later clock winning each, so photos added to an album on two machines are all kept. A library or project file of a newer format opens view-only; an album or smart album file holding what this build does not know is shown and never written.
 - **No lock decides anything.** Locks fail across NFS and SMB and do not exist in cloud folders. A presence note may later warn that a library is open on another computer; it blocks nothing.
@@ -616,7 +616,7 @@ flowchart LR
 ```
 
 - **The files live on the server.** The originals and their sidecars are in the server's folders. The desktop edits local copies and sends back what changed. Raws never change, so only sidecars and `.apdata` files go back, kilobytes a photo. A raw comes down once into a local copy in the cache by its fingerprint, as an offline drive's do ([Shares, offline drives and cloud folders](#shares-offline-drives-and-cloud-folders)).
-- **Away from the server,** the desktop keeps the sidecars of a server root it has read or written in its cache, by root and path, with the changes the server has not taken yet, so a photo is still rated and edited; the changes go back once the server answers.
+- **Away from the server,** the desktop keeps the sidecars of a server root it has read or written, by root and path, with the changes the server has not taken yet, in its user data folder rather than the cache, since the changes are nowhere else (decision 76), so a photo is still rated and edited; the changes go back once the server answers.
 - **A server root** is a new kind of root ([Roots](#roots)), found by the server's URL and an account instead of a path, its id kept on the server at its top. The root map holds the URL and the account. A library may mix server roots and folders.
 - **Conflicts** are decision 52's: the server is one more copy, compared by clock vectors and merged as copies from several computers are ([Comparing two copies](#comparing-two-copies)). No lock.
 - **The truth** is still the sidecar files, in the server's folders (decision 46). The server's index of its folders is a disposable cache, as a library's is ([A library's cache](#a-librarys-cache)); no database is the truth.
@@ -629,11 +629,12 @@ flowchart LR
 
 ## A library's cache
 
-Decision 55, planned (steps 21 and 27): one per library per machine, in `<cache>/libraries/<library id>/cache-<schema>/` (the platform's cache folder, or `<user data>/cache` with `--user-data-dir`), never in the library's folder, on a share or in a sync folder.
+Decision 55, planned (steps 21 and 27): one per library per machine, in `<cache>/libraries/<library id>/cache-<schema>/` (the cache folder, [cache.md](cache.md#the-folder)), never in the library's folder, on a share or in a sync folder.
 
 - **What it gives:** a large library's open under a second, browsing of roots that are away, full-text search and later similarity.
 - **What it holds:** each photo and virtual copy with its file facts, EXIF, ratings, labels, keywords and metadata, as darktable's `images` table where it serves. Vectors for semantic search, similar photos and faces stay in it too, decided with the AI work.
 - **Disposable:** a library opens without it, and it is rebuilt from the files when missing, so it needs no backup and never travels.
+- **In the cache** it is the kept kind `libraries`: never removed by size or age, offered for removal once long unopened or its library is not found, locked while a process has it open; the library's root map, last-written sidecars and a server root's pending changes are in the user data folder instead ([cache.md](cache.md#time-and-never), decision 76).
 - **Folder mode** has none: the same facts in memory, in the same `Index` type.
 - **Its engine** is chosen by spike L2: plain Rust collections with a snapshot file and `tantivy` for full text, the likely choice, measured beside Turso Database at 100,000 and 500,000 photos against a query under 50 ms and an open under 1 s at 100,000. SQLite only if both fail, with an exception to decision 5.
 
@@ -646,7 +647,7 @@ In progress: step 6. Built: the camera's embedded pictures, read in memory and w
 The decided design (decisions 53 and 57):
 
 - **The camera's embedded JPEG first,** shown unmarked, as darktable does, then Apertrust's own render, a still of the engine's viewport pipe. The engine renders the thumbnails and the library keeps them. A cheaper path of Apertrust's own (the raw stage, then the mosaic averaged per thumbnail pixel) is a performance idea to measure later.
-- **The cache,** the library's files in every mode, in the cache folder, keyed by the raw's fingerprint, a hash of its edit, a render version (the operations' and the pipeline's) and a size.
+- **The cache** (decision 76), the library's files in every mode, the cache's limited kind `thumbnails/`: one file per photo, virtual copy and size (128, 256, 512 or 1024), holding the edit's hash and the render version (the operations' and the pipeline's), or the embedded picture's mark, replaced whole by a newer one; a reader finding another version renders again, showing the stale picture meanwhile. Its limit, Unlimited, eviction and clearing are [cache.md](cache.md)'s.
 - **Jobs on `SystemForeground`,** each thumbnail one, deduplicated by photo, size and edit, the newest first, as darktable's thumbnail loads.
 - **Nothing for cloud files not on the disk.**
 
@@ -674,5 +675,7 @@ Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (
   - accounts and sharing between people: one person's server, or a household's, with photos shared between accounts;
   - where a library whose roots are all on the server keeps its own files;
   - a hosted service later, which the principles' "no accounts, subscriptions or cloud processing" would have to allow (decision 1).
+
+- **The CLI and the root map** (decision 76): the root map is in the user data folder, which the CLI only reads; `apertrust-cli library relink` (step 35) would be its one write there, decided with that step.
 
 - **A library's cache's engine** (decision 55): spike L2 builds plain Rust collections with a snapshot file and `tantivy`, the likely choice, beside Turso Database, at 100,000 and 500,000 synthetic photos on the M4, against a query under 50 ms and an open under 1 s at 100,000. `rusqlite` with SQLite compiled in only if both fail, with an exception to decision 5.

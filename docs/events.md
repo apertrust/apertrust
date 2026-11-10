@@ -80,7 +80,7 @@ Then come `settings`, the parameters no module owns of the operations an unedite
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); `Cache`, a fact for each cache kind and each library's cache, their entries and bytes (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 

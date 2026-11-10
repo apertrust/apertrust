@@ -1096,9 +1096,9 @@ Behind a `jobs` feature, as `log`, `build`, `folders` and `codegen` are, turned 
   | --- | --- | --- | --- | --- |
   | `UserForeground` | `DT_JOB_QUEUE_USER_FG` | the user's actions: import, move, copy, rename, delete, Apply edit, styles, virtual copies; an export's preview lines | 4 | FIFO |
   | `SystemForeground` | `DT_JOB_QUEUE_SYSTEM_FG` | thumbnails and stills of what is on screen | 4 | a stack of 30, deduplicated |
-  | `UserBackground` | `DT_JOB_QUEUE_USER_BG` | a folder's listing and index, Rebuild Cache; later AI batches and tethering | 0 | FIFO |
+  | `UserBackground` | `DT_JOB_QUEUE_USER_BG` | a folder's listing and index, Rebuild Cache, clearing the cache (decision 76); later AI batches and tethering | 0 | FIFO |
   | `UserExport` | `DT_JOB_QUEUE_USER_EXPORT` | export; later print | 0 | FIFO, one running at a time |
-  | `SystemBackground` | `DT_JOB_QUEUE_SYSTEM_BG` | the thumbnail crawler, rescans, conflict copies; later scripts' storage | 0 | FIFO |
+  | `SystemBackground` | `DT_JOB_QUEUE_SYSTEM_BG` | the thumbnail crawler, rescans, conflict copies, the cache's walk and eviction (decision 76); later scripts' storage | 0 | FIFO |
 
 - **`schedule`,** darktable's `dt_control_add_job` and `_control_schedule_job` restated as pure functions over the queues, held by tables of cases worked through darktable's code:
   - adding to `SystemForeground`: a job equal to a running one is discarded; one equal to a queued one moves that one to the top and the new is discarded; past 30 the bottom one is discarded. Equal as `_control_job_equal`: the same kind and queue, then the same key, darktable's params compared by bytes, or the same description where there is no key;

@@ -14,7 +14,7 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 
 - The desktop keeps local copies to edit and sends back what changed. Raws never change, so only sidecars and `.apdata` files go back: kilobytes a photo.
 - A raw comes down once, into a local copy in the cache keyed by its fingerprint, as an offline drive's local copies do ([0053](0053-finding-folders-and-photos.md)).
-- The desktop keeps in its cache the sidecars of a server root that it has read or written, by root and path, with the changes the server has not taken yet. So a photo can be rated and edited while the server is out of reach, and the changes go back once it answers.
+- The desktop keeps the sidecars of a server root that it has read or written, by root and path, with the changes the server has not taken yet, in its user data folder, not the cache, since the changes are nowhere else ([0076](0076-the-cache-kinds-limits-and-control.md)). So a photo can be rated and edited while the server is out of reach, and the changes go back once it answers.
 
 **A server root** is a new kind of root ([0053](0053-finding-folders-and-photos.md)). It is found by the server's URL and an account instead of a path, and its id is kept on the server at the root's top, as a folder's is in `.apertrust/root.toml`. Each machine's root map holds the URL and the account where a folder root holds a path. A library may mix server roots and folders.
 
