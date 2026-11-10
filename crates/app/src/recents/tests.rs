@@ -338,18 +338,20 @@ fn what_was_open_last_is_kept_beside_the_list_and_taken_out() {
     let last = Last {
         kind: Kind::Folder,
         path: folder("a"),
+        folder: Some(folder("a/Day 1")),
         photo: Some("IMG_2041.ARW".to_owned()),
     };
     recents.set_last(Some(last.clone()));
     recents.flush();
     let written = text(&file);
-    let kept = "[last]\nkind = \"folder\"\npath = \"/photos/a\"\nphoto = \"IMG_2041.ARW\"\n";
+    let kept = "[last]\nfolder = \"/photos/a/Day 1\"\nkind = \"folder\"\npath = \"/photos/a\"\nphoto = \"IMG_2041.ARW\"\n";
     assert!(written.contains(kept), "{written}");
     assert!(written.contains("other = 1"), "{written}");
     let (mut again, _) = Recents::open(file.clone(), none);
     assert_eq!(again.last(), Some(&last));
-    // A folder with no photo active has none.
+    // The root itself active, with no photo active, has neither.
     let bare = Last {
+        folder: None,
         photo: None,
         ..last
     };
@@ -375,6 +377,7 @@ fn what_was_open_last_is_the_last_set_of_two_instances() {
     let last = |name: &str| Last {
         kind: Kind::Folder,
         path: folder(name),
+        folder: None,
         photo: None,
     };
     one.set_last(Some(last("a")));

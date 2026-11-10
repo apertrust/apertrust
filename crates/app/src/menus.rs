@@ -88,12 +88,13 @@ pub enum Entry {
 
 /// One of Open Recent's entries as its item shows it: its words, the folder's name, and
 /// its tip, the path and why it cannot be opened where it cannot, which the drawn menu
-/// shows and the Mac's menus, which show no path, leave out. Whether it can be chosen is
-/// its action's ([`State::recents`]).
+/// shows and the Mac's menus, which show no path, leave out; and its path, which a choice
+/// of its item opens. Whether it can be chosen is its action's ([`State::recents`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Recent {
     pub words: String,
     pub tip: String,
+    pub path: std::path::PathBuf,
 }
 
 /// The Mac's own items, which muda predefines: macOS performs them, so they are not the
@@ -1290,6 +1291,7 @@ mod tests {
         Recent {
             words: words.to_owned(),
             tip: tip.to_owned(),
+            path: std::path::PathBuf::from(tip.lines().last().unwrap_or_default()),
         }
     }
 

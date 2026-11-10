@@ -35,9 +35,9 @@
 //!   answered is not, and an answer to a question asked before the entry was opened again
 //!   is dropped.
 //! - **What was open last** ([`Last`]) is kept beside the list, as `[last]`, for the next
-//!   start to reopen (`docs/gui.md`, The start window): the folder a way in opened and its
-//!   photo active as the app ended, never a photo opened alone; File › Close takes it out
-//!   ([`Recents::set_last`]). A write merges it as it does the list, the newest winning;
+//!   start to reopen (`docs/gui.md`, The start window): the folder a way in opened, the
+//!   folder chosen in its tree and the photo active as the app ended, never a photo opened
+//!   alone; File › Close takes it out ([`Recents::set_last`]). A write merges it as it does the list, the newest winning;
 //!   one this build cannot read is read as none and left in the file until replaced.
 //! - A damaged `state.toml`, one that is not TOML or not UTF-8, is set aside as
 //!   `state.toml.bak` with a warning naming no path in it: read at the start, the list
@@ -96,12 +96,15 @@ pub struct Entry {
     pub opened: u64,
 }
 
-/// What was open last, for the next start to reopen: a folder, never a photo opened alone,
-/// with the file name of its photo active as the app ended, if any.
+/// What was open last, for the next start to reopen: a folder a way in opened, the tree's
+/// root, never a photo opened alone; the folder of its tree active as the app ended where
+/// it was another, chosen in the tree; and the file name of the photo active then, in the
+/// active folder, if any.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Last {
     pub kind: Kind,
     pub path: PathBuf,
+    pub folder: Option<PathBuf>,
     pub photo: Option<String>,
 }
 
@@ -111,11 +114,20 @@ impl Last {
         let table = value.as_table()?;
         let kind = Kind::from_id(table.get("kind")?.as_str()?)?;
         let path = PathBuf::from(table.get("path")?.as_str()?);
+        let folder = match table.get("folder") {
+            Some(folder) => Some(PathBuf::from(folder.as_str()?)),
+            None => None,
+        };
         let photo = match table.get("photo") {
             Some(photo) => Some(photo.as_str()?.to_owned()),
             None => None,
         };
-        Some(Last { kind, path, photo })
+        Some(Last {
+            kind,
+            path,
+            folder,
+            photo,
+        })
     }
 
     fn value(&self) -> Value {
@@ -123,6 +135,10 @@ impl Last {
         table.insert("kind".into(), self.kind.id().into());
         let path = self.path.to_string_lossy().into_owned();
         table.insert("path".into(), path.into());
+        if let Some(folder) = &self.folder {
+            let folder = folder.to_string_lossy().into_owned();
+            table.insert("folder".into(), folder.into());
+        }
         if let Some(photo) = &self.photo {
             table.insert("photo".into(), photo.clone().into());
         }
