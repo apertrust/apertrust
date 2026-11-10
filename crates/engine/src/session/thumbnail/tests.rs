@@ -33,8 +33,9 @@ const WAIT: Duration = Duration::from_secs(60);
 /// How many times the test's reading read each photo, by its path.
 static READS: Mutex<Option<HashMap<PathBuf, usize>>> = Mutex::new(None);
 
-/// The test's reading of `photo`: a smooth picture of 64 by 48, none for `none.ARW`, and
-/// for `broken.ARW` one whose pixels do not fill it, which cannot be encoded.
+/// The test's reading of `photo`: a smooth picture of 64 by 48, one of 511 by 383 for
+/// `odd.ARW`, none for `none.ARW`, and for `broken.ARW` one whose pixels do not fill it,
+/// which cannot be encoded.
 fn read(
     open: u64,
     folder: &Path,
@@ -56,6 +57,7 @@ fn read(
             height: 10,
             pixels: vec![0; 4].into(),
         }),
+        "odd.ARW" => Some(gradient_of(511, 383)),
         _ => Some(gradient()),
     };
     observer(LibraryEvent::Thumbnail {
@@ -76,9 +78,14 @@ fn reads(path: &Path) -> usize {
 }
 
 fn gradient() -> Thumbnail {
-    let (width, height) = (64u32, 48u32);
+    gradient_of(64, 48)
+}
+
+/// A smooth picture of `width` by `height`: red across, green down.
+fn gradient_of(width: u32, height: u32) -> Thumbnail {
+    let level = |at: u32, of: u32| (at * 255 / (of - 1).max(1)) as u8;
     let pixels: Vec<u8> = (0..height)
-        .flat_map(|y| (0..width).flat_map(move |x| [(x * 4) as u8, (y * 5) as u8, 128, 255]))
+        .flat_map(|y| (0..width).flat_map(move |x| [level(x, width), level(y, height), 128, 255]))
         .collect();
     Thumbnail {
         width,
@@ -265,99 +272,149 @@ fn a_write_past_the_limit_asks_for_an_eviction() {
     assert!(past.asks.try_recv().is_ok(), "an eviction is asked for");
 }
 
-/// The cold walk's method (`docs/cache.md`, The walk's cost): the thumbnails of every raw
-/// of the corpus written at 256, 512 and 1024 through the library's own reading, read back
-/// as hits, their sizes told; then the cache filled to 100,000 entries and walked five
-/// times. Run on its own, after `sudo purge` on a Mac for a cold first walk:
-///
-/// ```text
-/// APERTRUST_CACHE_TIMING=DIR cargo test --release -p apertrust-engine --lib \
-///     time_the_walk -- --ignored --nocapture
-/// ```
-///
-/// `DIR` holds the cache, on the disk to time; the corpus is `APERTRUST_RAW_CORPUS` or
-/// `test-images/raw.pixls.us`.
+/// The largest difference of one channel between two pictures of one size.
+fn worst(a: &Thumbnail, b: &Thumbnail) -> u8 {
+    assert_eq!((a.width, a.height), (b.width, b.height));
+    let pairs = a.pixels.iter().zip(b.pixels.iter());
+    pairs.map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0)
+}
+
+/// The picture goes out before anything is written: the cache holds nothing as the
+/// client is told, and the entry once the job has ended.
 #[test]
-#[ignore = "a measurement, on a corpus and a folder of the person's"]
-fn time_the_walk() {
-    const ENTRIES: u64 = 100_000;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let corpus = std::env::var_os("APERTRUST_RAW_CORPUS")
-        .map_or_else(|| root.join("test-images/raw.pixls.us"), PathBuf::from);
-    let folder = PathBuf::from(std::env::var_os("APERTRUST_CACHE_TIMING").expect("a folder"));
-    let cache = folder.join("cache");
-    if !cache.exists() {
-        let bench_cache = Arc::new(Cache::create(&cache).unwrap());
-        let control = Control::start(|_| {});
-        let options = CacheOptions {
-            cache: Arc::clone(&bench_cache),
-            limit: Limit::Unlimited,
-        };
-        let stop = Arc::new(AtomicBool::new(false));
-        let upkeep = Upkeep::start(options, &control, Arc::new(|| {}), stop);
-        let mut raws = Vec::new();
-        let mut folders = vec![corpus];
-        while let Some(folder) = folders.pop() {
-            for item in std::fs::read_dir(&folder).unwrap().flatten() {
-                let path = item.path();
-                if path.is_dir() {
-                    folders.push(path);
-                } else if !path.extension().is_some_and(|e| e == "apxmp" || e == "xmp") {
-                    raws.push(path);
-                }
-            }
-        }
-        let mut before = (0, 0);
-        for size in [256, 512, 1024] {
-            for pass in ["written", "read back"] {
-                let tally = Tally::new(size);
-                let started = Instant::now();
-                for raw in &raws {
-                    let (parent, name) = (raw.parent().unwrap(), raw.file_name().unwrap());
-                    let asked = Asked {
-                        open: 1,
-                        folder: parent,
-                        photo: name.to_str().unwrap(),
-                        size,
-                    };
-                    let tell = |_| {};
-                    serve(
-                        Some((&upkeep, &tally)),
-                        &asked,
-                        &tell,
-                        &|| false,
-                        library::thumbnail,
-                    );
-                }
-                let (hits, misses, written) = tally.counts();
-                let took = started.elapsed().as_secs_f64();
-                println!(
-                    "{size}: {pass} in {took:.2} s: {hits} hits, {misses} read, {written} written"
-                );
-            }
-            let sizes = bench_cache.walk(&|| false).unwrap().of(THUMBNAILS);
-            let (entries, bytes) = (sizes.entries - before.0, sizes.bytes - before.1);
-            before = (sizes.entries, sizes.bytes);
-            let each = bytes as f64 / entries as f64 / 1e3;
-            println!("{size}: {entries} entries, {each:.1} kB each");
-        }
-        drop(control);
-        // Padded to the count, each a file of a byte in a subfolder of its own: a walk
-        // reads no entry's contents.
-        let have = bench_cache.walk(&|| false).unwrap().of(THUMBNAILS).entries;
-        let kind = bench_cache.kind_folder(THUMBNAILS);
-        for n in have..ENTRIES {
-            let subfolder = kind.join(format!("{:02x}", n % 256));
-            std::fs::create_dir_all(&subfolder).unwrap();
-            std::fs::write(subfolder.join(format!("padding-{n}")), b"x").unwrap();
-        }
+fn the_picture_is_sent_before_it_is_written() {
+    let bench = Bench::new("first", &["A.ARW"], Limit::Bytes(1 << 30));
+    let told = Mutex::new(0);
+    let cache = Arc::clone(&bench.cache);
+    let tell = |_: LibraryEvent| {
+        let entries = cache.walk(&|| false).unwrap().of(THUMBNAILS).entries;
+        assert_eq!(entries, 0, "nothing written before the picture is sent");
+        *told.lock().unwrap() += 1;
+    };
+    let asked = Asked {
+        open: 3,
+        folder: &bench.folder,
+        photo: "A.ARW",
+        size: 256,
+    };
+    let tally = Tally::new(256);
+    serve(
+        Some((&bench.upkeep, &tally)),
+        &asked,
+        &tell,
+        &|| false,
+        read,
+    );
+    assert_eq!(*told.lock().unwrap(), 1);
+    assert_eq!(bench.entries(), 1);
+}
+
+/// A cancel after the picture is read writes nothing.
+#[test]
+fn a_cancel_after_the_read_writes_nothing() {
+    let bench = Bench::new("cancelled", &["A.ARW"], Limit::Bytes(1 << 30));
+    let read_by_now = AtomicBool::new(false);
+    let tell = |_: LibraryEvent| read_by_now.store(true, std::sync::atomic::Ordering::Relaxed);
+    let cancel = || read_by_now.load(std::sync::atomic::Ordering::Relaxed);
+    let asked = Asked {
+        open: 3,
+        folder: &bench.folder,
+        photo: "A.ARW",
+        size: 256,
+    };
+    let tally = Tally::new(256);
+    serve(Some((&bench.upkeep, &tally)), &asked, &tell, &cancel, read);
+    assert!(read_by_now.into_inner());
+    assert_eq!(bench.entries(), 0);
+    assert_eq!(tally.counts(), (0, 1, 0));
+}
+
+/// A picture of odd sides, which 4:2:2's halved chroma does not divide, comes back whole.
+#[test]
+fn an_odd_sized_picture_comes_back_whole() {
+    let bench = Bench::new("odd", &["odd.ARW"], Limit::Bytes(1 << 30));
+    let tally = Tally::new(512);
+    let first = picture(&bench.serve("odd.ARW", &tally)).expect("a picture");
+    let second = picture(&bench.serve("odd.ARW", &tally)).expect("a picture");
+    assert_eq!(tally.counts(), (1, 1, 1));
+    assert_eq!((second.width, second.height), (511, 383));
+    let worst = worst(&first, &second);
+    assert!(worst <= 6, "{worst}");
+}
+
+/// An entry at the right version that is not a JPEG, or one cut short, which zune-jpeg
+/// would read without a word, is a miss: read again and written over.
+#[test]
+fn a_damaged_entry_is_read_again_and_written_over() {
+    let bench = Bench::new("damaged", &["A.ARW"], Limit::Bytes(1 << 30));
+    let path = bench.folder.join("A.ARW");
+    let key = library::thumbnail_key(&bench.folder, "A.ARW", 256).expect("a key");
+    let jpeg = encode(&gradient()).expect("it encodes");
+    let cut = jpeg[..jpeg.len() * 2 / 3].to_vec();
+    for (damage, entry) in [
+        ("garbage", b"garbage at the right version".to_vec()),
+        ("cut", cut),
+    ] {
+        let before = reads(&path);
+        let cache = bench.upkeep.cache();
+        cache
+            .write(THUMBNAILS, &key.slot, &key.version, &entry)
+            .unwrap();
+        let tally = Tally::new(256);
+        assert_eq!(
+            picture(&bench.serve("A.ARW", &tally)),
+            Some(gradient()),
+            "{damage}"
+        );
+        assert_eq!(reads(&path), before + 1, "{damage}: read again");
+        assert_eq!(tally.counts(), (0, 1, 1), "{damage}: written over");
+        // Whole again: the next ask hits.
+        bench.serve("A.ARW", &tally);
+        assert_eq!(tally.counts(), (1, 1, 1), "{damage}");
     }
-    let cache = Cache::open(&cache);
-    for run in 1..=5 {
-        let started = Instant::now();
-        let sizes = cache.walk(&|| false).unwrap();
-        let ms = started.elapsed().as_secs_f64() * 1e3;
-        let entries = sizes.of(THUMBNAILS).entries;
-        println!("walk {run}: {entries} entries in {ms:.1} ms");
-    }
+}
+
+/// A tripwire: zune-jpeg, rawler's decoder, still misreads the export's own 4:2:0 with its
+/// optimised tables, a scan for each component, which is why thumbnails are kept at 4:2:2.
+/// Once it fails, zune-jpeg reads it right, and the thumbnails may move to 4:2:0.
+#[test]
+fn zune_jpeg_still_misreads_the_export_s_4_2_0_so_thumbnails_stay_4_2_2() {
+    let image = gradient_of(64, 48);
+    let pixels: Vec<[f32; 4]> = image
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|p| p.map(|v| f32::from(v) / 255.0))
+        .collect();
+    let mut jpeg = Vec::new();
+    let options = Options {
+        subsample: Subsample::S420,
+        ..OPTIONS
+    };
+    let source = Image::new(&pixels, image.width, image.height).unwrap();
+    jpeg::write(source, &options, &mut jpeg).unwrap();
+    let misread = match apertrust_raw::read_jpeg(&jpeg) {
+        Err(_) => true,
+        Ok(read) => {
+            let read = Thumbnail {
+                width: read.width,
+                height: read.height,
+                pixels: read.pixels.into(),
+            };
+            worst(&image, &read) > 32
+        }
+    };
+    assert!(
+        misread,
+        "zune-jpeg now reads the export's 4:2:0: thumbnails may use it"
+    );
+    // 4:2:2, as kept, reads right.
+    let kept = apertrust_raw::read_jpeg(&encode(&image).unwrap()).unwrap();
+    let kept = Thumbnail {
+        width: kept.width,
+        height: kept.height,
+        pixels: kept.pixels.into(),
+    };
+    assert!(worst(&image, &kept) <= 6);
 }

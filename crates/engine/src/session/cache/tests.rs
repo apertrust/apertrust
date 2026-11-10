@@ -18,13 +18,15 @@
 //! the test answers the workers' asks as the engine thread does.
 
 use std::fs::{self, File};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::SystemTime;
 
 use apertrust_base::cache::THUMBNAILS;
+use apertrust_library::ops::LibraryEvent;
 
 use super::*;
+use crate::session::thumbnail::{Asked, Tally, serve};
 
 /// How long a test waits for the cache's jobs.
 const WAIT: Duration = Duration::from_secs(60);
@@ -389,4 +391,106 @@ fn an_eviction_stops_as_the_session_ends() {
     assert_eq!(session.eviction(), Eviction::Idle);
     // A full pass leaves 4.
     assert!(session.entries() > 4, "{}", session.entries());
+}
+
+/// The cold walk's method (`docs/cache.md`, The walk's cost): the thumbnails of every raw
+/// of the corpus written at 256, 512 and 1024 through the library's own reading, read back
+/// as hits, their sizes told; then the cache filled to 100,000 entries and walked five
+/// times. Run on its own, after `sudo purge` on a Mac for a cold first walk:
+///
+/// ```text
+/// APERTRUST_CACHE_TIMING=DIR cargo test --release -p apertrust-engine --lib \
+///     time_the_walk -- --ignored --nocapture
+/// ```
+///
+/// `DIR` holds the cache, on the disk to time; the corpus is `APERTRUST_RAW_CORPUS` or
+/// `test-images/raw.pixls.us`.
+#[test]
+#[ignore = "a measurement, on a corpus and a folder of the person's"]
+fn time_the_walk() {
+    const ENTRIES: u64 = 100_000;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus = std::env::var_os("APERTRUST_RAW_CORPUS")
+        .map_or_else(|| root.join("test-images/raw.pixls.us"), PathBuf::from);
+    let folder = PathBuf::from(std::env::var_os("APERTRUST_CACHE_TIMING").expect("a folder"));
+    let cache = folder.join("cache");
+    if !cache.exists() {
+        let bench_cache = Arc::new(Cache::create(&cache).unwrap());
+        let control = Control::start(|_| {});
+        let options = CacheOptions {
+            cache: Arc::clone(&bench_cache),
+            limit: Limit::Unlimited,
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        let upkeep = Upkeep::start(options, &control, Arc::new(|| {}), stop);
+        let mut raws = Vec::new();
+        let mut folders = vec![corpus];
+        while let Some(folder) = folders.pop() {
+            for item in std::fs::read_dir(&folder).unwrap().flatten() {
+                let path = item.path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else if !path.extension().is_some_and(|e| e == "apxmp" || e == "xmp")
+                    && !path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with('.'))
+                {
+                    raws.push(path);
+                }
+            }
+        }
+        let mut before = (0, 0);
+        for size in [256, 512, 1024] {
+            for pass in ["written", "read back"] {
+                let tally = Tally::new(size);
+                let started = Instant::now();
+                for raw in &raws {
+                    let (parent, name) = (raw.parent().unwrap(), raw.file_name().unwrap());
+                    let asked = Asked {
+                        open: 1,
+                        folder: parent,
+                        photo: name.to_str().unwrap(),
+                        size,
+                    };
+                    let tell = |_: LibraryEvent| {};
+                    serve(
+                        Some((&upkeep, &tally)),
+                        &asked,
+                        &tell,
+                        &|| false,
+                        apertrust_library::ops::thumbnail,
+                    );
+                }
+                let (hits, misses, written) = tally.counts();
+                let took = started.elapsed().as_secs_f64();
+                println!(
+                    "{size}: {pass} in {took:.2} s: {hits} hits, {misses} read, {written} written"
+                );
+            }
+            let sizes = bench_cache.walk(&|| false).unwrap().of(THUMBNAILS);
+            let (entries, bytes) = (sizes.entries - before.0, sizes.bytes - before.1);
+            before = (sizes.entries, sizes.bytes);
+            let each = bytes as f64 / entries as f64 / 1e3;
+            println!("{size}: {entries} entries, {each:.1} kB each");
+        }
+        drop(control);
+        // Padded to the count, each a file of a byte in a subfolder of its own: a walk
+        // reads no entry's contents.
+        let have = bench_cache.walk(&|| false).unwrap().of(THUMBNAILS).entries;
+        let kind = bench_cache.kind_folder(THUMBNAILS);
+        for n in have..ENTRIES {
+            let subfolder = kind.join(format!("{:02x}", n % 256));
+            std::fs::create_dir_all(&subfolder).unwrap();
+            std::fs::write(subfolder.join(format!("padding-{n}")), b"x").unwrap();
+        }
+    }
+    let cache = Cache::open(&cache);
+    for run in 1..=5 {
+        let started = Instant::now();
+        let sizes = cache.walk(&|| false).unwrap();
+        let ms = started.elapsed().as_secs_f64() * 1e3;
+        let entries = sizes.of(THUMBNAILS).entries;
+        println!("walk {run}: {entries} entries in {ms:.1} ms");
+    }
 }

@@ -183,9 +183,13 @@ fn shrink(picture: &Preview, longest: u32) -> Preview {
 }
 
 /// Reads a baseline JPEG of three components, as the cache writes thumbnails, into 8-bit
-/// RGBA, alpha opaque, through rawler's JPEG decoder; an error where it is none, or
-/// another kind.
+/// RGBA, alpha opaque, through rawler's JPEG decoder; an error where it is none, another
+/// kind, or does not end with its end marker, as one cut short does, which the decoder
+/// would read without a word.
 pub fn read_jpeg(jpeg: &[u8]) -> Result<Preview, Error> {
+    if !jpeg.ends_with(&[0xFF, 0xD9]) {
+        return Err(Error::Decode("a JPEG cut short".to_owned()));
+    }
     let (width, height) =
         jpeg_size(jpeg).ok_or_else(|| Error::Decode("not a JPEG with a frame".to_owned()))?;
     let (w, h) = (width as usize, height as usize);

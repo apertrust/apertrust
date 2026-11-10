@@ -31,8 +31,10 @@
 //! The encoding is here, in the engine, since the library depends on neither the export
 //! nor the cache's writes of its own until its other kinds come, and the engine runs the
 //! thumbnail jobs. JPEGs are read back by rawler's decoder ([`apertrust_raw::read_jpeg`]),
-//! written without subsampled chroma, which that decoder misreads beside the export's
-//! optimised tables.
+//! zune-jpeg, written with chroma halved across (4:2:2): zune-jpeg misreads the export's
+//! 4:2:0, whose optimised tables give a scan for each component. An entry that does not
+//! end as a JPEG ends, cut short or not a JPEG at all, is a miss, read again and written
+//! over.
 //!
 //! Under `-d perf`, one line for each [`LibraryCommand::Thumbnails`] once its last job has
 //! ended: how many came from the cache and how many were read, each with their time, and
@@ -55,10 +57,10 @@ use super::cache::Upkeep;
 pub(crate) type Read =
     fn(u64, &Path, &str, u32, &(dyn Fn(LibraryEvent) + Send + Sync), &(dyn Fn() -> bool + Sync));
 
-/// The JPEG a thumbnail is kept as: quality 90, chroma whole.
+/// The JPEG a thumbnail is kept as: quality 90, chroma halved across.
 const OPTIONS: Options = Options {
     quality: 90,
-    subsample: Subsample::S444,
+    subsample: Subsample::S422,
     dpi: 300,
 };
 
@@ -140,7 +142,7 @@ pub(crate) fn serve(
 }
 
 /// The picture the cache holds for `key`, or none: missing, of another version, or one
-/// that cannot be read, which is read again and written over.
+/// that cannot be read or is cut short, which is read again and written over.
 fn hit(upkeep: &Upkeep, key: &ThumbnailKey) -> Option<Thumbnail> {
     let bytes = upkeep
         .cache()

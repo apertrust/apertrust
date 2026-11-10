@@ -24,7 +24,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 - **Limited** kinds count together against one limit and are removed oldest last use first, unless the person chooses an unlimited cache.
 - **Kept** kinds are never removed by size: only by the person, or by the rule of their owner's step.
-- **Thumbnails are stored as JPEG at quality 90,** through the JPEG encoder export already uses, chroma whole, and read back by rawler's decoder, so none is added.
+- **Thumbnails are stored as JPEG at quality 90,** through the JPEG encoder export already uses, chroma halved across (4:2:2), and read back by rawler's decoder, so none is added.
 - Embeddings for search live inside a library's cache ([0055](0055-the-librarys-cache.md)). AI models are not cache: they are the AI page's downloads, placed with the AI work. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
 **One file per entry, the file system as the index.**
@@ -39,7 +39,7 @@ It is read and written by the app, a second instance and the CLI at once, with n
 **The limit,** two settings, owner `engine`, on Settings › Storage, group Cache, applied at once, each settable for one run by `--conf`:
 
 - `cache.limited`, a boolean, on by default: whether the limited kinds are kept within a limit. Off is Unlimited: nothing is evicted by size, and the Storage page and `cache info` still show every size and offer Clear.
-- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 54,000 thumbnails at 512 px or 17,600 at 1024 px, at 74 kB and 227 kB each, measured on the corpus's embedded pictures.
+- `cache.limit`, a number in GB from 0.5 to 1,000 in steps of 0.5, default 4: the limit, its row drawn disabled while `cache.limited` is off, by a schema field `requires = "cache.limited"` that names the boolean a row depends on, added with it. 4 GB holds about 61,000 thumbnails at 512 px or 20,000 at 1024 px, at 66 kB and 200 kB each, measured on the corpus's embedded pictures.
 
 **Time:** nothing in the cache is removed by age. `cache.unused_after`, owner `engine`, a choice of `apertrust_base::cache::UnusedAfter` (`days_30`, `days_90`, `days_180`, `days_365`, `never`), default `days_90`, on the same page and group, is how long a library's cache may go unopened on this machine before it is marked and offered for removal; with `never` none is offered for its age.
 

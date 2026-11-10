@@ -52,7 +52,7 @@ flowchart TD
 
 ## Entries
 
-- **One file per slot.** A limited entry's slot is what it stands for: a thumbnail's is the photo's fingerprint, its virtual copy and the size, one of 128, 256, 512 or 1024; until the fingerprint is built (step 8), the photo's path stands for it. The file is named by the slot's hash, in 256 subfolders by the name's first byte.
+- **One file per slot.** A limited entry's slot is what it stands for: a thumbnail's is the photo's fingerprint, its virtual copy and the size, one of 128, 256, 512 or 1024; until the fingerprint is built (step 8), the photo's path stands for it. Until then, a raw replaced or renamed onto another's path with the same size and modified time keeps the old thumbnail, which FAT32's 2-second times make possible for a burst. The file is named by the slot's hash, in 256 subfolders by the name's first byte.
 - **The version inside.** The file holds its version: a thumbnail's is the edit's hash and the render version, or the embedded picture's mark, which is how the picture was read (`apertrust_raw::PREVIEW_VERSION`, rawler's version and the reading's own) and the raw's size and modified time. A reader wanting another version renders again, and may show the stale picture meanwhile.
 - **A write replaces the slot's file whole,** through a hidden temporary and a rename (base's `fs`), so a newer version removes the stale one at once and stale entries never pile up.
 - **Last use is the file's modified time,** which Apertrust sets as it writes the entry and as it reads it, at most once a day an entry. Access times are never read: many systems record them lazily or not at all.
@@ -62,7 +62,7 @@ flowchart TD
 
 There is no index file. Sizes come from a walk of each limited kind: one listing per subfolder, with each file's size and time.
 
-- **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s. Measured again with thumbnails written by the session's own path: 164 to 248 ms for 100,000 entries, the first walk of each process the slowest ([below](#timing-the-walk)).
+- **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s. Measured again with thumbnails written by the session's own path: 153 to 185 ms for 100,000 entries, the first walk of each process the slowest ([below](#timing-the-walk)).
 - **When:** once as the session starts, then before each eviction and each time the Storage page asks. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
 - **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts, with the write checks `Cache::create` left in the cache folder; a walk writes nothing.
 - **Stopping:** the walk, the tidy and eviction's listing ask their cancel before each subfolder, and eviction before each removal, so a program that quits never waits for a cold walk; a walk stopped keeps no sizes.
@@ -76,13 +76,13 @@ Built for the camera's embedded pictures, the only thumbnails until Apertrust re
 - **keeps nothing** for a raw with no embedded picture, or a picture that cannot be encoded: it is sent, and read again the next time;
 - with no cache, in the CLI or where the folder cannot be written, reads as before.
 
-**The JPEG:** quality 90, through the export's JPEG writer (`apertrust_export::jpeg::write`), with chroma whole (4:4:4). It is read back by rawler's own decoder (`apertrust_raw::read_jpeg`), the image crate's zune-jpeg, so no decoder is added; zune-jpeg misreads the export's subsampled chroma with its optimised tables, which 4:4:4 avoids. The encoding runs in the engine, where the thumbnail jobs run: the library depends on neither the export nor the GPU, and needs neither for this.
+**The JPEG:** quality 90, through the export's JPEG writer (`apertrust_export::jpeg::write`), chroma halved across (4:2:2). It is read back by rawler's own decoder (`apertrust_raw::read_jpeg`), the image crate's zune-jpeg, so no decoder is added; zune-jpeg misreads the export's 4:2:0, whose optimised tables give a scan for each component, and a test says when it no longer does. An entry that does not end with the JPEG's end marker, cut short or not a JPEG, is a miss: read again and written over. The encoding runs in the engine, where the thumbnail jobs run: the library depends on neither the export nor the GPU, and needs neither for this.
 
 **Apertrust's own rendered thumbnails** are planned with step 6: a still of the viewport pipe, its version the edit's hash and the render version.
 
 ### Timing the walk
 
-An ignored test, `session::thumbnail::tests::time_the_walk`, measures it:
+An ignored test, `session::cache::tests::time_the_walk`, measures it:
 
 ```sh
 APERTRUST_CACHE_TIMING=DIR cargo test --release -p apertrust-engine --lib \
@@ -91,15 +91,15 @@ APERTRUST_CACHE_TIMING=DIR cargo test --release -p apertrust-engine --lib \
 
 On its first run in `DIR`, on the disk to time, it writes the thumbnails of every raw of the corpus (`APERTRUST_RAW_CORPUS` or `test-images/raw.pixls.us`) at 256, 512 and 1024 through the session's own path, reads them back as hits, and tells their sizes; then it fills the thumbnails kind to 100,000 entries. Every run then walks it five times. For a cold first walk, flush the file system's cache first: `sudo purge` on a Mac, a restart or a fresh mount elsewhere.
 
-On the M4's internal SSD, 41 raws of the corpus, 33 with an embedded picture rawler reads:
+On the M4's internal SSD, 40 raws of the corpus, 33 with an embedded picture rawler reads:
 
-| Size | Written, 41 asked | Read back | Each entry |
+| Size | Written, 40 asked | Read back | Each entry |
 | --- | --- | --- | --- |
-| 256 | 2.93 s | 0.03 s, 33 hits | 27.7 kB |
-| 512 | 1.99 s | 0.05 s, 33 hits | 74.1 kB |
-| 1024 | 2.31 s | 0.16 s, 33 hits | 226.7 kB |
+| 256 | 2.75 s | 0.02 s, 33 hits | 25.3 kB |
+| 512 | 1.89 s | 0.05 s, 33 hits | 65.8 kB |
+| 1024 | 2.15 s | 0.16 s, 33 hits | 199.9 kB |
 
-The walk of 100,000 entries, warm, three processes of five walks each: 181.8 to 247.9 ms for the first walk of a process, 163.6 to 199.7 ms for the rest.
+The walk of 100,000 entries, warm, three processes of five walks each: 161.4 to 184.8 ms for the first walk of a process, 153.4 to 163.5 ms for the rest.
 
 ## Two processes at once
 
@@ -116,7 +116,7 @@ A library's cache is locked: a process that has it open holds an OS lock on its 
 Two settings of owner `engine`, declared in the settings schema ([settings.md](settings.md#user-data-folders)):
 
 - `cache.limited`, on by default. Off is **Unlimited**: nothing is evicted by size, and every size and Clear stay.
-- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 54,000 thumbnails at 512 px or 17,600 at 1024 px, at 74 kB and 227 kB each, measured on the corpus's embedded pictures ([below](#timing-the-walk)); at 256 px, 28 kB.
+- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 61,000 thumbnails at 512 px or 20,000 at 1024 px, at 66 kB and 200 kB each, measured on the corpus's embedded pictures ([above](#timing-the-walk)); at 256 px, 25 kB.
 
 Unlimited is the person's choice, never the default, and its size is always shown and can be cleared, where darktable's disk cache grows unseen.
 
@@ -211,6 +211,6 @@ Owners name their slots and versions: the library its thumbnails, library caches
 
 ## Open questions
 
-- **The walk cold, on Windows and on hard disks:** the 164 to 248 ms for 100,000 entries are the M4's SSD with the file system's cache warm; a cold walk needs `sudo purge` first, which is the maintainer's to run. A cold walk on Windows, with its virus scanner, and on a hard disk are still to time, by the method [above](#timing-the-walk); a walk too slow for the start's background job brings in the per-kind index of entries decision 76 keeps as its next step.
+- **The walk cold, on Windows and on hard disks:** the 153 to 185 ms for 100,000 entries are the M4's SSD with the file system's cache warm; a cold walk needs `sudo purge` first, which is the maintainer's to run. A cold walk on Windows, with its virus scanner, and on a hard disk are still to time, by the method [above](#timing-the-walk); a walk too slow for the start's background job brings in the per-kind index of entries decision 76 keeps as its next step.
 
 - **Free space:** whether the cache also stops writing when its disk is nearly full, below the limit.

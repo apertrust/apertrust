@@ -210,7 +210,7 @@ impl Upkeep {
 
     /// Asks for an eviction where the limited kinds are past the limit as the handle counts
     /// them, from any thread: after the start's walk, and after each write to a limited
-    /// kind, the thumbnails' with the library's step 6. One running takes it in; one
+    /// kind, the thumbnails' writes. One running takes it in; one
     /// queued is it; otherwise the engine thread is asked to add one. Nothing while the
     /// cache is unlimited, or before its walk.
     pub(crate) fn check(&self) {
