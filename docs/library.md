@@ -6,7 +6,7 @@ The library is how Apertrust finds photos and keeps what is known about them: on
 
 **Status.**
 
-- **Built:** folder mode's first part. A folder is listed and its sidecars read into an index in memory, opened through the session as a job, and shown in the Library tab's Folders and the grid panel. The `.apxmp` version 1 and the XMP layer under it are built, as are the safe write and `apertrust-cli library scan`. The code is in `crates/library/src/`: `listing`, `index`, `sidecar`, `xmp` and `ops`.
+- **Built:** folder mode's first part. A folder is listed and its sidecars read into an index in memory, opened through the session as a job, and shown in Browse's Folders, in the side panel's Photos tab, and in the grid panel. The `.apxmp` version 1 and the XMP layer under it are built, as are the safe write and `apertrust-cli library scan`. The code is in `crates/library/src/`: `listing`, `index`, `sidecar`, `xmp` and `ops`.
 - **In progress:** thumbnails ([Thumbnails](#thumbnails)): the camera's embedded pictures are built, the cache and Apertrust's own renders remain.
 - **Planned:** one photo, Open With into folder mode and the start window in Phase 2; the rest of folder mode in Phases 2 and 3; the Library and the Project in Phase 5; the server in Phase 7 ([The steps](#the-steps), [A server](#a-server)).
 
@@ -32,7 +32,7 @@ A window holds one of them at a time. The first rows are for choosing between th
 | What it gives | The photo at once, its edit beside it, nothing else touched | The folder's photos in the grid panel, to edit, rate and cull, with nothing to import | Albums and smart albums, nested; search across all its folders; photos on drives that are away, still rated and tagged; its edits beside the photos or in its own folder | What a library gives, and folders with roles (Capture, Selects, Output, Trash), a watched Capture folder and the job's settings |
 | What it lacks | Every other photo: no grid of its folder, and no place in the recents | Albums, smart albums, search beyond the open folder, photos on drives that are not connected | Folder roles and the job's settings | Import library…: a project stays one job |
 | What it leaves on disk | The photo's `.apxmp`, once something changes | Each photo's `.apxmp`, once something about it changes; nothing else of Apertrust's | A folder with `Name.aplibrary` and a hidden `.apertrust/`; the sidecars beside the photos or in it; an id file at the top of each folder added | A folder with `Name.approject`, `.apertrust/` and its role folders |
-| How it opens | `apertrust FILE` from a terminal, and no other way | File › Open Folder… or Open…; Open With or a double-click on a raw; the Library tab's Folders; Open Recent or the start window; `apertrust FOLDER` | File › New Library…, or from the open folder, in place; then Open…, Open Recent, the start window or a double-click on `Name.aplibrary` | File › New Project…, from a template or not, or Export as Project… from an album; then Open…, Open Recent, the start window or a double-click on `Name.approject` |
+| How it opens | `apertrust FILE` from a terminal, and no other way | File › Open Folder… or Open…; Open With or a double-click on a raw; Browse's Folders; Open Recent or the start window; `apertrust FOLDER` | File › New Library…, or from the open folder, in place; then Open…, Open Recent, the start window or a double-click on `Name.aplibrary` | File › New Project…, from a template or not, or Export as Project… from an album; then Open…, Open Recent, the start window or a double-click on `Name.approject` |
 | Its photos | The one | The folder's | Copied into its `Photos/`, or referenced where they are | Copied into its Capture, or referenced where they are |
 | Its edits | Beside the photo | Beside the photos | Beside the photos, or in its own folder, mirrored by path | As a library's |
 | Index | None beyond the photo | In memory while open | Built from its files as it opens; a cache on each machine (decision 55) | As a library's |
@@ -61,7 +61,7 @@ Planned, Phase 2. `apertrust FILE` from a terminal opens that one raw alone, for
 - Its edit is found as folder mode finds it, beside the photo or where its root's id file says ([Where edits live](#where-edits-live)).
 - Nothing is listed or indexed beyond the photo, and nothing is written but its `.apxmp`, once something about it changes, and its `.apdata` once the edit has one (decision 49).
 - It is never added to the recents and is never what the next start reopens; that stays what was open before it.
-- The grid panel shows the photo alone. The Library tab's Folders offers its folder first, as Open This Folder, which opens it in folder mode, that photo active, then the recent folders ([In the window](#in-the-window)).
+- The grid panel shows the photo alone. Browse's Folders offers its folder first, as Open This Folder, which opens it in folder mode, that photo active, then the recent folders ([In the window](#in-the-window)).
 
 Until it is built, a raw named on the command line opens with its folder, as File › Open Image… does.
 
@@ -69,13 +69,13 @@ Until it is built, a raw named on the command line opens with its folder, as Fil
 
 Built first, and partly built.
 
-- It opens by File › Open Folder… or Open…, from a folder in the Library tab's Folders, from Open Recent or the start window ([gui.md](gui.md#the-start-window)), by `apertrust FOLDER`, or by Open With and a double-click on a raw (below).
+- It opens by File › Open Folder… or Open…, from a folder in Browse's Folders, from Open Recent or the start window ([gui.md](gui.md#the-start-window)), by `apertrust FOLDER`, or by Open With and a double-click on a raw (below).
 - **Open With and a double-click** (planned) open the photo's folder, that photo active. The photo opens at once and the folder lists in the background. Several files opened together from one folder open it with them selected, the first active; files from several folders open the first file's folder, with those from it selected, and a notice says how many were left.
   - macOS delivers these as an open-documents event, not as arguments, which the app's platform code receives (`apertrust-display`).
   - On Windows and Linux, the installer's and the desktop entry's registrations pass `--in-folder` before the file (planned, [packaging.md](packaging.md#opening-a-raw-from-the-system)), so the app tells them from a terminal's `apertrust FILE`, which opens [one photo](#one-photo).
 - Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
-- The Library tab's Library module has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in the module's options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
+- Browse, the Photos tab's first module, has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in Browse's options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
 - Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, of the same form as a library's (planned, decision 73).
 - Import… (planned) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it.
 - It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
@@ -146,7 +146,7 @@ A library's command, planned. It takes another library's file or a project's and
 The library's words are decision 46's, listed with the others in [architecture.md](architecture.md#naming):
 
 - The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot.
-- The code and docs add **folder roles**, **root** and **collection**, for any set of photos the Library chooses.
+- The code and docs add **folder roles**, **root** and **collection**, for any set of photos Browse chooses.
 - Never: film roll; catalogue; workspace for a library; session for a library or project ("session" is the engine's); Shoot or layout for the roles; version for a virtual copy.
 
 ### Against darktable's library
@@ -168,7 +168,7 @@ darktable's library is kept feature by feature, with 24 deviations, each for a r
 
 ### In the window
 
-Decisions 37, 46 and 73. The Library tab of the side panel chooses what the grid panel shows and describes the photos in it. Its modules are Library, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Library's groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
+Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid panel shows and describes the photos in it. Its modules are Browse, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Browse keeps one name in every mode, its top line showing what is open: in folder mode the open folder's name and count ("Wedding 2026-10 · 120 photos"), in a library or a project its name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
 
 **The sections by mode:**
 
@@ -179,14 +179,14 @@ Decisions 37, 46 and 73. The Library tab of the side panel chooses what the grid
 | A library | Its roots' trees | Its albums, nested | Its smart albums, over the library or inside an album |
 | A project | Its folders, with their roles marked: Capture, Selects, Output, Trash | Its albums, which group photos without moving them | Its smart albums, saved searches within the project |
 
-- **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in the Library module's options: Make This Folder a Library…, New Library… on the open folder, in place. The module's top, what is open with its recents and ＋, is the same in every mode.
+- **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in Browse's options: Make This Folder a Library…, New Library… on the open folder, in place. The module's top, what is open with its recents and ＋, is the same in every mode.
 - **Filters in folder mode** (decision 73, Phase 3, planned) run over the open folder's index in memory, not smart albums: nothing is written beside the photos, and Save as Smart Album leads to Make This Folder a Library…. A filter that hides selected photos leaves only the shown ones selected.
 - **Keywords** are one module, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
 - **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
 
-- **Built:** File › Open Folder… and the Library tab's Folders (Open Folder…, the open folder's name with its photo count, its subfolders, the recent folders, `library.recent_folders` in settings); the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
+- **Built:** File › Open Folder… and Folders in the first tab, still named Library in code and messages until the rename lands (Open Folder…, the open folder's name with its photo count, its subfolders, the recent folders, `library.recent_folders` in settings); the grid panel showing the open folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states. File › Open Image…, which Open… replaces ([gui.md](gui.md#file)), opens one raw and its folder too, unless that folder is the one shown.
 - `apertrust-library` owns the folders, their listing and the sidecars' metadata, and the thumbnail cache's files ([Thumbnails](#thumbnails)).
-- Offline, in the cloud, missing and view-only photos, and a project's roles, carry marks of their own ([gui.md](gui.md#the-library-tabs-marks)).
+- Offline, in the cloud, missing and view-only photos, and a project's roles, carry marks of their own ([gui.md](gui.md#the-photos-tabs-marks)).
 
 ## The code
 
@@ -349,7 +349,7 @@ sequenceDiagram
         Job-->>Mirror: Event::Library(Listed { open: n, photos, done })
     end
     Mirror-->>App: Reaction::FolderOpened, for the recent folders
-    App->>App: the Library tab's Folders and the grid panel draw from the mirror
+    App->>App: Browse's Folders and the grid panel draw from the mirror
 ```
 
 ### In the app
@@ -666,7 +666,7 @@ Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` to
 
 The library is built in steps, each delivering one thing and reviewed before the next starts: folder mode first, twenty steps in Phases 2 and 3 before any library exists, then the library and then the project in Phase 5, with spikes L1 to L4 along the way. The list, built and remaining, is [roadmap.md](roadmap.md#the-librarys-steps)'s.
 
-Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, the Library tab's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part). The rest of step 6, the cache and Apertrust's own renders, is in progress.
+Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Browse's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part). The rest of step 6, the cache and Apertrust's own renders, is in progress.
 
 ## Open questions
 

@@ -1,14 +1,14 @@
-# 0037. One view, the Library as a tab
+# 0037. One view, the Photos tab
 
 ## Context
 
-Raw editors usually split their window into views (a library, a darkroom, a map, print, a slideshow), each with its own panels and keys. That leaves two things that change with the view and are out of sight once it is chosen: the side panel's tabs, and whether a key acts on the active photo or the selection. Both are mode errors. How is the window organised instead, and how does the engine show many photos while one is edited?
+Raw editors usually split their window into views (a library, a darkroom, a map, print, a slideshow), each with its own panels and keys. That leaves two things that change with the view and are out of sight once it is chosen: the side panel's tabs, and whether a key acts on the active photo or the selection. Both are mode errors. How is the window organised instead, what is the side panel's tab for choosing photos called, and how does the engine show many photos while one is edited? In folder mode, where most people start, a tab named Library holding a module named Library and offering Make This Folder a Library… reads as if a library already existed.
 
 ## Decision
 
 **The app is one view.** There is no Library, Edit, Map, Print or Slideshow view.
 
-- **The Library is a tab** of the side panel, with Folders, Albums and Smart albums ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)). The grid panel under the photo shows the current folder or album and is always shown.
+- **Photos is the side panel's first tab.** It holds everything about photos as items: which photos the grid panel shows, through its first module, Browse, with Folders and later Albums and Smart albums ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md), [0073](0073-the-photos-tabs-modules-browse-first-filters-in-folder-mode.md)), and what they are. The other tabs (Base, Colour, Correct, Effect, History) are about one photo's pixels ([0038](0038-side-panel-tabs-as-darktables-groups.md)). The grid panel under the photo shows the current folder or album and is always shown.
 - **The centre shows a layout,** switched only when the person asks:
   - **Photo:** the active photo, or the selected photos side by side in a grid of 3 × 4 or 4 × 3 cells, following the centre's shape, up to 11 photos, the 12th cell saying "N more photos";
   - **Map** (later): switched by the central bar's Map toggle after Guides, or Shift+M; pressed again, back to Photo. Its tiles are offline first, a Natural Earth basemap shipped with the app and regional PMTiles files the person adds; online tiles, as darktable has them (OpenStreetMap and other sources, cached on disk), stay off until the person turns them on, over TLS through the platform's own (`native-tls`), which [0005](0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md)'s rule for platform libraries covers. Planned with the Map layout.
@@ -16,7 +16,7 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 - **The side panel's tabs and what a key acts on stay the same** whatever the centre shows; the whole view is one keyboard scope.
 - **With several photos selected,** the rating keys (rating, reject, colour labels), Apply edit and Export act on every selected photo, with the count shown and one Undo for all; sliders and Reset act on the active photo only. There is no "edit all selected" toggle.
 - **Other tasks:** Export is a dialog ([0041](0041-dialogs-as-native-modal-windows.md)); Import and Print are full-window sheets inside the main window; Slideshow is an action.
-- **Words:** Folder, Album and Smart album in the interface, "collection" only in code and docs; "layout" for what the centre shows; "workspace" for a named, saved set of the side panel's tabs, built in or the person's own. The composition overlay is Guides.
+- **Words:** Photos for the side panel's first tab; Library only for the Phase 5 mode, the library file a person creates and opens ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), never for a generic interface label, a tab, a module, a group or a Settings page (the page is Photos); Folder, Album and Smart album in the interface, "collection" only in code and docs; "layout" for what the centre shows; "workspace" for a named, saved set of the side panel's tabs, built in or the person's own. The composition overlay is Guides.
 
 **The engine's side, planned until spike W1 measures it:**
 
@@ -30,6 +30,8 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 ## Options considered
 
 - Views, as darktable has them: the mode errors above.
+- Library as the tab's name: in folder mode it reads as if a library existed, and clashes with the Phase 5 mode.
+- Browse as the tab's name: a verb among noun tabs, and Keywords, Metadata and Styles are not browsing.
 - A layout switcher in the top bar: close to a view switch again.
 - A Grid layout of thumbnails: the grid panel is always shown, so a second grid adds nothing.
 - The map showing itself when a map tab or section opens: it hides the photo a focused slider still edits and has no clear moment to switch back.
@@ -39,6 +41,8 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 
 ## Consequences
 
-- The side panel's tabs are [0038](0038-side-panel-tabs-as-darktables-groups.md)'s; the Library tab's content is the library's ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)).
+- The side panel's tabs are [0038](0038-side-panel-tabs-as-darktables-groups.md)'s; the Photos tab's modules are [0073](0073-the-photos-tabs-modules-browse-first-filters-in-folder-mode.md)'s.
+- Known costs of the name: the Mac's Photos app shares the word, and Photos is close to the central panel's Photo layout. A library's `Photos/` folder, which holds the photos copied in ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), keeps its name: it is a folder on disk, shown in Browse's Folders as any folder is, not an interface label.
+- The built tab, its id, its messages and its action still say Library until the rename lands in code ([gui.md](../gui.md#the-side-panel)).
 - `apertrust-library` is built from Phase 2 for folder mode and reached through the session protocol, since a browser client's library lives on the server.
 - Stills, several photos in one session and commands by photo id are planned; spike W1 measures the mechanism before it is built.

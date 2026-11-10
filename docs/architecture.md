@@ -171,7 +171,7 @@ Details: [engine.md, The module layer](engine.md#the-module-layer), [modules/REA
 
 ### The desktop interface
 
-One egui interface for the desktop and the browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the Library is a side-panel tab, the centre shows the photo, the grid panel is always there (decision 37). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); the viewport's colour is managed by the app, by the system later for HDR.
+One egui interface for the desktop and the browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the side panel's Photos tab chooses the photos, the centre shows the photo, the grid panel is always there (decision 37). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); the viewport's colour is managed by the app, by the system later for HDR.
 
 Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#display-colour), [The shell](gui.md#the-shell), [Module panels from definitions](gui.md#module-panels-from-definitions), and the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK) for how it looks.
 
@@ -242,7 +242,7 @@ Details: [session-protocol.md, Web, tablets and remote access](session-protocol.
 **The library's words** are decision 46's ([library.md](library.md#words)):
 
 - The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot.
-- The code and docs add **folder roles**, **root** and **collection**, for any set of photos the Library chooses.
+- The code and docs add **folder roles**, **root** and **collection**, for any set of photos Browse chooses.
 - Never: film roll; catalogue; workspace for a library; session for a library or project ("session" is the engine's); Shoot or layout for the roles; version for a virtual copy.
 
 **The window's words** (decision 37): the app is one view; the centre's Photo and Map are its layouts; a workspace is a named, saved set of the side panel's tabs.

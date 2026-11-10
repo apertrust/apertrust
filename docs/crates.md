@@ -434,7 +434,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 - a failure, `Failed`, or the job ending cancelled (the jobs window's Cancel) returns `Reaction::FolderFailed`: the recent folder is drawn disabled with the reason. The list is never checked as it is drawn, since a share may be slow.
 - The folder's reading shows in the spinner and never opens the jobs window.
 
-**The Library tab**, chosen like the others (Ctrl+1), has its Folders section: Open Folder…, the folder's name with its photo count, its subfolders and the recent folders. Albums and Smart albums are drawn disabled.
+**The first tab**, the Photos tab (decision 37), chosen like the others (Ctrl+1), has its Folders section: Open Folder…, the folder's name with its photo count, its subfolders and the recent folders. Albums and Smart albums are drawn disabled. Browse, the module around Folders (decision 73), is not built, and the tab still reads Library (`tab-library`, kept as `library`, the action `view-library`) until the rename lands.
 
 **The grid panel** is never hidden: one row of `GridCell`s in the grid bar's sort, which the mirror applies (`FolderState::order`), at the grid bar's size, the open photo the active cell, each caption the name alone until the library keeps ratings (`Thumb::rating` none, its first line's clicks not read). A click or Enter opens one; the arrows, Home and End move between cells. The grid bar's choices are actions of the registry (`sort-…`, `thumbnails-…`, `show-labels`), which View › Sort By, Thumbnail Size and Show Labels run too, kept under `[grid_panel]` with its position, the rows and columns its edge was dragged to, `labels` and `square_thumbnails` (which `--conf` sets, with no Settings row yet; a filling thumbnail asked for half as large again), at most as many as fit in half the window (`Shell::grid_edge`). At the right it lies between the photo and the side panel, at the left at the window's left edge (`Shell::grid_frame`); View › Grid Panel Position and the grid bar's options menu move it (`grid-position-…`).
 
@@ -445,9 +445,9 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 ### The side panel
 
 - It is as wide as its edge is dragged or moved with the keys: 240 to 600 points, 320 at first, at most half the window but never under 240, kept in settings.
-- **Tabs** are darktable's scene-referred groups between Apertrust's own two (decision 38; [docs/gui.md](gui.md), The tabs: darktable's groups): Library, Base, Colour, Correct, Effect and History (`TABS`).
+- **Tabs** are darktable's scene-referred groups between Apertrust's own two (decision 38; [docs/gui.md](gui.md), The tabs: darktable's groups): Photos, Base, Colour, Correct, Effect and History (`TABS`), the first still built as Library.
   - Kept by darktable's ids (`base`, `color`, `correct`, `effect`). Edit opens on Base; History is drawn disabled until built, saying it is to come, and its key is unavailable.
-  - A kept id of History opens Base, the Library's opens the Library. An unknown id (such as `adjust`) is read as unknown and Base is shown with a warning; both are kept until the user chooses a tab.
+  - A kept id of History opens Base, `library` opens the first tab; once renamed, `photos` opens it and `library` is unknown (decision 38). An unknown id (such as `adjust`) is read as unknown and Base is shown with a warning; both are kept until the user chooses a tab.
 - **Modules by tab** (`TAB_MODULES`): each module in darktable's group, those in none in the one darktable's other layouts give them, in darktable's order, the last in the pipeline at the top. A test holds the order to `OPERATIONS` reversed.
 
 | Tab | Modules |
@@ -458,7 +458,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 | Effect | Vignetting, Soften, Grain |
 
 - The sections' open state is kept in settings.
-- **The Scopes section** (`src/scopes.rs`) is pinned over every tab's modules but the Library's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.
+- **The Scopes section** (`src/scopes.rs`) is pinned over every tab's modules but the Photos tab's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.
 
 ### The module panel renderer
 

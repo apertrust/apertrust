@@ -10,7 +10,7 @@ The modules users edit with. In the first pass each is darktable's own: one modu
 
 Every module's operation keeps darktable's place, darktable's v5.0 order throughout (decision 22; `src/common/iop_order.c`; [engine.md](../engine.md), Order): the tone equalizer at camera RGB 24.0, RGB curve and RGB levels at 42 and 43, before the tone mapper.
 
-The side panel's tabs are Library, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Library and History, with no quick access panel or active-modules tab. Each module sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last module at the top. The app's `TAB_MODULES` holds these lists for the built modules, and a test holds them to `OPERATIONS` reversed. How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
+The side panel's tabs are Photos, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each module sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last module at the top. The app's `TAB_MODULES` holds these lists for the built modules, and a test holds them to `OPERATIONS` reversed. How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
 
 The tables below are in that order:
 
@@ -108,12 +108,12 @@ darktable's scene-referred preset lists these modules in no group; darktable rea
 | Demosaic | "modules: all": base | Base, after Rotate and perspective |
 | Raw black/white point | "modules: all": base | Base, last |
 
-### Library, History and shared sections
+### Photos, History and shared sections
 
-- **Library,** Apertrust's own tab, first (decisions 37 and 38): Folders with folder mode (Phase 2), Styles (Phase 3), Albums and Smart albums (Phase 5).
-- **Styles** are darktable's styles, bundles of module values with no parameters of their own, with content tabs Browse and Favorites. Applying one is one change, or a layer with opacity (Phase 4). It is in the Library tab because darktable's styles module is a lighttable module.
+- **Photos,** Apertrust's own tab, first (decisions 37, 38 and 73): Browse, pinned, with Folders in folder mode (Phase 2) and Albums and Smart albums (Phase 5); Filters, Keywords, Metadata and Styles (Phase 3).
+- **Styles** are darktable's styles, bundles of module values with no parameters of their own, with content tabs All and Favourites. Applying one is one change, or a layer with opacity (Phase 4). It is in the Photos tab because darktable's styles module is a lighttable module.
 - **History,** Apertrust's own tab, last (decision 38): the edit's history, drawn disabled until built.
-- **Scopes** (decision 19): pinned over the modules in every tab but the Library's, as darktable's histogram sits over its groups. Its drags send Exposure's commands, so nothing is owned twice.
+- **Scopes** (decision 19): pinned over the modules in every tab but the Photos tab, as darktable's histogram sits over its groups. Its drags send Exposure's commands, so nothing is owned twice.
 - **Layers** (Phase 4): Apertrust's own model, pinned in the four groups' tabs. A layer's mask, opacity and blend mode become the blend settings of each instance it adds; it owns no operation parameter.
 - **AI denoise and AI erase** are Apertrust's own models (Phase 6), not darktable's, so in no darktable group; their tab is decided with their design.
 
