@@ -2,7 +2,7 @@
 
 Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. No program opens the cache yet. The rest is planned: the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page's hand-built part and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. The app opens the cache as it starts and hands it to its session, which tidies and walks it as it starts and keeps it within the limit by eviction, as background jobs ([Through the session](#through-the-session)). The thumbnails kind is built for the camera's embedded pictures: read from the cache first, written to it on a miss ([Thumbnails](#thumbnails)). The rest is planned: Apertrust's own rendered thumbnails with the library's step 6, the photo's fingerprint as their slot with step 8, the session's other cache commands and events, the Storage page's hand-built part and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)).
 
 ## What goes in it
 
@@ -17,7 +17,9 @@ Chosen once, as the program starts, by `Folders` in `apertrust-base` ([settings.
 3. `<user data>/cache`, when the user data folder is given by flag or variable, since a development build changes kernels without bumping the thumbnails' render version and could otherwise show its thumbnails in the person's Apertrust;
 4. the platform's cache folder: `~/Library/Caches/Apertrust` on macOS, `%LOCALAPPDATA%\Apertrust\cache` on Windows, `$XDG_CACHE_HOME/apertrust` (`~/.cache/apertrust`) on Linux.
 
-Apertrust Dev has its own. A leading `~` and a relative folder are taken as for the user data folder, and one given empty, or with a `~` and no home folder, stops the start. The folder is chosen, never created or probed: the cache creates what it writes. The CLI finds it as the app does, and `-d settings` logs it with how it was chosen.
+Apertrust Dev has its own. A leading `~` and a relative folder are taken as for the user data folder, and one given empty, or with a `~` and no home folder, stops the start. `Folders` only chooses the folder, never creating or probing it, and `-d settings` logs it with how it was chosen; the CLI finds it as the app does.
+
+**Opening it.** A program that writes the cache opens it with `Cache::create`, which creates the folder where it is missing and writes and removes a file of its own there: the cache's first write. The app does so as it starts; the CLI's commands write no cache yet, so it opens none. A folder that cannot be created or written is warned of once, as the program starts, and the program runs with no disk cache: it never refuses to start, and is never warned of again for each write it would have made.
 
 ## Kinds
 
@@ -45,12 +47,13 @@ flowchart TD
 
 - **Limited** kinds count together against one limit and lose their oldest entries first, unless the person makes the cache unlimited.
 - **Kept** kinds are removed only by the person, or by their own step's rule.
+- **Thumbnails** are stored as JPEG at quality 90, through the JPEG encoder export uses ([Thumbnails](#thumbnails)).
 - **Elsewhere:** embeddings for search live inside a library's cache (decision 55). AI models are the AI page's downloads, not cache. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
 ## Entries
 
-- **One file per slot.** A limited entry's slot is what it stands for: a thumbnail's is the photo's fingerprint, its virtual copy and the size, one of 128, 256, 512 or 1024. The file is named by the slot's hash, in 256 subfolders by the name's first byte.
-- **The version inside.** The file holds its version: a thumbnail's is the edit's hash and the render version, or the embedded picture's mark. A reader wanting another version renders again, and may show the stale picture meanwhile.
+- **One file per slot.** A limited entry's slot is what it stands for: a thumbnail's is the photo's fingerprint, its virtual copy and the size, one of 128, 256, 512 or 1024; until the fingerprint is built (step 8), the photo's path stands for it. Until then, a raw replaced or renamed onto another's path with the same size and modified time keeps the old thumbnail, which FAT32's 2-second times make possible for a burst. The file is named by the slot's hash, in 256 subfolders by the name's first byte.
+- **The version inside.** The file holds its version: a thumbnail's is the edit's hash and the render version, or the embedded picture's mark, which is how the picture was read (`apertrust_raw::PREVIEW_VERSION`, rawler's version and the reading's own) and the raw's size and modified time. A reader wanting another version renders again, and may show the stale picture meanwhile.
 - **A write replaces the slot's file whole,** through a hidden temporary and a rename (base's `fs`), so a newer version removes the stale one at once and stale entries never pile up.
 - **Last use is the file's modified time,** which Apertrust sets as it writes the entry and as it reads it, at most once a day an entry. Access times are never read: many systems record them lazily or not at all.
 - **A kept entry** is a folder or a file of its own. A library's cache records the library's name, its last path and when it was last opened on this machine.
@@ -59,9 +62,44 @@ flowchart TD
 
 There is no index file. Sizes come from a walk of each limited kind: one listing per subfolder, with each file's size and time.
 
-- **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s.
+- **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s. Measured again with thumbnails written by the session's own path: 153 to 185 ms for 100,000 entries, the first walk of each process the slowest ([below](#timing-the-walk)).
 - **When:** once as the session starts, then before each eviction and each time the Storage page asks. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
-- **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts; a walk writes nothing.
+- **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts, with the write checks `Cache::create` left in the cache folder; a walk writes nothing.
+- **Stopping:** the walk, the tidy and eviction's listing ask their cancel before each subfolder, and eviction before each removal, so a program that quits never waits for a cold walk; a walk stopped keeps no sizes.
+
+## Thumbnails
+
+Built for the camera's embedded pictures, the only thumbnails until Apertrust renders its own ([library.md](library.md#thumbnails)). A thumbnail job (`LibraryCommand::Thumbnails`), given a cache:
+
+- **reads the cache first,** by the slot and version above (`ops::thumbnail_key`), and sends the picture as the library would;
+- **on a miss** reads the embedded picture and sends it as without a cache, then encodes it and writes it, so a write never delays the picture shown. A write past the limit asks for an eviction;
+- **keeps nothing** for a raw with no embedded picture, or a picture that cannot be encoded: it is sent, and read again the next time;
+- with no cache, in the CLI or where the folder cannot be written, reads as before.
+
+**The JPEG:** quality 90, through the export's JPEG writer (`apertrust_export::jpeg::write`), chroma halved across (4:2:2). It is read back by rawler's own decoder (`apertrust_raw::read_jpeg`), the image crate's zune-jpeg, so no decoder is added; zune-jpeg misreads the export's 4:2:0, whose optimised tables give a scan for each component, and a test says when it no longer does. An entry that does not end with the JPEG's end marker, cut short or not a JPEG, is a miss: read again and written over. The encoding runs in the engine, where the thumbnail jobs run: the library depends on neither the export nor the GPU, and needs neither for this.
+
+**Apertrust's own rendered thumbnails** are planned with step 6: a still of the viewport pipe, its version the edit's hash and the render version.
+
+### Timing the walk
+
+An ignored test, `session::cache::tests::time_the_walk`, measures it:
+
+```sh
+APERTRUST_CACHE_TIMING=DIR cargo test --release -p apertrust-engine --lib \
+    time_the_walk -- --ignored --nocapture
+```
+
+On its first run in `DIR`, on the disk to time, it writes the thumbnails of every raw of the corpus (`APERTRUST_RAW_CORPUS` or `test-images/raw.pixls.us`) at 256, 512 and 1024 through the session's own path, reads them back as hits, and tells their sizes; then it fills the thumbnails kind to 100,000 entries. Every run then walks it five times. For a cold first walk, flush the file system's cache first: `sudo purge` on a Mac, a restart or a fresh mount elsewhere.
+
+On the M4's internal SSD, 40 raws of the corpus, 33 with an embedded picture rawler reads:
+
+| Size | Written, 40 asked | Read back | Each entry |
+| --- | --- | --- | --- |
+| 256 | 2.75 s | 0.02 s, 33 hits | 25.3 kB |
+| 512 | 1.89 s | 0.05 s, 33 hits | 65.8 kB |
+| 1024 | 2.15 s | 0.16 s, 33 hits | 199.9 kB |
+
+The walk of 100,000 entries, warm, three processes of five walks each: 161.4 to 184.8 ms for the first walk of a process, 153.4 to 163.5 ms for the rest.
 
 ## Two processes at once
 
@@ -78,7 +116,7 @@ A library's cache is locked: a process that has it open holds an OS lock on its 
 Two settings of owner `engine`, declared in the settings schema ([settings.md](settings.md#user-data-folders)):
 
 - `cache.limited`, on by default. Off is **Unlimited**: nothing is evicted by size, and every size and Clear stay.
-- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 90,000 thumbnails at 512 px or 27,000 at 1024 px, at an estimated 45 kB and 150 kB each, which step 6 measures for the format it chooses.
+- `cache.limit`, in GB of 10⁹ bytes, as disks count them, from 0.5 to 1,000 in steps of 0.5, 4 by default, drawn disabled while `cache.limited` is off (the schema's `requires`). 4 GB holds about 61,000 thumbnails at 512 px or 20,000 at 1024 px, at 66 kB and 200 kB each, measured on the corpus's embedded pictures ([above](#timing-the-walk)); at 256 px, 25 kB.
 
 Unlimited is the person's choice, never the default, and its size is always shown and can be cleared, where darktable's disk cache grows unseen.
 
@@ -86,9 +124,10 @@ Unlimited is the person's choice, never the default, and its size is always show
 
 While `cache.limited` is on, a `SystemBackground` job of kind `cache-evict`, with no progress and never shown, one at a time:
 
-- **added** after the start's walk, after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on;
+- **run** by the start's walk itself where the cache is past the limit, the walk counting as an eviction running; **added** after a write that takes the limited kinds past the limit, and when the limit is lowered or turned on; never when it is raised or turned off;
+- **one at a time:** a request while one is queued is that one's, since it reads the limit as it runs; a request while one runs, the start's walk among them, is folded into it, which walks and evicts once more before it ends; one that panics leaves the next request free to add another;
 - **walks** the limited kinds, then removes their entries oldest last use first, across kinds, until they hold at most 90% of the limit, so it does not run again at the next write;
-- **costs** the walk and the removals, about 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's, paused by an export as darktable's crawler is (decision 57).
+- **costs** the walk and the removals, about 0.2 s for 100,000 entries and 0.06 ms a removal on the M4, off the engine thread and the interface's; it stops before its next removal as the session ends. Planned: paused by an export, as darktable's crawler is (decision 57).
 
 ## Time and Never
 
@@ -112,9 +151,19 @@ What clearing would lose, or would make the person do again, lives in the user d
 
 ## Through the session
 
-The engine opens no folder: each binary opens the cache and hands the session its handle, the golden harness none. The session's part ([session-protocol.md](session-protocol.md#commands-planned), [events.md](events.md)):
+The engine opens no folder: a binary opens the cache and hands `Session::start` a `CacheOptions`, the `Arc<Cache>` and the limit its settings give, or none. The app hands one; the CLI, whose commands write no cache yet, hands none, and the golden harness starts no session.
 
-- **`Command::Cache(CacheCommand)`:**
+**Built:**
+
+- **As the session starts,** a `cache-walk` job: the tidy of old temporaries, then the walk, then eviction in the same job where the limited kinds are past the limit.
+- **Eviction** ([above](#eviction)), asked for after a write past the limit (`Upkeep::check`, which the thumbnails' writes call), and by `Command::Cache(CacheCommand::Limit(limit))`, which the app sends each time Settings changes `cache.limited` or `cache.limit`, applied at once. Only the engine thread adds the jobs, since it owns the control: a worker asks it through the session's inbox.
+- **The session's end** is the cancel of the tidy, the walk and eviction ([Sizes and the walk](#sizes-and-the-walk)), so quitting returns promptly.
+- **Thumbnails** ([below](#thumbnails)), read from the cache by the thumbnail jobs and written on a miss.
+- **Logging:** `-d perf`, the walk's sizes, the temporaries tidied and its time (each kind's under `verbose`), and each eviction's entries and bytes removed, its failures and its time; for each `LibraryCommand::Thumbnails`, once its last job has ended, how many came from the cache and how many were read, each with their time, and how many were written, each thumbnail under `verbose`; a cache that cannot be tidied, walked or evicted is a warning, as is a folder that cannot be created or written as the program starts.
+
+**Planned** with step 6b ([session-protocol.md](session-protocol.md#commands-planned), [events.md](events.md)):
+
+- **`Command::Cache(CacheCommand)`,** `Limit` built, and these variants beside it:
   - `Sizes`: walks the cache and answers;
   - `Clear { kind }`: removes the kind's entries listed as it starts;
   - `Remove { library }`: removes one library's cache, skipped and said so while another process has it open.
@@ -123,12 +172,12 @@ The engine opens no folder: each binary opens the cache and hands the session it
 
 **The jobs** (decision 57):
 
-| Job | Queue | Shown |
-| --- | --- | --- |
-| The start's walk | `SystemBackground` | no |
-| `cache-evict` | `SystemBackground` | no |
-| `cache-clear`: Clear and Remove | `UserBackground`, cancellable, as Rebuild Cache | with a progress |
-| Conflict copies past 30 days removed, as the app starts | `SystemBackground` | no |
+| Job | Queue | Shown | |
+| --- | --- | --- | --- |
+| `cache-walk`, the start's tidy and walk | `SystemBackground` | no | built |
+| `cache-evict` | `SystemBackground` | no | built |
+| `cache-clear`: Clear and Remove | `UserBackground`, cancellable, as Rebuild Cache | with a progress | step 6b |
+| Conflict copies past 30 days removed, as the app starts | `SystemBackground` | no | step 13 |
 
 ## Settings › Storage
 
@@ -150,10 +199,18 @@ A hand-built page with rows from the schema ([gui.md](gui.md#the-settings-dialog
 
 ## Where the code lives
 
-`apertrust_base::cache`, behind a `cache` feature ([crates.md](crates.md#apertrust-base)): the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, `UnusedAfter`, and the commands' and events' types. Owners name their slots and versions: the library its thumbnails, library caches and local copies, the engine its pipelines.
+- `apertrust_base::cache`, behind a `cache` feature ([crates.md](crates.md#apertrust-base)): the kinds, the folder's layout and its creation (`Cache::create`), the entry's write, read and touch, the walk, eviction's order, clearing, `UnusedAfter`, and, planned, the commands' and events' types.
+- The engine's `session::cache` ([crates.md](crates.md#the-cache)): `CacheOptions`, the start's job and eviction's; its `session::thumbnail`, the thumbnails read from and written to the cache.
+- The library's `ops::thumbnail_key`, a thumbnail's slot and version.
+- `apertrust-raw`'s `PREVIEW_VERSION` and `read_jpeg`, which reads a cached thumbnail back.
+- The app's `open_cache`, which opens it as the app starts.
+
+The CLI reads no thumbnails: `library scan` lists a folder, and no command of its reads or writes the cache yet.
+
+Owners name their slots and versions: the library its thumbnails, library caches and local copies, the engine its pipelines.
 
 ## Open questions
 
-- **The walk on Windows and on hard disks:** the 0.2 s for 100,000 entries is the M4's SSD, warm. Step 6 times a cold walk on Windows, with its virus scanner, and on a hard disk; a walk too slow for the start's background job brings in the per-kind index of entries decision 76 keeps as its next step.
+- **The walk cold, on Windows and on hard disks:** the 153 to 185 ms for 100,000 entries are the M4's SSD with the file system's cache warm; a cold walk needs `sudo purge` first, which is the maintainer's to run. A cold walk on Windows, with its virus scanner, and on a hard disk are still to time, by the method [above](#timing-the-walk); a walk too slow for the start's background job brings in the per-kind index of entries decision 76 keeps as its next step.
 
 - **Free space:** whether the cache also stops writing when its disk is nearly full, below the limit.

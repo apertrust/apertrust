@@ -640,14 +640,14 @@ Decision 55, planned (steps 21 and 27): one per library per machine, in `<cache>
 
 ## Thumbnails
 
-In progress: step 6. Built: the camera's embedded pictures, read in memory and written nowhere, through `LibraryCommand::Thumbnails` and `LibraryEvent::Thumbnail` ([The API](#the-api)). Remaining: the cache, then Apertrust's own renders.
+In progress: step 6. Built: the camera's embedded pictures, read in memory, through `LibraryCommand::Thumbnails` and `LibraryEvent::Thumbnail` ([The API](#the-api)); the cache opened by the app, walked and kept within its limit by the session ([cache.md](cache.md#through-the-session)); the embedded pictures kept in the cache's thumbnails, read from it first and written on a miss ([cache.md](cache.md#thumbnails)). Remaining: Apertrust's own renders.
 
 - **The embedded picture** (`apertrust_raw::read_preview_file`, `crates/raw/src/preview.rs`): rawler's thumbnail, which only a DNG gives, where it is at least the size asked, else its preview, else the larger of the two; at most the size asked on its longer side, each pixel the mean of those under it, never made larger; turned upright by the EXIF Orientation, since the camera stores it as the sensor sees it, as darktable turns it (`dt_iop_flip_and_zoom_8`); 8-bit RGBA. Of the corpus's 40 raws, 33 give one (`crates/raw/tests/corpus/previews.txt`); the GoPro's, the two Olympus and OM System ORFs, the Phase One IIQ and the Samsung SRW give none rawler reads, and the Hasselblad 3FR and the Sigma X3F fail to parse.
 
 The decided design (decisions 53 and 57):
 
 - **The camera's embedded JPEG first,** shown unmarked, as darktable does, then Apertrust's own render, a still of the engine's viewport pipe. The engine renders the thumbnails and the library keeps them. A cheaper path of Apertrust's own (the raw stage, then the mosaic averaged per thumbnail pixel) is a performance idea to measure later.
-- **The cache** (decision 76), the library's files in every mode, the cache's limited kind `thumbnails/`: one file per photo, virtual copy and size (128, 256, 512 or 1024), holding the edit's hash and the render version (the operations' and the pipeline's), or the embedded picture's mark, replaced whole by a newer one; a reader finding another version renders again, showing the stale picture meanwhile. Its limit, Unlimited, eviction and clearing are [cache.md](cache.md)'s.
+- **The cache** (decision 76), the library's files in every mode, the cache's limited kind `thumbnails/`: one file per photo, virtual copy and size (128, 256, 512 or 1024), a JPEG of quality 90 through the export's JPEG encoder, chroma halved across (4:2:2), holding the edit's hash and the render version (the operations' and the pipeline's), or the embedded picture's mark, replaced whole by a newer one; a reader finding another version renders again, showing the stale picture meanwhile. Its limit, Unlimited, eviction and clearing are [cache.md](cache.md)'s.
 - **Jobs on `SystemForeground`,** each thumbnail one, deduplicated by photo, size and edit, the newest first, as darktable's thumbnail loads.
 - **Nothing for cloud files not on the disk.**
 - **The opening photo's picture** (decision 77, planned): the session's open reads the largest of the photo's rendered thumbnails from this cache, stale or not, as the central panel's first picture, before its live frame; else the camera's embedded picture at the central panel's size ([engine.md](engine.md#opening-a-photo)).
@@ -667,7 +667,7 @@ Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` to
 
 The library is built in steps, each delivering one thing and reviewed before the next starts: folder mode first, twenty steps in Phases 2 and 3 before any library exists, then the library and then the project in Phase 5, with spikes L1 to L4 along the way. The list, built and remaining, is [roadmap.md](roadmap.md#the-librarys-steps)'s.
 
-Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Browse's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part). The rest of step 6, the cache and Apertrust's own renders, is in progress.
+Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Browse's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part). The cache's thumbnails of the embedded pictures are built too; the rest of step 6, Apertrust's own renders, is in progress.
 
 ## Open questions
 

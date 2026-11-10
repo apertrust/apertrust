@@ -23,11 +23,17 @@
 //!
 //! rawler gives two pictures, a thumbnail (a DNG's) and a preview (most formats'); the
 //! smaller that is at least the size asked is taken, and the larger where neither is.
+//!
+//! The disk cache keeps the pictures read here as JPEGs (decision 76): [`PREVIEW_VERSION`]
+//! names how they were read, and [`read_jpeg`] reads one back, through rawler's own JPEG
+//! decoder, so no decoder of its own is added.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
 use rawler::decoders::{Decoder, Orientation as RawlerOrientation, RawDecodeParams};
+use rawler::decompressors::decompress_strips;
+use rawler::decompressors::jpeg::JpegDecompressor;
 use rawler::rawsource::RawSource;
 
 use crate::{Error, Orientation, orientation_from};
@@ -46,6 +52,12 @@ impl std::fmt::Debug for Preview {
         write!(f, "Preview({}×{})", self.width, self.height)
     }
 }
+
+/// How the embedded picture is read: rawler's version, which reads it, and this module's
+/// own, raised whenever [`read_preview`] would give another picture for the same file. A
+/// cached thumbnail of another reading is read again (decision 76). A test holds the first
+/// to `Cargo.lock`, so updating rawler fails until it is raised.
+pub const PREVIEW_VERSION: &str = "rawler 0.8.0, preview 1";
 
 /// Reads the raw file's embedded picture, at most `longest` pixels on its longer side and
 /// upright. `None` where the file holds none rawler reads; an error where the file cannot
@@ -167,6 +179,60 @@ fn shrink(picture: &Preview, longest: u32) -> Preview {
         width: w,
         height: h,
         pixels,
+    }
+}
+
+/// Reads a baseline JPEG of three components, as the cache writes thumbnails, into 8-bit
+/// RGBA, alpha opaque, through rawler's JPEG decoder; an error where it is none, another
+/// kind, or does not end with its end marker, as one cut short does, which the decoder
+/// would read without a word.
+pub fn read_jpeg(jpeg: &[u8]) -> Result<Preview, Error> {
+    if !jpeg.ends_with(&[0xFF, 0xD9]) {
+        return Err(Error::Decode("a JPEG cut short".to_owned()));
+    }
+    let (width, height) =
+        jpeg_size(jpeg).ok_or_else(|| Error::Decode("not a JPEG with a frame".to_owned()))?;
+    let (w, h) = (width as usize, height as usize);
+    // One strip of every row, so the picture is decoded once.
+    let decode = || decompress_strips::<u16, _>(jpeg, w * 3, h, false, h, JpegDecompressor::new());
+    let rgb = catch_unwind(AssertUnwindSafe(decode))
+        .map_err(|_| Error::Decode("the JPEG decoder panicked".to_owned()))?
+        .map_err(Error::Decode)?;
+    let mut pixels = Vec::with_capacity(w * h * 4);
+    for rgb in rgb.data.as_chunks::<3>().0 {
+        // 8-bit samples, held in 16 bits unscaled.
+        pixels.extend(rgb.iter().map(|&v| v.min(255) as u8));
+        pixels.push(255);
+    }
+    Ok(Preview {
+        width,
+        height,
+        pixels,
+    })
+}
+
+/// A JPEG's width and height from its frame header, a baseline, extended or progressive
+/// one's; `None` where there is none before the scan.
+fn jpeg_size(jpeg: &[u8]) -> Option<(u32, u32)> {
+    let mut at = 2;
+    if jpeg.get(..2)? != [0xFF, 0xD8] {
+        return None;
+    }
+    loop {
+        let (&[0xFF, marker], rest) = jpeg.get(at..)?.split_first_chunk::<2>()? else {
+            return None;
+        };
+        let length = usize::from(u16::from_be_bytes(*rest.first_chunk::<2>()?));
+        if matches!(marker, 0xC0..=0xC2) {
+            // Length, precision, then the height and the width.
+            let height = u16::from_be_bytes(*rest.get(3..)?.first_chunk::<2>()?);
+            let width = u16::from_be_bytes(*rest.get(5..)?.first_chunk::<2>()?);
+            return (width > 0 && height > 0).then_some((width.into(), height.into()));
+        }
+        if marker == 0xDA {
+            return None;
+        }
+        at += 2 + length;
     }
 }
 
@@ -323,5 +389,35 @@ mod tests {
             read_preview(b"not a raw", 256),
             Err(Error::Decode(_))
         ));
+    }
+
+    /// The reading's version names the rawler that `Cargo.lock` holds, so updating rawler
+    /// fails here until the version is raised and cached thumbnails are read again.
+    #[test]
+    fn the_preview_version_names_the_rawler_in_use() {
+        let lock = include_str!("../../../Cargo.lock");
+        let rawler = lock
+            .split("\n[[package]]\n")
+            .find_map(|package| package.strip_prefix("name = \"rawler\"\nversion = \""))
+            .and_then(|rest| rest.split('"').next())
+            .expect("rawler in Cargo.lock");
+        assert!(
+            PREVIEW_VERSION.starts_with(&format!("rawler {rawler}, ")),
+            "{PREVIEW_VERSION} for rawler {rawler}: raise it"
+        );
+    }
+
+    /// What is no JPEG, or one cut short, is an error, never a panic.
+    #[test]
+    fn what_is_no_jpeg_is_an_error() {
+        assert!(read_jpeg(b"").is_err());
+        assert!(read_jpeg(b"not a jpeg").is_err());
+        // A start and a frame header of 2 by 1, and no scan.
+        let header = [
+            0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x02, 0x03,
+        ];
+        assert_eq!(jpeg_size(&header), Some((2, 1)));
+        assert!(read_jpeg(&header).is_err());
+        assert_eq!(jpeg_size(&header[..9]), None);
     }
 }

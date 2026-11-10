@@ -65,23 +65,27 @@ mod popups;
 mod scopes;
 mod settings;
 mod settings_dialog;
+#[cfg(test)]
+mod testing;
 mod thumbnails;
 mod viewport;
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
 use actions::{ActionId, Emit, Intent, Keymap, State, View};
+use apertrust_base::cache::{Cache, Limit};
 use apertrust_base::folders::{self, Folders, Given};
 use apertrust_base::settings::CONF_FLAG;
 use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, Source};
 use apertrust_engine::session::{
-    Command, ControlValue, Frame, Graphs, LibraryCommand, Places, Session, Values, ViewOnly,
+    CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand, Places,
+    Session, Values, ViewOnly,
 };
 use apertrust_modules::Module;
 use apertrust_ui::components::{
@@ -300,6 +304,10 @@ fn main() -> eframe::Result {
     // give every photo of this run its budget: a change applies at the next start.
     let engine = keeper.engine();
     tracing::debug!(target: "settings", "engine.memory_budget: for this run, a change at the next start");
+    // The disk cache, on the folder chosen with the user data folder (decision 76).
+    let cache = folders
+        .as_ref()
+        .and_then(|folders| open_cache(folders.cache()));
     // The window's device is the engine's, so it is created from the engine's instance
     // (its Direct3D 12 shader compiler included) and with the engine's needs. A display
     // handle only matters for OpenGL on Wayland; the engine uses Vulkan.
@@ -365,6 +373,7 @@ fn main() -> eframe::Result {
                     settings,
                     engine_gate,
                     budget,
+                    cache,
                     app_host,
                     kept,
                 )))
@@ -827,6 +836,9 @@ struct App {
     started: apertrust_export::variables::DateTime,
     /// The Downloads folder, where the log's save dialog first opens; read once.
     downloads: Option<PathBuf>,
+    /// The disk cache's limit the session was last given, sent again as its settings
+    /// change it (decision 76).
+    cache_limit: Limit,
 }
 
 /// What the top panel asked for this frame.
@@ -1847,6 +1859,30 @@ fn keep_log(kept: &apertrust_base::log::Kept, log: &settings::Log) {
     });
 }
 
+/// The disk cache in `folder`, its folder created as the cache's first write (decision 76).
+/// One that cannot be created or written is warned of, once, as the app starts, and the
+/// app runs with no disk cache: never refused, and never warned of again as it would have
+/// been written.
+fn open_cache(folder: &Path) -> Option<Arc<Cache>> {
+    match Cache::create(folder) {
+        Ok(cache) => Some(Arc::new(cache)),
+        Err(error) => {
+            let folder = folder.display();
+            tracing::warn!(target: "settings", "cannot write the cache folder {folder}: {error}; no disk cache");
+            None
+        }
+    }
+}
+
+/// The disk cache's limit `now` where it differs from the `last` the session was given,
+/// which then becomes it; none where it is the same.
+fn changed(last: &mut Limit, now: Limit) -> Option<Limit> {
+    (now != *last).then(|| {
+        *last = now;
+        now
+    })
+}
+
 /// What the user changed in Settings, kept by `keeper` with the rest of settings and shown
 /// by the shell in the main window, `ctx`'s, in the order changed.
 fn apply_settings(
@@ -1864,8 +1900,9 @@ fn apply_settings(
 
 impl App {
     /// The app as `settings` left it, before its first frame; `keeper` writes them back.
-    /// Its session plans within `budget` bytes, `engine.memory_budget`. Its dialogs are the
-    /// host's. It keeps the session's log in `kept` while settings say so.
+    /// Its session plans within `budget` bytes, `engine.memory_budget`, and keeps `cache`,
+    /// the disk cache, if the app could open one. Its dialogs are the host's. It keeps the
+    /// session's log in `kept` while settings say so.
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
         cc: &eframe::CreationContext<'_>,
@@ -1874,6 +1911,7 @@ impl App {
         settings: Settings,
         gate: SubmitGate,
         budget: u64,
+        cache: Option<Arc<Cache>>,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
     ) -> Self {
@@ -1933,12 +1971,18 @@ impl App {
         let places = export::places();
         let ctx = cc.egui_ctx.clone();
         let modules = apertrust_modules::MODULES;
+        let cache_limit = keeper.cache_limit();
+        let cache = cache.map(|cache| CacheOptions {
+            cache,
+            limit: cache_limit,
+        });
         let session = Session::start(
             gpu,
             apertrust_operations::OPERATIONS,
             modules,
             apertrust_base::program!().version,
             budget,
+            cache,
             move || ctx.request_repaint(),
         );
         let mut app = Self {
@@ -1972,11 +2016,21 @@ impl App {
             saving: None,
             started: apertrust_engine::names::now(),
             downloads: paths::downloads(),
+            cache_limit,
         };
         if let Some(path) = path {
             app.open(path);
         }
         app
+    }
+
+    /// Gives the session the disk cache's limit where Settings changed it, applied at once:
+    /// the session evicts where it is lowered or turned on (decision 76).
+    fn follow_cache_limit(&mut self) {
+        if let Some(limit) = changed(&mut self.cache_limit, self.keeper.cache_limit()) {
+            self.session
+                .send(Command::Cache(CacheCommand::Limit(limit)));
+        }
     }
 
     /// Takes what the Export dialog asked for the photo open: a new preview of the
@@ -3126,6 +3180,7 @@ impl eframe::App for App {
         apply_settings(&taken.settings, &mut self.shell, &mut self.keeper, ctx);
         if !taken.settings.is_empty() {
             keep_log(&self.kept, &self.shell.log);
+            self.follow_cache_limit();
         }
         for asked in taken.export {
             self.export(asked, ctx);
@@ -3584,6 +3639,66 @@ mod tests {
     use egui_kittest::Harness;
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
     use std::path::Path;
+
+    /// A cache folder that cannot be created or written is warned of once, as the app
+    /// starts, and the app runs with no disk cache; one that can is created (decision 76).
+    #[test]
+    fn a_cache_folder_that_cannot_be_written_is_warned_of_once_and_left_out() {
+        let folder =
+            std::env::temp_dir().join(format!("apertrust-app-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        // A file where the cache folder should be, on every platform.
+        let file = folder.join("cache");
+        std::fs::write(&file, b"").unwrap();
+        let (kept, dispatch, _serial) = crate::testing::kept(Some(&[]));
+        let cache = tracing::dispatcher::with_default(&dispatch, || open_cache(&file));
+        assert!(cache.is_none());
+        let read = kept.read(&mut Default::default());
+        let warnings: Vec<&str> = read
+            .lines
+            .iter()
+            .map(|line| line.text())
+            .filter(|text| text.contains("cache folder"))
+            .collect();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("warning:"), "{warnings:?}");
+        assert!(warnings[0].contains(&file.display().to_string()));
+
+        let made = folder.join("made");
+        let cache = open_cache(&made).expect("a cache folder that can be written");
+        assert_eq!(cache.folder(), made);
+        assert!(made.is_dir());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The session is given the cache's limit again only where Settings changed it: lowered,
+    /// turned off, or reset to its default.
+    #[test]
+    fn the_cache_s_limit_is_sent_again_only_when_it_changes() {
+        let folder = settings::testing::Folder::new("cache-limit");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let mut last = keeper.cache_limit();
+        assert_eq!(last, Limit::Bytes(4_000_000_000));
+        let mut set = |id, value: Option<toml::Value>| {
+            keeper.apply(&settings, id, value.as_ref());
+            keeper.cache_limit()
+        };
+        let lowered = set("cache.limit", Some(2.0.into()));
+        assert_eq!(
+            changed(&mut last, lowered),
+            Some(Limit::Bytes(2_000_000_000))
+        );
+        let same = set("cache.limit", Some(2.0.into()));
+        assert_eq!(changed(&mut last, same), None);
+        let off = set("cache.limited", Some(false.into()));
+        assert_eq!(changed(&mut last, off), Some(Limit::Unlimited));
+        let on = set("cache.limited", None);
+        assert_eq!(changed(&mut last, on), Some(Limit::Bytes(2_000_000_000)));
+        let reset = set("cache.limit", None);
+        assert_eq!(changed(&mut last, reset), Some(Limit::Bytes(4_000_000_000)));
+        assert_eq!(last, Limit::Bytes(4_000_000_000));
+    }
 
     #[test]
     fn a_newer_apertrust_s_edit_says_which_version_wrote_it() {

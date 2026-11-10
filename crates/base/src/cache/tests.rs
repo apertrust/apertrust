@@ -71,6 +71,15 @@ fn set_used(path: &Path, time: SystemTime) {
         .unwrap();
 }
 
+/// How many subfolders `kinds` hold: the questions a listing asks its cancel before its
+/// first removal.
+fn subfolders(cache: &Cache, kinds: &[Kind]) -> u64 {
+    kinds
+        .iter()
+        .map(|kind| cache.subfolders(*kind).unwrap().len() as u64)
+        .sum()
+}
+
 /// A cancel that answers true from its `after`-th question on.
 fn cancel_after(after: u64) -> impl Fn() -> bool + Sync {
     let asked = AtomicU64::new(0);
@@ -93,6 +102,35 @@ fn the_kinds_are_the_decided_ones_each_in_its_own_folder() {
     assert_eq!(PIPELINES.policy(), Policy::Limited);
     assert_eq!(LIBRARIES.policy(), Policy::Kept);
     assert_eq!(COPIES.policy(), Policy::Kept);
+}
+
+/// A program that writes the cache creates its folder, as its first write, and leaves
+/// nothing of its check in it; a folder that cannot be made is the error.
+#[test]
+fn a_cache_created_has_its_folder_and_one_that_cannot_be_made_is_an_error() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let path = folder.path().join("deep").join("cache");
+    let cache = Cache::create(&path).expect("the cache's folder is made");
+    assert_eq!(cache.folder(), path);
+    assert!(path.is_dir());
+    assert_eq!(files(&path), Vec::<String>::new());
+    // Again, on the folder that is there now.
+    Cache::create(&path).expect("the same folder again");
+    // A file where the folder should be, on every platform.
+    let file = folder.path().join("a file");
+    fs::write(&file, b"").unwrap();
+    assert!(Cache::create(&file).is_err());
+    assert!(Cache::create(file.join("cache")).is_err());
+}
+
+/// A folder that is there but cannot be written is the error too.
+#[cfg(unix)]
+#[test]
+fn a_cache_folder_that_cannot_be_written_is_an_error() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let path = folder.path().join("cache");
+    fs::create_dir(&path).unwrap();
+    with_mode(&path, 0o555, || assert!(Cache::create(&path).is_err()));
 }
 
 #[test]
@@ -266,7 +304,7 @@ fn the_walk_gives_each_kinds_entries_and_bytes() {
     let (_folder, cache) = cache();
     assert_eq!(cache.sizes(), None);
     // An empty or missing cache is nothing, and the walk makes no folder.
-    assert_eq!(cache.walk().unwrap(), Sizes::default());
+    assert_eq!(cache.walk(&never).unwrap(), Sizes::default());
     assert!(!cache.folder().exists());
 
     for (slot, bytes) in [(&b"a"[..], 10), (b"b", 20), (b"c", 30)] {
@@ -295,7 +333,7 @@ fn the_walk_gives_each_kinds_entries_and_bytes() {
     set_used(&stale, SystemTime::now() - 2 * DAY);
 
     let header = (MAGIC.len() + 4 + 1) as u64;
-    let sizes = cache.walk().unwrap();
+    let sizes = cache.walk(&never).unwrap();
     assert_eq!(
         sizes.of(THUMBNAILS),
         Usage {
@@ -335,11 +373,11 @@ fn the_walk_gives_each_kinds_entries_and_bytes() {
 
     // The walk writes nothing: the stale temporary stays until a tidy removes it.
     assert!(stale.exists());
-    assert_eq!(cache.tidy().unwrap(), 1);
+    assert_eq!(cache.tidy(&never).unwrap(), 1);
     assert!(!stale.exists());
     assert!(fresh.exists());
-    assert_eq!(cache.tidy().unwrap(), 0);
-    assert_eq!(cache.walk().unwrap(), sizes);
+    assert_eq!(cache.tidy(&never).unwrap(), 0);
+    assert_eq!(cache.walk(&never).unwrap(), sizes);
 }
 
 #[test]
@@ -349,7 +387,7 @@ fn the_handle_counts_its_own_writes_and_removals_after_the_walk() {
     // Before a walk nothing is counted: the walk finds it.
     cache.write(THUMBNAILS, b"a", b"v", &[0; 10]).unwrap();
     assert_eq!(cache.sizes(), None);
-    cache.walk().unwrap();
+    cache.walk(&never).unwrap();
     let thumbnails = || cache.sizes().unwrap().of(THUMBNAILS);
     assert_eq!(
         thumbnails(),
@@ -380,7 +418,7 @@ fn the_handle_counts_its_own_writes_and_removals_after_the_walk() {
 
     // The counts agree with the next walk.
     let counted = cache.sizes().unwrap();
-    assert_eq!(cache.walk().unwrap(), counted);
+    assert_eq!(cache.walk(&never).unwrap(), counted);
 
     cache.clear(THUMBNAILS, &quiet, &never).unwrap();
     assert_eq!(thumbnails(), Usage::default());
@@ -434,7 +472,7 @@ fn present(cache: &Cache, slots: &[(Kind, &'static [u8])]) -> Vec<&'static [u8]>
 fn eviction_waits_for_the_limit_then_removes_the_oldest_across_kinds_to_ninety_percent() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    cache.walk().unwrap();
+    cache.walk(&never).unwrap();
 
     // At the limit, or under it, nothing goes.
     for limit in [6 * size, 6 * size + 1, 10 * size] {
@@ -478,7 +516,7 @@ fn eviction_waits_for_the_limit_then_removes_the_oldest_across_kinds_to_ninety_p
 fn eviction_takes_its_removals_from_the_counts_and_keeps_writes_made_after() {
     let (_folder, cache) = cache();
     let (_, size) = six_entries(&cache);
-    cache.walk().unwrap();
+    cache.walk(&never).unwrap();
     let removed = cache.evict(Limit::Bytes(4 * size), &never).unwrap();
     assert_eq!(removed.entries, 3);
     cache.write(THUMBNAILS, b"7", b"v", &[0; 100]).unwrap();
@@ -489,7 +527,7 @@ fn eviction_takes_its_removals_from_the_counts_and_keeps_writes_made_after() {
             bytes: 4 * size
         }
     );
-    assert_eq!(Some(cache.walk().unwrap()), cache.sizes());
+    assert_eq!(Some(cache.walk(&never).unwrap()), cache.sizes());
 }
 
 /// Gives `folder` the permissions `mode` while `test` runs, then the usual ones back; false,
@@ -514,7 +552,7 @@ fn with_mode(folder: &Path, mode: u32, test: impl FnOnce()) -> bool {
 fn an_entry_that_cannot_be_removed_is_passed_over_and_still_counted() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    cache.walk().unwrap();
+    cache.walk(&never).unwrap();
     let subfolder = cache
         .entry_path(THUMBNAILS, b"1")
         .parent()
@@ -587,7 +625,7 @@ fn an_unreadable_subfolder_is_passed_over() {
         .filter(|(kind, slot)| cache.entry_path(*kind, slot).parent() != Some(&subfolder))
         .count() as u64;
     with_mode(&subfolder, 0o000, || {
-        let sizes = cache.walk().unwrap();
+        let sizes = cache.walk(&never).unwrap();
         assert_eq!(
             sizes.limited(),
             Usage {
@@ -596,7 +634,7 @@ fn an_unreadable_subfolder_is_passed_over() {
             }
         );
         assert_eq!(sizes.of(LIBRARIES).bytes, 100_000);
-        assert_eq!(cache.tidy().unwrap(), 0);
+        assert_eq!(cache.tidy(&never).unwrap(), 0);
         let removed = cache.evict(Limit::Bytes(1), &never).unwrap();
         assert_eq!((removed.entries, removed.failed), (elsewhere, 0));
         assert_eq!(
@@ -628,7 +666,7 @@ fn two_handles_writing_evicting_and_clearing_at_once_never_read_a_part() {
         }
         scope.spawn(|| {
             for round in 0..rounds {
-                other.walk().unwrap();
+                other.walk(&never).unwrap();
                 other.evict(Limit::Bytes(30_000), &never).unwrap();
                 if round % 10 == 0 {
                     other.clear(THUMBNAILS, &quiet, &never).unwrap();
@@ -659,7 +697,7 @@ fn kept_kinds_are_never_evicted() {
     let removed = cache.evict(Limit::Bytes(1), &never).unwrap();
     assert_eq!(removed.entries, 6);
     assert!(present(&cache, &slots).is_empty());
-    let sizes = cache.walk().unwrap();
+    let sizes = cache.walk(&never).unwrap();
     assert_eq!(sizes.limited(), Usage::default());
     assert_eq!(
         sizes.of(LIBRARIES),
@@ -692,7 +730,10 @@ fn an_unlimited_cache_evicts_nothing() {
 fn eviction_stops_at_a_cancel() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    let removed = cache.evict(Limit::Bytes(1), &cancel_after(2)).unwrap();
+    let listed = subfolders(&cache, &[THUMBNAILS, PIPELINES]);
+    let removed = cache
+        .evict(Limit::Bytes(1), &cancel_after(listed + 2))
+        .unwrap();
     assert_eq!(
         removed,
         Removed {
@@ -709,7 +750,7 @@ fn eviction_stops_at_a_cancel() {
 fn clear_removes_one_kinds_entries_and_tells_its_progress() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    cache.walk().unwrap();
+    cache.walk(&never).unwrap();
     let told = Mutex::new(Vec::new());
     let progress = |done, total| told.lock().unwrap().push((done, total));
     let removed = cache.clear(THUMBNAILS, &progress, &never).unwrap();
@@ -738,12 +779,12 @@ fn clear_removes_one_kinds_entries_and_tells_its_progress() {
         }
     );
     assert_eq!(sizes.of(LIBRARIES).bytes, 100_000);
-    assert_eq!(cache.walk().unwrap(), sizes);
+    assert_eq!(cache.walk(&never).unwrap(), sizes);
 
     // A kept kind is not cleared here.
     let error = cache.clear(LIBRARIES, &quiet, &never).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::Unsupported);
-    assert_eq!(cache.walk().unwrap().of(LIBRARIES).entries, 1);
+    assert_eq!(cache.walk(&never).unwrap().of(LIBRARIES).entries, 1);
 }
 
 #[test]
@@ -761,7 +802,10 @@ fn clear_stops_at_a_cancel() {
         }
     );
     assert_eq!(present(&cache, &slots).len(), 6);
-    let removed = cache.clear(THUMBNAILS, &quiet, &cancel_after(3)).unwrap();
+    let listed = subfolders(&cache, &[THUMBNAILS]);
+    let removed = cache
+        .clear(THUMBNAILS, &quiet, &cancel_after(listed + 3))
+        .unwrap();
     assert_eq!(
         removed,
         Removed {
@@ -782,4 +826,57 @@ fn an_entry_removed_by_another_process_is_passed_over() {
     assert!(remove(&path).unwrap());
     assert!(!remove(&path).unwrap());
     assert_eq!(cache.read(THUMBNAILS, b"a", b"v").unwrap(), None);
+}
+
+/// Every listing stops at a cancel before its next subfolder: a cancelled walk keeps
+/// nothing, and a cancelled tidy or scan removes nothing, so a program that quits waits for
+/// none of them.
+#[test]
+fn a_walk_a_tidy_and_an_eviction_s_scan_stop_at_a_cancel() {
+    let (_folder, cache) = cache();
+    let (slots, _) = six_entries(&cache);
+    let always = || true;
+    let error = cache.walk(&always).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+    assert_eq!(cache.sizes(), None);
+    let error = cache.tidy(&always).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+    let removed = cache.evict(Limit::Bytes(1), &always).unwrap();
+    assert_eq!(
+        removed,
+        Removed {
+            cancelled: true,
+            ..Removed::default()
+        }
+    );
+    assert_eq!(present(&cache, &slots).len(), 6);
+    // Stopped partway, after its first subfolder.
+    let error = cache.walk(&cancel_after(1)).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+    assert_eq!(cache.sizes(), None);
+    assert!(cache.walk(&never).is_ok());
+}
+
+/// The tidy removes the write checks a crash left in the cache folder, any process's,
+/// and nothing else there.
+#[test]
+fn the_tidy_removes_write_checks_left_behind() {
+    let (_folder, cache) = cache();
+    fs::create_dir_all(cache.folder()).unwrap();
+    let left = cache.folder().join(".apertrust-write-check-4242.tmp");
+    fs::write(&left, b"").unwrap();
+    let others = [
+        ".apertrust-write-check-.tmp",
+        ".apertrust-write-check-12a.tmp",
+        "apertrust-write-check-1.tmp",
+        "notes.tmp",
+    ];
+    for name in others {
+        fs::write(cache.folder().join(name), b"").unwrap();
+    }
+    assert_eq!(cache.tidy(&never).unwrap(), 1);
+    assert!(!left.exists());
+    for name in others {
+        assert!(cache.folder().join(name).exists(), "{name}");
+    }
 }

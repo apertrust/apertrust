@@ -1006,7 +1006,7 @@ Commands are plain data in the engine and move into the protocol unchanged ([ses
 
 `apertrust-engine::session`, decision 28.
 
-- **The session takes the modules** as it takes the operations: `Session::start(gpu, operations, modules, build, budget, wake)`, the binaries handing it `apertrust_modules::MODULES` and `apertrust_operations::OPERATIONS` (decisions 17 and 28). It accepts the modules with `apertrust_modules::check::accept`: a parameter belongs to the first module that owns it, and a later one owning it too is left out whole, reported as `SessionError::Module`. A test refuses a built-in module that owns a parameter already owned, unknown or of the wrong kind. The values report the modules crate's `Setting`.
+- **The session takes the modules** as it takes the operations: `Session::start(gpu, operations, modules, build, budget, cache, wake)`, the binaries handing it `apertrust_modules::MODULES` and `apertrust_operations::OPERATIONS` (decisions 17 and 28). It accepts the modules with `apertrust_modules::check::accept`: a parameter belongs to the first module that owns it, and a later one owning it too is left out whole, reported as `SessionError::Module`. A test refuses a built-in module that owns a parameter already owned, unknown or of the wrong kind. The values report the modules crate's `Setting`.
 - **`Set` has no `done`,** so it is saved with the next completed change, or when the photo closes or the session ends.
 - **A command that changes nothing writes nothing:** a `done` repeating the value already set, or a reset of what is untouched, so a photo opened and reset leaves no file beside it.
 - **Saving.** The edit's writer thread reports `Saved { path, through }`, the file and how many commands the written edit includes, and a failed write as `SessionError::Save` with the same two, to the client itself, so `wake` is `Send + Sync`.
@@ -1177,7 +1177,7 @@ flowchart TD
 - **The session's end.** The edit is saved, then `Control::shutdown` runs on a short-lived thread of its own while the engine thread keeps stepping the tasks the workers hand it until every worker has ended. So a body that cannot be cancelled and still waits for the engine thread finishes, and the drop never hangs.
   - After a panic, saving the edit or stepping tasks at the end, the inbox and the waiting tasks go before the control waits for its workers, so their bodies hear `Stopped`, and the panic goes on once the workers have ended.
   - After a panic elsewhere on the engine thread the inbox is dropped first and the tasks before the control.
-- **Callers.** The export is the first job a client starts (`Command::Export`, [Export jobs](#export-jobs)), beside the Export dialog's preview and a folder's reading. The tests' synthetic job stays behind a test-only command.
+- **Callers.** The export is the first job a client starts (`Command::Export`, [Export jobs](#export-jobs)), beside the Export dialog's preview and a folder's reading. The disk cache's `cache-walk` and `cache-evict` are `SystemBackground` jobs with no progress, the latter asked for by `Command::Cache(CacheCommand::Limit(limit))` and by a write past the limit ([cache.md](cache.md#through-the-session)). The tests' synthetic job stays behind a test-only command.
 
 ### Differences from darktable
 

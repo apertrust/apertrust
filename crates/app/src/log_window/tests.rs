@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::Wake;
 
 use apertrust_ui::{Builtin, Locale};
@@ -23,10 +23,10 @@ use eframe::egui::accesskit::Toggled;
 use eframe::egui::{Event, OutputCommand};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
-use tracing::Dispatch;
 
 use super::*;
 use crate::dialog_host;
+use crate::testing::kept;
 
 /// The window as the host draws it, and what it asked.
 struct Bench {
@@ -67,24 +67,6 @@ fn window_at(kept: &Kept, size: egui::Vec2) -> Harness<'static, Bench> {
         );
     harness.run();
     harness
-}
-
-/// A log of its own, keeping `chosen`'s domains, and the dispatch that logs to it.
-fn kept(chosen: Option<&[Domain]>) -> (Kept, Dispatch, MutexGuard<'static, ()>) {
-    let serial = serial();
-    let (kept, dispatch) = Kept::scoped::<&str>(&[]).expect("a log");
-    kept.keep(chosen, String::new);
-    (kept, dispatch, serial)
-}
-
-/// Held while a test's log is in use: tracing's callsites keep one interest for every
-/// dispatcher, rebuilt as a filter changes, and a rebuild in another test meanwhile can
-/// lose an event of this one's.
-fn serial() -> MutexGuard<'static, ()> {
-    static SERIAL: Mutex<()> = Mutex::new(());
-    SERIAL
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// A session's lines as the terminal writes them, of known seconds.

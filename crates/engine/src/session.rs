@@ -77,7 +77,9 @@
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
+mod cache;
 mod outbox;
+mod thumbnail;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
@@ -88,6 +90,7 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+pub use apertrust_base::cache::CacheCommand;
 use apertrust_base::jobs::Control;
 pub use apertrust_export::{ExportSettings, Places};
 /// The library's commands and events and what they carry (decision 54, layer 4).
@@ -115,8 +118,11 @@ use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 pub use crate::sidecar::ViewOnly;
 use crate::{raw, sidecar};
+pub use cache::CacheOptions;
+use cache::Upkeep;
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
+use thumbnail::Tally;
 
 /// What a client asks of the session. Plain data, so it can move into the protocol.
 #[derive(Debug, Clone, PartialEq)]
@@ -244,6 +250,13 @@ pub enum Command {
     /// [`LibraryEvent::Thumbnail`], naming the open of its folder. A new open or a close
     /// cancels those not yet sent; with no folder open nothing is read.
     Library(LibraryCommand),
+    /// A command of the disk cache's (decision 76). [`CacheCommand::Limit`], the limit as
+    /// `cache.limited` and `cache.limit` now give it ([`crate::settings::cache_limit`]),
+    /// for settings that apply at once: lowered or turned on, an eviction, a
+    /// `SystemBackground` job with no progress, unless one is queued already; one running,
+    /// the start's walk among them, takes it in and runs once more. Raised, the same or
+    /// turned off, none. With no cache, nothing.
+    Cache(CacheCommand),
     /// A test's synthetic GPU job, started as a command starts a job.
     #[cfg(test)]
     Synthetic(crate::jobs::testing::Synthetic),
@@ -274,7 +287,8 @@ fn on_edit(command: &Command) -> bool {
         | Command::RetryJob { .. }
         | Command::Export { .. }
         | Command::PreviewExport { .. }
-        | Command::Library(_) => false,
+        | Command::Library(_)
+        | Command::Cache(_) => false,
         #[cfg(test)]
         Command::Synthetic(_)
         | Command::HoldExport(_)
@@ -286,11 +300,12 @@ fn on_edit(command: &Command) -> bool {
 }
 
 /// What reaches the engine thread, in the order sent: the client's commands, the GPU
-/// tasks its jobs' bodies hand it ([`crate::jobs::Tasks`]), and, last, the client's
-/// handle dropping.
+/// tasks its jobs' bodies hand it ([`crate::jobs::Tasks`]), a worker's ask for the
+/// cache's eviction ([`cache::Upkeep::check`]), and, last, the client's handle dropping.
 pub(crate) enum Inbox {
     Command(Instant, Box<Command>),
     Task(Waiting),
+    Evict,
     Stop,
 }
 
@@ -727,7 +742,9 @@ impl Session {
     /// `build` as the build that wrote it: the client's version (decision 44). Every photo
     /// is planned within `budget` bytes of GPU memory, the engine's memory budget
     /// (decision 12), which the client reads from its settings (`engine.memory_budget`);
-    /// the session keeps it while it runs, so a change applies at the next start. `wake`
+    /// the session keeps it while it runs, so a change applies at the next start. `cache`
+    /// is the disk cache the client opened, with its limit, which the session tidies,
+    /// walks and keeps within the limit as background jobs (decision 76), or none. `wake`
     /// is called, from the session's threads, when events have arrived and the client has
     /// not looked since the last call, once for a burst: the client looks at them with
     /// [`Session::events`], a window asking for a repaint, and the next event after that
@@ -738,6 +755,7 @@ impl Session {
         modules: &'static [&'static dyn Module],
         build: &str,
         budget: u64,
+        cache: Option<CacheOptions>,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Session {
         Self::spawn(
@@ -746,17 +764,23 @@ impl Session {
             modules,
             build,
             budget,
+            cache,
             Arc::new(wake),
             decode,
         )
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "`start`'s, and the decode a test puts in its place"
+    )]
     pub(crate) fn spawn(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
         modules: &'static [&'static dyn Module],
         build: &str,
         budget: u64,
+        cache: Option<CacheOptions>,
         wake: Wake,
         load: Load,
     ) -> Session {
@@ -765,6 +789,11 @@ impl Session {
         // The jobs' bodies hand their GPU tasks through the same inbox, so a task wakes
         // the engine thread as a command does.
         let tasks = commands.clone();
+        // A worker that finds the cache past its limit asks the engine thread the same way.
+        let asks = commands.clone();
+        let ask: cache::Ask = Arc::new(move || {
+            let _ = asks.send(Inbox::Evict);
+        });
         let (outbox, events) = outbox::channel(wake);
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
@@ -786,6 +815,10 @@ impl Session {
                 // drop, which waits for its workers, never waits for them.
                 let received = received;
                 engine.load = load;
+                engine.cache = cache.map(|options| {
+                    let stop = Arc::clone(&stopping);
+                    Upkeep::start(options, &engine.jobs.control, ask, stop)
+                });
                 outbox.send_all(rejected);
                 // Once the handle has dropped, an Open still queued, and what follows it,
                 // was for a photo that never opens.
@@ -814,6 +847,7 @@ impl Session {
                         match item {
                             Inbox::Command(at, command) => batch.push((at, *command)),
                             Inbox::Task(waiting) => engine.jobs.background.add(waiting),
+                            Inbox::Evict => engine.evict_cache(),
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
                                 stop = true;
@@ -1179,6 +1213,8 @@ struct Engine {
     scopes_failed: bool,
     /// The session's jobs and the GPU tasks they hand it (decision 57).
     jobs: Jobs,
+    /// The disk cache the client handed the session, kept within its limit (decision 76).
+    cache: Option<Upkeep>,
     /// The latest export preview's job, which the next one cancels.
     preview: Option<JobId>,
     /// The job reading the folder last opened, which the next open or a close cancels.
@@ -1329,7 +1365,9 @@ impl Jobs {
                 while !stopping.is_finished() {
                     #[cfg(test)]
                     assert!(!panics, "the jobs' end panicked, as a test asked");
-                    // The session sends nothing after its `Stop`; the tasks still come.
+                    // The session sends nothing after its `Stop`; the tasks still come,
+                    // and a worker's `Inbox::Evict` may too, which is dropped: no job is
+                    // added once the session ends.
                     if let Ok(Inbox::Task(waiting)) = inbox.recv_timeout(POLL_INTERVAL) {
                         background.add(waiting);
                     }
@@ -1505,6 +1543,7 @@ impl Engine {
             meter: None,
             scopes_failed: false,
             jobs,
+            cache: None,
             preview: None,
             folder: None,
             shown: None,
@@ -1640,6 +1679,14 @@ impl Engine {
         self.live_frame.store(live, Ordering::Relaxed);
     }
 
+    /// A worker's ask for the cache's eviction ([`Inbox::Evict`]): one added, unless one is
+    /// queued or running already.
+    fn evict_cache(&self) {
+        if let Some(cache) = &self.cache {
+            cache.evict(&self.jobs.control);
+        }
+    }
+
     /// Saves what the photo's edit still needs, then drops the photo.
     fn close_saving(&mut self) {
         self.save_unsaved();
@@ -1726,6 +1773,12 @@ impl Engine {
                 }
                 Command::Library(command) => {
                     self.library(command, &mut events);
+                    Ok(())
+                }
+                Command::Cache(CacheCommand::Limit(limit)) => {
+                    if let Some(cache) = &self.cache {
+                        cache.set_limit(limit, &self.jobs.control);
+                    }
                     Ok(())
                 }
                 #[cfg(test)]
@@ -1949,7 +2002,8 @@ impl Engine {
             | Command::RetryJob { .. }
             | Command::Export { .. }
             | Command::PreviewExport { .. }
-            | Command::Library(_) => {
+            | Command::Library(_)
+            | Command::Cache(_) => {
                 return Ok(Effect::default());
             }
             #[cfg(test)]
@@ -2317,7 +2371,8 @@ impl Engine {
     /// `SystemForeground` queue, as darktable's thumbnail loads (decision 57), with no
     /// progress, deduplicated by the open, the photo and the size; added from the last, so
     /// the first, on the stack's top, is read first. Its picture goes out as
-    /// [`Event::Library`]. Nothing with no folder open.
+    /// [`Event::Library`], from the disk cache where it holds it, and one read is kept
+    /// there ([`thumbnail`], decision 76). Nothing with no folder open.
     fn thumbnails(&mut self, photos: Vec<String>, size: u32) {
         let Some((open, folder)) = self.shown.clone() else {
             return;
@@ -2327,10 +2382,13 @@ impl Engine {
         self.thumbnails.retain(|&job| control.state(job).is_some());
         #[cfg(test)]
         let hold = self.thumbnails_hold.take();
+        // The command's jobs share one tally, logged once the last has ended.
+        let cached = (self.cache.clone()).map(|upkeep| (upkeep, Arc::new(Tally::new(size))));
         for photo in photos.into_iter().rev() {
             let key = format!("{open}/{size}/{photo}").into_bytes();
             let description = format!("thumbnail of {photo} at {size}");
             let (outbox, folder) = (self.jobs.outbox.clone(), folder.clone());
+            let cached = cached.clone();
             #[cfg(test)]
             let hold = hold.clone();
             let job = self.jobs.add(self.applied, Queue::SystemForeground, |_| {
@@ -2340,7 +2398,15 @@ impl Engine {
                         hold.wait();
                     }
                     let tell = |event| outbox.send(Event::Library(event));
-                    library::thumbnail(open, &folder, &photo, size, &tell, &|| context.cancelled());
+                    let asked = thumbnail::Asked {
+                        open,
+                        folder: &folder,
+                        photo: &photo,
+                        size,
+                    };
+                    let cached = cached.as_ref().map(|(upkeep, tally)| (upkeep, &**tally));
+                    let cancel = || context.cancelled();
+                    thumbnail::serve(cached, &asked, &tell, &cancel, library::thumbnail);
                     Ok(())
                 })
                 .dedup(key)
@@ -2807,6 +2873,7 @@ mod tests {
             modules,
             BUILD,
             pipeline::BUDGET,
+            None,
             Arc::new(wake),
             load,
         );
@@ -6592,6 +6659,55 @@ mod tests {
         assert_eq!(retries.take(ids[1]), kept);
         assert_eq!(retries.take(ids[1]), None, "used once");
         assert_eq!(retries.take(ids[RETRIES_KEPT]), kept);
+    }
+
+    /// The session keeps the disk cache it is handed within its limit (decision 76): the
+    /// start's walk finds it past the limit and evicts, and a limit lowered by
+    /// `CacheCommand::Limit` evicts again; a session with none starts as every other
+    /// test's does.
+    #[test]
+    fn the_session_keeps_the_cache_it_is_handed_within_its_limit() {
+        use apertrust_base::cache::{Cache, Limit, THUMBNAILS};
+        // An entry's file: its mark, the version's length, the version and its bytes.
+        const ENTRY: u64 = 4 + 4 + 1 + 1000;
+        let gpu = gpu();
+        let photo = scratch("cache");
+        let cache = Cache::create(photo.parent().unwrap().join("cache")).expect("a cache");
+        let cache = Arc::new(cache);
+        for slot in 0u64..10 {
+            let entry = cache.write(THUMBNAILS, &slot.to_le_bytes(), b"v", &[0; 1000]);
+            entry.expect("an entry is written");
+        }
+        let options = CacheOptions {
+            cache: Arc::clone(&cache),
+            limit: Limit::Bytes(5 * ENTRY),
+        };
+        let session = Session::spawn(
+            gpu,
+            OPERATIONS,
+            &[],
+            BUILD,
+            pipeline::BUDGET,
+            Some(options),
+            Arc::new(|| {}),
+            synthetic,
+        );
+        let within = |limit: u64| {
+            let deadline = Instant::now() + TEST_WAIT;
+            while !cache
+                .sizes()
+                .is_some_and(|sizes| sizes.limited().bytes <= limit * 9 / 10)
+            {
+                assert!(Instant::now() < deadline, "the cache is evicted in time");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        };
+        within(5 * ENTRY);
+        session.send(Command::Cache(CacheCommand::Limit(Limit::Bytes(2 * ENTRY))));
+        within(2 * ENTRY);
+        assert_eq!(cache.walk(&|| false).unwrap().limited().entries, 1);
+        drop(session);
+        remove(&photo);
     }
 
     #[test]

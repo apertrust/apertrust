@@ -14,7 +14,7 @@ directories.workspace = true
 eframe.workspace = true
 egui-winit.workspace = true
 egui_commonmark.workspace = true
-apertrust-base = { workspace = true, features = ["folders", "log"] }
+apertrust-base = { workspace = true, features = ["cache", "folders", "log"] }
 apertrust-display.workspace = true
 apertrust-engine.workspace = true
 # The Export dialog's settings, its choices, the variables it lists and the size it computes.
