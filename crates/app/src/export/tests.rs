@@ -55,16 +55,27 @@ fn home(values: Values) -> Export {
     Export::with_home(values, Some(PathBuf::from("/Users/anna")))
 }
 
-/// `export` in the bench, drawn by the host.
+/// `export` in the bench, drawn by the host on the Mac.
 fn dialog_of(
     export: Export,
     which: Builtin,
     locale: Locale,
     size: egui::Vec2,
 ) -> Harness<'static, Bench> {
+    dialog_on(export, which, locale, size, OperatingSystem::Mac)
+}
+
+/// `export` in the bench, drawn by the host on `os`.
+fn dialog_on(
+    export: Export,
+    which: Builtin,
+    locale: Locale,
+    size: egui::Vec2,
+    os: OperatingSystem,
+) -> Harness<'static, Bench> {
     let mut harness = Harness::builder()
         .with_size(size)
-        .with_os(egui::os::OperatingSystem::Mac)
+        .with_os(os)
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::builtin(which));
             apertrust_ui::set_locale(ctx, locale);
@@ -1418,5 +1429,52 @@ fn the_dialog_is_as_wide_as_designed_in_every_language() {
         let size = harness.get_by_role(Role::Dialog).rect().size();
         assert_eq!(size.x, WIDTH, "{locale:?}");
         assert_eq!(size.y, HEADER + BODY + FOOTER, "{locale:?}");
+    }
+}
+
+#[test]
+fn its_title_is_its_window_s_frame_s_and_its_own_header_the_mac_sheet_s_alone() {
+    let title = "Export 1 photo";
+    let size = egui::vec2(WIDTH + 20.0, HEADER + BODY + FOOTER + 60.0);
+    for os in [
+        OperatingSystem::Mac,
+        OperatingSystem::Windows,
+        OperatingSystem::Nix,
+    ] {
+        let mut harness = dialog_on(
+            home(Values::default()),
+            Builtin::Dark,
+            Locale::EnGb,
+            size,
+            os,
+        );
+        answer(&mut harness, 1, preview());
+        let window = harness.get_by_role_and_label(Role::Dialog, title).rect();
+        let button = harness.get_by_role_and_label(Role::Button, title).rect();
+        // The title painted above the body: the sheet's header on the Mac, the host's
+        // strip on Linux, nothing on Windows, whose system title bar shows it.
+        let above: Vec<egui::Rect> = dialog_host::painted(harness.output())
+            .into_iter()
+            .filter(|(text, at)| text == title && !button.contains_rect(*at))
+            .map(|(_, at)| at)
+            .collect();
+        let (header, frame) = match os {
+            OperatingSystem::Mac => (HEADER, 0.0),
+            OperatingSystem::Windows => (0.0, 0.0),
+            _ => (0.0, dialog_host::FRAME),
+        };
+        assert_eq!(
+            above.len(),
+            usize::from(os != OperatingSystem::Windows),
+            "{os:?}"
+        );
+        if let Some(at) = above.first() {
+            assert!(
+                at.bottom() <= window.top() + header.max(frame),
+                "{os:?} {at:?}"
+            );
+        }
+        // The window is as tall as what it holds.
+        assert_eq!(window.height(), frame + header + BODY + FOOTER, "{os:?}");
     }
 }

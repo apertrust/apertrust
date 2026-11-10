@@ -348,7 +348,8 @@ impl Dialog for Export {
         "export"
     }
 
-    /// "Export 1 photo", which a sheet shows as its own heading.
+    /// "Export 1 photo", which its window's frame shows, and the Mac's sheet, which has
+    /// none, as its own heading.
     fn title(&self, ctx: &egui::Context) -> String {
         let mut args = Args::new();
         args.set("count", PHOTOS as f64);
@@ -434,9 +435,10 @@ impl Export {
         &self.values
     }
 
-    /// Draws the dialog in `ui`: its header, the two columns, the footer, and its keys but
-    /// the host's. Returns what it asked of the app, whether it is to close, and whether
-    /// the path's variable list was open as the frame began, which Escape closes first.
+    /// Draws the dialog in `ui`: its header in the Mac's sheet, the two columns, the footer,
+    /// and its keys but the host's. Returns what it asked of the app, whether it is to
+    /// close, and whether the path's variable list was open as the frame began, which
+    /// Escape closes first.
     fn frame(&mut self, ui: &mut Ui) -> (Asked, bool, bool) {
         let ctx = ui.ctx().clone();
         let t = theme(&ctx);
@@ -446,7 +448,12 @@ impl Export {
         ui.set_width(WIDTH);
         // The regions sit edge to edge; each column sets the spacing of its own rows.
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        self.header(ui, &t);
+        // The title is its window's frame's, the system's or the host's on Linux; a sheet
+        // has none, so it shows it here.
+        let os = ctx.os();
+        if dialog_host::platform::form(self.form(os), os) == Form::Sheet {
+            self.header(ui, &t);
+        }
         let mut regions = [Rect::NOTHING; 3];
         let mut list_was_open = false;
         ui.horizontal_top(|ui| {
@@ -518,7 +525,7 @@ impl Export {
     }
 
     /// The header: the title, 16 points Medium in a 44-point band with a hairline under
-    /// it. A sheet shows no title of its own.
+    /// it, drawn only in the Mac's sheet, which has no title bar to show it.
     fn header(&self, ui: &mut Ui, t: &Theme) {
         let (rect, _) = ui.allocate_exact_size(vec2(WIDTH, HEADER), Sense::hover());
         let title = self.title(ui.ctx());
