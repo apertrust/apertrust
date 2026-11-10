@@ -2,7 +2,7 @@
 
 Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, eviction to 90% of a limit and clearing a limited kind, on a folder its caller gives. The rest is planned: the folder's choice, the settings, the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. The rest is planned: the folder's choice, the settings, the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
 
 ## What goes in it
 
@@ -61,7 +61,7 @@ There is no index file. Sizes come from a walk of each limited kind: one listing
 
 - **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s.
 - **When:** once as the session starts, then before each eviction and each time the Storage page asks. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
-- **Tidying:** a walk removes temporaries more than a day old, by name, as a folder's listing does.
+- **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts; a walk writes nothing.
 
 ## Two processes at once
 
@@ -69,7 +69,7 @@ The app, a second instance and the CLI share the cache with no lock for limited 
 
 - two processes writing one slot each rename a whole file, the last rename winning;
 - a removal that finds the file gone is ignored, and a reader whose file vanished renders again;
-- a crash leaves at most a temporary, which a walk removes.
+- a crash leaves at most a temporary, which the start's tidy removes.
 
 A library's cache is locked: a process that has it open holds an OS lock on its `lock` file (`std::fs::File::lock`), and no clear removes it then.
 

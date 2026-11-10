@@ -24,14 +24,25 @@
 //!   replaces the slot's file whole through the safe write ([`crate::fs`]), so a stale
 //!   version goes at once; a read returns the bytes only for the version asked. Last use is
 //!   the file's modified time, set as it is written and as it is read, at most once a day.
-//! - [`Cache::walk`] gives each kind's [`Usage`], tidying day-old temporaries;
-//!   [`Cache::sizes`] is the last walk's with the handle's own writes and removals since.
-//! - [`Cache::evict`] removes the oldest limited entries to 90% of the limit, and
-//!   [`Cache::clear`] a limited kind's entries, both cancellable.
+//! - [`Cache::walk`] gives each kind's [`Usage`] and writes nothing; [`Cache::sizes`] is
+//!   the last walk's with the handle's own writes and removals since; [`Cache::tidy`]
+//!   removes the temporaries a crash left.
+//! - [`Cache::evict`] removes the oldest limited entries to 90% of the limit once they are
+//!   past it, and [`Cache::clear`] a limited kind's entries, both cancellable.
+//! - An item that cannot be read or removed is passed over, and a removal counted as
+//!   failed: only a kind's own folder that cannot be listed is an error.
 //!
-//! No index file and no lock for limited kinds: two processes writing one slot each rename
-//! a whole file, the last rename winning; a removal that finds the file gone is ignored; a
-//! read whose file vanished finds nothing. A kept kind is only its folder here.
+//! No index file and no lock for limited kinds:
+//!
+//! - two processes writing one slot each rename a whole file, the last rename winning;
+//! - a removal that finds the file gone is ignored, and a read whose file vanished finds
+//!   nothing;
+//! - eviction may remove a slot another process rewrote between its walk and its removal,
+//!   which costs only that entry made again;
+//! - on Windows, a reader's open file may hold another process's rename back for a moment,
+//!   which the safe write's retry covers ([`crate::fs::Retry`]).
+//!
+//! A kept kind is only its folder here.
 
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -48,18 +59,36 @@ pub enum Policy {
     Kept,
 }
 
-/// A kind of entry, a folder of its own in the cache.
+/// A kind of entry, a folder of its own in the cache: one of [`KINDS`], the only ones
+/// there are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Kind {
+    /// Its place in [`KINDS`].
+    index: usize,
+    id: &'static str,
+    folder: &'static str,
+    policy: Policy,
+}
+
+impl Kind {
     /// Its name, as `apertrust-cli cache clear` takes it.
-    pub id: &'static str,
+    pub fn id(self) -> &'static str {
+        self.id
+    }
+
     /// Its folder in the cache folder.
-    pub folder: &'static str,
-    pub policy: Policy,
+    pub fn folder(self) -> &'static str {
+        self.folder
+    }
+
+    pub fn policy(self) -> Policy {
+        self.policy
+    }
 }
 
 /// The library's thumbnails: one per photo, virtual copy and size.
 pub const THUMBNAILS: Kind = Kind {
+    index: 0,
     id: "thumbnails",
     folder: "thumbnails",
     policy: Policy::Limited,
@@ -67,6 +96,7 @@ pub const THUMBNAILS: Kind = Kind {
 
 /// The engine's wgpu pipeline cache, one per adapter, Vulkan only, if measured worthwhile.
 pub const PIPELINES: Kind = Kind {
+    index: 1,
     id: "pipelines",
     folder: "pipelines",
     policy: Policy::Limited,
@@ -74,6 +104,7 @@ pub const PIPELINES: Kind = Kind {
 
 /// The libraries' caches, one folder per library id.
 pub const LIBRARIES: Kind = Kind {
+    index: 2,
     id: "libraries",
     folder: "libraries",
     policy: Policy::Kept,
@@ -81,6 +112,7 @@ pub const LIBRARIES: Kind = Kind {
 
 /// Local copies of raws, one per fingerprint, for offline drives and server roots.
 pub const COPIES: Kind = Kind {
+    index: 3,
     id: "copies",
     folder: "copies",
     policy: Policy::Kept,
@@ -92,8 +124,8 @@ pub const KINDS: [Kind; 4] = [THUMBNAILS, PIPELINES, LIBRARIES, COPIES];
 /// How long a read leaves an entry's last use alone: it is set at most once a day.
 pub const TOUCH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// What eviction leaves of the limit, in tenths: it removes down to 90%, so it does not
-/// run again at the next write.
+/// What eviction leaves of the limit, in tenths: past the limit, it removes down to 90%,
+/// so it does not run again at the next write.
 const EVICT_TO_TENTHS: u64 = 9;
 
 /// What starts every limited entry's file, its format's mark: a file without it is no
@@ -116,6 +148,14 @@ pub struct Usage {
     pub bytes: u64,
 }
 
+impl Usage {
+    /// Takes away what was removed, never below nothing.
+    fn subtract(&mut self, removed: Usage) {
+        self.entries = self.entries.saturating_sub(removed.entries);
+        self.bytes = self.bytes.saturating_sub(removed.bytes);
+    }
+}
+
 /// Each kind's [`Usage`], in [`KINDS`]' order.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Sizes {
@@ -125,25 +165,22 @@ pub struct Sizes {
 impl Sizes {
     /// `kind`'s usage.
     pub fn of(&self, kind: Kind) -> Usage {
-        self.usage[index(kind)]
+        self.usage[kind.index]
     }
 
     /// The limited kinds' together, what the limit is measured against.
     pub fn limited(&self) -> Usage {
-        KINDS
-            .iter()
-            .filter(|kind| kind.policy == Policy::Limited)
-            .fold(Usage::default(), |sum, kind| {
-                let usage = self.of(*kind);
-                Usage {
-                    entries: sum.entries + usage.entries,
-                    bytes: sum.bytes + usage.bytes,
-                }
-            })
+        limited_kinds().fold(Usage::default(), |sum, kind| {
+            let usage = self.of(kind);
+            Usage {
+                entries: sum.entries + usage.entries,
+                bytes: sum.bytes + usage.bytes,
+            }
+        })
     }
 
     fn of_mut(&mut self, kind: Kind) -> &mut Usage {
-        &mut self.usage[index(kind)]
+        &mut self.usage[kind.index]
     }
 }
 
@@ -152,6 +189,8 @@ impl Sizes {
 pub struct Removed {
     pub entries: u64,
     pub bytes: u64,
+    /// Entries that could not be removed, passed over and still counted.
+    pub failed: u64,
     /// Whether it stopped at a cancel, before it was done.
     pub cancelled: bool,
 }
@@ -263,17 +302,17 @@ impl Cache {
         Ok(Some(bytes.to_vec()))
     }
 
-    /// Walks every kind: each limited kind's entries, one listing per subfolder, removing
-    /// temporaries more than a day old; each kept kind's entries, the items in its folder,
-    /// and every byte under them. The handle keeps the result, which [`Cache::sizes`] then
-    /// keeps up to date with its own writes and removals.
+    /// Walks every kind, writing nothing: each limited kind's entries, one listing per
+    /// subfolder; each kept kind's entries, the items in its folder, and every byte under
+    /// them. An item that cannot be read is passed over; a kind's folder that cannot be
+    /// listed is the error. The handle keeps the result, which [`Cache::sizes`] then keeps
+    /// up to date with its own writes and removals.
     pub fn walk(&self) -> io::Result<Sizes> {
-        let now = SystemTime::now();
         let mut sizes = Sizes::default();
         for kind in KINDS {
             *sizes.of_mut(kind) = match kind.policy {
                 Policy::Limited => {
-                    self.scan(kind, now)?
+                    self.scan(kind)?
                         .iter()
                         .fold(Usage::default(), |usage, entry| Usage {
                             entries: usage.entries + 1,
@@ -293,33 +332,54 @@ impl Cache {
         *self.lock()
     }
 
-    /// Walks the limited kinds, then removes their entries, oldest last use first, across
-    /// kinds, until they hold at most 90% of `limit`; with [`Limit::Unlimited`], nothing.
-    /// `cancel` is asked before each removal; once it answers true, eviction stops.
+    /// Removes the temporaries more than a day old that writes left in the limited kinds'
+    /// subfolders, by name, as the session does as it starts; how many it removed. One that
+    /// cannot be removed is left for the next time.
+    pub fn tidy(&self) -> io::Result<u64> {
+        let now = SystemTime::now();
+        let mut removed = 0;
+        for kind in limited_kinds() {
+            for subfolder in self.subfolders(kind)? {
+                let Ok(files) = fs::read_dir(&subfolder) else {
+                    continue;
+                };
+                for file in files.flatten() {
+                    let name = file.file_name();
+                    let Some(name) = name.to_str() else {
+                        continue;
+                    };
+                    if crate::fs::remove_if_stale(&subfolder, name, now).unwrap_or(false) {
+                        removed += 1;
+                    }
+                }
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Walks the limited kinds and, if they hold more than `limit`, removes their entries,
+    /// oldest last use first, across kinds, until they hold at most 90% of it; with
+    /// [`Limit::Unlimited`], nothing. An entry that cannot be removed is passed over and
+    /// counted as failed, its bytes still held. `cancel` is asked before each removal; once
+    /// it answers true, eviction stops.
     pub fn evict(&self, limit: Limit, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Removed> {
         let Limit::Bytes(limit) = limit else {
             return Ok(Removed::default());
         };
-        let now = SystemTime::now();
         let mut entries = Vec::new();
-        for kind in KINDS
-            .into_iter()
-            .filter(|kind| kind.policy == Policy::Limited)
-        {
-            entries.extend(self.scan(kind, now)?);
+        for kind in limited_kinds() {
+            entries.extend(self.scan(kind)?);
+        }
+        let mut held: u64 = entries.iter().map(|entry| entry.bytes).sum();
+        if held <= limit {
+            return Ok(Removed::default());
         }
         // Equal times in the paths' order, so that eviction's order is always the same.
         entries.sort_by(|a, b| a.used.cmp(&b.used).then_with(|| a.path.cmp(&b.path)));
 
         let target = (u128::from(limit) * u128::from(EVICT_TO_TENTHS) / 10) as u64;
-        let mut held: u64 = entries.iter().map(|entry| entry.bytes).sum();
-        let mut found = Sizes::default();
-        for entry in &entries {
-            let usage = found.of_mut(entry.kind);
-            usage.entries += 1;
-            usage.bytes += entry.bytes;
-        }
         let mut removed = Removed::default();
+        let mut taken = Sizes::default();
         for entry in &entries {
             if held <= target {
                 break;
@@ -328,32 +388,32 @@ impl Cache {
                 removed.cancelled = true;
                 break;
             }
-            held -= entry.bytes;
-            if remove(&entry.path)? {
-                removed.entries += 1;
-                removed.bytes += entry.bytes;
-                let usage = found.of_mut(entry.kind);
-                usage.entries -= 1;
-                usage.bytes -= entry.bytes;
+            match remove(&entry.path) {
+                Ok(true) => {
+                    held -= entry.bytes;
+                    removed.entries += 1;
+                    removed.bytes += entry.bytes;
+                    let usage = taken.of_mut(entry.kind);
+                    usage.entries += 1;
+                    usage.bytes += entry.bytes;
+                }
+                // Another process removed it.
+                Ok(false) => held -= entry.bytes,
+                Err(_) => removed.failed += 1,
             }
         }
-        // The limited kinds are as this walk found them, less what it removed.
-        if let Some(sizes) = self.lock().as_mut() {
-            for kind in KINDS
-                .into_iter()
-                .filter(|kind| kind.policy == Policy::Limited)
-            {
-                *sizes.of_mut(kind) = found.of(kind);
-            }
+        for kind in limited_kinds() {
+            let usage = taken.of(kind);
+            self.count(kind, |sizes| sizes.subtract(usage));
         }
         Ok(removed)
     }
 
-    /// Removes the limited `kind`'s entries listed as it starts. `progress` is told the
-    /// entries done and their total, first with none done, then after each; `cancel` is
-    /// asked before each removal, and once it answers true, clearing stops. A kept kind is
-    /// refused (`Unsupported`): a library's cache waits for its lock, a local copy for its
-    /// own rule.
+    /// Removes the limited `kind`'s entries listed as it starts. An entry that cannot be
+    /// removed is passed over and counted as failed. `progress` is told the entries done and
+    /// their total, first with none done, then after each; `cancel` is asked before each
+    /// removal, and once it answers true, clearing stops. A kept kind is refused
+    /// (`Unsupported`): a library's cache waits for its lock, a local copy for its own rule.
     pub fn clear(
         &self,
         kind: Kind,
@@ -366,7 +426,7 @@ impl Cache {
                 format!("the cache's {} are not cleared yet", kind.id),
             ));
         }
-        let entries = self.scan(kind, SystemTime::now())?;
+        let entries = self.scan(kind)?;
         let total = entries.len() as u64;
         progress(0, total);
         let mut removed = Removed::default();
@@ -375,15 +435,21 @@ impl Cache {
                 removed.cancelled = true;
                 break;
             }
-            if remove(&entry.path)? {
-                removed.entries += 1;
-                removed.bytes += entry.bytes;
+            match remove(&entry.path) {
+                Ok(true) => {
+                    removed.entries += 1;
+                    removed.bytes += entry.bytes;
+                }
+                Ok(false) => {}
+                Err(_) => removed.failed += 1,
             }
             progress(done, total);
         }
         self.count(kind, |usage| {
-            usage.entries = usage.entries.saturating_sub(removed.entries);
-            usage.bytes = usage.bytes.saturating_sub(removed.bytes);
+            usage.subtract(Usage {
+                entries: removed.entries,
+                bytes: removed.bytes,
+            })
         });
         Ok(removed)
     }
@@ -394,34 +460,34 @@ impl Cache {
         self.kind_folder(kind).join(&name[..2]).join(name)
     }
 
-    /// The limited `kind`'s entries, one listing per subfolder, removing temporaries more
-    /// than a day old before `now`. A subfolder or a file gone meanwhile is passed over.
-    fn scan(&self, kind: Kind, now: SystemTime) -> io::Result<Vec<Entry>> {
-        let mut entries = Vec::new();
-        let Some(subfolders) = listing(&self.kind_folder(kind))? else {
-            return Ok(entries);
+    /// The limited `kind`'s subfolders. Only its folder's own listing is an error; an item
+    /// that cannot be read is passed over.
+    fn subfolders(&self, kind: Kind) -> io::Result<Vec<PathBuf>> {
+        let Some(items) = listing(&self.kind_folder(kind))? else {
+            return Ok(Vec::new());
         };
-        for subfolder in subfolders {
-            let subfolder = subfolder?;
-            if !subfolder.file_type()?.is_dir() {
-                continue;
-            }
-            let path = subfolder.path();
-            let Some(files) = listing(&path)? else {
+        Ok(items
+            .flatten()
+            .filter(|item| item.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|item| item.path())
+            .collect())
+    }
+
+    /// The limited `kind`'s entries, one listing per subfolder, temporaries left out.
+    /// A subfolder or a file that cannot be read, or has gone meanwhile, is passed over.
+    fn scan(&self, kind: Kind) -> io::Result<Vec<Entry>> {
+        let mut entries = Vec::new();
+        for subfolder in self.subfolders(kind)? {
+            let Ok(files) = fs::read_dir(&subfolder) else {
                 continue;
             };
-            for file in files {
-                let file = file?;
+            for file in files.flatten() {
                 let name = file.file_name();
                 if name.to_str().is_some_and(crate::fs::is_temporary_name) {
-                    // A tidy that fails is tried again at the next walk.
-                    let _ = crate::fs::remove_if_stale(&path, &name.to_string_lossy(), now);
                     continue;
                 }
-                let meta = match file.metadata() {
-                    Ok(meta) => meta,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                    Err(error) => return Err(error),
+                let Ok(meta) = file.metadata() else {
+                    continue;
                 };
                 if meta.is_file() {
                     entries.push(Entry {
@@ -449,12 +515,11 @@ impl Cache {
     }
 }
 
-/// `kind`'s place in [`KINDS`].
-fn index(kind: Kind) -> usize {
+/// The limited kinds, in [`KINDS`]' order.
+fn limited_kinds() -> impl Iterator<Item = Kind> {
     KINDS
-        .iter()
-        .position(|known| *known == kind)
-        .expect("every kind is in KINDS")
+        .into_iter()
+        .filter(|kind| kind.policy == Policy::Limited)
 }
 
 /// An error for a kept `kind`, whose entries are its owner's.
@@ -528,40 +593,36 @@ fn listing(folder: &Path) -> io::Result<Option<fs::ReadDir>> {
 }
 
 /// A kept kind's usage: the items in its folder, and every byte of the files under them,
-/// links not followed.
+/// links not followed. Only the folder's own listing is an error; an item that cannot be
+/// read is passed over.
 fn kept_usage(folder: &Path) -> io::Result<Usage> {
     let mut usage = Usage::default();
     let Some(items) = listing(folder)? else {
         return Ok(usage);
     };
-    for item in items {
+    for item in items.flatten() {
         usage.entries += 1;
-        usage.bytes += bytes_under(&item?.path())?;
+        usage.bytes += bytes_under(&item.path());
     }
     Ok(usage)
 }
 
-/// The bytes of the file at `path`, or of every file under the folder there.
-fn bytes_under(path: &Path) -> io::Result<u64> {
-    let meta = match fs::symlink_metadata(path) {
-        Ok(meta) => meta,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(error),
+/// The bytes of the file at `path`, or of every file under the folder there; what cannot
+/// be read counts nothing.
+fn bytes_under(path: &Path) -> u64 {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
     };
     if meta.is_file() {
-        return Ok(meta.len());
+        return meta.len();
     }
     if !meta.is_dir() {
-        return Ok(0);
+        return 0;
     }
-    let Some(items) = listing(path)? else {
-        return Ok(0);
+    let Ok(items) = fs::read_dir(path) else {
+        return 0;
     };
-    let mut bytes = 0;
-    for item in items {
-        bytes += bytes_under(&item?.path())?;
-    }
-    Ok(bytes)
+    items.flatten().map(|item| bytes_under(&item.path())).sum()
 }
 
 #[cfg(test)]

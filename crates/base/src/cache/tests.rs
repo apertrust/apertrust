@@ -79,16 +79,20 @@ fn cancel_after(after: u64) -> impl Fn() -> bool + Sync {
 
 #[test]
 fn the_kinds_are_the_decided_ones_each_in_its_own_folder() {
-    let ids: Vec<_> = KINDS.iter().map(|kind| kind.id).collect();
+    let ids: Vec<_> = KINDS.iter().map(|kind| kind.id()).collect();
     assert_eq!(ids, ["thumbnails", "pipelines", "libraries", "copies"]);
     for (i, kind) in KINDS.iter().enumerate() {
-        assert_eq!(index(*kind), i);
-        assert!(KINDS[..i].iter().all(|other| other.folder != kind.folder));
+        assert_eq!(kind.index, i);
+        assert!(
+            KINDS[..i]
+                .iter()
+                .all(|other| other.folder() != kind.folder())
+        );
     }
-    assert_eq!(THUMBNAILS.policy, Policy::Limited);
-    assert_eq!(PIPELINES.policy, Policy::Limited);
-    assert_eq!(LIBRARIES.policy, Policy::Kept);
-    assert_eq!(COPIES.policy, Policy::Kept);
+    assert_eq!(THUMBNAILS.policy(), Policy::Limited);
+    assert_eq!(PIPELINES.policy(), Policy::Limited);
+    assert_eq!(LIBRARIES.policy(), Policy::Kept);
+    assert_eq!(COPIES.policy(), Policy::Kept);
 }
 
 #[test]
@@ -191,7 +195,7 @@ fn a_kept_kind_has_no_entries_of_the_caches_own() {
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         let error = cache.read(kind, b"slot", b"v").unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
-        assert_eq!(cache.kind_folder(kind), cache.folder().join(kind.folder));
+        assert_eq!(cache.kind_folder(kind), cache.folder().join(kind.folder()));
     }
     assert!(files(folder.path()).is_empty());
 }
@@ -258,7 +262,7 @@ fn a_write_sets_last_use_even_with_the_same_bytes() {
 }
 
 #[test]
-fn the_walk_gives_each_kinds_entries_and_bytes_and_tidies_temporaries() {
+fn the_walk_gives_each_kinds_entries_and_bytes() {
     let (_folder, cache) = cache();
     assert_eq!(cache.sizes(), None);
     // An empty or missing cache is nothing, and the walk makes no folder.
@@ -278,7 +282,7 @@ fn the_walk_gives_each_kinds_entries_and_bytes_and_tidies_temporaries() {
     fs::create_dir_all(cache.kind_folder(COPIES)).unwrap();
     fs::write(cache.kind_folder(COPIES).join("raw"), [0; 5]).unwrap();
 
-    // A temporary left by a crash two days ago goes; one being written stays, uncounted.
+    // Temporaries, one left by a crash two days ago and one being written, are uncounted.
     let subfolder = cache
         .entry_path(THUMBNAILS, b"a")
         .parent()
@@ -327,9 +331,15 @@ fn the_walk_gives_each_kinds_entries_and_bytes_and_tidies_temporaries() {
             bytes: 160 + 4 * header
         }
     );
+    assert_eq!(cache.sizes(), Some(sizes));
+
+    // The walk writes nothing: the stale temporary stays until a tidy removes it.
+    assert!(stale.exists());
+    assert_eq!(cache.tidy().unwrap(), 1);
     assert!(!stale.exists());
     assert!(fresh.exists());
-    assert_eq!(cache.sizes(), Some(sizes));
+    assert_eq!(cache.tidy().unwrap(), 0);
+    assert_eq!(cache.walk().unwrap(), sizes);
 }
 
 #[test]
@@ -387,11 +397,10 @@ fn six_entries(cache: &Cache) -> (Vec<(Kind, &'static [u8])>, u64) {
         (THUMBNAILS, b"5"),
         (THUMBNAILS, b"6"),
     ];
-    let now = SystemTime::now();
-    for (days, (kind, slot)) in (0..).zip(&slots) {
+    for (kind, slot) in &slots {
         cache.write(*kind, slot, b"v", &[0; 100]).unwrap();
-        set_used(&cache.entry_path(*kind, slot), now - (10 - days) * DAY);
     }
+    age(cache, &slots);
     let library = cache.kind_folder(LIBRARIES).join("0f3a");
     fs::create_dir_all(&library).unwrap();
     fs::write(library.join("index"), vec![0; 100_000]).unwrap();
@@ -399,6 +408,18 @@ fn six_entries(cache: &Cache) -> (Vec<(Kind, &'static [u8])>, u64) {
     fs::write(cache.kind_folder(COPIES).join("raw"), vec![0; 100_000]).unwrap();
     let size = (MAGIC.len() + 4 + 1 + 100) as u64;
     (slots, size)
+}
+
+/// Sets the last use of those of `slots` still there a day apart, the first ten days ago,
+/// as reads that set it to now leave them otherwise.
+fn age(cache: &Cache, slots: &[(Kind, &'static [u8])]) {
+    let now = SystemTime::now();
+    for (days, (kind, slot)) in (0..).zip(slots) {
+        let path = cache.entry_path(*kind, slot);
+        if path.exists() {
+            set_used(&path, now - (10 - days) * DAY);
+        }
+    }
 }
 
 fn present(cache: &Cache, slots: &[(Kind, &'static [u8])]) -> Vec<&'static [u8]> {
@@ -410,19 +431,36 @@ fn present(cache: &Cache, slots: &[(Kind, &'static [u8])]) -> Vec<&'static [u8]>
 }
 
 #[test]
-fn eviction_removes_the_oldest_across_kinds_to_ninety_percent() {
+fn eviction_waits_for_the_limit_then_removes_the_oldest_across_kinds_to_ninety_percent() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
     cache.walk().unwrap();
 
-    // A limit of four entries: 90% of it holds three, so the three oldest go, the
-    // pipeline among them.
+    // At the limit, or under it, nothing goes.
+    for limit in [6 * size, 6 * size + 1, 10 * size] {
+        assert_eq!(
+            cache.evict(Limit::Bytes(limit), &never).unwrap(),
+            Removed::default()
+        );
+    }
+    assert_eq!(present(&cache, &slots).len(), 6);
+    age(&cache, &slots);
+
+    // A byte past it: the oldest goes, which leaves five under 90% of the limit.
+    let removed = cache.evict(Limit::Bytes(6 * size - 1), &never).unwrap();
+    assert_eq!(removed.entries, 1);
+    assert_eq!(present(&cache, &slots), [b"2", b"3", b"4", b"5", b"6"]);
+    age(&cache, &slots);
+
+    // A limit of four entries: 90% of it holds three, so the two oldest go, the pipeline
+    // among them.
     let removed = cache.evict(Limit::Bytes(4 * size), &never).unwrap();
     assert_eq!(
         removed,
         Removed {
-            entries: 3,
-            bytes: 3 * size,
+            entries: 2,
+            bytes: 2 * size,
+            failed: 0,
             cancelled: false
         }
     );
@@ -434,19 +472,184 @@ fn eviction_removes_the_oldest_across_kinds_to_ninety_percent() {
             bytes: 3 * size
         }
     );
+}
 
-    // Exactly at 90%: nothing more goes.
-    let limit = (3 * size * 10).div_ceil(9);
+#[test]
+fn eviction_takes_its_removals_from_the_counts_and_keeps_writes_made_after() {
+    let (_folder, cache) = cache();
+    let (_, size) = six_entries(&cache);
+    cache.walk().unwrap();
+    let removed = cache.evict(Limit::Bytes(4 * size), &never).unwrap();
+    assert_eq!(removed.entries, 3);
+    cache.write(THUMBNAILS, b"7", b"v", &[0; 100]).unwrap();
     assert_eq!(
-        cache.evict(Limit::Bytes(limit), &never).unwrap(),
-        Removed::default()
+        cache.sizes().unwrap().limited(),
+        Usage {
+            entries: 4,
+            bytes: 4 * size
+        }
     );
-    // One byte under it: the oldest left goes.
-    let removed = cache
-        .evict(Limit::Bytes(3 * size * 10 / 9 - 1), &never)
-        .unwrap();
-    assert_eq!(removed.entries, 1);
-    assert_eq!(present(&cache, &slots), [b"5", b"6"]);
+    assert_eq!(Some(cache.walk().unwrap()), cache.sizes());
+}
+
+/// Gives `folder` the permissions `mode` while `test` runs, then the usual ones back; false,
+/// and nothing run, where the process can write in it anyway, as root can.
+#[cfg(unix)]
+fn with_mode(folder: &Path, mode: u32, test: impl FnOnce()) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(folder, fs::Permissions::from_mode(mode)).unwrap();
+    let probe = folder.join("probe");
+    let refused = File::create(&probe).is_err();
+    if refused {
+        test();
+    } else {
+        let _ = fs::remove_file(&probe);
+    }
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o755)).unwrap();
+    refused
+}
+
+#[cfg(unix)]
+#[test]
+fn an_entry_that_cannot_be_removed_is_passed_over_and_still_counted() {
+    let (_folder, cache) = cache();
+    let (slots, size) = six_entries(&cache);
+    cache.walk().unwrap();
+    let subfolder = cache
+        .entry_path(THUMBNAILS, b"1")
+        .parent()
+        .unwrap()
+        .to_owned();
+    let alone = slots[1..]
+        .iter()
+        .all(|(kind, slot)| cache.entry_path(*kind, slot).parent() != Some(&subfolder));
+    assert!(
+        alone,
+        "the test wants the oldest entry alone in its subfolder"
+    );
+
+    with_mode(&subfolder, 0o555, || {
+        // The oldest stays and still counts, so three more go to reach 90% of four.
+        let removed = cache.evict(Limit::Bytes(4 * size), &never).unwrap();
+        assert_eq!(
+            removed,
+            Removed {
+                entries: 3,
+                bytes: 3 * size,
+                failed: 1,
+                cancelled: false
+            }
+        );
+        assert_eq!(
+            cache.sizes().unwrap().limited(),
+            Usage {
+                entries: 3,
+                bytes: 3 * size
+            }
+        );
+        // Clear passes over it too.
+        let told = Mutex::new(Vec::new());
+        let progress = |done, total| told.lock().unwrap().push((done, total));
+        let removed = cache.clear(THUMBNAILS, &progress, &never).unwrap();
+        assert_eq!(
+            removed,
+            Removed {
+                entries: 2,
+                bytes: 2 * size,
+                failed: 1,
+                cancelled: false
+            }
+        );
+        assert_eq!(told.lock().unwrap().last(), Some(&(3, 3)));
+        assert_eq!(
+            cache.sizes().unwrap().of(THUMBNAILS),
+            Usage {
+                entries: 1,
+                bytes: size
+            }
+        );
+        assert_eq!(present(&cache, &slots), [b"1"]);
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_subfolder_is_passed_over() {
+    let (_folder, cache) = cache();
+    let (slots, size) = six_entries(&cache);
+    let subfolder = cache
+        .entry_path(THUMBNAILS, b"1")
+        .parent()
+        .unwrap()
+        .to_owned();
+    let elsewhere = slots
+        .iter()
+        .filter(|(kind, slot)| cache.entry_path(*kind, slot).parent() != Some(&subfolder))
+        .count() as u64;
+    with_mode(&subfolder, 0o000, || {
+        let sizes = cache.walk().unwrap();
+        assert_eq!(
+            sizes.limited(),
+            Usage {
+                entries: elsewhere,
+                bytes: elsewhere * size
+            }
+        );
+        assert_eq!(sizes.of(LIBRARIES).bytes, 100_000);
+        assert_eq!(cache.tidy().unwrap(), 0);
+        let removed = cache.evict(Limit::Bytes(1), &never).unwrap();
+        assert_eq!((removed.entries, removed.failed), (elsewhere, 0));
+        assert_eq!(
+            cache.clear(THUMBNAILS, &quiet, &never).unwrap(),
+            Removed::default()
+        );
+    });
+}
+
+#[test]
+fn two_handles_writing_evicting_and_clearing_at_once_never_read_a_part() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let one = Cache::open(folder.path().join("cache"));
+    let other = Cache::open(folder.path().join("cache"));
+    let slots: [&[u8]; 3] = [b"a", b"b", b"c"];
+    let bytes = |version: u8| vec![version; 20_000];
+    let rounds = 40u8;
+    std::thread::scope(|scope| {
+        for handle in [&one, &other] {
+            scope.spawn(move || {
+                for version in 0..rounds {
+                    for slot in slots {
+                        let written = handle.write(THUMBNAILS, slot, &[version], &bytes(version));
+                        // Windows may refuse a rename over a file another thread reads.
+                        assert!(written.is_ok() || cfg!(windows), "{written:?}");
+                    }
+                }
+            });
+        }
+        scope.spawn(|| {
+            for round in 0..rounds {
+                other.walk().unwrap();
+                other.evict(Limit::Bytes(30_000), &never).unwrap();
+                if round % 10 == 0 {
+                    other.clear(THUMBNAILS, &quiet, &never).unwrap();
+                }
+            }
+        });
+        scope.spawn(|| {
+            for round in 0..u32::from(rounds) * 5 {
+                let version = (round % u32::from(rounds)) as u8;
+                for slot in slots {
+                    match one.read(THUMBNAILS, slot, &[version]) {
+                        Ok(Some(found)) => assert!(found == bytes(version), "a part read"),
+                        Ok(None) => {}
+                        // Windows may refuse to open a file another thread removes.
+                        Err(error) if cfg!(windows) => drop(error),
+                        Err(error) => panic!("{error}"),
+                    }
+                }
+            }
+        });
+    });
 }
 
 #[test]
@@ -495,6 +698,7 @@ fn eviction_stops_at_a_cancel() {
         Removed {
             entries: 2,
             bytes: 2 * size,
+            failed: 0,
             cancelled: true
         }
     );
@@ -514,6 +718,7 @@ fn clear_removes_one_kinds_entries_and_tells_its_progress() {
         Removed {
             entries: 5,
             bytes: 5 * size,
+            failed: 0,
             cancelled: false
         }
     );
@@ -551,6 +756,7 @@ fn clear_stops_at_a_cancel() {
         Removed {
             entries: 0,
             bytes: 0,
+            failed: 0,
             cancelled: true
         }
     );
@@ -561,6 +767,7 @@ fn clear_stops_at_a_cancel() {
         Removed {
             entries: 3,
             bytes: 3 * size,
+            failed: 0,
             cancelled: true
         }
     );
