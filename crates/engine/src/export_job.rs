@@ -379,6 +379,12 @@ impl Snapshot {
         let changed = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         Self { xml, changed }
     }
+
+    /// Its text, none where there is no file: what an opening photo reads its edit from
+    /// (decision 77).
+    pub(crate) fn xml(self) -> io::Result<Option<String>> {
+        self.xml
+    }
 }
 
 /// What an export job runs with: everything it needs of the session, owned, so its body
@@ -776,7 +782,7 @@ impl Run {
                     Ok(edit) => edit,
                     Err(message) => return failed(Cause::Edit, None, &message),
                 };
-                let decoded = match decode(&self.gpu, self.load, path) {
+                let decoded = match decode(&self.gpu, &self.load, path) {
                     Ok(decoded) => decoded,
                     Err(message) => return failed(Cause::Unreadable, None, &message),
                 };
@@ -921,9 +927,11 @@ impl Run {
 
 /// Decodes and uploads the raw at `path` through `load` on the job's worker, a panic and
 /// the GPU's errors caught as its failure, in plain words.
-fn decode(gpu: &GpuContext, load: Load, path: &Path) -> Result<Decoded, String> {
+fn decode(gpu: &GpuContext, load: &Load, path: &Path) -> Result<Decoded, String> {
     let (decoded, error) = scoped(gpu, || {
-        panic::catch_unwind(AssertUnwindSafe(|| load(gpu, path)))
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            crate::session::open::decode(gpu, load, path)
+        }))
     });
     if let Some(error) = error {
         return Err(format!("uploading {}: {error}", path.display()));
@@ -1127,6 +1135,7 @@ mod tests {
     use crate::export::export_at;
     use crate::gpu::GpuOptions;
     use crate::jobs::{JobEvent, JobId, Progress, Queue, State};
+    use crate::session::open::{self, Metadata, Mosaic};
     use crate::session::{Command, Session, SessionError, TEST_WAIT};
 
     /// The build the tests' sessions record.
@@ -1143,19 +1152,12 @@ mod tests {
     /// The modules crate's synthetic photo, whatever the path, as the session's tests load
     /// it, or the wide one for a raw called `wide.ARW` ([`photo`]); one called `broken.ARW`
     /// cannot be read.
-    fn synthetic(gpu: &GpuContext, path: &Path) -> Result<Decoded, SessionError> {
+    fn synthetic(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         if path.ends_with("broken.ARW") {
             return Err(SessionError::NotAMosaic);
         }
-        let (image, [width, height], mosaic) = photo(path);
-        Ok(Decoded {
-            camera: "Synthetic".to_owned(),
-            image,
-            input: GpuImage::upload_mosaic(gpu, width, height, &mosaic).expect("it uploads"),
-            shot: Shot::default(),
-            decode_ms: 0.0,
-            upload_ms: 0.0,
-        })
+        let (image, size, mosaic) = photo(path);
+        Ok(open::testing::photo(image, size, mosaic))
     }
 
     /// The synthetic photo the tests' loader gives for `path`, its context, its sensor and
@@ -1304,7 +1306,7 @@ mod tests {
                 pipeline::BUDGET,
                 None,
                 Arc::new(wake),
-                synthetic,
+                open::testing::loading(synthetic),
             );
             Self {
                 session,
@@ -1321,6 +1323,8 @@ mod tests {
                 height: 48,
             });
             client.send(Command::Open(path.to_owned()));
+            // An edit takes a change once the photo is live (decision 77).
+            client.until(|e| matches!(e, Event::Values(values) if values.live));
             let sent = client.send(brightness(0.5, false));
             client.frame(sent);
             client

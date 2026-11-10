@@ -20,6 +20,11 @@
 //! black subtraction and scaling, with the areas, levels, white balance and colour
 //! matrices that raw preparation applies later. The types here are Apertrust's own, so
 //! changes in rawler's API stay inside this crate.
+//!
+//! A photo that opens in stages (decision 77) maps its file once, as a [`RawFile`], and
+//! reads from it its metadata without the pixels ([`RawFile::metadata`], in milliseconds),
+//! its EXIF, its embedded picture, then the decode. A corpus test holds the metadata read
+//! equal to the decode's but for the pixels.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -249,6 +254,54 @@ pub fn decode(file: &[u8]) -> Result<RawImage, Error> {
     decode_source(&RawSource::new_from_slice(file)).inspect(|raw| log_decoded("a raw", raw, start))
 }
 
+/// A raw file mapped once, for every reading a photo's open makes of it (decision 77):
+/// its metadata, its EXIF, its embedded picture and its decode.
+pub struct RawFile {
+    source: RawSource,
+    name: String,
+}
+
+impl RawFile {
+    /// Maps the raw file at `path`; an error where it cannot be opened.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let path = path.as_ref();
+        let source = RawSource::new(path).map_err(|source| Error::Read {
+            path: path.to_owned(),
+            source,
+        })?;
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into());
+        Ok(Self { source, name })
+    }
+
+    /// What [`RawFile::decode`] gives but the pixels, which are empty, of the kind the
+    /// decode's are: rawler's decode with its pixels skipped, so in milliseconds.
+    pub fn metadata(&self) -> Result<RawImage, Error> {
+        let start = Instant::now();
+        let raw = decode_raw(&self.source, true)?;
+        let ms = start.elapsed().as_secs_f64() * 1e3;
+        tracing::debug!(target: "perf", "read the metadata of {} in {ms:.1} ms", self.name);
+        Ok(raw)
+    }
+
+    /// The shooting data its EXIF records, as [`read_exif_file`] reads it.
+    pub fn exif(&self) -> Result<Exif, Error> {
+        read_exif_source(&self.source)
+    }
+
+    /// Its embedded picture, as [`read_preview_file`] reads it.
+    pub fn preview(&self, longest: u32) -> Result<Option<Preview>, Error> {
+        preview::read_preview_source(&self.source, longest)
+    }
+
+    /// Decodes it, as [`decode_file`] does.
+    pub fn decode(&self) -> Result<RawImage, Error> {
+        let start = Instant::now();
+        decode_source(&self.source).inspect(|raw| log_decoded(&self.name, raw, start))
+    }
+}
+
 /// Reads a raw file's shooting data from its EXIF, as darktable reads it for its
 /// variables, without decoding its image.
 pub fn read_exif_file(path: impl AsRef<Path>) -> Result<Exif, Error> {
@@ -339,9 +392,15 @@ fn log_decoded(name: &str, raw: &RawImage, start: Instant) {
 }
 
 fn decode_source(source: &RawSource) -> Result<RawImage, Error> {
+    decode_raw(source, false)
+}
+
+/// The decode, or with `dummy` its metadata alone, the pixels left empty: rawler's decode
+/// with its decompression skipped.
+fn decode_raw(source: &RawSource, dummy: bool) -> Result<RawImage, Error> {
     // A decoder bug on an odd file must not take the application down.
     let raw = catch_unwind(AssertUnwindSafe(|| {
-        rawler::decode(source, &RawDecodeParams::default())
+        rawler::global_loader().decode(source, &RawDecodeParams::default(), dummy)
     }))
     .map_err(|panic| {
         let message = panic
@@ -474,7 +533,10 @@ fn decode_source(source: &RawSource) -> Result<RawImage, Error> {
         exposure_bias,
         iso,
         lens_correction,
+        // A dummy decode's buffer holds no values, only its room, which is let go.
         pixels: match raw.data {
+            RawImageData::Integer(_) if dummy => Pixels::U16(Vec::new()),
+            RawImageData::Float(_) if dummy => Pixels::F32(Vec::new()),
             RawImageData::Integer(values) => Pixels::U16(values),
             RawImageData::Float(values) => Pixels::F32(values),
         },

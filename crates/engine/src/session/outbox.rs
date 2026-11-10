@@ -188,6 +188,7 @@ impl Drain {
 /// An event's kind, as `-d event` counts it.
 fn kind(event: &Event) -> &'static str {
     match event {
+        Event::OpenPreview(_) => "OpenPreview",
         Event::Opened(_) => "Opened",
         Event::Values(_) => "Values",
         Event::Frame(_) => "Frame",
@@ -235,7 +236,11 @@ impl fmt::Display for Line<'_> {
         let event = self.0;
         f.write_str(kind(event))?;
         match event {
+            Event::OpenPreview(preview) => write!(f, ", open {}", preview.open)?,
             Event::Opened(photo) => write!(f, ", open {}", photo.open)?,
+            Event::Values(values) if !values.live => {
+                write!(f, ", through {}, not live", values.through)?
+            }
             Event::Values(values) => write!(f, ", through {}", values.through)?,
             Event::Frame(frame) => write!(f, ", through {}", frame.through)?,
             Event::Scopes(reading) => write!(f, ", through {}", reading.through)?,

@@ -3793,6 +3793,7 @@ mod tests {
                 edited,
                 through: 0,
                 extent: [84, 62],
+                live: true,
             }
         };
         // The step on the session's edit, its holds then pruned as after every change.
@@ -3898,8 +3899,6 @@ mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time: None,
             aperture: None,
@@ -3952,6 +3951,7 @@ mod tests {
             edited: false,
             through: 0,
             extent: [84, 62],
+            live: true,
         };
         let modules: &[&dyn Module] = &[&WhiteBalance];
         let drag = Pending::Control {
@@ -4424,6 +4424,7 @@ mod tests {
                         edited: false,
                         through: 1,
                         extent: [84, 62],
+                        live: true,
                     },
                     sent: Vec::new(),
                 },

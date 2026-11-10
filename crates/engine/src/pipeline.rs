@@ -3162,9 +3162,13 @@ fn bind_group(
 
 /// The kernels a pipeline has compiled, one per kernel and entry point however many
 /// passes run it, kept across every rebuild over the same input (decision 28): an
-/// operation that joins the plan compiles once for the photo, and again never.
-#[derive(Default)]
-struct Kernels {
+/// operation that joins the plan compiles once for the photo, and again never. The
+/// session keeps them across photos too, a pipeline taking them as it is built
+/// ([`Pipeline::with_kernels`]) and giving them back as it goes ([`Pipeline::into_kernels`]),
+/// and compiles a plan's before its raw arrives ([`compile`]), as a photo opens in stages
+/// (decision 77).
+#[derive(Default, Clone)]
+pub(crate) struct Kernels {
     compiled: Vec<ImageKernel>,
     /// Where each kernel's entry point is in `compiled`, by kernel name and entry point.
     index: HashMap<(&'static str, String), usize>,
@@ -3201,6 +3205,32 @@ impl Kernels {
             .insert((kernel.name, entry_point.to_owned()), index);
         Ok(index)
     }
+
+    /// How many entry points it holds.
+    pub(crate) fn len(&self) -> usize {
+        self.compiled.len()
+    }
+}
+
+/// Compiles into `kernels` every entry point `plan`'s passes run that they lack, and
+/// returns how many it compiled, so a pipeline built for the plan later compiles none.
+pub(crate) async fn compile(
+    gpu: &GpuContext,
+    plan: &Plan,
+    kernels: &mut Kernels,
+) -> Result<usize, ComputeError> {
+    let had = kernels.len();
+    for op in &plan.operations {
+        for pass in &op.passes {
+            let label = if pass.entry_point == "main" {
+                op.id
+            } else {
+                pass.entry_point
+            };
+            kernels.get(gpu, op.kernel, pass.entry_point, label).await?;
+        }
+    }
+    Ok(kernels.len() - had)
 }
 
 /// The keys of the whole-image results an operation's scratch buffers hold: all its
@@ -3437,6 +3467,24 @@ impl Pipeline {
     /// or fails if the GPU cannot make or bind the buffers the plan needs.
     pub async fn new(gpu: &GpuContext, plan: Plan, input: GpuImage) -> Result<Self, ComputeError> {
         Self::holding(gpu, plan, input, &[]).await
+    }
+
+    /// [`Self::new`], taking `kernels`, compiled for earlier photos, so it compiles only
+    /// what they lack.
+    pub(crate) async fn with_kernels(
+        gpu: &GpuContext,
+        plan: Plan,
+        input: GpuImage,
+        kernels: Kernels,
+    ) -> Result<Self, ComputeError> {
+        let mut kept = Kept::nothing(input, &plan);
+        kept.kernels = kernels;
+        Self::build(gpu, plan, kept).await
+    }
+
+    /// Its compiled kernels, for the next photo's pipeline, the rest freed.
+    pub(crate) fn into_kernels(self) -> Kernels {
+        self.kernels
     }
 
     /// [`Self::new`], binding the scratch buffers `held` holds for the operations they

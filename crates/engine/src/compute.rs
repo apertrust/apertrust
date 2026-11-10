@@ -310,7 +310,7 @@ pub(crate) fn read_back(
 /// A compiled kernel entry point: `main`, or a Slang kernel's gradient entry point. It
 /// binds its images whole, so make them with [`GpuImage::upload`] or
 /// [`GpuImage::try_new`], which refuse an image larger than the GPU binds at once.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ImageKernel {
     pipeline: wgpu::ComputePipeline,
 }

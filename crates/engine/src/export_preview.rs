@@ -568,11 +568,11 @@ mod tests {
     use apertrust_plugin::Format as Pixels;
 
     use super::*;
-    use crate::compute::GpuImage;
     use crate::export_job::testing::{Hold, path_in};
     use crate::gpu::{GpuContext, GpuOptions};
     use crate::pipeline;
-    use crate::session::{Command, Decoded, Session, SessionError, TEST_WAIT};
+    use crate::session::open::{self, Metadata, Mosaic};
+    use crate::session::{Command, Session, SessionError, TEST_WAIT};
 
     const MODULES: &[&dyn Module] = &[&Sample];
 
@@ -1105,15 +1105,12 @@ mod tests {
             .expect("a GPU adapter, hardware or software")
     }
 
-    fn synthetic(gpu: &GpuContext, _: &Path) -> Result<Decoded, SessionError> {
-        Ok(Decoded {
-            camera: "Synthetic".to_owned(),
-            image: modules::image(),
-            input: GpuImage::upload_mosaic(gpu, 96, 72, &modules::mosaic()).expect("it uploads"),
-            shot: Shot::default(),
-            decode_ms: 0.0,
-            upload_ms: 0.0,
-        })
+    fn synthetic(_: &Path) -> Result<(Metadata, Mosaic), SessionError> {
+        Ok(open::testing::photo(
+            modules::image(),
+            [96, 72],
+            modules::mosaic(),
+        ))
     }
 
     /// A session with the wake its client waits on.
@@ -1130,7 +1127,7 @@ mod tests {
             pipeline::BUDGET,
             None,
             Arc::new(wake),
-            synthetic,
+            open::testing::loading(synthetic),
         );
         (session, wakes)
     }
@@ -1236,6 +1233,15 @@ mod tests {
             height: 48,
         });
         session.send(Command::Open(raw.clone()));
+        // The open photo as the session holds it once live (decision 77).
+        let mut events = Vec::new();
+        while !events
+            .iter()
+            .any(|e| matches!(e, Event::Values(values) if values.live))
+        {
+            wakes.recv_timeout(TEST_WAIT).expect("the photo goes live");
+            events.extend(session.events());
+        }
         let path = path_in(&out, "export/$(FILE_NAME)");
         let sent = session.send(command(&[raw.clone(), out.join("b.ARW")], &path));
         let mut events = Vec::new();

@@ -228,6 +228,8 @@ impl Mirror {
             None => {}
         }
         match event {
+            // The opening photo's picture (decision 77), not drawn yet.
+            Event::OpenPreview(_) => {}
             Event::Opened(photo) => {
                 self.saving.opened(&photo.path, photo.view_only.is_some());
                 self.photo = PhotoState::Open(photo);
@@ -402,6 +404,7 @@ fn untouched(modules: &[&dyn Module]) -> Values {
         edited: false,
         through: 0,
         extent: [0, 0],
+        live: false,
     }
 }
 
@@ -824,8 +827,6 @@ pub(crate) mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time: None,
             aperture: None,
@@ -838,6 +839,7 @@ pub(crate) mod tests {
             edited: false,
             through: 4,
             extent: [84, 62],
+            live: true,
         });
         let failed = |open| {
             Event::Failed(SessionError::Open {
@@ -899,6 +901,7 @@ pub(crate) mod tests {
             edited: true,
             through,
             extent: [84, 62],
+            live: true,
         };
         let image = ImageContext::full(84, 62);
         let mirror = |report, pending: &mut Vec<_>| {
@@ -957,8 +960,6 @@ pub(crate) mod tests {
             camera: String::new(),
             width: 84,
             height: 62,
-            decode_ms: 0.0,
-            upload_ms: 0.0,
             view_only: None,
             exposure_time: None,
             aperture: None,
@@ -990,6 +991,7 @@ pub(crate) mod tests {
             edited: exposure != 0.0,
             through,
             extent: [84, 62],
+            live: true,
         }
     }
 

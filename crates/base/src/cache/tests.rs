@@ -289,6 +289,16 @@ fn a_read_sets_last_use_at_most_once_a_day() {
 }
 
 #[test]
+fn a_read_of_any_version_gives_the_version_with_the_bytes() {
+    let (_folder, cache) = cache();
+    assert_eq!(cache.read_any(THUMBNAILS, b"photo").unwrap(), None);
+    cache.write(THUMBNAILS, b"photo", b"v", b"pixels").unwrap();
+    let (version, bytes) = cache.read_any(THUMBNAILS, b"photo").unwrap().unwrap();
+    assert_eq!((&version[..], &bytes[..]), (&b"v"[..], &b"pixels"[..]));
+    assert!(cache.read_any(LIBRARIES, b"photo").is_err());
+}
+
+#[test]
 fn a_write_sets_last_use_even_with_the_same_bytes() {
     let (_folder, cache) = cache();
     cache.write(THUMBNAILS, b"photo", b"v", b"pixels").unwrap();

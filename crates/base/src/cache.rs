@@ -338,6 +338,14 @@ impl Cache {
         self.read_at(kind, slot, version, SystemTime::now())
     }
 
+    /// The version and the bytes of `slot`'s entry in the limited `kind`, whatever version
+    /// it holds, for a reader that may show a stale entry meanwhile, as an opening photo's
+    /// rendered thumbnail (decision 77); `None` if none is there. A read sets its last use
+    /// as [`Cache::read`] does.
+    pub fn read_any(&self, kind: Kind, slot: &[u8]) -> io::Result<Option<(Vec<u8>, Vec<u8>)>> {
+        self.read_entry(kind, slot, None, SystemTime::now())
+    }
+
     /// [`Cache::read`] as at `now`.
     fn read_at(
         &self,
@@ -346,6 +354,19 @@ impl Cache {
         version: &[u8],
         now: SystemTime,
     ) -> io::Result<Option<Vec<u8>>> {
+        let entry = self.read_entry(kind, slot, Some(version), now)?;
+        Ok(entry.map(|(_, bytes)| bytes))
+    }
+
+    /// The version and the bytes of `slot`'s entry, if it holds `version` or, with none, any,
+    /// read as at `now`.
+    fn read_entry(
+        &self,
+        kind: Kind,
+        slot: &[u8],
+        version: Option<&[u8]>,
+        now: SystemTime,
+    ) -> io::Result<Option<(Vec<u8>, Vec<u8>)>> {
         limited(kind)?;
         let path = self.entry_path(kind, slot);
         let mut file = match File::open(&path) {
@@ -357,7 +378,8 @@ impl Cache {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
         drop(file);
-        let Some(bytes) = payload(&contents, version) else {
+        let found = parts(&contents).filter(|(found, _)| version.is_none_or(|v| v == *found));
+        let Some((found, bytes)) = found else {
             return Ok(None);
         };
         let stale = used
@@ -366,7 +388,7 @@ impl Cache {
         if stale {
             touch(&path, now);
         }
-        Ok(Some(bytes.to_vec()))
+        Ok(Some((found.to_vec(), bytes.to_vec())))
     }
 
     /// Walks every kind, writing nothing: each limited kind's entries, one listing per
@@ -674,16 +696,15 @@ fn name(slot: &[u8]) -> String {
         .collect()
 }
 
-/// The bytes an entry's file holds after its mark and its version, if that is `version`.
-fn payload<'a>(file: &'a [u8], version: &[u8]) -> Option<&'a [u8]> {
+/// The version an entry's file holds after its mark, and the bytes after the version.
+fn parts(file: &[u8]) -> Option<(&[u8], &[u8])> {
     let rest = file.strip_prefix(&MAGIC)?;
     let (length, rest) = rest.split_first_chunk::<4>()?;
     let length = usize::try_from(u32::from_le_bytes(*length)).ok()?;
     if rest.len() < length {
         return None;
     }
-    let (found, bytes) = rest.split_at(length);
-    (found == version).then_some(bytes)
+    Some(rest.split_at(length))
 }
 
 /// Sets the file's modified time, its last use, to `now`. One that cannot be set, gone or
