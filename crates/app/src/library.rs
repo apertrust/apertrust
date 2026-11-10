@@ -531,11 +531,14 @@ fn missing_words(ctx: &egui::Context, why: Missing<'_>) -> String {
 /// One row of the tree: set in by its `level`, from 1; a chevron where it has subfolders
 /// shown or hidden; the folder's icon, its name cut in its middle and its photo count at
 /// the end where known. The open folder's is chosen, on `list_chosen`. To screen readers a
-/// tree item with its level, chosen and open state.
+/// tree item with its level, chosen and open state, described by its count where known and
+/// its path, as its tooltip writes it.
 struct TreeRow<'a> {
     level: usize,
     name: &'a str,
     count: Option<usize>,
+    /// The folder's path as its tooltip writes it, the home folder as `~`.
+    shown: &'a str,
     /// Some for a row whose subfolders show (true) or hide (false) under it.
     expanded: Option<bool>,
     chosen: bool,
@@ -607,17 +610,22 @@ impl TreeRow<'_> {
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TreeItem, true, name));
         let (level, expanded, chosen, count) = (self.level, self.expanded, self.chosen, self.count);
         let words = translator(ui.ctx());
+        let description = match count {
+            Some(count) => {
+                let mut args = Args::new();
+                args.set("count", count as f64);
+                let count = words.text_with("photo-count", Some(&args));
+                format!("{count}, {}", self.shown)
+            }
+            None => self.shown.to_owned(),
+        };
         ui.ctx().accesskit_node_builder(response.id, |node| {
             node.set_level(level.saturating_sub(1));
             node.set_selected(chosen);
             if let Some(expanded) = expanded {
                 node.set_expanded(expanded);
             }
-            if let Some(count) = count {
-                let mut args = Args::new();
-                args.set("count", count as f64);
-                node.set_description(words.text_with("photo-count", Some(&args)));
-            }
+            node.set_description(description);
         });
         let on_chevron = self.expanded.is_some()
             && response.clicked()
@@ -661,7 +669,8 @@ fn tree(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
     // A photo alone has no tree: its folder is offered instead.
     if let Some((_, folder)) = alone(browse.folder) {
         let this = words.text("browse-open-this-folder");
-        let response = open_this_row(ui, &this).on_hover_text(export::shown(folder, browse.home));
+        let shown = export::shown(folder, browse.home);
+        let response = open_this_row(ui, &this, &shown).on_hover_text(shown);
         if response.clicked() {
             actions.push(Action::Open(folder.to_owned()));
         }
@@ -745,15 +754,17 @@ impl Branch<'_> {
             Some(Inside::Listed([])) => None,
             _ => Some(open),
         };
+        let shown = export::shown(self.path, browse.home);
         let (response, on_chevron) = TreeRow {
             level: self.level,
             name: self.name,
             count: self.count,
+            shown: &shown,
             expanded: chevron,
             chosen: self.chosen,
         }
         .show(ui);
-        let response = response.on_hover_text(export::shown(self.path, browse.home));
+        let response = response.on_hover_text(shown);
         // ← closes the folder, → opens it, as a tree's keys do.
         let key = |key: egui::Key| {
             response.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key))
@@ -886,8 +897,8 @@ fn up_row(ui: &mut egui::Ui, parent: &str, up: &str) -> egui::Response {
 
 /// Open This Folder, a photo alone's one row in Folders, as the wireframe draws it: the
 /// folder icon in `text_secondary` and the words in the text colour, underlined, a button
-/// for screen readers.
-fn open_this_row(ui: &mut egui::Ui, words: &str) -> egui::Response {
+/// for screen readers described by the folder's path, `shown` as its tooltip writes it.
+fn open_this_row(ui: &mut egui::Ui, words: &str, shown: &str) -> egui::Response {
     let t = theme(ui.ctx());
     let size = vec2(ui.available_width(), t.sizes.panel_line);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -922,6 +933,9 @@ fn open_this_row(ui: &mut egui::Ui, words: &str) -> egui::Response {
         }
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, words));
+    let shown = shown.to_owned();
+    ui.ctx()
+        .accesskit_node_builder(response.id, |node| node.set_description(shown));
     response
 }
 
@@ -1189,10 +1203,15 @@ mod tests {
         assert_eq!(node.data().level(), Some(0));
         assert_eq!(node.data().is_expanded(), Some(true));
         assert_eq!(node.data().is_selected(), Some(true));
-        assert_eq!(node.data().description(), Some("120 photos"));
+        assert_eq!(
+            node.data().description(),
+            Some("120 photos, /photos/Wedding")
+        );
         for sub in ["Edits", "Selects"] {
             let row = harness.get_by_role_and_label(Role::TreeItem, sub);
             assert_eq!(row.accesskit_node().data().level(), Some(1), "{sub}");
+            let path = format!("/photos/Wedding/{sub}");
+            assert_eq!(row.accesskit_node().data().description(), Some(&*path));
         }
         harness
             .get_by_role_and_label(Role::TreeItem, "Edits")
@@ -1706,9 +1725,17 @@ mod tests {
         );
         assert!(harness.query_by_role(Role::Tree).is_none());
         assert!(harness.query_by_label_contains("Up to").is_none());
-        harness
-            .get_by_role_and_label(Role::Button, "Open This Folder")
-            .click();
+        let this = harness.get_by_role_and_label(Role::Button, "Open This Folder");
+        let described = this
+            .accesskit_node()
+            .data()
+            .description()
+            .map(str::to_owned);
+        assert_eq!(
+            described.as_deref(),
+            Some("/Users/me/Pictures/2026-10 Lisbon")
+        );
+        this.click();
         harness.run();
         assert_eq!(*harness.state(), [Action::Open(lisbon.clone())]);
         let words = translator(&harness.ctx);
