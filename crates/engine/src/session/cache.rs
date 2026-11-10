@@ -664,10 +664,17 @@ fn log_clear(kind: Kind, removed: &Removed, took: Duration) {
     );
 }
 
-/// `message` with `bytes` as a person reads a size: `$size` in `$unit`, `kb`, `mb` or
-/// `gb`, of 10³, 10⁶ and 10⁹ bytes as disks count them, with one decimal below 10 and
-/// none from there; the client words the unit.
+/// `message` with `bytes` as a person reads a size, [`size_in_unit`]'s `$size` in `$unit`;
+/// the client words the unit.
 fn with_size(message: Message, bytes: u64) -> Message {
+    let (size, unit) = size_in_unit(bytes);
+    message.with("size", size).with("unit", unit)
+}
+
+/// `bytes` as a person reads a size: a number in a unit, `kb`, `mb` or `gb`, of 10³, 10⁶
+/// and 10⁹ bytes as disks count them, with one decimal below 10 and none from there, as a
+/// Clear's messages and Settings › Storage give it.
+pub fn size_in_unit(bytes: u64) -> (f64, &'static str) {
     let rounded = |value: f64| {
         if value < 10.0 {
             (value * 10.0).round() / 10.0
@@ -682,7 +689,7 @@ fn with_size(message: Message, bytes: u64) -> Message {
         .map(|&(unit, scale)| (unit, rounded(bytes as f64 / scale)))
         .find(|&(unit, size)| size < 1000.0 || unit == "gb")
         .expect("gb takes any size");
-    message.with("size", size).with("unit", unit)
+    (size, unit)
 }
 
 /// A walk the handle's own eviction or clear overtook twice, under `-d perf`: the count

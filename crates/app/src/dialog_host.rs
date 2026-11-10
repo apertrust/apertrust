@@ -277,6 +277,8 @@ pub trait Dialog: Any + std::fmt::Debug {
 pub enum Output {
     /// A setting changed in Settings, for the shell to keep and the main window to show.
     Settings(settings_dialog::Change),
+    /// What Settings › Storage asked of the app: the sizes, a Clear, a folder shown.
+    Storage(crate::storage::Asked),
     /// Where Settings' own window was left as it closed, for it to open there next time;
     /// the one dialog whose place is kept.
     Placed(Position),
@@ -716,6 +718,9 @@ pub trait Dialogs {
     /// Hands the Export dialog open the session's answer to the preview numbered `through`;
     /// any other dialog, or none, takes nothing.
     fn preview(&mut self, through: u64, preview: ExportPreview);
+    /// Hands Settings open what its Storage page shows; any other dialog, or none, takes
+    /// nothing.
+    fn storage(&mut self, view: crate::storage::View);
     /// Opens the jobs window, a window of its own beside any dialog, at `place`, where it
     /// was last left, if that is on a screen still, else centred on the main window, whose
     /// context is `main`. Where it is open already, its window comes to the front if `focus`
@@ -849,6 +854,11 @@ impl AppDialogs {
     /// `through`.
     pub fn preview(&mut self, through: u64, preview: ExportPreview) {
         self.host.preview(through, preview);
+    }
+
+    /// Hands Settings open what its Storage page shows ([`Dialogs::storage`]).
+    pub fn storage(&mut self, view: crate::storage::View) {
+        self.host.storage(view);
     }
 
     /// Asks `request` as the system's alert ([`Dialogs::ask`]).
@@ -1282,6 +1292,17 @@ impl Dialogs for Host {
             && let Some(export) = dialog_mut::<export::Export>(&mut open.dialog)
         {
             export.receive(through, preview);
+            open.window.request_redraw();
+        }
+    }
+
+    fn storage(&mut self, view: crate::storage::View) {
+        let mut inner = self.0.borrow_mut();
+        if let Some(open) = inner.open[Slot::Dialog.index()].as_mut()
+            && let Some(settings) = dialog_mut::<settings_dialog::Settings>(&mut open.dialog)
+            && settings.storage != view
+        {
+            settings.storage = view;
             open.window.request_redraw();
         }
     }

@@ -315,12 +315,12 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
   - `CacheCommand::Sizes`, answered by `Event::Cache`, a fact: at once with the session's own count, then again after a walk that counts other processes' writes; `NoCache` for a session with none;
   - `CacheCommand::Clear { kind }`, a limited kind cleared by a cancellable `UserBackground` job whose row's title, detail and outcome are its own messages in every language, the sizes sent again as it ends; a kept kind, a Clear under way and no cache refused;
   - `apertrust-cli cache info` and `cache clear [KIND...]`, on base's `cache` with no session and no GPU, creating nothing.
+- [x] Settings › Storage (step 6b's second part, decision 76; [cache.md](cache.md#settings--storage)): the user data and cache folders, each with how it was chosen and Show in Finder; each limited kind's entries and size with its Clear, disabled until its job ends; the libraries' caches as one line until their Remove with step 27; the total against the limit; the sizes asked each time the page is shown and after the limit changes.
 
 **Remaining, in Phase 2:**
 
 - [ ] **Step 5.** (Its later part) The calls into a root on that root's queue (decisions 53 and 57), with step 10, when a folder is listed again while other calls into it run; `CollectionChanged` with darktable's reason and property, with the first change to a collection.
 - [ ] **Step 6.** Thumbnails, its remaining parts: a cold walk timed on Windows and a hard disk (decision 76; [cache.md](cache.md#timing-the-walk)); then Apertrust's own rendered thumbnails, stills of the viewport pipe replacing the embedded picture, deduplicated by the edit too, and the opening photo's first picture (decision 77); nothing for cloud files not on the disk.
-- [ ] **Step 6b.** (Its remaining part) The cache's control in the app (decision 76): Settings › Storage with the user data and cache folders, each kind's size and Clear, the limit's row and Show in Finder, through `CacheCommand::Sizes` and `Clear`.
 - [ ] **Step 7.** Bulk listing (`getattrlistbulk`, `FindFirstFileExW`, `statx`; in an `apertrust-fs` crate only if it needs FFI that safe crates do not cover), timed against step 1 on the NAS; spike L1 folded in.
 - [ ] **Step 8.** Sidecar version 2's identity and clocks: the photo's name and fingerprint, its virtual copies (one at first) with ids and clock vectors, the machine id; version 1 still read. Written through the XMP layer.
 - [ ] **Step 9.** History in the sidecar: the session's undo and history saved as the log of steps and its end; Undo and Redo back after reopening; Compress History. Built with the session's undo, or right after it.

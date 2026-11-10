@@ -127,6 +127,8 @@ pub struct Mirror {
     pub jobs: jobs::Mirror,
     /// The open folder and its photos.
     pub folder: FolderState,
+    /// The disk cache's latest sizes and the Clears under way, Settings › Storage's.
+    pub cache: crate::storage::Mirror,
     /// The number of the first preview the Export dialog open asked for, then of the newest
     /// answer shown: an answer to an earlier command is from an earlier dialog or is
     /// outdated, and shows nothing.
@@ -155,6 +157,7 @@ impl Mirror {
             saving: Saving::default(),
             jobs,
             folder: FolderState::default(),
+            cache: crate::storage::Mirror::default(),
             export_floor: 0,
         }
     }
@@ -218,6 +221,9 @@ impl Mirror {
             event,
             Event::Opened(_) | Event::Library(_) | Event::Failed(SessionError::Open { .. })
         );
+        // Settings › Storage's part takes the sizes in, and its Clears' jobs and refusals,
+        // which the jobs' mirror sees too.
+        self.cache.apply(&event);
         // The folder takes its own events in, and the reading's job, which the jobs' mirror
         // sees too; what the app owes for them comes back from it.
         match self.folder.apply(&event) {
@@ -269,7 +275,7 @@ impl Mirror {
             Event::Export { .. } => {}
             // The folder took these in above.
             Event::Library(_) => {}
-            // The cache's sizes are Settings › Storage's, which asks for them.
+            // Taken in above, for Settings › Storage.
             Event::Cache(_) => {}
             // The session logs a failed save, a module left out and the scopes turned off as
             // they happen; the rest only reach the app.

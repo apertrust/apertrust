@@ -2,7 +2,7 @@
 
 Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. The app opens the cache as it starts and hands it to its session, which tidies and walks it as it starts and keeps it within the limit by eviction, as background jobs ([Through the session](#through-the-session)). The thumbnails kind is built for the camera's embedded pictures: read from the cache first, written to it on a miss ([Thumbnails](#thumbnails)). So are the session's sizes and Clear, `CacheCommand::Sizes` and `Clear { kind }` answered by `Event::Cache` ([Through the session](#through-the-session)), and `apertrust-cli cache info` and `cache clear` ([The CLI](#the-cli)). The rest is planned: Apertrust's own rendered thumbnails with the library's step 6, the photo's fingerprint as their slot with step 8, the Storage page's hand-built part with step 6b, library caches, each listed with its Remove, with step 27, and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)).
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. The app opens the cache as it starts and hands it to its session, which tidies and walks it as it starts and keeps it within the limit by eviction, as background jobs ([Through the session](#through-the-session)). The thumbnails kind is built for the camera's embedded pictures: read from the cache first, written to it on a miss ([Thumbnails](#thumbnails)). So are the session's sizes and Clear, `CacheCommand::Sizes` and `Clear { kind }` answered by `Event::Cache` ([Through the session](#through-the-session)), and `apertrust-cli cache info` and `cache clear` ([The CLI](#the-cli)). So is Settings › Storage's hand-built part: the folders, each kind's size with its Clear, and the total against the limit ([Settings › Storage](#settings--storage)). The rest is planned: Apertrust's own rendered thumbnails with the library's step 6, the photo's fingerprint as their slot with step 8, library caches, each listed with its Remove, with step 27, and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)).
 
 ## What goes in it
 
@@ -63,7 +63,7 @@ flowchart TD
 There is no index file. Sizes come from a walk of each limited kind: one listing per subfolder, with each file's size and time.
 
 - **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s. Measured again with thumbnails written by the session's own path: 153 to 185 ms for 100,000 entries, the first walk of each process the slowest ([below](#timing-the-walk)).
-- **When:** once as the session starts, then before each eviction, each time a client asks for the sizes (`CacheCommand::Sizes`, which the Storage page is to send as it opens) and each time `apertrust-cli cache info` runs. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
+- **When:** once as the session starts, then before each eviction, each time a client asks for the sizes (`CacheCommand::Sizes`, which Settings › Storage sends each time it is shown) and each time `apertrust-cli cache info` runs. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
 - **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts, with the write checks `Cache::create` left in the cache folder; a walk writes nothing.
 - **Stopping:** the walk, the tidy and eviction's listing ask their cancel before each subfolder, and eviction before each removal, so a program that quits never waits for a cold walk; a walk stopped keeps no sizes.
 - **Overtaken:** a walk that the handle's own eviction or clear overlaps keeps and returns nothing, since it may have seen part of what their count takes away: the handle keeps a generation of its removals, raised as each begins removing and once it has counted, and a walk keeps its sizes only where the generation stayed and nothing was removing. The session then walks once more; overtaken again, its count stands, which holds what they removed.
@@ -182,14 +182,22 @@ The engine opens no folder: a binary opens the cache and hands `Session::start` 
 
 ## Settings › Storage
 
-A hand-built page with rows from the schema ([gui.md](gui.md#the-settings-dialog)); a level the design draws from:
+A page of rows from the schema with a hand-built part around them ([gui.md](gui.md#the-settings-dialog)), `crates/app/src/storage.rs`.
 
-- the cache folder, how it was chosen, and Show in Finder (Explorer, the file manager);
-- each kind present, with its entries and size, and Clear;
-- the limit, `cache.limited`'s and `cache.limit`'s rows, with the limited kinds' total against it, or the total alone while unlimited;
-- `cache.unused_after`'s row;
-- each library's cache with the library's name, its last path, when it was last opened and its size, those unopened for `cache.unused_after` or not found marked, each with Remove;
-- the conflict copies' count and size, with Show in Finder, and no Clear.
+**Built,** in three groups:
+
+| Group | Lines |
+| --- | --- |
+| Folders, hand-built, first | The user data folder and the cache folder, each in full with the home as `~`, cut in its middle where the page is narrow, how it was chosen under it (the flag, the variable, inside the user data folder, or the system's), and Show in Finder (Explorer, Files), read-only, since a folder is chosen before the app starts |
+| Cache, the schema's | `cache.limited`, `cache.limit` (disabled while unlimited) and `cache.unused_after` |
+| In the cache, hand-built, last | Thumbnails and Pipelines, each with its entries and size in the language's numbers and its Clear; Library caches, one read-only line with their entries and size; the limited kinds' total against the limit, or with "unlimited" |
+
+- **The sizes** are `CacheCommand::Sizes`, sent each time the page is shown, and again after a limit Settings changed is sent, so the total and the limit agree. The app's mirror keeps the latest `Event::Cache` (`storage::Mirror`) and hands Settings the page's view as it changes, through the dialog host. Before the first answer each line says "Counting…", and Clear waits.
+- **Clear** sends `CacheCommand::Clear { kind }`. Its button is disabled from the press until that job's `Ended`, not until the next sizes; the job's row is the jobs window's, which it does not open. A refusal is worded under the lines: "These are being cleared already.", "There is no disk cache to clear.", or "They could not be cleared." for any other.
+- **With no cache** the In the cache group says so plainly, with no Clear; the folders still show.
+- **Its words** are `settings-storage-…` messages in every language; sizes take the Clear's `$size` and `$unit` (`session::size_in_unit`), so 999,800 bytes read 1.0 MB.
+
+**Planned:** with step 27, each library's cache on a line of its own with the library's name, its last path, when it was last opened and its size, those unopened for `cache.unused_after` or not found marked, each with Remove; with step 13, the conflict copies' count and size, with Show in Finder, and no Clear.
 
 ## The CLI
 

@@ -120,7 +120,7 @@ pub use crate::scopes::{Graphs, Reading};
 pub use crate::sidecar::ViewOnly;
 use crate::{raw, sidecar};
 use cache::Upkeep;
-pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions};
+pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
 use thumbnail::Tally;
