@@ -2098,7 +2098,9 @@ pub(crate) mod tests {
         assert_eq!(m.folder.shown(), None);
         assert_eq!(m.folder.thumbnail("a.ARW", 128), None);
         // Open This Folder: the photo stays open, active once its folder is listed.
-        let folder = m.folder.to_show(&path).expect("its folder");
+        let Some(folder::Show::Open(folder)) = m.folder.to_show(&path) else {
+            panic!("its folder, as a way in");
+        };
         assert_eq!(folder, PathBuf::from("/photos"));
         m.folder.opening(folder, 2);
         assert_eq!(

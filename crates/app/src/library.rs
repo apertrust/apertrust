@@ -81,7 +81,8 @@ pub enum Action {
     Ask(PathBuf),
     /// Try Again under a folder whose subfolders could not be listed.
     Retry(PathBuf),
-    /// Show in Finder, Browse's option: the folder opened in the platform's file manager.
+    /// Show in Finder, Browse's option: the tree's root opened in the platform's file
+    /// manager.
     Reveal(PathBuf),
     /// Show in Folder, a folder row's: the folder shown in its parent.
     ShowInFolder(PathBuf),
@@ -282,8 +283,9 @@ impl Browse<'_> {
 /// The Photos tab's Browse section (decision 73), in folder mode's form: its top line,
 /// what is open, a box listing the recents to choose from, with ＋ beside it; then its
 /// Folders group, the tree of the folder opened, its root, with nothing above it; ⋯ holds
-/// Show in Finder. Each part is open or closed as `browse.open` says. Albums and Smart albums join
-/// Folders with the library (Phase 5); folder mode never shows them.
+/// Show in Finder, which shows the root, what the top line names. Each part is open or
+/// closed as `browse.open` says. Albums and Smart albums join Folders with the library
+/// (Phase 5); folder mode never shows them.
 ///
 /// For a photo alone, as the wireframe's one-photo column draws it, the top line names the
 /// photo, Folders holds Open This Folder alone, and ⋯ holds Open This Folder, then Show in
@@ -293,7 +295,7 @@ pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     let words = translator(ui.ctx());
     let mut actions = Vec::new();
     let title = words.text("section-browse");
-    let open = shown(browse.folder).map(Path::to_owned);
+    let open = browse.root.map(Path::to_owned);
     let alone = alone(browse.folder);
     let reveal = Item::new("reveal", words.text(jobs::FILE_MANAGER.show_message()))
         .enabled(open.is_some() || alone.is_some());
@@ -1420,12 +1422,18 @@ mod tests {
         assert_eq!(node.data().level(), Some(0));
         assert_eq!(node.data().is_selected(), Some(false));
         assert_eq!(node.data().is_expanded(), Some(true));
-        assert_eq!(node.data().description(), Some("120 photos, /photos/Portraits"));
+        assert_eq!(
+            node.data().description(),
+            Some("120 photos, /photos/Portraits")
+        );
         let active = harness.get_by_role_and_label(Role::TreeItem, "Edits");
         let node = active.accesskit_node();
         assert_eq!(node.data().level(), Some(1));
         assert_eq!(node.data().is_selected(), Some(true));
-        assert_eq!(node.data().description(), Some("7 photos, /photos/Portraits/Edits"));
+        assert_eq!(
+            node.data().description(),
+            Some("7 photos, /photos/Portraits/Edits")
+        );
         // A sibling has no count, only its path.
         let sibling = harness.get_by_role_and_label(Role::TreeItem, "Selects");
         let said = sibling
@@ -1462,6 +1470,16 @@ mod tests {
                 Action::Choose(portraits.join("Selects")),
             ]
         );
+        // ⋯'s Show in Finder shows the root, which the top line names.
+        harness.state_mut().clear();
+        harness
+            .get_by_role_and_label(Role::Button, "Browse options")
+            .click();
+        harness.run();
+        let show = translator(&harness.ctx).text(jobs::FILE_MANAGER.show_message());
+        harness.get_by_role_and_label(Role::MenuItem, &show).click();
+        harness.run();
+        assert_eq!(*harness.state(), [Action::Reveal(portraits.to_owned())]);
     }
 
     /// The top line says what is open, and its list holds the recents: choosing one opens
@@ -2128,6 +2146,45 @@ mod tests {
             tab.snapshot(name);
             results.extend(tab.take_snapshot_results());
         }
+        // Day 1 chosen in the tree: the root stays at its top and in the top line.
+        let mut chosen = themed(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(320.0, 360.0),
+            move |ui, actions| {
+                let panel = theme(ui.ctx()).colors.panel;
+                ui.painter().rect_filled(ui.max_rect(), 0.0, panel);
+                let trip = Path::new("/Users/me/Pictures/2026-10 Lisbon");
+                let day = trip.join("Day 1 Alfama");
+                let Folder::Open(mut listing) = listing(48, true) else {
+                    unreachable!()
+                };
+                listing.name = "Day 1 Alfama".to_owned();
+                listing.path = day.clone();
+                listing.subfolders = ["Evening", "Morning"].map(str::to_owned).to_vec();
+                let (folder, recent, keys) = (Folder::Open(listing), recent(), keys());
+                let days = ["Day 1 Alfama", "Day 2 Sintra", "Panoramas"];
+                let inside = HashMap::from([
+                    (trip.to_owned(), Ok(days.map(str::to_owned).to_vec())),
+                    (trip.join("Panoramas"), Ok(Vec::new())),
+                ]);
+                let tree = BTreeMap::from([(day, true)]);
+                let browse = Browse {
+                    folder: &folder,
+                    root: Some(trip),
+                    root_count: Some(212),
+                    recent: &recent,
+                    open: OPEN_ALL,
+                    tree: &tree,
+                    inside: &inside,
+                    keys: &keys,
+                    home: None,
+                };
+                PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            },
+        );
+        chosen.run();
+        chosen.snapshot("photos-tab-chosen");
+        results.extend(chosen.take_snapshot_results());
 
         // A photo alone, as the wireframe's one-photo column draws it.
         let mut tab = themed(

@@ -131,6 +131,15 @@ pub enum Outcome {
     Failed { path: PathBuf, reason: String },
 }
 
+/// What File › Open… does to the folder ([`FolderState::to_show`]).
+#[derive(Debug, PartialEq)]
+pub enum Show {
+    /// The root, chosen in its tree, which stays.
+    Choose(PathBuf),
+    /// This folder, opened as a way in: the tree's root from now on.
+    Open(PathBuf),
+}
+
 /// The folder, and what is needed to tell its events from an earlier open's.
 #[derive(Debug, Default)]
 pub struct FolderState {
@@ -363,13 +372,15 @@ impl FolderState {
         };
     }
 
-    /// Whether the subfolders of `folder`, inside the open folder's tree, are to be asked
-    /// for: neither listed nor asked yet. Marks them asked.
+    /// Whether the subfolders of `folder`, inside the root's tree, are to be asked for:
+    /// neither listed nor asked yet, the active folder's coming with its own open. Marks
+    /// them asked. Asked whenever there is a root, so the tree is still listed after a
+    /// folder chosen in it failed, which the session serves as it does any.
     pub fn ask_inside(&mut self, folder: &Path) -> bool {
-        let Folder::Open(listing) = &self.folder else {
+        if self.root.is_none() {
             return false;
-        };
-        let listed = listing.path == folder || self.inside.contains_key(folder);
+        }
+        let listed = self.shown() == Some(folder) || self.inside.contains_key(folder);
         !listed && self.asked.insert(folder.to_owned())
     }
 
@@ -407,15 +418,19 @@ impl FolderState {
         }
     }
 
-    /// The folder to open for the photo at `photo`, when the folder shown is not its own:
-    /// File › Open… shows the folder of what it opens (`docs/gui.md`, File). Paths compare
-    /// as absolute, since a raw named on the command line may be relative.
-    pub fn to_show(&self, photo: &Path) -> Option<PathBuf> {
+    /// What File › Open… of the photo at `photo` does to the folder, a way in (`docs/gui.md`,
+    /// File): the photo's folder opened as the tree's root, even where it is active inside
+    /// another root's tree; where it is the root already, the root chosen if another folder
+    /// of its tree is active, and nothing if it is. Paths compare as absolute, since a raw
+    /// named on the command line may be relative.
+    pub fn to_show(&self, photo: &Path) -> Option<Show> {
         let folder = std::path::absolute(photo.parent()?).ok()?;
-        let shown = self
-            .shown()
-            .and_then(|shown| std::path::absolute(shown).ok());
-        (shown.as_ref() != Some(&folder)).then_some(folder)
+        let absolute = |path: Option<&Path>| path.and_then(|path| std::path::absolute(path).ok());
+        if absolute(self.root()).as_ref() != Some(&folder) {
+            return Some(Show::Open(folder));
+        }
+        let active = absolute(self.shown()).as_ref() == Some(&folder);
+        (!active).then(|| Show::Choose(self.root.clone().unwrap_or(folder)))
     }
 
     /// Takes in `event`, if it is the folder's: a `Library` event of the latest command, or
@@ -508,7 +523,8 @@ impl FolderState {
                 };
                 self.unroot();
                 self.reorder();
-                Some(Outcome::Failed {
+                // A folder chosen in the tree that failed is no recent's to mark.
+                self.way_in.then(|| Outcome::Failed {
                     path,
                     reason: reason.clone(),
                 })
@@ -813,10 +829,13 @@ mod tests {
         // Back to the root, chosen: still not a way in.
         state.choosing(wedding.clone(), 3);
         assert_eq!(state.apply(&opened(3, "/photos/Wedding")), None);
-        // A choice that fails leaves the tree as it was.
+        // A choice that fails leaves the tree as it was, still listed as it opens, and
+        // marks no recent missing.
         state.choosing(selects.clone(), 4);
-        state.apply(&failed(4));
+        assert_eq!(state.apply(&failed(4)), None);
         assert_eq!(state.root(), Some(wedding.as_path()));
+        assert!(state.ask_inside(&edits), "the tree is still listed");
+        assert!(!state.ask_inside(&wedding), "the root was listed");
 
         let portraits = PathBuf::from("/photos/Portraits");
         state.opening(portraits.clone(), 5);
@@ -825,10 +844,15 @@ mod tests {
         assert!(state.inside().is_empty());
         let way_in = state.apply(&opened(5, "/photos/Portraits"));
         assert_eq!(way_in, Some(Outcome::Opened(portraits)));
-        // A way in that fails leaves no root.
+        // A way in that fails says so, and leaves no root and nothing to ask.
         state.opening(PathBuf::from("/photos/Gone"), 6);
-        state.apply(&failed(6));
+        let gone = Some(Outcome::Failed {
+            path: PathBuf::from("/photos/Gone"),
+            reason: "gone".to_owned(),
+        });
+        assert_eq!(state.apply(&failed(6)), gone);
         assert_eq!(state.root(), None);
+        assert!(!state.ask_inside(Path::new("/photos/Gone/Edits")));
     }
 
     #[test]
@@ -1058,28 +1082,46 @@ mod tests {
     }
 
     #[test]
-    fn a_photo_opened_shows_its_folder_unless_that_is_the_one_shown() {
-        // The folder shown is absolute, so on Windows it takes the current drive.
+    fn a_photo_opened_is_a_way_in_to_its_folder_unless_that_is_the_root() {
+        // The folders compare as absolute, so on Windows they take the current drive.
         let absolute = |path: &str| std::path::absolute(path).unwrap();
         let mut state = FolderState::default();
         let photo = Path::new("/photos/a/x.ARW");
-        assert_eq!(state.to_show(photo), Some(absolute("/photos/a")));
-        // Being opened counts as shown.
-        state.opening(PathBuf::from("/photos/a"), 1);
+        assert_eq!(
+            state.to_show(photo),
+            Some(Show::Open(absolute("/photos/a")))
+        );
+        // The root, active, being opened or open: nothing.
+        let root = absolute("/photos/a");
+        state.opening(root.clone(), 1);
         assert_eq!(state.to_show(photo), None);
-        state.apply(&opened(1, "/photos/a"));
+        state.apply(&Event::Library(LibraryEvent::Opened {
+            open: 1,
+            name: "a".to_owned(),
+            folder: root.clone(),
+        }));
         assert_eq!(state.to_show(photo), None);
+        // Another folder of its tree active: the root chosen, which stays.
+        state.choosing(root.join("Edits"), 2);
+        assert_eq!(state.to_show(photo), Some(Show::Choose(root.clone())));
+        // The photo's folder active inside the root's tree, or elsewhere: opened as the
+        // root.
+        let inside = Path::new("/photos/a/Edits/y.ARW");
+        assert_eq!(
+            state.to_show(inside),
+            Some(Show::Open(absolute("/photos/a/Edits")))
+        );
         assert_eq!(
             state.to_show(Path::new("/photos/b/y.ARW")),
-            Some(absolute("/photos/b"))
+            Some(Show::Open(absolute("/photos/b")))
         );
-        // A failed folder is not shown: the photo's own is tried.
-        state.opening(PathBuf::from("/photos/gone"), 2);
-        state.apply(&Event::Library(LibraryEvent::Failed {
-            open: 2,
-            reason: "gone".to_owned(),
-        }));
-        assert_eq!(state.to_show(photo), Some(absolute("/photos/a")));
+        // A way in that failed leaves no root: the photo's own folder is opened.
+        state.opening(PathBuf::from("/photos/gone"), 3);
+        state.apply(&failed(3));
+        assert_eq!(
+            state.to_show(photo),
+            Some(Show::Open(absolute("/photos/a")))
+        );
     }
 
     #[test]
