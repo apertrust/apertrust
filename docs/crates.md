@@ -209,7 +209,8 @@ The session's events (decision 59, [docs/events.md](events.md)):
 
 ### Planned
 
-- **Several photos in one session** (decision 37, once spike W1 measures it): the active one live and every other on screen a still, rendered once from its saved edit; background work one tile per submission; decoding off the engine thread on a job worker (decision 57); kernels kept for the session.
+- **A photo opening in stages** (decision 77, [engine.md](engine.md#opening-a-photo)): the `open` job on `SystemForeground`, its picture (`Event::OpenPreview`), the metadata and sidecar before the decode, one decode slot, decoding off the engine thread; `Values::live` and `SessionError::NotLive`; `Photo` without its decode and upload times; kernels kept across photos.
+- **Several photos in one session** (decision 37, once spike W1 measures it): the active one live and every other on screen a still, rendered once from its saved edit; background work one tile per submission; decoding off the engine thread on a job worker (decision 57), the live photo's from decision 77 on; kernels kept for the session.
 - **Readouts** (decision 19): what an operation measures of the photo for its module's panel, the tone equalizer's mask histogram first. Its readout pass is planned in the viewport alone and dispatched while a client asks (`Command::Readouts`, by module) and its key, a whole-image result's, has changed. Its counts are read back through the scopes' staging pair, decoded by the operation and sent as `Event::Readout`. A failure turns readouts off, never the frame.
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
@@ -361,8 +362,9 @@ Raw decoding with rawler (decision 23).
 
 **Lens corrections** the raw carries, as darktable reads them, over rawler's public parsers (decision 25): Fujifilm's (the FujiIFD and the maker note's CropMode), held to Exiv2's dump in `tests/lens.rs`. Sony's, DNG opcodes and Olympus's are planned.
 
-**Planned** (decision 27):
+**Planned** (decisions 27 and 77):
 
+- a metadata read without the pixels, rawler's decode with `dummy`, giving the camera an opening photo's values need before its decode, held equal to the decode's over the corpus (decision 77);
 - darktable's spellings where they differ from rawler's (`Z 6_2`, `OM System`, `GFX100S`), applied to `make`, `model` and `alias`;
 - darktable's `data/wb_presets.json`, embedded and parsed once with serde_json as darktable reads it, the camera's presets looked up by alias then model and carried in the image context.
 
