@@ -2841,19 +2841,10 @@ impl App {
         slot: &egui::Response,
         photo: Option<egui::Rect>,
     ) -> Option<ActionId> {
-        let id = slot.id.with("menu");
-        if slot.secondary_clicked()
-            && let Some(at) = slot.interact_pointer_pos()
-            && !photo.is_some_and(|photo| photo.contains(at))
-        {
+        surround_menu(ctx, slot, photo, |at| {
             let state = self.state(ctx);
-            let request = menus::context(ctx, &self.shell.keymap, &state, &menus::BACKGROUND, at);
-            popup::open(ctx, id, request);
-        }
-        match popup::answer(ctx, id)? {
-            popup::Answer::Chosen(chosen) => menus::chosen(&chosen),
-            popup::Answer::Dismissed => None,
-        }
+            menus::context(ctx, &self.shell.keymap, &state, &menus::BACKGROUND, at)
+        })
     }
 
     /// Draws `frame` where the block `placed` puts the photo, with Proof margin's white
@@ -2876,6 +2867,33 @@ impl App {
                 painter.hline(rect.x_range(), y, stroke);
             }
         }
+    }
+}
+
+/// Opens the menu `request` gives at the pointer when `slot` is right-clicked outside
+/// `photo`, and returns the action of the item chosen in it. The menu is drawn here while
+/// it is open, before its answer is read: a drawn menu (Windows, Linux) answers as it is
+/// drawn, and its answer lasts only that frame, so a read before the frame's later
+/// `popup::show` would miss it. The Mac's native menu answers between frames.
+fn surround_menu(
+    ctx: &egui::Context,
+    slot: &egui::Response,
+    photo: Option<egui::Rect>,
+    request: impl FnOnce(egui::Pos2) -> popup::Request,
+) -> Option<ActionId> {
+    let id = slot.id.with("menu");
+    if slot.secondary_clicked()
+        && let Some(at) = slot.interact_pointer_pos()
+        && !photo.is_some_and(|photo| photo.contains(at))
+    {
+        popup::open(ctx, id, request(at));
+    }
+    if popup::is_open(ctx, id) {
+        popup::show(ctx);
+    }
+    match popup::answer(ctx, id)? {
+        popup::Answer::Chosen(chosen) => menus::chosen(&chosen),
+        popup::Answer::Dismissed => None,
     }
 }
 
@@ -4666,6 +4684,58 @@ mod tests {
             Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac).grid,
             chosen
         );
+    }
+
+    /// A frame as the app's: the surround's menu read in the central panel, and the
+    /// frame's popups drawn after it.
+    struct Surround {
+        shell: Shell,
+        chosen: Vec<ActionId>,
+    }
+
+    #[test]
+    fn the_surround_s_drawn_menu_gives_the_background_chosen_in_it() {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(600.0, 400.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, surround: &mut Surround| {
+                    let ctx = ui.ctx().clone();
+                    let slot = ui.allocate_rect(ui.max_rect(), egui::Sense::click());
+                    let shell = &surround.shell;
+                    let chosen = surround_menu(&ctx, &slot, None, |at| {
+                        let state = shell.state(&ctx, false, false);
+                        menus::context(&ctx, &shell.keymap, &state, &menus::BACKGROUND, at)
+                    });
+                    surround.chosen.extend(chosen);
+                    popup::show(&ctx);
+                },
+                Surround {
+                    shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix),
+                    chosen: Vec::new(),
+                },
+            );
+        let at = egui::pos2(300.0, 200.0);
+        harness.hover_at(at);
+        harness.run();
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        }
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "White")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().chosen, [ActionId::BACKGROUND[5]]);
     }
 
     #[test]
