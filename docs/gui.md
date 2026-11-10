@@ -35,7 +35,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
 - The dialog host, with Settings, the Export dialog, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog), [The log window](#the-log-window)).
-- Folder mode's first parts: File › Open Folder…, Browse's Folders in the Photos tab, the grid panel's cells and the central panel's empty states ([The grid panel](#the-grid-panel), [The central panel's layouts](#the-central-panels-layouts)).
+- Folder mode's first parts: File › Open Folder… and Open…, drag and drop onto the window, View › Browse, Browse's Folders in the Photos tab, the grid panel's cells and the central panel's empty states ([File](#file), [The grid panel](#the-grid-panel), [The central panel's layouts](#the-central-panels-layouts)).
 
 Still to come:
 
@@ -453,7 +453,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
 - **Still to do:** `Keymap::load` and Settings refusing the Mac's own keys, Cmd+H, Option+Cmd+H and Cmd+M, which no default takes.
 - **What it holds now,** the actions the registry declares ([what arrives when](#what-arrives-when) lists what is still to come):
   - the app menu, titled Apertrust, with About, Settings, Services, Hide, Hide Others, Show All and Quit;
-  - File with Open Image…, Open Folder…, Import, Export…, Export Again and Close Window;
+  - File with Open…, Open Folder…, Import, Export…, Export Again and Close Window;
   - Edit with Undo and Redo, Copy Edit, Apply Edit and Copy or Apply Parts, then Reset Edit;
   - Photo with Next Photo and Previous Photo;
   - View with Browse, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
@@ -571,7 +571,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
-| Open… | `open` | Ctrl+O | Built as Open Image…, one raw; Open… in its place with folder mode in Phase 2 |
+| Open… | `open` | Ctrl+O | Built for raws in folder mode; a library's or a project's file in Phase 5 |
 | Open Folder… | `open-folder` | Ctrl+Shift+O | Built, after Open…: the platform's folder dialog, asynchronous as the open dialog is, starting in the open folder, else the open photo's, else Pictures; the folder chosen goes to the session as `Command::Library(Open(Folder))` |
 | Open Recent → the last ten folders, and from Phase 5 libraries and projects, opened, newest first, the start window's list; —; Clear Menu | `open-recent`, `clear-recent` | — | New, Phase 2; its list, the recents, is built (`crates/app/src/recents.rs`: its entries, opening one, Clear Menu) |
 | — | | | |
@@ -594,13 +594,18 @@ macOS only: the app menu, which macOS titles with the app's name.
 
 - **The ways in** are Open Folder…, Open…, New Library… and New Project…, with Open Recent, [the start window](#the-start-window) and drag and drop. One photo alone opens only from a terminal, `apertrust FILE` ([library.md](library.md#one-photo)).
 - **Open…** takes one or more raws, or a library's or a project's file. Raws open their folder in folder mode, the first chosen photo active and the chosen ones selected, the photo at once and the folder listing behind it, as Open With does ([library.md](library.md#folder-mode)); a `Name.aplibrary` or `Name.approject` opens that library or project. **Open Folder…** shows a folder with its first photo active. The two are the same on every platform: Open Folder… chooses a folder, Open… a file, though the Mac's dialog could take both, so neither dialog ever lacks the button its name promises. Import… is not how a photo opens in folder mode: Open… and Open Folder… open in place, and Import… copies.
-- **Drag and drop** onto the main window opens what is dropped, on every platform (planned, step 9b): a folder as Open Folder… does; raws as Open… does, from the first one's folder; a `Name.aplibrary` or `Name.approject` as Open… does. Several folders, or raws from several folders, open the first; a file Apertrust cannot open is refused with a message, and nothing is dropped while a modal dialog is up. The window shows where it lands while something is dragged over it.
-- **Open Image…**, as built, is Open…'s first part, and Open… takes its place: the platform's open dialog for one raw, showing the formats the decoder reads (`session::raw_extensions`) and starting in the open photo's folder, or the Pictures folder when none is open.
-  - The raw chosen opens in place of the photo open, as one named on the command line does: the session saves the edit of the photo left, if anything in it is not on disk yet, and reads the new photo's from beside it. Should that last write fail, the central panel says so, naming the photo left, over the photos opened after it until another is asked for.
-  - It also opens the raw's folder in the grid panel, unless that is the one shown.
-  - Cancelling does nothing; a raw that cannot be opened says why over the central panel, as one from the command line does, and the next Open Image… starts in its folder.
+- **Drag and drop** onto the main window opens what is dropped, on every platform: a folder as Open Folder… does; raws as Open… does, from the first one's folder; a `Name.aplibrary` or `Name.approject` as Open… does. Several folders, or raws from several folders, open the first; a file Apertrust cannot open is refused with a message, and nothing is dropped while a modal dialog is up. The window shows where it lands while something is dragged over it.
+- **Open…, as built,** is the platform's open dialog for one or more raws, showing the formats the decoder reads (`session::raw_extensions`) and nothing else, so a library's or a project's file is greyed out in it until Phase 5. It starts in the open folder, else the open photo's, else the Pictures folder. Browse's ＋ and the central panel's empty state run it too.
+  - The first raw chosen opens in place of the photo open, as one named on the command line does: the session saves the edit of the photo left, if anything in it is not on disk yet, and reads the new photo's from beside it. Should that last write fail, the central panel says so, naming the photo left, over the photos opened after it until another is asked for.
+  - The photo opens at once and its folder lists in the grid panel behind it, unless that is the one shown. The other raws chosen are to be selected with it once the grid panel selects (Phase 3); until then only the first is.
+  - Cancelling does nothing; a raw that cannot be opened says why over the central panel, as one from the command line does, and the next Open… starts in its folder.
   - While one photo opens, what the session still sends of an earlier open is dropped, so a raw chosen before the one chosen first has arrived is the only one shown and edited.
   - The dialog never stops the window or the engine (decision 18): on the Mac it is AppKit's open panel as a sheet on the window, on Windows the system's dialog, on Linux the desktop's file chooser through the XDG desktop portal, never GTK (`crates/app/src/dialogs.rs`, rfd's asynchronous dialog).
+- **Drag and drop, as built** (`crates/app/src/dropped.rs`), reads egui's dropped and hovered files, which winit gives on macOS, Windows and X11; winit has none on Wayland yet.
+  - What each path is, a folder or a file, is asked of the disk on a thread of its own, never the interface's, as the recents are checked, and the drop opens a frame later. The paths are asked in order until one opens: a folder; or a raw, by its extension, with the raws dropped beside it from its folder, which are to be selected with it as Open…'s are.
+  - Where nothing opens, a system alert names the first thing dropped and says why: only folders and raw photos open, or libraries and projects come in a later version, with OK, which Return and Escape press. A file that opens nothing beside one that opens says nothing.
+  - Under a modal dialog, a sheet, a modal window, an alert, About or the open dialog, nothing dropped is taken, nor once it has been looked at if one opened meanwhile.
+  - While something is dragged over the window, the photo and the grid panel are outlined inside their edge, 2 points (`separator_width`) in `focus_ring`, over what is drawn there; nothing shows under a modal dialog. Whether what is dragged would open is not known until it is dropped, since the disk is never asked while it hovers.
 - **Close Window** closes the key window: a dialog's own window when it has the focus, and otherwise the main window. Built, the main window's close ends Apertrust as Quit does, through the same exit, while the app has one window, closing any dialog first; with the start window it does what Close does, and so does the main window's close button on the Mac. Neither loses a change: they wait for the edit's last write (principle 3). It rests under a modal dialog over the main window, as AppKit's does under a sheet, unless a dialog's own window has the focus, which it then closes. eframe ends with its root window, so with the start window the Mac's app hides its windows rather than closing the last.
 - **Close** (planned) closes what is open, the photo, folder, library or project, and the main window with it, after the edit's last write, and shows [the start window](#the-start-window). On Windows and Linux the main window's close button still quits, as Quit does.
 - **Open Recent** lists the last ten folders opened, and from Phase 5 libraries and projects, newest first, never holding an edit: the start window's list, never one photo opened alone. They are the recents, kept in `state.toml` beside `settings.toml`, since the settings hold no photo ([settings.md](settings.md#the-settings-schema)), the one list Browse's recent folders and the start window read too. Whether each is there is checked off the interface's thread as the main window shows and again as it gains the focus. Clear Menu empties it. An entry whose folder has gone says so when it is chosen and offers to remove it; entries are not checked as the menu opens, since a NAS can be slow, though one the start window has found missing is marked. With none, it holds only Clear Menu, disabled.
@@ -699,7 +704,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, with the grid bar's Labels |
 | Grid Panel Position → Left, Right, Bottom, the one in use checked | `grid-position-left`, `grid-position-right`, `grid-position-bottom` | — | New, Phase 2, with the grid bar's options menu |
 | — | | | |
-| Browse | `show-browse` | L | Declared, with no command yet, so unavailable; Phase 2, with Browse in the Photos tab (decisions 37 and 73) |
+| Browse | `show-browse` | L | Built: chooses the Photos tab, the first holding Browse until workspaces change the tabs; pressed again, nothing (decisions 37 and 73) |
 | Side Panel Tab → each tab by its name, the one shown checked | `panel-tab-1` to `panel-tab-5` | Ctrl+1 to Ctrl+5 | Built |
 | Workspace → each workspace by its name, the current one checked; —; Save as Workspace…, Rename Workspace…, Delete Workspace…, Reset Workspace | `workspace-1` to `workspace-9`, `save-workspace`, `rename-workspace`, `delete-workspace`, `reset-workspace` | — | New, Phase 3 ([Workspaces](#workspaces)) |
 | Panels → | | | |
@@ -902,10 +907,10 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Browse, Next Photo and Previous Photo, and View's zoom items |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, their folder opened with the first active); Open Folder…; Export… and Export Again; Reset Edit; Browse; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the side panel's tabs; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; Auto › Exposure, drawn disabled; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
-| Later in Phase 2 | Open… (Open Image… becoming it), Open Recent, Close and Show in Folder, with folder mode and the start window; Browse, with its module (decisions 37 and 73); Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
+| Later in Phase 2 | Open Recent, Close and Show in Folder, with folder mode and the start window; Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
 | Phase 3 | Workspace; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Side Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode (decision 46) |
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
@@ -1109,10 +1114,10 @@ Where winit cannot:
 - **View › Jobs stays:** the jobs window is modeless beside any dialog, so the jobs stay in reach under a sheet or the quit alert that waits for them.
 - **Help › Show Log stays:** the log window is modeless beside any dialog, so the log is in reach under a sheet or an alert.
 - **Close Window** rests then too, as AppKit's does under a sheet, unless a dialog's own window has the focus: it acts on the key window.
-- **A modeless Settings window** leaves them all to run, as Apple's apps do: Open Image… and About open over the main window beside it.
+- **A modeless Settings window** leaves them all to run, as Apple's apps do: Open… and About open over the main window beside it.
 - **Quit while the open dialog asks** waits for its answer: AppKit's panel hangs on the main window as a sheet, and a Quit under it would take the panel away and leave the window open, the app running on.
 - **While a modeless dialog's own window is the key window,** Settings' on the Mac (`State::dialog_window`), the items that act on the main window or its photo rest as well, since AppKit rests an item whose target is not in the key window's responder chain: the side panel's tabs, Full Screen, which the Settings window cannot take, and Reset Edit; later Undo, Redo, Export and the edit's items with them.
-  - The Interface Size items stay, since they scale every window, and so do the app's own: About, Settings, Open Image…, Close Window, which then closes the Settings window, and Quit.
+  - The Interface Size items stay, since they scale every window, and so do the app's own: About, Settings, Open…, Close Window, which then closes the Settings window, and Quit.
   - The menus only: the main window's own controls, its top panel's Reset among them, are drawn as they are with the main window focused, since a window's controls act on that window whichever has the focus, as AppKit checks a toolbar's items against their own window.
 - **The editing items,** Undo, Redo, Cut, Copy, Paste and Select All, act on a text field focused in the dialog.
 - **Quit** closes the dialog as its Cancel and leaves through the exit path, and a close of the main window does the same: Close Window with the main window the key window, or its close button, whose close is held until the dialog has gone (`ViewportCommand::CancelClose`, then Quit).
@@ -1171,7 +1176,7 @@ The host draws any dialog the same way (`dialog_host::draw`, which the tests run
 
 #### Built on the Mac and Linux
 
-The confirmations: Export's overwrite question, the quit alert and the failed-save retry.
+The confirmations: Export's overwrite question, the quit alert and the failed-save retry; and one that only tells, a drop that opens nothing ([File](#file), Drag and drop).
 
 - **The request** is plain data in `apertrust-ui` (`alert::Request`: a title, a message and buttons, each with its words and a `Role`, Default, Cancel or Destructive), egui-free.
   - The buttons are listed in the order of their answers, the one that goes ahead first. The default, which Return presses, is the first unless the request names another (`Request::default_button`), and it may be the cancel, which Escape presses too. Destructive only marks a button; at most one button is the cancel.
@@ -1902,7 +1907,7 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
 - **Browse, as built** (`crates/app/src/library.rs`), in folder mode's form, as the wireframe's "Browse module" frame draws it, the tab `photos` (`tab-photos`), the section `browse` (`section-browse`):
   - The tab is chosen by Ctrl+1 or a click like the others. Browse shows alone in it, open by default (kept in settings with the other sections).
   - **Its top line** is a box saying what is open, a Boxed choice's box (`ChoiceBox` in `apertrust-ui`, its list hung from it with `components::pull_down`), the folder icon and "Folder: 2026-10 Lisbon", "Reading 2026-10 Lisbon…" until its last chunk, or "No folder open" with none open or after an open failed, the name cut in its middle; its count is on the open folder's row in the tree, and screen readers hear it with the box, a combo box named "What is open". The box lists the recents, ten at most, newest first, the open one checked, a choice opening it ([File](#file), Open Recent's list, kept in `state.toml`). The list keeps the folders it was built for while it is open, so a recent added meanwhile changes nothing chosen. A missing one is marked "Name, not found", a submenu whose first line says why, disabled, then Try Again where its opening failed this run, Locate…, and Remove from the List. Locate… is the platform's folder dialog, starting in the folder's parent, which points the entry to the folder chosen and opens it.
-  - **＋ after it,** after it in the focus order too, holds, in the wireframe's order, New Library… and New Project…, drawn disabled, saying they come later, then Open Folder… and Open Image…, with their keys.
+  - **＋ after it,** after it in the focus order too, holds, in the wireframe's order, New Library… and New Project…, drawn disabled, saying they come later, then Open Folder… and Open…, File's own, with their keys.
   - **⋯, its options,** holds Show in Finder (Explorer on Windows, Files on Linux), which opens the open folder in the file manager. Make This Folder a Library… joins it with the library.
   - **Folders,** a collapsible group (`browse-folders`), open by default and kept in `edit.groups` as `browse.folders`, is the open folder's tree. Above it, the way up: ‹ and the parent folder's name in `text_secondary`, a button ("Up to Pictures") that opens it, absent at a disk's top. Then the open folder, chosen on `list_chosen`, with its count at the row's end once every photo is listed, and its subfolders under it 12 points in, in the listing's order (the file browser's), a click opening one. Its chevron, or ← and →, hides and shows its subfolders, for this run. Each row has the folder icon, its count in the language's number format, and a right-click, the menu key or Shift+F10 holds Show in Folder, named as the platform's file manager is (Show in Finder on the Mac), and Open. The tooltips write the home folder as `~`.
   - To screen readers the tree is a tree named Folders, each row a tree item with its level, the open folder selected with its open state and its count.
@@ -2946,7 +2951,7 @@ Ctrl means Cmd on macOS.
 | --- | --- | --- | --- |
 | App | About Apertrust | None | Opens the dialog; the top panel's mark runs it |
 | App | Settings | Ctrl+, | Opens the dialog, or brings it to the front |
-| App | Open…, built as Open Image… | Ctrl+O | Opens the platform's open dialog: for one raw as built; raws into folder mode, or a library's or project's file, in Phase 2 |
+| App | Open… | Ctrl+O | Opens the platform's open dialog: raws into folder mode; a library's or project's file in Phase 5 |
 | App | Open Folder… | Ctrl+Shift+O | Opens the platform's folder dialog |
 | App | Import, Export | Ctrl+I, Ctrl+E | Import not built: listed and disabled. Export built on the Mac; it acts on every selected photo |
 | App | Export Again | None, so anyone used to darktable can bind Ctrl+E to it | Built on the Mac |
@@ -2963,7 +2968,7 @@ Ctrl means Cmd on macOS.
 | App | Quit | Ctrl+Q | Closes the window |
 | App | The menu | F10, Windows and Linux | Opens the ☰'s menu at its top |
 | View | The layouts: Photo, and Map toggled on and off, as its central-bar toggle is | Shift+M toggles Map, pressed again back to Photo; Photo has no key of its own, and E is left free | The Edit view's action, built with E, is to become Photo's, with no key; Shift+M comes with the Map and its toggle |
-| View | Browse (`show-browse`): the first tab holding Browse | L; pressed again, nothing | Declared, not yet available; the tab is chosen by Ctrl+1 and a click |
+| View | Browse (`show-browse`): the first tab holding Browse | L; pressed again, nothing | Built, on the main window; Ctrl+1 and a click choose the tab too |
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a module's section too; rendering the photo without that module waits for a session command that leaves one module out of the render |
 | View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
 | View | Extend the selection | Shift with the arrows, in the grid panel | Phase 3, with selecting several photos |
@@ -3214,9 +3219,9 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
    - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host.
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Browse's Folders; the grid panel showing the folder, with the engine's thumbnails and its grid bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The grid panel](#the-grid-panel)); File › Open…, Open Folder… and Open Recent; the central panel's empty states ([The central panel's layouts](#the-central-panels-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
-   - Built: File › Open Folder…, the Photos tab with Browse, its top line listing the recents, ＋, ⋯ and its Folders as the open folder's tree with the way up ([The side panel](#the-side-panel)), the grid panel's cells with the camera's embedded pictures, its grid bar's Sort and Zoom, its edge in whole rows or columns and its position, and the central panel's empty states.
+   - Built: File › Open Folder… and Open…, drag and drop onto the window, View › Browse, the Photos tab with Browse, its top line listing the recents, ＋, ⋯ and its Folders as the open folder's tree with the way up ([The side panel](#the-side-panel)), the grid panel's cells with the camera's embedded pictures, its grid bar's Sort and Zoom, its edge in whole rows or columns and its position, and the central panel's empty states.
    - Built too: a photo opening in stages, its picture at once and its values read-only until it is live (decision 77).
-   - Left: Open… in place of Open Image…, Open Recent, and opening a folder's first photo; one photo from a terminal and Open With into folder mode (`--in-folder`, and macOS's open-documents event); the start window, reopening what was open last, and File › Close ([The start window](#the-start-window)). The engine's side for the stills waits for spike W1.
+   - Left: selecting the other raws Open… and a drop choose; Open Recent, and opening a folder's first photo; one photo from a terminal, with Open This Folder, and Open With into folder mode (`--in-folder`, and macOS's open-documents event); the start window, reopening what was open last, and File › Close ([The start window](#the-start-window)). The engine's side for the stills waits for spike W1.
 
 Decision 42's slider values and choice rows are Phase 2's, built beside steps 7 to 9 in [their cards' order](#slider-values-the-build-in-cards).
 

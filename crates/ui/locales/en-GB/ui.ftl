@@ -364,10 +364,10 @@ photo-aperture = f/{ $value }
 photo-focal-length = { $value } mm
 photo-iso = ISO { $value }
 
-## The platform's open dialog, from File › Open Image…
+## The platform's open dialog, from File › Open…
 
 # Its title, where the platform shows one.
-open-title = Open Image
+open-title = Open
 # The file types it shows: the raws Apertrust can open.
 open-filter = Raw photos
 
@@ -701,8 +701,8 @@ about-back = Back
 
 ## Actions, as the keyboard map names them (docs/gui.md, Keyboard and actions)
 
-# File › Open Image…: one raw, in place of the photo open.
-action-open = Open Image…
+# File › Open…: raws, their folder opened with the first in place of the photo open.
+action-open = Open…
 action-view-edit = Switch to Edit
 # View › Browse: the first tab holding Browse.
 action-show-browse = Browse
@@ -1014,3 +1014,9 @@ alert-save-button = Try Again
 alert-quit-save-title = Quit without your last changes?
 alert-quit-save-message = Your last changes couldn’t be saved: { $error }
 alert-quit-anyway = Quit Anyway
+# What was dropped onto the window opens nothing: $name is the first thing dropped, the
+# message says why, and the button is the one way out.
+alert-refused-title = Can’t open { $name }
+alert-refused-unknown = Only folders and raw photos open here.
+alert-refused-library = Libraries and projects come in a later version.
+alert-refused-button = OK

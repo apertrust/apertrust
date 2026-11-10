@@ -290,9 +290,9 @@ photo-aperture = f/{ $value }
 photo-focal-length = { $value } mm
 photo-iso = ISO { $value }
 
-## Okno otwierania, z menu Plik › Otwórz zdjęcie…
+## Okno otwierania, z menu Plik › Otwórz…
 
-open-title = Otwórz zdjęcie
+open-title = Otwórz
 open-filter = Zdjęcia raw
 
 ## Panel siatki i jego komórki
@@ -570,7 +570,7 @@ about-back = Wstecz
 
 ## Działania, jak nazywa je mapa klawiszy
 
-action-open = Otwórz zdjęcie…
+action-open = Otwórz…
 action-view-edit = Przejdź do edycji
 action-show-browse = Przeglądaj
 action-panel-tab-1 = Karta panelu bocznego 1
@@ -847,3 +847,7 @@ alert-save-button = Spróbuj ponownie
 alert-quit-save-title = Zakończyć bez ostatnich zmian?
 alert-quit-save-message = Nie udało się zapisać ostatnich zmian: { $error }
 alert-quit-anyway = Zakończ mimo to
+alert-refused-title = Nie można otworzyć { $name }
+alert-refused-unknown = Tu otwierają się tylko foldery i zdjęcia raw.
+alert-refused-library = Biblioteki i projekty pojawią się w jednej z kolejnych wersji.
+alert-refused-button = OK
