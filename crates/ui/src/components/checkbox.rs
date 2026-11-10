@@ -25,7 +25,7 @@
 use egui::{Color32, FontId, Rect, Response, Role, Shape, Stroke, StrokeKind, Ui};
 use egui::{WidgetInfo, pos2, vec2};
 
-use super::plate::{ButtonState, Touch, allocate, paint_focus};
+use super::plate::{ButtonState, Touch, allocate, paint_focus, undimmed_painter};
 use crate::{Theme, theme};
 
 /// The box's side, in points.
@@ -69,7 +69,7 @@ impl<'a> Checkbox<'a> {
     /// Draws it; the response is marked changed when a click or a key toggled it.
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
-        let enabled = self.enabled && self.state != Some(ButtonState::Disabled);
+        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let gap = ui.spacing().icon_spacing;
         let galley = (!self.label.is_empty()).then(|| {
             let font = FontId::proportional(t.text.body);
@@ -86,7 +86,7 @@ impl<'a> Checkbox<'a> {
         }
         let on = *self.on;
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
+            let painter = &undimmed_painter(ui);
             let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
             let square = Rect::from_min_size(
                 pos2(rect.left(), rect.center().y - BOX / 2.0),

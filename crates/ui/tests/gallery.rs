@@ -25,29 +25,79 @@
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::Role;
-use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
+use egui_kittest::{Harness, SnapshotResults};
 
-/// The gallery's page, at a fixed size that holds all of it, on the panel's colour.
-const PAGE: egui::Vec2 = egui::vec2(600.0, 8050.0);
+/// The gallery's page width, in points.
+const WIDTH: f32 = 600.0;
 
+/// The tallest part of the page one image holds: GPUs make textures of at most 8192 pixels
+/// a side, so a taller gallery is photographed in two parts, the second from a little above
+/// where the first ends to the page's end.
+const PART: f32 = 8000.0;
+const OVERLAP: f32 = 40.0;
+
+/// Photographs the whole gallery on the panel's colour: `name`, its top, with the ☰'s menu
+/// open, and where the page is taller than [`PART`], `name-end`, the rest down to Spacing.
 fn photograph(which: Builtin, locale: Locale, name: &str) {
-    let mut gallery = Gallery::new(which).with_menu_open();
+    let height = page_height(which, locale);
+    // Both parts' results in one, as kittest asks of several harnesses in a test.
+    let mut results = SnapshotResults::new();
+    let mut top = part(which, locale, 0.0, height.min(PART), true);
+    top.snapshot(name);
+    results.extend_harness(&mut top);
+    if height > PART {
+        let from = PART - OVERLAP;
+        let mut end = part(which, locale, from, height - from, false);
+        end.snapshot(format!("{name}-end"));
+        results.extend_harness(&mut end);
+    }
+    results.unwrap();
+}
+
+/// How tall the gallery is drawn, measured on a page taller than it, never rendered.
+fn page_height(which: Builtin, locale: Locale) -> f32 {
+    let harness = part(which, locale, 0.0, 4.0 * PART, true);
+    harness
+        .ctx
+        .data(|d| d.get_temp::<f32>(height_id()))
+        .expect("the page measured")
+        .ceil()
+}
+
+fn height_id() -> egui::Id {
+    egui::Id::unique("gallery page height")
+}
+
+/// The gallery from `from` points down, `height` points of it.
+fn part(which: Builtin, locale: Locale, from: f32, height: f32, menu: bool) -> Harness<'static> {
+    let mut gallery = Gallery::new(which);
+    if menu {
+        gallery = gallery.with_menu_open();
+    }
     gallery.locale = locale;
     let mut harness = Harness::builder()
-        .with_size(PAGE)
+        .with_size(egui::vec2(WIDTH, height))
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::builtin(which));
             apertrust_ui::set_locale(ctx, locale);
         })
-        .build_ui(|ui| {
+        .build_ui(move |ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
             ui.painter()
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-            gallery.show(ui);
+            // The page drawn `from` points up, in a child that starts above the window.
+            let page = egui::Rect::from_min_size(
+                ui.max_rect().min - egui::vec2(0.0, from),
+                egui::vec2(ui.max_rect().width(), f32::INFINITY),
+            );
+            let mut page = ui.new_child(egui::UiBuilder::new().max_rect(page));
+            gallery.show(&mut page);
+            let height = page.min_rect().height();
+            ui.data_mut(|d| d.insert_temp(height_id(), height));
         });
     harness.run();
-    harness.snapshot(name);
+    harness
 }
 
 #[test]

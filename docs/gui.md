@@ -273,7 +273,7 @@ An interface for photo editing must not be too contrasty, so:
 
 - It is the code's counterpart of the wireframe's Controls and Sections boards.
 - A component is built there before any panel uses it.
-- The snapshot tests photograph it, in every theme and in the pseudo-locale.
+- The snapshot tests photograph it whole, in every theme and in the pseudo-locale: its top 8000 points and, below, the rest (`gallery-<theme>-end`), since a GPU makes no texture over 8192 pixels a side.
 
 ### Checkboxes, text buttons and icon buttons
 
@@ -283,7 +283,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 - **Hover and press.** Under the pointer a plate lifts a step (`button_hover`); pressed it dips a step back towards the ground (`button_pressed`). No border appears on either.
 - **High contrast.** Every ground is black there, so every plate has a 1-point edge, `button_edge`, white, and `text_disabled` while disabled; the dark and light themes' `button_edge` is transparent, no edge.
 - **Focus** is one ring for the three: 1.5 points of `focus_ring` with a point of ground, `shape.focus_gap`, between it and the control, shown only after a key (`FocusVisible`). It never changes the fill, so amber marks no press.
-- **Disabled** keeps the shape: the words, the icon and a box's edge in `text_disabled`, a ticked box filled `text_disabled`. A disabled primary button is drawn as a disabled default one, so amber always means it will act. A disabled text button or checkbox is egui's disabled widget, so it keeps its tooltip and takes no focus.
+- **Disabled** keeps the shape: the words, the icon and a box's edge in `text_disabled`, a ticked box filled `text_disabled`. A disabled primary button is drawn as a disabled default one, so amber always means it will act. A disabled text button or checkbox is the design system's widget allocated in egui's disabled scope, so it keeps its tooltip and takes no focus, and painted at full strength, its tokens dimming it. A control inside a disabled parent is drawn by the same rules.
 
 | Control | Rest | Under the pointer | Pressed | Disabled |
 | --- | --- | --- | --- | --- |
@@ -294,10 +294,11 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 | Quiet button, icon button | None | `button` | `button_pressed` | None |
 
 - **The checkbox** (`Checkbox`, in `ToggleRow` and Linux's alert): a 14-point box at the start, `radius_small`, a 1-point edge, its label after it, both the target. A ticked box is neutral, never amber, its tick 1.5 points.
-- **Text buttons** (`Button`): 22 points high (`sizes.control`), 8 points at each end, `radius`, body text. Default, a plate, for dialogs' rows, the jobs and log windows, About, a module's action row (`ActionRow`); primary (`Button::primary`), amber with `text_on_accent`, one in a dialog: Export's Export and an alert's default. A destructive button's words are `text`, as any button's: its words say what it does.
+- **Text buttons** (`Button`): 22 points high (`sizes.control`), 8 points at each end, `radius`, body text; at least a given width with its words at its start (`Button::width`), and the keys that do the same at its end in `text_secondary` (`Button::keys`), as the start card's Open Folder… and Open…. Default, a plate, for dialogs' rows, the jobs and log windows, the log's newer-lines button, About, the start card, a module's action row (`ActionRow`); primary (`Button::primary`), amber with `text_on_accent`, one in a dialog: Export's Export and an alert's default. A destructive button's words are `text`, as any button's: its words say what it does.
 - **Quiet buttons** (`ToolButton`): a plate only while touched, on the bars alone, the top panel's Import…, Export… and Reset, so a row of them is no wall of boxes.
 - **Icon buttons** (`IconButton`, and the jobs spinner) are always quiet. A toggle that is on shows its filled icon with no plate. A toggle with no filled form, a quad's picker, and a button whose menu is open, the ☰, » and ⋮ among them, are drawn pressed: `raised` with a `border` hairline.
-- **egui's own buttons left** (the Export dialog's preset line, Browse's folder lines, the start card's Open buttons, the log window's newer-lines pill) take the plate through the theme: `Theme::apply` maps egui's rest, hover and active onto `button`, `button_hover` and `button_pressed`, edged with `button_edge` and no other stroke. egui draws a focused widget as active, so these few show focus as pressed until they are the design system's.
+- **egui's own widgets left,** the gallery's selectable chips and the Export dialog's preset line, a list's line, take the plate through the theme: `Theme::apply` maps egui's rest, hover and active onto `button`, `button_hover` and `button_pressed`, `button_edge` on the pressed one alone, so a chip or a line at rest or under the pointer has no edge. egui draws a focused widget as active, so these show focus as pressed. Browse's folder lines are list lines: the rows' `hover` band and their focus ring.
+- **Not yet on the plate,** still on `hover` with the old ring: Not saved in the top panel, the window's caption buttons, the central bar's zoom and layer menu, the scopes' overlay buttons, and a section header's toggle ring.
 - **Tokens' roles:** `hover` is the rows' band alone (a choice row, a slider's value, a list's line); `accent_subtle` is behind something selected, never a press.
 
 ## Translation
@@ -1230,7 +1231,7 @@ flowchart LR
 - **Its size** is the person's: the one dialog they resize (`Dialog::resize`). It opens at 960 by 466 points the first time, the filters on one line and 380 points of lines, is never made smaller than 560 by 320, and opens next at the size it was left at, `log_window.size`, in whole points without the frame the host draws on Linux (`Output::LogSized`).
 - **The filters,** a bar of checkboxes at its top: Warnings and errors, then each of Log's options, wrapping onto further lines where the window is narrow, each box whole. They filter only what is shown, among what is kept, and change no setting. A domain not kept is drawn disabled, unticked, its tooltip "Not kept: turn it on in Settings › General › Diagnostics".
 - **The lines** take all the width and all the height the filters and the footer leave, at least three rows, in IBM Plex Mono at `text.small` and in columns: the seconds right-aligned in ten characters, as wide as the terminal writes them, the domain in ten, as long as the longest, `[settings]`, the line cut with "…" at the end; 20 points a row; warnings in `warning` and errors in `error` on a faint band of their colour. Drawn row by row, only those in view (`quiet_scroll_rows`, over egui's `ScrollArea::show_rows`), each a label to screen readers, inside a region of the log role named Lines. Past 20,000 lines the oldest go, and the first row says how many.
-- **Following the end:** while the view is at its end, new lines scroll it with them; scrolled up, it stays put, and a pill, "↓ 3 newer lines", goes back to the end.
+- **Following the end:** while the view is at its end, new lines scroll it with them; scrolled up, it stays put, and a text button over the lines, "↓ 3 newer lines", goes back to the end.
 - **The footer,** one line however narrow the window: where it is short the note gives way first, then the counts are cut with "…", and the two buttons are never cut. It holds the counts, in the language's number format, "1,284 lines kept · 1,107 shown · this session only, in memory", the note "Lines name your files and folders.", **Save to file…** and **Copy to clipboard**. Both take the lines shown as plain text, each as the terminal writes it. Save asks through the platform's save dialog (`dialogs::Saving`, rfd's, as the open dialog is), offering `apertrust-log-<the session's start, YYYY-MM-DD-HH-MM>.txt`, in Downloads the first time and then in the folder the last save went to (`log_window.folder`), and writes the file on a thread of its own, a failure a warning under `control`.
 - **Repaints:** the window reads the lines kept since its last frame into a copy of its own, never holding the log while it draws. A line kept wakes it through a waker the host hands it as its window is made (`Dialog::wake_with`), once until it next reads; nothing else draws it again.
 
@@ -2046,7 +2047,7 @@ A small icon toggle immediately right of Guides that shows the map in the centra
 - **States:**
   - off, the icon in secondary text;
   - on, the neutral toggled look, its filled icon in the text colour with no box, no amber, since a layout changes what is shown, not what the controls act on (the accent rule, [Product choices](#product-choices));
-  - under the pointer, `hover` behind it and the tooltip "Map (Shift+M)", the same words on or off, as a menu item keeps its words;
+  - under the pointer, the icon buttons' plate, `button`, behind it and the tooltip "Map (Shift+M)", the same words on or off, as a menu item keeps its words;
   - with keyboard focus, the focus ring.
 
   Never disabled while the bar shows, even with no photo active, since the map needs none. The first time Map is turned on it asks before any map tile is fetched; declining leaves Photo shown and the toggle off.

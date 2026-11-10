@@ -108,6 +108,20 @@ pub(crate) fn allocate(ui: &mut Ui, size: Vec2, enabled: bool) -> (Rect, Respons
     .inner
 }
 
+/// `ui`'s painter at the strength its own fades give it, but a disabled parent's: egui fades
+/// everything in a disabled `Ui` by `disabled_alpha`, and these controls dim by their tokens
+/// instead, so a disabled one looks the same whether it or its parent is disabled.
+pub(crate) fn undimmed_painter(ui: &Ui) -> Painter {
+    let mut painter = ui.painter().clone();
+    if !ui.is_enabled() {
+        let faded = ui.visuals().disabled_alpha();
+        if faded > 0.0 {
+            painter.set_opacity((painter.opacity() / faded).min(1.0));
+        }
+    }
+    painter
+}
+
 /// The plate a control is drawn on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Plate {

@@ -769,11 +769,13 @@ impl Theme {
             ));
         }
         // A plate's edge, where the theme draws one, carries the plate on the grounds it
-        // sits on: the high-contrast theme's, where plate and ground are both black.
+        // sits on: the high-contrast theme's, where plate and ground are both black. So does
+        // a disabled plate's, drawn in `text_disabled`.
         if c.button_edge.a() > 0 {
             menu_band.extend([
                 ("button_edge", c.button_edge, "panel", c.panel, CONTROL),
                 ("button_edge", c.button_edge, "raised", c.raised, CONTROL),
+                ("text_disabled", c.text_disabled, "panel", c.panel, CONTROL),
             ]);
         }
         let mut issues = Vec::new();
@@ -944,16 +946,18 @@ impl Theme {
         v.selection.stroke = Stroke::new(1.0, c.text);
         v.text_cursor.stroke = Stroke::new(2.0, c.accent_text);
 
-        // egui's own widgets that are left, as a few of its buttons, take the design
-        // system's plate: `button` at rest, a step up under the pointer, a step back while
-        // pressed, edged only where the theme edges plates. egui shows a focused widget as
-        // active, so those few show focus as pressed; the design system's own controls draw
-        // a ring instead (`components::Button`).
+        // egui's own widgets that are left, its selectable chips and frameless lines, take
+        // the design system's plate: `button` at rest, a step up under the pointer, a step
+        // back while pressed. Only the pressed one is a plate drawn whatever the widget, so
+        // only it takes the edge where the theme edges plates: a chip or a line at rest or
+        // under the pointer has none. egui shows a focused widget as active, so those few
+        // show focus as pressed; the design system's own controls draw a ring instead
+        // (`components::Button`).
         let w = &mut v.widgets;
         for (state, fill, border, text) in [
             (&mut w.noninteractive, c.panel, c.divider, c.text),
-            (&mut w.inactive, c.button, c.button_edge, c.text),
-            (&mut w.hovered, c.button_hover, c.button_edge, c.text),
+            (&mut w.inactive, c.button, Color32::TRANSPARENT, c.text),
+            (&mut w.hovered, c.button_hover, Color32::TRANSPARENT, c.text),
             (&mut w.active, c.button_pressed, c.button_edge, c.text),
             (&mut w.open, c.raised, c.border, c.text),
         ] {
@@ -1164,12 +1168,33 @@ mod tests {
         let c = Theme::builtin(Builtin::HighContrast).colors;
         assert_eq!(c.button_edge.a(), 255);
         assert!(contrast(c.button_edge, c.panel) >= TEXT_AAA);
-        // A theme that draws an edge too faint to see is named.
+        // A disabled plate's edge, text_disabled, is held to a control's part there too.
+        assert!((contrast(c.text_disabled, c.panel) - 6.25).abs() < 0.01);
+        let dim = Theme::from_toml(
+            r##"
+            extends = "high-contrast"
+            [colors]
+            text_disabled = "#404040"
+            "##,
+        )
+        .unwrap();
+        assert!(dim.check().iter().any(|issue| matches!(
+            issue,
+            Issue::Contrast {
+                token: "text_disabled",
+                against: "panel",
+                minimum: CONTROL,
+                ..
+            }
+        )));
+        // A theme that draws an edge too faint to see is named, its disabled edge readable
+        // there.
         let faint = Theme::from_toml(
             r##"
             extends = "dark"
             [colors]
             button_edge = "#3A3A3A"
+            text_disabled = "#9A9A9A"
             "##,
         )
         .unwrap();
@@ -1191,21 +1216,21 @@ mod tests {
     }
 
     #[test]
-    fn egui_s_own_widgets_take_the_plate_with_no_stroke_when_pressed() {
+    fn egui_s_own_widgets_take_the_plate_edged_only_when_pressed() {
         for which in Builtin::ALL {
             let theme = Theme::builtin(which);
             let ctx = egui::Context::default();
             set_theme(&ctx, theme.clone());
             let c = &theme.colors;
             let w = ctx.global_style().visuals.widgets.clone();
-            for (state, fill) in [
-                (w.inactive, c.button),
-                (w.hovered, c.button_hover),
-                (w.active, c.button_pressed),
+            for (state, fill, edge) in [
+                (w.inactive, c.button, Color32::TRANSPARENT),
+                (w.hovered, c.button_hover, Color32::TRANSPARENT),
+                (w.active, c.button_pressed, c.button_edge),
             ] {
                 assert_eq!(state.bg_fill, fill, "{which:?}");
                 assert_eq!(state.weak_bg_fill, fill, "{which:?}");
-                assert_eq!(state.bg_stroke.color, c.button_edge, "{which:?}");
+                assert_eq!(state.bg_stroke.color, edge, "{which:?}");
             }
         }
     }

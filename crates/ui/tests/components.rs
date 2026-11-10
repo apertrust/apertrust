@@ -19,8 +19,9 @@
 //! (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    ActionRow, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton, Mark, Marker, Quad,
-    Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, ToggleRow,
+    ActionRow, Button, Checkbox, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton,
+    Mark, Marker, Quad, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
+    ToggleRow,
 };
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::Role;
@@ -3232,4 +3233,49 @@ fn collapsible_groups_focused_and_under_the_pointer() {
         });
     assert!(band, "no hover band across Margins");
     harness.snapshot("collapsible-groups-focused-hovered");
+}
+
+/// A checkbox, a text button and an icon button inside a disabled parent are disabled as
+/// their own `enabled(false)` makes them: said disabled to screen readers, and drawn by the
+/// `text_disabled` rules at full strength, not faded as egui fades a disabled `Ui`.
+#[test]
+fn controls_in_a_disabled_parent_draw_as_disabled() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 120.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            ui.add_enabled_ui(false, |ui| {
+                let mut on = true;
+                Checkbox::new(&mut on, "Guides").show(ui);
+                Button::new("Close").show(ui);
+                IconButton::new(Icon::Reset, "Reset Exposure").show(ui);
+            });
+        });
+    harness.run();
+    for (role, name) in [
+        (Role::CheckBox, "Guides"),
+        (Role::Button, "Close"),
+        (Role::Button, "Reset Exposure"),
+    ] {
+        assert!(
+            harness
+                .get_by_role_and_label(role, name)
+                .accesskit_node()
+                .is_disabled(),
+            "{name}"
+        );
+    }
+    let c = Theme::default().colors;
+    let fills: Vec<Color32> = harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => Some(rect.fill),
+            _ => None,
+        })
+        .collect();
+    // The ticked box filled with text_disabled, the button keeping its plate, both whole.
+    assert!(fills.contains(&c.text_disabled), "{fills:?}");
+    assert!(fills.contains(&c.button), "{fills:?}");
 }

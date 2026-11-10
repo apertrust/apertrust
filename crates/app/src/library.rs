@@ -22,7 +22,9 @@
 
 use std::path::{Path, PathBuf};
 
-use apertrust_ui::components::{ActionRow, Section, SectionAction, group_label};
+use apertrust_ui::components::{
+    ActionRow, Button, Section, SectionAction, focus_ring_centred, group_label,
+};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{theme, tr, translator};
 use eframe::egui::{self, Align, Layout, Rect, Sense, UiBuilder, vec2};
@@ -132,17 +134,38 @@ fn name(path: &Path) -> String {
     )
 }
 
-/// One folder in a list: a button with no frame, the whole path in its tooltip, disabled
-/// with `missing` as its tooltip when it could not be opened.
+/// One folder in a list: a line, its name cut with … where it is too long, the rows' `hover`
+/// band under the pointer and the rows' focus ring, both 4 points beyond it at each end; the
+/// whole path in its tooltip, disabled with `missing` as its tooltip when it could not be
+/// opened.
 fn row(ui: &mut egui::Ui, label: &str, tip: &str, missing: Option<&str>) -> bool {
     let t = theme(ui.ctx());
-    let button = egui::Button::new(label).frame(false).truncate();
+    let size = vec2(ui.available_width(), t.sizes.panel_line);
     let response = ui
-        .allocate_ui_with_layout(
-            vec2(ui.available_width(), t.sizes.panel_line),
-            Layout::left_to_right(Align::Center),
-            |ui| ui.add_enabled(missing.is_none(), button),
-        )
+        .add_enabled_ui(missing.is_none(), |ui| {
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            if ui.is_rect_visible(rect) {
+                let painter = ui.painter();
+                let band = rect.expand2(vec2(t.spacing.xs, 0.0));
+                if response.hovered() && ui.is_enabled() {
+                    painter.rect_filled(band, t.shape.radius, t.colors.hover);
+                }
+                let font = egui::FontId::proportional(t.text.body);
+                let mut job =
+                    egui::text::LayoutJob::simple_singleline(label.to_owned(), font, t.colors.text);
+                job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width());
+                let galley = painter.layout_job(job);
+                let at = egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0);
+                painter.galley(at, galley, t.colors.text);
+                if response.has_focus() {
+                    focus_ring_centred(painter, band, &t);
+                }
+            }
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label)
+            });
+            response
+        })
         .inner;
     match missing {
         Some(why) => {
@@ -300,16 +323,16 @@ pub fn empty_state(
             );
             if buttons {
                 ui.add_space(t.spacing.s);
-                let size = vec2(width - 2.0 * margin, t.sizes.control);
                 for (id, keys, action) in [
                     ("action-open-folder", &keys.folder, Action::OpenFolder),
                     ("action-open", &keys.image, Action::OpenImage),
                 ] {
-                    let mut button = egui::Button::new(tr(ui.ctx(), id));
+                    let words = tr(ui.ctx(), id);
+                    let mut button = Button::new(&words).width(width - 2.0 * margin);
                     if let Some(keys) = keys {
-                        button = button.shortcut_text(keys.as_str());
+                        button = button.keys(keys);
                     }
-                    if ui.add_sized(size, button).clicked() {
+                    if button.show(ui).clicked() {
                         actions.push(action);
                     }
                 }
@@ -526,9 +549,15 @@ mod tests {
         let mut harness = card(Folder::None, recent);
         harness.run();
         harness.get_by_label("Open a folder to start");
-        harness.get_by_label("Open Folder… Ctrl+Shift+O").click();
+        let folder = harness.get_by_label("Open Folder…");
+        // The keys are the button's shortcut, not part of its name.
+        assert_eq!(
+            folder.accesskit_node().data().keyboard_shortcut(),
+            Some("Ctrl+Shift+O")
+        );
+        folder.click();
         harness.run();
-        harness.get_by_label("Open Image… Ctrl+O").click();
+        harness.get_by_label("Open Image…").click();
         harness.run();
         harness.get_by_label("Portraits").click();
         harness.run();
@@ -548,7 +577,7 @@ mod tests {
         let mut empty = card(listing(0, true), Vec::new());
         empty.run();
         empty.get_by_label("No raw photos in Wedding");
-        empty.get_by_label("Open Folder… Ctrl+Shift+O");
+        empty.get_by_label("Open Folder…");
 
         let failed = Folder::Failed {
             path: PathBuf::from("/photos/gone"),

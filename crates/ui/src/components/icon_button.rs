@@ -25,7 +25,7 @@
 
 use egui::{Popup, Rect, Response, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, vec2};
 
-use super::plate::{ButtonState, Plate, Touch, paint_focus, paint_plate};
+use super::plate::{ButtonState, Plate, Touch, paint_focus, paint_plate, undimmed_painter};
 use super::{icon_colour, report_shortcut};
 use crate::{Icon, popup, theme};
 
@@ -100,7 +100,7 @@ impl<'a> IconButton<'a> {
         let side = self
             .size
             .unwrap_or_else(|| (self.icon.size() + 8.0).max(t.sizes.control));
-        let enabled = self.enabled && self.state != Some(ButtonState::Disabled);
+        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let sense = if enabled {
             Sense::click()
         } else {
@@ -112,7 +112,7 @@ impl<'a> IconButton<'a> {
         // quad's picker, and a button whose menu is open, are drawn pressed, in a box.
         let filled = self.icon.filled() != self.icon;
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
+            let painter = &undimmed_painter(ui);
             let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
             let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&response))
                 || popup::is_open(ui.ctx(), popup::button_menu(response.id));
@@ -231,7 +231,7 @@ impl<'a> ToolButton<'a> {
 
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
-        let enabled = self.enabled && self.state != Some(ButtonState::Disabled);
+        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let colour = if enabled {
             t.colors.text
         } else {
@@ -250,7 +250,7 @@ impl<'a> ToolButton<'a> {
         };
         let (rect, response) = ui.allocate_exact_size(size, sense);
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
+            let painter = &undimmed_painter(ui);
             let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
             paint_plate(painter, rect, Plate::Quiet, touch, &t);
             let mut x = rect.left() + t.spacing.m;

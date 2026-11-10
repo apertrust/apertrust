@@ -21,7 +21,10 @@
 
 use egui::{Color32, FontId, Response, Role, Ui, WidgetInfo, pos2, vec2};
 
-use super::plate::{ButtonState, Plate, Touch, allocate, paint_focus, paint_plate, words_colour};
+use super::plate::{
+    ButtonState, Plate, Touch, allocate, paint_focus, paint_plate, undimmed_painter, words_colour,
+};
+use super::report_shortcut;
 use crate::theme;
 
 pub struct Button<'a> {
@@ -29,6 +32,8 @@ pub struct Button<'a> {
     primary: bool,
     enabled: bool,
     tip: Option<&'a str>,
+    keys: Option<&'a str>,
+    width: f32,
     state: Option<ButtonState>,
 }
 
@@ -40,6 +45,8 @@ impl<'a> Button<'a> {
             primary: false,
             enabled: true,
             tip: None,
+            keys: None,
+            width: 0.0,
             state: None,
         }
     }
@@ -64,6 +71,20 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// The keys that do the same, in the platform's spelling (`Ctrl+O`), shown at its end in
+    /// `text_secondary` and told to screen readers as its shortcut.
+    pub fn keys(mut self, keys: &'a str) -> Self {
+        self.keys = Some(keys);
+        self
+    }
+
+    /// At least `width` points wide, its words at its start and its keys at its end, as the
+    /// start card's buttons fill its width.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
+    }
+
     /// Draws it in `state` whatever the pointer and the keys do, as the gallery shows each
     /// state.
     pub fn state(mut self, state: ButtonState) -> Self {
@@ -73,15 +94,21 @@ impl<'a> Button<'a> {
 
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
-        let enabled = self.enabled && self.state != Some(ButtonState::Disabled);
+        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let font = FontId::proportional(t.text.body);
-        let galley = ui
-            .painter()
-            .layout_no_wrap(self.text.to_owned(), font, Color32::PLACEHOLDER);
-        let size = vec2(galley.size().x + 2.0 * t.spacing.m, t.sizes.control);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(self.text.to_owned(), font.clone(), Color32::PLACEHOLDER);
+        let keys = self.keys.map(|keys| {
+            ui.painter()
+                .layout_no_wrap(keys.to_owned(), font, Color32::PLACEHOLDER)
+        });
+        let keys_width = keys.as_ref().map_or(0.0, |k| t.spacing.l + k.size().x);
+        let width = galley.size().x + keys_width + 2.0 * t.spacing.m;
+        let size = vec2(width.max(self.width), t.sizes.control);
         let (rect, response) = allocate(ui, size, enabled);
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
+            let painter = &undimmed_painter(ui);
             let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
             let plate = if self.primary {
                 Plate::Primary
@@ -90,14 +117,29 @@ impl<'a> Button<'a> {
             };
             paint_plate(painter, rect, plate, touch, &t);
             let at = pos2(
-                rect.center().x - galley.size().x / 2.0,
+                rect.left() + t.spacing.m,
                 rect.center().y - galley.size().y / 2.0,
             );
             painter.galley(at, galley, words_colour(&t, plate, touch));
+            if let Some(keys) = keys {
+                let colour = if touch.enabled {
+                    t.colors.text_secondary
+                } else {
+                    t.colors.text_disabled
+                };
+                let at = pos2(
+                    rect.right() - t.spacing.m - keys.size().x,
+                    rect.center().y - keys.size().y / 2.0,
+                );
+                painter.galley(at, keys, colour);
+            }
             paint_focus(painter, rect, t.shape.radius, touch, &t);
         }
         let text = self.text;
         response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+        if let Some(keys) = self.keys {
+            report_shortcut(ui, response.id, keys);
+        }
         match self.tip {
             Some(tip) => response.on_hover_text(tip).on_disabled_hover_text(tip),
             None => response,

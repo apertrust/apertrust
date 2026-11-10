@@ -261,8 +261,8 @@ fn focus_ring(painter: &Painter, rect: Rect, t: &Theme) {
 }
 
 /// The ring centred on `rect`'s edge, while focus rings show: around a whole row, whose
-/// neighbours an outside ring would run into.
-fn focus_ring_centred(painter: &Painter, rect: Rect, t: &Theme) {
+/// neighbours an outside ring would run into, as a list's line in the app is.
+pub fn focus_ring_centred(painter: &Painter, rect: Rect, t: &Theme) {
     ring(painter, rect, t, StrokeKind::Middle);
 }
 

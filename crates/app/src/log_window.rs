@@ -401,20 +401,19 @@ impl Window {
             let mut args = apertrust_ui::i18n::Args::new();
             args.set("count", self.newer as f64);
             let said = words.text_with("log-newer", Some(&args));
-            let font = FontId::proportional(t.text.small);
+            // A text button, as wide as its words and their padding.
+            let font = FontId::proportional(t.text.body);
             let width = ui
                 .painter()
                 .layout_no_wrap(said.clone(), font, t.colors.text)
                 .size()
                 .x;
-            let size = vec2(width + 2.0 * t.spacing.l, t.sizes.row);
+            let size = vec2(width + 2.0 * t.spacing.m, t.sizes.control);
             let area = scope.inner;
             let at = area.max - size - vec2(t.spacing.xxl, t.spacing.l);
-            let pill = egui::Button::new(egui::RichText::new(said).size(t.text.small))
-                .corner_radius(size.y / 2.0);
             // Over the lines, in a child that moves nothing after it.
             let mut over = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(at, size)));
-            if over.add_sized(size, pill).clicked() {
+            if Button::new(&said).show(&mut over).clicked() {
                 self.to_end = true;
                 self.newer = 0;
                 ctx.request_repaint();

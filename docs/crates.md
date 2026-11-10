@@ -695,7 +695,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - `ChoiceStyle::Boxed`, the default;
 - `Blended`, darktable's combobox: its option right-aligned with ⌄ after it, its stroke ending where slider values end, no box and no minimum width, the hover band across the row and the focus ring round it, and the kept marker a slider row has (`Choice::mark`, `ChoiceAction::ToggleKeep`).
 
-**Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`), `IconButton` and `ToolButton`, the bars' quiet one, drawn from one plate and one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
+**Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`; at least a width, with the keys that do the same at its end, `Button::width` and `Button::keys`), `IconButton` and `ToolButton`, the bars' quiet one, drawn from one plate and one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
 
 **Others:** `Segmented`, `Swatches`, `ToggleRow` for a module's checkboxes, `ActionRow` for its buttons, drawn disabled until their tools come, and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
 
