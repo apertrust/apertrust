@@ -229,7 +229,9 @@ pub trait Dialog: Any + std::fmt::Debug {
     /// Its stable name, which tells one dialog from another and names it in the log, never
     /// translated.
     fn id(&self) -> &'static str;
-    /// Its title, which its window takes and screen readers read, in `ctx`'s language.
+    /// Its title, which its window takes and screen readers read, in `ctx`'s language. It
+    /// belongs to the window's frame, the system's or the host's on Linux, which shows it;
+    /// the content draws it only where the frame has none, in the Mac's sheet.
     fn title(&self, ctx: &egui::Context) -> String;
     /// The form it asks for on `os`, which [`platform::form`] turns into the one the
     /// platform gives.
@@ -346,8 +348,8 @@ pub enum Gesture {
 }
 
 /// The height of the strip at a dialog window's top where the host draws its frame, in
-/// points: its close button and the space a drag moves the window from.
-const FRAME: f32 = 32.0;
+/// points: its close button, the window's title and the space a drag moves the window from.
+pub(crate) const FRAME: f32 = 32.0;
 
 /// The transparent margin round a shadowed dialog's card ([`platform::shadowed`]), in
 /// points, on each side, where its shadow is drawn.
@@ -485,7 +487,10 @@ pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
                     .width()
                     .min(ui.clip_rect().right() - top.x);
                 let strip = egui::Rect::from_min_size(top, egui::vec2(width, FRAME));
-                (gesture, closed) = frame(ui, strip);
+                // A dialog's title is its window's frame's; an alert's body starts with its
+                // own, as every platform's alerts do.
+                let shown = (role != Role::AlertDialog).then_some(title.as_str());
+                (gesture, closed) = frame(ui, strip, shown);
             }
         });
     });
@@ -519,9 +524,10 @@ pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
 
 /// The frame the host draws at the top of a dialog's window (`platform::draws_frame`),
 /// in `strip`: the close button at its end, in the main window's caption style, which
-/// closes the dialog as its Cancel; a drag on the rest moves the window, and a right-click
-/// opens the window's menu. The button comes after the content in the focus order.
-fn frame(ui: &mut egui::Ui, strip: egui::Rect) -> (Option<Gesture>, bool) {
+/// closes the dialog as its Cancel, and `title`, if given, centred ([`frame_title`]); a
+/// drag on the rest, the title included, moves the window, and a right-click opens the
+/// window's menu. The button comes after the content in the focus order.
+fn frame(ui: &mut egui::Ui, strip: egui::Rect, title: Option<&str>) -> (Option<Gesture>, bool) {
     let ctx = ui.ctx().clone();
     let t = theme(&ctx);
     // First, so the button over it takes its own presses.
@@ -536,7 +542,10 @@ fn frame(ui: &mut egui::Ui, strip: egui::Rect) -> (Option<Gesture>, bool) {
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     let name = apertrust_ui::tr(&ctx, "window-close");
-    let closed = caption_button(&mut end, Icon::Close, &name, true, &t).clicked();
+    let close = caption_button(&mut end, Icon::Close, &name, true, &t);
+    if let Some(title) = title {
+        frame_title(ui, strip, close.rect, title);
+    }
     let gesture = if empty.drag_started_by(egui::PointerButton::Primary) {
         Some(Gesture::Move)
     } else if empty.secondary_clicked() {
@@ -544,7 +553,35 @@ fn frame(ui: &mut egui::Ui, strip: egui::Rect) -> (Option<Gesture>, bool) {
     } else {
         None
     };
-    (gesture, closed)
+    (gesture, close.clicked())
+}
+
+/// Draws a dialog's `title` in its frame's `strip`, as GNOME's own windows show theirs: on
+/// one line in the body's size, Medium and `text_strong`, centred on the strip but kept
+/// clear of its close button, at `close`, by a gap at each side, moved towards the start
+/// where it would reach the button and cut with … where the room is too short. Only painted:
+/// it takes no press, so a drag on it moves the window, and it adds no node, since the
+/// window is named by its title already.
+fn frame_title(ui: &egui::Ui, strip: egui::Rect, close: egui::Rect, title: &str) {
+    let t = theme(ui.ctx());
+    let gap = t.spacing.l;
+    let (start, end) = (strip.left() + gap, close.left() - gap);
+    if end <= start {
+        return;
+    }
+    let font = egui::FontId::new(
+        t.text.body,
+        egui::FontFamily::Name(apertrust_ui::fonts::MEDIUM.into()),
+    );
+    let mut job =
+        egui::text::LayoutJob::simple_singleline(title.to_owned(), font, t.colors.text_strong);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(end - start);
+    let galley = ui.painter().layout_job(job);
+    let width = galley.size().x;
+    let left = (strip.center().x - width / 2.0).clamp(start, (end - width).max(start));
+    let top = strip.center().y - galley.size().y / 2.0;
+    ui.painter()
+        .galley(egui::pos2(left, top), galley, t.colors.text_strong);
 }
 
 /// Draws a dialog's buttons at the end of a row, in the order given, which is to be the
@@ -2143,6 +2180,27 @@ fn ready<T>(future: impl Future<Output = T>) -> Option<T> {
     }
 }
 
+/// Every text a frame painted, from `output`, with where it was painted: what screen readers
+/// never meet, as the frame's title.
+#[cfg(test)]
+pub(crate) fn painted(output: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+    fn texts(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+        match shape {
+            egui::Shape::Text(text) => {
+                let at = text.galley.rect.translate(text.pos.to_vec2());
+                out.push((text.galley.text().to_owned(), at));
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| texts(s, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &output.shapes {
+        texts(&clipped.shape, &mut out);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2561,6 +2619,177 @@ mod tests {
                 "menu"
             );
         }
+    }
+
+    /// The strip at the top of the window drawn in `harness`, from the window's start to
+    /// the end of its close, the last button so named, and the texts its last frame painted
+    /// in it.
+    fn strip<T>(harness: &Harness<'_, T>) -> (egui::Rect, Vec<(String, egui::Rect)>) {
+        let close = harness
+            .query_all_by_role_and_label(Role::Button, "Close")
+            .last()
+            .expect("the frame's close")
+            .rect();
+        let window = harness
+            .query_all_by_role(Role::Dialog)
+            .chain(harness.query_all_by_role(Role::AlertDialog))
+            .next()
+            .expect("the window's node")
+            .rect();
+        let strip =
+            egui::Rect::from_min_max(egui::pos2(window.left(), close.top()), close.right_bottom());
+        assert_eq!(strip.height(), FRAME);
+        let texts = painted(harness.output())
+            .into_iter()
+            .filter(|(_, at)| strip.expand(0.5).contains_rect(*at))
+            .collect();
+        (strip, texts)
+    }
+
+    #[test]
+    fn on_linux_the_strip_shows_the_window_s_title_centred_and_clear_of_close() {
+        let mut harness = settings_on(OperatingSystem::Nix, &[]);
+        let (strip, titles) = strip(&harness);
+        let [(title, at)] = &titles[..] else {
+            panic!("one title: {titles:?}");
+        };
+        assert_eq!(title, "Settings");
+        // Centred on the strip, both ways, and clear of the close by a gap.
+        let close = harness
+            .query_all_by_role_and_label(Role::Button, "Close")
+            .last()
+            .expect("the frame's close")
+            .rect();
+        assert!(
+            (at.center().x - strip.center().x).abs() < 0.5,
+            "{at:?} {strip:?}"
+        );
+        assert!(
+            (at.center().y - strip.center().y).abs() < 0.5,
+            "{at:?} {strip:?}"
+        );
+        let gap = Theme::default().spacing.l;
+        assert!(at.right() + gap <= close.left(), "{at:?} {close:?}");
+        // No node of its own: the window is named by its title once, the nodes so named
+        // those Windows has, and the close is still the last button.
+        let named = |harness: &Harness<'_, Bench>| -> Vec<Role> {
+            harness
+                .query_all_by_label("Settings")
+                .map(|node| node.accesskit_node().role())
+                .collect()
+        };
+        let windows = settings_on(OperatingSystem::Windows, &[]);
+        assert_eq!(named(&harness), named(&windows));
+        assert_eq!(named(&harness)[0], Role::Dialog);
+        let last = harness
+            .query_all_by_role(Role::Button)
+            .last()
+            .expect("buttons");
+        assert_eq!(last.rect(), close);
+        // A drag on the title moves the window.
+        let from = at.center();
+        harness.drag_at(from);
+        harness.hover_at(from + egui::vec2(30.0, 0.0));
+        harness.run();
+        harness.drop_at(from + egui::vec2(30.0, 0.0));
+        harness.run();
+        let asked = &harness.state().asked;
+        assert!(asked.iter().any(|d| d.gesture == Some(Gesture::Move)));
+        assert!(!harness.state().closed());
+        // The Mac's and Windows' frames are the system's: the host draws no title, and the
+        // content none of its own.
+        let titles = |harness: &Harness<'_, Bench>| {
+            painted(harness.output())
+                .into_iter()
+                .filter(|(text, _)| text == "Settings")
+                .count()
+        };
+        for os in [OperatingSystem::Mac, OperatingSystem::Windows] {
+            assert_eq!(
+                titles(&settings_on(os, &[])) + 1,
+                titles(&harness),
+                "{os:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_title_too_long_for_the_strip_is_cut_short_of_the_close() {
+        #[derive(Debug)]
+        struct Long;
+        impl Dialog for Long {
+            fn id(&self) -> &'static str {
+                "long"
+            }
+            fn title(&self, _: &egui::Context) -> String {
+                "A title far too long for the narrow window it names".to_owned()
+            }
+            fn form(&self, _: OperatingSystem) -> Form {
+                Form::Modal
+            }
+            fn look(&self, t: &apertrust_ui::Theme) -> Look {
+                Look {
+                    background: t.colors.panel,
+                    margin: 0.0,
+                }
+            }
+            fn keys(&self, _: OperatingSystem) -> Keys {
+                Keys::default()
+            }
+            fn show(&mut self, ui: &mut egui::Ui) -> Asks {
+                ui.allocate_exact_size(egui::vec2(240.0, 100.0), egui::Sense::hover());
+                Asks::default()
+            }
+        }
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 200.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(|ui| {
+                draw(ui, &mut Long);
+            });
+        harness.run();
+        let close = harness.get_by_role_and_label(Role::Button, "Close").rect();
+        let (strip, titles) = strip(&harness);
+        let [(_, at)] = &titles[..] else {
+            panic!("one title: {titles:?}");
+        };
+        let gap = Theme::default().spacing.l;
+        assert!(at.left() >= strip.left() + gap - 0.5, "{at:?} {strip:?}");
+        assert!(at.right() + gap <= close.left() + 0.5, "{at:?} {close:?}");
+        let cut =
+            harness.output().shapes.iter().any(
+                |clipped| matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.elided),
+            );
+        assert!(cut, "cut with …");
+    }
+
+    #[test]
+    fn on_linux_an_alert_s_strip_shows_no_title_since_its_body_starts_with_it() {
+        let answer = Rc::new(Cell::new(None));
+        let request = alert::Request::new("Overwrite?", "The old files go.")
+            .button("Overwrite", alert::Role::Destructive)
+            .button("Cancel", alert::Role::Cancel);
+        let wake = egui::Context::default();
+        let dialog = alert_dialog::AlertDialog::new(&request, Rc::clone(&answer), &wake);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(480.0, 240.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, dialog: &mut alert_dialog::AlertDialog| {
+                    draw(ui, dialog);
+                },
+                dialog,
+            );
+        harness.run();
+        let (_, texts) = strip(&harness);
+        assert!(texts.is_empty(), "{texts:?}");
+        let titles: Vec<_> = painted(harness.output())
+            .into_iter()
+            .filter(|(text, _)| text == "Overwrite?")
+            .collect();
+        assert_eq!(titles.len(), 1, "the body's alone: {titles:?}");
     }
 
     #[test]
