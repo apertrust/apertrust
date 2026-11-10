@@ -40,7 +40,7 @@ In the first pass it is the Sigmoid module, a tone mapper of its own in the Base
 ## Pipeline
 
 - **darktable position:** 45.3 in the v5.0 order (`src/common/iop_order.c`, `v50_order`): after rgb levels (43), base curve (44) and filmic (45), before AgX (45.5) and filmic rgb (46).
-- **Apertrust slot:** working space 45.3, darktable's place: after RGB levels (43), before AgX (45.5), as `docs/engine.md`'s Order table has it (decision 22).
+- **Apertrust slot:** working space 45.3, darktable's place: after RGB levels (43), before AgX (45.5), as `crates/operations/order.md`'s table has it (decision 22).
 - **Domain:** scene-referred in, display-referred out (`Domain::Scene` in the manifest), as AgX's.
 - **Input and output:** working RGB, linear Rec2020, in and out; alpha passes through. The output is linear and display-referred: middle grey 0.1845, the target white (1.0 by default) as the curve's limit. Hue preservation and the purity matrix can move channels slightly outside [0, white]; nothing clips them.
 - **Assumes earlier modules:** demosaic, white balance or colour calibration, and exposure placing middle grey near 0.1845, which the curve keeps. Negative input (out-of-gamut camera colours) is handled by `_desaturate_negative_values`.

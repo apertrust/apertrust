@@ -16,11 +16,11 @@
 
 //! The pipeline order (decision 22): no two operations share a slot, the numbers rise
 //! with the stages so the number alone gives the order, and every built-in operation sits
-//! where `docs/engine.md`'s Order table puts it, on an unedited photo or not as it says.
+//! where `crates/operations/order.md`'s table puts it, on an unedited photo or not as it says.
 
 use apertrust_operations::{KERNELS, OPERATIONS};
 
-/// One row of `docs/engine.md`'s Order table: the operation's id, its slot as a manifest
+/// One row of `crates/operations/order.md`'s table: the operation's id, its slot as a manifest
 /// prints it (`working space 28.5`), and whether an unedited photo runs it.
 struct Row {
     id: String,
@@ -28,16 +28,11 @@ struct Row {
     unedited: bool,
 }
 
-/// The rows of the table under `## Order`.
+/// The rows of `crates/operations/order.md`'s table.
 fn table() -> Vec<Row> {
     // A Windows checkout may end its lines with CRLF.
-    let doc = include_str!("../../../docs/engine.md").replace("\r\n", "\n");
-    let section = doc
-        .split("\n## Order\n")
-        .nth(1)
-        .expect("engine.md has an Order section");
-    section
-        .lines()
+    let doc = include_str!("../order.md").replace("\r\n", "\n");
+    doc.lines()
         .skip_while(|line| !line.starts_with('|'))
         .take_while(|line| line.starts_with('|'))
         // The header and its rule.
@@ -63,7 +58,7 @@ fn every_operation_sits_where_the_order_table_puts_it() {
         let row = rows
             .iter()
             .find(|row| row.id == manifest.id)
-            .unwrap_or_else(|| panic!("{} is not in engine.md's Order table", manifest.id));
+            .unwrap_or_else(|| panic!("{} is not in order.md's table", manifest.id));
         assert_eq!(manifest.slot.to_string(), row.slot, "{}", manifest.id);
         assert_eq!(manifest.default_enabled, row.unedited, "{}", manifest.id);
     }

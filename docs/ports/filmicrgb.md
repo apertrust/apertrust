@@ -35,7 +35,7 @@ In the first pass it is the Filmic RGB module, a tone mapper of its own in the B
 ## Pipeline
 
 - **darktable position:** 46.0 in the v5.0 order (`src/common/iop_order.c`, `v50_order`): after rgb levels (43), base curve (44), filmic (45), sigmoid (45.3) and AgX (45.5), before lut3d (listed after it) and colisa (47).
-- **Apertrust slot:** working space 46.0, darktable's place: after AgX (45.5), the last of the tone mappers, before local contrast (display 54), as `docs/engine.md`'s Order table has it (decision 22).
+- **Apertrust slot:** working space 46.0, darktable's place: after AgX (45.5), the last of the tone mappers, before local contrast (display 54), as `crates/operations/order.md`'s table has it (decision 22).
 - **Domain:** scene-referred in, display-referred out, as AgX and sigmoid (`Domain::Scene` in the manifest, AgX's choice).
 - **Input and output:** working RGB, linear Rec2020, in and out; alpha passes through. The output is linear display light: the curve's black and white targets as its limits, middle grey at the grey target.
 - **Assumes earlier modules:** demosaic, white balance or colour calibration, and exposure placing middle grey near the grey source. Negative input (out-of-gamut camera colours) is handled per colour science (Per pixel).

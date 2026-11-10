@@ -222,34 +222,7 @@ Operations whose maths depends on position (the CFA pattern, vignetting, lens co
 
 Every operation has one place, its slot: the stage it reads and a number (decisions 21 and 22). The planner sorts by stage, then number. Users can neither reorder operations nor add instances outside layers (decision 34).
 
-The order is darktable's v5.0 order (`src/common/iop_order.c`, `v50_order`) throughout in the first pass (decision 22). The table describes what is built and changes with the manifests, since `crates/operations/tests/order.rs` holds the two together. "Driven by" names the first pass's modules, darktable's (decision 2, [modules/README.md](modules/README.md)).
-
-| Operation | Slot | On an unedited photo | darktable, v5.0 | Driven by |
-| --- | --- | --- | --- | --- |
-| rawprepare | raw 1 | yes | 1 | Raw black/white point |
-| temperature | raw 3 | yes | 3 | White balance, darktable's white balance module (decision 27) |
-| highlights | raw 4 | yes | 4 | Highlight reconstruction |
-| demosaic | raw 8 | yes | 8 | Demosaic |
-| hazeremoval | camera RGB 14 | no | 14.0, after lens correction and chromatic aberrations, before rotate and perspective | Haze removal |
-| flip (orientation) | camera RGB 16 | yes | 16; at no rotation it runs no pass and leaves the plan, as darktable disables its piece | Orientation |
-| exposure | camera RGB 21 | yes | 21 | Exposure |
-| toneequal | camera RGB 24 | no | 24.0, before crop and colorin | Tone equalizer |
-| colorin | camera RGB 28 | yes | 28 | Input colour profile |
-| channelmixerrgb (colour calibration) | working space 28.5 | yes | 28.5, first of its group | Colour calibration, its CAT tab included (decision 27) |
-| primaries | working space 28.9 | no, as in darktable | 28.5, last of its group | RGB primaries |
-| colorequal | working space 41.2 | no | 41.2, after colorbalance, before color balance rgb | Colour equalizer |
-| colorbalancergb | working space 41.5 | no, as in darktable (decision 32) | 41.5 | Colour balance RGB |
-| rgbcurve | working space 42 | no | 42.0, before rgb levels and the tone mappers | RGB curve, one instance |
-| rgblevels | working space 43 | no | 43.0, after rgb curve, before the tone mappers | RGB levels |
-| sigmoid | working space 45.3 | no | 45.3, before agx | Sigmoid, once an edit can choose it as its tone mapper (decision 33) |
-| agx | working space 45.5 | yes | 45.5 | AgX, while it is the edit's tone mapper (decision 33) |
-| filmicrgb | working space 46 | no | 46.0, after agx | Filmic RGB, once an edit can choose it as its tone mapper (decision 33) |
-| bilat (local contrast) | display 54 | no | 54 | Local contrast |
-| bloom | display 61 | no | 61 | Bloom |
-| grain | display 65 | no | 65 | Grain |
-| soften | display 66 | no | 66 | Soften |
-| vignette | display 68 | no | 68 | Vignetting |
-| colorout | display 70 | yes | 70 | Output colour profile |
+The order is darktable's v5.0 order (`src/common/iop_order.c`, `v50_order`) throughout in the first pass (decision 22). Each built operation's slot, whether an unedited photo runs it, its place in darktable and the module that drives it are in [crates/operations/order.md](../crates/operations/order.md), a table of its own because `crates/operations/tests/order.rs` reads it and holds it to the manifests.
 
 **Rules** (decision 22):
 
@@ -2222,7 +2195,7 @@ A still takes minutes on WARP, so background stills are off on a software GPU if
   - temperature and demosaic: the image description carries darktable's buffer-descriptor state, and demosaic writes the declared crop from planes of the whole mosaic. Through demosaic the raw stage matches darktable to a mean of 1e-8 to 1e-7;
   - highlight reconstruction's inpaint opposed, the first reduction, matches darktable's CPU loops within 2e-6 on synthetic mosaics, and darktable itself on the 29 corpus mosaics whose decoders and camera matrices agree.
 - **The engine,** on any adapter, CI's software GPUs included:
-  - planning, without a GPU: slot order, regions, buffer assignment; no two built-in operations sharing a slot, the numbers rising with the stages, and every built-in operation at its slot in the [order table](#order) (decision 22, `crates/operations/tests/order.rs`); row strips and their windows; the 7R V's and the X-T5's exports fitting lavapipe's 128 MiB (`crates/engine/tests/limits.rs`);
+  - planning, without a GPU: slot order, regions, buffer assignment; no two built-in operations sharing a slot, the numbers rising with the stages, and every built-in operation at its slot in [crates/operations/order.md](../crates/operations/order.md) (decision 22, `crates/operations/tests/order.rs`); row strips and their windows; the 7R V's and the X-T5's exports fitting lavapipe's 128 MiB (`crates/engine/tests/limits.rs`);
   - a render from a restart point equals a full render, bit for bit;
   - a tiled export equals an untiled one, bit for bit, Bayer and X-Trans, in the tests and on real raws, through a rotation and a turn too (decision 16; through a test-only quarter turn and window, built, `geometry.rs`);
   - geometry (decision 16): extents and regions through each geometry on the CPU, against darktable's numbers for its module; each geometry's kernel against its CPU map on a grid; points forward then back within a pixel; the viewport fitted to the output extent. Built for the test-only window and quarter turn (`crates/engine/tests/geometry.rs`; [Geometry](#geometry), Tests), each port adding darktable's numbers for its module, with the operations with whole-image passes after them rendering as on the turned or windowed image and the edit cache kept through the turn; and a plan without geometry planned unchanged, keys included;

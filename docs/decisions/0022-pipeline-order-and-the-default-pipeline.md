@@ -13,7 +13,7 @@ In what order do operations run, and which run on a photo nobody has edited? dar
 - An operation keeps darktable's v5.0 number where it keeps darktable's place. darktable's place is its position in the list, which is its real order; where a number disagrees with the list (lut3d's 36, listed between 46.0 and 47.0), the operation takes a number between its list neighbours.
 - No two operations share a slot, and the numbers rise with the stages, so the number alone gives the order.
 - darktable's other operations at 28.5 take numbers after colour calibration in darktable's list order: RGB primaries is 28.9, the rest between 28.5 and 28.9.
-- `crates/operations/tests/order.rs` holds every built-in operation to the Order table in [engine.md](../engine.md) and `KERNELS` to the same order. A third-party plugin whose slot breaks a rule is refused at load.
+- `crates/operations/tests/order.rs` holds every built-in operation to the table in [crates/operations/order.md](../../crates/operations/order.md) and `KERNELS` to the same order. A third-party plugin whose slot breaks a rule is refused at load.
 
 **The default pipeline:** an unedited colour raw runs nine operations, each a manifest with `default_enabled`:
 

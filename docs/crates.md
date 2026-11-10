@@ -849,7 +849,7 @@ Sigmoid and filmic rgb are planned for an edit that chooses either as its tone m
 
 ## apertrust-operations
 
-The list of built-in operations, `OPERATIONS`: all twenty-four in darktable's v5.0 order (decision 22), and their kernels. Decision 22's eight, colour calibration (decision 27) and orientation, which darktable enables on every image at auto, are `default_enabled`. Tests hold the enabled set to those ten, and every slot to [docs/engine.md](engine.md)'s Order table.
+The list of built-in operations, `OPERATIONS`: all twenty-four in darktable's v5.0 order (decision 22), and their kernels. Decision 22's eight, colour calibration (decision 27) and orientation, which darktable enables on every image at auto, are `default_enabled`. Tests hold the enabled set to those ten, and every slot to [crates/operations/order.md](../crates/operations/order.md)'s table.
 
 ## apertrust-base
 

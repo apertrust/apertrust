@@ -85,7 +85,7 @@ Decision 22. A slot is the stage whose data the operation reads (raw, camera RGB
 
 - Demosaic and the tone mapper are operations within a stage, not anchors of their own.
 - An operation keeps darktable's v5.0 number where it keeps darktable's place. Otherwise it takes a number between its new neighbours in that list, its spec saying why; so does one whose darktable number disagrees with its list position, as lut3d's 36, listed after filmic rgb (46.0), does. The first pass keeps darktable's place for every operation.
-- No two operations share a slot, and the numbers rise with the stages. `crates/operations/tests/order.rs` holds the two rules, and every built-in operation to engine.md's [order table](engine.md#order).
+- No two operations share a slot, and the numbers rise with the stages. `crates/operations/tests/order.rs` holds the two rules, and every built-in operation to [crates/operations/order.md](../crates/operations/order.md).
 
 ## The image context
 
