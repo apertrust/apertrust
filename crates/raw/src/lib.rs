@@ -276,8 +276,9 @@ impl RawFile {
     }
 
     /// What [`RawFile::decode`] gives but the pixels, which are empty, of the kind the
-    /// decode's are: rawler's decode with its pixels skipped, so in milliseconds.
-    pub fn metadata(&self) -> Result<RawImage, Error> {
+    /// decode's are: rawler's decode with its pixels skipped, so in milliseconds. The
+    /// shooting data comes from the same parse of the metadata, `None` where it fails.
+    pub fn metadata(&self) -> Result<(RawImage, Option<Exif>), Error> {
         let start = Instant::now();
         let raw = decode_raw(&self.source, true)?;
         let ms = start.elapsed().as_secs_f64() * 1e3;
@@ -285,20 +286,15 @@ impl RawFile {
         Ok(raw)
     }
 
-    /// The shooting data its EXIF records, as [`read_exif_file`] reads it.
-    pub fn exif(&self) -> Result<Exif, Error> {
-        read_exif_source(&self.source)
-    }
-
     /// Its embedded picture, as [`read_preview_file`] reads it.
     pub fn preview(&self, longest: u32) -> Result<Option<Preview>, Error> {
         preview::read_preview_source(&self.source, longest)
     }
 
-    /// Decodes it, as [`decode_file`] does.
-    pub fn decode(&self) -> Result<RawImage, Error> {
+    /// Decodes it, as [`decode_file`] does, with its shooting data, as [`RawFile::metadata`].
+    pub fn decode(&self) -> Result<(RawImage, Option<Exif>), Error> {
         let start = Instant::now();
-        decode_source(&self.source).inspect(|raw| log_decoded(&self.name, raw, start))
+        decode_raw(&self.source, false).inspect(|(raw, _)| log_decoded(&self.name, raw, start))
     }
 }
 
@@ -392,12 +388,13 @@ fn log_decoded(name: &str, raw: &RawImage, start: Instant) {
 }
 
 fn decode_source(source: &RawSource) -> Result<RawImage, Error> {
-    decode_raw(source, false)
+    decode_raw(source, false).map(|(raw, _)| raw)
 }
 
 /// The decode, or with `dummy` its metadata alone, the pixels left empty: rawler's decode
-/// with its decompression skipped.
-fn decode_raw(source: &RawSource, dummy: bool) -> Result<RawImage, Error> {
+/// with its decompression skipped; and the shooting data, from the same parse of the
+/// metadata, `None` where it fails.
+fn decode_raw(source: &RawSource, dummy: bool) -> Result<(RawImage, Option<Exif>), Error> {
     // A decoder bug on an odd file must not take the application down.
     let raw = catch_unwind(AssertUnwindSafe(|| {
         rawler::global_loader().decode(source, &RawDecodeParams::default(), dummy)
@@ -427,6 +424,7 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<RawImage, Error> {
             None
         }
     };
+    let shooting = exif.as_ref().map(exif::read);
     let exposure_bias = exif
         .as_ref()
         .and_then(|exif| exif.exposure_bias)
@@ -501,7 +499,7 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<RawImage, Error> {
         .collect();
     color_matrices.sort_by_key(|m| m.illuminant);
 
-    Ok(RawImage {
+    let raw = RawImage {
         camera: Camera {
             make: raw.clean_make.clone(),
             model,
@@ -540,7 +538,8 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<RawImage, Error> {
             RawImageData::Integer(values) => Pixels::U16(values),
             RawImageData::Float(values) => Pixels::F32(values),
         },
-    })
+    };
+    Ok((raw, shooting))
 }
 
 /// A DNG's colour calibration tags and its LinearResponseLimit, from its first IFD,

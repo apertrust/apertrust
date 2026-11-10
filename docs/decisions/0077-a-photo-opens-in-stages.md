@@ -15,7 +15,7 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 
 ## Decision
 
-**A photo opens in three stages,** each a state every client sees. Planned.
+**A photo opens in three stages,** each a state every client sees. The session's side is built; the app's is planned.
 
 | Stage | When | Central panel | Side panel | Events |
 | --- | --- | --- | --- | --- |
@@ -44,7 +44,7 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 - **`Opened(Photo)`** comes at stage 2. It carries what the metadata, the EXIF and the sidecar give: the path, the open's number, the camera, the size at full resolution, `view_only`, the shooting data and the image context. The decode and upload times leave it, for `-d perf`.
 - **`Values::live`** is false from `Opened` until the pipeline is live, and true from the batch of its first live frame. It is part of the fact, so a client joining late, or sent only the latest values, knows whether the photo is live.
 - **A failure after `Opened`**, of the decode or the upload, is `Failed(Open { open, error })`, as before: the photo is closed and none is open.
-- **Order.** The engine thread sends `Opened`, `Values { live: false }`, then `Values { live: true }` and the `Frame`. The job body sends `OpenPreview` through the outbox, as a thumbnail's job does, so only the open's number orders it against the rest. It is never sent after the job's cancel.
+- **Order.** The engine thread sends `Opened`, `Values { live: false }`, then `Values { live: true }` and the `Frame`. The job body sends `OpenPreview` through the outbox, as a thumbnail's job does, so only the open's number orders it against the rest. The job looks for its cancel just before it sends it, and a client drops a stale one by its number.
 - **The CLI and MCP** see the same events. `export` and `preview` wait for the frame, as now. A client that edits waits for `Values { live: true }`, as the CLI's in-process helpers and the planned MCP adapter do.
 
 **Until it is live, the photo is read-only.**

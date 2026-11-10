@@ -377,7 +377,7 @@ Raw decoding with rawler (decision 23).
 - a DNG's colour calibration tags and its LinearResponseLimit;
 - black measured from the masked areas as darktable's decoder does, to explain darktable's levels.
 
-**A raw mapped once** (decision 77): `RawFile::open`, then its `metadata`, rawler's decode with `dummy`, everything the decode gives but the pixels, which are empty, in milliseconds; its `exif`, `preview` and `decode`. `tests/corpus.rs`'s `the_metadata_read_equals_the_decode_but_for_the_pixels` holds the two equal, field for field, over the corpus.
+**A raw mapped once** (decision 77): `RawFile::open`, then its `metadata`, rawler's decode with `dummy`, everything the decode gives but the pixels, which are empty, in milliseconds; its `preview`; and its `decode`. The metadata and the decode each come with the shooting data (`Exif`) from their one parse of the metadata. `tests/corpus.rs`'s `the_metadata_read_equals_the_decode_but_for_the_pixels` holds the two equal, field for field, over the corpus.
 
 **Shooting data.** `read_exif_file` and `read_exif` give the shooting data darktable's variables read (`Exif`), from rawler's metadata, without decoding the image.
 

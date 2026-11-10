@@ -1277,6 +1277,9 @@ struct Engine {
     decoding: Vec<u64>,
     #[cfg(test)]
     uploaded: Vec<u64>,
+    /// How many kernels the session has compiled, for a test.
+    #[cfg(test)]
+    compiled: usize,
 }
 
 /// The session's jobs (decision 57): its control, and the GPU tasks their bodies hand
@@ -1618,6 +1621,8 @@ impl Engine {
             decoding: Vec::new(),
             #[cfg(test)]
             uploaded: Vec::new(),
+            #[cfg(test)]
+            compiled: 0,
         };
         (engine, rejected)
     }
@@ -2387,6 +2392,10 @@ impl Engine {
         let ms = start.elapsed().as_secs_f64() * 1e3;
         match compiled {
             Ok(count) => {
+                #[cfg(test)]
+                {
+                    self.compiled += count;
+                }
                 tracing::debug!(target: "perf", "open {name}: compiled {count} kernels as it decodes, {ms:.0} ms");
             }
             Err(error) => tracing::debug!(target: "pipe", "open {name}: not compiled: {error}"),
@@ -2412,13 +2421,21 @@ impl Engine {
         let ms = start.elapsed().as_secs_f64() * 1e3;
         let at = started.elapsed().as_secs_f64() * 1e3;
         tracing::debug!(target: "perf", "open {name}: upload, {ms:.0} ms, at {at:.0} ms");
+        // Its metadata installed it, which came first from the same job.
         let Some(photo) = &mut self.open else {
-            return Ok(());
+            let error = "the photo's raw arrived before its metadata";
+            return Err(SessionError::Panicked(error.to_owned()));
         };
         if metadata.image != photo.image {
             tracing::debug!(target: "raw", "{name}: the decode's image context differs from the metadata's, taken");
             photo.options = listed_options(&self.modules, &metadata.image);
             photo.image = metadata.image;
+            // Clamped again to the ranges the decode's context gives, as an opened edit is.
+            if photo.view_only.is_none() {
+                for warning in photo.edit.clamp_read(&self.modules, &photo.image) {
+                    tracing::warn!(target: "pipe", "{warning}");
+                }
+            }
         }
         photo.sensor = input.desc();
         photo.shot = metadata.shot;
@@ -2689,10 +2706,17 @@ impl Engine {
         )?;
         let pipeline = match open.pipeline.take() {
             Some(pipeline) => pollster::block_on(pipeline.update(&self.gpu, plan))?,
-            // The photo's first, taking the kernels earlier photos compiled.
+            // The photo's first, taking the kernels earlier photos compiled; the session
+            // keeps its own, so a build that fails loses none of them.
             None => {
-                let kernels = std::mem::take(&mut self.kernels);
-                pollster::block_on(Pipeline::with_kernels(&self.gpu, plan, input, kernels))?
+                let kernels = self.kernels.clone();
+                let built = Pipeline::with_kernels(&self.gpu, plan, input, kernels);
+                let pipeline = pollster::block_on(built)?;
+                #[cfg(test)]
+                {
+                    self.compiled += pipeline.kernels() - self.kernels.len();
+                }
+                pipeline
             }
         };
         let pipeline = open.pipeline.insert(pipeline);
@@ -3081,9 +3105,39 @@ mod tests {
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
     /// `testing::image`'s photo, whatever the path; one called `bias.ARW` records an
-    /// exposure bias of −0.7 EV.
+    /// exposure bias of −0.7 EV, one called `xtrans.ARW` has an X-Trans filter, and one
+    /// called `wide.ARW` is 1100 photosites wide, its image 1088 × 62.
     fn synthetic(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         let mut image = testing::image();
+        if let (true, Some(camera)) = (path.ends_with("xtrans.ARW"), &mut image.camera) {
+            #[rustfmt::skip]
+            let values = vec![
+                1, 1, 0, 1, 1, 2,
+                1, 1, 2, 1, 1, 0,
+                2, 0, 1, 0, 2, 1,
+                1, 1, 2, 1, 1, 0,
+                1, 1, 0, 1, 1, 2,
+                0, 2, 1, 2, 0, 1,
+            ];
+            camera.cfa = Some(apertrust_plugin::Pattern {
+                width: 6,
+                height: 6,
+                values,
+            });
+        }
+        if path.ends_with("wide.ARW") {
+            let [width, height] = [1100, 72];
+            let mut camera = image.camera.expect("a raw's");
+            camera.width = width;
+            camera.crop = [2, 2, 1096, 68];
+            camera.declared = [6, 4, 1088, 62];
+            let image = ImageContext {
+                camera: Some(camera),
+                ..ImageContext::full(1088, 62)
+            };
+            let mosaic = vec![2000; (width * height) as usize];
+            return Ok(open::testing::photo(image, [width, height], mosaic));
+        }
         if let (true, Some(camera)) = (path.ends_with("bias.ARW"), &mut image.camera) {
             camera.exposure_bias = -0.7;
         }
@@ -3591,6 +3645,238 @@ mod tests {
         remove(&second);
     }
 
+    /// Three photos switched quickly: the second, cancelled while it waits for the slot,
+    /// decodes nothing, even handed the slot as its cancel comes; the first's decode, under
+    /// way, ends, and the third's follows (decision 77).
+    #[test]
+    fn a_cancelled_open_waiting_for_the_decode_slot_decodes_nothing() {
+        let paths = ["switch-a", "switch-b", "switch-c"].map(scratch);
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([
+            Command::HoldDecode(hold),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        let a = driven.engine.applied + 1;
+        driven.run([Command::Open(paths[0].clone())]);
+        driven.pump(|engine, _| engine.decoding == [a]);
+        begun.recv_timeout(TEST_WAIT).expect("A's decode begins");
+        let b = driven.engine.applied + 1;
+        driven.run([Command::Open(paths[1].clone())]);
+        let opened = |open: u64| move |e: &Event| matches!(e, Event::Opened(p) if p.open == open);
+        driven.pump(|_, events| events.iter().any(opened(b)));
+        // B waits for the slot; C cancels it, and A's decode ends as it does.
+        driven.pump_for(Duration::from_millis(100));
+        let c = driven.engine.applied + 1;
+        driven.run([Command::Open(paths[2].clone())]);
+        permit.send(()).unwrap();
+        driven.settle();
+        assert_eq!(driven.engine.decoding, [a, c]);
+        assert_eq!(driven.engine.uploaded, [c]);
+        for path in &paths {
+            remove(path);
+        }
+    }
+
+    /// Reopening the photo that is opening cancels the first open and opens it again,
+    /// never taken for the first by the stack's deduplication (decision 77).
+    #[test]
+    fn reopening_a_photo_while_it_opens_opens_it_again() {
+        let path = scratch("reopen");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([
+            Command::HoldDecode(hold),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        let first = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        driven.pump(|engine, _| engine.decoding == [first]);
+        begun
+            .recv_timeout(TEST_WAIT)
+            .expect("the first decode begins");
+        let second = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        permit.send(()).unwrap();
+        let events = driven.settle();
+        assert_eq!(driven.engine.decoding, [first, second]);
+        assert_eq!(driven.engine.uploaded, [second]);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Opened(p) if p.open == second))
+        );
+        assert_eq!(stages(&events)[2..], ["live", "frame"]);
+        remove(&path);
+    }
+
+    /// An open job that ends before its decode, as one panicking would, fails its open,
+    /// and what it handed over after is dropped (decision 77).
+    #[test]
+    fn an_open_job_that_ends_early_fails_its_open() {
+        let path = scratch("ends-early");
+        let mut driven = Driven::new(&[&Sample]);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([Command::HoldDecode(hold)]);
+        let open = driven.engine.applied + 1;
+        driven.run([Command::Open(path.clone())]);
+        driven.pump(|engine, _| engine.decoding == [open]);
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        let events = driven.engine.stage(Stage::Gone { open, began: true });
+        assert!(
+            matches!(&events[..], [Event::Failed(SessionError::Open { open: failed, error })]
+                if *failed == open && matches!(**error, SessionError::Panicked(_))),
+            "{events:?}"
+        );
+        assert!(driven.engine.opening.is_none() && driven.engine.open.is_none());
+        // The job's decode, ending after, changes nothing.
+        permit.send(()).unwrap();
+        assert!(driven.pump_for(Duration::from_millis(200)).is_empty());
+        assert!(driven.engine.uploaded.is_empty());
+        remove(&path);
+    }
+
+    /// An open job dropped from the stack, past 30 jobs added after it while every worker
+    /// is busy, is added again, and the photo still goes live (decision 77).
+    #[test]
+    fn an_open_job_dropped_from_the_stack_is_added_again() {
+        let gpu = gpu();
+        let path = scratch("dropped-open");
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 40,
+            height: 40,
+        });
+        // Every worker held.
+        let (told, _heard) = Heard::start();
+        let mut gos = Vec::new();
+        for _ in 0..apertrust_base::jobs::workers(64) {
+            let label: &'static str = Box::leak(format!("busy {}", gos.len()).into_boxed_str());
+            let (job, go) = Synthetic::new(label, Queue::UserBackground, 1, &told).held();
+            session.send(Command::Synthetic(job));
+            gos.push(go);
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        session.send(Command::Open(path.clone()));
+        for n in 0..31 {
+            let label: &'static str = Box::leak(format!("stacked {n}").into_boxed_str());
+            let job = Synthetic::new(label, Queue::SystemForeground, 1, &told);
+            session.send(Command::Synthetic(job));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        drop(gos);
+        until(&session, &wakes, live);
+        drop(session);
+        remove(&path);
+    }
+
+    /// A photo still opening is no live photo for an export, which reads its file
+    /// (decision 77).
+    #[test]
+    fn a_photo_still_opening_is_exported_from_its_file() {
+        let path = scratch("export-opening");
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        assert!(
+            driven
+                .engine
+                .live_among(std::slice::from_ref(&path))
+                .is_some()
+        );
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        driven.run([Command::HoldDecode(hold), Command::Open(path.clone())]);
+        begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+        driven.pump(|engine, _| engine.open.is_some());
+        assert!(
+            driven
+                .engine
+                .live_among(std::slice::from_ref(&path))
+                .is_none()
+        );
+        permit.send(()).unwrap();
+        driven.settle();
+        assert!(
+            driven
+                .engine
+                .live_among(std::slice::from_ref(&path))
+                .is_some()
+        );
+        remove(&path);
+    }
+
+    /// Kernels are kept across photos (decisions 37 and 77): a Bayer photo, an X-Trans
+    /// one, which adds its demosaic's, then a Bayer one again, compiling nothing.
+    #[test]
+    fn kernels_are_kept_across_photos() {
+        let mut driven = Driven::new(&[&Sample]);
+        let mut counts = Vec::new();
+        for name in ["kernels-bayer", "kernels-xtrans", "kernels-bayer-again"] {
+            let mut path = scratch(name);
+            if name.ends_with("xtrans") {
+                path.set_file_name("xtrans.ARW");
+            }
+            let before = driven.engine.compiled;
+            let events = driven.open(&path);
+            assert!(
+                events.iter().any(|e| matches!(e, Event::Frame(_))),
+                "{events:?}"
+            );
+            counts.push(driven.engine.compiled - before);
+            remove(&path);
+        }
+        assert!(counts[0] > 0 && counts[1] > 0, "{counts:?}");
+        assert_eq!(counts[2], 0, "{counts:?}");
+    }
+
+    /// A photo's first pipeline that fails to build leaves the kernels earlier photos
+    /// compiled to the next, which compiles none (decision 77).
+    #[test]
+    fn a_failed_build_leaves_the_kernels_to_the_next_photo() {
+        let options = GpuOptions {
+            max_storage_binding: Some(512 * 1024),
+            ..GpuOptions::default()
+        };
+        let gpu = pollster::block_on(GpuContext::new(&options)).expect("a GPU adapter");
+        let mut driven = Driven::on(gpu, &[&Sample], pipeline::BUDGET);
+        let first = scratch("failed-build-first");
+        driven.open(&first);
+        // Planned as if the GPU bound anything, the wide photo's build fails.
+        let honest = driven.engine.limits;
+        driven.engine.limits.binding = u64::MAX;
+        let wide = scratch("failed-build").with_file_name("wide.ARW");
+        driven.run([Command::Open(wide.clone())]);
+        let events = driven.settle();
+        let refused = |e: &Event| {
+            matches!(
+                e,
+                Event::Failed(SessionError::Compute(ComputeError::Binding { .. }))
+            )
+        };
+        assert!(
+            events.iter().all(|e| !matches!(e, Event::Frame(_))) && events.iter().any(refused),
+            "{:?}",
+            stages(&events)
+        );
+        driven.engine.limits = honest;
+        let before = driven.engine.compiled;
+        let next = scratch("failed-build-next");
+        let events = driven.open(&next);
+        assert!(
+            events.iter().any(|e| matches!(e, Event::Frame(_))),
+            "{events:?}"
+        );
+        assert_eq!(driven.engine.compiled, before);
+        for path in [first, wide, next] {
+            remove(&path);
+        }
+    }
+
     /// A decode that fails after the photo's values were sent fails its open, the photo
     /// closed (decision 77).
     #[test]
@@ -3791,7 +4077,11 @@ mod tests {
 
         /// An engine that plans within `budget` bytes.
         fn within(modules: &'static [&'static dyn Module], budget: u64) -> Self {
-            let gpu = gpu();
+            Driven::on(gpu(), modules, budget)
+        }
+
+        /// An engine on `gpu` that plans within `budget` bytes.
+        fn on(gpu: GpuContext, modules: &'static [&'static dyn Module], budget: u64) -> Self {
             let (sent, saved) = outbox::channel(Arc::new(|| {}));
             let (tasks, inbox) = mpsc::channel();
             let (mut engine, _) = Engine::new(

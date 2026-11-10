@@ -50,7 +50,7 @@ use apertrust_base::jobs::{Context, Interrupted};
 use apertrust_library::ops::{self as library, Thumbnail};
 use apertrust_modules::Module;
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Operation};
-use apertrust_raw::{Pixels, RawImage};
+use apertrust_raw::{Exif, Pixels, RawImage};
 
 use super::cache::Upkeep;
 use super::{Decoded, Event, Inbox, OpenPreview, Outbox, PreviewSource, SessionError};
@@ -141,18 +141,19 @@ struct File {
 }
 
 impl File {
-    /// What the raw stage reads of `raw`, refused where it is no 16-bit mosaic.
-    fn metadata_of(&self, raw: &RawImage) -> Result<Metadata, SessionError> {
+    /// What the raw stage reads of `raw`, with the shooting data `exif` records, refused
+    /// where it is no 16-bit mosaic.
+    fn metadata_of(&self, raw: &RawImage, exif: Option<Exif>) -> Result<Metadata, SessionError> {
         let mosaic = matches!(raw.pixels, Pixels::U16(_)) && raw.components == 1;
         if !mosaic || raw.cfa.is_none() {
             return Err(SessionError::NotAMosaic);
         }
         let shot = Shot::of(raw);
-        let shot = match self.file.exif() {
-            Ok(exif) => shot.with_exif(&exif),
-            Err(error) => {
+        let shot = match exif {
+            Some(exif) => shot.with_exif(&exif),
+            None => {
                 let path = self.path.display();
-                tracing::warn!(target: "raw", "{path}: no shooting data: {error}");
+                tracing::warn!(target: "raw", "{path}: no shooting data");
                 shot
             }
         };
@@ -168,7 +169,8 @@ impl File {
 
 impl RawFile for File {
     fn metadata(&self) -> Result<Metadata, SessionError> {
-        self.metadata_of(&self.file.metadata()?)
+        let (raw, exif) = self.file.metadata()?;
+        self.metadata_of(&raw, exif)
     }
 
     fn preview(&self, longest: u32) -> Option<Thumbnail> {
@@ -187,8 +189,8 @@ impl RawFile for File {
     }
 
     fn decode(&self) -> Result<(Metadata, Mosaic), SessionError> {
-        let raw = self.file.decode()?;
-        let metadata = self.metadata_of(&raw)?;
+        let (raw, exif) = self.file.decode()?;
+        let metadata = self.metadata_of(&raw, exif)?;
         let Pixels::U16(values) = raw.pixels else {
             return Err(SessionError::NotAMosaic);
         };
@@ -448,6 +450,11 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let Ok(turn) = run.decodes.take(context) else {
         return;
     };
+    // Handed the slot as its cancel came: it decodes nothing, and the slot goes on to the
+    // next as the turn drops.
+    if cancelled() {
+        return;
+    }
     delivery.send(Stage::Decoding { open }, false);
     #[cfg(test)]
     if let Some(hold) = &run.hold {

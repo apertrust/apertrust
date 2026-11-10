@@ -100,12 +100,12 @@ fn the_metadata_read_equals_the_decode_but_for_the_pixels() {
         let file = apertrust_raw::RawFile::open(dir.join(name))
             .unwrap_or_else(|e| panic!("{e}: run tools/fetch-raw-corpus.sh"));
         let read = file.metadata();
-        let decoded = file.decode().map(|mut raw| {
+        let decoded = file.decode().map(|(mut raw, exif)| {
             raw.pixels = match raw.pixels {
                 Pixels::U16(_) => Pixels::U16(Vec::new()),
                 Pixels::F32(_) => Pixels::F32(Vec::new()),
             };
-            raw
+            (raw, exif)
         });
         // Every field, the lens's corrections and a DNG's tags among them.
         match (read, decoded) {
@@ -113,8 +113,8 @@ fn the_metadata_read_equals_the_decode_but_for_the_pixels() {
             (Err(_), Err(_)) => {}
             (read, decoded) => {
                 let (read, decoded) = (
-                    read.map(|r| fingerprint(&r)),
-                    decoded.map(|r| fingerprint(&r)),
+                    read.map(|(r, e)| (fingerprint(&r), e)),
+                    decoded.map(|(r, e)| (fingerprint(&r), e)),
                 );
                 differ.push(format!("{name}\n    read: {read:?}\n  decode: {decoded:?}"))
             }
