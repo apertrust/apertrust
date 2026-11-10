@@ -67,6 +67,7 @@ mod recents;
 mod scopes;
 mod settings;
 mod settings_dialog;
+mod start;
 mod storage;
 #[cfg(test)]
 mod testing;
@@ -394,6 +395,16 @@ fn main() -> eframe::Result {
         }
         None => Recents::nowhere(),
     };
+    // Whether the window opens as the start window, nothing to open given or reopened:
+    // Finder's files at the launch come only once the loop runs, and `App::new` gives the
+    // window the main window's size and place back where they come.
+    let reopens = keeper.reopen_last() && recents.last().is_some();
+    let starts = open.is_none() && in_folder.is_empty() && !reopens;
+    let placement = if starts {
+        start_placement(&settings.window, settings.scale)
+    } else {
+        settings.window
+    };
     // The engine's settings, from the same file, as the engine's options (decision 43).
     // The session takes the memory budget as it starts, so the settings read once here
     // give every photo of this run its budget: a change applies at the next start.
@@ -423,7 +434,9 @@ fn main() -> eframe::Result {
         ));
     }
     let options = eframe::NativeOptions {
-        viewport: window(&settings.window),
+        viewport: window(&placement, starts),
+        // The start window with no place kept, as on the first run, in the screen's middle.
+        centered: starts && placement.position.is_none(),
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             wgpu_setup: WgpuSetup::CreateNew(setup),
@@ -454,6 +467,10 @@ fn main() -> eframe::Result {
     if let Err(e) = apertrust_display::receive_opened_files() {
         tracing::warn!(target: "control", "files Finder opens with the app not received: {e}");
     }
+    // A click on the Dock icon, which shows the start window again once it was closed.
+    if let Err(e) = apertrust_display::receive_reopen() {
+        tracing::warn!(target: "control", "the Dock icon's click not received: {e}");
+    }
     // The dialogs' windows, beside eframe's, run by `Gated` (decision 41).
     let host = dialog_host::Host::new(event_loop.create_proxy());
     let app_host = host.clone();
@@ -472,6 +489,7 @@ fn main() -> eframe::Result {
                     cc,
                     open,
                     in_folder,
+                    (placement, starts),
                     keeper,
                     settings,
                     engine_gate,
@@ -626,18 +644,29 @@ const BUTTONS_ROOM: f32 = 78.0;
 /// place it (Wayland does not), and maximised or not. Full screen is not restored. The
 /// window is created at the interface's scale of 1, so a position in logical pixels is
 /// its pixels over its scale factor. Its title is kept where it is not drawn, for
-/// Mission Control, the Window menu and screen readers.
-fn window(placement: &settings::Window) -> egui::ViewportBuilder {
+/// Mission Control, the Window menu and screen readers. As the start window (`start`), the
+/// size `placement` holds, `start_placement`'s, and neither resized nor maximised.
+fn window(placement: &settings::Window, start: bool) -> egui::ViewportBuilder {
     let [width, height] = placement
         .size
         .unwrap_or(settings::registry::WINDOW_SIZE.default());
     let viewport = egui::ViewportBuilder::default()
         .with_title(APP_NAME)
         .with_app_id(APP_ID)
-        .with_icon(icon())
-        .with_inner_size([width.max(WINDOW_MIN[0]), height.max(WINDOW_MIN[1])])
-        .with_min_inner_size(WINDOW_MIN)
-        .with_maximized(MAXIMISES && !PLACE_AFTER_CREATION && placement.maximized);
+        .with_icon(icon());
+    let viewport = if start {
+        viewport
+            .with_inner_size([width, height])
+            .with_min_inner_size([width, height])
+            .with_max_inner_size([width, height])
+            .with_resizable(false)
+            .with_maximize_button(false)
+    } else {
+        viewport
+            .with_inner_size([width.max(WINDOW_MIN[0]), height.max(WINDOW_MIN[1])])
+            .with_min_inner_size(WINDOW_MIN)
+            .with_maximized(MAXIMISES && !PLACE_AFTER_CREATION && placement.maximized)
+    };
     let viewport = if OWN_TITLE_BAR {
         viewport
             .with_fullsize_content_view(true)
@@ -685,6 +714,71 @@ fn place(window: &egui_winit::winit::window::Window, placement: &settings::Windo
         }
     }
     if MAXIMISES && placement.maximized {
+        egui_winit::set_maximized(window, true);
+    }
+}
+
+/// Where the start window stands at the interface's `scale` (`docs/gui.md`, The start
+/// window): its size, in logical pixels, centred on `main`, the main window's last normal
+/// placement, where that has a position; never maximised.
+fn start_placement(main: &settings::Window, scale: f32) -> settings::Window {
+    let size = (start::SIZE * scale).round();
+    let kept = main
+        .size
+        .unwrap_or(settings::registry::WINDOW_SIZE.default());
+    let kept = egui::Vec2::from(kept).max(egui::Vec2::from(WINDOW_MIN));
+    let position = main.position.map(|at| {
+        let offset = (kept - size) / 2.0 * at.scale_factor;
+        settings::Position {
+            pixels: [
+                (at.pixels[0] + offset.x).round(),
+                (at.pixels[1] + offset.y).round(),
+            ],
+            scale_factor: at.scale_factor,
+        }
+    });
+    settings::Window {
+        size: Some([size.x, size.y]),
+        position,
+        maximized: false,
+    }
+}
+
+/// Gives the window it shows the start window's placement or the main window's, as `start`
+/// says: its size, its least size and whether it resizes and maximises; then its place,
+/// where `placement` has one on a monitor still there (Wayland places none); and, for the
+/// main window, maximised if it was.
+fn reshape(window: &egui_winit::winit::window::Window, placement: &settings::Window, start: bool) {
+    use egui_winit::winit::dpi::LogicalSize;
+    use egui_winit::winit::window::WindowButtons;
+    let [width, height] = placement
+        .size
+        .unwrap_or(settings::registry::WINDOW_SIZE.default());
+    let logical = |[width, height]: [f32; 2]| LogicalSize::new(f64::from(width), f64::from(height));
+    window.set_min_inner_size(None::<LogicalSize<f64>>);
+    window.set_max_inner_size(None::<LogicalSize<f64>>);
+    if start {
+        let size = logical([width, height]);
+        let _ = window.request_inner_size(size);
+        window.set_min_inner_size(Some(size));
+        window.set_max_inner_size(Some(size));
+        window.set_resizable(false);
+        window.set_enabled_buttons(WindowButtons::CLOSE | WindowButtons::MINIMIZE);
+    } else {
+        let size = [width.max(WINDOW_MIN[0]), height.max(WINDOW_MIN[1])];
+        let _ = window.request_inner_size(logical(size));
+        window.set_min_inner_size(Some(logical(WINDOW_MIN)));
+        window.set_resizable(true);
+        window.set_enabled_buttons(WindowButtons::all());
+    }
+    if let Some(position) = placement.position {
+        let monitors = monitors(window);
+        let mac = cfg!(target_os = "macos");
+        if let Some(spot) = on_screen(&position, [width, height], &monitors, mac) {
+            move_to(window, spot);
+        }
+    }
+    if !start && MAXIMISES && placement.maximized {
         egui_winit::set_maximized(window, true);
     }
 }
@@ -963,6 +1057,9 @@ struct App {
     storage_shown: storage::View,
     /// What was open last, while it reopens at the start ([`reopened`]).
     reopening: Option<Reopening>,
+    /// The main window as the start window, with nothing open (`docs/gui.md`, The start
+    /// window).
+    start: start::Window,
 }
 
 /// What the top panel asked for this frame.
@@ -1327,6 +1424,10 @@ struct Shell {
     menu_recents: Vec<PathBuf>,
     /// Whether File › Close ran, for the app to close what is open after the action.
     close: bool,
+    /// Whether Quit, or Close Window on the main window, asked the window to close, which
+    /// ends the app: the start window's own close on the Mac does not ([`App`]'s
+    /// `raw_input_hook`).
+    leaving: bool,
     /// What was opened, newest first, kept in `state.toml`: Browse's recent folders and
     /// Open Recent's list, with what was open last beside them.
     recents: Recents,
@@ -1433,6 +1534,7 @@ impl Shell {
             open_recent: None,
             menu_recents: Vec::new(),
             close: false,
+            leaving: false,
             recents: Recents::nowhere(),
             browse_shown: false,
             tree: BTreeMap::new(),
@@ -2093,8 +2195,10 @@ impl Shell {
                 let on = ctx.input(|i| i.viewport().fullscreen).unwrap_or(false);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!on));
             }
-            // The main window, the app's one: a dialog's own is the app's to close.
+            // The main window, the app's one: a dialog's own is the app's to close. A close
+            // the app leaves by, never the start window's own.
             Intent::CloseWindow | Intent::Quit => {
+                self.leaving = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             // Read while held, by the sections.
@@ -2220,7 +2324,9 @@ fn apply_settings(
 impl App {
     /// The app as `settings` left it, before its first frame, opening what the command line
     /// named, `open`, or the files Open With gave it, `in_folder`, once they have been
-    /// looked at; `keeper` writes them back.
+    /// looked at; `keeper` writes them back. Its window was made at `built`'s placement, as
+    /// the start window where it says so, and is given the other where the start turns out
+    /// otherwise, before it first shows.
     /// Its session plans within `budget` bytes, `engine.memory_budget`, and keeps `cache`,
     /// the disk cache, if the app could open one. Its dialogs are the host's. It keeps the
     /// session's log in `kept` while settings say so.
@@ -2229,6 +2335,7 @@ impl App {
         cc: &eframe::CreationContext<'_>,
         open: Option<Start>,
         in_folder: Vec<PathBuf>,
+        built: (settings::Window, bool),
         keeper: Keeper,
         settings: Settings,
         gate: SubmitGate,
@@ -2255,9 +2362,10 @@ impl App {
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         prepare(&cc.egui_ctx, &shell, settings.scale);
+        let (placement, built_start) = built;
         if let Some(window) = cc.winit_window() {
             frame_shadow(window);
-            place(window, &settings.window);
+            place(window, &placement);
         }
         // Only the top panel's empty areas move the window, never its buttons.
         if OWN_TITLE_BAR && let Err(e) = apertrust_display::content_never_moves_window(cc) {
@@ -2354,6 +2462,7 @@ impl App {
             storage_folders,
             storage_shown: storage::View::default(),
             reopening: None,
+            start: start::Window::new(false, settings.scale),
         };
         // Finder's files at the launch, which macOS hands over as it finishes launching,
         // before the window, win over what was open last, as `--in-folder`'s do; any that
@@ -2371,9 +2480,27 @@ impl App {
         if !in_folder.is_empty() {
             app.opened.look(in_folder, &cc.egui_ctx);
         }
-        // Finder's files, at the launch and later, wake the app as they come.
+        // With nothing to open, the start window in place of the main window; the window
+        // given the other's size and place where the start turned out otherwise.
+        let looking = app.opened.looking();
+        let starts = shows_start(opened(&app.mirror), looking, false, false);
+        app.start.shown = starts;
+        if starts != built_start
+            && let Some(window) = cc.winit_window()
+        {
+            let placement = if starts {
+                start_placement(&settings.window, settings.scale)
+            } else {
+                settings.window
+            };
+            reshape(window, &placement, starts);
+        }
+        // Finder's files, at the launch and later, and a click on the Dock icon wake the app
+        // as they come.
         let ctx = cc.egui_ctx.clone();
         apertrust_display::on_opened_files(move || ctx.request_repaint());
+        let ctx = cc.egui_ctx.clone();
+        apertrust_display::on_reopen(move || ctx.request_repaint());
         app
     }
 
@@ -2862,11 +2989,16 @@ impl App {
     /// What the actions' availability depends on, for the keys and the menus: the shell's,
     /// with the open dialog and the host's dialog ([`with_dialogs`]).
     fn state(&self, ctx: &egui::Context) -> State {
-        with_dialogs(
+        let state = with_dialogs(
             self.shell_state(ctx),
             self.asking_modal(),
             self.dialogs.shown(),
-        )
+        );
+        if self.start.shown {
+            in_start(state)
+        } else {
+            state
+        }
     }
 
     /// What the main window's own controls are drawn from: [`App::state`], but as though no
@@ -2887,10 +3019,9 @@ impl App {
         // opening, read-only until it is live (decision 77).
         let resettable = self.mirror.values.edited && self.mirror.takes_edits();
         let state = self.shell.state(ctx, open, resettable);
-        let folder = !matches!(self.mirror.folder.folder, folder::Folder::None);
         State {
             shown: !self.mirror.folder.order().is_empty(),
-            opened: folder || !matches!(self.mirror.photo, PhotoState::None),
+            opened: opened(&self.mirror),
             ..state
         }
     }
@@ -2918,6 +3049,20 @@ impl App {
                 continue;
             }
             let state = self.state(ctx);
+            // Close Window on the start window closes it, as its close button does; on a
+            // dialog's own window with the focus, that window.
+            let dialog_focused = self.dialogs.shown().is_some_and(|shown| shown.focused);
+            if id == ActionId::CLOSE_WINDOW && self.start.shown && !dialog_focused {
+                let enabled = actions::action(id).is_some_and(|a| a.enabled(&state));
+                self.start.close |= enabled;
+                continue;
+            }
+            // On the Mac's main window, what Close does.
+            let id = if id == ActionId::CLOSE_WINDOW && !self.start.shown {
+                close_window_runs(ctx.os(), &state)
+            } else {
+                id
+            };
             let running = self.mirror.jobs.running();
             let edit = quit_edit(&self.mirror.saving);
             let mut leave = alerts::Leave::new(&mut self.quit, running, edit);
@@ -3398,6 +3543,221 @@ impl App {
     /// Draws `frame` where the block `placed` puts the photo, with Proof margin's white
     /// border under it and the guides over it. A frame rendered for another size, as while
     /// the window resizes, is shown at the size the next will have: `placed`'s.
+    /// Whether the main window is the start window this frame ([`shows_start`]): it becomes
+    /// it as nothing is open, the first recent chosen and the recents checked again, and the
+    /// main window again as something opens, shown if it was hidden. The window takes the
+    /// start window's size and place, centred where the main window was, once it is neither
+    /// full screen nor maximised, and again as the interface's scale changes; and the main
+    /// window's back, whose size it does not keep until it has it.
+    fn follow_start(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let wanted = self.shows_start(ctx);
+        let window = frame.winit_window();
+        if wanted != self.start.shown {
+            self.start.shown = wanted;
+            if wanted {
+                self.start.list = start::List::shown();
+                self.start.reshape = true;
+                self.shell.recents.check();
+            } else {
+                self.reveal(ctx);
+                if let Some(window) = window {
+                    reshape(window, &self.shell.window, false);
+                }
+                self.start.settling = Some(start::SIZE * self.start.zoom);
+            }
+        }
+        let zoom = ctx.zoom_factor();
+        if !wanted || !(self.start.reshape || self.start.zoom != zoom) {
+            return;
+        }
+        let viewport = ctx.input(|i| i.viewport().clone());
+        if viewport.fullscreen.unwrap_or(false) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            ctx.request_repaint();
+        } else if MAXIMISES && viewport.maximized.unwrap_or(false) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+            ctx.request_repaint();
+        } else {
+            // Centred where the main window was as it becomes the start window; where it
+            // stands as only the scale changes.
+            let placement = start_placement(&self.shell.window, zoom);
+            let placement = settings::Window {
+                position: placement.position.filter(|_| self.start.reshape),
+                ..placement
+            };
+            if let Some(window) = window {
+                reshape(window, &placement, true);
+            }
+            self.start.reshape = false;
+            self.start.zoom = zoom;
+        }
+    }
+
+    /// Whether the main window is to be the start window now ([`shows_start`]).
+    fn shows_start(&self, ctx: &egui::Context) -> bool {
+        let looking = self.opened.looking() || self.drops.looking();
+        let modal = self.state(ctx).modal;
+        shows_start(opened(&self.mirror), looking, modal, self.start.shown)
+    }
+
+    /// Shows the main window again where the start window was closed on the Mac, with the
+    /// focus.
+    fn reveal(&mut self, ctx: &egui::Context) {
+        if std::mem::take(&mut self.start.hidden) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
+    /// The start window's close, asked by its close button, Escape or Close Window: on the
+    /// Mac the window is hidden and the app runs on, its menu bar there; elsewhere the app
+    /// leaves, as Quit does.
+    fn close_start(&mut self, ctx: &egui::Context) {
+        if !std::mem::take(&mut self.start.close) || !self.start.shown {
+            return;
+        }
+        if ctx.os() == OperatingSystem::Mac {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.start.hidden = true;
+        } else {
+            self.run_actions([ActionId::QUIT], ctx, &[]);
+        }
+    }
+
+    /// One frame of the main window as the start window (`start.rs`): its window buttons in
+    /// its strip on the Mac, the app's keys, the recents and the buttons, what they ask run
+    /// as Browse's would, and the rest of the frame as the main window's.
+    fn start_frame(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let room = self.window_buttons(frame, &ctx, start::STRIP);
+        let state = self.state(&ctx);
+        let keys = actions::read(&ctx, &self.shell.keymap, &state);
+        let mut run = keys.pressed;
+        let recents = self.shell.recent_folders();
+        let shown = start::Shown {
+            home: self.places.home.as_deref(),
+            // Where the app draws the window's frame, but in full screen.
+            close: CAPTION_BUTTONS && room.is_some(),
+            keys: !state.modal,
+        };
+        let asked = start::show(ui, &recents, &mut self.start.list, shown);
+        let mut gesture = None;
+        let mut library = Vec::new();
+        for asked in asked {
+            match asked {
+                start::Asked::Close => {
+                    self.start.close = true;
+                    ctx.request_repaint();
+                }
+                start::Asked::Move => gesture = Some(TitleBar::Move),
+                start::Asked::Menu => gesture = Some(TitleBar::Menu),
+                asked => library.extend(asked.library()),
+            }
+        }
+        self.carry_out(library, &ctx);
+        self.shell.about.show(&ctx);
+        run.extend(self.shell.popups(&ctx));
+        self.run_actions(run, &ctx, &[]);
+        self.finish_frame(&ctx, frame, ui.max_rect(), gesture);
+    }
+
+    /// The end of each frame, the main window's or the start window's: the ☰'s menu, the
+    /// open dialog and what it chose, drops and what the system opened, over `target`, the
+    /// title bar's `gesture`, the bands that resize the window, the menus, the Mac's popup
+    /// menus and the settings kept. Where what ran changed whether the start window shows,
+    /// the frame is drawn again before it is shown.
+    fn finish_frame(
+        &mut self,
+        ctx: &egui::Context,
+        frame: &mut eframe::Frame,
+        target: egui::Rect,
+        gesture: Option<TitleBar>,
+    ) {
+        let state = self.state(ctx);
+        self.shell.open_menu(ctx, &state);
+        // Open…'s and Open Folder…'s dialog, over the window; what is chosen opens a later
+        // frame.
+        let asked = if std::mem::take(&mut self.shell.open) {
+            Some(dialogs::Pick::Files)
+        } else if std::mem::take(&mut self.shell.open_folder) {
+            Some(dialogs::Pick::Folder)
+        } else {
+            self.shell.locate.take().map(dialogs::Pick::Locate)
+        };
+        let (photo, pictures) = (&self.mirror.photo, self.pictures.as_deref());
+        let shown = self.mirror.folder.shown();
+        let mut dialog = dialogs::Native {
+            window: frame,
+            ctx,
+            asking: &mut self.asking,
+        };
+        let start = dialogs::locate_start(asked.as_ref());
+        let chosen = dialogs::open(&mut dialog, asked, || match start {
+            Some(parent) => parent,
+            None => dialogs::folder(shown, photo.path(), pictures),
+        });
+        // Quit, held while the dialog asked, runs once it has answered, opening nothing.
+        let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
+        if self.quit_held && self.asking.is_none() && !overwrite {
+            self.quit_held = false;
+            self.run_actions([ActionId::QUIT], ctx, &[]);
+        } else if let Some(opening) = chosen.and_then(|c| answered(&mut self.shell, c)) {
+            self.carry_out_opening(opening, ctx);
+        }
+        // What was dropped onto the window opens as Open… or Open Folder… would, once it has
+        // been looked at, a later frame; nothing while a modal dialog is up, as one may have
+        // opened meanwhile. An earlier drop's answer is taken before this frame's drop is,
+        // so a drop never opens the frame it came in, however soon its thread answers.
+        let modal = self.state(ctx).modal;
+        if let Some(dropped) = self.drops.looked().filter(|_| !modal) {
+            self.carry_out_opening(dropped_opens(dropped), ctx);
+        }
+        self.drops.take(ctx, modal);
+        // What the system asked the app to open, Open With's, taken in `logic`, opens as a
+        // drop of it would, its folder with the photo active, once looked at; it waits for a
+        // modal dialog to go rather than being set aside, since nothing on the screen says it
+        // came. A drop's answer and Open With's in one frame both open, the later winning,
+        // and the second's refusal, if any, finds the alert busy and says nothing.
+        if !modal && let Some(opened) = self.opened.looked() {
+            self.carry_out_opening(dropped_opens(opened), ctx);
+        }
+        if dropped::hovering(ctx, modal) {
+            dropped::show_target(ctx, target);
+        }
+        if let Some(gesture) = gesture {
+            let mut system = System {
+                frame,
+                handed_off: false,
+            };
+            run_title_bar(gesture, ctx, &mut system);
+            // The compositor or window manager moving the window keeps the release too.
+            let moved = CAPTION_BUTTONS && gesture == TitleBar::Move;
+            self.handed_off |= system.handed_off || moved;
+        }
+        // The start window is never resized.
+        if CAPTION_BUTTONS && !self.start.shown {
+            resize_hover(ctx, RESIZE_BAND);
+        }
+        // The menus follow what ran: the keys, what can run now, the focus, the language;
+        // Open Recent the recents as they are, kept for its choices, which `logic` runs
+        // after the next drain.
+        let recents = self.menus.is_some().then(|| self.shell.show_recents(ctx));
+        let state = self.state(ctx);
+        if let (Some(menus), Some(recents)) = (&mut self.menus, recents) {
+            menus.update(ctx, &self.shell.keymap, &state, &recents);
+        }
+        // The Mac's popup menus the frame asked for, shown from the run loop.
+        popups::show(ctx, frame);
+        let size = ctx.input(|i| i.viewport_rect().size()) * ctx.zoom_factor();
+        let tracks = self.start.keeps_placement(size);
+        keep(&mut self.shell, &mut self.keeper, ctx, tracks);
+        // Something opened from the start window, or all closed: the other is drawn at once,
+        // never a frame of the main window with nothing open.
+        if self.shows_start(ctx) != self.start.shown {
+            ctx.request_discard("the start window shows or goes");
+        }
+    }
+
     fn photo_at(&self, ui: &egui::Ui, slot: egui::Rect, placed: &Placed, frame: &Frame) {
         let ppp = ui.pixels_per_point();
         let rect = placed.photo;
@@ -3533,6 +3893,12 @@ impl eframe::App for App {
             self.tag_failed = true;
         }
         let ctx = ui.ctx().clone();
+        // With nothing open the main window is the start window, and draws nothing else.
+        self.follow_start(&ctx, frame);
+        if self.start.shown {
+            self.start_frame(ui, frame);
+            return;
+        }
         let t = theme(&ctx);
         let title_bar = self.window_buttons(frame, &ctx, t.sizes.top_bar);
         let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
@@ -3650,81 +4016,7 @@ impl eframe::App for App {
         if let Some(command) = self.mirror.scopes.ask(self.shell.scopes_wanted()) {
             self.session.send(command);
         }
-        let state = self.state(&ctx);
-        self.shell.open_menu(&ctx, &state);
-        // Open…'s and Open Folder…'s dialog, over the window; what is chosen opens a later
-        // frame.
-        let asked = if std::mem::take(&mut self.shell.open) {
-            Some(dialogs::Pick::Files)
-        } else if std::mem::take(&mut self.shell.open_folder) {
-            Some(dialogs::Pick::Folder)
-        } else {
-            self.shell.locate.take().map(dialogs::Pick::Locate)
-        };
-        let (photo, pictures) = (&self.mirror.photo, self.pictures.as_deref());
-        let shown = self.mirror.folder.shown();
-        let mut dialog = dialogs::Native {
-            window: frame,
-            ctx: &ctx,
-            asking: &mut self.asking,
-        };
-        let start = dialogs::locate_start(asked.as_ref());
-        let chosen = dialogs::open(&mut dialog, asked, || match start {
-            Some(parent) => parent,
-            None => dialogs::folder(shown, photo.path(), pictures),
-        });
-        // Quit, held while the dialog asked, runs once it has answered, opening nothing.
-        let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
-        if self.quit_held && self.asking.is_none() && !overwrite {
-            self.quit_held = false;
-            self.run_actions([ActionId::QUIT], &ctx, &[]);
-        } else if let Some(opening) = chosen.and_then(|c| answered(&mut self.shell, c)) {
-            self.carry_out_opening(opening, &ctx);
-        }
-        // What was dropped onto the window opens as Open… or Open Folder… would, once it has
-        // been looked at, a later frame; nothing while a modal dialog is up, as one may have
-        // opened meanwhile. An earlier drop's answer is taken before this frame's drop is,
-        // so a drop never opens the frame it came in, however soon its thread answers.
-        let modal = self.state(&ctx).modal;
-        if let Some(dropped) = self.drops.looked().filter(|_| !modal) {
-            self.carry_out_opening(dropped_opens(dropped), &ctx);
-        }
-        self.drops.take(&ctx, modal);
-        // What the system asked the app to open, Open With's, taken in `logic`, opens as a
-        // drop of it would, its folder with the photo active, once looked at; it waits for a
-        // modal dialog to go rather than being set aside, since nothing on the screen says it
-        // came. A drop's answer and Open With's in one frame both open, the later winning,
-        // and the second's refusal, if any, finds the alert busy and says nothing.
-        if !modal && let Some(opened) = self.opened.looked() {
-            self.carry_out_opening(dropped_opens(opened), &ctx);
-        }
-        if dropped::hovering(&ctx, modal) {
-            dropped::show_target(&ctx, central.union(grid_panel));
-        }
-        if let Some(gesture) = window {
-            let mut system = System {
-                frame,
-                handed_off: false,
-            };
-            run_title_bar(gesture, &ctx, &mut system);
-            // The compositor or window manager moving the window keeps the release too.
-            let moved = CAPTION_BUTTONS && gesture == TitleBar::Move;
-            self.handed_off |= system.handed_off || moved;
-        }
-        if CAPTION_BUTTONS {
-            resize_hover(&ctx, RESIZE_BAND);
-        }
-        // The menus follow what ran: the keys, what can run now, the focus, the language;
-        // Open Recent the recents as they are, kept for its choices, which `logic` runs
-        // after the next drain.
-        let recents = self.menus.is_some().then(|| self.shell.show_recents(&ctx));
-        let state = self.state(&ctx);
-        if let (Some(menus), Some(recents)) = (&mut self.menus, recents) {
-            menus.update(&ctx, &self.shell.keymap, &state, &recents);
-        }
-        // The Mac's popup menus the frame asked for, shown from the run loop.
-        popups::show(&ctx, frame);
-        keep(&mut self.shell, &mut self.keeper, &ctx);
+        self.finish_frame(&ctx, frame, central.union(grid_panel), window);
     }
 
     /// What was chosen in the menus runs here, at once: eframe calls this before each frame,
@@ -3739,8 +4031,13 @@ impl eframe::App for App {
         // which then comes back and to the front to show them.
         if let Some(files) = apertrust_display::take_opened_files() {
             self.opened.look(files, ctx);
+            self.reveal(ctx);
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        // The start window closed on the Mac comes back with a click on the Dock icon.
+        if apertrust_display::take_reopened() {
+            self.reveal(ctx);
         }
         let focused = ctx.input(|i| i.focused);
         if focused && !self.focused {
@@ -3751,8 +4048,14 @@ impl eframe::App for App {
             ctx.request_repaint();
         }
         let chosen = self.menus.as_ref().map(menus::NativeMenus::chosen);
+        let chosen = chosen.unwrap_or_default();
+        // A choice in the menus with the start window closed shows it again for what it
+        // opens there, but for those that open no dialog over it.
+        if chosen.iter().any(|id| !OVER_NO_WINDOW.contains(id)) {
+            self.reveal(ctx);
+        }
         // No F6 among them: the menus hold no action that moves the focus.
-        self.run_actions(chosen.unwrap_or_default(), ctx, &[]);
+        self.run_actions(chosen, ctx, &[]);
         // An alert answered, before anything else it may have held.
         if let Some((purpose, answer)) = self.alerts.answered(&mut self.dialogs) {
             self.alert_answered(purpose, answer);
@@ -3786,7 +4089,15 @@ impl eframe::App for App {
         self.log_saved(ctx);
         // The app's keys pressed in a dialog's own window, Quit among them.
         self.run_actions(taken.actions, ctx, &[]);
-        settle(taken.quit, &mut self.shell, &mut self.keeper, ctx);
+        // The start window's close, asked by its button, Escape, Close Window or, on the
+        // Mac, its red button; the main window's red button, which closes what is open.
+        self.close_start(ctx);
+        if std::mem::take(&mut self.start.close_main) {
+            self.run_actions([ActionId::CLOSE], ctx, &[]);
+        }
+        let size = ctx.input(|i| i.viewport_rect().size()) * ctx.zoom_factor();
+        let placed = self.start.keeps_placement(size);
+        settle(taken.quit, placed, &mut self.shell, &mut self.keeper, ctx);
         // Quit again: a dialog it closed has gone, the person said yes to the quit alert, the
         // jobs that were left to finish have, or the write it waited for is confirmed or
         // has failed.
@@ -3815,8 +4126,25 @@ impl eframe::App for App {
         if std::mem::take(&mut self.handed_off) {
             release_after_drag(ctx, raw_input);
         }
-        if CAPTION_BUTTONS {
+        // The start window is never resized.
+        if CAPTION_BUTTONS && !self.start.shown {
             self.resize = resize_press(ctx, raw_input, RESIZE_BAND);
+        }
+        // On the Mac the close button closes the start window, the app running on, and on
+        // the main window with something open does what Close does, so eframe never sees
+        // that close; the close Quit asks for still ends the app.
+        if raw_input.viewport().close_requested() {
+            let quitting = std::mem::take(&mut self.shell.leaving);
+            let mac = ctx.os() == OperatingSystem::Mac;
+            let closes = !self.start.shown
+                && close_window_runs(ctx.os(), &self.state(ctx)) == ActionId::CLOSE;
+            if mac && !quitting && (self.start.shown || closes) {
+                if let Some(viewport) = raw_input.viewports.get_mut(&raw_input.viewport_id) {
+                    viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
+                }
+                self.start.close = self.start.shown;
+                self.start.close_main = closes;
+            }
         }
     }
 
@@ -4245,9 +4573,11 @@ fn take_dialogs(
 /// windows closed for Quit report where they were left only as they go, so their places
 /// (Settings', the jobs window's) are in the shell by now and in the file only if the
 /// keeper has them before the app leaves, whether or not a frame still follows.
-fn settle(quit: bool, shell: &mut Shell, keeper: &mut Keeper, ctx: &egui::Context) {
+/// The window's size and place are kept only where they are the main window's own
+/// (`placed`), as [`keep`] keeps them.
+fn settle(quit: bool, placed: bool, shell: &mut Shell, keeper: &mut Keeper, ctx: &egui::Context) {
     if quit {
-        keep(shell, keeper, ctx);
+        keep(shell, keeper, ctx, placed);
     }
 }
 
@@ -4296,6 +4626,56 @@ fn with_dialogs(mut state: State, asking: bool, shown: Option<dialog_host::Shown
         state.dialog_window |= shown.focused && !shown.modal();
     }
     state
+}
+
+/// What Close Window runs on the main window, where it has the focus, in `state`
+/// (`docs/gui.md`, File): on the Mac with something open, Close, the start window taking the
+/// main window's place, as the Mac's apps close a document's window and stay; else itself,
+/// which ends the app, as Quit does. A dialog's own window with the focus leaves Close
+/// disabled, so Close Window closes that window.
+fn close_window_runs(os: OperatingSystem, state: &State) -> ActionId {
+    let close = actions::action(ActionId::CLOSE).is_some_and(|a| a.enabled(state));
+    if os == OperatingSystem::Mac && close {
+        ActionId::CLOSE
+    } else {
+        ActionId::CLOSE_WINDOW
+    }
+}
+
+/// What a choice in the Mac's menus runs with the start window closed, its window hidden,
+/// without showing it again: what opens a window of its own, or leaves, or changes only the
+/// recents.
+const OVER_NO_WINDOW: [ActionId; 5] = [
+    ActionId::QUIT,
+    ActionId::SETTINGS,
+    ActionId::SHOW_LOG,
+    ActionId::SHOW_JOBS,
+    ActionId::CLEAR_RECENT,
+];
+
+/// The actions' availability, `state`, with the main window as the start window
+/// (`docs/gui.md`, The start window): as with a modeless dialog's window with the focus, the
+/// view's keys rest and so do the items that act on the main window or its photo, and Close
+/// Window closes it, but under a modal dialog or alert over it.
+fn in_start(mut state: State) -> State {
+    state.dialog = true;
+    state.dialog_window |= !state.modal;
+    state
+}
+
+/// Whether anything is open in `mirror`, a folder or a photo, opening, open or failed.
+fn opened(mirror: &Mirror) -> bool {
+    !matches!(mirror.folder.folder, folder::Folder::None)
+        || !matches!(mirror.photo, PhotoState::None)
+}
+
+/// Whether the main window is the start window (`docs/gui.md`, The start window): never
+/// while anything is `opened`; with nothing, it stays so once `shown`, and becomes so but
+/// while what the system or a drop handed the app is still `looking`, or a modal dialog or
+/// alert is over the main window (`modal`), as the refusal of what was handed over is. The
+/// main window then shows with nothing open until it is answered: the one time it does.
+fn shows_start(opened: bool, looking: bool, modal: bool, shown: bool) -> bool {
+    !opened && (shown || !(looking || modal))
 }
 
 /// The open photo's edit as Quit finds it: a write under way, which it waits for, or the last
@@ -4442,11 +4822,14 @@ fn prepare(ctx: &egui::Context, shell: &Shell, scale: f32) {
 }
 
 /// Hands the frame's settings to `keeper`, which writes them once they have stood still,
-/// and asks for a frame then, should nothing else bring one; maximises the window once it
-/// shows, if it was.
-fn keep(shell: &mut Shell, keeper: &mut Keeper, ctx: &egui::Context) {
-    shell.maximise(ctx);
-    shell.track_window(ctx);
+/// and asks for a frame then, should nothing else bring one; keeps the window's size and
+/// place, and maximises it once it shows, if it was, only where they are the main window's
+/// own (`placed`), never the start window's.
+fn keep(shell: &mut Shell, keeper: &mut Keeper, ctx: &egui::Context, placed: bool) {
+    if placed {
+        shell.maximise(ctx);
+        shell.track_window(ctx);
+    }
     if let Some(wait) = keeper.frame(Instant::now(), &shell.to_settings(ctx)) {
         ctx.request_repaint_after(wait);
     }
@@ -5230,22 +5613,25 @@ mod tests {
     }
 
     /// File › Close: the photo closed through the session, which saves its edit, and the
-    /// folder closed, so nothing is open and the central panel says where to start; what
-    /// the photo closed still sends is dropped. With nothing open, nothing is sent.
+    /// folder closed, so nothing is open and the start window shows in place of the main
+    /// window; what the photo closed still sends is dropped. With nothing open, nothing is
+    /// sent.
     #[test]
-    fn close_closes_the_photo_and_the_folder_and_drops_what_the_photo_still_sends() {
+    fn close_closes_the_photo_and_the_folder_and_shows_the_start_window() {
         let mut m = mirror::tests::mirror();
         let mut sent = Vec::new();
         let folder = PathBuf::from("/photos");
         open_folder(folder.clone(), &mut m, &mut sender(&mut sent));
         open_photo(folder.join("a.ARW"), &mut m, &mut sender(&mut sent));
         m.apply(Event::Opened(mirror::tests::photo(2)));
+        assert!(!shows_start(opened(&m), false, false, false));
         sent.clear();
         close(&mut m, &mut sender(&mut sent));
         assert_eq!(
             sent,
             [Command::Close, Command::Library(LibraryCommand::Close)]
         );
+        assert!(shows_start(opened(&m), false, false, false));
         assert!(matches!(m.photo, PhotoState::None));
         assert_eq!(m.folder.folder, folder::Folder::None);
         // Browse's tree has no root after it.
@@ -5476,17 +5862,18 @@ mod tests {
     }
 
     /// A kept folder that is gone fails as its reading does, never waited for at the start,
-    /// and is closed: the central panel shows nothing open, its recent marked with why, and
-    /// still enabled in Open Recent, so choosing it tries again; one a check found gone is
-    /// disabled.
+    /// and is closed: the start window shows, its recent marked with why, and still enabled
+    /// in Open Recent, so choosing it tries again; one a check found gone is disabled.
     #[test]
-    fn a_kept_folder_that_is_gone_shows_nothing_open_its_recent_marked() {
+    fn a_kept_folder_that_is_gone_shows_the_start_window_its_recent_marked() {
         let kept = last(Some("b.ARW"));
         let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
         let mut shell = opened_on("photos");
         shell.remember_folder(PathBuf::from("/photos/Gone"));
         shell.remember_folder(kept.path.clone());
         let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        // The main window while it is read.
+        assert!(!shows_start(opened(&m), false, false, false));
         let failed = Event::Library(LibraryEvent::Failed {
             open: 1,
             reason: "No such folder".to_owned(),
@@ -5499,7 +5886,7 @@ mod tests {
         reopened(&mut reopening, &mut m, &mut sender(&mut sent));
         assert_eq!(sent[1..], [Command::Library(LibraryCommand::Close)]);
         assert_eq!(reopening, None);
-        assert_eq!(library::Empty::of(&m.folder.folder), library::Empty::Start);
+        assert!(shows_start(opened(&m), false, false, false));
         let rows = shell.recent_folders();
         assert_eq!(
             rows[0].missing,
@@ -5518,6 +5905,140 @@ mod tests {
             "{}",
             items[0].tip
         );
+    }
+
+    /// What shows at the start (`docs/gui.md`, The start window): with nothing kept, or
+    /// Reopen what was open last off, the start window in place of the main window; with
+    /// what was kept reopening, a path from the command line, or Open With's files still
+    /// being looked at, the main window. A refusal of what was handed over is asked over the
+    /// main window, which becomes the start window once it is answered.
+    #[test]
+    fn the_start_window_shows_at_the_start_with_nothing_to_open() {
+        let kept = last(None);
+        let starts = |last: Option<&recents::Last>, on: bool| {
+            let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+            reopen(last, on, &mut m, &mut sender(&mut sent));
+            shows_start(opened(&m), false, false, false)
+        };
+        assert!(starts(None, true), "nothing kept");
+        assert!(starts(Some(&kept), false), "reopen off");
+        assert!(!starts(Some(&kept), true), "what was open last reopening");
+        for given in [
+            Start::Photo(PathBuf::from("/photos/a.ARW")),
+            Start::Folder(PathBuf::from("/photos")),
+        ] {
+            let mut m = mirror::tests::mirror();
+            started_with(given, &mut m);
+            assert!(!shows_start(opened(&m), false, false, false));
+        }
+        // `--in-folder`'s or Finder's files, looked at off this thread, then refused.
+        let nothing = opened(&mirror::tests::mirror());
+        assert!(!shows_start(nothing, true, false, false));
+        assert!(!shows_start(nothing, false, true, false));
+        assert!(shows_start(nothing, false, false, false));
+        // Shown, it stays while a dialog or a drop asks over it.
+        assert!(shows_start(nothing, true, true, true));
+    }
+
+    /// The start window's place: its size at the interface's scale, centred on the main
+    /// window's last normal placement, the main window's own kept as it was; with no place
+    /// kept, none, for the system to choose.
+    #[test]
+    fn the_start_window_stands_centred_where_the_main_window_was() {
+        let main = settings::Window {
+            size: Some([1400.0, 900.0]),
+            position: Some(settings::Position {
+                pixels: [200.0, 100.0],
+                scale_factor: 2.0,
+            }),
+            maximized: true,
+        };
+        let start = start_placement(&main, 1.0);
+        assert_eq!(start.size, Some([760.0, 520.0]));
+        // (1400 - 760) / 2 = 320 points, 640 pixels at 2; (900 - 520) / 2 = 190, 380.
+        let at = start.position.expect("a place");
+        assert_eq!(at.pixels, [840.0, 480.0]);
+        assert_eq!(at.scale_factor, 2.0);
+        assert!(!start.maximized);
+        let larger = start_placement(&main, 1.5);
+        assert_eq!(larger.size, Some([1140.0, 780.0]));
+        let first = settings::Window {
+            size: None,
+            position: None,
+            maximized: false,
+        };
+        assert_eq!(start_placement(&first, 1.0).position, None);
+    }
+
+    /// The start window's menus and keys: as with a modeless dialog's window with the focus,
+    /// what needs something open or acts on the main window rests; the ways in, Settings and
+    /// Quit stay, and Close Window closes it, but under a modal dialog or alert.
+    #[test]
+    fn the_start_window_rests_what_acts_on_the_main_window() {
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        let state = in_start(shell.state(&ctx, false, false));
+        let enabled = |id, state: &State| actions::action(id).is_some_and(|a| a.enabled(state));
+        for id in [
+            ActionId::OPEN,
+            ActionId::OPEN_FOLDER,
+            ActionId::SETTINGS,
+            ActionId::QUIT,
+            ActionId::CLOSE_WINDOW,
+        ] {
+            assert!(enabled(id, &state), "{id:?}");
+        }
+        for id in [
+            ActionId::CLOSE,
+            ActionId::EXPORT,
+            ActionId::FULL_SCREEN,
+            ActionId::SHOW_BROWSE,
+            ActionId::PANEL_TABS[1],
+        ] {
+            assert!(!enabled(id, &state), "{id:?}");
+        }
+        let modal = State {
+            modal: true,
+            ..shell.state(&ctx, false, false)
+        };
+        let modal = in_start(modal);
+        assert!(!enabled(ActionId::CLOSE_WINDOW, &modal));
+        assert!(!enabled(ActionId::OPEN_FOLDER, &modal));
+        assert!(enabled(ActionId::QUIT, &modal));
+    }
+
+    /// Close Window on the main window, and the Mac's close button there: on the Mac with
+    /// something open, what Close does, the start window taking its place; with nothing
+    /// open, under a modal dialog, with a dialog's own window focused, and on Windows and
+    /// Linux, itself, which ends the app.
+    #[test]
+    fn close_window_on_the_mac_s_main_window_does_what_close_does() {
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        let open = State {
+            opened: true,
+            ..shell.state(&ctx, true, false)
+        };
+        let mac = OperatingSystem::Mac;
+        assert_eq!(close_window_runs(mac, &open), ActionId::CLOSE);
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            assert_eq!(close_window_runs(os, &open), ActionId::CLOSE_WINDOW);
+        }
+        let nothing = shell.state(&ctx, false, false);
+        assert_eq!(close_window_runs(mac, &nothing), ActionId::CLOSE_WINDOW);
+        let modal = State {
+            modal: true,
+            ..open
+        };
+        assert_eq!(close_window_runs(mac, &modal), ActionId::CLOSE_WINDOW);
+        let settings = State {
+            dialog: true,
+            dialog_window: true,
+            ..open
+        };
+        assert_eq!(close_window_runs(mac, &settings), ActionId::CLOSE_WINDOW);
     }
 
     /// Open Recent's items name each folder, with as many of the folders it is in as tell it
@@ -5765,7 +6286,7 @@ mod tests {
                     // What Settings' window changed, as `App::logic` hands it on.
                     let changes = std::mem::take(&mut kept.changes);
                     apply_settings(&changes, &mut kept.shell, &mut kept.keeper, &ctx);
-                    keep(&mut kept.shell, &mut kept.keeper, &ctx);
+                    keep(&mut kept.shell, &mut kept.keeper, &ctx, true);
                 },
                 Kept {
                     shell,
@@ -5854,7 +6375,7 @@ mod tests {
                             kept.shell.toggle_group(module, group);
                         }
                     }
-                    keep(&mut kept.shell, &mut kept.keeper, &ctx);
+                    keep(&mut kept.shell, &mut kept.keeper, &ctx, true);
                 },
                 Kept {
                     shell,
@@ -5957,7 +6478,7 @@ mod tests {
                     }
                     side.sent
                         .extend(side.scopes.ask(side.shell.scopes_wanted()));
-                    keep(&mut side.shell, &mut side.keeper, &ctx);
+                    keep(&mut side.shell, &mut side.keeper, &ctx, true);
                 },
                 Side {
                     shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
@@ -9090,7 +9611,7 @@ mod tests {
         let app = shell.state(&ctx, true, true);
         let taken = take_dialogs(&mut shell, &mut dialogs, &app, &ctx);
         assert!(taken.quit);
-        settle(taken.quit, &mut shell, &mut keeper, &ctx);
+        settle(taken.quit, true, &mut shell, &mut keeper, &ctx);
         keeper.flush();
         assert!(folder.text().contains("[jobs_window]"), "{}", folder.text());
         let (_, read) = Keeper::open(folder.storage());

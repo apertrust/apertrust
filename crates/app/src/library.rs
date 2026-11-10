@@ -118,7 +118,10 @@ pub struct Keys {
 /// What the central panel says while no photo is open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Empty<'a> {
-    /// Nothing has been opened: where to start.
+    /// Nothing is open. The start window takes the main window's place then
+    /// (`crate::start`), but for the moments the main window waits with nothing open: Open
+    /// With's files looked at as the app starts, and the alert refusing them; a fallback the
+    /// main window shows there, "No folder open".
     Start,
     /// The folder is being read.
     Reading(&'a Path),
@@ -863,8 +866,9 @@ fn open_this_row(ui: &mut egui::Ui, words: &str, shown: &str) -> egui::Response 
 }
 
 /// The central panel's empty state in the middle of `slot`: with nothing open "No folder
-/// open", and "No photo selected", each one line alone on the surround, in its text colour,
-/// the ways in being File's, Browse's and the keys'; else a card with the heading, and under
+/// open", the fallback for the moments the start window waits ([`Empty::Start`]), and "No
+/// photo selected", each one line alone on the surround, in its text colour, the ways in
+/// being File's, Browse's and the keys'; else a card with the heading, and under
 /// a folder that failed or has no raws the two ways to open with their keys.
 pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) -> Vec<Action> {
     let t = theme(ui.ctx());

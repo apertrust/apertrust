@@ -416,6 +416,18 @@ folder-failed = Nie udało się otworzyć { $folder }: { $reason }
 folder-cancelled = Odczytywanie { $folder } przerwano
 folder-no-photo = Nie wybrano zdjęcia
 
+## Okno startowe, wyświetlane zamiast głównego okna, gdy nic nie jest otwarte
+
+start-recents = Ostatnie
+start-recents-none = Jeszcze nic nie otwarto
+start-kind-folder = Folder
+start-recent-gone = Nie znaleziono
+start-recent-failed = Nie udało się otworzyć
+start-recent-about = { $kind }, { $path }
+start-recent-about-missing = { $kind }, { $path }. { $why }
+start-browse = Przeglądaj…
+start-open = Otwórz
+
 ## Ustawienia
 
 settings-close = Zamknij

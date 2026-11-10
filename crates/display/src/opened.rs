@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Files the system asks the app to open (`docs/packaging.md`, Opening a raw from the
-//! system).
+//! What the system asks the app to open: files (`docs/packaging.md`, Opening a raw from the
+//! system), and on macOS the app itself again, by a click on its Dock icon (`docs/gui.md`,
+//! The start window).
 //!
 //! On macOS a double-click in Finder, Open With and a drop on the Dock icon reach the app
 //! as an open-documents event, never as arguments, at its launch or while it runs. AppKit
@@ -25,11 +26,18 @@
 //! files are kept until the app takes them with [`take_opened_files`], the latest event's
 //! only, and [`on_opened_files`] wakes the app as they come.
 //!
+//! A click on the Dock icon of a running app reaches the delegate's
+//! `applicationShouldHandleReopen:hasVisibleWindows:`, which winit 0.30's delegate does not
+//! have either: [`receive_reopen`] gives winit's class that method, which notes the click
+//! for [`take_reopened`] and wakes the app ([`on_reopen`]), then lets AppKit do what it
+//! does by default, bringing a minimised window back.
+//!
 //! Windows and Linux pass the files as arguments (`--in-folder`), which the app reads
-//! itself; there nothing arrives here.
+//! itself; there nothing arrives here, and no app runs without a window.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The files of the latest event not yet taken, and what wakes the app.
 struct Opened {
@@ -74,6 +82,44 @@ pub fn on_opened_files(wake: impl Fn() + Send + 'static) {
     opened().wake = Some(Box::new(wake));
 }
 
+/// Whether the Dock icon was clicked since the last call, and what wakes the app then.
+static REOPENED: AtomicBool = AtomicBool::new(false);
+static REOPEN_WAKE: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
+
+/// Notes a click on the Dock icon, and wakes the app.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+fn reopened() {
+    REOPENED.store(true, Ordering::SeqCst);
+    let wake = REOPEN_WAKE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(wake) = wake.as_ref() {
+        wake();
+    }
+}
+
+/// Whether the Dock icon was clicked since the last call, once each.
+pub fn take_reopened() -> bool {
+    REOPENED.swap(false, Ordering::SeqCst)
+}
+
+/// `wake` is called as the Dock icon is clicked, so the app looks though it is idle and has
+/// no window shown; it is called on the main thread.
+pub fn on_reopen(wake: impl Fn() + Send + 'static) {
+    *REOPEN_WAKE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(wake));
+}
+
+/// Makes the app hear a click on its Dock icon while it runs, on macOS; does nothing
+/// elsewhere. To be called once, as [`receive_opened_files`] is.
+pub fn receive_reopen() -> Result<(), crate::Error> {
+    #[cfg(target_os = "macos")]
+    return macos::receive_reopen();
+    #[cfg(not(target_os = "macos"))]
+    Ok(())
+}
+
 /// Makes the app receive the files the system asks it to open, on macOS; does nothing
 /// elsewhere. To be called once, after winit's event loop is made, which sets its
 /// delegate, and before it runs, which finishes the launch and delivers the launch's files.
@@ -88,41 +134,82 @@ pub fn receive_opened_files() -> Result<(), crate::Error> {
 mod macos {
     use std::path::PathBuf;
 
-    use objc2::runtime::{AnyClass, AnyObject, Imp, NSObjectProtocol as _, Sel};
+    use std::ffi::{CStr, CString};
+
+    use objc2::Encode as _;
+    use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, NSObjectProtocol as _, Sel};
     use objc2::{MainThreadMarker, sel};
     use objc2_app_kit::NSApplication;
     use objc2_foundation::{NSArray, NSURL};
 
     use crate::Error;
 
-    /// Gives the application delegate's class, winit's, `application:openURLs:`, then sets
-    /// the delegate again, so AppKit, which may note what a delegate answers to as it is
-    /// set, sees the method.
+    /// Gives the application delegate's class, winit's, `application:openURLs:`.
     pub(super) fn receive() -> Result<(), Error> {
+        let opened: extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSURL>) = opened;
+        // SAFETY: an IMP is any method's function pointer, called with the signature the
+        // encoding gives, `opened`'s: no result, self, the selector, the application and
+        // the array of URLs.
+        let imp: Imp = unsafe { std::mem::transmute(opened) };
+        add(
+            sel!(application:openURLs:),
+            "application:openURLs:",
+            imp,
+            c"v@:@@",
+        )
+    }
+
+    /// Gives the application delegate's class, winit's,
+    /// `applicationShouldHandleReopen:hasVisibleWindows:`.
+    pub(super) fn receive_reopen() -> Result<(), Error> {
+        let reopen: extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, Bool) -> Bool = reopen;
+        // SAFETY: as `receive`'s, with `reopen`'s signature: a BOOL, self, the selector, the
+        // application and a BOOL, whose encoding is the platform's (`c` or `B`).
+        let imp: Imp = unsafe { std::mem::transmute(reopen) };
+        let types = format!("{0}@:@{0}", Bool::ENCODING);
+        let name = "applicationShouldHandleReopen:hasVisibleWindows:";
+        let types = CString::new(types).map_err(|_| Error::OwnMethod(name))?;
+        add(
+            sel!(applicationShouldHandleReopen:hasVisibleWindows:),
+            name,
+            imp,
+            &types,
+        )
+    }
+
+    /// Gives winit's application delegate class the method `imp`, named `name`, with the
+    /// type encoding `types`, then sets the delegate again, so AppKit, which may note what a
+    /// delegate answers to as it is set, sees the method.
+    fn add(selector: Sel, name: &'static str, imp: Imp, types: &CStr) -> Result<(), Error> {
         let mtm = MainThreadMarker::new().ok_or(Error::NotMainThread)?;
         let app = NSApplication::sharedApplication(mtm);
         let delegate = app.delegate().ok_or(Error::NoDelegate)?;
         // winit's class by name, never another's: a delegate that is not winit's is left
-        // as it is, and the files are not received (`main.rs` warns on `control`).
+        // as it is, and nothing is received (`main.rs` warns on `control`).
         let class = AnyClass::get(c"WinitApplicationDelegate")
             .filter(|class| delegate.isKindOfClass(class))
             .ok_or(Error::UnknownDelegate)?;
-        let opened: extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSURL>) = opened;
-        // SAFETY: an IMP is any method's function pointer, called with the signature the
-        // encoding gives, `opened`'s: no result, self, the selector, the application and
-        // the array of URLs. The method goes on winit's delegate class, which
-        // does not define it (`class_addMethod` adds nothing to a class that does).
+        // SAFETY: the method goes on winit's delegate class, which does not define it
+        // (`class_addMethod` adds nothing to a class that does), with the encoding its
+        // function's signature has.
         let added = unsafe {
-            let imp: Imp = std::mem::transmute(opened);
             let class = std::ptr::from_ref::<AnyClass>(class).cast_mut();
-            objc2::ffi::class_addMethod(class, sel!(application:openURLs:), imp, c"v@:@@".as_ptr())
+            objc2::ffi::class_addMethod(class, selector, imp, types.as_ptr())
         };
         if !added.as_bool() {
-            return Err(Error::OwnMethod("application:openURLs:"));
+            return Err(Error::OwnMethod(name));
         }
         app.setDelegate(None);
         app.setDelegate(Some(&delegate));
         Ok(())
+    }
+
+    /// The delegate's `applicationShouldHandleReopen:hasVisibleWindows:`: the click noted for
+    /// the app, which shows its start window where it has no window shown; yes, so AppKit
+    /// still brings a minimised window back.
+    extern "C-unwind" fn reopen(_: &AnyObject, _: Sel, _: &AnyObject, _: Bool) -> Bool {
+        super::reopened();
+        Bool::YES
     }
 
     /// The delegate's `application:openURLs:`: the files among `urls`, kept for the app.
@@ -174,7 +261,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use super::{deliver, on_opened_files, take_opened_files};
+    use super::{deliver, on_opened_files, on_reopen, reopened, take_opened_files, take_reopened};
 
     /// The latest event's files, once, the app woken for each event with files; an event
     /// with none keeps nothing. One test, since the files are kept for the whole process.
@@ -196,5 +283,22 @@ mod tests {
             Some(paths(&["/b/IMG_2.CR3", "/b/IMG_3.CR3"]))
         );
         assert_eq!(take_opened_files(), None);
+    }
+
+    /// A Dock click, noted once and waking the app each time. One test, since the click is
+    /// kept for the whole process.
+    #[test]
+    fn a_click_on_the_dock_icon_is_taken_once_and_wakes_the_app() {
+        let woken = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&woken);
+        on_reopen(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
+        assert!(!take_reopened());
+        reopened();
+        reopened();
+        assert_eq!(woken.load(Ordering::SeqCst), 2);
+        assert!(take_reopened());
+        assert!(!take_reopened());
     }
 }
