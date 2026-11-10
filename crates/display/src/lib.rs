@@ -117,6 +117,8 @@ pub enum Error {
     OwnMethod(&'static str),
     #[error("the application has no delegate")]
     NoDelegate,
+    #[error("the application's delegate is not winit's")]
+    UnknownDelegate,
 }
 
 /// Tags the window's surface as holding `space`, so the system colour-manages it to the

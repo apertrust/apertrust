@@ -88,7 +88,7 @@ pub fn receive_opened_files() -> Result<(), crate::Error> {
 mod macos {
     use std::path::PathBuf;
 
-    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2::runtime::{AnyClass, AnyObject, Imp, NSObjectProtocol as _, Sel};
     use objc2::{MainThreadMarker, sel};
     use objc2_app_kit::NSApplication;
     use objc2_foundation::{NSArray, NSURL};
@@ -102,12 +102,15 @@ mod macos {
         let mtm = MainThreadMarker::new().ok_or(Error::NotMainThread)?;
         let app = NSApplication::sharedApplication(mtm);
         let delegate = app.delegate().ok_or(Error::NoDelegate)?;
-        let object: &AnyObject = delegate.as_ref();
-        let class: &AnyClass = object.class();
+        // winit's class by name, never another's: a delegate that is not winit's is left
+        // as it is, and the files are not received (`main.rs` warns on `control`).
+        let class = AnyClass::get(c"WinitApplicationDelegate")
+            .filter(|class| delegate.isKindOfClass(class))
+            .ok_or(Error::UnknownDelegate)?;
         let opened: extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &NSArray<NSURL>) = opened;
         // SAFETY: an IMP is any method's function pointer, called with the signature the
         // encoding gives, `opened`'s: no result, self, the selector, the application and
-        // the array of URLs. The method goes on the delegate's own class, winit's, which
+        // the array of URLs. The method goes on winit's delegate class, which
         // does not define it (`class_addMethod` adds nothing to a class that does).
         let added = unsafe {
             let imp: Imp = std::mem::transmute(opened);

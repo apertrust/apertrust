@@ -3544,12 +3544,11 @@ impl eframe::App for App {
             self.carry_out_opening(dropped_opens(dropped), &ctx);
         }
         self.drops.take(&ctx, modal);
-        // What the system asked the app to open, Open With's, opens as a drop of it would,
-        // its folder with the photo active, once looked at; it waits for a modal dialog to
-        // go rather than being set aside, since nothing on the screen says it came.
-        if let Some(files) = apertrust_display::take_opened_files() {
-            self.opened.look(files, &ctx);
-        }
+        // What the system asked the app to open, Open With's, taken in `logic`, opens as a
+        // drop of it would, its folder with the photo active, once looked at; it waits for a
+        // modal dialog to go rather than being set aside, since nothing on the screen says it
+        // came. A drop's answer and Open With's in one frame both open, the later winning,
+        // and the second's refusal, if any, finds the alert busy and says nothing.
         if !modal && let Some(opened) = self.opened.looked() {
             self.carry_out_opening(dropped_opens(opened), &ctx);
         }
@@ -3587,6 +3586,13 @@ impl eframe::App for App {
         self.drain(ctx);
         // The recents checked again as the window gains the focus, a folder that came back
         // no longer shown missing; what their checks have found, without waiting.
+        // Finder's files, taken here since `logic` runs while the window is minimised too,
+        // which then comes back and to the front to show them.
+        if let Some(files) = apertrust_display::take_opened_files() {
+            self.opened.look(files, ctx);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
         let focused = ctx.input(|i| i.focused);
         if focused && !self.focused {
             self.shell.recents.check();
