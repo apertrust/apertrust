@@ -192,7 +192,7 @@ An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes i
 - `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open. Planned, it may come after the open's `Opened`, when the decode or the upload fails (decision 77).
 - `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76), and, planned, `NotLive`, a command on the edit while the photo is opening (decision 77).
 
-- `CacheWalk { command, source }`: the walk for a `CacheCommand::Sizes` failed, its folder or a kind's not listed.
+- `CacheWalk { command, source }`: the walk for a `CacheCommand::Sizes` failed, its folder or a kind's not listed, one for each `Sizes` that walk's pass answers.
 
 The others stand alone:
 

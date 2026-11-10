@@ -81,7 +81,7 @@ Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progres
 - `apertrust-cli cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
 - `--cache-dir DIR` (or `--cachedir`), global, as `--user-data-dir` is.
 
-**Where the code lives:** `apertrust_base::cache`, behind a `cache` feature: the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, and the commands' and events' types. Owners name their slots and versions: the library's thumbnails, library caches and local copies, the engine's pipelines. The engine opens no folder ([0043](0043-settings-and-apertrusts-folders.md)): a binary opens the cache and hands the session its handle with the limit (`CacheOptions`), the golden harness none; the engine's `session::cache` runs the start's walk and eviction.
+**Where the code lives:** `apertrust_base::cache`, behind a `cache` feature: the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, and the commands' and events' types. Owners name their slots and versions: the library's thumbnails, library caches and local copies, the engine's pipelines. The engine opens no folder ([0043](0043-settings-and-apertrusts-folders.md)): a binary opens the cache and hands the session its handle with the limit (`CacheOptions`), the golden harness none; the engine's `session::cache` runs the start's walk, eviction, the walk for the sizes and `cache-clear`.
 
 ## Options considered
 

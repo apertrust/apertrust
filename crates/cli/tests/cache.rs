@@ -61,7 +61,7 @@ impl Folder {
 
     /// Each kind's usage as a walk finds it now.
     fn usage(&self) -> [Usage; 3] {
-        let sizes = Cache::open(self.cache()).walk(&|| false).unwrap();
+        let sizes = Cache::open(self.cache()).walk(&|| false).unwrap().unwrap();
         [THUMBNAILS, PIPELINES, LIBRARIES].map(|kind| sizes.of(kind))
     }
 
@@ -127,6 +127,11 @@ fn info_prints_the_folder_the_limit_and_each_kind() {
     let (stdout, _, status) = folder.run(&["--conf", "cache.limited=false", "info"]);
     assert_eq!(status, Some(0));
     assert!(stdout.contains("\nlimit: unlimited\n"), "{stdout}");
+
+    // The limit as the setting holds it.
+    let (stdout, _, status) = folder.run(&["--conf", "cache.limit=4.3", "info"]);
+    assert_eq!(status, Some(0));
+    assert!(stdout.contains("\nlimit: 4.3 GB\n"), "{stdout}");
 }
 
 /// A cache folder that is missing is an empty cache, and stays missing.
@@ -162,7 +167,8 @@ fn info_on_a_missing_folder_is_an_empty_cache_and_creates_nothing() {
 #[test]
 fn clear_removes_the_kinds_named_or_every_limited_one() {
     let folder = Folder::populated("clear");
-    let (stdout, stderr, status) = folder.run(&["clear", "thumbnails"]);
+    // A kind named twice is cleared once.
+    let (stdout, stderr, status) = folder.run(&["clear", "thumbnails", "thumbnails"]);
     assert_eq!(status, Some(0), "{stderr}");
     assert_eq!(stdout, "thumbnails: removed 3 entries, 3.0 kB\n");
     let library = usage(1, 5000);
@@ -226,8 +232,12 @@ fn clear_says_what_it_could_not_remove_and_fails() {
     assert_eq!(status, Some(1), "{stderr}");
     assert_eq!(
         stdout,
-        "thumbnails: removed 3 entries, 3.0 kB\npipelines: removed 0 entries, 0.0 kB\n\
-         pipelines: could not remove 1 entry\n"
+        "thumbnails: removed 3 entries, 3.0 kB\npipelines: removed 0 entries, 0.0 kB\n"
+    );
+    // What failed goes to stderr.
+    assert!(
+        stderr.contains("pipelines: could not remove 1 entry\n"),
+        "{stderr}"
     );
     assert!(stderr.contains("not fully cleared"), "{stderr}");
     assert_eq!(folder.usage()[..2], [usage(0, 0), usage(1, ENTRY)]);
