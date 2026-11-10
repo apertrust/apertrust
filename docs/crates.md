@@ -551,7 +551,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 
 File › Open… (`open`, Ctrl+O, first in File, and Browse's ＋; `src/dialogs.rs`, `dialogs::Pick::Files`):
 
-- rfd's asynchronous open dialog for one or more raws of the formats the decoder reads (`session::raw_extensions`), over the window and polled each frame, so neither the window nor the engine stops; a library's or a project's file is not among them, so it is greyed out until Phase 5;
+- rfd's asynchronous open dialog for one or more raws of the formats the decoder reads (`session::raw_extensions`), over the window and polled each frame, so neither the window nor the engine stops; a library's or a project's file is not among them, so it is greyed out until Phase 5; the paths chosen are told by their names as a drop's are (`dropped::chosen`), so a name typed into it that is a library's file or no raw is refused with the drop's alert;
 - AppKit's open panel as a sheet on the Mac, COM on Windows, the XDG desktop portal on Linux, never GTK;
 - it starts in the open folder, else the open photo's, else Pictures;
 - the first raw chosen is opened through the session in place of the photo open, whose edit the session saves first, and its folder behind it (`App::open`); the others are to be selected with it once the grid panel selects (Phase 3).
@@ -562,7 +562,7 @@ File › Open… (`open`, Ctrl+O, first in File, and Browse's ＋; `src/dialogs.
 
 - a drop is taken unless a modal dialog is up (`State::modal`), and `dropped::Drops` asks the disk what each path is on a thread of its own, in order until one opens (`dropped::opens`), the answer taken a later frame;
 - a folder opens as Open Folder… does; a raw, by its extension, as Open… does, with the raws dropped beside it from its folder (`Dropped::Raws`); of several, the first;
-- where nothing opens, the alert `alerts::Purpose::Refused` names the first path and says why (`Refusal::Unknown`, or `Refusal::Library` for a `.aplibrary` or `.approject`), with OK alone;
+- where nothing opens, the alert `alerts::Purpose::Refused` says why, `Refusal::Library` naming the first `.aplibrary` or `.approject` among the paths, else `Refusal::Unknown` the first path, with OK alone, asked through `alerts::Alerts`, so it is not asked while another alert is up (`Ask::Busy`);
 - while something hovers, `dropped::show_target` outlines the photo and the grid panel in `focus_ring`, `separator_width` wide (snapshot `drop-target`).
 
 ### The dialog host

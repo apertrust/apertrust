@@ -2421,6 +2421,20 @@ impl App {
         }
     }
 
+    /// Opens what Open… or a drop asked for, or asks the alert that says why nothing opens,
+    /// naming the path it refused.
+    fn carry_out_opening(&mut self, opening: Opening, ctx: &egui::Context) {
+        match opening {
+            Ok(Opens::Photo(path)) => self.open(path),
+            Ok(Opens::Folder(path)) => self.open_folder(path),
+            Err((path, why)) => {
+                let request = alerts::refused_request(ctx, &file_name(&path), why);
+                let purpose = alerts::Purpose::Refused;
+                self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
+            }
+        }
+    }
+
     /// Opens the folder at `path` in the library, its photos going into the grid panel;
     /// the photo open stays open (`docs/events.md`, The library's events).
     fn open_folder(&mut self, path: PathBuf) {
@@ -3430,12 +3444,8 @@ impl eframe::App for App {
         if self.quit_held && self.asking.is_none() && !overwrite {
             self.quit_held = false;
             self.run_actions([ActionId::QUIT], &ctx, &[]);
-        } else if let Some(chosen) = chosen {
-            match answered(&mut self.shell, chosen) {
-                Some(Opens::Photo(path)) => self.open(path),
-                Some(Opens::Folder(path)) => self.open_folder(path),
-                None => {}
-            }
+        } else if let Some(opening) = chosen.and_then(|c| answered(&mut self.shell, c)) {
+            self.carry_out_opening(opening, &ctx);
         }
         // What was dropped onto the window opens as Open… or Open Folder… would, once it has
         // been looked at, a later frame; nothing while a modal dialog is up, as one may have
@@ -3443,15 +3453,7 @@ impl eframe::App for App {
         let modal = self.state(&ctx).modal;
         self.drops.take(&ctx, modal);
         if let Some(dropped) = self.drops.looked().filter(|_| !modal) {
-            match dropped_opens(dropped) {
-                Ok(Opens::Photo(path)) => self.open(path),
-                Ok(Opens::Folder(path)) => self.open_folder(path),
-                Err((path, why)) => {
-                    let request = alerts::refused_request(&ctx, &file_name(&path), why);
-                    let purpose = alerts::Purpose::Refused;
-                    self.alerts.ask(&mut self.dialogs, purpose, &request, &ctx);
-                }
-            }
+            self.carry_out_opening(dropped_opens(dropped), &ctx);
         }
         if dropped::hovering(&ctx, modal) {
             dropped::show_target(&ctx, central.union(grid_panel));
@@ -3578,22 +3580,29 @@ enum Opens {
     Folder(PathBuf),
 }
 
-/// What `chosen`, an open dialog's answer, opens: the first raw chosen, with its folder
-/// (the others are to be selected with it once the grid panel selects, Phase 3), or the
-/// folder chosen; for Locate…, the folder chosen, which the missing recent now points to.
-/// None for an answer with no path.
-fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opens> {
-    let first = chosen.paths.into_iter().next()?;
-    Some(match chosen.pick {
-        dialogs::Pick::Files => Opens::Photo(first),
-        dialogs::Pick::Folder => Opens::Folder(first),
-        dialogs::Pick::Locate(from) => Opens::Folder(shell.located(&from, first)),
-    })
+/// What an open dialog's answer or a drop opens, or the path it refuses and why.
+type Opening = Result<Opens, (PathBuf, dropped::Refusal)>;
+
+/// What `chosen`, an open dialog's answer, opens: for Open…, what a drop of the files
+/// chosen would, told by their names (`dropped::chosen`), so a library's file or another
+/// typed into the dialog is refused as a drop of it is; the folder chosen; for Locate…,
+/// the folder chosen, which the missing recent now points to. None for an answer with no
+/// path.
+fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opening> {
+    let dialogs::Chosen { pick, paths } = chosen;
+    match pick {
+        dialogs::Pick::Files => dropped::chosen(&paths).map(dropped_opens),
+        dialogs::Pick::Folder => paths.into_iter().next().map(|p| Ok(Opens::Folder(p))),
+        dialogs::Pick::Locate(from) => {
+            let to = paths.into_iter().next()?;
+            Some(Ok(Opens::Folder(shell.located(&from, to))))
+        }
+    }
 }
 
 /// What a drop opens: the folder, or the first raw, with its folder, the others to be
 /// selected with it as Open…'s are; or the first path, with why nothing opens.
-fn dropped_opens(dropped: dropped::Dropped) -> Result<Opens, (PathBuf, dropped::Refusal)> {
+fn dropped_opens(dropped: dropped::Dropped) -> Opening {
     match dropped {
         dropped::Dropped::Folder(path) => Ok(Opens::Folder(path)),
         dropped::Dropped::Raws { first, .. } => Ok(Opens::Photo(first)),
@@ -6526,8 +6535,11 @@ mod tests {
         host: FakeHost,
         /// What was dropped, while it is looked at.
         drops: dropped::Drops,
-        /// Each drop that opened nothing: its first path, and why.
+        /// Each drop or Open… that opened nothing: the path it names, and why.
         refused: Vec<(PathBuf, dropped::Refusal)>,
+        /// The alert up, and what each refusal's asking of it came to.
+        alerts: alerts::Alerts,
+        asked: Vec<dialog_host::Ask>,
     }
 
     /// A stand-in for the open dialog and the person answering it: `answer` is what they
@@ -6689,18 +6701,29 @@ mod tests {
                             Command::Library(LibraryCommand::Open(Source::Folder(path)))
                         }
                     };
+                    // What Open… or a drop opens, or the alert asked, as `carry_out_opening`.
+                    let carry_out = |bench: &mut Bench, opening: super::Opening| match opening {
+                        Ok(chosen) => bench.commands.push(opens(chosen)),
+                        Err((path, why)) => {
+                            let request = alerts::refused_request(&ctx, &file_name(&path), why);
+                            let purpose = alerts::Purpose::Refused;
+                            bench.asked.push(bench.alerts.ask(
+                                &mut bench.dialogs,
+                                purpose,
+                                &request,
+                                &ctx,
+                            ));
+                            bench.refused.push((path, why));
+                        }
+                    };
                     let chosen = dialogs::open(&mut bench.dialog, asked, folder);
-                    if let Some(chosen) = chosen.and_then(|c| answered(&mut bench.shell, c)) {
-                        bench.commands.push(opens(chosen));
+                    if let Some(opening) = chosen.and_then(|c| answered(&mut bench.shell, c)) {
+                        carry_out(bench, opening);
                     }
-                    // The app's drop, the alert it asks left out.
                     let modal = bench.state(&ctx).modal;
                     bench.drops.take(&ctx, modal);
                     if let Some(dropped) = bench.drops.looked().filter(|_| !modal) {
-                        match dropped_opens(dropped) {
-                            Ok(chosen) => bench.commands.push(opens(chosen)),
-                            Err(refused) => bench.refused.push(refused),
-                        }
+                        carry_out(bench, dropped_opens(dropped));
                     }
                     if let Some(gesture) = window {
                         run_title_bar(gesture, &ctx, &mut bench.system);
@@ -6730,6 +6753,8 @@ mod tests {
                     host,
                     drops: dropped::Drops::default(),
                     refused: Vec::new(),
+                    alerts: alerts::Alerts::default(),
+                    asked: Vec::new(),
                 },
             )
     }
@@ -6738,7 +6763,9 @@ mod tests {
         /// The actions' availability, the shell's with the host's dialog, as the app has it.
         fn state(&self, ctx: &egui::Context) -> State {
             let shell = self.shell.state(ctx, self.photo, self.edited);
-            with_dialogs(shell, false, self.dialogs.shown())
+            // The open dialog asking and an alert up, as `App::asking_modal`.
+            let asking = self.dialog.asking || self.alerts.pending().is_some();
+            with_dialogs(shell, asking, self.dialogs.shown())
         }
 
         /// Whether Settings is open in the host.
@@ -9763,11 +9790,12 @@ mod tests {
         harness.run();
         drop_onto(&mut harness, &[&notes]);
         drop_onto(&mut harness, &[&notes, &library]);
+        // The alert names the library, since it says libraries come later.
         assert_eq!(
             harness.state().refused,
             vec![
                 (notes.clone(), dropped::Refusal::Unknown),
-                (notes.clone(), dropped::Refusal::Library)
+                (library.clone(), dropped::Refusal::Library)
             ]
         );
         // A file that opens nothing beside a raw: the raw opens.
@@ -9778,12 +9806,117 @@ mod tests {
         harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
         harness.run();
         assert!(harness.state().state(&harness.ctx).modal);
-        let file = dropped::tests::File(raw.clone());
+        dropped_untaken(&mut harness, &raw);
+        assert_eq!(harness.state().refused.len(), 2);
+    }
+
+    /// `path` dropped onto the bench's window under a modal dialog: nothing is taken, and
+    /// nothing opens.
+    fn dropped_untaken(harness: &mut Harness<'_, Bench>, path: &Path) {
+        let before = harness.state().commands.len();
+        let file = dropped::tests::File(path.to_path_buf());
         harness.input_mut().dropped_files.push(Arc::new(file));
         harness.run();
         assert!(!harness.state().drops.looking());
-        assert_eq!(harness.state().commands.len(), 1);
-        assert_eq!(harness.state().refused.len(), 2);
+        assert_eq!(harness.state().commands.len(), before);
+    }
+
+    #[test]
+    fn no_drop_is_taken_under_about_the_open_dialog_or_an_alert() {
+        let folder = settings::testing::Folder::new("drop-modal");
+        let (raw, notes) = (folder.0.join("IMG_1.CR3"), folder.0.join("notes.txt"));
+        for file in [&raw, &notes] {
+            std::fs::write(file, b"").expect("a file");
+        }
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        // About, over the window.
+        let ctx = harness.ctx.clone();
+        harness.state_mut().shell.about.open(&ctx);
+        harness.run();
+        dropped_untaken(&mut harness, &raw);
+        harness.state_mut().shell.about = about::About::default();
+        harness.run();
+        // The open dialog asking, a sheet on the Mac.
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::O);
+        harness.run();
+        assert!(harness.state().dialog.asking);
+        dropped_untaken(&mut harness, &raw);
+        harness.state_mut().dialog.answer = Some(None);
+        harness.run();
+        // An alert, the refusal's own: the next drop waits for its answer.
+        harness.state().host.0.borrow_mut().native_alerts = true;
+        drop_onto(&mut harness, &[&notes]);
+        assert_eq!(harness.state().asked, vec![dialog_host::Ask::Shown]);
+        dropped_untaken(&mut harness, &raw);
+        assert!(harness.state().commands.is_empty());
+    }
+
+    #[test]
+    fn a_drop_looked_at_while_a_modal_dialog_opens_opens_nothing() {
+        let folder = settings::testing::Folder::new("drop-meanwhile");
+        let raw = folder.0.join("IMG_1.CR3");
+        std::fs::write(&raw, b"").expect("a raw");
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        let file = dropped::tests::File(raw.clone());
+        harness.input_mut().dropped_files.push(Arc::new(file));
+        // One frame, so none takes the answer before About opens.
+        harness.step();
+        assert!(harness.state().drops.looking());
+        // About opens, modal over the window, before the frame the answer is looked for.
+        let ctx = harness.ctx.clone();
+        harness.state_mut().shell.about.open(&ctx);
+        harness.state_mut().drops.wait();
+        harness.step();
+        assert!(!harness.state().drops.looking());
+        assert!(harness.state().commands.is_empty());
+        // Nor once About has gone: the answer was taken and set aside.
+        harness.state_mut().shell.about = about::About::default();
+        harness.run();
+        assert!(harness.state().commands.is_empty());
+    }
+
+    #[test]
+    fn open_refuses_a_library_s_file_or_another_typed_into_its_dialog() {
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        for (typed, why) in [
+            ("/photos/Home.aplibrary", dropped::Refusal::Library),
+            ("/photos/notes.txt", dropped::Refusal::Unknown),
+        ] {
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::O);
+            harness.run();
+            let typed = PathBuf::from(typed);
+            harness.state_mut().dialog.answer = Some(Some(vec![typed.clone()]));
+            harness.run();
+            assert_eq!(harness.state().refused.last(), Some(&(typed, why)));
+        }
+        assert!(harness.state().commands.is_empty());
+    }
+
+    #[test]
+    fn the_refused_alert_goes_through_alerts_and_another_that_frame_is_busy() {
+        let host = FakeHost::default();
+        host.0.borrow_mut().native_alerts = true;
+        let mut dialogs = dialog_host::AppDialogs::new(host.clone());
+        let mut alerts = alerts::Alerts::default();
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        let refused = alerts::refused_request(&ctx, "notes.txt", dropped::Refusal::Unknown);
+        let purpose = alerts::Purpose::Refused;
+        let asked = alerts.ask(&mut dialogs, purpose, &refused, &ctx);
+        assert_eq!(asked, dialog_host::Ask::Shown);
+        // The save warning's, asked in the same frame, waits: one alert at a time.
+        let save = alerts::save_request(&ctx, "IMG_1.CR3", "disk full");
+        let later = alerts.ask(&mut dialogs, alerts::Purpose::Save, &save, &ctx);
+        assert_eq!(later, dialog_host::Ask::Busy);
+        assert_eq!(host.0.borrow().alerts, vec![refused]);
+        // OK pressed: the refusal's answer, which does nothing.
+        host.0.borrow_mut().answer = Some(dialog_host::Answer::Pressed(0));
+        let answered = alerts.answered(&mut dialogs);
+        assert_eq!(answered, Some((purpose, dialog_host::Answer::Pressed(0))));
+        assert_eq!(alerts.pending(), None);
     }
 
     #[test]

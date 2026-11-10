@@ -49,7 +49,7 @@ fn entries() -> Vec<Entry> {
             "file",
             "&File",
             vec![
-                Item::new("open", "Open Image…").shortcut("Ctrl+O").into(),
+                Item::new("open", "Open…").shortcut("Ctrl+O").into(),
                 Submenu::new(
                     "recent",
                     "Open Recent",
@@ -318,7 +318,7 @@ fn the_arrows_move_through_the_lines_and_into_and_out_of_submenus() {
     // → opens File at its first line, and → again its submenu.
     key(&mut harness, Key::ArrowRight);
     assert!(menu_open(&harness, "File"));
-    assert_eq!(focused(&harness), "Open Image…");
+    assert_eq!(focused(&harness), "Open…");
     key(&mut harness, Key::ArrowDown);
     key(&mut harness, Key::ArrowRight);
     assert!(menu_open(&harness, "Open Recent"));
@@ -408,7 +408,7 @@ fn a_letter_moves_to_the_next_line_starting_with_it() {
     typed(&mut harness, "o");
     assert_eq!(focused(&harness), "Open Recent");
     typed(&mut harness, "o");
-    assert_eq!(focused(&harness), "Open Image…");
+    assert_eq!(focused(&harness), "Open…");
     typed(&mut harness, "q");
     assert_eq!(focused(&harness), "Quit");
     // Nothing is chosen by a letter.
@@ -427,7 +427,7 @@ fn a_click_chooses_an_item_but_never_a_disabled_one() {
     assert!(harness.state().answers.is_empty());
     assert!(menu_open(&harness, "File"));
     harness
-        .get_by_role_and_label(Role::MenuItem, "Open Image…")
+        .get_by_role_and_label(Role::MenuItem, "Open…")
         .click();
     harness.run();
     assert_eq!(
@@ -515,7 +515,7 @@ fn screen_readers_read_it_as_a_menu() {
     assert_eq!(proof.accesskit_node().toggled(), Some(Toggled::False));
     // An item's keys are its shortcut; a disabled one is read so.
     open(&mut harness, Some("file"));
-    let item = harness.get_by_role_and_label(Role::MenuItem, "Open Image…");
+    let item = harness.get_by_role_and_label(Role::MenuItem, "Open…");
     assert_eq!(
         item.accesskit_node().data().keyboard_shortcut(),
         Some("Ctrl+O")
@@ -704,7 +704,7 @@ fn an_answer_is_read_once() {
     // Chosen by a click, by the keys, and dismissed.
     open(&mut harness, Some("file"));
     harness
-        .get_by_role_and_label(Role::MenuItem, "Open Image…")
+        .get_by_role_and_label(Role::MenuItem, "Open…")
         .click();
     harness.run();
     open(&mut harness, Some("file"));

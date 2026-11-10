@@ -1751,7 +1751,7 @@ fn sample_menu(anchor: egui::Rect) -> Request {
             "file",
             "&File",
             vec![
-                Item::new("open", "Open Image…").shortcut("Ctrl+O").into(),
+                Item::new("open", "Open…").shortcut("Ctrl+O").into(),
                 Submenu::new(
                     "open-recent",
                     "Open Recent",
