@@ -440,15 +440,19 @@ fn row(
         if response.hovered() {
             painter.rect_filled(rect, t.shape.radius, t.colors.hover);
         }
+        // Greyed only where it cannot be opened, as Open Recent's: one whose opening failed
+        // this run tries again.
         let quiet = t.colors.text_secondary;
-        match gone {
-            Some(_) => (
+        match recent.missing {
+            Some(Missing::Gone) => (
                 t.colors.text_disabled,
                 t.colors.text_disabled,
                 quiet,
                 t.colors.warning,
             ),
-            None => (t.colors.text, t.colors.text_strong, quiet, t.colors.warning),
+            Some(Missing::Failed(_)) | None => {
+                (t.colors.text, t.colors.text_strong, quiet, t.colors.warning)
+            }
         }
     };
     let icon = Rect::from_center_size(
