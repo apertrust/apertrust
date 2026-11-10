@@ -1324,7 +1324,8 @@ struct Shell {
     /// Whether Browse was shown at the last frame, so the recents are checked again as it
     /// comes into sight.
     browse_shown: bool,
-    /// The folders the user opened (true) or closed (false) in Browse's tree, for this run.
+    /// The folders the user opened (true) or closed (false) in Browse's tree, for this run:
+    /// neither a folder chosen in the tree nor a way in changes them.
     tree: BTreeMap<PathBuf, bool>,
     /// The missing recent Locate… asked about, for the folder dialog after the frame.
     locate: Option<PathBuf>,
@@ -1540,10 +1541,10 @@ impl Shell {
         self.recents.save();
     }
 
-    /// Opens or closes `folder` in Browse's tree, for the run; `open` says it is the open
-    /// folder, which starts open, the others closed. Returns whether it is open now.
-    fn toggle_tree(&mut self, folder: &Path, open: bool) -> bool {
-        let now = !self.tree.get(folder).copied().unwrap_or(open);
+    /// Opens or closes `folder` in Browse's tree, for the run; `root` says it is the tree's
+    /// root, which starts open, the others closed. Returns whether it is open now.
+    fn toggle_tree(&mut self, folder: &Path, root: bool) -> bool {
+        let now = !self.tree.get(folder).copied().unwrap_or(root);
         self.tree.insert(folder.to_owned(), now);
         now
     }
@@ -2526,11 +2527,23 @@ impl App {
         }
     }
 
-    /// Opens the folder at `path` in the library, its photos going into the grid panel;
-    /// the photo open stays open (`docs/events.md`, The library's events).
+    /// Opens the folder at `path` in the library, its photos going into the grid panel, a
+    /// way in: it becomes Browse's root and, once open, the first of the recents. The photo
+    /// open stays open (`docs/events.md`, The library's events).
     fn open_folder(&mut self, path: PathBuf) {
         let session = &self.session;
         open_folder(path, &mut self.mirror, &mut |command| session.send(command));
+    }
+
+    /// Shows the folder at `path`, chosen in Browse's tree, in the grid panel: the library
+    /// opens it, and the tree's root, what it has listed and the recents stay as they were
+    /// (`docs/gui.md`, Browse).
+    fn choose_folder(&mut self, path: PathBuf) {
+        let source = Source::Folder(path.clone());
+        let open = self
+            .session
+            .send(Command::Library(LibraryCommand::Open(source)));
+        self.mirror.folder.choosing(path, open);
     }
 
     /// Takes in what the engine has reported since the last frame through the mirror
@@ -2886,6 +2899,8 @@ impl App {
         let keys = self.shell.open_keys(ui.ctx());
         let browse = library::Browse {
             folder,
+            root: self.mirror.folder.root(),
+            root_count: self.mirror.folder.root_count(),
             recent: &recent,
             open: self.shell.browse_open(),
             tree: &self.shell.tree,
@@ -2901,8 +2916,8 @@ impl App {
     }
 
     /// What Browse and the empty states asked for: the dialogs are asked after the frame, a
-    /// folder is opened through the session at once, Browse's header, its Folders' row and
-    /// the tree's open folder open or close them, the file manager is started, and a
+    /// recent opened or a folder in the tree chosen through the session at once, Browse's
+    /// header, its Folders' row and the tree's folders open or close them, the file manager is started, and a
     /// missing recent is taken out of the recents or located.
     fn carry_out(&mut self, actions: Vec<library::Action>, ctx: &egui::Context) {
         let mut repaint = false;
@@ -2913,11 +2928,12 @@ impl App {
                 library::Action::OpenFolder => self.shell.open_folder = true,
                 library::Action::OpenFiles => self.shell.open = true,
                 library::Action::Open(path) => self.open_folder(path),
+                library::Action::Choose(path) => self.choose_folder(path),
                 library::Action::Toggle => self.shell.toggle_browse(false),
                 library::Action::ToggleFolders => self.shell.toggle_browse(true),
                 library::Action::ToggleTree(path) => {
-                    let open = self.mirror.folder.shown() == Some(path.as_path());
-                    self.shell.toggle_tree(&path, open);
+                    let root = self.mirror.folder.root() == Some(path.as_path());
+                    self.shell.toggle_tree(&path, root);
                 }
                 // Asked while the tree is drawn, sent once an open.
                 library::Action::Ask(folder) => {
@@ -6492,8 +6508,8 @@ mod tests {
         assert_eq!(shown(&shell)[0], (a, None));
     }
 
-    /// The tree keeps what was opened for the run: the open folder starts open and the
-    /// others closed, and each toggle flips it.
+    /// The tree keeps what was opened for the run: the root starts open and the others
+    /// closed, and each toggle flips it.
     #[test]
     fn the_tree_keeps_what_was_opened_for_the_run() {
         let mut shell = opened_on("photos");
@@ -6588,6 +6604,8 @@ mod tests {
                     let keys = library::Keys::default();
                     let browse = library::Browse {
                         folder: &folder::Folder::None,
+                        root: None,
+                        root_count: None,
                         recent: &[],
                         open: shell.browse_open(),
                         tree: &BTreeMap::new(),

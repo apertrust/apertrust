@@ -1296,6 +1296,10 @@ struct Engine {
     /// The jobs listing subfolders inside that folder's tree, which the next open or a close
     /// cancels.
     subfolders: Vec<JobId>,
+    /// The root of the tree whose subfolders are listed: the first folder opened, kept while
+    /// each later open lies inside it, as Browse shows a folder inside its tree, so the
+    /// siblings of the folder last opened can be listed; a close forgets it.
+    tree: Option<PathBuf>,
     /// Holds the next export's renders for a test.
     #[cfg(test)]
     export_hold: Option<export_job::testing::Hold>,
@@ -1651,6 +1655,7 @@ impl Engine {
             shown: None,
             thumbnails: Vec::new(),
             subfolders: Vec::new(),
+            tree: None,
             #[cfg(test)]
             export_hold: None,
             #[cfg(test)]
@@ -2627,7 +2632,8 @@ impl Engine {
     /// folder's reading before it and reads the new one as a job on darktable's
     /// `UserBackground` queue, a folder's reading as darktable's film import (decision 57),
     /// cancellable, its events going out as [`Event::Library`]. A close cancels the reading
-    /// and answers at once. Either cancels the thumbnails asked for before it.
+    /// and answers at once. Either cancels the thumbnails and subfolders asked for before it.
+    /// An open outside [`Self::tree`] becomes the tree's root; one inside it keeps it.
     fn library(&mut self, command: LibraryCommand, events: &mut Vec<Event>) {
         let source = match command {
             LibraryCommand::Thumbnails { photos, size } => {
@@ -2650,11 +2656,15 @@ impl Engine {
         let open = self.applied;
         let Some(source) = source else {
             self.shown = None;
+            self.tree = None;
             events.push(Event::Library(LibraryEvent::Closed { open }));
             return;
         };
         let library::Source::Folder(path) = &source;
         self.shown = Some((open, path.clone()));
+        if !(self.tree.as_deref()).is_some_and(|root| library::inside(root, path)) {
+            self.tree = Some(path.clone());
+        }
         let message = jobs::Message::new("job-folder").with("folder", path.as_path());
         let description = format!("reading {}", path.display());
         let outbox = self.jobs.outbox.clone();
@@ -2678,11 +2688,12 @@ impl Engine {
     /// [`LibraryCommand::Subfolders`]: `folder`'s subfolders listed by a job on darktable's
     /// `UserBackground` queue, as the open folder's reading is, cancellable, answered as
     /// [`Event::Library`] in the open folder's number; the library refuses a folder outside
-    /// the open one's tree. Nothing with no folder open.
+    /// [`Self::tree`], the tree of the folder first opened. Nothing with no folder open.
     fn subfolders(&mut self, folder: PathBuf) {
-        let Some((open, root)) = self.shown.clone() else {
+        let (Some((open, _)), Some(root)) = (&self.shown, self.tree.clone()) else {
             return;
         };
+        let open = *open;
         let control = &self.jobs.control;
         self.subfolders.retain(|&job| control.state(job).is_some());
         let outbox = self.jobs.outbox.clone();
@@ -8813,6 +8824,77 @@ mod tests {
         assert!(!events.iter().any(late), "{events:?}");
         drop(session);
         remove(&path);
+    }
+
+    /// An open inside the tree of the folder first opened keeps that folder as the tree's
+    /// root, so a sibling of the folder open now is listed, and a folder outside the root is
+    /// still refused; an open outside it becomes the root.
+    #[test]
+    fn an_open_inside_the_tree_keeps_its_root_for_the_subfolders() {
+        let gpu = gpu();
+        let (folder, path) = photo_folder("library-tree-root");
+        let (day, sibling) = (folder.join("Day 1"), folder.join("Day 2"));
+        std::fs::create_dir(&sibling).unwrap();
+        std::fs::create_dir(sibling.join("Evening")).unwrap();
+        let (other, other_path) = photo_folder("library-tree-other");
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let mut events = Vec::new();
+        let root = session.send(open_folder(&folder));
+        follow(&session, &wakes, &mut events, root, ended);
+        let inside = session.send(open_folder(&day));
+        follow(&session, &wakes, &mut events, inside, ended);
+        events.clear();
+
+        // Outside the root first, then the sibling: only the sibling is answered.
+        let answer = |e: &Event| matches!(e, Event::Library(LibraryEvent::SubfoldersOf { .. }));
+        let ask = |folder: &Path| {
+            let folder = folder.to_owned();
+            session.send(Command::Library(LibraryCommand::Subfolders { folder }))
+        };
+        ask(&other);
+        ask(&sibling);
+        events.extend(until(&session, &wakes, answer));
+        // A reading after them, so the refused one has had its turn.
+        let after = session.send(open_folder(&day));
+        follow(&session, &wakes, &mut events, after, ended);
+        let answered: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Library(LibraryEvent::SubfoldersOf {
+                    open,
+                    folder,
+                    names,
+                    ..
+                }) => Some((*open, folder.clone(), names.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            answered,
+            [(inside, sibling.clone(), vec!["Evening".to_owned()])]
+        );
+
+        // Opened outside the tree, the other folder is the root, and the first one's
+        // folders are outside it.
+        let moved = session.send(open_folder(&other));
+        follow(&session, &wakes, &mut events, moved, ended);
+        events.clear();
+        ask(&sibling);
+        ask(&other.join("Day 1"));
+        events.extend(until(&session, &wakes, answer));
+        let again = session.send(open_folder(&other));
+        follow(&session, &wakes, &mut events, again, ended);
+        let folders: Vec<&Path> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Library(LibraryEvent::SubfoldersOf { folder, .. }) => Some(folder.as_path()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(folders, [other.join("Day 1")]);
+        drop(session);
+        remove(&path);
+        remove(&other_path);
     }
 
     /// A subfolders job under way is cancelled by a new open and by a close: neither its

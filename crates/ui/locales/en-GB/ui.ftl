@@ -496,9 +496,8 @@ browse-locate-title = Locate Folder
 browse-plus = New or open
 action-new-library = New Library…
 action-new-project = New Project…
-# The tree: the way up to the open folder's parent, a folder row's right-click menu, whose
-# Show in Folder is named as the platform's file manager is.
-browse-parent = Up to { $name }
+# The tree: a folder row's right-click menu, whose Show in Folder is named as the platform's
+# file manager is, and whose Open chooses the folder.
 browse-folder-menu = { $name } menu
 browse-open-row = Open
 # A photo opened alone: Folders' one row and Browse's option, which open its folder in
