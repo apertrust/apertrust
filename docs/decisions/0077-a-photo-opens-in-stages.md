@@ -15,7 +15,7 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 
 ## Decision
 
-**A photo opens in three stages,** each a state every client sees. The session's side is built; the app's is planned.
+**A photo opens in three stages,** each a state every client sees. Built, the session's side and the app's.
 
 | Stage | When | Central panel | Side panel | Events |
 | --- | --- | --- | --- | --- |

@@ -304,6 +304,12 @@ layer-image = Image
 
 # While the photo decodes and its first frame renders; $name is its file name.
 photo-opening = Opening { $name }…
+# The central bar, quietly, while a photo opening is still not live a second after the
+# click (decision 77).
+photo-rendering = Rendering…
+# The tooltip of every control while the photo opens, read-only until it is live; $name
+# is the photo's file name without its extension.
+controls-opening = Opening { $name }…
 # Over the photos opened after one whose edit could not be written as it closed, so that
 # edit is lost: $name is that photo's file name, $error why, in the system's words.
 edit-not-saved = The edit of { $name } was not saved: { $error }

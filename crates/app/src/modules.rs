@@ -556,7 +556,9 @@ fn coordinate_marks(definition: &Definition, state: &mut ModuleState) {
 /// or closed as `open` says, each of its collapsible groups open as `groups` says by the
 /// group's id. The section peeks while `peek` holds (`Section::peek`). Its reset is drawn
 /// disabled unless `editable`, as on a photo open for viewing only, whose controls the
-/// session reports unavailable. Returns what the user did.
+/// session reports unavailable. While `opening` holds the tooltip of a photo opening,
+/// read-only until it is live (decision 77), hovering its rows says why. Returns what the
+/// user did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the section, each part apart"
@@ -570,6 +572,7 @@ pub fn section(
     groups: &dyn Fn(&str) -> bool,
     peek: bool,
     editable: bool,
+    opening: Option<&str>,
 ) -> Vec<Change> {
     let definition = module.definition();
     let id = definition.id;
@@ -606,6 +609,14 @@ pub fn section(
         groups,
     };
     let out = section.show(ui, |ui| {
+        // The rows' tooltip while the photo opens, over where they were drawn last frame,
+        // asked before theirs: egui shows one tooltip a layer, the first asked, so hovering
+        // any disabled control says why rather than what it does.
+        let rows_id = ui.scope_id().with("opening rows");
+        let drawn = ui.ctx().data(|data| data.get_temp::<egui::Rect>(rows_id));
+        if let (Some(tip), Some(rows)) = (opening, drawn) {
+            (ui.interact(rows, rows_id, egui::Sense::hover())).on_hover_text(tip);
+        }
         let tab = definition
             .tabs
             .get(selected)
@@ -615,6 +626,8 @@ pub fn section(
                 draw_row(ui, &page, row, &mut changes);
             }
         }
+        let rows = ui.min_rect();
+        ui.ctx().data_mut(|data| data.insert_temp(rows_id, rows));
     });
     for action in out.actions {
         changes.push(match action {
@@ -1726,6 +1739,7 @@ mod tests {
                         &groups,
                         false,
                         true,
+                        None,
                     );
                     for change in &changes {
                         panel.panels.apply(change);
@@ -5004,7 +5018,9 @@ mod tests {
                 for (i, (state, panels)) in states.iter().zip(&panels).enumerate() {
                     let groups = |_: &str| GROUP_OPEN;
                     ui.push_id(i, |ui| {
-                        section(ui, &ToneCurve, state, true, panels, &groups, false, true)
+                        section(
+                            ui, &ToneCurve, state, true, panels, &groups, false, true, None,
+                        )
                     });
                 }
             });
@@ -5083,7 +5099,9 @@ mod tests {
                     let open = i < 2;
                     let groups = |_: &str| mapping[i];
                     ui.push_id(i, |ui| {
-                        section(ui, &Exposure, state, open, panels, &groups, false, true)
+                        section(
+                            ui, &Exposure, state, open, panels, &groups, false, true, None,
+                        )
                     });
                 }
             });
