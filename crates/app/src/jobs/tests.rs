@@ -21,7 +21,7 @@
 use std::time::Duration;
 
 use apertrust_base::jobs::{Control, Job as ControlJob};
-use apertrust_engine::session::Cause;
+use apertrust_engine::session::{CACHE_READ, CACHE_REMOVE, Cause};
 use apertrust_ui::components::JobPhase;
 use apertrust_ui::{Builtin, Locale, Theme};
 use eframe::egui::accesskit::Role;
@@ -732,7 +732,7 @@ fn every_cause_the_engine_names_has_words_in_every_language() {
     ];
     // The cache's Clear names its own two (decision 76).
     let codes = causes.map(|cause| cause.id()).into_iter();
-    let codes: Vec<_> = codes.chain(["cache-remove", "cache-read"]).collect();
+    let codes: Vec<_> = codes.chain([CACHE_REMOVE, CACHE_READ]).collect();
     for locale in [Locale::EnGb, Locale::Uk, Locale::Pl] {
         let words = Translator::new(locale);
         for cause in &codes {

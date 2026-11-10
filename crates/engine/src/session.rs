@@ -119,8 +119,8 @@ use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 pub use crate::sidecar::ViewOnly;
 use crate::{raw, sidecar};
-pub use cache::CacheOptions;
 use cache::Upkeep;
+pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions};
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
 use thumbnail::Tally;
@@ -6799,7 +6799,7 @@ mod tests {
         within(5 * ENTRY);
         session.send(Command::Cache(CacheCommand::Limit(Limit::Bytes(2 * ENTRY))));
         within(2 * ENTRY);
-        assert_eq!(cache.walk(&|| false).unwrap().limited().entries, 1);
+        assert_eq!(cache.walk(&|| false).unwrap().unwrap().limited().entries, 1);
         drop(session);
         remove(&photo);
     }
@@ -6990,7 +6990,7 @@ mod tests {
         let told = events.iter().filter_map(thumbnails_told).next_back();
         assert_eq!(told, Some(Usage::default()));
         assert_eq!(
-            cache.walk(&|| false).unwrap().of(THUMBNAILS),
+            cache.walk(&|| false).unwrap().unwrap().of(THUMBNAILS),
             Usage::default()
         );
         drop(session);
@@ -7056,7 +7056,7 @@ mod tests {
         };
         let told = events.iter().filter_map(thumbnails_told).next_back();
         assert_eq!(told, Some(left));
-        assert_eq!(cache.walk(&|| false).unwrap().of(THUMBNAILS), left);
+        assert_eq!(cache.walk(&|| false).unwrap().unwrap().of(THUMBNAILS), left);
         drop(session);
         remove(&photo);
     }

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::SystemTime;
 
-use apertrust_base::cache::THUMBNAILS;
+use apertrust_base::cache::{THUMBNAILS, Usage};
 use apertrust_library::ops::LibraryEvent;
 
 use super::*;
@@ -158,9 +158,23 @@ impl Session {
         self.cache.sizes().expect("walked").limited().bytes
     }
 
+    /// Holds the walk for the sizes before each subfolder: what it tells as it waits, and
+    /// its permit, which, dropped, lets it go on unheld.
+    fn hold_walk(&self) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+        let (hold, begun, permit) = crate::export_job::testing::Hold::new();
+        *self.upkeep.walk_hold.lock().unwrap() = Some(hold);
+        (begun, permit)
+    }
+
+    /// Asks for the sizes as the `Sizes` numbered `command`.
+    fn sizes(&self, command: u64, tell: &Tell) {
+        self.upkeep
+            .walk_for_sizes(command, &self.control, Arc::clone(tell));
+    }
+
     /// The limited kinds' entries as a walk finds them now.
     fn entries(&self) -> u64 {
-        self.cache.walk(&never).unwrap().limited().entries
+        self.cache.walk(&never).unwrap().unwrap().limited().entries
     }
 }
 
@@ -403,20 +417,23 @@ fn told() -> (Tell, mpsc::Receiver<Event>) {
     (tell, told)
 }
 
+/// The thumbnails each sizes' answer among `answers` tells.
+fn thumbnails(answers: &[Event]) -> Vec<u64> {
+    let told = answers.iter().filter_map(|event| match event {
+        Event::Cache(CacheEvent::Sizes { sizes, .. }) => Some(sizes.of(THUMBNAILS).entries),
+        _ => None,
+    });
+    told.collect()
+}
+
 /// Before any walk the handle counts nothing, so `Sizes` has no answer at once: its walk
-/// gives the first. A second `Sizes` while that walk is under way adds none: the walk
-/// answers for both.
+/// gives the first, and the handle keeps it.
 #[test]
-fn sizes_before_any_walk_are_walked_first_and_one_walk_answers_for_two() {
+fn sizes_before_any_walk_are_walked_first() {
     let session = Session::new("sizes-before", 10, Limit::Bytes(20 * ENTRY));
     assert_eq!(session.upkeep.counted(), None);
     let (tell, told) = told();
-    // The walk waits at its start for the hold.
-    let hold = session.upkeep.hold.lock().unwrap();
-    let control = &session.control;
-    session.upkeep.walk_for_sizes(1, control, Arc::clone(&tell));
-    session.upkeep.walk_for_sizes(2, control, tell);
-    drop(hold);
+    session.sizes(1, &tell);
     session.settle();
     let answers: Vec<_> = told.try_iter().collect();
     let [Event::Cache(CacheEvent::Sizes { sizes, limit, .. })] = answers.as_slice() else {
@@ -428,6 +445,127 @@ fn sizes_before_any_walk_are_walked_first_and_one_walk_answers_for_two() {
         session.upkeep.counted(),
         Some(CacheEvent::sizes(*sizes, *limit))
     );
+}
+
+/// A `Sizes` that comes while the walk runs is answered by a walk begun after it, one pass
+/// more, which answers every `Sizes` that came meanwhile; then the walk is free again.
+#[test]
+fn a_sizes_while_its_walk_runs_gets_a_walk_of_its_own() {
+    let session = Session::new("sizes-again", 10, Limit::Bytes(20 * ENTRY));
+    let (tell, told) = told();
+    let (begun, permit) = session.hold_walk();
+    session.sizes(1, &tell);
+    begun.recv_timeout(WAIT).expect("the walk begins");
+    // A thumbnail more, written after the walk began, which only the next pass sees.
+    write(&session.cache, 10..11);
+    session.sizes(2, &tell);
+    session.sizes(3, &tell);
+    drop(permit);
+    session.settle();
+    let answers: Vec<_> = told.try_iter().collect();
+    assert_eq!(thumbnails(&answers).last(), Some(&11), "{answers:?}");
+    assert_eq!(thumbnails(&answers).len(), 2, "two passes: {answers:?}");
+    assert!(!session.upkeep.lock().sizing.job);
+
+    session.sizes(4, &tell);
+    session.settle();
+    assert_eq!(thumbnails(&told.try_iter().collect::<Vec<_>>()), [11]);
+}
+
+/// A walk for the sizes that the session's own Clear overlaps neither keeps nor tells
+/// what it saw before the Clear: it walks again, and tells the cleared kind empty.
+#[test]
+fn a_sizes_walk_a_clear_overlaps_tells_what_the_clear_left() {
+    let session = Session::start("sizes-clear", 10, Limit::Bytes(20 * ENTRY));
+    session.settle();
+    let (tell, told) = told();
+    let (begun, permit) = session.hold_walk();
+    session.sizes(1, &tell);
+    // Past the first subfolder, whose entries it has counted.
+    begun.recv_timeout(WAIT).expect("the walk begins");
+    permit.send(()).unwrap();
+    begun.recv_timeout(WAIT).expect("the walk goes on");
+    let removed = session.cache.clear(THUMBNAILS, &|_, _| {}, &never).unwrap();
+    assert_eq!(removed.entries, 10);
+    drop(permit);
+    session.settle();
+    let answers: Vec<_> = told.try_iter().collect();
+    assert_eq!(thumbnails(&answers), [0], "{answers:?}");
+    let counted = session.cache.sizes().unwrap();
+    assert_eq!(counted.of(THUMBNAILS), Usage::default());
+}
+
+/// A walk that fails names each `Sizes` its pass answers.
+#[cfg(unix)]
+#[test]
+fn a_failed_walk_names_each_command_it_answers() {
+    use apertrust_base::cache::PIPELINES;
+    use std::os::unix::fs::PermissionsExt;
+    let session = Session::new("sizes-failed", 10, Limit::Bytes(20 * ENTRY));
+    session
+        .cache
+        .write(PIPELINES, b"gpu", b"v", &[0; 10])
+        .unwrap();
+    let pipelines = session.cache.kind_folder(PIPELINES);
+    let mode = |mode| fs::set_permissions(&pipelines, fs::Permissions::from_mode(mode)).unwrap();
+    mode(0o000);
+    // Where the process reads it anyway, as root can, there is nothing to test.
+    if fs::read_dir(&pipelines).is_ok() {
+        mode(0o755);
+        return;
+    }
+    let (tell, told) = told();
+    let (begun, permit) = session.hold_walk();
+    session.sizes(1, &tell);
+    begun.recv_timeout(WAIT).expect("the walk begins");
+    session.sizes(2, &tell);
+    session.sizes(3, &tell);
+    drop(permit);
+    session.settle();
+    mode(0o755);
+    let named: Vec<_> = told
+        .try_iter()
+        .filter_map(|event| match event {
+            Event::Failed(SessionError::CacheWalk { command, .. }) => Some(command),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(named, [1, 2, 3]);
+}
+
+/// A Clear that cannot remove some entries fails, `cache-remove`, removes the rest, and
+/// still tells the sizes, with what stayed.
+#[cfg(unix)]
+#[test]
+fn a_clear_that_cannot_remove_some_fails_and_still_tells_the_sizes() {
+    use std::os::unix::fs::PermissionsExt;
+    let session = Session::start("clear-failed", 10, Limit::Bytes(20 * ENTRY));
+    session.settle();
+    let thumbnails_folder = session.cache.kind_folder(THUMBNAILS);
+    let subfolder = fs::read_dir(&thumbnails_folder)
+        .unwrap()
+        .flatten()
+        .map(|item| item.path())
+        .find(|path| !path.file_name().unwrap().to_string_lossy().starts_with('.'))
+        .expect("a subfolder");
+    let kept = fs::read_dir(&subfolder).unwrap().count() as u64;
+    let mode = |mode| fs::set_permissions(&subfolder, fs::Permissions::from_mode(mode)).unwrap();
+    mode(0o555);
+    let probe = subfolder.join("probe");
+    if fs::write(&probe, b"").is_ok() {
+        let _ = fs::remove_file(&probe);
+        mode(0o755);
+        return;
+    }
+    let (tell, told) = told();
+    let job = session.upkeep.clear_job(THUMBNAILS, tell, None);
+    let ended = session.control.run_now(job);
+    mode(0o755);
+    let failure = ended.expect_err("the Clear fails");
+    assert_eq!(failure.cause, CACHE_REMOVE);
+    let answers: Vec<_> = told.try_iter().collect();
+    assert_eq!(thumbnails(&answers), [kept], "{answers:?}");
+    assert_eq!(session.entries(), kept);
 }
 
 /// A size as a job's message tells it: kB, MB or GB of disks' powers of ten, one decimal
@@ -447,6 +585,13 @@ fn a_size_is_told_in_the_unit_it_reads_best_in() {
     assert_eq!(told(4_250_000), (number(4.3), unit("mb")));
     assert_eq!(told(138_412_032), (number(138.0), unit("mb")));
     assert_eq!(told(12_500_000_000), (number(13.0), unit("gb")));
+    // The unit chosen after rounding: just below a unit reads in it.
+    assert_eq!(told(49), (number(0.0), unit("kb")));
+    assert_eq!(told(9_960), (number(10.0), unit("kb")));
+    assert_eq!(told(999_400), (number(999.0), unit("kb")));
+    assert_eq!(told(999_800), (number(1.0), unit("mb")));
+    assert_eq!(told(999_600_000), (number(1.0), unit("gb")));
+    assert_eq!(told(2_000_000_000_000), (number(2000.0), unit("gb")));
 }
 
 /// The cold walk's method (`docs/cache.md`, The walk's cost): the thumbnails of every raw
@@ -524,7 +669,7 @@ fn time_the_walk() {
                     "{size}: {pass} in {took:.2} s: {hits} hits, {misses} read, {written} written"
                 );
             }
-            let sizes = bench_cache.walk(&|| false).unwrap().of(THUMBNAILS);
+            let sizes = bench_cache.walk(&|| false).unwrap().unwrap().of(THUMBNAILS);
             let (entries, bytes) = (sizes.entries - before.0, sizes.bytes - before.1);
             before = (sizes.entries, sizes.bytes);
             let each = bytes as f64 / entries as f64 / 1e3;
@@ -533,7 +678,12 @@ fn time_the_walk() {
         drop(control);
         // Padded to the count, each a file of a byte in a subfolder of its own: a walk
         // reads no entry's contents.
-        let have = bench_cache.walk(&|| false).unwrap().of(THUMBNAILS).entries;
+        let have = bench_cache
+            .walk(&|| false)
+            .unwrap()
+            .unwrap()
+            .of(THUMBNAILS)
+            .entries;
         let kind = bench_cache.kind_folder(THUMBNAILS);
         for n in have..ENTRIES {
             let subfolder = kind.join(format!("{:02x}", n % 256));
@@ -544,7 +694,7 @@ fn time_the_walk() {
     let cache = Cache::open(&cache);
     for run in 1..=5 {
         let started = Instant::now();
-        let sizes = cache.walk(&|| false).unwrap();
+        let sizes = cache.walk(&|| false).unwrap().unwrap();
         let ms = started.elapsed().as_secs_f64() * 1e3;
         let entries = sizes.of(THUMBNAILS).entries;
         println!("walk {run}: {entries} entries in {ms:.1} ms");

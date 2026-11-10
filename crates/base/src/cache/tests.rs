@@ -17,7 +17,7 @@
 //! The cache's tests, each in a temporary folder. Last use is set by hand, never waited
 //! for.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use super::*;
 
@@ -113,7 +113,7 @@ fn the_kinds_are_the_decided_ones_each_in_its_own_folder() {
 fn a_sizes_event_holds_the_limited_kinds_total() {
     let (_folder, cache) = cache();
     let (_, size) = six_entries(&cache);
-    let sizes = cache.walk(&never).unwrap();
+    let sizes = cache.walk(&never).unwrap().unwrap();
     let limit = Limit::Bytes(10 * size);
     let CacheEvent::Sizes {
         sizes: told,
@@ -328,7 +328,7 @@ fn the_walk_gives_each_kinds_entries_and_bytes() {
     let (_folder, cache) = cache();
     assert_eq!(cache.sizes(), None);
     // An empty or missing cache is nothing, and the walk makes no folder.
-    assert_eq!(cache.walk(&never).unwrap(), Sizes::default());
+    assert_eq!(cache.walk(&never).unwrap().unwrap(), Sizes::default());
     assert!(!cache.folder().exists());
 
     for (slot, bytes) in [(&b"a"[..], 10), (b"b", 20), (b"c", 30)] {
@@ -357,7 +357,7 @@ fn the_walk_gives_each_kinds_entries_and_bytes() {
     set_used(&stale, SystemTime::now() - 2 * DAY);
 
     let header = (MAGIC.len() + 4 + 1) as u64;
-    let sizes = cache.walk(&never).unwrap();
+    let sizes = cache.walk(&never).unwrap().unwrap();
     assert_eq!(
         sizes.of(THUMBNAILS),
         Usage {
@@ -401,7 +401,46 @@ fn the_walk_gives_each_kinds_entries_and_bytes() {
     assert!(!stale.exists());
     assert!(fresh.exists());
     assert_eq!(cache.tidy(&never).unwrap(), 0);
-    assert_eq!(cache.walk(&never).unwrap(), sizes);
+    assert_eq!(cache.walk(&never).unwrap().unwrap(), sizes);
+}
+
+/// A walk that the handle's own clear overlaps, beginning during it or ending after it,
+/// keeps nothing, since it may have seen part of what the clear's count takes away; the
+/// count stays the clear's, and the next walk keeps again.
+#[test]
+fn a_walk_its_own_clear_overlaps_keeps_nothing() {
+    let (_folder, cache) = cache();
+    six_entries(&cache);
+    let before = cache.walk(&never).unwrap().unwrap();
+
+    // A clear between two of the walk's subfolders.
+    let cleared = AtomicBool::new(false);
+    let clear_once = || {
+        if !cleared.swap(true, Ordering::SeqCst) {
+            cache.clear(THUMBNAILS, &quiet, &never).unwrap();
+        }
+        false
+    };
+    assert_eq!(cache.walk(&clear_once).unwrap(), None);
+    let counted = cache.sizes().unwrap();
+    assert_eq!(counted.of(THUMBNAILS), Usage::default());
+    assert_eq!(counted.of(PIPELINES), before.of(PIPELINES));
+
+    // A walk while a clear removes.
+    six_entries(&cache);
+    cache.walk(&never).unwrap().unwrap();
+    let walked = Mutex::new(Vec::new());
+    let progress = |done, _| {
+        if done == 1 {
+            walked.lock().unwrap().push(cache.walk(&never).unwrap());
+        }
+    };
+    cache.clear(THUMBNAILS, &progress, &never).unwrap();
+    assert_eq!(*walked.lock().unwrap(), [None]);
+    assert_eq!(cache.sizes().unwrap().of(THUMBNAILS), Usage::default());
+
+    let walked = cache.walk(&never).unwrap();
+    assert_eq!(walked, cache.sizes(), "the next walk keeps its sizes");
 }
 
 #[test]
@@ -411,7 +450,7 @@ fn the_handle_counts_its_own_writes_and_removals_after_the_walk() {
     // Before a walk nothing is counted: the walk finds it.
     cache.write(THUMBNAILS, b"a", b"v", &[0; 10]).unwrap();
     assert_eq!(cache.sizes(), None);
-    cache.walk(&never).unwrap();
+    cache.walk(&never).unwrap().unwrap();
     let thumbnails = || cache.sizes().unwrap().of(THUMBNAILS);
     assert_eq!(
         thumbnails(),
@@ -442,7 +481,7 @@ fn the_handle_counts_its_own_writes_and_removals_after_the_walk() {
 
     // The counts agree with the next walk.
     let counted = cache.sizes().unwrap();
-    assert_eq!(cache.walk(&never).unwrap(), counted);
+    assert_eq!(cache.walk(&never).unwrap().unwrap(), counted);
 
     cache.clear(THUMBNAILS, &quiet, &never).unwrap();
     assert_eq!(thumbnails(), Usage::default());
@@ -496,7 +535,7 @@ fn present(cache: &Cache, slots: &[(Kind, &'static [u8])]) -> Vec<&'static [u8]>
 fn eviction_waits_for_the_limit_then_removes_the_oldest_across_kinds_to_ninety_percent() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    cache.walk(&never).unwrap();
+    cache.walk(&never).unwrap().unwrap();
 
     // At the limit, or under it, nothing goes.
     for limit in [6 * size, 6 * size + 1, 10 * size] {
@@ -540,7 +579,7 @@ fn eviction_waits_for_the_limit_then_removes_the_oldest_across_kinds_to_ninety_p
 fn eviction_takes_its_removals_from_the_counts_and_keeps_writes_made_after() {
     let (_folder, cache) = cache();
     let (_, size) = six_entries(&cache);
-    cache.walk(&never).unwrap();
+    cache.walk(&never).unwrap().unwrap();
     let removed = cache.evict(Limit::Bytes(4 * size), &never).unwrap();
     assert_eq!(removed.entries, 3);
     cache.write(THUMBNAILS, b"7", b"v", &[0; 100]).unwrap();
@@ -551,7 +590,7 @@ fn eviction_takes_its_removals_from_the_counts_and_keeps_writes_made_after() {
             bytes: 4 * size
         }
     );
-    assert_eq!(Some(cache.walk(&never).unwrap()), cache.sizes());
+    assert_eq!(Some(cache.walk(&never).unwrap().unwrap()), cache.sizes());
 }
 
 /// Gives `folder` the permissions `mode` while `test` runs, then the usual ones back; false,
@@ -576,7 +615,7 @@ fn with_mode(folder: &Path, mode: u32, test: impl FnOnce()) -> bool {
 fn an_entry_that_cannot_be_removed_is_passed_over_and_still_counted() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    cache.walk(&never).unwrap();
+    cache.walk(&never).unwrap().unwrap();
     let subfolder = cache
         .entry_path(THUMBNAILS, b"1")
         .parent()
@@ -649,7 +688,7 @@ fn an_unreadable_subfolder_is_passed_over() {
         .filter(|(kind, slot)| cache.entry_path(*kind, slot).parent() != Some(&subfolder))
         .count() as u64;
     with_mode(&subfolder, 0o000, || {
-        let sizes = cache.walk(&never).unwrap();
+        let sizes = cache.walk(&never).unwrap().unwrap();
         assert_eq!(
             sizes.limited(),
             Usage {
@@ -721,7 +760,7 @@ fn kept_kinds_are_never_evicted() {
     let removed = cache.evict(Limit::Bytes(1), &never).unwrap();
     assert_eq!(removed.entries, 6);
     assert!(present(&cache, &slots).is_empty());
-    let sizes = cache.walk(&never).unwrap();
+    let sizes = cache.walk(&never).unwrap().unwrap();
     assert_eq!(sizes.limited(), Usage::default());
     assert_eq!(
         sizes.of(LIBRARIES),
@@ -774,7 +813,7 @@ fn eviction_stops_at_a_cancel() {
 fn clear_removes_one_kinds_entries_and_tells_its_progress() {
     let (_folder, cache) = cache();
     let (slots, size) = six_entries(&cache);
-    cache.walk(&never).unwrap();
+    cache.walk(&never).unwrap().unwrap();
     let told = Mutex::new(Vec::new());
     let progress = |done, total| told.lock().unwrap().push((done, total));
     let removed = cache.clear(THUMBNAILS, &progress, &never).unwrap();
@@ -803,12 +842,15 @@ fn clear_removes_one_kinds_entries_and_tells_its_progress() {
         }
     );
     assert_eq!(sizes.of(LIBRARIES).bytes, 100_000);
-    assert_eq!(cache.walk(&never).unwrap(), sizes);
+    assert_eq!(cache.walk(&never).unwrap().unwrap(), sizes);
 
     // A kept kind is not cleared here.
     let error = cache.clear(LIBRARIES, &quiet, &never).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::Unsupported);
-    assert_eq!(cache.walk(&never).unwrap().of(LIBRARIES).entries, 1);
+    assert_eq!(
+        cache.walk(&never).unwrap().unwrap().of(LIBRARIES).entries,
+        1
+    );
 }
 
 #[test]

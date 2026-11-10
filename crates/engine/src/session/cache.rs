@@ -22,7 +22,8 @@
 //! queue, neither with a progress, so neither is ever shown:
 //!
 //! - **`cache-walk`,** added as the session starts: the tidy of old temporaries, then the
-//!   walk, whose sizes the handle then keeps up to date with its own writes and removals,
+//!   walk, whose sizes the handle then keeps up to date with its own writes and removals
+//!   (walked again once should the handle's own Clear overtake it, [`Cache::walk`]),
 //!   then, where the limited kinds are past the limit, an eviction in the same job. It
 //!   counts as an eviction running, so a request meanwhile is folded into it;
 //! - **`cache-evict`,** one at a time, asked for after a write that leaves the limited
@@ -37,7 +38,8 @@
 //! - **a `cache-walk` for the sizes,** on the same queue, one at a time, for
 //!   [`CacheCommand::Sizes`](apertrust_base::cache::CacheCommand::Sizes): the engine
 //!   thread answers at once with the handle's count where a walk has run, and the walk
-//!   answers again with what other processes did meanwhile;
+//!   answers again with what other processes did meanwhile; a `Sizes` while it runs is
+//!   folded into a pass more;
 //! - **`cache-clear`,** on darktable's `UserBackground` queue with a progress, cancellable,
 //!   as darktable's Rebuild Cache, for
 //!   [`CacheCommand::Clear`](apertrust_base::cache::CacheCommand::Clear): its row's title,
@@ -99,11 +101,27 @@ pub(crate) enum Step {
     Evict,
 }
 
+/// The cause of a Clear that could not remove some of its entries, which a client words
+/// as `job-cause-cache-remove`.
+pub const CACHE_REMOVE: &str = "cache-remove";
+
+/// The cause of a Clear whose kind's folder cannot be listed, `job-cause-cache-read`.
+pub const CACHE_READ: &str = "cache-read";
+
+/// Where the walk for the sizes stands.
+#[derive(Debug, Default)]
+struct Sizing {
+    /// Whether its job is queued or running.
+    job: bool,
+    /// The `Sizes` commands no pass begun after them has answered yet: one queued takes
+    /// them in its first pass, one running in a pass more.
+    asked: Vec<u64>,
+}
+
 struct State {
     limit: Limit,
     eviction: Eviction,
-    /// The walk for the sizes, while it may not have ended.
-    sizing: Option<JobId>,
+    sizing: Sizing,
     /// Each Clear with its kind, while it may not have ended.
     clears: Vec<(Kind, JobId)>,
     /// The steps taken, in order, for a test.
@@ -134,6 +152,9 @@ pub(crate) struct Upkeep {
     /// Held by a test to keep the start's job or an eviction's pass waiting for it.
     #[cfg(test)]
     hold: Arc<Mutex<()>>,
+    /// Set by a test to hold the walk for the sizes before each subfolder.
+    #[cfg(test)]
+    walk_hold: Arc<Mutex<Option<crate::export_job::testing::Hold>>>,
 }
 
 /// Puts eviction back to idle should a job's body panic, so the next request adds one.
@@ -144,6 +165,17 @@ impl Drop for Unwinding<'_> {
         // On a normal end the job has set it, under the lock that folds a request in.
         if std::thread::panicking() {
             self.0.lock().eviction = Eviction::Idle;
+        }
+    }
+}
+
+/// Leaves the walk for the sizes free should its body panic, so the next `Sizes` adds one.
+struct SizingUnwinding<'a>(&'a Upkeep);
+
+impl Drop for SizingUnwinding<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.lock().sizing = Sizing::default();
         }
     }
 }
@@ -172,7 +204,7 @@ impl Upkeep {
             state: Arc::new(Mutex::new(State {
                 limit: options.limit,
                 eviction: Eviction::Running { again: false },
-                sizing: None,
+                sizing: Sizing::default(),
                 clears: Vec::new(),
                 #[cfg(test)]
                 steps: Vec::new(),
@@ -185,6 +217,8 @@ impl Upkeep {
             stop,
             #[cfg(test)]
             hold: Arc::default(),
+            #[cfg(test)]
+            walk_hold: Arc::default(),
         }
     }
 
@@ -221,8 +255,9 @@ impl Upkeep {
         };
         #[cfg(test)]
         self.took(Step::Walk);
-        match self.cache.walk(&cancel) {
-            Ok(sizes) => log_walk(&sizes, tidied, self.limit(), started.elapsed()),
+        match self.walk(&cancel) {
+            Ok(Some(sizes)) => log_walk(&sizes, tidied, self.limit(), started.elapsed()),
+            Ok(None) => log_overtaken(),
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {
                 return self.idle();
             }
@@ -375,39 +410,92 @@ impl Upkeep {
 
     /// [`CacheCommand::Sizes`](apertrust_base::cache::CacheCommand::Sizes), the command
     /// numbered `command`, from the engine thread: a `cache-walk` that tells the sizes it
-    /// finds through `tell`, unless one is queued or running already, which answers this
-    /// command too. A walk that fails is told as [`SessionError::CacheWalk`].
+    /// finds through `tell`. One queued already takes the command in; one running walks
+    /// once more for it, as eviction folds a request in, so every `Sizes` is answered by a
+    /// walk begun after it. A walk that fails is told as [`SessionError::CacheWalk`] for
+    /// each command its pass answers.
     pub(crate) fn walk_for_sizes(&self, command: u64, control: &Control, tell: Tell) {
-        let sizing = self.lock().sizing;
-        if sizing.is_some_and(|job| control.state(job).is_some()) {
-            return;
+        {
+            let mut state = self.lock();
+            state.sizing.asked.push(command);
+            if state.sizing.job {
+                return;
+            }
+            state.sizing.job = true;
         }
         let upkeep = self.clone();
         let job = Job::new(
             "cache-walk",
             "the cache's walk for its sizes",
             move |context| {
-                let cancel = || context.cancelled() || upkeep.stop.load(Ordering::Relaxed);
-                #[cfg(test)]
-                drop(upkeep.hold.lock().unwrap_or_else(PoisonError::into_inner));
-                let started = Instant::now();
-                match upkeep.cache.walk(&cancel) {
-                    Ok(sizes) => {
-                        log_sizes(&sizes, upkeep.limit(), started.elapsed());
-                        tell(Event::Cache(CacheEvent::sizes(sizes, upkeep.limit())));
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                    Err(source) => {
-                        let folder = upkeep.cache.folder().display();
-                        tracing::warn!(target: "settings", "cache not walked: {folder}: {source}");
-                        tell(Event::Failed(SessionError::CacheWalk { command, source }));
-                    }
-                }
+                upkeep.walk_while_asked(context, &tell);
                 Ok(())
             },
         );
-        let job = control.add(Queue::SystemBackground, job);
-        self.lock().sizing = Some(job);
+        control.add(Queue::SystemBackground, job);
+    }
+
+    /// The walk for the sizes' job: a pass for the commands asked before it began, then
+    /// one more while any came meanwhile; then free, under the lock a `Sizes` takes, so
+    /// none is left unanswered.
+    fn walk_while_asked(&self, context: &Context<'_>, tell: &Tell) {
+        let _unwinding = SizingUnwinding(self);
+        let stopped = || context.cancelled() || self.stop.load(Ordering::Relaxed);
+        let cancel = || {
+            #[cfg(test)]
+            if let Some(hold) = &*self
+                .walk_hold
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+            {
+                hold.wait();
+            }
+            stopped()
+        };
+        loop {
+            let commands = {
+                let mut state = self.lock();
+                let commands = std::mem::take(&mut state.sizing.asked);
+                if commands.is_empty() || stopped() {
+                    state.sizing.job = false;
+                    return;
+                }
+                commands
+            };
+            let started = Instant::now();
+            match self.walk(&cancel) {
+                Ok(Some(sizes)) => {
+                    log_sizes(&sizes, self.limit(), started.elapsed());
+                    tell(Event::Cache(CacheEvent::sizes(sizes, self.limit())));
+                }
+                // The handle's own removals overtook both walks: its count holds them.
+                Ok(None) => {
+                    log_overtaken();
+                    if let Some(counted) = self.counted() {
+                        tell(Event::Cache(counted));
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => {
+                    let folder = self.cache.folder().display();
+                    tracing::warn!(target: "settings", "cache not walked: {folder}: {error}");
+                    for command in commands {
+                        let source = io::Error::new(error.kind(), error.to_string());
+                        tell(Event::Failed(SessionError::CacheWalk { command, source }));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Walks the cache, and once more should the handle's own eviction or clear overtake
+    /// the walk ([`Cache::walk`]); `None` where it overtook both, the handle's count then
+    /// holding what they removed.
+    fn walk(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Option<Sizes>> {
+        match self.cache.walk(cancel)? {
+            Some(sizes) => Ok(Some(sizes)),
+            None => self.cache.walk(cancel),
+        }
     }
 
     /// Whether a Clear of `kind` is queued or running, from the engine thread: one whose
@@ -477,7 +565,7 @@ impl Upkeep {
                         removed.failed,
                         kind.id()
                     );
-                    Err(Failure::new("cache-remove", reason))
+                    Err(Failure::new(CACHE_REMOVE, reason))
                 }
                 Ok(_) => Ok(()),
                 Err(error) => {
@@ -485,7 +573,7 @@ impl Upkeep {
                     let folder = folder.display();
                     tracing::warn!(target: "settings", "cache not cleared: {folder}: {error}");
                     let reason = format!("the cache's {} cannot be listed: {error}", kind.id());
-                    Err(Failure::new("cache-read", reason))
+                    Err(Failure::new(CACHE_READ, reason))
                 }
             }
         })
@@ -497,7 +585,10 @@ impl Upkeep {
     fn tell_sizes(&self, tell: &Tell) {
         let sizes = match self.cache.sizes() {
             Some(sizes) => Some(sizes),
-            None => self.cache.walk(&|| self.stop.load(Ordering::Relaxed)).ok(),
+            None => self
+                .walk(&|| self.stop.load(Ordering::Relaxed))
+                .ok()
+                .flatten(),
         };
         if let Some(sizes) = sizes {
             tell(Event::Cache(CacheEvent::sizes(sizes, self.limit())));
@@ -577,18 +668,27 @@ fn log_clear(kind: Kind, removed: &Removed, took: Duration) {
 /// `gb`, of 10³, 10⁶ and 10⁹ bytes as disks count them, with one decimal below 10 and
 /// none from there; the client words the unit.
 fn with_size(message: Message, bytes: u64) -> Message {
-    let (unit, scale) = match bytes {
-        1_000_000_000.. => ("gb", 1e9),
-        1_000_000.. => ("mb", 1e6),
-        _ => ("kb", 1e3),
+    let rounded = |value: f64| {
+        if value < 10.0 {
+            (value * 10.0).round() / 10.0
+        } else {
+            value.round()
+        }
     };
-    let value = bytes as f64 / scale;
-    let size = if value < 10.0 {
-        (value * 10.0).round() / 10.0
-    } else {
-        value.round()
-    };
+    // The unit chosen after rounding, so 999,800 bytes are 1.0 MB, never 1000 kB.
+    let units = [("kb", 1e3), ("mb", 1e6), ("gb", 1e9)];
+    let (unit, size) = units
+        .iter()
+        .map(|&(unit, scale)| (unit, rounded(bytes as f64 / scale)))
+        .find(|&(unit, size)| size < 1000.0 || unit == "gb")
+        .expect("gb takes any size");
     message.with("size", size).with("unit", unit)
+}
+
+/// A walk the handle's own eviction or clear overtook twice, under `-d perf`: the count
+/// stays as it was.
+fn log_overtaken() {
+    tracing::debug!(target: "perf", "cache walked while it removed, twice: its count kept");
 }
 
 /// An eviction under `-d perf`: what it removed, what it could not, and the time.
