@@ -629,13 +629,12 @@ flowchart LR
 
 ## A library's cache
 
-Decision 55, planned (steps 21 and 27): one per library per machine, in `<cache>/libraries/<library id>/cache-<schema>/` (the cache folder, [settings.md](settings.md#user-data-folders)), never in the library's folder, on a share or in a sync folder.
+Decision 55, planned (steps 21 and 27): one per library per machine, in `<cache>/libraries/<library id>/cache-<schema>/` (the cache folder, [cache.md](cache.md#the-folder)), never in the library's folder, on a share or in a sync folder.
 
 - **What it gives:** a large library's open under a second, browsing of roots that are away, full-text search and later similarity.
 - **What it holds:** each photo and virtual copy with its file facts, EXIF, ratings, labels, keywords and metadata, as darktable's `images` table where it serves. Vectors for semantic search, similar photos and faces stay in it too, decided with the AI work.
 - **Disposable:** a library opens without it, and it is rebuilt from the files when missing, so it needs no backup and never travels.
-- **Kept, not evicted** (decision 76): the cache's kind `libraries`, never removed by size. It records the library's name, its last path and when it was last opened on this machine; one unopened for `cache.unused_after` (90 days by default, or never), or whose library was not found at its last path, is marked on Settings › Storage and offered for removal, never removed without the person. A process that has it open holds an OS lock on its `lock` file, so no clear removes it then; the open library's is rebuilt by Rebuild Cache.
-- **What is not in it:** the library's root map on this machine, the last copy of each sidecar this machine wrote and a server root's pending changes, which clearing the cache would lose; they are in the user data folder's `libraries/<library id>/` (decision 76).
+- **In the cache** it is the kept kind `libraries`: never removed by size or age, offered for removal once long unopened or its library is not found, locked while a process has it open; the library's root map, last-written sidecars and a server root's pending changes are in the user data folder instead ([cache.md](cache.md#time-and-never), decision 76).
 - **Folder mode** has none: the same facts in memory, in the same `Index` type.
 - **Its engine** is chosen by spike L2: plain Rust collections with a snapshot file and `tantivy` for full text, the likely choice, measured beside Turso Database at 100,000 and 500,000 photos against a query under 50 ms and an open under 1 s at 100,000. SQLite only if both fail, with an exception to decision 5.
 
@@ -648,9 +647,7 @@ In progress: step 6. Built: the camera's embedded pictures, read in memory and w
 The decided design (decisions 53 and 57):
 
 - **The camera's embedded JPEG first,** shown unmarked, as darktable does, then Apertrust's own render, a still of the engine's viewport pipe. The engine renders the thumbnails and the library keeps them. A cheaper path of Apertrust's own (the raw stage, then the mosaic averaged per thumbnail pixel) is a performance idea to measure later.
-- **The cache** (decision 76), the library's files in every mode, in the cache folder's `thumbnails/`: one file per slot, the raw's fingerprint, its virtual copy and a size (128, 256, 512 or 1024), named by the slot's hash; the file holds its version, a hash of the edit and a render version (the operations' and the pipeline's), or the embedded picture's mark. A new version replaces the file whole by a rename, so a stale thumbnail never stays beside its successor; a reader finding another version renders again, showing the stale picture meanwhile.
-- **Its limit:** thumbnails count against `cache.limit` (4 GB by default) with the cache's other limited kinds, unless the person turns `cache.limited` off for an unlimited cache; past it, a `SystemBackground` job removes the oldest last used, the file's modified time, which Apertrust sets as it writes or reads one, at most once a day, until they hold 90% of it.
-- **Seen and cleared** on Settings › Storage and by `apertrust-cli cache info` and `cache clear thumbnails` (decision 76).
+- **The cache** (decision 76), the library's files in every mode, the cache's limited kind `thumbnails/`: one file per photo, virtual copy and size (128, 256, 512 or 1024), holding the edit's hash and the render version (the operations' and the pipeline's), or the embedded picture's mark, replaced whole by a newer one; a reader finding another version renders again, showing the stale picture meanwhile. Its limit, Unlimited, eviction and clearing are [cache.md](cache.md)'s.
 - **Jobs on `SystemForeground`,** each thumbnail one, deduplicated by photo, size and edit, the newest first, as darktable's thumbnail loads.
 - **Nothing for cloud files not on the disk.**
 
@@ -678,10 +675,6 @@ Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (
   - accounts and sharing between people: one person's server, or a household's, with photos shared between accounts;
   - where a library whose roots are all on the server keeps its own files;
   - a hosted service later, which the principles' "no accounts, subscriptions or cloud processing" would have to allow (decision 1).
-
-- **The cache's walk on Windows and on hard disks** (decision 76): the 0.2 s for 100,000 entries is the M4's SSD, warm. Step 6 times a cold walk on Windows, with its virus scanner, and on a hard disk; a walk too slow for the start's background job brings in the per-kind index of entries the decision keeps as its next step.
-
-- **Free space** (decision 76): whether the cache also stops writing when its disk is nearly full, below the limit.
 
 - **The CLI and the root map** (decision 76): the root map is in the user data folder, which the CLI only reads; `apertrust-cli library relink` (step 35) would be its one write there, decided with that step.
 

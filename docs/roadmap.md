@@ -146,7 +146,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [x] Thumbnails from the camera's embedded pictures in the grid panel.
 - [x] The grid bar's Sort and Zoom, the grid panel resized from its edge in whole rows or columns, and its position at the bottom, left or right.
 - [x] The thumbnail alone at its square's bottom centre, or filling it with square thumbnails, its rings round the picture and its marks on its corner; under it a caption of the file name, with the reject, rating and colour labels' line drawn once the ratings come; and the grid bar's Labels, which shows or hides the captions.
-- [ ] The thumbnail cache, kept within a size limit, its size seen and cleared in Settings › Storage and from the command line (decision 76), and Apertrust's own rendered thumbnails.
+- [ ] The thumbnail cache, kept within a size limit, its size seen and cleared in Settings › Storage and from the command line (decision 76, [cache.md](cache.md)), and Apertrust's own rendered thumbnails.
 - [ ] Faster listing on network drives.
 - [ ] The edit file's next version: the photo's identity, and clocks for editing on several computers.
 - [ ] Several photos shown at once, the active one live and the rest still images, once spike W1 has measured it (decision 37).
