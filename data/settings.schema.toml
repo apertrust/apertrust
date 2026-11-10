@@ -36,8 +36,8 @@
 #   library, editing, processing, storage, shortcuts, presets or ai) and the titled group
 #   on it (snake_case), each with the other; neither for what the app keeps by itself,
 #   which the dialog never shows. A page's groups and rows are in this file's order.
-# - requires: on a setting with a page, the id of another boolean setting its row needs
-#   on: the dialog draws the row disabled while that is off.
+# - requires: on a setting with a page, the id of another boolean setting on a page, which
+#   its row needs on: the dialog draws the row disabled while that is off.
 #
 # Decision 43's other fields and kinds, platforms, whole numbers and folders, come with
 # the first setting that needs one.

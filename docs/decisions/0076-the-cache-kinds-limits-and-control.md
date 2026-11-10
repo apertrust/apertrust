@@ -8,9 +8,9 @@ It is read and written by the app, a second instance and the CLI at once, with n
 
 ## Decision
 
-**One cache folder, split by kind, holding only what Apertrust can rebuild with no one's help and nothing lost.** Planned, built with the library's step 6.
+**One cache folder, split by kind, holding only what Apertrust can rebuild with no one's help and nothing lost.** Built: base's `cache`, the folder's choice with `--cache-dir` (or `--cachedir`) and `APERTRUST_CACHE_DIR`, and the settings `cache.limited`, `cache.limit` and `cache.unused_after`. The rest is planned, built with the library's steps 6 and 6b.
 
-**The folder** ([0043](0043-settings-and-apertrusts-folders.md)): `--cache-dir DIR`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given by flag or variable, then the platform's: `~/Library/Caches/Apertrust`, `%LOCALAPPDATA%\Apertrust\cache`, `$XDG_CACHE_HOME/apertrust`; Apertrust Dev's its own. `Folders` chooses it with the user data folder, the CLI finding it to read as it finds that one.
+**The folder** ([0043](0043-settings-and-apertrusts-folders.md)): `--cache-dir DIR` (or darktable's `--cachedir`), then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given by flag or variable, then the platform's: `~/Library/Caches/Apertrust`, `%LOCALAPPDATA%\Apertrust\cache`, `$XDG_CACHE_HOME/apertrust`; Apertrust Dev's its own. `Folders` chooses it with the user data folder, the CLI finding it to read as it finds that one.
 
 **The kinds,** a closed list in base's `cache::KINDS` (each an id, its folder and its policy), as the settings schema is one list:
 
@@ -75,7 +75,7 @@ Clear and Remove are a `UserBackground` job of kind `cache-clear` with a progres
 
 - `apertrust-cli cache info`: the folder and how it was chosen; the limit, or `unlimited`, and the limited kinds' total; `cache.unused_after`; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, marked as on the Storage page. It walks and writes nothing.
 - `apertrust-cli cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
-- `--cache-dir DIR`, global, as `--user-data-dir` is.
+- `--cache-dir DIR` (or `--cachedir`), global, as `--user-data-dir` is.
 
 **Where the code lives:** `apertrust_base::cache`, behind a `cache` feature: the kinds, the folder's layout, the entry's write, read and touch, the walk, eviction's order, clearing, and the commands' and events' types. Owners name their slots and versions: the library's thumbnails, library caches and local copies, the engine's pipelines. The engine opens no folder ([0043](0043-settings-and-apertrusts-folders.md)): each binary opens the cache and hands the session its handle, the golden harness none.
 

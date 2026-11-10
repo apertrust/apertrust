@@ -112,8 +112,10 @@ struct Static {
     id: String,
     /// Whether it is a boolean with a value always, which another setting may require.
     boolean: bool,
+    /// Whether it is on a page, so the Settings dialog draws its row.
+    shown: bool,
     /// The setting it requires, and the line that says so, which [`parse`] checks names a
-    /// boolean.
+    /// boolean on a page.
     requires: Option<(String, usize)>,
     owner: String,
     /// Its name in Rust, the id in capitals: `SIDE_PANEL_WIDTH`.
@@ -171,18 +173,21 @@ pub fn parse(text: &str, path: &str) -> Result<Schema, Vec<Error>> {
         let Some((required, line)) = &setting.requires else {
             continue;
         };
-        let boolean = settings
+        let target = settings
             .iter()
-            .any(|other| &other.id == required && other.boolean && other.id != setting.id);
-        if !boolean {
-            errors.push(Error {
-                line: *line,
-                message: format!(
-                    "[{}]: requires names no other boolean setting: {required}",
-                    setting.id
-                ),
-            });
-        }
+            .find(|other| &other.id == required && other.boolean && other.id != setting.id);
+        let why = match target {
+            None => format!("requires names no other boolean setting: {required}"),
+            // The dialog draws no row for it, so the requiring row would never be enabled.
+            Some(target) if !target.shown => {
+                format!("requires names a setting on no page, whose row is never drawn: {required}")
+            }
+            Some(_) => continue,
+        };
+        errors.push(Error {
+            line: *line,
+            message: format!("[{}]: {why}", setting.id),
+        });
     }
     let path = path.to_owned();
     if errors.is_empty() {
@@ -349,6 +354,7 @@ impl Reader<'_> {
         Ok(Static {
             id: id.to_owned(),
             boolean,
+            shown: page != "None",
             requires,
             owner,
             name: upper,
@@ -951,6 +957,10 @@ mod tests {
         assert_eq!(refused(&limit("requires = \"cache.limt\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limt"]);
         assert_eq!(refused(&limit("requires = \"cache.limit\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limit"]);
         assert_eq!(refused(&limit("requires = true\n")), ["16: [cache.limit]: requires is a boolean setting's id"]);
+        // A boolean on no page has no row to turn on, so the requiring row would stay
+        // disabled.
+        let hidden = limit("requires = \"cache.limited\"\n").replace("page = \"storage\"\ngroup = \"cache\"\n\n", "\n");
+        assert_eq!(refused(&hidden), ["14: [cache.limit]: requires names a setting on no page, whose row is never drawn: cache.limited"]);
         each_refused(&[
             ("boolean", "default = true\nrequires = \"log.keep\"\n", "6: [scale]: requires draws its row disabled: give its page and group"),
         ]);

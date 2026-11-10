@@ -52,8 +52,9 @@
 //! The **cache folder** holds what Apertrust can compute again (decision 76;
 //! `docs/cache.md`, The folder). It is chosen in this order:
 //!
-//! - `--cache-dir DIR` ([`CACHE_FLAG`]), as darktable's `--cachedir`, which each binary
-//!   reads from its own command line; given more than once, the last;
+//! - `--cache-dir DIR`, or its alias, darktable's `--cachedir` ([`CACHE_FLAGS`]), which
+//!   each binary reads from its own command line and hands over as a [`Given`]; given more
+//!   than once, the last;
 //! - then [`CACHE_VARIABLE`], `APERTRUST_CACHE_DIR`, unless it is empty;
 //! - then `cache` in the user data folder, when that was given by flag or variable
 //!   ([`Chosen::explicit`]), so that a development build's thumbnails never show in the
@@ -81,16 +82,18 @@ pub const FLAGS: [&str; 3] = ["--user-data-dir", "--config-dir", "--configdir"];
 /// The environment variable that names the user data folder where no flag does.
 pub const VARIABLE: &str = "APERTRUST_USER_DATA_DIR";
 
-/// The flag that names the cache folder.
-pub const CACHE_FLAG: &str = "--cache-dir";
+/// The flags that name the cache folder: `--cache-dir`, then its alias, darktable's
+/// `--cachedir`, as `--configdir` is the user data folder's.
+pub const CACHE_FLAGS: [&str; 2] = ["--cache-dir", "--cachedir"];
 
 /// The environment variable that names the cache folder where no flag does.
 pub const CACHE_VARIABLE: &str = "APERTRUST_CACHE_DIR";
 
-/// A user data folder named on the command line.
+/// A user data folder or a cache folder named on the command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Given {
-    /// The flag that named it, one of [`FLAGS`].
+    /// The flag that named it, one of [`FLAGS`] for the user data folder, of
+    /// [`CACHE_FLAGS`] for the cache folder.
     pub flag: &'static str,
     /// The folder as given, relative or not.
     pub folder: PathBuf,
@@ -129,8 +132,8 @@ impl fmt::Display for Chosen {
 /// How the cache folder was chosen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheChosen {
-    /// By [`CACHE_FLAG`].
-    Flag,
+    /// By a flag on the command line, the one given, one of [`CACHE_FLAGS`].
+    Flag(&'static str),
     /// By [`CACHE_VARIABLE`].
     Variable,
     /// In the user data folder, which was given by flag or variable.
@@ -144,7 +147,7 @@ impl fmt::Display for CacheChosen {
     /// platform.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            CacheChosen::Flag => CACHE_FLAG,
+            CacheChosen::Flag(flag) => flag,
             CacheChosen::Variable => CACHE_VARIABLE,
             CacheChosen::UserData => "the user data folder",
             CacheChosen::Platform => "the platform",
@@ -226,13 +229,13 @@ impl Folders {
     /// Chooses the folders: the user data folder `given` names on the command line, else
     /// [`VARIABLE`]'s, else the platform's, Apertrust Dev's for a `dev` build
     /// (`Program::dev`), created where it is missing; and the cache folder `cache` names,
-    /// [`CACHE_FLAG`]'s, else [`CACHE_VARIABLE`]'s, else the user data folder's or the
+    /// by one of [`CACHE_FLAGS`], else [`CACHE_VARIABLE`]'s, else the user data folder's or the
     /// platform's, never created here. Logs both under `-d settings`. None, with a warning,
     /// where nothing names a user data folder and the system gives none, as on a system
     /// with no home folder: nothing is kept then.
     pub fn find(
         given: Option<Given>,
-        cache: Option<PathBuf>,
+        cache: Option<Given>,
         dev: bool,
     ) -> Result<Option<Folders>, Error> {
         Folders::look(given, cache, dev, true)
@@ -245,7 +248,7 @@ impl Folders {
     /// same and stays missing, so its settings are the defaults.
     pub fn find_to_read(
         given: Option<Given>,
-        cache: Option<PathBuf>,
+        cache: Option<Given>,
         dev: bool,
     ) -> Result<Option<Folders>, Error> {
         Folders::look(given, cache, dev, false)
@@ -255,7 +258,7 @@ impl Folders {
     /// or only reads them.
     fn look(
         given: Option<Given>,
-        cache: Option<PathBuf>,
+        cache: Option<Given>,
         dev: bool,
         writes: bool,
     ) -> Result<Option<Folders>, Error> {
@@ -335,7 +338,7 @@ fn platform_folder(dev: bool) -> &'static str {
 /// the user data folder is created.
 fn choose(
     given: Option<Given>,
-    cache: Option<PathBuf>,
+    cache: Option<Given>,
     system: System,
     current: impl Fn() -> io::Result<PathBuf>,
     writes: bool,
@@ -347,10 +350,10 @@ fn choose(
         home,
     } = system;
     let named_cache = match (cache, cache_variable) {
-        (Some(folder), _) if folder.as_os_str().is_empty() => {
-            return Err(Error::Empty { flag: CACHE_FLAG });
+        (Some(Given { flag, folder }), _) if folder.as_os_str().is_empty() => {
+            return Err(Error::Empty { flag });
         }
-        (Some(folder), _) => Some((folder, CacheChosen::Flag)),
+        (Some(Given { flag, folder }), _) => Some((folder, CacheChosen::Flag(flag))),
         (None, Some(folder)) if !folder.is_empty() => Some((folder.into(), CacheChosen::Variable)),
         (None, _) => None,
     };
@@ -384,7 +387,8 @@ fn choose(
         }
         None => {
             let Some(Platform { user_data, cache }) = platform else {
-                tracing::warn!(target: "settings", "no user data folder on this system: nothing kept");
+                let warning = nothing_kept(named_cache.as_ref());
+                tracing::warn!(target: "settings", "{warning}");
                 return Ok(None);
             };
             let folder = platform_folder_used(user_data, writes);
@@ -404,6 +408,19 @@ fn choose(
         cache,
         cache_chosen,
     }))
+}
+
+/// The warning where the system gives no user data folder and none is named: nothing is
+/// kept, and a cache folder named, `cache`, is not used either.
+fn nothing_kept(cache: Option<&(PathBuf, CacheChosen)>) -> String {
+    let nothing = "no user data folder on this system: nothing kept";
+    match cache {
+        Some((folder, chosen)) => format!(
+            "{nothing}, and the cache folder {} given by {chosen} is not used either",
+            folder.display()
+        ),
+        None => nothing.to_owned(),
+    }
 }
 
 /// The platform's user data folder, created where it is missing for a program that
@@ -1008,7 +1025,7 @@ mod tests {
     ) -> Result<Option<Folders>, Error> {
         let mut system = system(None, platform, None);
         system.cache_variable = variable.map(|folder| folder.as_os_str().to_owned());
-        let cache = cache.map(Path::to_owned);
+        let cache = cache.and_then(|folder| self::given(CACHE_FLAGS[0], folder));
         super::choose(given, cache, system, unasked, writes)
     }
 
@@ -1021,7 +1038,8 @@ mod tests {
         let [flagged, variable, udd] = ["flag", "variable", "udd"].map(|n| folder.join(n));
         let platform = folder.join("platform/apertrust");
         std::fs::create_dir_all(&udd).expect("the user data folder");
-        for writes in [true, false] {
+        // Reading first, so the platform's user data folder is still missing then.
+        for writes in [false, true] {
             let cache = |given: Option<Given>, flag: Option<&Path>, var: Option<&Path>| {
                 let chosen = with_cache(given, flag, var, Some(platform.clone()), writes);
                 let chosen = found(chosen);
@@ -1030,7 +1048,7 @@ mod tests {
             let udd_given = || given(FLAGS[0], &udd);
             assert_eq!(
                 cache(udd_given(), Some(&flagged), Some(&variable)),
-                (flagged.clone(), CacheChosen::Flag)
+                (flagged.clone(), CacheChosen::Flag("--cache-dir"))
             );
             assert_eq!(
                 cache(None, None, Some(&variable)),
@@ -1045,13 +1063,13 @@ mod tests {
                 cache(udd_given(), None, Some(Path::new(""))),
                 (udd.join("cache"), CacheChosen::UserData)
             );
-            if writes {
-                // The platform's user data folder, created, keeps its cache apart.
-                assert_eq!(
-                    cache(None, None, None),
-                    (platform.with_extension("cache"), CacheChosen::Platform)
-                );
-            }
+            // The platform's user data folder, missing for a program that reads and created
+            // for one that writes, keeps its cache apart.
+            assert_eq!(
+                cache(None, None, None),
+                (platform.with_extension("cache"), CacheChosen::Platform)
+            );
+            assert_eq!(platform.is_dir(), writes);
             assert!(!flagged.exists() && !variable.exists());
             assert!(!udd.join("cache").exists());
             assert!(!platform.with_extension("cache").exists());
@@ -1071,22 +1089,22 @@ mod tests {
         let home = folder.join("home");
         let current = folder.join("current");
         let udd = folder.join("udd");
-        let named = |cache: &str, home: Option<PathBuf>| {
+        let named_by = |flag, cache: &str, home: Option<PathBuf>| {
             let mut system = system(None, None, home);
             system.cache_variable = Some("~/variable".into());
             let here = || Ok(current.clone());
-            super::choose(
-                given(FLAGS[0], &udd),
-                Some(cache.into()),
-                system,
-                here,
-                true,
-            )
+            let cache = given(flag, cache);
+            super::choose(given(FLAGS[0], &udd), cache, system, here, true)
         };
+        let named = |cache: &str, home| named_by(CACHE_FLAGS[0], cache, home);
         let chosen = found(named("~/cache", Some(home.clone())));
         assert_eq!(chosen.cache(), home.join("cache"));
         let chosen = found(named("cache", None));
         assert_eq!(chosen.cache(), current.join("cache"));
+        // darktable's spelling, named as given.
+        let chosen = found(named_by("--cachedir", "cache", None));
+        assert_eq!(chosen.cache_chosen(), CacheChosen::Flag("--cachedir"));
+        assert_eq!(chosen.cache_chosen().to_string(), "--cachedir");
         std::fs::remove_dir_all(&udd).expect("created");
 
         let refused = named("~/cache", None);
@@ -1100,6 +1118,8 @@ mod tests {
         );
         let refused = named("", None).expect_err("refused");
         assert_eq!(refused.to_string(), "--cache-dir names no folder");
+        let refused = named_by("--cachedir", "", None).expect_err("refused");
+        assert_eq!(refused.to_string(), "--cachedir names no folder");
         assert!(!udd.exists(), "the user data folder created");
 
         let mut system = system(None, None, None);
@@ -1115,6 +1135,37 @@ mod tests {
                  folder: "
             ),
             "{error}"
+        );
+    }
+
+    /// With no user data folder on the system and none named, nothing is kept, and a cache
+    /// folder named is not used either, which the warning says rather than dropping it
+    /// unsaid.
+    #[test]
+    fn a_cache_folder_named_without_a_user_data_folder_is_said_to_be_unused() {
+        let folder = Folder::new("cache-unused");
+        let cache = folder.join("cache");
+        for writes in [true, false] {
+            let chosen = with_cache(None, Some(&cache), None, None, writes);
+            assert_eq!(chosen.expect("no error"), None);
+        }
+        assert!(!cache.exists());
+        assert_eq!(
+            nothing_kept(None),
+            "no user data folder on this system: nothing kept"
+        );
+        let named = (cache.clone(), CacheChosen::Flag("--cachedir"));
+        assert_eq!(
+            nothing_kept(Some(&named)),
+            format!(
+                "no user data folder on this system: nothing kept, and the cache folder {} \
+                 given by --cachedir is not used either",
+                cache.display()
+            )
+        );
+        let named = (cache.clone(), CacheChosen::Variable);
+        assert!(
+            nothing_kept(Some(&named)).ends_with("given by APERTRUST_CACHE_DIR is not used either")
         );
     }
 }

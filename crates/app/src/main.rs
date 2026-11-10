@@ -119,9 +119,9 @@ struct Arguments {
     /// in it, it separates settings only: edits are still written beside the photos.
     user_data: Option<Given>,
     /// The cache folder, in place of the variable's, the user data folder's or the
-    /// platform's: `--cache-dir DIR` or `--cache-dir=DIR` (`folders::CACHE_FLAG`), the last
-    /// given.
-    cache: Option<PathBuf>,
+    /// platform's: `--cache-dir DIR` or `--cache-dir=DIR`, or darktable's `--cachedir` the
+    /// same way (`folders::CACHE_FLAGS`), the last given.
+    cache: Option<Given>,
     /// `--conf KEY=VALUE` or `--conf=KEY=VALUE`, darktable's, each a setting's value for
     /// this run, in the order given, which `settings::overrides` reads (decision 43).
     conf: Vec<String>,
@@ -160,21 +160,23 @@ fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, Stri
 }
 
 /// The flags that name a folder: the user data folder's (`folders::FLAGS`), then the cache
-/// folder's.
-const FOLDER_FLAGS: [&str; 4] = [
+/// folder's (`folders::CACHE_FLAGS`).
+const FOLDER_FLAGS: [&str; 5] = [
     folders::FLAGS[0],
     folders::FLAGS[1],
     folders::FLAGS[2],
-    folders::CACHE_FLAG,
+    folders::CACHE_FLAGS[0],
+    folders::CACHE_FLAGS[1],
 ];
 
 impl Arguments {
     /// Takes the folder `flag`, one of [`FOLDER_FLAGS`], names: the last given counts.
     fn named(&mut self, flag: &'static str, folder: PathBuf) {
-        if flag == folders::CACHE_FLAG {
-            self.cache = Some(folder);
+        let given = Some(Given { flag, folder });
+        if folders::CACHE_FLAGS.contains(&flag) {
+            self.cache = given;
         } else {
-            self.user_data = Some(Given { flag, folder });
+            self.user_data = given;
         }
     }
 }
@@ -3981,20 +3983,29 @@ mod tests {
         assert_eq!(read(&["photo.ARW"]).expect("read").user_data, None);
     }
 
-    /// `--cache-dir` in either form, the last given, beside the user data folder's flags;
-    /// one without its folder stops the start.
+    /// `--cache-dir` or darktable's `--cachedir`, in either form, the last given, beside the
+    /// user data folder's flags; one without its folder stops the start.
     #[test]
     fn the_command_line_names_the_cache_folder() {
+        let given = |flag, folder: &str| {
+            let folder = PathBuf::from(folder);
+            Some(Given { flag, folder })
+        };
         let line = ["--cache-dir", "one", "--configdir=dev", "photo.ARW"];
         let read_ = read(&line).expect("read");
-        assert_eq!(read_.cache, Some(PathBuf::from("one")));
+        assert_eq!(read_.cache, given("--cache-dir", "one"));
         assert_eq!(read_.user_data.map(|given| given.flag), Some("--configdir"));
         assert_eq!(read_.path, Some(PathBuf::from("photo.ARW")));
-        let last = read(&["--cache-dir", "one", "photo.ARW", "--cache-dir=~/two"]);
-        assert_eq!(last.expect("read").cache, Some(PathBuf::from("~/two")));
+        for flag in folders::CACHE_FLAGS {
+            let apart = read(&[flag, "dev"]).expect("read");
+            assert_eq!(apart.cache, given(flag, "dev"));
+            assert_eq!(read(&[&format!("{flag}=dev")]), Ok(apart));
+        }
+        let last = read(&["--cache-dir", "one", "photo.ARW", "--cachedir=~/two"]);
+        assert_eq!(last.expect("read").cache, given("--cachedir", "~/two"));
         assert_eq!(
-            read(&["photo.ARW", "--cache-dir"]),
-            Err("--cache-dir needs a folder".to_owned())
+            read(&["photo.ARW", "--cachedir"]),
+            Err("--cachedir needs a folder".to_owned())
         );
         assert_eq!(read(&["photo.ARW"]).expect("read").cache, None);
     }

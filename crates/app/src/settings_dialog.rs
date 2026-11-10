@@ -1424,4 +1424,14 @@ mod tests {
         harness.run();
         harness.snapshot("settings-processing-dark");
     }
+
+    /// Storage's rows from the schema, the cache's three, at their defaults.
+    #[test]
+    fn the_storage_page_in_the_dark_theme() {
+        let mut harness = dialog();
+        harness.get_by_label("Storage").click();
+        harness.event(Event::PointerGone);
+        harness.run();
+        harness.snapshot("settings-storage-dark");
+    }
 }

@@ -32,7 +32,7 @@
 //! - `folders`, behind the `folders` feature, which only the binaries turn on: `Folders`,
 //!   the user data folder and how it was chosen, by `--user-data-dir` or its aliases, by
 //!   `APERTRUST_USER_DATA_DIR` or as the platform's, and the cache folder, by
-//!   `--cache-dir`, `APERTRUST_CACHE_DIR`, in a user data folder given or as the
+//!   `--cache-dir` or `--cachedir`, `APERTRUST_CACHE_DIR`, in a user data folder given or as the
 //!   platform's: the one place that decides them.
 //! - `jobs`, behind the `jobs` feature, which the engine and the library turn on:
 //!   darktable's control jobs, its queues, priorities, workers, progress and cancel
