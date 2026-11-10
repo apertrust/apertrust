@@ -250,7 +250,10 @@ impl Cache {
             .ok()
             .filter(|meta| meta.is_file())
             .map(|meta| meta.len());
-        if crate::fs::write(&path, &file)? == crate::fs::Written::Unchanged {
+        if matches!(
+            crate::fs::write(&path, &file)?,
+            crate::fs::Written::Unchanged
+        ) {
             // The same bytes were not written again, so its time is set by hand.
             touch(&path, SystemTime::now());
         }
