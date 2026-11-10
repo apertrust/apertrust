@@ -134,7 +134,7 @@ impl<'a> Empty<'a> {
             Folder::Failed { path, reason } => Empty::Failed(path, reason.as_deref()),
             Folder::Open(listing) if !listing.done => Empty::Reading(&listing.path),
             Folder::Open(listing) if listing.photos.is_empty() => Empty::NoRaws(&listing.name),
-            Folder::Open(_) => Empty::NoneChosen,
+            Folder::Open(_) | Folder::Alone { .. } => Empty::NoneChosen,
         }
     }
 
@@ -246,7 +246,7 @@ fn shown(folder: &Folder) -> Option<(&Path, Option<usize>, &[String])> {
             &listing.subfolders,
         )),
         Folder::Opening { path } => Some((path, None, &[])),
-        Folder::None | Folder::Failed { .. } => None,
+        Folder::None | Folder::Failed { .. } | Folder::Alone { .. } => None,
     }
 }
 
@@ -255,16 +255,26 @@ fn shown(folder: &Folder) -> Option<(&Path, Option<usize>, &[String])> {
 /// Folders group, the open folder's tree with the way up to its parent; ⋯ holds Show in
 /// Finder. Each part is open or closed as `browse.open` says. Albums and Smart albums join
 /// Folders with the library (Phase 5); folder mode never shows them.
+///
+/// For a photo alone, as the wireframe's one-photo column draws it, the top line names the
+/// photo, Folders holds Open This Folder alone, and ⋯ holds Open This Folder, then Show in
+/// Finder, which shows the photo in its folder.
 pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
     let mut actions = Vec::new();
     let title = words.text("section-browse");
     let open = shown(browse.folder).map(|(path, ..)| path.to_owned());
-    let reveal =
-        Item::new("reveal", words.text(jobs::FILE_MANAGER.show_message())).enabled(open.is_some());
+    let alone = alone(browse.folder);
+    let reveal = Item::new("reveal", words.text(jobs::FILE_MANAGER.show_message()))
+        .enabled(open.is_some() || alone.is_some());
+    let mut options = vec![Entry::Item(reveal)];
+    if alone.is_some() {
+        let this = Item::new("open-this-folder", words.text("browse-open-this-folder"));
+        options.insert(0, Entry::Item(this));
+    }
     let out = Section::new(&title, browse.open.browse)
-        .options_menu(vec![Entry::Item(reveal)])
+        .options_menu(options)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(t.spacing.xs);
@@ -285,16 +295,31 @@ pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     if out.actions.contains(&SectionAction::Toggle) {
         actions.push(Action::Toggle);
     }
-    if let (Some("reveal"), Some(path)) = (out.chosen.as_deref(), open) {
-        actions.push(Action::Reveal(path));
+    match (out.chosen.as_deref(), open, alone) {
+        (Some("reveal"), Some(path), _) => actions.push(Action::Reveal(path)),
+        (Some("reveal"), None, Some((photo, _))) => {
+            actions.push(Action::ShowInFolder(photo.to_owned()));
+        }
+        (Some("open-this-folder"), _, Some((_, folder))) => {
+            actions.push(Action::Open(folder.to_owned()));
+        }
+        _ => {}
     }
     actions
 }
 
+/// The photo open alone and its folder, which Open This Folder opens.
+fn alone(folder: &Folder) -> Option<(&Path, &Path)> {
+    match folder {
+        Folder::Alone { path, .. } => Some((path, path.parent()?)),
+        _ => None,
+    }
+}
+
 /// What the top line's box says, as the wireframe draws it: the open folder, "Folder:
 /// 2026-10 Lisbon", its name cut in its middle to fit `width` in `font`, its count on its
-/// row in the tree; that it is being read; or, with none open or the last open failed,
-/// that none is. Returns it cut, and whole.
+/// row in the tree; that it is being read; the name of a photo alone; or, with none open
+/// or the last open failed, that none is. Returns it cut, and whole.
 fn open_line(
     ctx: &egui::Context,
     painter: &egui::Painter,
@@ -313,12 +338,14 @@ fn open_line(
             Folder::Open(_) | Folder::Opening { .. } => {
                 words.text_with("folders-reading", Some(&args))
             }
+            Folder::Alone { .. } => name.to_owned(),
             Folder::None | Folder::Failed { .. } => words.text("browse-no-folder"),
         }
     };
     let whole_name = match folder {
         Folder::Open(listing) => listing.name.clone(),
         Folder::Opening { path } => name(path),
+        Folder::Alone { photo, .. } => photo.name.clone(),
         Folder::None | Folder::Failed { .. } => String::new(),
     };
     let whole = line(&whole_name);
@@ -354,11 +381,16 @@ fn top_line(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
             f32::INFINITY,
         );
         let name = words.text("browse-open-name");
-        let response = ChoiceBox::new(&name, &whole).icon(Icon::Folder).show(
-            ui,
-            width,
-            |painter, font, room| open_line(&ctx, painter, browse.folder, font, room).0,
-        );
+        let icon = match browse.folder {
+            Folder::Alone { .. } => Icon::Photo,
+            _ => Icon::Folder,
+        };
+        let response =
+            ChoiceBox::new(&name, &whole)
+                .icon(icon)
+                .show(ui, width, |painter, font, room| {
+                    open_line(&ctx, painter, browse.folder, font, room).0
+                });
         // Its count, which the tree's row shows, said with it.
         if let Folder::Open(listing) = browse.folder
             && listing.done
@@ -626,6 +658,15 @@ fn row_menu(ui: &egui::Ui, response: &egui::Response, name: &str, path: &Path) -
 /// holds Show in Folder and Open.
 fn tree(ui: &mut egui::Ui, browse: &Browse<'_>, actions: &mut Vec<Action>) {
     let words = translator(ui.ctx());
+    // A photo alone has no tree: its folder is offered instead.
+    if let Some((_, folder)) = alone(browse.folder) {
+        let this = words.text("browse-open-this-folder");
+        let response = open_this_row(ui, &this).on_hover_text(export::shown(folder, browse.home));
+        if response.clicked() {
+            actions.push(Action::Open(folder.to_owned()));
+        }
+        return;
+    }
     // With none open, the top line says so, and the tree shows nothing.
     let Some((path, count, subfolders)) = shown(browse.folder) else {
         return;
@@ -840,6 +881,47 @@ fn up_row(ui: &mut egui::Ui, parent: &str, up: &str) -> egui::Response {
         }
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, up));
+    response
+}
+
+/// Open This Folder, a photo alone's one row in Folders, as the wireframe draws it: the
+/// folder icon in `text_secondary` and the words in the text colour, underlined, a button
+/// for screen readers.
+fn open_this_row(ui: &mut egui::Ui, words: &str) -> egui::Response {
+    let t = theme(ui.ctx());
+    let size = vec2(ui.available_width(), t.sizes.panel_line);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let band = rect.expand2(vec2(t.spacing.xs, 0.0));
+        if response.hovered() {
+            painter.rect_filled(band, t.shape.radius, t.colors.hover);
+        }
+        let icon = Rect::from_min_size(
+            pos2(rect.left(), rect.center().y - ROW_ICON / 2.0),
+            vec2(ROW_ICON, ROW_ICON),
+        );
+        Icon::Folder.paint(painter, icon, t.colors.text_secondary);
+        let x = icon.right() + t.spacing.s;
+        let font = egui::FontId::proportional(t.text.body);
+        let shown = middle_cut(painter, words, "", &font, (rect.right() - x).max(0.0));
+        let format = egui::TextFormat {
+            font_id: font,
+            color: t.colors.text,
+            underline: egui::Stroke::new(1.0, t.colors.text),
+            ..Default::default()
+        };
+        let galley = painter.layout_job(egui::text::LayoutJob::single_section(shown, format));
+        painter.galley(
+            pos2(x, rect.center().y - galley.size().y / 2.0),
+            galley,
+            t.colors.text,
+        );
+        if response.has_focus() {
+            focus_ring_centred(painter, band, &t);
+        }
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, words));
     response
 }
 
@@ -1596,6 +1678,59 @@ mod tests {
         );
     }
 
+    /// A photo opened alone, as the command line opens one: the wireframe's IMG_2041.ARW.
+    fn alone() -> Folder {
+        Folder::Alone {
+            path: PathBuf::from("/Users/me/Pictures/2026-10 Lisbon/IMG_2041.ARW"),
+            photo: apertrust_engine::session::library::Photo {
+                name: "IMG_2041.ARW".to_owned(),
+                size: 0,
+                modified: None,
+                edit: apertrust_engine::session::library::EditState::None,
+            },
+        }
+    }
+
+    /// Browse for a photo alone: its top line names the photo, and Folders holds Open This
+    /// Folder alone, which opens the photo's folder, as ⋯'s Open This Folder does; ⋯'s
+    /// Show in Finder shows the photo in it.
+    #[test]
+    fn a_photo_alone_offers_its_folder_as_open_this_folder() {
+        let lisbon = PathBuf::from("/Users/me/Pictures/2026-10 Lisbon");
+        let mut harness = browsed(egui::vec2(320.0, 400.0), alone, recent, OPEN_ALL, true);
+        harness.run();
+        let what = harness.get_by_role_and_label(Role::ComboBox, "What is open");
+        assert_eq!(
+            what.accesskit_node().value().as_deref(),
+            Some("IMG_2041.ARW")
+        );
+        assert!(harness.query_by_role(Role::Tree).is_none());
+        assert!(harness.query_by_label_contains("Up to").is_none());
+        harness
+            .get_by_role_and_label(Role::Button, "Open This Folder")
+            .click();
+        harness.run();
+        assert_eq!(*harness.state(), [Action::Open(lisbon.clone())]);
+        let words = translator(&harness.ctx);
+        let show = words.text(jobs::FILE_MANAGER.show_message());
+        for (item, action) in [
+            ("Open This Folder", Action::Open(lisbon.clone())),
+            (
+                show.as_str(),
+                Action::ShowInFolder(lisbon.join("IMG_2041.ARW")),
+            ),
+        ] {
+            harness.state_mut().clear();
+            harness
+                .get_by_role_and_label(Role::Button, "Browse options")
+                .click();
+            harness.run();
+            harness.get_by_role_and_label(Role::MenuItem, item).click();
+            harness.run();
+            assert_eq!(*harness.state(), [action], "{item}");
+        }
+    }
+
     /// A folder row's right-click holds Show in Folder and Open.
     #[test]
     fn a_folder_row_s_right_click_shows_it_in_its_folder_or_opens_it() {
@@ -1896,6 +2031,30 @@ mod tests {
             tab.snapshot(name);
             results.extend(tab.take_snapshot_results());
         }
+
+        // A photo alone, as the wireframe's one-photo column draws it.
+        let mut tab = themed(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(320.0, 160.0),
+            move |ui, actions| {
+                let panel = theme(ui.ctx()).colors.panel;
+                ui.painter().rect_filled(ui.max_rect(), 0.0, panel);
+                let (folder, recent, keys) = (alone(), recent(), keys());
+                let browse = Browse {
+                    folder: &folder,
+                    recent: &recent,
+                    open: OPEN_ALL,
+                    tree: &BTreeMap::new(),
+                    inside: &HashMap::new(),
+                    keys: &keys,
+                    home: None,
+                };
+                PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            },
+        );
+        tab.run();
+        tab.snapshot("photos-tab-alone");
+        results.extend(tab.take_snapshot_results());
 
         let recent = vec![
             (PathBuf::from("/photos/Portraits"), None),

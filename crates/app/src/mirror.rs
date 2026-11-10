@@ -2074,4 +2074,39 @@ pub(crate) mod tests {
         drop(live);
         let _ = std::fs::remove_dir_all(&folder);
     }
+
+    /// A photo opened alone (`docs/library.md`, One photo): the grid panel holds it by
+    /// itself, its cell following its edit, while no folder is shown and nothing reaches
+    /// the recents, whatever the photo's events say. Open This Folder then opens its folder,
+    /// which joins the recents, the photo active in it.
+    #[test]
+    fn a_photo_alone_lists_nothing_and_its_folder_opens_with_it_active() {
+        let mut m = mirror();
+        let path = PathBuf::from("/photos/a.ARW");
+        m.folder.alone(path.clone());
+        m.opening(path.clone(), 1, Instant::now());
+        let mut reactions = m.apply(Event::Opened(photo(1)));
+        reactions.extend(m.apply(Event::Values(report(1.0, 1))));
+        assert_eq!(reactions, []);
+        let folder::Folder::Alone { photo, .. } = &m.folder.folder else {
+            panic!("not alone: {:?}", m.folder.folder);
+        };
+        assert_eq!(photo.name, "a.ARW");
+        assert_eq!(photo.edit, EditState::Edited);
+        assert_eq!(m.folder.photos().len(), 1);
+        assert_eq!(m.folder.active_shown(), Some(0));
+        assert_eq!(m.folder.shown(), None);
+        assert_eq!(m.folder.thumbnail("a.ARW", 128), None);
+        // Open This Folder: the photo stays open, active once its folder is listed.
+        let folder = m.folder.to_show(&path).expect("its folder");
+        assert_eq!(folder, PathBuf::from("/photos"));
+        m.folder.opening(folder, 2);
+        assert_eq!(
+            m.apply(folder_opened(2, "/photos")),
+            [Reaction::FolderOpened(PathBuf::from("/photos"))]
+        );
+        m.apply(listed(2, &["0.ARW", "a.ARW"], true));
+        assert_eq!(m.folder.active(), Some(1));
+        assert!(matches!(m.photo, PhotoState::Open(_)));
+    }
 }

@@ -113,11 +113,11 @@ use recents::Recents;
 use settings::{Keeper, Settings};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
-/// [--cache-dir DIR] [--conf KEY=VALUE]... [FILE]`.
+/// [--cache-dir DIR] [--conf KEY=VALUE]... [FILE | FOLDER]`.
 #[derive(Debug, Default, PartialEq)]
 struct Arguments {
-    /// The raw to open.
-    path: Option<PathBuf>,
+    /// What to open: the first path given.
+    open: Option<Start>,
     /// darktable-style debug domains for stderr (`apertrust_base::log::DOMAINS`).
     domains: Vec<String>,
     /// The user data folder, where the settings are kept, in place of the platform's:
@@ -135,12 +135,26 @@ struct Arguments {
     conf: Vec<String>,
 }
 
-/// Reads `args`, the command line after the program's name. A flag of the user data
-/// folder or the cache folder without one is an error, so that another is never used in
-/// its place, as is `--conf` without its setting.
-fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, String> {
+/// What the command line's path opens (`docs/gui.md`, The start window).
+#[derive(Debug, PartialEq)]
+enum Start {
+    /// A raw, alone (`docs/library.md`, One photo).
+    Photo(PathBuf),
+    /// A folder, in folder mode.
+    Folder(PathBuf),
+}
+
+/// Reads `args`, the command line after the program's name, `look` saying what its path
+/// is on the disk ([`start`]). A flag of the user data folder or the cache folder without
+/// one is an error, so that another is never used in its place, as is `--conf` without
+/// its setting.
+fn arguments(
+    args: impl IntoIterator<Item = OsString>,
+    look: impl FnOnce(&Path) -> std::io::Result<dropped::Kind>,
+) -> Result<Arguments, String> {
     let mut args = args.into_iter();
     let mut arguments = Arguments::default();
+    let mut path = None;
     while let Some(arg) = args.next() {
         if arg == "-d" || arg == "--debug" {
             let domain = args.next().map(|d| d.to_string_lossy().into_owned());
@@ -160,11 +174,33 @@ fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, Stri
         } else if let Some(given) = joined(&arg) {
             let (flag, folder) = given?;
             arguments.named(flag, folder);
-        } else if arguments.path.is_none() {
-            arguments.path = Some(PathBuf::from(arg));
+        } else if path.is_none() {
+            path = Some(PathBuf::from(arg));
         }
     }
+    arguments.open = path.map(|path| start(path, look)).transpose()?;
     Ok(arguments)
+}
+
+/// What `path`, the command line's, opens, as `look` finds it on the disk: a folder in
+/// folder mode; a raw, told by its name, alone; made absolute from the folder the app
+/// starts in, so the photo's folder is known (Open This Folder). A library's or a
+/// project's file, until Phase 5, another file, or nothing there, is an error saying why.
+fn start(
+    path: PathBuf,
+    look: impl FnOnce(&Path) -> std::io::Result<dropped::Kind>,
+) -> Result<Start, String> {
+    let given = path.display();
+    let kind = look(&path).map_err(|error| format!("{given}: {error}"))?;
+    let absolute = || std::path::absolute(&path).unwrap_or_else(|_| path.clone());
+    match kind {
+        dropped::Kind::Folder => Ok(Start::Folder(absolute())),
+        dropped::Kind::Raw => Ok(Start::Photo(absolute())),
+        dropped::Kind::Library => Err(format!(
+            "{given}: libraries and projects come in a later version"
+        )),
+        dropped::Kind::Other => Err(format!("{given}: only folders and raw photos open")),
+    }
 }
 
 /// The flags that name a folder: the user data folder's (`folders::FLAGS`), then the cache
@@ -258,12 +294,12 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     let Arguments {
-        path,
+        open,
         domains,
         user_data,
         cache,
         conf,
-    } = match arguments(std::env::args_os().skip(1)) {
+    } = match arguments(std::env::args_os().skip(1), dropped::found) {
         Ok(arguments) => arguments,
         Err(error) => {
             eprintln!("apertrust: {error}");
@@ -387,7 +423,7 @@ fn main() -> eframe::Result {
                 let budget = engine.budget;
                 Ok(Box::new(App::new(
                     cc,
-                    path,
+                    open,
                     keeper,
                     settings,
                     engine_gate,
@@ -2027,14 +2063,15 @@ fn apply_settings(
 }
 
 impl App {
-    /// The app as `settings` left it, before its first frame; `keeper` writes them back.
+    /// The app as `settings` left it, before its first frame, opening what the command line
+    /// named, `open`; `keeper` writes them back.
     /// Its session plans within `budget` bytes, `engine.memory_budget`, and keeps `cache`,
     /// the disk cache, if the app could open one. Its dialogs are the host's. It keeps the
     /// session's log in `kept` while settings say so.
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
         cc: &eframe::CreationContext<'_>,
-        path: Option<PathBuf>,
+        open: Option<Start>,
         keeper: Keeper,
         settings: Settings,
         gate: SubmitGate,
@@ -2159,8 +2196,10 @@ impl App {
             storage_folders,
             storage_shown: storage::View::default(),
         };
-        if let Some(path) = path {
-            app.open(path);
+        match open {
+            Some(Start::Photo(path)) => app.open_alone(path),
+            Some(Start::Folder(path)) => app.open_folder(path),
+            None => {}
         }
         app
     }
@@ -2407,8 +2446,8 @@ impl App {
         }
     }
 
-    /// Opens the raw at `path` in the session, in place of the photo open, as File › Open…,
-    /// a drop and the command line do. The session saves the open photo's edit first, if
+    /// Opens the raw at `path` in the session, in place of the photo open, as File › Open…
+    /// and a drop do. The session saves the open photo's edit first, if
     /// anything in it is not on disk yet, and reads the new photo's from beside it.
     fn open(&mut self, path: PathBuf) {
         // The photo's folder shows in the grid panel, unless it is the one open already:
@@ -2419,6 +2458,16 @@ impl App {
         if let Some(folder) = folder {
             self.open_folder(folder);
         }
+    }
+
+    /// Opens the raw at `path`, absolute, alone, as `apertrust FILE` does at the start
+    /// (`docs/library.md`, One photo): no folder is listed, nothing enters the recents,
+    /// and the grid panel holds the photo by itself. Nothing is written but its edit, once
+    /// something in it changes.
+    fn open_alone(&mut self, path: PathBuf) {
+        self.mirror.folder.alone(path.clone());
+        let open = self.session.send(Command::Open(path.clone()));
+        self.mirror.opening(path, open, Instant::now());
     }
 
     /// Opens what Open… or a drop asked for, or asks the alert that says why nothing opens,
@@ -2856,7 +2905,8 @@ impl App {
 
     /// The grid panel: the open folder's photos, in the grid bar's sort, the photo open
     /// the active cell; a click or Enter opens one. Always there, empty with no folder
-    /// (`docs/gui.md`, The grid panel). Each cell draws its thumbnail once it has come, and
+    /// (`docs/gui.md`, The grid panel), and holding a photo open alone by itself, with no
+    /// thumbnail, since nothing of its folder is read. Each cell draws its thumbnail once it has come, and
     /// those in sight without one are asked for (`thumbnails.rs`). Returns the action a
     /// choice in the grid bar's menus, or its Labels, runs.
     fn grid_panel(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
@@ -2870,12 +2920,13 @@ impl App {
         let (clicked, wanted, bar) = {
             let mirror = &self.mirror;
             let textures = &self.thumbnails;
-            let (listing, active) = match &mirror.folder.folder {
-                folder::Folder::Open(listing) => (Some(listing), mirror.folder.active_shown()),
-                _ => (None, None),
+            let listing = match &mirror.folder.folder {
+                folder::Folder::Open(listing) => Some(listing),
+                _ => None,
             };
+            let active = mirror.folder.active_shown();
             let says = library::Empty::of(&mirror.folder.folder).grid_says(ui.ctx());
-            let photos = listing.map_or(&[][..], |listing| listing.photos.as_slice());
+            let photos = mirror.folder.photos();
             let order = mirror.folder.order();
             let thumb = |i: usize| {
                 let photo = &photos[order[i]];
@@ -2909,8 +2960,10 @@ impl App {
                 }
                 _ => None,
             };
+            // Only an open folder's are asked for.
             let shown = order
                 .get(output.shown)
+                .filter(|_| listing.is_some())
                 .unwrap_or_default()
                 .iter()
                 .map(|&i| photos[i].name.as_str());
@@ -4474,7 +4527,72 @@ mod tests {
     }
 
     fn read(line: &[&str]) -> Result<Arguments, String> {
-        arguments(line.iter().map(OsString::from))
+        arguments(line.iter().map(OsString::from), on_disk)
+    }
+
+    /// What the disk would say of a path, by its name, as `dropped`'s tests have it: a
+    /// folder where it has no dot; nothing there where it names `missing`.
+    fn on_disk(path: &Path) -> std::io::Result<dropped::Kind> {
+        if path.to_string_lossy().contains("missing") {
+            return Err(std::io::ErrorKind::NotFound.into());
+        }
+        Ok(dropped::tests::by_name(path))
+    }
+
+    /// `photo.ARW`, as the command line opens it alone: from the folder the app starts in.
+    fn photo_arw() -> Option<Start> {
+        let path = std::path::absolute("photo.ARW").expect("absolute");
+        Some(Start::Photo(path))
+    }
+
+    /// The path, a raw opening alone and a folder in folder mode, both absolute; a
+    /// library's or a project's file, another file and nothing there stop the start, saying
+    /// why; the other flags read as ever around it, and only the first path counts.
+    #[test]
+    fn the_command_line_s_path_opens_a_photo_alone_or_a_folder() {
+        let absolute = |path: &str| std::path::absolute(path).expect("absolute");
+        assert_eq!(read(&["photo.ARW"]).expect("read").open, photo_arw());
+        let folder = read(&["--conf", "scale=2", "Trips/Lisbon", "-d", "settings"]);
+        let folder = folder.expect("read");
+        assert_eq!(folder.open, Some(Start::Folder(absolute("Trips/Lisbon"))));
+        assert_eq!(folder.conf, ["scale=2"]);
+        assert_eq!(folder.domains, ["settings"]);
+        let given = read(&["/photos/IMG_1.CR3", "--cache-dir=one", "/photos/IMG_2.CR3"]);
+        let given = given.expect("read");
+        let first = Some(Start::Photo(PathBuf::from("/photos/IMG_1.CR3")));
+        assert_eq!(given.open, first);
+        assert!(given.cache.is_some());
+        assert_eq!(read(&["-d", "gpu"]).expect("read").open, None);
+        for (line, error) in [
+            (
+                &["Home.aplibrary"][..],
+                "Home.aplibrary: libraries and projects come in a later version",
+            ),
+            (
+                &["--configdir", "dev", "Trip.approject"],
+                "Trip.approject: libraries and projects come in a later version",
+            ),
+            (
+                &["notes.txt"],
+                "notes.txt: only folders and raw photos open",
+            ),
+        ] {
+            assert_eq!(read(line), Err(error.to_owned()), "{line:?}");
+        }
+        let missing = read(&["missing.CR3"]).expect_err("nothing there");
+        assert!(missing.starts_with("missing.CR3: "), "{missing}");
+        // On the disk: a folder, a raw, and nothing there.
+        let scratch = settings::testing::Folder::new("command-line");
+        let raw = scratch.0.join("IMG_1.CR3");
+        std::fs::write(&raw, b"").expect("a raw");
+        let line = |path: &Path| [OsString::from(path)];
+        let found = |path: &Path| arguments(line(path), dropped::found).map(|a| a.open);
+        assert_eq!(
+            found(&scratch.0),
+            Ok(Some(Start::Folder(scratch.0.clone())))
+        );
+        assert_eq!(found(&raw), Ok(Some(Start::Photo(raw.clone()))));
+        assert!(found(&scratch.0.join("IMG_2.CR3")).is_err());
     }
 
     #[test]
@@ -4486,7 +4604,7 @@ mod tests {
         assert_eq!(
             read(&["-d", "settings", "--user-data-dir", "dev", "photo.ARW"]),
             Ok(Arguments {
-                path: Some(PathBuf::from("photo.ARW")),
+                open: photo_arw(),
                 domains: vec!["settings".to_owned()],
                 user_data: given("--user-data-dir", "dev"),
                 cache: None,
@@ -4511,7 +4629,7 @@ mod tests {
         let last = read(&["--configdir", "one", "photo.ARW", "--user-data-dir=two"]);
         let last = last.expect("read");
         assert_eq!(last.user_data, given("--user-data-dir", "two"));
-        assert_eq!(last.path, Some(PathBuf::from("photo.ARW")));
+        assert_eq!(last.open, photo_arw());
         // A flag without its folder stops the start, so the platform's is never used for it.
         assert_eq!(
             read(&["photo.ARW", "--config-dir"]),
@@ -4533,7 +4651,7 @@ mod tests {
         let read_ = read(&line).expect("read");
         assert_eq!(read_.cache, given("--cache-dir", "one"));
         assert_eq!(read_.user_data.map(|given| given.flag), Some("--configdir"));
-        assert_eq!(read_.path, Some(PathBuf::from("photo.ARW")));
+        assert_eq!(read_.open, photo_arw());
         for flag in folders::CACHE_FLAGS {
             let apart = read(&[flag, "dev"]).expect("read");
             assert_eq!(apart.cache, given(flag, "dev"));
@@ -4562,7 +4680,7 @@ mod tests {
         ];
         let read_ = read(&line).expect("read");
         assert_eq!(read_.conf, ["scale=1.5", "theme=light", "scale=2"]);
-        assert_eq!(read_.path, Some(PathBuf::from("photo.ARW")));
+        assert_eq!(read_.open, photo_arw());
         // A value with `=` in it, as a table's, keeps it.
         let table = read(&["--conf=keys={ undo = [\"Ctrl+K\"] }"]).expect("read");
         assert_eq!(table.conf, ["keys={ undo = [\"Ctrl+K\"] }"]);
@@ -4579,9 +4697,12 @@ mod tests {
             use std::os::unix::ffi::OsStringExt;
             let not_utf8 = |arg: &[u8]| OsString::from_vec(arg.to_vec());
             let error = Err("--conf edit.tab=\u{FFFD}: not UTF-8".to_owned());
-            assert_eq!(arguments([not_utf8(b"--conf=edit.tab=\xff")]), error);
+            assert_eq!(
+                arguments([not_utf8(b"--conf=edit.tab=\xff")], on_disk),
+                error
+            );
             let apart = ["--conf".into(), not_utf8(b"edit.tab=\xff")];
-            assert_eq!(arguments(apart), error);
+            assert_eq!(arguments(apart, on_disk), error);
         }
     }
 
@@ -4596,7 +4717,7 @@ mod tests {
             folder.clone().into(),
             "photo.ARW".into(),
         ];
-        let given = arguments(line).expect("read").user_data;
+        let given = arguments(line, on_disk).expect("read").user_data;
         let folders = Folders::find(given, None, false)
             .expect("usable")
             .expect("a folder");

@@ -29,6 +29,8 @@
 //!   listing, so they go with the folder; each change raises [`FolderState::generation`],
 //!   which the textures made of them compare (`thumbnails.rs`, `docs/gui.md`, Derived
 //!   caches).
+//! - **A photo alone,** from a terminal, is [`Folder::Alone`]: no folder is asked for, and
+//!   the grid panel holds that one photo ([`FolderState::alone`]).
 //! - **The order** the grid panel shows the photos in is the grid bar's sort
 //!   ([`FolderState::sort`], [`sorted`]), worked out again when the sort changes, a chunk
 //!   comes or the capture times do (`Taken`, once the listing is done); until they come,
@@ -59,6 +61,15 @@ pub enum Folder {
     Failed {
         path: PathBuf,
         reason: Option<String>,
+    },
+    /// One photo alone, from a terminal (`docs/library.md`, One photo): no folder listed,
+    /// the grid panel holding the photo by itself.
+    Alone {
+        /// The photo's path, absolute.
+        path: PathBuf,
+        /// Its one cell: its name, and its edit state as the session reports it. Nothing
+        /// else is read of it, so its size is 0 and its modified time none.
+        photo: Photo,
     },
 }
 
@@ -152,6 +163,25 @@ impl FolderState {
         self.reorder();
     }
 
+    /// The photo at `path`, absolute, is opened alone, at the start, before any folder is
+    /// asked for (`docs/library.md`, One photo): nothing is listed, and the grid panel
+    /// holds it by itself until a folder opens.
+    pub fn alone(&mut self, path: PathBuf) {
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let photo = Photo {
+            name,
+            size: 0,
+            modified: None,
+            edit: library::EditState::None,
+        };
+        self.job = None;
+        self.folder = Folder::Alone { path, photo };
+        self.generation += 1;
+        self.reorder();
+    }
+
     /// The folder is closed by the command numbered `number`: nothing is open at once, and
     /// the events of the reading it stops are dropped.
     #[cfg_attr(
@@ -205,9 +235,19 @@ impl FolderState {
 
     /// The photo open, where it is in the listing.
     pub fn active(&self) -> Option<usize> {
-        // Only a folder that is open has cells.
+        // Only a folder that is open, or a photo alone, has cells.
         self.active
-            .filter(|_| matches!(self.folder, Folder::Open(_)))
+            .filter(|_| matches!(self.folder, Folder::Open(_) | Folder::Alone { .. }))
+    }
+
+    /// The photos the grid panel holds, in the listing's order: the open folder's, or the
+    /// photo alone.
+    pub fn photos(&self) -> &[Photo] {
+        match &self.folder {
+            Folder::Open(listing) => &listing.photos,
+            Folder::Alone { photo, .. } => std::slice::from_ref(photo),
+            _ => &[],
+        }
     }
 
     /// The grid panel's active cell: the photo open, where it is in the order.
@@ -234,10 +274,12 @@ impl FolderState {
     /// reading of the folder. An edit a newer Apertrust wrote, or a sidecar that could not
     /// be read, stays as the reading found it.
     pub fn edited(&mut self, path: &Path, edited: bool) {
-        let Folder::Open(listing) = &mut self.folder else {
-            return;
+        let photo = match &mut self.folder {
+            Folder::Open(listing) => listing.position(path).map(|i| &mut listing.photos[i]),
+            Folder::Alone { path: alone, photo } => same(alone, path).then_some(photo),
+            _ => None,
         };
-        let Some(photo) = listing.position(path).map(|i| &mut listing.photos[i]) else {
+        let Some(photo) = photo else {
             return;
         };
         let now = if edited {
@@ -263,6 +305,7 @@ impl FolderState {
         });
         self.order = match &self.folder {
             Folder::Open(listing) => sorted(&listing.photos, listing.taken.as_deref(), sort),
+            Folder::Alone { .. } => vec![0],
             _ => Vec::new(),
         };
         self.place = vec![0; self.order.len()];
@@ -276,6 +319,7 @@ impl FolderState {
     pub fn locate(&mut self, photo: Option<&Path>) {
         self.active = match (&self.folder, photo) {
             (Folder::Open(listing), Some(photo)) => listing.position(photo),
+            (Folder::Alone { path, .. }, Some(photo)) => same(path, photo).then_some(0),
             _ => None,
         };
     }
@@ -303,12 +347,13 @@ impl FolderState {
         self.asked.remove(folder);
     }
 
-    /// The folder shown: the open one, or the one being opened.
+    /// The folder shown: the open one, or the one being opened; none for a photo alone,
+    /// whose folder is not listed.
     pub fn shown(&self) -> Option<&Path> {
         match &self.folder {
             Folder::Open(listing) => Some(&listing.path),
             Folder::Opening { path } => Some(path),
-            Folder::None | Folder::Failed { .. } => None,
+            Folder::None | Folder::Failed { .. } | Folder::Alone { .. } => None,
         }
     }
 
@@ -458,6 +503,11 @@ impl FolderState {
             _ => {}
         }
     }
+}
+
+/// Whether `alone`, an absolute path, is the photo at `photo`, which may be relative.
+fn same(alone: &Path, photo: &Path) -> bool {
+    std::path::absolute(photo).is_ok_and(|photo| photo == alone)
 }
 
 /// The photos' order by `sort`, each by its place in `photos`; `taken`, the photos' capture
