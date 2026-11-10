@@ -24,8 +24,8 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 - only the active photo has a live pipeline; every other photo on screen is a still, rendered once from its saved edit by the same viewport pipe at its cell's size, its frame kept and its pipeline freed, so a still equals the live frame at that size byte for byte and activating a photo moves nothing;
 - commands name photos by id; an edit to a photo that is not live changes its edit and sidecar without the GPU, then renders its still again;
 - the engine thread takes the commands, renders the live frame if it changed, then makes one bounded submission of background work, a tile of a still, a `SystemForeground` job ([0057](0057-jobs-as-darktables-control-jobs.md)), so a change waits for one such submission at most;
-- decoding runs on a job worker, never the engine thread;
-- compiled kernels live as long as the session; one memory budget covers the session, stills dropped first; how many photos stay live is a setting, one for now.
+- decoding runs on a job worker, never the engine thread, the active photo opening in stages ([0077](0077-a-photo-opens-in-stages.md));
+- compiled kernels live as long as the session, kept across photos from the staged open on ([0077](0077-a-photo-opens-in-stages.md)); one memory budget covers the session, stills dropped first; how many photos stay live is a setting, one for now.
 
 ## Options considered
 
