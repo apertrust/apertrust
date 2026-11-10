@@ -2535,15 +2535,11 @@ impl App {
         open_folder(path, &mut self.mirror, &mut |command| session.send(command));
     }
 
-    /// Shows the folder at `path`, chosen in Browse's tree, in the grid panel: the library
-    /// opens it, and the tree's root, what it has listed and the recents stay as they were
-    /// (`docs/gui.md`, Browse).
+    /// Shows the folder at `path`, chosen in Browse's tree, in the grid panel
+    /// ([`choose_folder`]).
     fn choose_folder(&mut self, path: PathBuf) {
-        let source = Source::Folder(path.clone());
-        let open = self
-            .session
-            .send(Command::Library(LibraryCommand::Open(source)));
-        self.mirror.folder.choosing(path, open);
+        let session = &self.session;
+        choose_folder(path, &mut self.mirror, &mut |command| session.send(command));
     }
 
     /// Takes in what the engine has reported since the last frame through the mirror
@@ -3719,20 +3715,24 @@ fn started(open: Start, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     }
 }
 
-/// Opens the raw at `path` in place of the photo open, and its folder behind it unless it
-/// is the one shown: File › Open… shows the folder of what it opens (`docs/gui.md`, File),
-/// so from a photo alone it opens folder mode.
+/// Opens the raw at `path` in place of the photo open, and its folder behind it, a way in
+/// that makes it the tree's root, unless it is the root already, chosen then where another
+/// folder of its tree is active (`docs/gui.md`, File); from a photo alone it opens folder
+/// mode.
 fn open_photo(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     let folder = mirror.folder.to_show(&path);
     let open = send(Command::Open(path.clone()));
     mirror.opening(path, open, Instant::now());
-    if let Some(folder) = folder {
-        open_folder(folder, mirror, send);
+    match folder {
+        Some(folder::Show::Open(folder)) => open_folder(folder, mirror, send),
+        Some(folder::Show::Choose(root)) => choose_folder(root, mirror, send),
+        None => {}
     }
 }
 
-/// Opens the folder at `path` in the library, its photos going into the grid panel; the
-/// photo open stays open (`docs/events.md`, The library's events).
+/// Opens the folder at `path` in the library, its photos going into the grid panel, a way
+/// in: it becomes Browse's root and, once open, the first of the recents. The photo open
+/// stays open (`docs/events.md`, The library's events).
 fn open_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     // Absolute, from the folder the app started in, so the tree's folders are inside it for
     // the library, which lists no relative path; no disk is asked.
@@ -3740,6 +3740,15 @@ fn open_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     let source = Source::Folder(path.clone());
     let open = send(Command::Library(LibraryCommand::Open(source)));
     mirror.folder.opening(path, open);
+}
+
+/// Shows the folder at `path`, chosen in Browse's tree, in the grid panel: the library opens
+/// it, and the tree's root, what it has listed and the recents stay as they were
+/// (`docs/gui.md`, Browse).
+fn choose_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    let source = Source::Folder(path.clone());
+    let open = send(Command::Library(LibraryCommand::Open(source)));
+    mirror.folder.choosing(path, open);
 }
 
 /// What an open dialog's answer or a drop opens, or the path it refuses and why.
@@ -6506,6 +6515,73 @@ mod tests {
         // Opened again, it is neither.
         shell.remember_folder(a.clone());
         assert_eq!(shown(&shell)[0], (a, None));
+    }
+
+    /// Through a real session: a way in opens the folder as the root and enters the
+    /// recents; a folder chosen in its tree is opened by the library, the grid panel showing
+    /// it, but the root stays and its `Opened` asks nothing of the recents.
+    #[test]
+    fn a_folder_chosen_in_the_tree_is_opened_but_keeps_the_root_and_the_recents() {
+        use apertrust_engine::gpu::GpuOptions;
+        use apertrust_engine::session::LibraryEvent;
+        let Ok(gpu) = pollster::block_on(GpuContext::new(&GpuOptions::default())) else {
+            eprintln!("no GPU adapter: a session needs one");
+            return;
+        };
+        let (woken, wakes) = std::sync::mpsc::channel();
+        let session = apertrust_engine::session::testing::start(
+            gpu,
+            apertrust_operations::OPERATIONS,
+            apertrust_modules::MODULES,
+            "0.4.0+12~g1a2b3c4",
+            move || {
+                let _ = woken.send(());
+            },
+        );
+        let mut mirror = Mirror::new(apertrust_modules::MODULES, jobs::Mirror::new(None));
+        let root =
+            std::env::temp_dir().join(format!("apertrust-app-choose-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let day = root.join("Day 1");
+        std::fs::create_dir_all(&day).unwrap();
+        // The reactions to the session's events, but the jobs', until the open numbered `open`
+        // says it has opened.
+        let until_opened = |mirror: &mut Mirror, open: u64| {
+            let deadline = Instant::now() + std::time::Duration::from_secs(60);
+            let mut reactions = Vec::new();
+            loop {
+                assert!(Instant::now() < deadline, "opened in time");
+                let _ = wakes.recv_timeout(std::time::Duration::from_millis(50));
+                let mut done = false;
+                for event in session.events() {
+                    done |= matches!(&event, Event::Library(LibraryEvent::Opened { open: o, .. }) if *o == open);
+                    let folders = mirror.apply(event).into_iter();
+                    reactions.extend(folders.filter(|r| !matches!(r, Reaction::Jobs(_))));
+                }
+                if done {
+                    return reactions;
+                }
+            }
+        };
+
+        open_folder(root.clone(), &mut mirror, &mut |c| session.send(c));
+        let way_in = mirror.folder.latest();
+        let opened = until_opened(&mut mirror, way_in);
+        assert_eq!(opened, [Reaction::FolderOpened(root.clone())]);
+
+        choose_folder(day.clone(), &mut mirror, &mut |c| session.send(c));
+        let chosen = mirror.folder.latest();
+        assert_eq!(mirror.folder.root(), Some(root.as_path()));
+        let reactions = until_opened(&mut mirror, chosen);
+        assert!(reactions.is_empty(), "{reactions:?}");
+        // The library opened the chosen folder for the grid panel.
+        let folder::Folder::Open(listing) = &mirror.folder.folder else {
+            panic!("{:?}", mirror.folder.folder);
+        };
+        assert_eq!(listing.path, day);
+        assert_eq!(mirror.folder.root(), Some(root.as_path()));
+        drop(session);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The tree keeps what was opened for the run: the root starts open and the others
