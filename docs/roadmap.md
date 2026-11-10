@@ -122,7 +122,7 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [x] A module panel drawn from each module's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
 - [x] Edits save themselves after each change.
 - [x] Sixteen migrated modules, listed [below](#the-migrated-modules), each darktable's module with its parameters as controls (decision 2, [modules/README.md](modules/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
-- [x] The side panel's tabs are darktable's scene-referred groups (decision 38): Base, Colour, Correct and Effect, between Library and History.
+- [x] The side panel's tabs are darktable's scene-referred groups (decision 38): Base, Colour, Correct and Effect, between Photos and History.
 - [ ] Input colour profile, RGB levels and RGB curve as modules (their processing is ported), the built Tone curve reshaped into RGB curve.
 - [ ] Switched modules (decision 32): modules darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset.
 - [ ] Undo and redo, with the history saved in the sidecar as its log of steps (decision 47; [the library's step 9](#the-librarys-steps)).
@@ -142,7 +142,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [x] Listing a folder's raws and their edits, cancellable, also from the command line (`apertrust-cli library scan`).
 - [x] Safe writes: an edit is replaced whole or not at all, never left half written.
 - [x] A reader and writer for XMP, keeping everything other tools wrote, checked against ExifTool and exiv2.
-- [x] Open a folder in the app: the Library tab's Folders, and the folder's photos in the grid panel.
+- [x] Open a folder in the app: Folders in the first tab (the Photos tab, still named Library in code), and the folder's photos in the grid panel.
 - [x] Thumbnails from the camera's embedded pictures in the grid panel.
 - [x] The grid bar's Sort and Zoom, the grid panel resized from its edge in whole rows or columns, and its position at the bottom, left or right.
 - [x] The thumbnail alone at its square's bottom centre, or filling it with square thumbnails, its rings round the picture and its marks on its corner; under it a caption of the file name, with the reject, rating and colour labels' line drawn once the ratings come; and the grid bar's Labels, which shows or hides the captions.
@@ -150,7 +150,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [ ] Faster listing on network drives.
 - [ ] The edit file's next version: the photo's identity, and clocks for editing on several computers.
 - [ ] Several photos shown at once, the active one live and the rest still images, once spike W1 has measured it (decision 37).
-- [ ] The ways in: one photo from a terminal, writing nothing but its edit; Open With and a double-click opening the photo's folder with it active; File › Open… in place of Open Image… (decision 46).
+- [ ] The ways in: one photo from a terminal, writing nothing but its edit; Open With and a double-click opening the photo's folder with it active; File › Open… in place of Open Image… (decision 46); the Photos tab's Browse, its top line showing what is open, renamed from Library with its tab (decisions 37 and 73).
 - [ ] The start window: what was open last reopened at the start, File › Close, and the recent folders, libraries and projects with the ways to open and make one ([gui.md](gui.md#the-start-window)).
 
 ### The jobs window and the job API
@@ -298,7 +298,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [x] The open folder through the session (step 5), on the session's outbox and the app's reducer (decision 59):
   - `apertrust-library`'s `ops`: `LibraryCommand::Open(Source::Folder)` and `Close`; `LibraryEvent`'s `Opened`, `Subfolders`, `Listed` in chunks with each photo's edit state, `Failed` and `Closed`, each naming its command's number and each a notice; the folder's subfolders as the system's file browser sorts them;
   - the reading a cancellable `UserBackground` job of the session's control, as darktable's film import, its progress `Event::Job`, a new open or a close cancelling it, as does `CancelJob` (decision 57);
-  - in the app, the Library tab's Folders (Open Folder…, the folder's subfolders, the recent folders) and the grid panel showing the open folder, each photo's file name standing in until its thumbnail comes; the reducer's arms for the library's events, an earlier open's dropped by its number.
+  - in the app, Folders in the first tab (Open Folder…, the folder's subfolders, the recent folders) and the grid panel showing the open folder, each photo's file name standing in until its thumbnail comes; the reducer's arms for the library's events, an earlier open's dropped by its number.
 - [x] The XMP layer (decision 50): `apertrust-library`'s `xmp` module, with `sidecar`'s `Document` parsed and written through it (step 7b).
 - [x] The camera's embedded pictures as thumbnails (step 6's first part):
   - `apertrust-raw` reads a raw's embedded picture without decoding the mosaic: rawler's thumbnail where it is at least the size asked, else its preview, else the larger; at most the size asked on its longer side; turned upright by the EXIF Orientation; 8-bit RGBA;
@@ -313,7 +313,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 7.** Bulk listing (`getattrlistbulk`, `FindFirstFileExW`, `statx`; in an `apertrust-fs` crate only if it needs FFI that safe crates do not cover), timed against step 1 on the NAS; spike L1 folded in.
 - [ ] **Step 8.** Sidecar version 2's identity and clocks: the photo's name and fingerprint, its virtual copies (one at first) with ids and clock vectors, the machine id; version 1 still read. Written through the XMP layer.
 - [ ] **Step 9.** History in the sidecar: the session's undo and history saved as the log of steps and its end; Undo and Redo back after reopening; Compress History. Built with the session's undo, or right after it.
-- [ ] **Step 9b.** The ways in: `apertrust FILE` from a terminal opening one photo alone, nothing written but its edit, never in the recents; Open With and a double-click opening the photo's folder with it active, the photo at once and the folder listed behind it, several files from one folder selected (macOS's open-documents event; `--in-folder` from the installer's and the desktop entry's registrations, [packaging.md](packaging.md#opening-a-raw-from-the-system)); File › Open… in place of Open Image…; the Library tab's Library module by mode, Folders alone in one photo and folder mode.
+- [ ] **Step 9b.** The ways in: `apertrust FILE` from a terminal opening one photo alone, nothing written but its edit, never in the recents; Open With and a double-click opening the photo's folder with it active, the photo at once and the folder listed behind it, several files from one folder selected (macOS's open-documents event; `--in-folder` from the installer's and the desktop entry's registrations, [packaging.md](packaging.md#opening-a-raw-from-the-system)); File › Open… in place of Open Image…; the Photos tab's Browse module by mode, Folders alone in one photo and folder mode, its top line showing what is open; the tab, its messages and View › Browse (`show-browse`, L) renamed from Library (decisions 37 and 73).
 - [ ] **Step 9c.** The start window: what was open last reopened at the start (`library.reopen_last`, on by default), the recents' state file, the start window with its recents and buttons, File › Close, Open Recent listing the same ([gui.md](gui.md#the-start-window)).
 
 **Phase 3, several computers, virtual copies, metadata and Import, in folder mode:**
@@ -360,7 +360,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 41.** Export as Project…, by copy or reference.
 - [ ] **Step 42.** Project templates, saved into the user data folder and offered by New Project….
 
-**Later:** the module-by-module merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Library tab's Location; presence notes; the server with sync (Phase 7, decision 71); Shared Project for a studio shoot, hosted on the server or on the tethering computer, with changes pushed and merged module by module (decision 71); scripting.
+**Later:** the module-by-module merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Photos tab's Location; presence notes; the server with sync (Phase 7, decision 71); Shared Project for a studio shoot, hosted on the server or on the tethering computer, with changes pushed and merged module by module (decision 71); scripting.
 
 **Spikes:** L1, listing, folded into step 7; L2, the cache's engine, step 21; L3, cloud folders on macOS and Windows, before step 33; L4, two versions, the convergence harness built with step 12.
 

@@ -27,7 +27,7 @@ Everywhere the app also takes the main window's input while a modal dialog is op
 
 **Alerts:** plain requests (`alert::Request`: a title, a message, buttons with their role, Default, Cancel or Destructive, and an optional suppression box), answered on a later frame. On the Mac an `NSAlert` as a sheet, the destructive button marked, every key set (`begin_alert`); on Windows the task dialog, owned by the window, on a thread of its own (planned); on Linux, which has no system alert for an app outside GTK and Qt, Apertrust's own drawn alert, `components::AlertBody`, in a dialog window, in the theme, on every desktop. The words are Fluent messages, never the system's OK and Cancel.
 
-**Print and Import are not dialogs:** they are full-window sheets inside the main window ([0037](0037-one-view-the-library-as-a-tab.md)), since each takes the window's whole size for its preview or its thumbnails and is a place to work.
+**Print and Import are not dialogs:** they are full-window sheets inside the main window ([0037](0037-one-view-the-photos-tab.md)), since each takes the window's whole size for its preview or its thumbnails and is a place to work.
 
 ## Options considered
 

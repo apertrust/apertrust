@@ -35,7 +35,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
 - The dialog host, with Settings, the Export dialog, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog), [The log window](#the-log-window)).
-- Folder mode's first parts: File › Open Folder…, the Library tab's Folders section, the grid panel's cells and the central panel's empty states ([The grid panel](#the-grid-panel), [The central panel's layouts](#the-central-panels-layouts)).
+- Folder mode's first parts: File › Open Folder…, Browse's Folders in the Photos tab, the grid panel's cells and the central panel's empty states ([The grid panel](#the-grid-panel), [The central panel's layouts](#the-central-panels-layouts)).
 
 Still to come:
 
@@ -428,10 +428,10 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
   - File with Open Image…, Open Folder…, Import, Export…, Export Again and Close Window;
   - Edit with Undo and Redo, Copy Edit, Apply Edit and Copy or Apply Parts, then Reset Edit;
   - Photo with Next Photo and Previous Photo;
-  - View with Library, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
+  - View with Browse, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
   - Window; Help, with AppKit's search.
 
-  Disabled until built: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo, Previous Photo and Library. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions and H's peek. An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Side-panel tab 1"; the `.menu` and `.mac` attributes, title case and the tabs' own names, check marks and Undo naming its step come later.
+  Disabled until built: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo, Previous Photo and Browse. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions and H's peek. An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Side-panel tab 1"; the `.menu` and `.mac` attributes, title case and the tabs' own names, check marks and Undo naming its step come later.
 - **The app menu's title.** Run without a bundle, macOS titles it with the binary's name, "apertrust". The build embeds `crates/app/assets/macos/Info.plist`, whose `CFBundleName` is Apertrust, in the binary's `__TEXT,__info_plist` section (`crates/app/build.rs`), so the menu bar reads Apertrust.
   - The Dock and the app switcher keep "apertrust" until the app runs from a bundle, and no public API renames it: LaunchServices names an unbundled app after its executable's file and reads nothing of the embedded plist. `CFBundleDisplayName` or `CFBundleIdentifier` there, `NSProcessInfo.setProcessName`, `setprogname` and argv[0] change nothing, before the app starts or once its window is open; a symlink named Apertrust renames LaunchServices' entry but not the Dock's, which follows the link to the file.
   - Run from inside a minimal `Apertrust.app`, its Info.plist naming Apertrust and its `Contents/MacOS/apertrust` a symlink to the built binary, the same binary reads Apertrust in LaunchServices, the Dock and the menu bar, its stderr still the terminal's. The packaged Apertrust.app names it for users; in development only such a bundle would.
@@ -574,7 +574,7 @@ macOS only: the app menu, which macOS titles with the app's name.
   - The dialog never stops the window or the engine (decision 18): on the Mac it is AppKit's open panel as a sheet on the window, on Windows the system's dialog, on Linux the desktop's file chooser through the XDG desktop portal, never GTK (`crates/app/src/dialogs.rs`, rfd's asynchronous dialog).
 - **Close Window** closes the key window: a dialog's own window when it has the focus, and otherwise the main window. Built, the main window's close ends Apertrust as Quit does, through the same exit, while the app has one window, closing any dialog first; with the start window it does what Close does, and so does the main window's close button on the Mac. Neither loses a change: they wait for the edit's last write (principle 3). It rests under a modal dialog over the main window, as AppKit's does under a sheet, unless a dialog's own window has the focus, which it then closes. eframe ends with its root window, so with the start window the Mac's app hides its windows rather than closing the last.
 - **Close** (planned) closes what is open, the photo, folder, library or project, and the main window with it, after the edit's last write, and shows [the start window](#the-start-window). On Windows and Linux the main window's close button still quits, as Quit does.
-- **Open Recent** lists the last ten folders opened, and from Phase 5 libraries and projects, newest first, never holding an edit: the start window's list, never one photo opened alone. They are planned for a small state file of their own beside `settings.toml`, since the settings hold no photo; until it exists they are kept in `settings.toml` as `library.recent_folders`, which the Library tab's recent folders read, and move to the state file when it is built. Clear Menu empties it. An entry whose folder has gone says so when it is chosen and offers to remove it; entries are not checked as the menu opens, since a NAS can be slow, though one the start window has found missing is marked. With none, it holds only Clear Menu, disabled.
+- **Open Recent** lists the last ten folders opened, and from Phase 5 libraries and projects, newest first, never holding an edit: the start window's list, never one photo opened alone. They are planned for a small state file of their own beside `settings.toml`, since the settings hold no photo; until it exists they are kept in `settings.toml` as `library.recent_folders`, which Browse's recent folders read, and move to the state file when it is built. Clear Menu empties it. An entry whose folder has gone says so when it is chosen and offers to remove it; entries are not checked as the menu opens, since a NAS can be slow, though one the start window has found missing is marked. With none, it holds only Clear Menu, disabled.
 - **Open…** and **Open Folder…** work in folder mode. A library or project opens by Open…, Open Recent, the start window or a double-click on its `Name.aplibrary` or `Name.approject` file; a window holds one photo, folder, library or project at a time (decision 46).
 - **New Library…** asks for a name, a place and where its edits live, beside the photos or in the library's folder (decision 47); with a folder open, it offers to make that folder a library, in place, by writing the library's file at its top.
 - **New Project…** makes a small library for one job, `Name.approject`, with its Capture, Selects, Output and Trash folders, from a project template or not.
@@ -670,7 +670,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, with the grid bar's Labels |
 | Grid Panel Position → Left, Right, Bottom, the one in use checked | `grid-position-left`, `grid-position-right`, `grid-position-bottom` | — | New, Phase 2, with the grid bar's options menu |
 | — | | | |
-| Library | `show-library` | L | Declared as `view-library`, to be renamed; Phase 2, with the Library tab (decision 37) |
+| Browse | `show-browse` | L | Declared as `view-library`, to be renamed; Phase 2, with Browse in the Photos tab (decisions 37 and 73) |
 | Side Panel Tab → each tab by its name, the one shown checked | `panel-tab-1` to `panel-tab-5` | Ctrl+1 to Ctrl+5 | Built |
 | Workspace → each workspace by its name, the current one checked; —; Save as Workspace…, Rename Workspace…, Delete Workspace…, Reset Workspace | `workspace-1` to `workspace-9`, `save-workspace`, `rename-workspace`, `delete-workspace`, `reset-workspace` | — | New, Phase 3 ([Workspaces](#workspaces)) |
 | Panels → | | | |
@@ -686,7 +686,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo, every cell together when several are shown.
 - **The layouts** join the menu with the Map and its central-bar toggle, once there are two: a choice of one is no choice. Map, chosen again, goes back to Photo, as its toggle and Shift+M do and as Zoom to 100% goes back to Fit. Choosing one changes only the central panel (decision 37).
-- **Library** chooses the first tab holding Folders, as L does, wherever the workspace puts it.
+- **Browse** chooses the first tab holding Browse, as L does, wherever the workspace puts it. L is darktable's key for its lighttable, whose part Browse plays.
 - **Workspace** switches the side panel's tabs and nothing else; the same list is in the side panel's ⋮.
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
@@ -787,7 +787,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 
 **With no photo open,** every menu is there.
 
-- Enabled: Open, Open Folder, Open Recent, Settings, About, Quit, Close Window, Library, Side Panel Tab, Workspace, Panels, Interface Size, Jobs, Full Screen, Keyboard Shortcuts and the platform's items.
+- Enabled: Open, Open Folder, Open Recent, Settings, About, Quit, Close Window, Browse, Side Panel Tab, Workspace, Panels, Interface Size, Jobs, Full Screen, Keyboard Shortcuts and the platform's items.
 - Disabled: what acts on a photo, which is Export, Export Again, Show in Folder, Undo and Redo, the edit's items, the whole Photo menu, the zoom, the overlays and the grid bar's items.
 - The empty central panel offers Open… and Open Folder… with their keys, as the platform writes them (Cmd+O on the Mac) and as the person has set them; without a key, the sentence stops after the item ([The central panel's states](#the-central-panels-states)).
 
@@ -872,10 +872,10 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Library, Next Photo and Previous Photo, and View's zoom items |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open Image… (`open`, Ctrl+O, first in File: one raw, in place of the photo open); Open Folder…; Export… and Export Again; Reset Edit; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Browse, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the side panel's tabs; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; Auto › Exposure, drawn disabled; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
-| Later in Phase 2 | Open… (Open Image… becoming it), Open Recent, Close and Show in Folder, with folder mode and the start window; Library, with its tab (decision 37); Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
+| Later in Phase 2 | Open… (Open Image… becoming it), Open Recent, Close and Show in Folder, with folder mode and the start window; Browse, with its module (decisions 37 and 73); Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
 | Phase 3 | Workspace; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Side Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode (decision 46) |
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
@@ -1604,7 +1604,7 @@ Planned, Phase 2, with folder mode. Its design is the [UI wireframe](https://cla
 
 Apertrust is **one view** (decision 37): one window whose regions stay what they are whatever the person is doing.
 
-- The Library is a tab of the side panel.
+- The side panel's Photos tab chooses the photos; its other tabs edit one photo's pixels.
 - The central panel shows one of its layouts and changes only when the person asks.
 - Export, Import, Print and the slideshow open over the view and give it back as it was.
 
@@ -1648,7 +1648,7 @@ The model's words:
 - **one view** for the model;
 - **layout** for what the central panel shows: Photo and later Map;
 - **workspace** for a named, saved set of the side panel's tabs, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces));
-- **Folder**, **Album**, **Smart album** and **Group** for what the Library shows.
+- **Folder**, **Album**, **Smart album** and **Group** for what Browse shows.
 
 ### The regions
 
@@ -1658,12 +1658,12 @@ The model's words:
 | Central panel | The current layout ([below](#the-central-panels-layouts)): in Photo, the active photo or the selected photos side by side; later in Map, the photos on a map. "No photo selected" when no photo is active |
 | Central bar | The thin bar along the central panel's top ([below](#the-central-bar)). In Photo: the photo's toggles, ending with Guides; immediately after Guides the Map toggle (later); the layer menu, the values under the cursor, the scale. In Map: the photo's toggles where they are, drawn disabled, the Map toggle where it is, then Map's own controls |
 | Caption | One line under the photo, on the surround, as wide as the photo and part of its block in the central panel's slot ([below](#the-photo-frame)): the file name with its marks at its start; the photo's reject, rating and colour labels in its middle; the exposure at its end ([below](#the-caption-under-the-photo)) |
-| Side panel | The current workspace's icon tabs, the Library's first, the same whatever the central panel shows; then pinned sections, then sections that scroll; on the right or the left; as wide as the user drags its edge ([below](#the-side-panel)) |
+| Side panel | The current workspace's icon tabs, the Photos tab first, the same whatever the central panel shows; then pinned sections, then sections that scroll; on the right or the left; as wide as the user drags its edge ([below](#the-side-panel)) |
 | Grid panel | The current folder's or album's thumbnails along the bottom, except under the side panel, or in a column at the window's left or right, with the grid bar at its left end at the bottom and along its top at a side ([below](#the-grid-bar)). Shown in every layout, Map too, and never hidden; one line of thumbnails or several ([below](#the-grid-panel)) |
 
 - **A layout** (Photo; Map later) implements one trait: what the central panel shows and the central bar's contents after the Map toggle. Everything else is the shell's and stays as it is when the layout changes: the photo's toggles and the Map toggle, the grid panel, the side panel and its tabs, the keys and what they act on, the caption, the top panel and the menus. A new layout adds what the central panel shows and the end of the central bar, and nothing more.
 - **Over the view** ([below](#dialogs-sheets-and-the-slideshow)): Settings, Export and Customise tabs are dialogs, each a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)). About is Apertrust's own modal over the window. Import (Phase 5) and Print are full-window sheets, and the slideshow plays full screen. Each is modal, and the view's keys rest under it ([Keyboard and actions](#keyboard-and-actions)).
-- **A section** is anything in the side panel: a module, or a utility such as Scopes, Layers, History, Match, or the Library's Folders, Albums and Smart albums.
+- **A section** is anything in the side panel: a module, such as Exposure or the Photos tab's Browse, or a utility such as Scopes, Layers, History or Match.
   - Every section has an id, a title message, header actions and a body.
   - The side panel lays out a list of section ids per tab, and a workspace is a named set of those lists. Customise tabs edits the current workspace's, so any section can sit in any tab, pinned or not.
 - **Module sections are generated** from module definitions (decision 4, `ui-conventions`). Utility sections are written by hand, from the same components.
@@ -1706,7 +1706,7 @@ The app never opens with nothing loaded: it reopens what was open last, or shows
 
 | State | Central panel | Central bar | Caption | Side panel | Grid panel |
 | --- | --- | --- | --- | --- | --- |
-| A folder with no raws | "No raw photos in Wedding 2026-10", with Open Folder… | Hidden | Empty | Sections drawn disabled; the Library tab's Folders as in folder mode | Says the same, at its height, its edge still working |
+| A folder with no raws | "No raw photos in Wedding 2026-10", with Open Folder… | Hidden | Empty | Sections drawn disabled; Browse's Folders as in folder mode | Says the same, at its height, its edge still working |
 | Photos, none active | "No photo selected", with "Choose one in the grid panel, or press → for the first" | Drawn disabled, but for the Map toggle (later), since the map needs no active photo | Empty | Modules at their defaults, drawn disabled, under one line, "Select a photo to edit" (the line to come); Scopes as it was, open or closed, its graph empty and drawn disabled | Shown |
 | The active photo opening | "Opening IMG_2041.ARW"; once thumbnails exist, its thumbnail scaled to fit, the central bar saying it is still rendering, so an unfinished render never passes for the photo; never a progress bar | Shown | Its name | As with none active from the click on, then its values in one frame as the session reports them, from its sidecar; never blank | Shown |
 | It fails to open | Its message over the central panel | Shown | Its name | As with none active | Its thumbnail marked |
@@ -1773,16 +1773,16 @@ A workspace is a named, saved set of the side panel's tabs, built in or the user
 
 - **What one holds:** its tabs in order, each with its id, name and icon, its sections and which of them are pinned; and the side the panel sits on. Not the panel's width, which suits a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
 - **Built in.** Each may leave modules out: Customise tabs lists what a workspace leaves out, and every module stays in at least one workspace, Edit holding them all.
-  - **Edit,** the default: Library, Base, Colour, Correct, Effect and History, darktable's scene-referred groups between Apertrust's own two (decision 38; [The tabs](#the-tabs-darktables-groups)), with Scopes and Layers pinned in the editing tabs. It opens on Base.
-  - **Cull,** from Phase 3: Library first, holding Folders and the photo's camera data with Scopes pinned, and opening there; Base next, for White balance and Exposure; then the rest.
-  - **Map,** with the map: Library first, holding the Location section; then the rest.
+  - **Edit,** the default: Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups between Apertrust's own two (decision 38; [The tabs](#the-tabs-darktables-groups)), with Scopes and Layers pinned in the editing tabs. It opens on Base.
+  - **Photos,** from Phase 3, for culling and sorting (the wireframe's "Photo · culling · Photos workspace" frame): the Photos tab first, holding Browse and the photo's camera data with Scopes pinned, and opening there; Base next, for White balance and Exposure; then the rest.
+  - **Map,** with the map: the Photos tab first, holding the Location section; then the rest.
 - **Changing and saving.** Customise tabs, renaming a tab, moving or pinning a section change the current workspace, kept at once, as every setting is. View › Workspace › Save as Workspace… keeps a copy of the current one under a new name, as the user's own. Rename Workspace… and Delete Workspace… act on the user's own; Reset Workspace takes a built-in one back to how it shipped.
 - **Switching:** View › Workspace →, listing them with the current one checked; the side panel's ⋮ holds the same list. No default keys: the first nine by position are actions a user may give keys, as the side panel's tabs are by position.
   - A switch changes only the side panel: the central panel, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
   - Nothing switches it but the person: no layout, photo or tab changes the workspace.
 - **Kept** in settings ([Settings and workspace](#settings-and-workspace)): the current workspace by id; what the user changed in a built-in one; the user's own whole; in each, the tab last shown.
 - **What a script sees:** nothing; workspaces are interface state.
-- **When:** Phase 2 has a single workspace, Edit, the Library's tab first in it (decision 37), with no list, which Customise tabs edits (step 7). Named workspaces, their list and saving arrive in Phase 3, with Cull; Map's with the map.
+- **When:** Phase 2 has a single workspace, Edit, the Photos tab first in it (decision 37), with no list, which Customise tabs edits (step 7). Named workspaces, their list and saving arrive in Phase 3, with the Photos workspace; Map's with the map.
 
 ### Dialogs, sheets and the slideshow
 
@@ -1851,31 +1851,31 @@ Never folded: the ☰ on Windows and Linux, the mark, the save warning's sign, a
 
 The side panel is resizable in width, and its scroll bar is quiet. Both are built.
 
-- **The tabs** are the current workspace's ([Workspaces](#workspaces)) and stay the same whatever the central panel shows, so no tab appears or goes with the layout. The Library's tab is first (decision 37), then darktable's four groups, Base, Colour, Correct and Effect, and History last (decision 38; [below](#the-tabs-darktables-groups)).
-  - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Folders (pressed again, nothing).
+- **The tabs** are the current workspace's ([Workspaces](#workspaces)) and stay the same whatever the central panel shows, so no tab appears or goes with the layout. The Photos tab is first (decision 37), then darktable's four groups, Base, Colour, Correct and Effect, and History last (decision 38; [below](#the-tabs-darktables-groups)).
+  - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Browse (pressed again, nothing).
   - The sixth, History in Edit, has no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, which would zoom out.
   - With six tabs, more of them fold into » at 320 points than with five.
-- **The Library tab** chooses what the grid panel shows, a folder, an album or a smart album, and describes the photos in it. Its modules are Library, pinned, then Filters, Keywords, Metadata and Styles (decision 73). Its first, Library, holds Folders, Albums and Smart albums as its groups (decision 46), with what is open and its recents at its top and ＋ beside them; a group a mode has not is not shown (the wireframe's "Library module" frame; [library.md](library.md#in-the-window) has the table):
+- **The Photos tab** holds everything about photos as items: which photos the grid panel shows, a folder, an album or a smart album, and what they are; the other tabs are about one photo's pixels (decision 37). Its modules are Browse, pinned, then Filters, Keywords, Metadata and Styles (decision 73). **Browse**, one name in every mode, chooses what the grid panel shows. Its groups are Folders, Albums and Smart albums (decision 46). Its top line shows what is open, in folder mode the open folder's name and count ("Wedding 2026-10 · 120 photos"), in a library or a project its name, with its recents and ＋ beside it, ＋ ending with Open… as File › Open… does. A group a mode has not is not shown (the wireframe's "Browse module · the Photos tab's first, pinned, by mode · proposal" frame; [library.md](library.md#in-the-window) has the table):
   - **One photo:** Folders alone, the photo's own folder first as Open This Folder, which opens it in folder mode.
-  - **Folder mode:** Folders alone, the open folder's tree; Make This Folder a Library… in the module's options (⋯). Filters filters it from its index (Phase 3).
+  - **Folder mode:** Folders alone, the open folder's tree; Make This Folder a Library… in Browse's options (⋯). Filters filters it from its index (Phase 3).
   - **A project:** all three, Folders with its roles marked (Capture, Selects, Output, Trash).
   - **A library:** all three, Folders its roots.
-  - **Folders** (Phase 2, with folder mode, decision 37): the open folder, its subfolders, a click opening one; the recent folders, Open Recent's list ([File](#file)); Open Folder…; Show in Folder. In a library or project (Phase 5), every root's tree, darktable's film roll being a folder, with Add Folder… and Locate…; a project's folder roles marked each with its icon ([below](#the-library-tabs-marks)).
+  - **Folders** (Phase 2, with folder mode, decision 37): the open folder, its subfolders, a click opening one; the recent folders, Open Recent's list ([File](#file)); Open Folder…; Show in Folder. In a library or project (Phase 5), every root's tree, darktable's film roll being a folder, with Add Folder… and Locate…; a project's folder roles marked each with its icon ([below](#the-photos-tabs-marks)).
   - **Albums** (Phase 5, with the library): photos chosen by hand, nested to any depth, the one container. An album shows only its own photos, with the albums and smart albums inside it listed beside them. A photo may be in any number of albums, and removing it from one removes nothing else.
   - **Smart albums** (Phase 5): darktable's collect rules, filters and sort, saved. At the library's top they search the whole library, inside an album that album's photos, and their rules gain **in album**, an album's photos with or without the albums inside it.
   - **Filters** (Phase 3, decision 73; the wireframe's "Filters module" frame): collapsible groups with counts, a file name search, Rating, Colour label, History, Date taken, Camera, Lens, File type and more, the groups shown chosen by ＋ and kept app-wide; ↺ clears them, and ⋯ has its presets and Save as Smart Album. In folder mode it runs over the open folder's index; a filter that hides selected photos leaves only the shown ones selected.
   - **Keywords** (Phase 3, decision 73; the "Keywords module" frame), darktable's tagging in one module: the Add field (the bindable Add Keyword focuses it; Enter adds the suggestion chosen and keeps the field for the next), the chips of the keywords on the selected photos, one on some of them dimmed with its count, a click putting it on all; Recent, the last nine keywords used as buttons; the keyword list, a tree with counts, closed by default, 10 rows tall when open and dragged from 5 to 30, its right-click holding Edit Keyword… (name, synonyms, private, category), New Keyword Inside…, Move To…, Show Photos and Delete…. Saved keyword sets are later.
   - **Metadata** (Phase 3, decision 73; the "Metadata module" frame), darktable's image information and metadata editor in one list: the file's facts read-only and darktable's metadata fields edited in place, in the groups Photo, Shot, Description, Location and More; with several selected, a value they differ in says Different, and a field typed in is written to all of them.
-  - **Styles** (Phase 3), as darktable's styles module is the lighttable's, which this tab replaces (decision 38).
+  - **Styles** (Phase 3; the wireframe's "Photo · Photos tab · Styles" frame), with the content tabs All and Favorites, as darktable's styles module is the lighttable's, which this tab replaces (decision 38).
   - Later, full-text search.
-- **Folders, as built** (`crates/app/src/library.rs`):
+- **Folders, as built** (`crates/app/src/library.rs`). The built tab still reads Library, with its id `library`, its messages `tab-library` and `action-view-library` and Folders a section of its own with no Browse around it, until the rename lands in code:
   - The tab is chosen by Ctrl+1 or a click like the others. Folders shows alone, open by default (kept in settings with the other sections).
   - It holds Open Folder…; the open folder's name with its photo count ("Wedding · 120 photos", "Reading Wedding…" until its last chunk); its subfolders in the listing's order (the file browser's); and the last ten recent folders (`library.recent_folders`, newest first, a folder opened moving to the top).
   - A recent folder whose opening failed this run is drawn disabled with the reason in its tooltip, since a folder's existence is never asked as the list is drawn (a share can be slow).
   - Albums and Smart albums appear with libraries and projects, in Phase 5; folder mode never shows them.
   - There is no way up to the parent folder yet, nor Show in Folder.
 - **Names.** The interface has no word for a folder and an album together. The grid bar does not name the one shown: screen readers hear the folder's name and count as the thumbnails' list's name, and on screen Folders marks the open folder with its count. Names shorten in their middle at 320 points, the tree indents 12 points a level, and the panel's width serves a deep tree.
-- **The editing tabs' states,** as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab:
+- **The editing tabs' states** (Base, Colour, Correct and Effect, the tabs about one photo's pixels), as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab:
   - **With a photo open,** its modules with its values as the session reports them and the Scopes section with its latest reading, every control sending its command (none on a photo open for viewing only).
   - **With no photo** (none opened yet, a folder open with none chosen, after an open fails), and **from the moment another photo is asked for** (a click or Enter on a grid cell, File › Open…) until the session reports its values: every module's section as usual, each control at its definition's default, drawn disabled, with no kept marks; the resets, preset rows and buttons disabled; Scopes open or closed as it was, with no graph, since nothing is measured, and drawn disabled. The sections still open, close and change tab, which is the app's own state; nothing is sent to the session. The photo left's values and scopes reading go as the open is sent, so the click is answered at once.
   - **The switch** to the photo's values happens in one frame, as the mirror takes its values in (`Event::Values`, which the session sends with its `Opened`); its Scopes section comes with them and shows its first reading as it arrives.
@@ -1902,7 +1902,7 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
 
   The thumb at rest is below WCAG's 3:1 for controls, as quiet as the reference, except in high contrast. Under the pointer and dragged it meets 3:1, which the themes' check holds them to.
 
-#### The Library tab's marks
+#### The Photos tab's marks
 
 Decided with the library (decisions 46, 52 and 53; [library.md](library.md#in-the-window)). Their icons, words and places are to be drawn on the wireframe, and each arrives with the library's work for it:
 
@@ -1917,17 +1917,17 @@ Decided with the library (decisions 46, 52 and 53; [library.md](library.md#in-th
 
 #### The tabs: darktable's groups
 
-The default tabs are darktable's default "workflow: scene-referred" groups, with the same labels and similar icons, each module in darktable's tab and in darktable's order (decision 38). The only differences are Apertrust's own tabs, Library and History; darktable's quick access panel and active modules tabs are left out.
+The default tabs are darktable's default "workflow: scene-referred" groups, with the same labels and similar icons, each module in darktable's tab and in darktable's order (decision 38). The only differences are Apertrust's own tabs, Photos and History; darktable's quick access panel and active modules tabs are left out.
 
 Built: the bar, the labels and icons, each built module's tab and place, History drawn disabled, Base first shown and the old ids read as unknown.
 
-- **The bar,** in the Edit workspace: Library, Base, Colour, Correct, Effect, History.
+- **The bar,** in the Edit workspace: Photos, Base, Colour, Correct, Effect, History.
   - darktable's bar (`src/libs/modulegroups.c`) is the quick access panel, the active modules, then the preset's groups, base, color, correct and effect, icon-only buttons whose tooltips name them.
-  - Apertrust puts its Library first (decision 37) and its History last, since darktable keeps the history stack in the darkroom's left panel, and last keeps Ctrl+1 to Ctrl+5 on the Library and the four groups.
+  - Apertrust puts its Photos tab first (decision 37) and its History last, since darktable keeps the history stack in the darkroom's left panel, and last keeps Ctrl+1 to Ctrl+5 on Photos and the four groups.
 - **The labels** are darktable's words in British English and sentence case, as every tab name is: Base, Colour, Correct, Effect (darktable's base, color, correct, effect).
-  - Their ids, as settings keep the tab, are darktable's names, `base`, `color`, `correct` and `effect`, as a module's id is its operation's, beside `library` and `history`. Their messages are `tab-base`, `tab-color`, `tab-correct` and `tab-effect`.
+  - Their ids, as settings keep the tab, are darktable's names, `base`, `color`, `correct` and `effect`, as a module's id is its operation's, beside `photos` and `history`. Their messages are `tab-base`, `tab-color`, `tab-correct` and `tab-effect`, and Photos' is `tab-photos`.
   - Ukrainian and Polish start from darktable's own translations, Базові, Колір, Корекція, Ефект and Podstawowe, Kolor, Korekcja, Efekt, awaiting native review as every translation does. Podstawowe fits its tile only at 9 points, the most the names may shrink, so every Polish name is set at 9 ([Translation](#translation)).
-- **The icons** are darktable's shapes (`src/dtgtk/paint.c`, `dtgtk_cairo_paint_modulegroup_*`), which Lucide lacks, drawn for Apertrust in Lucide's style as its tab icons, drawn at 22 points, each with its filled form for the chosen tab, in one colour as every icon is (`crates/ui/assets/icons/README.md`); Library and History are derived from Lucide's `folder` and `rotate-ccw-clock`, and Metadata from its `tag`:
+- **The icons** are darktable's shapes (`src/dtgtk/paint.c`, `dtgtk_cairo_paint_modulegroup_*`), which Lucide lacks, drawn for Apertrust in Lucide's style as its tab icons, drawn at 22 points, each with its filled form for the chosen tab, in one colour as every icon is (`crates/ui/assets/icons/README.md`); Photos and History are derived from Lucide's `folder` and `rotate-ccw-clock`, and Metadata from its `tag`:
   - Base a circle;
   - Colour darktable's circle, its red, green and blue gradient suggested by line work in one colour;
   - Correct two half circles offset sideways, an S-shaped broken circle;
@@ -1942,9 +1942,9 @@ Built: the bar, the labels and icons, each built module's tab and place, History
 
   [modules/README.md](modules/README.md) keeps the lists, and its sections follow them. The modules the preset puts in no group (Raw black/white point, Demosaic, Input and Output colour profile, RGB curve, RGB levels, Soften, Bloom) each take the tab darktable's other layouts give it (modules/README.md, In no group). darktable's module search can come as work of its own.
 - **History is drawn disabled** in its place until something is behind it, as a titled content tab without rows is (decision 29) and as an action that cannot run is. Its tooltip says it is to come ("History: coming in a later version", `panel-tab-later`), it has no key, and screen readers hear it disabled.
-- **The Library tab** is built (Folders, with Albums and Smart albums drawn disabled, [The side panel](#the-side-panel)): Ctrl+1 and a click choose it, and a tab kept as `library` opens it. L, declared with no command yet, stays unavailable. A tab kept in settings that is drawn disabled opens Base, its id kept.
+- **The Photos tab** is built, still as the Library tab (Folders, with Albums and Smart albums drawn disabled, [The side panel](#the-side-panel)): Ctrl+1 and a click choose it, and a tab kept as `library` opens it until the rename, after which `photos` does and `library` is an unknown id (decision 38). L, declared with no command yet, stays unavailable. A tab kept in settings that is drawn disabled opens Base, its id kept.
 - **The tab first shown** in the Edit workspace is Base. darktable opens its darkroom on `plugins/darkroom/groups`, 2 by default, which named its basic group while the groups were fixed (darktable 3.2) and lands on its second group, color, since presets define them.
-- **Scopes** stay pinned in every tab but the Library's, as darktable's histogram sits over its groups; Layers in the four groups once they come (Phase 4).
+- **Scopes** stay pinned in every tab but the Photos tab, as darktable's histogram sits over its groups; Layers in the four groups once they come (Phase 4).
 - **Unknown tab ids** in settings, such as `profile`, `adjust`, `optics` and `detail`, which development builds wrote, are values this build cannot read: Base is shown, with a warning, and the id stays in the file until the user chooses a tab ([Settings and workspace](#settings-and-workspace)). No migration; the version stays 1; the ids are not reused for another tab.
 
 ### The photo frame
@@ -2455,7 +2455,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - Colour: Output colour profile, Colour balance RGB, RGB primaries and Colour calibration;
   - Correct: Haze removal;
   - Effect: Vignetting, Soften and Grain;
-  - nothing yet in the Library and History.
+  - nothing yet in Photos and History.
 - **A module joins the plan** on its first step off its defaults, as darktable's does (decision 32): colour balance rgb, say, with `default_enabled` off, runs only while its module is used. The pipeline keeps its kernels and matching cache points across a rebuild (decision 28), so that first step does not run the raw stage again. On the M4 an operation joining after the downscale costs its compilation and a render from the downscale, 15 to 17 ms for colour balance rgb at 30 and 61 MP with macOS's shader cache warm, against 225 to 469 ms built from nothing; a kernel the cache lacks, as after an update that changes it, compiles in about 75 ms instead of 7 to 9, once (`docs/engine.md`, Caching).
 
 ### What the renderer still lacks
@@ -2917,7 +2917,7 @@ Ctrl means Cmd on macOS.
 | App | Undo, Redo | Ctrl+Z; Ctrl+Shift+Z, and Ctrl+Y on Windows and Linux | Not built |
 | App | Copy edit, Apply edit | Ctrl+Shift+C, Ctrl+Shift+V | Not built; Copy or apply parts has no key. Apply edit acts on every selected photo |
 | App | Reset | None until undo exists, since a reset by accident could not be taken back | Its button; the active photo only |
-| App | Side-panel tabs 1 to 5 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold. With the Library's tab first, the sixth has no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types − |
+| App | Side-panel tabs 1 to 5 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold. With the Photos tab first, the sixth has no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types − |
 | App | Interface scale | None by default: View › Interface Size and Settings set it, and a user may give it keys | egui's zoom factor, from 50% to 300% in steps of 10%. egui's own zoom keys are off, so the registry owns them. `actions.rs` still gives it Ctrl+=, Ctrl+− and Ctrl+0 until the photo's zoom is built, when they move to it |
 | App | Next and previous pane | F6, Shift+F6 | Between the regions, as above |
 | App | Jobs | Ctrl+Shift+J | Opens the jobs window, or brings it to the front; never disabled, as the window opens beside any dialog |
@@ -2927,7 +2927,7 @@ Ctrl means Cmd on macOS.
 | App | Quit | Ctrl+Q | Closes the window |
 | App | The menu | F10, Windows and Linux | Opens the ☰'s menu at its top |
 | View | The layouts: Photo, and Map toggled on and off, as its central-bar toggle is | Shift+M toggles Map, pressed again back to Photo; Photo has no key of its own, and E is left free | The Edit view's action, built with E, is to become Photo's, with no key; Shift+M comes with the Map and its toggle |
-| View | The Library's tab: the first tab holding Folders | L; pressed again, nothing | Declared, not yet available; the tab is chosen by Ctrl+1 and a click |
+| View | Browse (`show-browse`): the first tab holding Browse | L; pressed again, nothing | Declared, not yet available; the tab is chosen by Ctrl+1 and a click |
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a module's section too; rendering the photo without that module waits for a session command that leaves one module out of the render |
 | View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
 | View | Extend the selection | Shift with the arrows, in the grid panel | Phase 3, with selecting several photos |
@@ -2949,7 +2949,7 @@ Ctrl means Cmd on macOS.
   - The number row is matched by its physical key, as Ctrl's digits are, so AZERTY's unshifted & é " ' ( still rate.
   - Three things stay with the focused widget or the platform. A focused text field keeps the digits and X, so typing a value never rates the photo, but not F1 to F5, which reach the registry from a field as F6 does. A focused curve keeps +, which Czech and Slovak keyboards type on the 1 key. On a Mac, F1 to F5 are the system's brightness and other keys unless Fn is held or the standard function keys are turned on, as in darktable.
   - A focused slider takes a digit, a minus sign or the decimal separator as the start of a typed value, so 3 with a slider focused never rates the photo (`Focus::keeps`).
-- **Kept free** for later features, as plain keys: `\`, J, O, W, B, S, C and M, M for the gradient tool, so the Map takes Shift+M; G and E are free too. On Polish keyboards AltGr with L types ł, which the AltGr rule above keeps from running the Library's tab.
+- **Kept free** for later features, as plain keys: `\`, J, O, W, B, S, C and M, M for the gradient tool, so the Map takes Shift+M; G and E are free too. On Polish keyboards AltGr with L types ł, which the AltGr rule above keeps from running Browse.
 - **A test fails** if a default takes a key kept free, if two keys in one scope can be one press, or if a key of the view would hide an app's. One press is judged by the matching rules (`actions::conflict`): on Windows and Linux Ctrl and Command of one letter, Ctrl++ and Ctrl+Shift++, and a symbol that a known layout types on a digit key with that digit. The one overlap accepted is Ctrl++ with Ctrl+1 on Czech and Slovak keyboards, where the 1 key types `+`: the digit wins there, and Ctrl+= zooms the photo in.
 
 ## Settings and workspace
@@ -3073,8 +3073,8 @@ thumbnails = "large"
 [workspaces.edit]
 tab = "base"
 
-[workspaces.cull]
-tab = "library"
+[workspaces.photos]
+tab = "photos"
 
 [central_panel]
 margin = 16                 # points; no page in Settings
@@ -3159,7 +3159,7 @@ show_selected = false       # from Phase 3
 ## Performance
 
 - The UI thread builds a frame in a few milliseconds and waits for nothing but its turn at the engine's submit gate and, inside a reconfigure of the window's surface, for the GPU (decisions 17 and 18). puffin scopes for each region show where the time goes.
-- Long lists draw only their visible rows: the grid panel's thumbnails, the Library's folders, keywords.
+- Long lists draw only their visible rows: the grid panel's thumbnails, Browse's folders, keywords.
 - Scopes and thumbnails are computed by the engine, scopes as GPU reductions (decision 15). They arrive as textures or small arrays, and the UI only draws them.
 
 ## Build order
@@ -3176,8 +3176,8 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
    - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry.
    - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Storage and Shortcuts, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host.
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
-9. Folder mode in one view (decision 37): the Library tab first, with its Folders section; the grid panel showing the folder, with the engine's thumbnails and its grid bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The grid panel](#the-grid-panel)); File › Open…, Open Folder… and Open Recent; the central panel's empty states ([The central panel's layouts](#the-central-panels-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
-   - Built: File › Open Folder…, the Library tab's Folders section with the recent folders, the grid panel's cells with the camera's embedded pictures, its grid bar's Sort and Zoom, its edge in whole rows or columns and its position, and the central panel's empty states.
+9. Folder mode in one view (decision 37): the Photos tab first, with Browse's Folders; the grid panel showing the folder, with the engine's thumbnails and its grid bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The grid panel](#the-grid-panel)); File › Open…, Open Folder… and Open Recent; the central panel's empty states ([The central panel's layouts](#the-central-panels-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
+   - Built: File › Open Folder…, the first tab's Folders section with the recent folders (still named Library, [The side panel](#the-side-panel)), the grid panel's cells with the camera's embedded pictures, its grid bar's Sort and Zoom, its edge in whole rows or columns and its position, and the central panel's empty states.
    - Left: Open… in place of Open Image…, Open Recent, and opening a folder's first photo; one photo from a terminal and Open With into folder mode (`--in-folder`, and macOS's open-documents event); the start window, reopening what was open last, and File › Close ([The start window](#the-start-window)). The engine's side for the stills waits for spike W1.
 
 Decision 42's slider values and choice rows are Phase 2's, built beside steps 7 to 9 in [their cards' order](#slider-values-the-build-in-cards).
@@ -3187,7 +3187,7 @@ Phase 3 adds, for the interface:
 - selecting several photos, Photo's cells and the batch actions;
 - virtual copies in the grid panel, History's Snapshots, photo groups and Import… by copy, in folder mode (decision 46);
 - ratings, the reject and labels from the caption, so culling is Photo with the grid panel and the caption's ratings, with no Grid;
-- named workspaces and Cull;
+- named workspaces and the Photos workspace;
 - the Export dialog, a native modal window (decision 41), in [its cards' order](#the-build-in-cards) on the session's export job (decision 56): built on the Mac, its presets, metadata and the other platforms left;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
 
@@ -3244,7 +3244,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |
 | Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in module panels and Boxed elsewhere, the drawn dropdown filtering as darktable's (decision 42; [Slider values and choices](#slider-values-and-choices)) |
-| The view | One view: the Library a side-panel tab; the central panel's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a dialog, Import and Print sheets, the slideshow an action (decision 37; [The shell](#the-shell)) |
+| The view | One view: the Photos tab choosing the photos; the central panel's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a dialog, Import and Print sheets, the slideshow an action (decision 37; [The shell](#the-shell)) |
 
 ## Open questions
 

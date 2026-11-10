@@ -41,4 +41,4 @@ The scheduling rules are pure functions (`jobs::schedule`'s `add` and `pick`), h
 ## Consequences
 
 - Every long piece of work is a job on darktable's queue for its kind; none starts a thread of its own.
-- Stills for several photos on screen ([0037](0037-one-view-the-library-as-a-tab.md)) take the same background turn.
+- Stills for several photos on screen ([0037](0037-one-view-the-photos-tab.md)) take the same background turn.

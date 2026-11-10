@@ -27,7 +27,7 @@ How are the desktop app's threads organised, how does a frame reach the window, 
 
 **Diagnostics:** tracing for logs and spans ([0044](0044-logging-the-banner-and-versions.md)); puffin for frame profiling.
 
-**Planned, with several photos** ([0037](0037-one-view-the-library-as-a-tab.md)): the live photo's frame first, then one bounded submission of background work, decoding off the engine thread on a job worker ([0057](0057-jobs-as-darktables-control-jobs.md)).
+**Planned, with several photos** ([0037](0037-one-view-the-photos-tab.md)): the live photo's frame first, then one bounded submission of background work, decoding off the engine thread on a job worker ([0057](0057-jobs-as-darktables-control-jobs.md)).
 
 ## Options considered
 

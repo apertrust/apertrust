@@ -47,8 +47,8 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Layers | Masked module instances at their pipeline positions, in a fixed order; each slider scaled in its own unit; a mask's parts combined top to bottom, an empty mask changing nothing; retouch as layers listed between the adjustment layers and Image, applied first; darktable's blend modes; masks and retouch ported from darktable's master (34, 74, Phase 4) | Compositing at the end of the pipe; darktable's linear mix for every slider |
 | UI toolkit | egui, one interface for the desktop and a desktop browser (35) | Iced, Slint, GPUI, Tauri with web panels |
 | Design system | `apertrust-ui`: tokens and themes in TOML, IBM Plex Sans with Plex Mono for the log's lines, Fluent and ICU4X; British and American English, Ukrainian and Polish; AccessKit on (36); the slider's marker a setting, Triangle, Circle or Square, Square by default, whole at the track's ends (75) | egui's default look; gettext; darktable's triangle alone, cut off at the ends |
-| One view | No separate views: the Library tab chooses photos, the centre shows the Photo layout and later Map, the grid panel always shown (37) | darktable's views; a Grid layout |
-| Side panel tabs | Library, Base, Colour, Correct, Effect and History: darktable's scene-referred groups between Apertrust's own two (38) | A quick access panel; an active-modules tab |
+| One view | No separate views: the Photos tab chooses photos, the centre shows the Photo layout and later Map, the grid panel always shown (37) | darktable's views; a Grid layout |
+| Side panel tabs | Photos, Base, Colour, Correct, Effect and History: darktable's scene-referred groups between Apertrust's own two (38) | A quick access panel; an active-modules tab |
 | Window frame and menus | One top bar from the window's top edge; the Mac's native menu bar through muda; one menu button, ☰, on Windows and Linux (39) | The system's title bar above the top bar; muda's Win32 menu bar |
 | Popups | Native menus on the Mac for plain lists and context menus, drawn everywhere else, through one popup service (40) | Win32 popups; egui's `Popup` |
 | Dialogs and alerts | Every dialog a native window of its own, modal, sheets on the Mac, Settings modeless; the system's alerts, Linux's drawn by the host; Wayland's parent set, the app keeping modality; a border and drop shadow drawn by the host on Wayland (41); on Linux shown before X11's modal hints, framed by the host, Export on every platform (69) | egui's viewports; egui modals |
@@ -63,7 +63,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Several computers | Two copies of a sidecar compared by clock vectors; diverged edits kept as a second virtual copy; metadata combined field by field; no locks (52) | Keeping one side by modified time; locks |
 | Finding folders and photos | Roots by an id file; photos by root, path and fingerprint; listing in bulk; safe writes; a queue per root (53) | Volume UUIDs or absolute paths; a whole-file hash |
 | Library API | Four layers, each calling only the one below, over a storage interface for local files and the server; clients see only `LibraryCommand` and `LibraryEvent` (54) | An SQL API; a second API beside the protocol |
-| Library tab | Library pinned, Filters, Keywords, Metadata, then Styles; Filters over the open folder's index in folder mode from Phase 3; one Keywords module, folder mode's keyword list in the user data folder; Metadata the file's facts and darktable's fields in one (73) | Filters only with the library's cache; a keyword list module of its own |
+| Photos tab | Browse pinned, one name in every mode, its top line saying what is open; then Filters, Keywords, Metadata and Styles; Filters over the open folder's index in folder mode from Phase 3; one Keywords module, folder mode's keyword list in the user data folder; Metadata the file's facts and darktable's fields in one (73) | A Library tab and module; filters only with the library's cache; a keyword list module of its own |
 | Library cache | One per library per machine, rebuilt from the files, its engine chosen by spike L2 (55) | A database in the library's folder |
 | Cache | One cache folder by kind, holding only what can be rebuilt with nothing lost: each entry one file, the file system its index, last use its modified time; thumbnails and later previews within one limit, `cache.limit`, evicted oldest first in the background, or unlimited by the person's choice (`cache.limited`); nothing removed by age, library caches and local copies kept until the person removes them, those long unopened offered for removal (`cache.unused_after`, Never a choice); sizes, the limit and Clear on Settings › Storage and in `apertrust-cli cache`; root maps, pending changes and conflict copies in the user data folder ([cache.md](../cache.md); 76) | A per-kind index of entries; unlimited by default, as darktable's |
 | Server and sync | A self-hosted server, planned: a container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged by clock vectors; server roots; one server, `apertrust-cli serve` (71) | A NAS share alone; a database on the server as the truth; locks |
@@ -162,7 +162,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | --- | --- |
 | [0035](0035-egui-for-the-desktop-and-the-browser.md) | egui, for the desktop and the browser |
 | [0036](0036-the-design-system.md) | The design system |
-| [0037](0037-one-view-the-library-as-a-tab.md) | One view, the Library as a tab |
+| [0037](0037-one-view-the-photos-tab.md) | One view, the Photos tab |
 | [0038](0038-side-panel-tabs-as-darktables-groups.md) | Side panel tabs as darktable's groups |
 | [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md) | One top bar, native menus on the Mac, one menu button elsewhere |
 | [0040](0040-popup-menus-native-on-the-mac-drawn-elsewhere.md) | Popup menus: native on the Mac, drawn elsewhere |
@@ -195,7 +195,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0054](0054-four-layers-for-the-librarys-code.md) | Four layers for the library's code |
 | [0055](0055-the-librarys-cache.md) | The library's cache |
 | [0071](0071-a-self-hosted-server-with-sync.md) | A self-hosted server with sync |
-| [0073](0073-the-library-tabs-modules-filters-in-folder-mode.md) | The Library tab's modules, filters in folder mode |
+| [0073](0073-the-photos-tabs-modules-browse-first-filters-in-folder-mode.md) | The Photos tab's modules: Browse first, filters in folder mode |
 
 ## Export and jobs
 

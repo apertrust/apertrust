@@ -12,7 +12,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 
 **One photo:** `apertrust FILE` from a terminal opens that raw alone, its edit beside it as in folder mode, with no index beyond it and nothing written but its `.apxmp`. It is the only way into this mode, and it is never added to the recents.
 
-**Folder mode, built first:** File › Open Folder… or Open…, the Library tab's Folders, `apertrust FOLDER`, or Open With and a double-click on a raw (planned). Those two open the photo's folder with that photo active: the photo opens at once and the folder lists in the background. macOS delivers them as an open-documents event; on Windows and Linux the installer's and the desktop entry's registrations pass `--in-folder`, which tells them from a terminal's `apertrust FILE`. Several files opened together from one folder open it with them selected, the first active.
+**Folder mode, built first:** File › Open Folder… or Open…, Browse's Folders in the Photos tab, `apertrust FOLDER`, or Open With and a double-click on a raw (planned). Those two open the photo's folder with that photo active: the photo opens at once and the folder lists in the background. macOS delivers them as an open-documents event; on Windows and Linux the installer's and the desktop entry's registrations pass `--in-folder`, which tells them from a terminal's `apertrust FILE`. Several files opened together from one folder open it with them selected, the first active.
 
 - Opening, browsing and thumbnailing write nothing beside the photos; a photo gets its `.apxmp` only once something about it changes.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes.
@@ -22,7 +22,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 
 - **Albums** hold photos chosen by hand (root, path, virtual copy) and other albums and smart albums, to any depth, and show only their own photos; a move that would make a cycle is refused.
 - **Smart albums** are darktable's collect rules, filters and sort, saved, with Apertrust's own rule "in album".
-- **The Library tab:** Folders, Albums, Smart albums; darktable's film roll is a folder. A library and a project have all three. In one photo and folder mode the Library tab has Folders alone: Albums and Smart albums are not shown, since folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files. Make This Folder a Library… is in the Library module's options.
+- **Browse,** the Photos tab's first module ([0073](0073-the-photos-tabs-modules-browse-first-filters-in-folder-mode.md)): Folders, Albums, Smart albums; darktable's film roll is a folder. A library and a project have all three. In one photo and folder mode Browse has Folders alone: Albums and Smart albums are not shown, since folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files. Make This Folder a Library… is in Browse's options.
 
 **The Project:** `Name.approject`, a library in the same format and code for one job, inside its folder only, with the folder roles Capture, Selects, Output and Trash; made by New Project… (from a template or not) or Export as Project…; a watched Capture folder; the job's settings in its file (the next capture's folder, name pattern and job code, the start adjustments as `.apertrust/start.apxmp`, the Output folder and export preset); templates in the user data folder; Output kept out of smart albums unless a rule names it.
 
