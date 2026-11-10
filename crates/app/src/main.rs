@@ -783,6 +783,49 @@ fn reshape(window: &egui_winit::winit::window::Window, placement: &settings::Win
     }
 }
 
+/// `placement` with a place where it has none, as on the first run: centred on the monitor
+/// `window` is on ([`centred`]), so the main window, larger than the start window it
+/// follows, never reaches past the screen's edge. Unchanged where it has a place, or no
+/// monitor is known.
+fn placed_on_monitor(
+    window: &egui_winit::winit::window::Window,
+    placement: settings::Window,
+) -> settings::Window {
+    if placement.position.is_some() {
+        return placement;
+    }
+    let Some(handle) = window.current_monitor() else {
+        return placement;
+    };
+    let monitor = Monitor {
+        rect: egui::Rect::from_min_size(
+            egui::pos2(handle.position().x as f32, handle.position().y as f32),
+            egui::vec2(handle.size().width as f32, handle.size().height as f32),
+        ),
+        scale_factor: handle.scale_factor() as f32,
+        primary: false,
+    };
+    let size = placement
+        .size
+        .unwrap_or(settings::registry::WINDOW_SIZE.default());
+    settings::Window {
+        position: Some(centred(&monitor, size)),
+        ..placement
+    }
+}
+
+/// Where a window of `size` logical pixels stands centred on `monitor`, its corner never
+/// above or left of the monitor's.
+fn centred(monitor: &Monitor, size: [f32; 2]) -> settings::Position {
+    let size = egui::Vec2::from(size).max(egui::Vec2::from(WINDOW_MIN)) * monitor.scale_factor;
+    let room = (monitor.rect.size() - size).max(egui::Vec2::ZERO);
+    let at = monitor.rect.min + room / 2.0;
+    settings::Position {
+        pixels: [at.x.round(), at.y.round()],
+        scale_factor: monitor.scale_factor,
+    }
+}
+
 /// The monitors there are now, as `window`'s platform reports them.
 fn monitors(window: &egui_winit::winit::window::Window) -> Vec<Monitor> {
     let primary = window.primary_monitor();
@@ -3080,6 +3123,12 @@ impl App {
                 &mut || leave.may(),
             );
             if leave.ask {
+                // The alert is a sheet on the window, which the start window closed on the
+                // Mac has hidden: shown again for it ([`App::reveal`]).
+                if std::mem::take(&mut self.start.hidden) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
                 let (alerts, quit) = (&mut self.alerts, &mut self.quit);
                 let dialogs = &mut self.dialogs;
                 self.quit_again |= alerts::ask_quit(alerts, dialogs, quit, running, edit, ctx);
@@ -3540,9 +3589,6 @@ impl App {
         })
     }
 
-    /// Draws `frame` where the block `placed` puts the photo, with Proof margin's white
-    /// border under it and the guides over it. A frame rendered for another size, as while
-    /// the window resizes, is shown at the size the next will have: `placed`'s.
     /// Whether the main window is the start window this frame ([`shows_start`]): it becomes
     /// it as nothing is open, the first recent chosen and the recents checked again, and the
     /// main window again as something opens, shown if it was hidden. The window takes the
@@ -3561,35 +3607,39 @@ impl App {
             } else {
                 self.reveal(ctx);
                 if let Some(window) = window {
-                    reshape(window, &self.shell.window, false);
+                    let placement = placed_on_monitor(window, self.shell.window);
+                    reshape(window, &placement, false);
                 }
                 self.start.settling = Some(start::SIZE * self.start.zoom);
             }
         }
         let zoom = ctx.zoom_factor();
-        if !wanted || !(self.start.reshape || self.start.zoom != zoom) {
-            return;
-        }
         let viewport = ctx.input(|i| i.viewport().clone());
-        if viewport.fullscreen.unwrap_or(false) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-            ctx.request_repaint();
-        } else if MAXIMISES && viewport.maximized.unwrap_or(false) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-            ctx.request_repaint();
-        } else {
-            // Centred where the main window was as it becomes the start window; where it
-            // stands as only the scale changes.
-            let placement = start_placement(&self.shell.window, zoom);
-            let placement = settings::Window {
-                position: placement.position.filter(|_| self.start.reshape),
-                ..placement
-            };
-            if let Some(window) = window {
-                reshape(window, &placement, true);
+        let full_screen = viewport.fullscreen.unwrap_or(false);
+        let maximised = MAXIMISES && viewport.maximized.unwrap_or(false);
+        let changed = self.start.zoom != zoom;
+        match start_shape(wanted, self.start.reshape, changed, full_screen, maximised) {
+            StartShape::Keep => {}
+            StartShape::LeaveFullScreen => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+                ctx.request_repaint();
             }
-            self.start.reshape = false;
-            self.start.zoom = zoom;
+            StartShape::Unmaximise => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                ctx.request_repaint();
+            }
+            StartShape::Resize { centred } => {
+                let placement = start_placement(&self.shell.window, zoom);
+                let placement = settings::Window {
+                    position: placement.position.filter(|_| centred),
+                    ..placement
+                };
+                if let Some(window) = window {
+                    reshape(window, &placement, true);
+                }
+                self.start.reshape = false;
+                self.start.zoom = zoom;
+            }
         }
     }
 
@@ -3616,11 +3666,12 @@ impl App {
         if !std::mem::take(&mut self.start.close) || !self.start.shown {
             return;
         }
-        if ctx.os() == OperatingSystem::Mac {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-            self.start.hidden = true;
-        } else {
-            self.run_actions([ActionId::QUIT], ctx, &[]);
+        match start_closes(ctx.os()) {
+            StartCloses::Hide => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.start.hidden = true;
+            }
+            StartCloses::Quit => self.run_actions([ActionId::QUIT], ctx, &[]),
         }
     }
 
@@ -3758,6 +3809,9 @@ impl App {
         }
     }
 
+    /// Draws `frame` where the block `placed` puts the photo, with Proof margin's white
+    /// border under it and the guides over it. A frame rendered for another size, as while
+    /// the window resizes, is shown at the size the next will have: `placed`'s.
     fn photo_at(&self, ui: &egui::Ui, slot: egui::Rect, placed: &Placed, frame: &Frame) {
         let ppp = ui.pixels_per_point();
         let rect = placed.photo;
@@ -4051,7 +4105,7 @@ impl eframe::App for App {
         let chosen = chosen.unwrap_or_default();
         // A choice in the menus with the start window closed shows it again for what it
         // opens there, but for those that open no dialog over it.
-        if chosen.iter().any(|id| !OVER_NO_WINDOW.contains(id)) {
+        if reveals_for(&chosen) {
             self.reveal(ctx);
         }
         // No F6 among them: the menus hold no action that moves the focus.
@@ -4135,15 +4189,20 @@ impl eframe::App for App {
         // that close; the close Quit asks for still ends the app.
         if raw_input.viewport().close_requested() {
             let quitting = std::mem::take(&mut self.shell.leaving);
-            let mac = ctx.os() == OperatingSystem::Mac;
-            let closes = !self.start.shown
-                && close_window_runs(ctx.os(), &self.state(ctx)) == ActionId::CLOSE;
-            if mac && !quitting && (self.start.shown || closes) {
-                if let Some(viewport) = raw_input.viewports.get_mut(&raw_input.viewport_id) {
-                    viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
-                }
-                self.start.close = self.start.shown;
-                self.start.close_main = closes;
+            // The main window's own state, whichever window has the focus, as AppKit checks
+            // a window's buttons against that window.
+            let state = self.state_in_window(ctx);
+            let closes = close_window_runs(ctx.os(), &state) == ActionId::CLOSE;
+            let button = close_button(ctx.os(), quitting, self.start.shown, state.modal, closes);
+            if button != CloseButton::Quit
+                && let Some(viewport) = raw_input.viewports.get_mut(&raw_input.viewport_id)
+            {
+                viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
+            }
+            match button {
+                CloseButton::Rest | CloseButton::Quit => {}
+                CloseButton::HideStart => self.start.close = true,
+                CloseButton::Close => self.start.close_main = true,
             }
         }
     }
@@ -4642,11 +4701,97 @@ fn close_window_runs(os: OperatingSystem, state: &State) -> ActionId {
     }
 }
 
+/// What the main window's close button does (`docs/gui.md`, File): on the Mac, nothing under
+/// a modal dialog or alert (`modal`), as Close Window rests there; closes the start window
+/// where it is `shown`; does what Close does where Close Window would (`closes`); else, and
+/// on Windows and Linux, and for the close Quit asked for (`quitting`), it ends the app.
+fn close_button(
+    os: OperatingSystem,
+    quitting: bool,
+    shown: bool,
+    modal: bool,
+    closes: bool,
+) -> CloseButton {
+    if os != OperatingSystem::Mac || quitting {
+        CloseButton::Quit
+    } else if modal {
+        CloseButton::Rest
+    } else if shown {
+        CloseButton::HideStart
+    } else if closes {
+        CloseButton::Close
+    } else {
+        CloseButton::Quit
+    }
+}
+
+/// What the main window's close button does ([`close_button`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloseButton {
+    Rest,
+    HideStart,
+    Close,
+    Quit,
+}
+
+/// What closing the start window does on `os`: on the Mac it hides, the app running on with
+/// its menu bar; elsewhere the app leaves, as Quit does.
+fn start_closes(os: OperatingSystem) -> StartCloses {
+    if os == OperatingSystem::Mac {
+        StartCloses::Hide
+    } else {
+        StartCloses::Quit
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StartCloses {
+    Hide,
+    Quit,
+}
+
+/// Whether `chosen`, from the Mac's menus with the start window hidden, shows it again: any
+/// but those in [`OVER_NO_WINDOW`]. Quit's alert shows it itself, should Quit ask.
+fn reveals_for(chosen: &[ActionId]) -> bool {
+    chosen.iter().any(|id| !OVER_NO_WINDOW.contains(id))
+}
+
+/// What the window does this frame as the start window `shown` (`wanted`), as it is to take
+/// the start window's place (`reshape`) or the scale has `changed`: leave full screen, then
+/// its maximised state, then take the start window's size, centred where the main window
+/// was only as it becomes the start window; nothing otherwise.
+fn start_shape(
+    wanted: bool,
+    reshape: bool,
+    changed: bool,
+    full_screen: bool,
+    maximised: bool,
+) -> StartShape {
+    if !wanted || !(reshape || changed) {
+        StartShape::Keep
+    } else if full_screen {
+        StartShape::LeaveFullScreen
+    } else if maximised {
+        StartShape::Unmaximise
+    } else {
+        StartShape::Resize { centred: reshape }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StartShape {
+    Keep,
+    LeaveFullScreen,
+    Unmaximise,
+    Resize { centred: bool },
+}
+
 /// What a choice in the Mac's menus runs with the start window closed, its window hidden,
 /// without showing it again: what opens a window of its own, or leaves, or changes only the
-/// recents.
-const OVER_NO_WINDOW: [ActionId; 5] = [
+/// recents; and Close Window, the start window being closed already.
+const OVER_NO_WINDOW: [ActionId; 6] = [
     ActionId::QUIT,
+    ActionId::CLOSE_WINDOW,
     ActionId::SETTINGS,
     ActionId::SHOW_LOG,
     ActionId::SHOW_JOBS,
@@ -6012,6 +6157,174 @@ mod tests {
     /// something open, what Close does, the start window taking its place; with nothing
     /// open, under a modal dialog, with a dialog's own window focused, and on Windows and
     /// Linux, itself, which ends the app.
+    #[test]
+    fn the_close_button_hides_the_start_window_on_the_mac_and_rests_under_a_modal() {
+        let mac = OperatingSystem::Mac;
+        // quitting, shown, modal, closes
+        assert_eq!(
+            close_button(mac, false, true, false, false),
+            CloseButton::HideStart
+        );
+        assert_eq!(
+            close_button(mac, false, false, false, true),
+            CloseButton::Close
+        );
+        assert_eq!(
+            close_button(mac, false, true, true, false),
+            CloseButton::Rest
+        );
+        assert_eq!(
+            close_button(mac, false, false, true, false),
+            CloseButton::Rest
+        );
+        // Nothing open on the main window, and Quit's own close, end the app.
+        assert_eq!(
+            close_button(mac, false, false, false, false),
+            CloseButton::Quit
+        );
+        assert_eq!(
+            close_button(mac, true, true, false, false),
+            CloseButton::Quit
+        );
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            assert_eq!(close_button(os, false, true, true, true), CloseButton::Quit);
+        }
+        assert_eq!(start_closes(mac), StartCloses::Hide);
+        assert_eq!(start_closes(OperatingSystem::Nix), StartCloses::Quit);
+        assert_eq!(start_closes(OperatingSystem::Windows), StartCloses::Quit);
+    }
+
+    /// With the start window hidden on the Mac, a menu's choice shows it again but for what
+    /// needs no window: Quit (whose alert shows it itself), Settings, the log and jobs
+    /// windows, Clear Menu and Close Window.
+    #[test]
+    fn a_menu_choice_shows_the_hidden_start_window_but_for_what_needs_none() {
+        for id in [
+            ActionId::OPEN,
+            ActionId::OPEN_FOLDER,
+            ActionId::OPEN_RECENT[0],
+            ActionId::ABOUT,
+        ] {
+            assert!(reveals_for(&[id]), "{id:?}");
+        }
+        for id in OVER_NO_WINDOW {
+            assert!(!reveals_for(&[id]), "{id:?}");
+        }
+        assert!(reveals_for(&[ActionId::SETTINGS, ActionId::OPEN]));
+        assert!(!reveals_for(&[]));
+    }
+
+    /// As it becomes the start window, the window leaves full screen, then its maximised
+    /// state, then takes the start window's size centred where it was; as only the scale
+    /// changes, its size where it stands; nothing as the main window.
+    #[test]
+    fn the_window_leaves_full_screen_and_maximised_before_it_takes_the_start_size() {
+        // wanted, reshape, changed, full screen, maximised
+        let shape = start_shape;
+        assert_eq!(shape(false, true, true, true, true), StartShape::Keep);
+        assert_eq!(shape(true, false, false, true, true), StartShape::Keep);
+        assert_eq!(
+            shape(true, true, false, true, true),
+            StartShape::LeaveFullScreen
+        );
+        assert_eq!(
+            shape(true, true, false, false, true),
+            StartShape::Unmaximise
+        );
+        let centred = StartShape::Resize { centred: true };
+        assert_eq!(shape(true, true, false, false, false), centred);
+        let in_place = StartShape::Resize { centred: false };
+        assert_eq!(shape(true, false, true, false, false), in_place);
+    }
+
+    /// With no place kept, as on the first run, the main window is centred on its monitor,
+    /// never past its top or left edge.
+    #[test]
+    fn with_no_place_kept_the_main_window_is_centred_on_its_monitor() {
+        let monitor = Monitor {
+            rect: egui::Rect::from_min_size(egui::pos2(1920.0, 0.0), egui::vec2(3024.0, 1964.0)),
+            scale_factor: 2.0,
+            primary: false,
+        };
+        let at = centred(&monitor, [1400.0, 900.0]);
+        assert_eq!(at.pixels, [1920.0 + 112.0, 82.0]);
+        assert_eq!(at.scale_factor, 2.0);
+        // Larger than the monitor: at its corner.
+        let at = centred(&monitor, [2000.0, 1200.0]);
+        assert_eq!(at.pixels, [1920.0, 0.0]);
+        // Never smaller than the main window's least.
+        let small = centred(&monitor, [400.0, 300.0]);
+        let least = centred(&monitor, WINDOW_MIN);
+        assert_eq!(small, least);
+    }
+
+    /// The start window's keys after the app's: the keymap takes Cmd+O and leaves ↓, Enter
+    /// and Escape to the list, as the app reads its keys before the window is drawn.
+    #[test]
+    fn the_start_window_s_keys_reach_the_list_after_the_app_s() {
+        struct Both {
+            shell: Shell,
+            list: start::List,
+            asked: Vec<start::Asked>,
+            pressed: Vec<ActionId>,
+        }
+        let mut harness = Harness::builder()
+            .with_size(start::SIZE)
+            .with_os(OperatingSystem::Mac)
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, both: &mut Both| {
+                    let ctx = ui.ctx().clone();
+                    let state = in_start(both.shell.state(&ctx, false, false));
+                    let keys = actions::read(&ctx, &both.shell.keymap, &state);
+                    both.pressed.extend(keys.pressed);
+                    let paths = [
+                        PathBuf::from("/photos/Lisbon"),
+                        PathBuf::from("/photos/Kraków"),
+                    ];
+                    let recents: Vec<library::Recent<'_>> = paths
+                        .iter()
+                        .map(|path| library::Recent {
+                            path,
+                            missing: None,
+                        })
+                        .collect();
+                    let shown = start::Shown {
+                        home: None,
+                        close: false,
+                        keys: !state.modal,
+                    };
+                    both.asked
+                        .extend(start::show(ui, &recents, &mut both.list, shown));
+                },
+                Both {
+                    shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac),
+                    list: start::List::shown(),
+                    asked: Vec::new(),
+                    pressed: Vec::new(),
+                },
+            );
+        harness.run();
+        for key in [Key::ArrowDown, Key::Enter, Key::Escape] {
+            harness.key_press(key);
+            harness.run();
+        }
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::O);
+        harness.run();
+        let both = harness.state();
+        assert_eq!(
+            both.asked,
+            [
+                start::Asked::Open(PathBuf::from("/photos/Kraków")),
+                start::Asked::Close
+            ]
+        );
+        assert_eq!(both.pressed, [ActionId::OPEN]);
+    }
+
     #[test]
     fn close_window_on_the_mac_s_main_window_does_what_close_does() {
         let ctx = egui::Context::default();

@@ -247,6 +247,26 @@ fn open_opens_the_recent_chosen_and_a_double_click_opens_one() {
     assert_eq!(harness.state().asked, [Asked::Open(family)]);
 }
 
+/// A recent whose opening failed this run is marked so, with Locate… and Remove from the
+/// List, but not greyed, as Open Recent's: Open stays enabled while it is chosen, and Enter
+/// tries it again.
+#[test]
+fn a_recent_that_failed_to_open_tries_again() {
+    let mut recents = sample();
+    recents[2].1 = Some(Mark::Failed("Permission denied"));
+    recents[3].1 = None;
+    let mut harness = window(recents);
+    press(&mut harness, egui::Key::ArrowDown);
+    press(&mut harness, egui::Key::ArrowDown);
+    assert_eq!(chosen(&harness), "2026-09 Mountains");
+    let open = harness.get_by_role_and_label(Role::Button, "Open");
+    assert!(!open.accesskit_node().is_disabled());
+    press(&mut harness, egui::Key::Enter);
+    let mountains = PathBuf::from("/Users/me/Pictures/2026-09 Mountains");
+    assert_eq!(harness.state().asked, [Asked::Open(mountains)]);
+    harness.get_by_role_and_label(Role::Button, "Locate…");
+}
+
 /// A recent found gone offers Locate… and Remove from the List, and cannot be opened: Open
 /// is disabled while it is chosen, and Enter does nothing.
 #[test]
