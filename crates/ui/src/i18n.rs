@@ -799,6 +799,10 @@ mod tests {
                 args.set("storage", "disk");
                 args.set("written", 10);
                 args.set("skipped", 1);
+                // The cache's Clear: what it clears, how many and in what unit.
+                args.set("kind", "thumbnails");
+                args.set("entries", 2104);
+                args.set("unit", "mb");
                 // The Export dialog's.
                 args.set("source", "IMG_2041.ARW");
                 args.set("names", "$(OPENCL.ACTIVATED)");

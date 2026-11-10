@@ -145,6 +145,42 @@ job-delete = Видалення { $done } / { $total }
 job-thumbnails = Створення мініатюр
 job-folder = Читання { $folder }
 
+## Очищення кешу: $kind — що очищається, thumbnails чи pipelines; $done — видалено записів
+## із $total; $entries — скільки видалено, $size і $unit — скільки вони займали, одиниця
+## kb, mb чи gb.
+
+job-cache-size =
+    { $size } { $unit ->
+        [kb] кБ
+        [gb] ГБ
+       *[mb] МБ
+    }
+job-cache-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } мініатюру
+                [few] { $entries } мініатюри
+                [many] { $entries } мініатюр
+               *[other] { $entries } мініатюри
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } конвеєр
+                [few] { $entries } конвеєри
+                [many] { $entries } конвеєрів
+               *[other] { $entries } конвеєра
+            }
+    }
+job-cache-clear =
+    { $kind ->
+        [thumbnails] Очищення кешу мініатюр
+       *[pipelines] Очищення кешу конвеєрів
+    }
+job-cache-clear-now = Видалено { $done } із { $total }
+job-cache-cleared = Видалено { job-cache-entries }, { job-cache-size }
+job-cache-clear-cancelled = Очищення скасовано: видалено { job-cache-entries }, { job-cache-size }
+
 job-export-photo =
     Експортування { $number } / { $total } до { $storage ->
        *[disk] файлу на диску
@@ -194,6 +230,8 @@ job-cause-gone = папки або її диска більше немає
 job-cause-folder = папку не вдається створити або записати до неї
 job-cause-write = не вдалося записати файл
 job-cause-engine = рушій несподівано зупинився
+job-cause-cache-remove = деякі файли кешу не вдалося видалити
+job-cause-cache-read = не вдалося прочитати теку кешу
 
 ## Рядок завдання у вікні завдань: рядки і кнопки
 

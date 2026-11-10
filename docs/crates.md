@@ -164,8 +164,10 @@ The groundwork for orientation:
 
 - **`cache-walk`,** a `SystemBackground` job with no progress, added as the session starts: base's `tidy`, then its `walk`, then, where the limited kinds are past the limit, eviction in the same job. It counts as an eviction running, so a limit lowered meanwhile is folded into it.
 - **`cache-evict`,** the same queue, never shown, one at a time: asked for after a write past the limit (`Upkeep::check`, for the thumbnails' writes), and by `Command::Cache(CacheCommand::Limit(limit))` where the limit is lowered or turned on; never while the cache is unlimited. A request while one is queued is that one's, which reads the limit as it runs; one while it runs is folded into it, which runs once more. A guard puts eviction back to idle should a job panic, so the next request still adds one.
+- **`Command::Cache(CacheCommand::Sizes)`,** answered by `Event::Cache(CacheEvent)`, a fact, `Fact::Cache`: at once with the handle's count where a walk has run, through the outbox before the walk is added, then by a `cache-walk` of its own (`Upkeep::walk_for_sizes`), one at a time, that counts what other processes did; `CacheEvent::NoCache` with no cache; `SessionError::CacheWalk` where that walk fails.
+- **`Command::Cache(CacheCommand::Clear { kind })`,** a `cache-clear` job on `UserBackground` with a progress, cancellable (`Upkeep::clear_job`): base's `clear`, its progress the bar and `job-cache-clear-now`, its title `job-cache-clear` and outcome `job-cache-cleared` or `job-cache-clear-cancelled` with the entries and their size (`$size`, `$unit`), the sizes told as it ends; entries it could not remove fail it, `cache-remove`, a folder that cannot be listed `cache-read`. Refused, `SessionError::Refused`, for a kept kind (`CacheKept`), a kind whose Clear has not ended (`CacheClearing`, `Upkeep::clearing` asking the control) and with no cache (`NoCache`).
 - Only the engine thread adds them, since it owns the control: a worker asks it through the inbox (`Inbox::Evict`), one arriving after the session's `Stop` dropped. As the session ends, its stop flag is the cancel of base's `tidy`, `walk` and eviction's listing, asked before each subfolder, and of eviction's removals, so quitting never waits for a cold walk.
-- `-d perf` logs the walk's sizes, the temporaries tidied and its time, each kind under `verbose`, and each eviction's removals, failures and time; a cache that cannot be tidied, walked or evicted is a warning.
+- `-d perf` logs the walk's sizes, the temporaries tidied and its time, each kind under `verbose`, each walk for the sizes, and each eviction's and Clear's removals, failures and time; a cache that cannot be tidied, walked, evicted or cleared is a warning.
 - **Thumbnails,** `session::thumbnail`: a thumbnail job reads the cache first, by the library's `thumbnail_key`, and decodes a hit with `apertrust_raw::read_jpeg`; on a miss it sends the library's reading, then encodes it with the export's JPEG writer at quality 90, 4:2:2, writes it and calls `Upkeep::check`. No picture, or one that cannot be encoded, is sent and not kept; with no cache the library's reading alone. One `-d perf` line for each `Thumbnails` command once its last job ends (`Tally`), each thumbnail under `verbose`.
 
 - A job's body hands the engine thread `GpuTask`s through its `Tasks`. They are stepped one a turn, after the live frame, by darktable's queue order and ageing, with one step's work on the GPU at a time.
@@ -226,19 +228,19 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
-- **The cache** (decision 76): Apertrust's own rendered thumbnails in it; eviction paused by an export; `Command::Cache` (`Sizes`, `Clear { kind }`, `Remove { library }`), a `UserBackground` job with a progress for a clear, and `Event::Cache`, a fact for each kind and each library's cache; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
+- **The cache** (decision 76): Apertrust's own rendered thumbnails in it; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview` and `library scan`; `cache`, `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 
 - **`--user-data-dir DIR`**, or `--config-dir`, darktable's `--configdir`, or `APERTRUST_USER_DATA_DIR`; else the platform's folder. `gpu`, `preview` and `export` read the engine's settings from the folder's `settings.toml`, its `[engine]` table (`adapter`, `memory_budget`), and never write them (decision 43).
   - The folder is found for reading (`Folders::find_to_read`): nothing is created or probed, and one given that is missing is an error.
-  - The settings are read through a read-only store, by the commands that run the engine.
+  - The settings are read through a read-only store, by the commands that run the engine and by `cache`, which reads the `[cache]` table.
   - The budget applies to `export` and `preview`.
-- **`--cache-dir DIR`**, or darktable's `--cachedir`, or `APERTRUST_CACHE_DIR`; else the user data folder's `cache` when that is given, else the platform's cache folder. Chosen and logged under `-d settings`, never created; read by the `cache` commands once they come.
+- **`--cache-dir DIR`**, or darktable's `--cachedir`, or `APERTRUST_CACHE_DIR`; else the user data folder's `cache` when that is given, else the platform's cache folder. Chosen and logged under `-d settings`, never created; read by the `cache` commands.
 - **`--adapter NAME`** comes before the file. A name that matches no adapter is an error, while a setting that names none falls back to wgpu's choice (decision 43).
 - **`--conf KEY=VALUE`**: a setting for this run only, as darktable's `--conf`, never written.
   - Global and repeatable; the last value for a key counts.
@@ -308,12 +310,13 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 - the leftover temporaries it removed;
 - the times, under `-d perf` (decisions 46 and 53).
 
-### Planned: cache
+### cache
 
-Decision 76, with the library's step 6b ([cache.md](cache.md#the-cli)). Both call `apertrust_base::cache` directly, with no session and no GPU, and take `--cache-dir DIR` or `--cachedir` (global) or `APERTRUST_CACHE_DIR`:
+`cache info` and `cache clear` (`crates/cli/src/cache.rs`, decision 76; [cache.md](cache.md#the-cli)) call `apertrust_base::cache` directly, with no session and no GPU, in the folder `--cache-dir DIR`, `--cachedir` or `APERTRUST_CACHE_DIR` names, else the user data folder's or the platform's. They open it with `Cache::open`, creating nothing: a missing folder is an empty cache.
 
-- `cache info`: the cache folder and how it was chosen; `cache.limit`, or `unlimited` while `cache.limited` is off, and the limited kinds' total; `cache.unused_after`; each kind's entries and size; each library's cache with its id, name, last path, last opened and size, those unopened for `cache.unused_after` or not found marked. It walks the folder and writes nothing.
-- `cache clear [KIND...] [--library ID]`: no kind clears every limited kind; `libraries` every library's cache no process has open; `--library ID` one. Local copies wait for step 31. It prints what it removed and what it skipped.
+- `cache info`: the cache folder, `(not created yet)` where missing, and how it was chosen; `cache.limit` in GB, or `unlimited` while `cache.limited` is off; the limited kinds' total; each kind's entries and size; `cache.unused_after` by its id; one item to a line. It walks the folder and writes nothing.
+- `cache clear [KIND...]`: the limited kinds named, or every one with none named, a line each of what it removed and, where some could not be removed, of how many, the exit status then 1. A kept kind (`libraries`, `copies`) or an unknown one is refused by name as a usage error, status 2, before anything is removed.
+- Planned with step 27: each library's cache in `cache info`, with its id, name, last path, last opened and size, those unopened for `cache.unused_after` or not found marked; `cache clear libraries`, every library's cache no process has open, and `--library ID`, one, saying what it skipped. Local copies wait for step 31.
 
 ## apertrust-golden
 
@@ -882,7 +885,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `folders` | `Folders` | the binaries (the app and the CLI) |
 | `fs` | the safe write | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
-| `cache` | the disk cache, `UnusedAfter` among it; turns on `fs` | the engine and the app; the library and the CLI are to |
+| `cache` | the disk cache, `UnusedAfter`, `CacheCommand` and `CacheEvent` among it; turns on `fs` | the engine, the app and the CLI; the library is to |
 | (none) | `settings` | |
 
 ### Logging
@@ -979,7 +982,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 **The cache folder and the cache,** with thumbnails (decisions 43 and 76; [cache.md](cache.md)):
 
-- `cache`, beside what its feature holds: clearing library caches, one skipped while another process holds its `lock` file; `CacheCommand`'s other variants, `Sizes`, `Clear { kind }` and `Remove { library }`, beside `Limit`, and `Event::Cache`'s types.
+- `cache`, beside what its feature holds: clearing library caches, one skipped while another process holds its `lock` file; `CacheCommand::Remove { library }` beside `Limit`, `Sizes` and `Clear { kind }`, and each library's cache in `CacheEvent`, with the library's step 27.
 
 ## apertrust-plugin
 

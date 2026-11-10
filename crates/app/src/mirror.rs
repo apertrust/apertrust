@@ -269,6 +269,8 @@ impl Mirror {
             Event::Export { .. } => {}
             // The folder took these in above.
             Event::Library(_) => {}
+            // The cache's sizes are Settings › Storage's, which asks for them.
+            Event::Cache(_) => {}
             // The session logs a failed save, a module left out and the scopes turned off as
             // they happen; the rest only reach the app.
             Event::Failed(SessionError::Save {

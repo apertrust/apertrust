@@ -145,6 +145,42 @@ job-delete = Usuwanie { $done } / { $total }
 job-thumbnails = Tworzenie miniatur
 job-folder = Odczytywanie { $folder }
 
+## Czyszczenie pamięci podręcznej: $kind to, co jest czyszczone, thumbnails lub pipelines;
+## $done to usunięte wpisy z $total; $entries to wpisy usunięte, $size i $unit, ile
+## zajmowały, jednostka kb, mb lub gb.
+
+job-cache-size =
+    { $size } { $unit ->
+        [kb] kB
+        [gb] GB
+       *[mb] MB
+    }
+job-cache-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } miniaturę
+                [few] { $entries } miniatury
+                [many] { $entries } miniatur
+               *[other] { $entries } miniatury
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } potok
+                [few] { $entries } potoki
+                [many] { $entries } potoków
+               *[other] { $entries } potoku
+            }
+    }
+job-cache-clear =
+    { $kind ->
+        [thumbnails] Czyszczenie pamięci podręcznej miniatur
+       *[pipelines] Czyszczenie pamięci podręcznej potoków
+    }
+job-cache-clear-now = Usunięto { $done } z { $total }
+job-cache-cleared = Usunięto { job-cache-entries }, { job-cache-size }
+job-cache-clear-cancelled = Czyszczenie anulowane. Usunięto { job-cache-entries }, { job-cache-size }
+
 job-export-photo =
     Eksportowanie { $number } / { $total } do { $storage ->
        *[disk] pliku na dysku
@@ -196,6 +232,8 @@ job-cause-gone = folderu lub jego dysku już nie ma
 job-cause-folder = nie można utworzyć folderu ani zapisać w nim
 job-cause-write = nie udało się zapisać pliku
 job-cause-engine = silnik nieoczekiwanie się zatrzymał
+job-cause-cache-remove = nie udało się usunąć niektórych plików pamięci podręcznej
+job-cause-cache-read = nie można odczytać folderu pamięci podręcznej
 
 ## Wiersz zadania w oknie zadań: wiersze i przyciski
 

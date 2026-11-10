@@ -102,6 +102,30 @@ fn the_kinds_are_the_decided_ones_each_in_its_own_folder() {
     assert_eq!(PIPELINES.policy(), Policy::Limited);
     assert_eq!(LIBRARIES.policy(), Policy::Kept);
     assert_eq!(COPIES.policy(), Policy::Kept);
+    for kind in KINDS {
+        assert_eq!(super::kind(kind.id()), Some(kind));
+    }
+    assert_eq!(super::kind("thumbnail"), None);
+}
+
+/// The session's answer holds each kind's usage, the limited kinds' total beside it.
+#[test]
+fn a_sizes_event_holds_the_limited_kinds_total() {
+    let (_folder, cache) = cache();
+    let (_, size) = six_entries(&cache);
+    let sizes = cache.walk(&never).unwrap();
+    let limit = Limit::Bytes(10 * size);
+    let CacheEvent::Sizes {
+        sizes: told,
+        limited,
+        limit: within,
+    } = CacheEvent::sizes(sizes, limit)
+    else {
+        panic!("the sizes");
+    };
+    assert_eq!((told, within), (sizes, limit));
+    assert_eq!(limited, sizes.limited());
+    assert_eq!(limited.entries, 6);
 }
 
 /// A program that writes the cache creates its folder, as its first write, and leaves

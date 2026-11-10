@@ -36,7 +36,8 @@
 //!   failed: only a kind's own folder that cannot be listed is an error.
 //! - [`UnusedAfter`], the [`Choice`] of the engine's setting `cache.unused_after`; the
 //!   engine turns `cache.limited` and `cache.limit` into a [`Limit`].
-//! - [`CacheCommand`], what a client asks of the cache through its session.
+//! - [`CacheCommand`], what a client asks of the cache through its session, and
+//!   [`CacheEvent`], what the session answers.
 //!
 //! No index file and no lock for limited kinds:
 //!
@@ -129,6 +130,11 @@ pub const COPIES: Kind = Kind {
 /// Every kind, a closed list.
 pub const KINDS: [Kind; 4] = [THUMBNAILS, PIPELINES, LIBRARIES, COPIES];
 
+/// The kind whose [`Kind::id`] is `id`, as `apertrust-cli cache clear` names it.
+pub fn kind(id: &str) -> Option<Kind> {
+    KINDS.into_iter().find(|kind| kind.id == id)
+}
+
 /// How long a read leaves an entry's last use alone: it is set at most once a day.
 pub const TOUCH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -155,13 +161,46 @@ pub enum Limit {
 }
 
 /// What a client asks of the cache through its session, `Command::Cache` (decision 76;
-/// `docs/cache.md`, Through the session). Step 6b adds the sizes, clearing a kind and
-/// removing a library's cache.
+/// `docs/cache.md`, Through the session). Removing a library's cache comes with the
+/// libraries' caches and their lock (the library's step 27).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheCommand {
     /// The limit as `cache.limited` and `cache.limit` now give it, applied at once:
     /// lowered or turned on, an eviction; raised, the same or turned off, none.
     Limit(Limit),
+    /// The cache's sizes, answered as a [`CacheEvent`]: at once from the handle's count
+    /// where a walk has run, then again once a walk has counted what other processes did.
+    Sizes,
+    /// Removes the limited `kind`'s entries listed as it starts, as a job the person sees
+    /// and can cancel; a kept kind is refused. The sizes are answered again as it ends.
+    Clear { kind: Kind },
+}
+
+/// What a session tells of its cache, `Event::Cache` (decision 76): a fact, the whole of
+/// the cache, each answer superseding the last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheEvent {
+    /// Each kind's entries and bytes, the limited kinds' together, and the limit they are
+    /// kept within.
+    Sizes {
+        sizes: Sizes,
+        limited: Usage,
+        limit: Limit,
+    },
+    /// The session has no disk cache: its client handed it none, as the CLI's does, or
+    /// the folder could not be written as the program started.
+    NoCache,
+}
+
+impl CacheEvent {
+    /// The event of `sizes`, kept within `limit`.
+    pub fn sizes(sizes: Sizes, limit: Limit) -> Self {
+        CacheEvent::Sizes {
+            sizes,
+            limited: sizes.limited(),
+            limit,
+        }
+    }
 }
 
 /// How long a library's cache may go unopened on this machine before the Storage page

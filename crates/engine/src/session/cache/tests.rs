@@ -393,6 +393,62 @@ fn an_eviction_stops_as_the_session_ends() {
     assert!(session.entries() > 4, "{}", session.entries());
 }
 
+/// What [`Upkeep::walk_for_sizes`] tells, through a channel.
+fn told() -> (Tell, mpsc::Receiver<Event>) {
+    let (sent, told) = mpsc::channel();
+    let sent = Mutex::new(sent);
+    let tell: Tell = Arc::new(move |event| {
+        let _ = sent.lock().unwrap().send(event);
+    });
+    (tell, told)
+}
+
+/// Before any walk the handle counts nothing, so `Sizes` has no answer at once: its walk
+/// gives the first. A second `Sizes` while that walk is under way adds none: the walk
+/// answers for both.
+#[test]
+fn sizes_before_any_walk_are_walked_first_and_one_walk_answers_for_two() {
+    let session = Session::new("sizes-before", 10, Limit::Bytes(20 * ENTRY));
+    assert_eq!(session.upkeep.counted(), None);
+    let (tell, told) = told();
+    // The walk waits at its start for the hold.
+    let hold = session.upkeep.hold.lock().unwrap();
+    let control = &session.control;
+    session.upkeep.walk_for_sizes(1, control, Arc::clone(&tell));
+    session.upkeep.walk_for_sizes(2, control, tell);
+    drop(hold);
+    session.settle();
+    let answers: Vec<_> = told.try_iter().collect();
+    let [Event::Cache(CacheEvent::Sizes { sizes, limit, .. })] = answers.as_slice() else {
+        panic!("one walk answers: {answers:?}");
+    };
+    assert_eq!(sizes.of(THUMBNAILS).entries, 10);
+    assert_eq!(*limit, Limit::Bytes(20 * ENTRY));
+    assert_eq!(
+        session.upkeep.counted(),
+        Some(CacheEvent::sizes(*sizes, *limit))
+    );
+}
+
+/// A size as a job's message tells it: kB, MB or GB of disks' powers of ten, one decimal
+/// below 10 and none from there.
+#[test]
+fn a_size_is_told_in_the_unit_it_reads_best_in() {
+    let told = |bytes| {
+        let message = with_size(Message::new("size"), bytes);
+        let size = message.argument("size").cloned();
+        (size, message.argument("unit").cloned())
+    };
+    let number = |n: f64| Some(apertrust_base::jobs::Argument::Number(n));
+    let unit = |u: &str| Some(apertrust_base::jobs::Argument::Text(u.to_owned()));
+    assert_eq!(told(0), (number(0.0), unit("kb")));
+    assert_eq!(told(2_018), (number(2.0), unit("kb")));
+    assert_eq!(told(10_090), (number(10.0), unit("kb")));
+    assert_eq!(told(4_250_000), (number(4.3), unit("mb")));
+    assert_eq!(told(138_412_032), (number(138.0), unit("mb")));
+    assert_eq!(told(12_500_000_000), (number(13.0), unit("gb")));
+}
+
 /// The cold walk's method (`docs/cache.md`, The walk's cost): the thumbnails of every raw
 /// of the corpus written at 256, 512 and 1024 through the library's own reading, read back
 /// as hits, their sizes told; then the cache filled to 100,000 entries and walked five
