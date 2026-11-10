@@ -25,7 +25,9 @@
 //! - Nothing is taken while a modal dialog is up, the open dialog and an alert among them.
 //! - Whether a path is a folder is asked of the disk on a thread of its own, never the
 //!   interface's, as the recents are checked, so a slow share never holds a frame; what it
-//!   opens opens a later frame ([`Drops`]).
+//!   opens opens a later frame ([`Drops`]). As with the recents' check, a share that hangs
+//!   keeps that thread until it answers; a later drop starts a thread of its own and is
+//!   the one taken, the hung one's answer, when it comes, going nowhere.
 //! - While something is dragged over the window, the photo and the grid panel, where it
 //!   opens, are outlined ([`show_target`]).
 //!
@@ -93,18 +95,17 @@ fn named_raw(path: &Path) -> bool {
 pub fn kind(path: &Path) -> Kind {
     match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_dir() => Kind::Folder,
-        Ok(_) if named_raw(path) => Kind::Raw,
-        Ok(_) if has_extension(path, &LIBRARY_EXTENSIONS) => Kind::Library,
-        _ => Kind::Other,
+        Ok(_) => file_kind(path),
+        Err(_) => Kind::Other,
     }
 }
 
 /// What dropping `paths` opens, each asked with `kind` in order until the first that
 /// opens: a folder; or a raw, with the raws dropped after it from its folder, told by
-/// their names alone; or, where none opens, the first path refused, as a library's file
-/// where one was among them. None for nothing dropped.
+/// their names alone; or, where none opens, the first library's or project's file refused,
+/// where one was among them, else the first path. None for nothing dropped.
 pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<Dropped> {
-    let mut library = false;
+    let mut library = None;
     for (i, path) in paths.iter().enumerate() {
         match kind(path) {
             Kind::Folder => return Some(Dropped::Folder(path.clone())),
@@ -118,17 +119,35 @@ pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<D
                 let first = path.clone();
                 return Some(Dropped::Raws { first, beside });
             }
-            Kind::Library => library = true,
+            Kind::Library => library = library.or(Some(path)),
             Kind::Other => {}
         }
     }
-    let why = if library {
-        Refusal::Library
-    } else {
-        Refusal::Unknown
+    let (path, why) = match library {
+        Some(path) => (path, Refusal::Library),
+        None => (paths.first()?, Refusal::Unknown),
     };
-    let path = paths.first()?.clone();
+    let path = path.clone();
     Some(Dropped::Refused { path, why })
+}
+
+/// What Open…'s answer `paths` opens, told by their names alone, the dialog having shown
+/// only files: the first raw, or the first path refused as a drop of it would be, should
+/// a name typed into the dialog be a library's file or another that is no raw. None for
+/// no path.
+pub fn chosen(paths: &[PathBuf]) -> Option<Dropped> {
+    opens(paths, file_kind)
+}
+
+/// What a file is, told by its name alone.
+fn file_kind(path: &Path) -> Kind {
+    if named_raw(path) {
+        Kind::Raw
+    } else if has_extension(path, &LIBRARY_EXTENSIONS) {
+        Kind::Library
+    } else {
+        Kind::Other
+    }
 }
 
 /// A drop being looked at, on its thread, until the frame that takes what it opens.
@@ -249,9 +268,7 @@ pub(crate) mod tests {
             .unwrap_or_default();
         match name.rsplit_once('.') {
             None => Kind::Folder,
-            Some(_) if named_raw(path) => Kind::Raw,
-            Some(_) if has_extension(path, &LIBRARY_EXTENSIONS) => Kind::Library,
-            Some(_) => Kind::Other,
+            Some(_) => file_kind(path),
         }
     }
 
@@ -284,30 +301,70 @@ pub(crate) mod tests {
         assert_eq!(opens(&[]), None);
     }
 
+    fn refused(path: &str, why: Refusal) -> Option<Dropped> {
+        let path = PathBuf::from(path);
+        Some(Dropped::Refused { path, why })
+    }
+
     #[test]
-    fn nothing_that_opens_is_refused_naming_the_first_and_a_library_says_so() {
+    fn nothing_that_opens_is_refused_naming_the_first_or_the_first_library() {
         let opens = |names: &[&str]| opens(&paths(names), by_name);
         assert_eq!(
             opens(&["/a/notes.txt", "/a/IMG_1.jpg"]),
-            Some(Dropped::Refused {
-                path: PathBuf::from("/a/notes.txt"),
-                why: Refusal::Unknown
-            })
+            refused("/a/notes.txt", Refusal::Unknown)
         );
+        // The alert says libraries come later, so it names the library.
         assert_eq!(
-            opens(&["/a/notes.txt", "/a/Trip.approject"]),
-            Some(Dropped::Refused {
-                path: PathBuf::from("/a/notes.txt"),
-                why: Refusal::Library
-            })
+            opens(&["/a/notes.txt", "/a/Trip.approject", "/a/Home.aplibrary"]),
+            refused("/a/Trip.approject", Refusal::Library)
         );
         assert_eq!(
             opens(&["/a/Home.APLIBRARY"]),
+            refused("/a/Home.APLIBRARY", Refusal::Library)
+        );
+    }
+
+    #[test]
+    fn open_s_answer_is_told_by_its_names_as_a_drop_of_it_would_be() {
+        assert_eq!(
+            chosen(&paths(&["/a/IMG_2.CR3", "/a/IMG_1.CR3"])),
+            Some(raws("/a/IMG_2.CR3", &["/a/IMG_1.CR3"]))
+        );
+        // Typed into the dialog: a library's file, a file that is no raw.
+        assert_eq!(
+            chosen(&paths(&["/a/Home.aplibrary"])),
+            refused("/a/Home.aplibrary", Refusal::Library)
+        );
+        assert_eq!(
+            chosen(&paths(&["/a/notes.txt"])),
+            refused("/a/notes.txt", Refusal::Unknown)
+        );
+        assert_eq!(chosen(&[]), None);
+    }
+
+    /// Paths whose names are not UTF-8, as Linux's file systems allow (APFS refuses them,
+    /// so none is made on disk): a raw's extension still makes a raw, the path kept as it
+    /// is, and anything else is refused, the alert naming it as best it can.
+    #[cfg(unix)]
+    #[test]
+    fn a_name_that_is_not_utf_8_is_told_by_its_extension() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = |bytes: &[u8]| PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
+        let (raw, notes) = (path(b"/a/IMG_\xff.CR3"), path(b"/a/\xff.txt"));
+        let first = raw.clone();
+        let beside = Vec::new();
+        assert_eq!(chosen(&[raw]), Some(Dropped::Raws { first, beside }));
+        let why = Refusal::Unknown;
+        assert_eq!(
+            chosen(std::slice::from_ref(&notes)),
             Some(Dropped::Refused {
-                path: PathBuf::from("/a/Home.APLIBRARY"),
-                why: Refusal::Library
+                path: notes.clone(),
+                why
             })
         );
+        assert_eq!(crate::file_name(&notes), "\u{fffd}.txt");
+        // Not there: nothing to open.
+        assert_eq!(kind(&path(b"/nowhere/\xff")), Kind::Other);
     }
 
     #[test]
