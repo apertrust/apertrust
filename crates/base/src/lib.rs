@@ -40,6 +40,9 @@
 //! - `fs`, behind the `fs` feature, which the sidecar, the export and the library turn on
 //!   (decision 53): the safe write, a file replaced whole through a hidden temporary and a
 //!   rename, with the temporary's naming and the removal of old ones.
+//! - `cache`, behind the `cache` feature, which turns on `fs` (decision 76): the disk
+//!   cache's kinds, a limited entry's write and read, the walk with each kind's sizes,
+//!   eviction to 90% of a limit and clearing a kind, on a folder its caller chose.
 //! - [`settings`]: the settings schema's types, a setting and its kinds and [`Choice`]
 //!   (`settings::Choice`); the [`Store`] (`settings::Store`), which reads and writes
 //!   `settings.toml` through a [`Storage`] (`settings::Storage`); and, behind the `codegen`
@@ -52,6 +55,8 @@
 
 #[cfg(any(feature = "build", test))]
 pub mod build;
+#[cfg(any(feature = "cache", test))]
+pub mod cache;
 #[cfg(any(feature = "folders", test))]
 pub mod folders;
 #[cfg(any(feature = "fs", test))]

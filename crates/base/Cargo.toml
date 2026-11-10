@@ -27,6 +27,9 @@ jobs = []
 # The safe write (decision 53): a file replaced through a hidden temporary, for the
 # sidecar's writer, the export's and the library's listing. No `unsafe`.
 fs = ["dep:tempfile"]
+# The disk cache (decision 76): its kinds, entries, walk, eviction and clearing, written
+# through the safe write, for the engine, the library and the CLI. No `unsafe`.
+cache = ["fs"]
 
 [dependencies]
 # The safe write's hidden temporary file.

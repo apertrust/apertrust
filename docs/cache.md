@@ -2,7 +2,7 @@
 
 Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Nothing is built yet: the folder, the thumbnails kind, the limit and eviction come with the library's step 6, the Storage page and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, the walk, eviction to 90% of a limit and clearing a limited kind, on a folder its caller gives. The rest is planned: the folder's choice, the settings, the session's commands and jobs, and thumbnails written to the cache come with the library's step 6, the Storage page and `apertrust-cli cache` with step 6b, library caches with step 27 and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)). Thumbnails today are read in memory and written nowhere.
 
 ## What goes in it
 
