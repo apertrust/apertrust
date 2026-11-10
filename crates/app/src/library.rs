@@ -225,9 +225,10 @@ pub fn library(
     actions
 }
 
-/// The central panel's empty state, a card in the middle of `slot`: the heading, and under
-/// the start's the two ways to open with their keys and the recent folders, under a folder
-/// with no raws Open Folder… again.
+/// The central panel's empty state in the middle of `slot`: "No photo selected" alone on the
+/// surround, in its text colour; else a card with the heading, and under the start's the two
+/// ways to open with their keys and the recent folders, under a folder with no raws Open
+/// Folder… again.
 pub fn empty_state(
     ui: &mut egui::Ui,
     slot: Rect,
@@ -238,9 +239,9 @@ pub fn empty_state(
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
     let ctx = ui.ctx().clone();
-    let (heading, detail) = match what {
-        Empty::Start => (words.text("start-title"), None),
-        Empty::Reading(path) => (with_folder(&ctx, "folder-reading", &name(path)), None),
+    let heading = match what {
+        Empty::Start => words.text("start-title"),
+        Empty::Reading(path) => with_folder(&ctx, "folder-reading", &name(path)),
         Empty::Failed(path, reason) => {
             let shown = path.display().to_string();
             match reason {
@@ -248,28 +249,24 @@ pub fn empty_state(
                     let mut args = Args::new();
                     args.set("folder", shown.as_str());
                     args.set("reason", reason);
-                    (words.text_with("folder-failed", Some(&args)), None)
+                    words.text_with("folder-failed", Some(&args))
                 }
-                None => (with_folder(&ctx, "folder-cancelled", &shown), None),
+                None => with_folder(&ctx, "folder-cancelled", &shown),
             }
         }
-        Empty::NoRaws(name) => (with_folder(&ctx, "folder-empty", name), None),
-        Empty::NoneChosen => (
-            words.text("folder-no-photo"),
-            Some(words.text("folder-choose")),
-        ),
+        Empty::NoRaws(name) => with_folder(&ctx, "folder-empty", name),
+        Empty::NoneChosen => words.text("folder-no-photo"),
     };
     let buttons = matches!(what, Empty::Start | Empty::NoRaws(_) | Empty::Failed(..));
     let recents = matches!(what, Empty::Start) && !recent.is_empty();
+    // A line alone where nothing is chosen yet; the card where there is more to say or do.
+    let boxed = !matches!(what, Empty::NoneChosen);
 
     let width = (slot.width() - 2.0 * t.spacing.xl).clamp(0.0, 420.0);
     let margin = t.spacing.l;
     // The card's height from its parts, so it can be centred without a layout pass.
     let line = t.sizes.panel_line;
     let mut height = 2.0 * margin + t.text.heading * 1.6;
-    if detail.is_some() {
-        height += t.spacing.s + t.text.body * 1.4;
-    }
     if buttons {
         height += t.spacing.l + 2.0 * (t.sizes.control + t.spacing.s);
     }
@@ -284,22 +281,23 @@ pub fn empty_state(
             .max_rect(card)
             .layout(Layout::top_down(Align::Center)),
         |ui| {
-            ui.painter()
-                .rect_filled(card, t.shape.radius, t.colors.raised);
+            if boxed {
+                ui.painter()
+                    .rect_filled(card, t.shape.radius, t.colors.raised);
+            }
             ui.add_space(margin);
             ui.spacing_mut().item_spacing.y = t.spacing.s;
             ui.set_width(width);
             ui.add(
-                egui::Label::new(
-                    egui::RichText::new(&heading)
-                        .size(t.text.heading)
-                        .color(t.colors.text),
-                )
+                egui::Label::new(egui::RichText::new(&heading).size(t.text.heading).color(
+                    if boxed {
+                        t.colors.text
+                    } else {
+                        t.colors.text_on_surround()
+                    },
+                ))
                 .wrap(),
             );
-            if let Some(detail) = &detail {
-                ui.label(egui::RichText::new(detail).color(t.colors.text_secondary));
-            }
             if buttons {
                 ui.add_space(t.spacing.s);
                 let size = vec2(width - 2.0 * margin, t.sizes.control);
@@ -570,8 +568,35 @@ mod tests {
 
         let mut chosen = card(wedding(), Vec::new());
         chosen.run();
+        // A line alone: nothing more to read, and no card drawn under it.
         chosen.get_by_label("No photo selected");
-        chosen.get_by_label("Choose one in the grid panel");
+        assert!(
+            chosen
+                .query_by_label("Choose one in the grid panel")
+                .is_none()
+        );
+        let raised = theme(&chosen.ctx).colors.raised;
+        let filled = |shape: &egui::epaint::ClippedShape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.fill == raised);
+        assert!(!chosen.output().shapes.iter().any(filled));
+        // On the surround, so in the surround's text colour, which reads on every background.
+        let colour = chosen
+            .output()
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "No photo selected" => {
+                    text.galley.job.sections.first().map(|s| s.format.color)
+                }
+                _ => None,
+            });
+        let on_surround = theme(&chosen.ctx).colors.text_on_surround();
+        assert_eq!(colour, Some(on_surround));
+        let mut start = card(Folder::None, Vec::new());
+        start.run();
+        assert!(
+            start.output().shapes.iter().any(filled),
+            "the start keeps its card"
+        );
     }
 
     #[test]

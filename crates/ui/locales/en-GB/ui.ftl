@@ -453,7 +453,6 @@ folder-failed = Could not open { $folder }: { $reason }
 folder-cancelled = Reading { $folder } was cancelled
 # A folder is open with photos, and none is.
 folder-no-photo = No photo selected
-folder-choose = Choose one in the grid panel
 
 ## Settings
 

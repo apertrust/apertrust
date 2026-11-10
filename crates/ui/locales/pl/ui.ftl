@@ -362,7 +362,6 @@ folder-empty = Brak zdjęć raw w { $folder }
 folder-failed = Nie udało się otworzyć { $folder }: { $reason }
 folder-cancelled = Odczytywanie { $folder } przerwano
 folder-no-photo = Nie wybrano zdjęcia
-folder-choose = Wybierz je w panelu siatki
 
 ## Ustawienia
 

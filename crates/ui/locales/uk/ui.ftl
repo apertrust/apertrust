@@ -360,7 +360,6 @@ folder-empty = У { $folder } немає знімків raw
 folder-failed = Не вдалося відкрити { $folder }: { $reason }
 folder-cancelled = Читання { $folder } скасовано
 folder-no-photo = Знімок не вибрано
-folder-choose = Виберіть його на панелі сітки
 
 ## Налаштування
 

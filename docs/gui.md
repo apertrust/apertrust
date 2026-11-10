@@ -1709,7 +1709,7 @@ The app never opens with nothing loaded: it reopens what was open last, or shows
 | State | Central panel | Central bar | Caption | Side panel | Grid panel |
 | --- | --- | --- | --- | --- | --- |
 | A folder with no raws | "No raw photos in Wedding 2026-10", with Open Folder… | Hidden | Empty | Sections drawn disabled; Browse's Folders as in folder mode | Says the same, at its height, its edge still working |
-| Photos, none active | "No photo selected", with "Choose one in the grid panel, or press → for the first" | Drawn disabled, but for the Map toggle (later), since the map needs no active photo | Empty | Modules at their defaults, drawn disabled, under one line, "Select a photo to edit" (the line to come); Scopes as it was, open or closed, its graph empty and drawn disabled | Shown |
+| Photos, none active | "No photo selected", one line in the middle with no card | Drawn disabled, but for the Map toggle (later), since the map needs no active photo | Empty | Modules at their defaults, drawn disabled, under one line, "Select a photo to edit" (the line to come); Scopes as it was, open or closed, its graph empty and drawn disabled | Shown |
 | The active photo opening | "Opening IMG_2041.ARW"; once thumbnails exist, its thumbnail scaled to fit, the central bar saying it is still rendering, so an unfinished render never passes for the photo; never a progress bar | Shown | Its name | As with none active from the click on, then its values in one frame as the session reports them, from its sidecar; never blank | Shown |
 | It fails to open | Its message over the central panel | Shown | Its name | As with none active | Its thumbnail marked |
 | It fails to render | Its message over the last frame | Shown | Its name | Its values, live | Shown |
@@ -1718,7 +1718,7 @@ The app never opens with nothing loaded: it reopens what was open last, or shows
 
 - Until the start window is built, the app starts with nothing open, and a card says where to start, with Open Folder… and Open…, their keys and the recent folders; the start window replaces that state.
 - A folder being read says "Reading …"; a failed one "Could not open …: why", with the library's reason, or "Reading … was cancelled" when the jobs window's Cancel stopped it.
-- An open folder with photos and none open says "No photo selected, Choose one in the grid panel": Open Folder… reaches that state already in Phase 2.
+- An open folder with photos and none open says "No photo selected", one line in the middle of the central panel with no card around it: Open Folder… reaches that state already in Phase 2.
 - The first photo is not opened for the person yet, as File › Open Folder… ("shows a folder with its first photo active") will.
 - The folder's reading turns the jobs spinner but never opens the jobs window.
 
