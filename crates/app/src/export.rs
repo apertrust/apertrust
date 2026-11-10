@@ -377,10 +377,12 @@ impl Dialog for Export {
 
     fn show(&mut self, ui: &mut Ui) -> Asks {
         let (asked, close, keeps_escape) = self.frame(ui);
-        let output = (asked.values.is_some() || asked.start || asked.confirm)
-            .then_some(Output::Export(asked));
+        let outputs = (asked.values.is_some() || asked.start || asked.confirm)
+            .then_some(Output::Export(asked))
+            .into_iter()
+            .collect();
         Asks {
-            output,
+            outputs,
             close,
             keeps_escape,
         }

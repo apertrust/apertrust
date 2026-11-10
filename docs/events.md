@@ -118,7 +118,7 @@ Decision 72: each job reports everything its row in the jobs window shows, so a 
 | | `offers` | `Vec<Offer>`, what it can do once ended: `Retry { items }`, sent back as `Command::RetryJob { job }` |
 
 - **`Failure`** is `{ cause, item, file, reason }`: `cause` a code a client words with Fluent as `job-cause-<cause>` (the export's are `Cause::id`'s, `panicked` for a panic); `item` the photo or file it failed on, `file` the file it could not write, each `Option<PathBuf>`; `reason` the error in plain words, for the log and a client with no words for the code.
-- **`Message`** is an id and named arguments, numbers, text or paths, worded by the client with Fluent (decision 36), as now.
+- **`Message`** is an id and named arguments, numbers (with at least so many decimals where it says, as a size's "1.0 MB"), text or paths, worded by the client with Fluent (decision 36).
 - **The throttle** is darktable's 0.5 s for each of `Progress`, `Title`, `Detail` and `Destination`, each on its own, the first and the last always; the outcome and the offers go out in `Ended`, after the last of them.
 - **`Progress::fraction()`** is the bar's fill for a client: `done / total`, `done` clamped to `total`, an empty bar for a total of 0, `None` with no total.
 - **Try again.** A job that offers `Retry` has left the session what it runs, an export the photos that failed and those not reached with the same settings. The session keeps the latest 64. `RetryJob { job }` runs it as if sent then; its job's `Added` names `retries: Some(job)`, and a client puts its row in the old one's place. A retry is used once; one not kept is refused, `NotRetryable`.

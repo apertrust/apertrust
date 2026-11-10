@@ -518,7 +518,6 @@ settings-storage-clear = Wyczyść
 settings-storage-clear-thumbnails = Wyczyść miniatury
 settings-storage-clear-pipelines = Wyczyść potoki
 settings-storage-clear-tip = Usuwane z dysku i tworzone ponownie w razie potrzeby
-settings-storage-libraries-tip = Pamięć podręczną każdej biblioteki będzie można usunąć, gdy pojawią się biblioteki.
 settings-storage-no-cache = Brak pamięci podręcznej na dysku: przy uruchomieniu Apertrust nie udało się zapisać jej folderu, więc nic nie jest zachowywane między uruchomieniami.
 settings-storage-refused-clearing = Są już czyszczone.
 settings-storage-refused-no-cache = Nie ma pamięci podręcznej do wyczyszczenia.

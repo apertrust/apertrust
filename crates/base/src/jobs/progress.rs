@@ -68,11 +68,17 @@ impl Message {
     }
 }
 
-/// A [`Message`]'s argument: a number, which the client formats in its language, text
-/// as it is, or a path, which the client shows as its platform does.
+/// A [`Message`]'s argument: a number, which the client formats in its language, with at
+/// least so many decimals where it says, text as it is, or a path, which the client shows
+/// as its platform does.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Argument {
     Number(f64),
+    /// A number written with at least `at_least` decimals, as a size's "1.0 MB".
+    Decimals {
+        value: f64,
+        at_least: u8,
+    },
     Text(String),
     Path(PathBuf),
 }

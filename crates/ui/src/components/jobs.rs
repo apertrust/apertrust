@@ -102,6 +102,8 @@ impl JobPhase {
 #[derive(Clone, Debug, PartialEq)]
 pub enum JobArg {
     Number(f64),
+    /// A number with at least so many decimals, as a size's "1.0 MB".
+    Decimals(f64, usize),
     Text(String),
 }
 
@@ -126,6 +128,13 @@ impl JobMessage {
         self
     }
 
+    /// A number written with at least `at_least` decimals.
+    pub fn decimals(mut self, name: &str, value: f64, at_least: usize) -> Self {
+        let arg = JobArg::Decimals(value, at_least);
+        self.args.push((name.to_owned(), arg));
+        self
+    }
+
     pub fn text(mut self, name: &str, value: impl Into<String>) -> Self {
         self.args
             .push((name.to_owned(), JobArg::Text(value.into())));
@@ -137,6 +146,9 @@ impl JobMessage {
         for (name, value) in &self.args {
             match value {
                 JobArg::Number(n) => args.set(name.as_str(), *n),
+                JobArg::Decimals(n, at_least) => {
+                    args.set(name.as_str(), crate::i18n::decimals(*n, *at_least));
+                }
                 JobArg::Text(t) => args.set(name.as_str(), t.as_str()),
             }
         }

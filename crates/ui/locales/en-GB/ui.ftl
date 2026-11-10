@@ -612,7 +612,6 @@ settings-storage-clear = Clear
 settings-storage-clear-thumbnails = Clear the thumbnails
 settings-storage-clear-pipelines = Clear the pipelines
 settings-storage-clear-tip = Removed from the disk, and made again when needed
-settings-storage-libraries-tip = Each library's cache can be removed once libraries come.
 settings-storage-no-cache = There is no disk cache: its folder could not be written as Apertrust started, so nothing is kept between runs.
 settings-storage-refused-clearing = These are being cleared already.
 settings-storage-refused-no-cache = There is no disk cache to clear.

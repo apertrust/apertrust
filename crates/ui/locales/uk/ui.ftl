@@ -516,7 +516,6 @@ settings-storage-clear = Очистити
 settings-storage-clear-thumbnails = Очистити мініатюри
 settings-storage-clear-pipelines = Очистити конвеєри
 settings-storage-clear-tip = Видаляються з диска й створюються знову за потреби
-settings-storage-libraries-tip = Кеш кожної бібліотеки можна буде видалити, коли з'являться бібліотеки.
 settings-storage-no-cache = Дискового кешу немає: його теку не вдалося записати під час запуску Apertrust, тож між запусками нічого не зберігається.
 settings-storage-refused-clearing = Їх уже очищують.
 settings-storage-refused-no-cache = Немає дискового кешу, який можна очистити.

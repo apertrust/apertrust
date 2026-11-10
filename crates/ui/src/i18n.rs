@@ -40,6 +40,16 @@ use unic_langid::LanguageIdentifier;
 
 pub use fluent_bundle::FluentArgs as Args;
 
+/// `value` for a message's variable, written in the language's numbers with at least
+/// `at_least` decimals, as a size's "1.0 MB" and "1,5 МБ".
+pub fn decimals(value: f64, at_least: usize) -> FluentValue<'static> {
+    let options = fluent_bundle::types::FluentNumberOptions {
+        minimum_fraction_digits: Some(at_least),
+        ..Default::default()
+    };
+    FluentValue::Number(fluent_bundle::types::FluentNumber::new(value, options))
+}
+
 /// The languages of the interface, and the pseudo-locale that tests layouts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Locale {
@@ -467,6 +477,21 @@ mod tests {
         assert_eq!(count(&pl, 5.0), "5 zdjęć");
         assert_eq!(count(&pl, 22.0), "22 zdjęcia");
         assert_eq!(count(&pl, 1.5), "1,5 zdjęcia");
+    }
+
+    /// A number given with at least a decimal keeps it, in each language's numbers.
+    #[test]
+    fn a_number_with_its_decimals_keeps_them() {
+        let size = |locale, value| {
+            let mut args = Args::new();
+            args.set("size", decimals(value, 1));
+            args.set("unit", "mb");
+            Translator::new(locale).text_with("job-cache-size", Some(&args))
+        };
+        assert_eq!(size(Locale::EnGb, 1.0), "1.0 MB");
+        assert_eq!(size(Locale::EnGb, 5.0), "5.0 MB");
+        assert_eq!(size(Locale::Uk, 1.5), "1,5 МБ");
+        assert_eq!(size(Locale::Pl, 1.5), "1,5 MB");
     }
 
     #[test]

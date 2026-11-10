@@ -32,10 +32,10 @@
 
 use std::path::PathBuf;
 
-use apertrust_base::cache::{CacheEvent, Kind, LIBRARIES, Limit, PIPELINES, THUMBNAILS};
+use apertrust_base::cache::{self, CacheEvent, Kind, LIBRARIES, Limit, PIPELINES, THUMBNAILS};
 use apertrust_base::folders;
-use apertrust_engine::jobs::{JobEvent, JobId};
-use apertrust_engine::session::{Event, SessionError, size_in_unit};
+use apertrust_engine::jobs::{Argument, JobEvent, JobId, Message};
+use apertrust_engine::session::{CacheCommand, Command, Event, SessionError, size_in_unit};
 use apertrust_ui::components::{Button, FileManager};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, Translator, translator};
@@ -45,6 +45,9 @@ use eframe::egui::{
 
 /// The limited kinds the page lists, each with its Clear, in the cache's order.
 const CLEARED: [Kind; 2] = [THUMBNAILS, PIPELINES];
+
+/// The kind of the session's job that clears a cache kind.
+const CLEAR_JOB: &str = "cache-clear";
 
 /// How a folder was chosen, as the page words it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,29 +90,53 @@ impl Folders {
                 ..Folders::default()
             };
         };
-        let user_data = match folders.chosen() {
-            folders::Chosen::Flag(flag) => Chosen::Flag(flag),
-            folders::Chosen::Variable => Chosen::Variable(folders::VARIABLE),
-            folders::Chosen::Platform => Chosen::Platform,
-        };
-        let cache = match folders.cache_chosen() {
-            folders::CacheChosen::Flag(flag) => Chosen::Flag(flag),
-            folders::CacheChosen::Variable => Chosen::Variable(folders::CACHE_VARIABLE),
-            folders::CacheChosen::UserData => Chosen::UserData,
-            folders::CacheChosen::Platform => Chosen::Platform,
-        };
         Folders {
             user_data: Some(Folder {
                 path: folders.user_data().to_owned(),
-                chosen: user_data,
+                chosen: user_data_chosen(folders.chosen()),
             }),
             cache: Some(Folder {
                 path: folders.cache().to_owned(),
-                chosen: cache,
+                chosen: cache_chosen(folders.cache_chosen()),
             }),
             home,
             file_manager: crate::jobs::FILE_MANAGER,
         }
+    }
+}
+
+/// How the user data folder was chosen, as the page words it.
+fn user_data_chosen(chosen: folders::Chosen) -> Chosen {
+    match chosen {
+        folders::Chosen::Flag(flag) => Chosen::Flag(flag),
+        folders::Chosen::Variable => Chosen::Variable(folders::VARIABLE),
+        folders::Chosen::Platform => Chosen::Platform,
+    }
+}
+
+/// How the cache folder was chosen, as the page words it.
+fn cache_chosen(chosen: folders::CacheChosen) -> Chosen {
+    match chosen {
+        folders::CacheChosen::Flag(flag) => Chosen::Flag(flag),
+        folders::CacheChosen::Variable => Chosen::Variable(folders::CACHE_VARIABLE),
+        folders::CacheChosen::UserData => Chosen::UserData,
+        folders::CacheChosen::Platform => Chosen::Platform,
+    }
+}
+
+/// Does what the page asked with `send`, the session's, which numbers each command: the
+/// sizes, or a Clear, whose number `mirror` keeps so its button stays disabled until its job
+/// ends; or a folder shown in the file manager.
+pub fn act(asked: Asked, send: &mut dyn FnMut(Command) -> u64, mirror: &mut Mirror) {
+    match asked {
+        Asked::Sizes => {
+            send(Command::Cache(CacheCommand::Sizes));
+        }
+        Asked::Clear(kind) => {
+            let number = send(Command::Cache(CacheCommand::Clear { kind }));
+            mirror.sent(kind, number);
+        }
+        Asked::Reveal(folder) => crate::jobs::reveal(&crate::jobs::Reveal::Folder(folder)),
     }
 }
 
@@ -136,11 +163,13 @@ pub enum Asked {
     Reveal(PathBuf),
 }
 
-/// A Clear the app sent, from its command to its job's end.
+/// A Clear, from the app's command, or its job's `Added`, to its job's end.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Clearing {
     kind: Kind,
-    command: u64,
+    /// The command the app sent, until its job is added; none for a job the app did not
+    /// start from the page, as a Try again.
+    command: Option<u64>,
     job: Option<JobId>,
 }
 
@@ -160,30 +189,38 @@ impl Mirror {
         self.refused = None;
         self.clears.push(Clearing {
             kind,
-            command,
+            command: Some(command),
             job: None,
         });
     }
 
-    /// Takes in `event`: the sizes, a Clear's job added or ended, or a Clear refused.
+    /// Takes in `event`: the sizes, a Clear's job added or ended, or a Clear refused. A
+    /// refusal's words go with the next sizes or the end of a Clear.
     pub fn apply(&mut self, event: &Event) {
         match event {
-            Event::Cache(cache) => self.latest = Some(*cache),
-            Event::Job {
-                event: JobEvent::Added { job, .. },
-                command: Some(command),
-            } => {
-                for clear in self.clears.iter_mut().filter(|c| c.command == *command) {
-                    clear.job = Some(*job);
-                }
+            Event::Cache(cache) => {
+                self.latest = Some(*cache);
+                self.refused = None;
             }
+            Event::Job {
+                event: JobEvent::Added {
+                    job, kind, title, ..
+                },
+                command,
+            } => self.added(*job, kind, title, *command),
             Event::Job {
                 event: JobEvent::Ended { job, .. },
                 ..
-            } => self.clears.retain(|clear| clear.job != Some(*job)),
+            } => {
+                let before = self.clears.len();
+                self.clears.retain(|clear| clear.job != Some(*job));
+                if self.clears.len() < before {
+                    self.refused = None;
+                }
+            }
             Event::Failed(SessionError::Refused { command, error }) => {
                 let before = self.clears.len();
-                self.clears.retain(|clear| clear.command != *command);
+                self.clears.retain(|clear| clear.command != Some(*command));
                 if self.clears.len() < before {
                     self.refused = Some(match **error {
                         SessionError::CacheClearing { .. } => "settings-storage-refused-clearing",
@@ -197,6 +234,34 @@ impl Mirror {
                 self.clears.clear();
             }
             _ => {}
+        }
+    }
+
+    /// A job added: the Clear the app sent as `command`, or any other job that clears a
+    /// cache kind, its title naming it, as the jobs window's Try again or another client's,
+    /// so its kind's Clear stays disabled until it ends.
+    fn added(&mut self, job: JobId, kind: &str, title: &Message, command: Option<u64>) {
+        let sent = self
+            .clears
+            .iter_mut()
+            .find(|clear| command.is_some() && clear.command == command);
+        if let Some(clear) = sent {
+            clear.job = Some(job);
+            return;
+        }
+        if kind != CLEAR_JOB {
+            return;
+        }
+        let cleared = match title.argument("kind") {
+            Some(Argument::Text(id)) => cache::kind(id),
+            _ => None,
+        };
+        if let Some(cleared) = cleared {
+            self.clears.push(Clearing {
+                kind: cleared,
+                command: None,
+                job: Some(job),
+            });
         }
     }
 
@@ -284,10 +349,17 @@ pub fn folders(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<As
     asked
 }
 
-/// The In the cache group's lines: each limited kind with its Clear, the libraries' caches,
-/// the total against the limit; with no cache, a line that says so, and no Clear. Returns
-/// what was asked.
-pub fn contents(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<Asked> {
+/// The In the cache group's lines: each limited kind with its Clear, disabled while the
+/// view says it is clearing or since it was `pressed`, the libraries' caches, the total
+/// against the limit; with no cache, a line that says so, and no Clear. Returns what was
+/// asked.
+pub fn contents(
+    ui: &mut Ui,
+    t: &Theme,
+    view: &View,
+    pressed: &[Kind],
+    widths: Widths,
+) -> Option<Asked> {
     let words = translator(ui.ctx());
     if view.cache == Some(CacheEvent::NoCache) {
         said(
@@ -316,7 +388,8 @@ pub fn contents(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<A
             || counting.clone(),
             |(sizes, ..)| usage(&words, kind, sizes.of(kind).entries, sizes.of(kind).bytes),
         );
-        let enabled = sizes.is_some() && !view.clearing.contains(&kind);
+        let busy = view.clearing.contains(&kind) || pressed.contains(&kind);
+        let enabled = sizes.is_some() && !busy;
         let line = Line {
             label: &label,
             value: &value,
@@ -341,12 +414,11 @@ pub fn contents(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<A
             usage(&words, LIBRARIES, usage_.entries, usage_.bytes)
         },
     );
-    let note = words.text("settings-storage-libraries-tip");
     Line {
         label: &label,
         value: &value,
         cut: Cut::End,
-        note: Some(&note),
+        note: None,
         button: None,
     }
     .draw(ui, t, widths);
@@ -396,10 +468,11 @@ fn chosen(words: &Translator, chosen: Chosen) -> String {
     words.text_with(id, Some(&args))
 }
 
-/// Arguments of `bytes` as the Clear's messages take them: `$size` in `$unit`.
+/// Arguments of `bytes` as the Clear's messages take them: `$size`, with one decimal below
+/// 10, in `$unit`.
 fn sized(args: &mut Args, bytes: u64) {
-    let (size, unit) = size_in_unit(bytes);
-    args.set("size", size);
+    let (size, at_least, unit) = size_in_unit(bytes);
+    args.set("size", apertrust_ui::i18n::decimals(size, at_least));
     args.set("unit", unit);
 }
 
@@ -419,8 +492,10 @@ fn total(words: &Translator, bytes: u64, limit: Limit) -> String {
     match limit {
         Limit::Unlimited => words.text_with("settings-storage-total-unlimited", Some(&args)),
         Limit::Bytes(limit) => {
-            // In the setting's own steps of 0.5 GB, so a float's last digits never show.
-            args.set("limit", (limit as f64 / 1e8).round() / 10.0);
+            // In the setting's own steps of 0.5 GB, so a float's last digits never show, and
+            // with its decimal, as its row writes it: "4.0 GB".
+            let gigabytes = (limit as f64 / 1e8).round() / 10.0;
+            args.set("limit", apertrust_ui::i18n::decimals(gigabytes, 1));
             words.text_with("settings-storage-total-limit", Some(&args))
         }
     }
@@ -561,20 +636,27 @@ fn fitted(painter: &egui::Painter, text: &str, font: &FontId, width: f32, cut: C
         return text.to_owned();
     }
     let chars: Vec<char> = text.chars().collect();
-    (1..chars.len())
-        .rev()
-        .map(|kept| match cut {
-            Cut::End => chars[..kept].iter().collect::<String>() + "…",
-            Cut::Middle => {
-                let head = kept.div_ceil(2);
-                let tail = kept - head;
-                let start: String = chars[..head].iter().collect();
-                let end: String = chars[chars.len() - tail..].iter().collect();
-                format!("{start}…{end}")
-            }
-        })
-        .find(|text| fits(text))
-        .unwrap_or_else(|| "…".to_owned())
+    let kept = |kept: usize| match cut {
+        Cut::End => chars[..kept].iter().collect::<String>() + "…",
+        Cut::Middle => {
+            let head = kept.div_ceil(2);
+            let tail = kept - head;
+            let start: String = chars[..head].iter().collect();
+            let end: String = chars[chars.len() - tail..].iter().collect();
+            format!("{start}…{end}")
+        }
+    };
+    // The most characters kept that still fit, found by halves: fewer kept is never wider.
+    let (mut fit, mut over) = (0, chars.len());
+    while over - fit > 1 {
+        let middle = (fit + over) / 2;
+        if fits(&kept(middle)) {
+            fit = middle;
+        } else {
+            over = middle;
+        }
+    }
+    kept(fit)
 }
 
 #[cfg(test)]

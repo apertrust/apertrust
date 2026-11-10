@@ -2059,18 +2059,12 @@ impl App {
     /// Does what Settings › Storage asked: the sizes, a Clear, whose button stays disabled
     /// until its job ends, or a folder shown in the file manager.
     fn storage_asked(&mut self, asked: storage::Asked) {
-        match asked {
-            storage::Asked::Sizes => {
-                self.session.send(Command::Cache(CacheCommand::Sizes));
-            }
-            storage::Asked::Clear(kind) => {
-                let number = self
-                    .session
-                    .send(Command::Cache(CacheCommand::Clear { kind }));
-                self.mirror.cache.sent(kind, number);
-            }
-            storage::Asked::Reveal(folder) => jobs::reveal(&jobs::Reveal::Folder(folder)),
-        }
+        let session = &self.session;
+        storage::act(
+            asked,
+            &mut |command| session.send(command),
+            &mut self.mirror.cache,
+        );
     }
 
     /// Hands Settings › Storage what it shows, where that has changed since last handed.
