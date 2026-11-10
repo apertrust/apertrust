@@ -863,7 +863,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `folders` | `Folders` | the binaries (the app and the CLI) |
 | `fs` | the safe write | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
-| `cache` (planned) | the disk cache | the engine, the library and the CLI |
+| `cache` | the disk cache; turns on `fs` | none yet; the engine, the library and the CLI are to |
 | (none) | `settings` | |
 
 ### Logging
@@ -959,7 +959,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 **The cache folder and the cache,** with thumbnails (decisions 43 and 76; [cache.md](cache.md)):
 
 - `Folders` chooses the cache folder: `--cache-dir`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` when the user data folder is given, then the platform's; Apertrust Dev's its own.
-- `cache`, behind a `cache` feature: `KINDS`, each kind's id, folder and policy, limited (thumbnails, later pipelines, previews and AI results) or kept (library caches, local copies); a limited entry one file per slot, named by the slot's hash, holding its version, written whole through `fs` and replaced by a newer one; last use the file's modified time, set at most once a day; the walk, with each kind's entries and bytes, removing day-old temporaries; eviction oldest first to 90% of `cache.limit` while `cache.limited` is on; `UnusedAfter`, `cache.unused_after`'s `Choice`; clearing a kind, a library's cache skipped while another process holds its lock; the types of `Command::Cache` and `Event::Cache`. No index file and no lock for limited kinds. Owners name their slots and versions.
+- `cache`, beside what its feature holds: `UnusedAfter`, `cache.unused_after`'s `Choice`; clearing library caches, one skipped while another process holds its `lock` file; the types of `Command::Cache` and `Event::Cache`.
 
 ## apertrust-plugin
 
