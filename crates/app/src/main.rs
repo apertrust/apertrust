@@ -65,6 +65,7 @@ mod popups;
 mod scopes;
 mod settings;
 mod settings_dialog;
+mod storage;
 #[cfg(test)]
 mod testing;
 mod thumbnails;
@@ -308,6 +309,8 @@ fn main() -> eframe::Result {
     let cache = folders
         .as_ref()
         .and_then(|folders| open_cache(folders.cache()));
+    // The folders as Settings › Storage shows them.
+    let storage_folders = storage::Folders::of(folders.as_ref(), export::places().home);
     // The window's device is the engine's, so it is created from the engine's instance
     // (its Direct3D 12 shader compiler included) and with the engine's needs. A display
     // handle only matters for OpenGL on Wayland; the engine uses Vulkan.
@@ -374,6 +377,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     budget,
                     cache,
+                    storage_folders,
                     app_host,
                     kept,
                 )))
@@ -839,6 +843,10 @@ struct App {
     /// The disk cache's limit the session was last given, sent again as its settings
     /// change it (decision 76).
     cache_limit: Limit,
+    /// The folders the app started with, which Settings › Storage shows.
+    storage_folders: storage::Folders,
+    /// What Settings › Storage was last handed, so it is handed again only when it changes.
+    storage_shown: storage::View,
 }
 
 /// What the top panel asked for this frame.
@@ -1883,6 +1891,19 @@ fn changed(last: &mut Limit, now: Limit) -> Option<Limit> {
     })
 }
 
+/// What the session is sent where Settings changed the disk cache's limit from `last` to
+/// `now`: the limit, then the sizes, so Settings › Storage's total and limit agree; nothing
+/// where it is the same.
+fn cache_commands(last: &mut Limit, now: Limit) -> Vec<Command> {
+    let Some(limit) = changed(last, now) else {
+        return Vec::new();
+    };
+    vec![
+        Command::Cache(CacheCommand::Limit(limit)),
+        Command::Cache(CacheCommand::Sizes),
+    ]
+}
+
 /// What the user changed in Settings, kept by `keeper` with the rest of settings and shown
 /// by the shell in the main window, `ctx`'s, in the order changed.
 fn apply_settings(
@@ -1912,6 +1933,7 @@ impl App {
         gate: SubmitGate,
         budget: u64,
         cache: Option<Arc<Cache>>,
+        storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
     ) -> Self {
@@ -2017,6 +2039,8 @@ impl App {
             started: apertrust_engine::names::now(),
             downloads: paths::downloads(),
             cache_limit,
+            storage_folders,
+            storage_shown: storage::View::default(),
         };
         if let Some(path) = path {
             app.open(path);
@@ -2027,9 +2051,34 @@ impl App {
     /// Gives the session the disk cache's limit where Settings changed it, applied at once:
     /// the session evicts where it is lowered or turned on (decision 76).
     fn follow_cache_limit(&mut self) {
-        if let Some(limit) = changed(&mut self.cache_limit, self.keeper.cache_limit()) {
-            self.session
-                .send(Command::Cache(CacheCommand::Limit(limit)));
+        for command in cache_commands(&mut self.cache_limit, self.keeper.cache_limit()) {
+            self.session.send(command);
+        }
+    }
+
+    /// Does what Settings › Storage asked: the sizes, a Clear, whose button stays disabled
+    /// until its job ends, or a folder shown in the file manager.
+    fn storage_asked(&mut self, asked: storage::Asked) {
+        match asked {
+            storage::Asked::Sizes => {
+                self.session.send(Command::Cache(CacheCommand::Sizes));
+            }
+            storage::Asked::Clear(kind) => {
+                let number = self
+                    .session
+                    .send(Command::Cache(CacheCommand::Clear { kind }));
+                self.mirror.cache.sent(kind, number);
+            }
+            storage::Asked::Reveal(folder) => jobs::reveal(&jobs::Reveal::Folder(folder)),
+        }
+    }
+
+    /// Hands Settings › Storage what it shows, where that has changed since last handed.
+    fn show_storage(&mut self) {
+        let view = self.mirror.cache.view(&self.storage_folders);
+        if view != self.storage_shown {
+            self.dialogs.storage(view.clone());
+            self.storage_shown = view;
         }
     }
 
@@ -2526,6 +2575,7 @@ impl App {
                 dialogs,
                 keeper,
                 &self.jobs_view,
+                &self.storage_shown,
                 id,
                 &state,
                 ctx,
@@ -3182,6 +3232,10 @@ impl eframe::App for App {
             keep_log(&self.kept, &self.shell.log);
             self.follow_cache_limit();
         }
+        for asked in taken.storage {
+            self.storage_asked(asked);
+        }
+        self.show_storage();
         for asked in taken.export {
             self.export(asked, ctx);
         }
@@ -3247,6 +3301,7 @@ fn run_action(
     dialogs: &mut dialog_host::AppDialogs,
     keeper: &Keeper,
     jobs: &[apertrust_ui::components::Job],
+    storage: &storage::View,
     id: ActionId,
     state: &State,
     ctx: &egui::Context,
@@ -3268,7 +3323,8 @@ fn run_action(
     }
     let command = shell.run(id, state, ctx, regions);
     if std::mem::take(&mut shell.settings) {
-        let settings = settings_dialog::Settings::new(keeper, ctx.os() != OperatingSystem::Mac);
+        let close = ctx.os() != OperatingSystem::Mac;
+        let settings = settings_dialog::Settings::new(keeper, close).with_storage(storage.clone());
         dialogs.open(settings, shell.settings_window, ctx);
     }
     if std::mem::take(&mut shell.export_asked) {
@@ -3303,6 +3359,7 @@ fn take_dialogs(
     let mut log = Vec::new();
     let mut actions = Vec::new();
     let mut settings = Vec::new();
+    let mut storage = Vec::new();
     for output in dialogs.outputs() {
         match output {
             dialog_host::Output::Keys(keys) => actions.extend(actions::read_from_dialog(
@@ -3313,6 +3370,7 @@ fn take_dialogs(
                 state,
             )),
             dialog_host::Output::Settings(change) => settings.push(change),
+            dialog_host::Output::Storage(asked) => storage.push(asked),
             dialog_host::Output::Placed(place) => shell.settings_window = Some(place),
             dialog_host::Output::JobsPlaced(place) => shell.jobs_window = Some(place),
             dialog_host::Output::Jobs(action) => jobs.push(action),
@@ -3335,6 +3393,7 @@ fn take_dialogs(
     Taken {
         quit: held || gone,
         settings,
+        storage,
         export,
         jobs,
         log,
@@ -3360,6 +3419,8 @@ struct Taken {
     /// What the user changed in Settings, in order, for the keeper to keep and the shell
     /// to show ([`apply_settings`]).
     settings: Vec<settings_dialog::Change>,
+    /// What Settings › Storage asked, in order, after the settings changed with it.
+    storage: Vec<storage::Asked>,
     /// What the Export dialog asked of the session, in order.
     export: Vec<export::Asked>,
     /// What was pressed in the jobs window, in order.
@@ -3698,6 +3759,29 @@ mod tests {
         let reset = set("cache.limit", None);
         assert_eq!(changed(&mut last, reset), Some(Limit::Bytes(4_000_000_000)));
         assert_eq!(last, Limit::Bytes(4_000_000_000));
+    }
+
+    /// A limit Settings changed is sent, then the sizes asked again, so Storage's total and
+    /// limit agree; the same limit sends nothing.
+    #[test]
+    fn a_changed_limit_asks_for_the_sizes_again() {
+        let mut last = Limit::Bytes(4_000_000_000);
+        let lowered = Limit::Bytes(2_000_000_000);
+        assert_eq!(
+            cache_commands(&mut last, lowered),
+            [
+                Command::Cache(CacheCommand::Limit(lowered)),
+                Command::Cache(CacheCommand::Sizes),
+            ]
+        );
+        assert_eq!(cache_commands(&mut last, lowered), []);
+        assert_eq!(
+            cache_commands(&mut last, Limit::Unlimited),
+            [
+                Command::Cache(CacheCommand::Limit(Limit::Unlimited)),
+                Command::Cache(CacheCommand::Sizes),
+            ]
+        );
     }
 
     #[test]
@@ -6442,6 +6526,8 @@ mod tests {
             self.0.borrow_mut().previews.push(through);
         }
 
+        fn storage(&mut self, _view: storage::View) {}
+
         fn open_jobs(
             &mut self,
             window: jobs::Window,
@@ -6681,6 +6767,7 @@ mod tests {
                             dialogs,
                             keeper,
                             &view,
+                            &storage::View::default(),
                             id,
                             &state,
                             &ctx,

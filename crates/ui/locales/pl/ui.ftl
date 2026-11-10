@@ -467,6 +467,63 @@ setting-log-domains-option-control = Sterowanie
 setting-log-domains-option-event = Zdarzenia
 setting-log-domains-option-verbose = Szczegółowo
 
+## Ustawienia › Przechowywanie, jego część zbudowana ręcznie (decyzja 76). $flag i $variable
+## to to, co wskazało folder; $kind to thumbnails, pipelines lub libraries; $entries, $size
+## i $unit jak w czyszczeniu pamięci podręcznej; $limit to limit w GB.
+
+settings-group-folders = Foldery
+settings-group-cache-contents = W pamięci podręcznej
+settings-storage-user-data = Folder danych użytkownika
+settings-storage-cache = Folder pamięci podręcznej
+settings-storage-chosen-flag = Wskazany przez { $flag }
+settings-storage-chosen-variable = Wskazany przez { $variable }
+settings-storage-chosen-user-data = Wewnątrz folderu danych użytkownika
+settings-storage-chosen-platform = Folder systemowy
+settings-storage-none = Brak: system nie podaje folderu
+settings-storage-show-tip = Otwórz ten folder
+settings-storage-show-name = { $show }: { $folder }
+settings-storage-kind-thumbnails = Miniatury
+settings-storage-kind-pipelines = Potoki
+settings-storage-kind-libraries = Pamięci podręczne bibliotek
+settings-storage-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } miniatura
+                [few] { $entries } miniatury
+                [many] { $entries } miniatur
+               *[other] { $entries } miniatury
+            }
+        [libraries]
+            { $entries ->
+                [one] { $entries } biblioteka
+                [few] { $entries } biblioteki
+                [many] { $entries } bibliotek
+               *[other] { $entries } biblioteki
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } potok
+                [few] { $entries } potoki
+                [many] { $entries } potoków
+               *[other] { $entries } potoku
+            }
+    }
+settings-storage-usage = { settings-storage-entries }, { job-cache-size }
+settings-storage-total = Razem
+settings-storage-total-limit = { job-cache-size } z { $limit } GB
+settings-storage-total-unlimited = { job-cache-size }, bez limitu
+settings-storage-counting = Liczenie…
+settings-storage-clear = Wyczyść
+settings-storage-clear-thumbnails = Wyczyść miniatury
+settings-storage-clear-pipelines = Wyczyść potoki
+settings-storage-clear-tip = Usuwane z dysku i tworzone ponownie w razie potrzeby
+settings-storage-libraries-tip = Pamięć podręczną każdej biblioteki będzie można usunąć, gdy pojawią się biblioteki.
+settings-storage-no-cache = Brak pamięci podręcznej na dysku: przy uruchomieniu Apertrust nie udało się zapisać jej folderu, więc nic nie jest zachowywane między uruchomieniami.
+settings-storage-refused-clearing = Są już czyszczone.
+settings-storage-refused-no-cache = Nie ma pamięci podręcznej do wyczyszczenia.
+settings-storage-refused = Nie udało się ich wyczyścić.
+
 ## Okno dziennika, Pomoc › Pokaż dziennik; jego filtry to opcje wiersza „Dziennik”
 
 action-show-log = Pokaż dziennik

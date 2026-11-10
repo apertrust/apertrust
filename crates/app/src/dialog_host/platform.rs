@@ -242,11 +242,8 @@ mod tests {
     fn each_dialog_s_form_on_macos_windows_and_linux() {
         let export = export::Export::new(export::Values::default());
         assert_eq!(forms(&export), [Form::Sheet, Form::Modal, Form::Modal]);
-        let settings = settings_dialog::Settings {
-            rows: Vec::new(),
-            page: apertrust_base::settings::Page::General,
-            close_button: false,
-        };
+        let (keeper, _) = crate::settings::Keeper::nowhere();
+        let settings = settings_dialog::Settings::new(&keeper, false);
         // Apple's Settings windows are modeless; elsewhere a dialog is modal.
         assert_eq!(forms(&settings), [Form::Modeless, Form::Modal, Form::Modal]);
         let jobs = jobs::Window::new(Vec::new());
@@ -263,11 +260,8 @@ mod tests {
         };
         let export = export::Export::new(export::Values::default());
         assert_eq!(PLATFORMS.map(|os| export.keys(os)), [all; 3]);
-        let settings = settings_dialog::Settings {
-            rows: Vec::new(),
-            page: apertrust_base::settings::Page::General,
-            close_button: true,
-        };
+        let (keeper, _) = crate::settings::Keeper::nowhere();
+        let settings = settings_dialog::Settings::new(&keeper, true);
         // On the Mac, Apple's Settings window: Escape does nothing, and Cmd+W is Close
         // Window's, the menu's. Elsewhere Escape cancels it, as every modal dialog.
         let escape = Keys {

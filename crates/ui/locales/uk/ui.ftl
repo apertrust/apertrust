@@ -465,6 +465,63 @@ setting-log-domains-option-control = Керування
 setting-log-domains-option-event = Події
 setting-log-domains-option-verbose = Докладно
 
+## Налаштування › Сховище, його частина, зроблена вручну (рішення 76). $flag і $variable
+## — що вибрало теку; $kind — thumbnails, pipelines чи libraries; $entries, $size і $unit —
+## як в очищенні кешу; $limit — обмеження в ГБ.
+
+settings-group-folders = Теки
+settings-group-cache-contents = У кеші
+settings-storage-user-data = Тека даних користувача
+settings-storage-cache = Тека кешу
+settings-storage-chosen-flag = Задано через { $flag }
+settings-storage-chosen-variable = Задано через { $variable }
+settings-storage-chosen-user-data = Усередині теки даних користувача
+settings-storage-chosen-platform = Системна тека
+settings-storage-none = Немає: система не дає теки
+settings-storage-show-tip = Відкрити цю теку
+settings-storage-show-name = { $show }: { $folder }
+settings-storage-kind-thumbnails = Мініатюри
+settings-storage-kind-pipelines = Конвеєри
+settings-storage-kind-libraries = Кеші бібліотек
+settings-storage-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } мініатюра
+                [few] { $entries } мініатюри
+                [many] { $entries } мініатюр
+               *[other] { $entries } мініатюри
+            }
+        [libraries]
+            { $entries ->
+                [one] { $entries } бібліотека
+                [few] { $entries } бібліотеки
+                [many] { $entries } бібліотек
+               *[other] { $entries } бібліотеки
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } конвеєр
+                [few] { $entries } конвеєри
+                [many] { $entries } конвеєрів
+               *[other] { $entries } конвеєра
+            }
+    }
+settings-storage-usage = { settings-storage-entries }, { job-cache-size }
+settings-storage-total = Разом
+settings-storage-total-limit = { job-cache-size } із { $limit } ГБ
+settings-storage-total-unlimited = { job-cache-size }, без обмеження
+settings-storage-counting = Підрахунок…
+settings-storage-clear = Очистити
+settings-storage-clear-thumbnails = Очистити мініатюри
+settings-storage-clear-pipelines = Очистити конвеєри
+settings-storage-clear-tip = Видаляються з диска й створюються знову за потреби
+settings-storage-libraries-tip = Кеш кожної бібліотеки можна буде видалити, коли з'являться бібліотеки.
+settings-storage-no-cache = Дискового кешу немає: його теку не вдалося записати під час запуску Apertrust, тож між запусками нічого не зберігається.
+settings-storage-refused-clearing = Їх уже очищують.
+settings-storage-refused-no-cache = Немає дискового кешу, який можна очистити.
+settings-storage-refused = Їх не вдалося очистити.
+
 ## Вікно журналу, Довідка › Показати журнал; його фільтри — варіанти рядка «Журнал»
 
 action-show-log = Показати журнал

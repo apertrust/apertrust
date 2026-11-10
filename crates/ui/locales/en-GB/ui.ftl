@@ -566,6 +566,58 @@ setting-log-domains-option-control = Control
 setting-log-domains-option-event = Events
 setting-log-domains-option-verbose = Verbose
 
+## Settings › Storage, its hand-built part (decision 76). $flag and $variable name what
+## chose a folder; $kind is thumbnails, pipelines or libraries; $entries, $size and $unit
+## as the cache's Clear has them; $limit the limit in GB.
+
+settings-group-folders = Folders
+settings-group-cache-contents = In the cache
+settings-storage-user-data = User data folder
+settings-storage-cache = Cache folder
+settings-storage-chosen-flag = Chosen by { $flag }
+settings-storage-chosen-variable = Chosen by { $variable }
+settings-storage-chosen-user-data = Inside the user data folder
+settings-storage-chosen-platform = The system's folder
+settings-storage-none = None: the system gives no folder
+settings-storage-show-tip = Open this folder
+# Show's full name for screen readers: $show is its words, $folder the line's label.
+settings-storage-show-name = { $show }: { $folder }
+settings-storage-kind-thumbnails = Thumbnails
+settings-storage-kind-pipelines = Pipelines
+settings-storage-kind-libraries = Library caches
+settings-storage-entries =
+    { $kind ->
+        [thumbnails]
+            { $entries ->
+                [one] { $entries } thumbnail
+               *[other] { $entries } thumbnails
+            }
+        [libraries]
+            { $entries ->
+                [one] { $entries } library
+               *[other] { $entries } libraries
+            }
+       *[pipelines]
+            { $entries ->
+                [one] { $entries } pipeline
+               *[other] { $entries } pipelines
+            }
+    }
+settings-storage-usage = { settings-storage-entries }, { job-cache-size }
+settings-storage-total = Total
+settings-storage-total-limit = { job-cache-size } of { $limit } GB
+settings-storage-total-unlimited = { job-cache-size }, unlimited
+settings-storage-counting = Counting…
+settings-storage-clear = Clear
+settings-storage-clear-thumbnails = Clear the thumbnails
+settings-storage-clear-pipelines = Clear the pipelines
+settings-storage-clear-tip = Removed from the disk, and made again when needed
+settings-storage-libraries-tip = Each library's cache can be removed once libraries come.
+settings-storage-no-cache = There is no disk cache: its folder could not be written as Apertrust started, so nothing is kept between runs.
+settings-storage-refused-clearing = These are being cleared already.
+settings-storage-refused-no-cache = There is no disk cache to clear.
+settings-storage-refused = They could not be cleared.
+
 ## The log window, Help › Show Log (docs/gui.md, The log window); its filters are the
 ## Log row's options. $count, $kept and $shown are numbers of lines.
 

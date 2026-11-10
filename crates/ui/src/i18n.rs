@@ -803,6 +803,9 @@ mod tests {
                 args.set("kind", "thumbnails");
                 args.set("entries", 2104);
                 args.set("unit", "mb");
+                // Settings › Storage's: the cache's limit, and Show's words.
+                args.set("limit", 4);
+                args.set("show", "Show in Finder");
                 // The Export dialog's.
                 args.set("source", "IMG_2041.ARW");
                 args.set("names", "$(OPENCL.ACTIVATED)");
