@@ -450,14 +450,15 @@ The photo and its caption are one block in the central panel's slot, under the c
 
 ### Folder mode
 
-In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
+In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `src/mirror.rs`.
 
 **Opening a folder.**
 
-- File › Open Folder… (`open-folder`, Ctrl+Shift+O, in the group after Open Image…) shows rfd's asynchronous folder dialog. It starts in the open folder, else the open photo's, else Pictures.
+- File › Open Folder… (`open-folder`, Ctrl+Shift+O, in the group after Open…) shows rfd's asynchronous folder dialog. It starts in the open folder, else the open photo's, else Pictures.
 - The folder chosen is sent as `Command::Library(Open(Folder))`.
 - File › Open… of a photo also opens its folder, unless that is the one shown.
 - Opening a folder opens no photo.
+- A folder dropped onto the window opens the same way, raws dropped as Open…'s do ([Drag and drop](#drag-and-drop)).
 
 **The folder's state.** The mirror's `FolderState` (`src/folder.rs`) folds `Event::Library` and the reading's job:
 
@@ -467,7 +468,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 - a failure, `Failed`, or the job ending cancelled (the jobs window's Cancel) returns `Reaction::FolderFailed`: the recent folder is drawn disabled with the reason. The list is never checked as it is drawn, since a share may be slow: the recents' check, started as the window opens and again as it gains the focus and as Browse comes into sight, marks a folder gone, drawn disabled too, and `App::logic` takes its answers each frame without waiting.
 - The folder's reading shows in the spinner and never opens the jobs window.
 
-**The first tab**, the Photos tab (decision 37; `tab-photos`, kept as `photos`), chosen like the others (Ctrl+1), holds Browse (decision 73; the section `browse`, `section-browse`) in folder mode's form (`library::browse`, drawn from a `library::Browse`): its top line, a box saying what is open (`ChoiceBox`) whose list is the recents, the paths it was built from kept under its id, missing ones with Try Again, Locate… (the folder dialog's `Pick::Locate(path)`, then `Shell::located`, which opens the folder chosen) and Remove from the List; ＋ (New Library… and New Project… disabled, Open Folder…, Open Image…) and ⋯ (Show in Finder, `Section::options_menu`); then its Folders group (`browse-folders`, open by default, kept in `edit.groups` as `browse.folders`), the open folder's tree: the parent's row, the open folder with its count, its subfolders a level in and theirs at every level as each opens, asked for while the tree is drawn (`library::Action::Ask`, once an open by `FolderState::ask_inside`), a folder's open or closed state kept for the run at every level (`Shell::tree`), one whose subfolders could not be listed offering Try Again, each row's right-click (`apertrust-ui`'s `context_menu`) holding Show in Folder and Open. Albums and Smart albums are not shown, as folder mode has none. View › Browse (`show-browse`, L) is declared with no command yet.
+**The first tab**, the Photos tab (decision 37; `tab-photos`, kept as `photos`), chosen like the others (Ctrl+1), holds Browse (decision 73; the section `browse`, `section-browse`) in folder mode's form (`library::browse`, drawn from a `library::Browse`): its top line, a box saying what is open (`ChoiceBox`) whose list is the recents, the paths it was built from kept under its id, missing ones with Try Again, Locate… (the folder dialog's `Pick::Locate(path)`, then `Shell::located`, which opens the folder chosen) and Remove from the List; ＋ (New Library… and New Project… disabled, Open Folder…, Open…) and ⋯ (Show in Finder, `Section::options_menu`); then its Folders group (`browse-folders`, open by default, kept in `edit.groups` as `browse.folders`), the open folder's tree: the parent's row, the open folder with its count, its subfolders a level in and theirs at every level as each opens, asked for while the tree is drawn (`library::Action::Ask`, once an open by `FolderState::ask_inside`), a folder's open or closed state kept for the run at every level (`Shell::tree`), one whose subfolders could not be listed offering Try Again, each row's right-click (`apertrust-ui`'s `context_menu`) holding Show in Folder and Open. Albums and Smart albums are not shown, as folder mode has none. View › Browse (`show-browse`, L, `Intent::ShowBrowse`) chooses the first tab holding Browse, the Photos tab (`BROWSE` in `src/main.rs`) until workspaces change the tabs, and pressed again does nothing; it rests while a dialog's own window has the focus, as the tabs' keys do.
 
 **The grid panel** is never hidden: one row of `GridCell`s in the grid bar's sort, which the mirror applies (`FolderState::order`), at the grid bar's size, the open photo the active cell, each caption the name alone until the library keeps ratings (`Thumb::rating` none, its first line's clicks not read). A click or Enter opens one; the arrows, Home and End move between cells. The grid bar's choices are actions of the registry (`sort-…`, `thumbnails-…`, `show-labels`), which View › Sort By, Thumbnail Size and Show Labels run too, kept under `[grid_panel]` with its position, the rows and columns its edge was dragged to, `labels` and `square_thumbnails` (which `--conf` sets, with no Settings row yet; a filling thumbnail asked for half as large again), at most as many as fit in half the window (`Shell::grid_edge`). At the right it lies between the photo and the side panel, at the left at the window's left edge (`Shell::grid_frame`); View › Grid Panel Position and the grid bar's options menu move it (`grid-position-…`).
 
@@ -546,14 +547,23 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs` and `src/mirror.rs`.
 - After the frame it hands the list to `apertrust_display::pop_up_menu` with the window, the keymap's spelling turned back into key equivalents. The answer comes back through `popup::answered`.
 - Windows and Linux keep every popup drawn.
 
-### Open Image…
+### Open…
 
-File › Open Image… (`open`, Ctrl+O, first in File; `src/dialogs.rs`):
+File › Open… (`open`, Ctrl+O, first in File, and Browse's ＋; `src/dialogs.rs`, `dialogs::Pick::Files`):
 
-- rfd's asynchronous open dialog for one raw of the formats the decoder reads (`session::raw_extensions`), over the window and polled each frame, so neither the window nor the engine stops;
+- rfd's asynchronous open dialog for one or more raws of the formats the decoder reads (`session::raw_extensions`), over the window and polled each frame, so neither the window nor the engine stops; a library's or a project's file is not among them, so it is greyed out until Phase 5;
 - AppKit's open panel as a sheet on the Mac, COM on Windows, the XDG desktop portal on Linux, never GTK;
-- it starts in the open photo's folder or Pictures;
-- the raw chosen is opened through the session in place of the photo open, whose edit the session saves first.
+- it starts in the open folder, else the open photo's, else Pictures;
+- the first raw chosen is opened through the session in place of the photo open, whose edit the session saves first, and its folder behind it (`App::open`); the others are to be selected with it once the grid panel selects (Phase 3).
+
+### Drag and drop
+
+`src/dropped.rs`, read from egui's dropped and hovered files (macOS, Windows and X11; winit has no drops on Wayland):
+
+- a drop is taken unless a modal dialog is up (`State::modal`), and `dropped::Drops` asks the disk what each path is on a thread of its own, in order until one opens (`dropped::opens`), the answer taken a later frame;
+- a folder opens as Open Folder… does; a raw, by its extension, as Open… does, with the raws dropped beside it from its folder (`Dropped::Raws`); of several, the first;
+- where nothing opens, the alert `alerts::Purpose::Refused` names the first path and says why (`Refusal::Unknown`, or `Refusal::Library` for a `.aplibrary` or `.approject`), with OK alone;
+- while something hovers, `dropped::show_target` outlines the photo and the grid panel in `focus_ring`, `separator_width` wide (snapshot `drop-target`).
 
 ### The dialog host
 
@@ -678,11 +688,11 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 ### Planned
 
 - **Dialogs** (decision 41): every dialog a native modal window of its own, hosted beside eframe's window in `Gated`, each with its own egui context, AccessKit adapter and surface on the engine's device, Settings first; every confirmation the system's alert. About stays the modal over the scrim, and a future splash screen will be drawn so too.
-- **Layouts** (decision 37): the app is one view. Its views (`View`, `Scope::View`, E and L) are to become the central panel's layouts, Photo and Map (Map later, switched by the central bar's Map toggle after Guides).
+- **Layouts** (decision 37): the app is one view. The old views' enum, holding only `View::Edit` with E, and `Scope::View` are to become the central panel's layouts, Photo and Map (Map later, switched by the central bar's Map toggle after Guides).
 - **Switched modules** (decision 32): a module's reset available only while the session reports it edited, a switched module while it is on, or while a change is pending; a switched module that is off told to screen readers as "Not applied", with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
-- **The ways in** (decision 46): `apertrust FILE` opening one photo alone; `--in-folder FILE…` and macOS's open-documents event, through `apertrust-display`, opening the photo's folder with it active; File › Open… in place of Open Image…; the start window, what was open last reopened at the start, and File › Close ([docs/gui.md](gui.md), The start window).
+- **The ways in** (decision 46): `apertrust FILE` opening one photo alone; `--in-folder FILE…` and macOS's open-documents event, through `apertrust-display`, opening the photo's folder with it active; Browse for one photo, with Open This Folder; the start window, what was open last reopened at the start, and File › Close ([docs/gui.md](gui.md), The start window).
 
 ## apertrust-ui
 

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
-//! alerts, asked through the dialog host and answered on a later frame. Three so far:
+//! alerts, asked through the dialog host and answered on a later frame. Four so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
 //!   replaces files, as darktable does, from the Export dialog's own sheet.
@@ -26,6 +26,8 @@
 //!   the jobs that cannot be stopped.
 //! - **Why the edit is not saved** ([`Purpose::Save`]): the top panel's save warning
 //!   pressed, with Try Again.
+//! - **Why a drop opens nothing** ([`Purpose::Refused`]): what was dropped onto the window
+//!   is neither a folder nor a raw, or is a library's or a project's file.
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
@@ -38,6 +40,7 @@ use eframe::egui;
 use apertrust_engine::jobs::JobId;
 
 use crate::dialog_host::{Answer, AppDialogs, Ask};
+use crate::dropped::Refusal;
 use crate::jobs::{Mirror, Running};
 
 /// What an alert is asked for, which says what its answer does.
@@ -50,6 +53,8 @@ pub enum Purpose {
     Quit,
     /// The edit's last write failed: yes writes it again.
     Save,
+    /// A drop opened nothing: the alert only says why.
+    Refused,
 }
 
 /// The open photo's edit as Quit finds it.
@@ -210,6 +215,19 @@ pub fn save_request(ctx: &egui::Context, name: &str, why: &str) -> Request {
         .button(tr(ctx, "alert-cancel"), Role::Cancel)
 }
 
+/// "Can't open notes.txt": a drop that opens nothing, the first thing dropped named `name`,
+/// saying why, with one button, which Return and Escape both press.
+pub fn refused_request(ctx: &egui::Context, name: &str, why: Refusal) -> Request {
+    let mut args = Args::new();
+    args.set("name", name);
+    let title = translator(ctx).text_with("alert-refused-title", Some(&args));
+    let message = match why {
+        Refusal::Library => "alert-refused-library",
+        Refusal::Unknown => "alert-refused-unknown",
+    };
+    Request::new(title, tr(ctx, message)).button(tr(ctx, "alert-refused-button"), Role::Cancel)
+}
+
 /// One Quit or Close Window deciding whether the app leaves: `run_action` asks
 /// [`Leave::may`] once no dialog is open, and the app asks the alert afterwards if
 /// [`Leave::ask`] says so.
@@ -290,6 +308,8 @@ pub enum Then {
     /// Quit again at once, to leave: the quit alert could not be shown, so this one Quit
     /// leaves and the next asks again, as when asking it fails ([`ask_quit`]).
     Leave,
+    /// Nothing: the alert only said something, so no question waits on its answer.
+    Told,
 }
 
 /// The decision an answer makes: only a yes (the first button, the default) does anything.
@@ -315,6 +335,7 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
         }
         Purpose::Save if confirmed => Then::RetrySave,
         Purpose::Save => Then::Nothing,
+        Purpose::Refused => Then::Told,
     }
 }
 
@@ -761,5 +782,27 @@ mod tests {
         assert_eq!(then(Answer::Pressed(1), &mut guard), Then::Nothing);
         assert_eq!(then(Answer::Dismissed, &mut guard), Then::Nothing);
         assert!(!guard.confirmed());
+    }
+
+    #[test]
+    fn a_refused_drop_s_alert_names_the_first_thing_dropped_and_says_why() {
+        let ctx = context(Locale::EnGb);
+        let request = refused_request(&ctx, "notes.txt", Refusal::Unknown);
+        assert_eq!(request.title, "Can’t open notes.txt");
+        assert_eq!(request.message, "Only folders and raw photos open here.");
+        assert_eq!(request.check(), Ok(()));
+        // One button, which Return and Escape both press.
+        assert_eq!(request.buttons.len(), 1);
+        assert_eq!(request.buttons[0].label, "OK");
+        assert_eq!((request.default, request.cancel()), (0, Some(0)));
+        let library = refused_request(&ctx, "Home.aplibrary", Refusal::Library);
+        assert_eq!(
+            library.message,
+            "Libraries and projects come in a later version."
+        );
+        let (mirror, _) = exporting();
+        let mut guard = Guard::default();
+        let told = then(Purpose::Refused, Answer::Pressed(0), &mut guard, &mirror);
+        assert_eq!(told, Then::Told);
     }
 }

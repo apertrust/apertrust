@@ -14,9 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The platform's file dialogs (`docs/gui.md`, The menu bar, File): File › Open Image…'s,
-//! which asks for one raw, and File › Open Folder…'s, which asks for a folder; and the log
-//! window's save dialog ([`Saving`]).
+//! The platform's file dialogs (`docs/gui.md`, The menu bar, File): File › Open…'s, which
+//! asks for one or more raws, and File › Open Folder…'s, which asks for a folder; and the
+//! log window's save dialog ([`Saving`]).
+//!
+//! Open… shows the raws the decoder reads and nothing else, so a library's or a project's
+//! file is greyed out in it until libraries and projects open (Phase 5).
 //!
 //! They are rfd's asynchronous dialogs, so the window keeps drawing and the engine keeps
 //! rendering while one is open: a blocking dialog would run its modal loop inside an
@@ -43,22 +46,23 @@ use eframe::egui;
 /// What a dialog asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pick {
-    /// One raw, for File › Open Image….
-    Image,
+    /// One or more raws, for File › Open….
+    Files,
     /// A folder, for File › Open Folder….
     Folder,
     /// The folder the missing recent at this path went to, for Locate….
     Locate(PathBuf),
 }
 
-/// What the person chose.
+/// What the person chose: one path or more for [`Pick::Files`], in the dialog's order, and
+/// one for a folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chosen {
     pub pick: Pick,
-    pub path: PathBuf,
+    pub paths: Vec<PathBuf>,
 }
 
-/// The dialog that asks for a raw or a folder to open: the platform's ([`Native`]), or a
+/// The dialog that asks for raws or a folder to open: the platform's ([`Native`]), or a
 /// test's.
 pub trait OpenDialog {
     /// Whether it is asking now, between [`OpenDialog::ask`] and the answer.
@@ -72,7 +76,7 @@ pub trait OpenDialog {
     fn chosen(&mut self) -> Option<Chosen>;
 }
 
-/// Asks `dialog` for `asked` when Open Image… or Open Folder… ran, starting in `folder()`,
+/// Asks `dialog` for `asked` when Open… or Open Folder… ran, starting in `folder()`,
 /// unless it is asking already, and returns what the person chose once they have, for the
 /// app to open; nothing while it asks, nor when they cancel.
 pub fn open(
@@ -118,7 +122,10 @@ pub fn folder(
 }
 
 /// The answer on its way from the platform's dialog, kept from frame to frame.
-pub struct Asking(Pick, Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>);
+pub struct Asking(
+    Pick,
+    Pin<Box<dyn Future<Output = Option<Vec<rfd::FileHandle>>>>>,
+);
 
 /// The platform's open dialog over the app's window, for one frame.
 pub struct Native<'a> {
@@ -135,8 +142,8 @@ impl OpenDialog for Native<'_> {
 
     fn ask(&mut self, pick: Pick, folder: Option<&Path>) {
         let mut dialog = rfd::AsyncFileDialog::new().set_parent(self.window);
-        let answer: Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>> = match pick {
-            Pick::Image => {
+        let answer: Pin<Box<dyn Future<Output = Option<Vec<rfd::FileHandle>>>>> = match pick {
+            Pick::Files => {
                 // The decoder's extensions are upper case; a portal's chooser may match case.
                 let extensions: Vec<String> = session::raw_extensions()
                     .iter()
@@ -148,7 +155,7 @@ impl OpenDialog for Native<'_> {
                 if let Some(folder) = folder {
                     dialog = dialog.set_directory(folder);
                 }
-                Box::pin(dialog.pick_file())
+                Box::pin(dialog.pick_files())
             }
             Pick::Folder | Pick::Locate(_) => {
                 let title = match pick {
@@ -159,7 +166,9 @@ impl OpenDialog for Native<'_> {
                 if let Some(folder) = folder {
                     dialog = dialog.set_directory(folder);
                 }
-                Box::pin(dialog.pick_folder())
+                // Asked now, so the sheet is up as it is for the files.
+                let folder = dialog.pick_folder();
+                Box::pin(async move { folder.await.map(|folder| vec![folder]) })
             }
         };
         // On macOS the sheet is up once this returns; elsewhere rfd's thread shows it.
@@ -170,14 +179,12 @@ impl OpenDialog for Native<'_> {
         let Asking(pick, answer) = self.asking.as_mut()?;
         let pick = pick.clone();
         let waker = Waker::from(Arc::new(Repaint(self.ctx.clone())));
-        let Poll::Ready(file) = answer.as_mut().poll(&mut Context::from_waker(&waker)) else {
+        let Poll::Ready(files) = answer.as_mut().poll(&mut Context::from_waker(&waker)) else {
             return None;
         };
         *self.asking = None;
-        file.map(|file| Chosen {
-            pick,
-            path: file.path().to_owned(),
-        })
+        let paths: Vec<PathBuf> = files?.iter().map(|f| f.path().to_owned()).collect();
+        (!paths.is_empty()).then_some(Chosen { pick, paths })
     }
 }
 

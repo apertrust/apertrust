@@ -288,9 +288,9 @@ photo-aperture = f/{ $value }
 photo-focal-length = { $value } мм
 photo-iso = ISO { $value }
 
-## Діалог відкриття, з меню Файл › Відкрити знімок…
+## Діалог відкриття, з меню Файл › Відкрити…
 
-open-title = Відкрити знімок
+open-title = Відкрити
 open-filter = Raw-знімки
 
 ## Панель сітки та її комірки
@@ -568,7 +568,7 @@ about-back = Назад
 
 ## Дії, як їх називає карта клавіш
 
-action-open = Відкрити знімок…
+action-open = Відкрити…
 action-view-edit = Перейти до обробки
 action-show-browse = Огляд
 action-panel-tab-1 = Вкладка бічної панелі 1
@@ -844,3 +844,7 @@ alert-save-button = Спробувати ще раз
 alert-quit-save-title = Вийти без останніх змін?
 alert-quit-save-message = Не вдалося зберегти останні зміни: { $error }
 alert-quit-anyway = Однаково вийти
+alert-refused-title = Не вдалося відкрити { $name }
+alert-refused-unknown = Тут відкриваються лише теки та raw-знімки.
+alert-refused-library = Бібліотеки та проєкти з'являться в одній із наступних версій.
+alert-refused-button = Гаразд

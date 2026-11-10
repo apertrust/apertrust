@@ -50,6 +50,7 @@ mod actions;
 mod alerts;
 mod dialog_host;
 mod dialogs;
+mod dropped;
 mod export;
 mod export_again;
 mod exposure;
@@ -732,6 +733,10 @@ const TAB_IDS: [&str; TABS.len()] = ["photos", "base", "color", "correct", "effe
 /// The Photos tab, first: Browse so far.
 const PHOTOS: usize = 0;
 
+/// The first tab holding Browse, which View › Browse chooses (decision 73): the Photos tab,
+/// until workspaces let the tabs be changed (`docs/gui.md`, Workspaces).
+const BROWSE: usize = PHOTOS;
+
 /// Whether each tab can be chosen: History has nothing behind it until it is built, so it
 /// is drawn disabled, its key unavailable.
 const TABS_ENABLED: [bool; TABS.len()] = [true, true, true, true, true, false];
@@ -825,6 +830,8 @@ struct App {
     menus: Option<menus::NativeMenus>,
     /// The open dialog's answer on its way, while it asks.
     asking: Option<dialogs::Asking>,
+    /// What was dropped onto the window, while it is looked at (`dropped`).
+    drops: dropped::Drops,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
     /// The dialogs' windows (decision 41).
@@ -1221,7 +1228,7 @@ struct Shell {
     /// Whether View › Jobs ran, for the app to open the jobs window after the action.
     show_jobs: bool,
     about: about::About,
-    /// Whether Open Image… ran, for the app to show the open dialog after the frame.
+    /// Whether Open… ran, for the app to show the open dialog after the frame.
     open: bool,
     /// Whether Open Folder… ran, for the app to show the folder dialog after the frame.
     open_folder: bool,
@@ -1502,7 +1509,7 @@ impl Shell {
         let os = ctx.os();
         library::Keys {
             folder: self.keymap.tip(ActionId::OPEN_FOLDER, os, &words),
-            image: self.keymap.tip(ActionId::OPEN, os, &words),
+            files: self.keymap.tip(ActionId::OPEN, os, &words),
         }
     }
 
@@ -1876,14 +1883,9 @@ impl Shell {
             Intent::ExportAgain => self.export_again = true,
             Intent::Menu => self.menu = true,
             Intent::View(view) => self.view = view,
-            Intent::PanelTab(tab) => {
-                // The user chose a tab: the one settings had is forgotten, even if they
-                // come back to the tab the shell opened on.
-                if tab != self.panel_tab {
-                    self.opening_tab = None;
-                }
-                self.panel_tab = tab;
-            }
+            Intent::PanelTab(tab) => self.choose_tab(tab),
+            // Pressed again, it is chosen already, and nothing changes.
+            Intent::ShowBrowse => self.choose_tab(BROWSE),
             Intent::ScaleUp | Intent::ScaleDown => {
                 let up = intent == Intent::ScaleUp;
                 ctx.set_zoom_factor(actions::step_scale(ctx.zoom_factor(), up));
@@ -1913,6 +1915,15 @@ impl Shell {
             }
         }
         ctx.request_repaint();
+    }
+
+    /// Shows the side panel's tab `tab`, chosen by the user: the one settings had is
+    /// forgotten, even if they come back to the tab the shell opened on.
+    fn choose_tab(&mut self, tab: usize) {
+        if tab != self.panel_tab {
+            self.opening_tab = None;
+        }
+        self.panel_tab = tab;
     }
 
     /// The theme in use, with the background chosen behind the photo, if any.
@@ -2126,6 +2137,7 @@ impl App {
             keeper,
             menus,
             asking: None,
+            drops: dropped::Drops::default(),
             pictures: paths::pictures(),
             dialogs,
             jobs_view: Vec::new(),
@@ -2287,6 +2299,7 @@ impl App {
                 self.send_edit(Command::RetrySave);
             }
             alerts::Then::Leave => self.quit_again = true,
+            alerts::Then::Told => {}
         }
     }
 
@@ -2394,8 +2407,8 @@ impl App {
         }
     }
 
-    /// Opens the raw at `path` in the session, in place of the photo open, as File › Open
-    /// Image… and the command line do. The session saves the open photo's edit first, if
+    /// Opens the raw at `path` in the session, in place of the photo open, as File › Open…,
+    /// a drop and the command line do. The session saves the open photo's edit first, if
     /// anything in it is not on disk yet, and reads the new photo's from beside it.
     fn open(&mut self, path: PathBuf) {
         // The photo's folder shows in the grid panel, unless it is the one open already:
@@ -2800,7 +2813,7 @@ impl App {
             repaint |= !matches!(action, library::Action::Ask(_));
             match action {
                 library::Action::OpenFolder => self.shell.open_folder = true,
-                library::Action::OpenImage => self.shell.open = true,
+                library::Action::OpenFiles => self.shell.open = true,
                 library::Action::Open(path) => self.open_folder(path),
                 library::Action::Toggle => self.shell.toggle_browse(false),
                 library::Action::ToggleFolders => self.shell.toggle_browse(true),
@@ -3354,12 +3367,13 @@ impl eframe::App for App {
         let grid_panel = grid_frame.show(ui, |ui| self.grid_panel(ui, lines));
         run.extend(grid_panel.inner);
         let grid_panel = grid_panel.response.rect;
-        let (central_bar, background) = egui::CentralPanel::default()
+        let central = egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(t.colors.photo_surround))
             .show(ui, |ui| {
                 self.central_panel(ui, panel_resized || grid_resized)
-            })
-            .inner;
+            });
+        let (central_bar, background) = central.inner;
+        let central = central.response.rect;
         run.extend(background);
         // The side panel parts from the photo by a separator, as the bars do: its edge,
         // which resizes it, over the photo and the panel both; the grid panel's likewise.
@@ -3390,10 +3404,10 @@ impl eframe::App for App {
         }
         let state = self.state(&ctx);
         self.shell.open_menu(&ctx, &state);
-        // Open Image…'s and Open Folder…'s dialog, over the window; what is chosen opens a
-        // later frame.
+        // Open…'s and Open Folder…'s dialog, over the window; what is chosen opens a later
+        // frame.
         let asked = if std::mem::take(&mut self.shell.open) {
-            Some(dialogs::Pick::Image)
+            Some(dialogs::Pick::Files)
         } else if std::mem::take(&mut self.shell.open_folder) {
             Some(dialogs::Pick::Folder)
         } else {
@@ -3418,9 +3432,29 @@ impl eframe::App for App {
             self.run_actions([ActionId::QUIT], &ctx, &[]);
         } else if let Some(chosen) = chosen {
             match answered(&mut self.shell, chosen) {
-                Opens::Photo(path) => self.open(path),
-                Opens::Folder(path) => self.open_folder(path),
+                Some(Opens::Photo(path)) => self.open(path),
+                Some(Opens::Folder(path)) => self.open_folder(path),
+                None => {}
             }
+        }
+        // What was dropped onto the window opens as Open… or Open Folder… would, once it has
+        // been looked at, a later frame; nothing while a modal dialog is up, as one may have
+        // opened meanwhile.
+        let modal = self.state(&ctx).modal;
+        self.drops.take(&ctx, modal);
+        if let Some(dropped) = self.drops.looked().filter(|_| !modal) {
+            match dropped_opens(dropped) {
+                Ok(Opens::Photo(path)) => self.open(path),
+                Ok(Opens::Folder(path)) => self.open_folder(path),
+                Err((path, why)) => {
+                    let request = alerts::refused_request(&ctx, &file_name(&path), why);
+                    let purpose = alerts::Purpose::Refused;
+                    self.alerts.ask(&mut self.dialogs, purpose, &request, &ctx);
+                }
+            }
+        }
+        if dropped::hovering(&ctx, modal) {
+            dropped::show_target(&ctx, central.union(grid_panel));
         }
         if let Some(gesture) = window {
             let mut system = System {
@@ -3537,20 +3571,33 @@ impl eframe::App for App {
     }
 }
 
-/// What an open dialog's answer opens.
+/// What an open dialog's answer, or a drop, opens.
 #[derive(Debug, PartialEq)]
 enum Opens {
     Photo(PathBuf),
     Folder(PathBuf),
 }
 
-/// What `chosen`, an open dialog's answer, opens: the raw or the folder chosen; for
-/// Locate…, the folder chosen, which the missing recent now points to.
-fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Opens {
-    match chosen.pick {
-        dialogs::Pick::Image => Opens::Photo(chosen.path),
-        dialogs::Pick::Folder => Opens::Folder(chosen.path),
-        dialogs::Pick::Locate(from) => Opens::Folder(shell.located(&from, chosen.path)),
+/// What `chosen`, an open dialog's answer, opens: the first raw chosen, with its folder
+/// (the others are to be selected with it once the grid panel selects, Phase 3), or the
+/// folder chosen; for Locate…, the folder chosen, which the missing recent now points to.
+/// None for an answer with no path.
+fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opens> {
+    let first = chosen.paths.into_iter().next()?;
+    Some(match chosen.pick {
+        dialogs::Pick::Files => Opens::Photo(first),
+        dialogs::Pick::Folder => Opens::Folder(first),
+        dialogs::Pick::Locate(from) => Opens::Folder(shell.located(&from, first)),
+    })
+}
+
+/// What a drop opens: the folder, or the first raw, with its folder, the others to be
+/// selected with it as Open…'s are; or the first path, with why nothing opens.
+fn dropped_opens(dropped: dropped::Dropped) -> Result<Opens, (PathBuf, dropped::Refusal)> {
+    match dropped {
+        dropped::Dropped::Folder(path) => Ok(Opens::Folder(path)),
+        dropped::Dropped::Raws { first, .. } => Ok(Opens::Photo(first)),
+        dropped::Dropped::Refused { path, why } => Err((path, why)),
     }
 }
 
@@ -6122,7 +6169,7 @@ mod tests {
             harness.state().dialog.asked.last(),
             Some(&Some(PathBuf::from("/photos")))
         );
-        harness.state_mut().dialog.answer = Some(Some(found.clone()));
+        harness.state_mut().dialog.answer = Some(Some(vec![found.clone()]));
         harness.run();
         assert_eq!(
             harness.state().commands,
@@ -6449,8 +6496,8 @@ mod tests {
 
     /// The shell as the app's frame runs it, without the engine, which `App` needs a GPU
     /// for: the keys read first, then the top panel, the side panel's tabs and a section,
-    /// the settings dialog, then what the keys and clicks asked for, and last Open
-    /// Image…'s dialog, which a stand-in for the person answers.
+    /// the settings dialog, then what the keys and clicks asked for, Open…'s dialog, which a
+    /// stand-in for the person answers, and last what was dropped onto the window.
     struct Bench {
         shell: Shell,
         photo: bool,
@@ -6472,20 +6519,25 @@ mod tests {
         caption: Option<bool>,
         /// The window's platform, as the top panel's gestures see it.
         system: Stub,
-        /// The open dialog, as Open Image… sees it.
+        /// The open dialog, as Open… sees it.
         dialog: Person,
         /// The dialog host, which shows Settings in its platform's form.
         dialogs: dialog_host::AppDialogs,
         host: FakeHost,
+        /// What was dropped, while it is looked at.
+        drops: dropped::Drops,
+        /// Each drop that opened nothing: its first path, and why.
+        refused: Vec<(PathBuf, dropped::Refusal)>,
     }
 
     /// A stand-in for the open dialog and the person answering it: `answer` is what they
-    /// will choose, a raw or None to cancel, and None while they have not answered yet;
-    /// `asked` holds the folder of every dialog asked for, a second over the first too.
+    /// will choose, raws or a folder, or None to cancel, and None while they have not
+    /// answered yet; `asked` holds the folder of every dialog asked for, a second over the
+    /// first too.
     #[derive(Default)]
     struct Person {
         asking: bool,
-        answer: Option<Option<PathBuf>>,
+        answer: Option<Option<Vec<PathBuf>>>,
         asked: Vec<Option<PathBuf>>,
         /// What each dialog asked for, a raw or a folder.
         picks: Vec<dialogs::Pick>,
@@ -6511,7 +6563,7 @@ mod tests {
             let answer = self.answer.take()?;
             self.asking = false;
             let pick = self.pick.take()?;
-            answer.map(|path| dialogs::Chosen { pick, path })
+            answer.map(|paths| dialogs::Chosen { pick, paths })
         }
     }
 
@@ -6621,7 +6673,7 @@ mod tests {
                     let state = bench.state(&ctx);
                     bench.shell.open_menu(&ctx, &state);
                     let asked = if std::mem::take(&mut bench.shell.open) {
-                        Some(dialogs::Pick::Image)
+                        Some(dialogs::Pick::Files)
                     } else if std::mem::take(&mut bench.shell.open_folder) {
                         Some(dialogs::Pick::Folder)
                     } else {
@@ -6631,15 +6683,24 @@ mod tests {
                     // The app's own start and answer, `App` needing a session and a GPU.
                     let start = dialogs::locate_start(asked.as_ref());
                     let folder = || start.unwrap_or_else(pictures);
-                    if let Some(chosen) = dialogs::open(&mut bench.dialog, asked, folder) {
-                        bench
-                            .commands
-                            .push(match answered(&mut bench.shell, chosen) {
-                                Opens::Photo(path) => Command::Open(path),
-                                Opens::Folder(path) => {
-                                    Command::Library(LibraryCommand::Open(Source::Folder(path)))
-                                }
-                            });
+                    let opens = |opens| match opens {
+                        Opens::Photo(path) => Command::Open(path),
+                        Opens::Folder(path) => {
+                            Command::Library(LibraryCommand::Open(Source::Folder(path)))
+                        }
+                    };
+                    let chosen = dialogs::open(&mut bench.dialog, asked, folder);
+                    if let Some(chosen) = chosen.and_then(|c| answered(&mut bench.shell, c)) {
+                        bench.commands.push(opens(chosen));
+                    }
+                    // The app's drop, the alert it asks left out.
+                    let modal = bench.state(&ctx).modal;
+                    bench.drops.take(&ctx, modal);
+                    if let Some(dropped) = bench.drops.looked().filter(|_| !modal) {
+                        match dropped_opens(dropped) {
+                            Ok(chosen) => bench.commands.push(opens(chosen)),
+                            Err(refused) => bench.refused.push(refused),
+                        }
                     }
                     if let Some(gesture) = window {
                         run_title_bar(gesture, &ctx, &mut bench.system);
@@ -6667,6 +6728,8 @@ mod tests {
                     dialog: Person::default(),
                     dialogs: dialog_host::AppDialogs::new(host.clone()),
                     host,
+                    drops: dropped::Drops::default(),
+                    refused: Vec::new(),
                 },
             )
     }
@@ -7434,6 +7497,7 @@ mod tests {
                             }
                             alerts::Then::RetrySave => d.sent.push(Command::RetrySave),
                             alerts::Then::Leave => d.quit_again = true,
+                            alerts::Then::Told => {}
                         }
                     }
                     if d.quit_held && d.alerts.pending() != Some(alerts::Purpose::Overwrite) {
@@ -9464,11 +9528,11 @@ mod tests {
         assert!(harness.state().settings_open());
     }
 
-    /// A plain E in one frame, as egui-winit sends it: the press, what it typed, the release.
-    fn type_e(harness: &mut Harness<'_, Bench>, typed: &str) {
+    /// A plain L in one frame, as egui-winit sends it: the press, what it typed, the release.
+    fn type_l(harness: &mut Harness<'_, Bench>, typed: &str) {
         let key = |pressed| egui::Event::Key {
-            key: Key::E,
-            physical_key: Some(Key::E),
+            key: Key::L,
+            physical_key: Some(Key::L),
             pressed,
             repeat: false,
             modifiers: Modifiers::NONE,
@@ -9481,21 +9545,45 @@ mod tests {
     #[test]
     fn a_plain_letter_runs_unless_its_press_typed_another_key_s_character() {
         let mut harness = bench(OperatingSystem::Windows);
-        // E switches to Edit from Library.
-        harness.state_mut().shell.view = View::Library;
+        // L chooses Browse's tab from another.
+        harness.state_mut().shell.panel_tab = BASE;
         harness.run();
-        // AltGr+E types ę on a Polish keyboard and € on a German one, and arrives as E.
-        type_e(&mut harness, "ę");
-        type_e(&mut harness, "€");
+        // AltGr+L types ł on a Polish keyboard, and arrives as L.
+        type_l(&mut harness, "ł");
         assert!(harness.state().pressed.is_empty());
-        assert_eq!(harness.state().shell.view, View::Library);
-        // У is the Ukrainian layout's own letter on the E key.
-        type_e(&mut harness, "у");
-        assert_eq!(harness.state().pressed, vec![ActionId::EDIT_VIEW]);
-        assert_eq!(harness.state().shell.view, View::Edit);
-        harness.state_mut().shell.view = View::Library;
-        type_e(&mut harness, "e");
-        assert_eq!(harness.state().pressed, vec![ActionId::EDIT_VIEW; 2]);
+        assert_eq!(harness.state().shell.panel_tab, BASE);
+        // Д is the Ukrainian layout's own letter on the L key.
+        type_l(&mut harness, "д");
+        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE]);
+        assert_eq!(harness.state().shell.panel_tab, BROWSE);
+        harness.state_mut().shell.panel_tab = BASE;
+        type_l(&mut harness, "l");
+        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE; 2]);
+    }
+
+    #[test]
+    fn view_browse_chooses_the_first_tab_holding_browse_and_pressed_again_nothing() {
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.state_mut().shell.panel_tab = 3;
+        harness.run();
+        harness.key_press(Key::L);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, BROWSE);
+        assert_eq!(BROWSE, PHOTOS);
+        // The tab the settings had is forgotten, as a click on a tab forgets it.
+        assert_eq!(harness.state().shell.opening_tab, None);
+        harness.key_press(Key::L);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, BROWSE);
+        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE; 2]);
+        // From the ☰'s menu too, View › Browse, with its key.
+        harness.state_mut().shell.panel_tab = 3;
+        alt(&mut harness, Key::V, Some("v"));
+        let item = harness.get_by_role_and_label(Role::MenuItem, "Browse");
+        assert_eq!(item.accesskit_node().data().keyboard_shortcut(), Some("L"));
+        item.click();
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, BROWSE);
     }
 
     #[test]
@@ -9527,11 +9615,10 @@ mod tests {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         for (modifiers, key) in [
-            // Not built yet: Undo, Redo, Copy edit, Browse, the next photo.
+            // Not built yet: Undo, Redo, Copy edit, the next photo.
             (Modifiers::COMMAND, Key::Z),
             (Modifiers::COMMAND, Key::Y),
             (Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C),
-            (Modifiers::NONE, Key::L),
             (Modifiers::NONE, Key::Space),
             // Can't run now: Edit is showing, the scale is already 100%.
             (Modifiers::NONE, Key::E),
@@ -9565,7 +9652,7 @@ mod tests {
     }
 
     #[test]
-    fn open_image_opens_the_raw_chosen_and_cancelling_opens_nothing() {
+    fn open_opens_the_first_raw_chosen_and_cancelling_opens_nothing() {
         for (os, command) in [
             (
                 OperatingSystem::Windows,
@@ -9588,20 +9675,115 @@ mod tests {
             assert_eq!(bench.dialog.asked, vec![Some(PathBuf::from("Pictures"))]);
             assert!(bench.commands.is_empty(), "{os:?}");
 
-            // While a dialog asks, Open Image… shows no second one.
+            // While a dialog asks, Open… shows no second one.
             harness.key_press_modifiers(command, Key::O);
             harness.run();
             harness.key_press_modifiers(command, Key::O);
             harness.run();
             assert_eq!(harness.state().dialog.asked.len(), 2, "{os:?}");
             assert!(harness.state().commands.is_empty(), "{os:?}");
+            assert_eq!(harness.state().dialog.picks[1], dialogs::Pick::Files);
 
-            // The raw chosen opens through the session, a frame after the dialog asked.
+            // The raw chosen opens through the session, a frame after the dialog asked; the
+            // app opens its folder behind it (`App::open`).
             let raw = PathBuf::from("raws/IMG_2041.CR3");
-            harness.state_mut().dialog.answer = Some(Some(raw.clone()));
+            harness.state_mut().dialog.answer = Some(Some(vec![raw.clone()]));
             harness.run();
             assert_eq!(harness.state().commands, vec![Command::Open(raw)], "{os:?}");
+
+            // Of several from one folder, the first opens; the others wait for the grid
+            // panel's selection.
+            harness.state_mut().commands.clear();
+            harness.key_press_modifiers(command, Key::O);
+            harness.run();
+            let raws = ["raws/IMG_2043.CR3", "raws/IMG_2042.CR3"].map(PathBuf::from);
+            harness.state_mut().dialog.answer = Some(Some(raws.to_vec()));
+            harness.run();
+            let first = Command::Open(raws[0].clone());
+            assert_eq!(harness.state().commands, vec![first], "{os:?}");
         }
+    }
+
+    /// `paths` dropped onto the bench's window, as winit drops them, then the frames that
+    /// take them and, once they have been looked at, open what they open.
+    fn drop_onto(harness: &mut Harness<'_, Bench>, paths: &[&Path]) {
+        for path in paths {
+            let file = dropped::tests::File(path.to_path_buf());
+            harness.input_mut().dropped_files.push(Arc::new(file));
+        }
+        harness.run();
+        harness.state_mut().drops.wait();
+        harness.run();
+    }
+
+    #[test]
+    fn a_folder_or_raws_dropped_open_as_open_folder_and_open_do() {
+        let folder = settings::testing::Folder::new("drop-onto");
+        let (wedding, portraits) = (folder.0.join("Wedding"), folder.0.join("Portraits"));
+        for made in [&wedding, &portraits] {
+            std::fs::create_dir(made).expect("a folder");
+        }
+        let raws = [
+            wedding.join("B.CR3"),
+            portraits.join("C.CR3"),
+            wedding.join("A.CR3"),
+        ];
+        for raw in &raws {
+            std::fs::write(raw, b"").expect("a raw");
+        }
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        let open_folder =
+            |path: &Path| Command::Library(LibraryCommand::Open(Source::Folder(path.to_owned())));
+        // A folder; of two, the first.
+        drop_onto(&mut harness, &[&wedding]);
+        drop_onto(&mut harness, &[&portraits, &wedding]);
+        // Raws: the first, from its folder, the others from it to be selected with it.
+        drop_onto(&mut harness, &[&raws[0], &raws[1], &raws[2]]);
+        assert_eq!(
+            harness.state().commands,
+            vec![
+                open_folder(&wedding),
+                open_folder(&portraits),
+                Command::Open(raws[0].clone())
+            ]
+        );
+        assert!(harness.state().refused.is_empty());
+    }
+
+    #[test]
+    fn a_drop_that_opens_nothing_says_why_and_none_is_taken_under_a_modal_dialog() {
+        let folder = settings::testing::Folder::new("drop-refused");
+        let (notes, library) = (folder.0.join("notes.txt"), folder.0.join("Home.aplibrary"));
+        let raw = folder.0.join("IMG_1.CR3");
+        for file in [&notes, &library, &raw] {
+            std::fs::write(file, b"").expect("a file");
+        }
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        drop_onto(&mut harness, &[&notes]);
+        drop_onto(&mut harness, &[&notes, &library]);
+        assert_eq!(
+            harness.state().refused,
+            vec![
+                (notes.clone(), dropped::Refusal::Unknown),
+                (notes.clone(), dropped::Refusal::Library)
+            ]
+        );
+        // A file that opens nothing beside a raw: the raw opens.
+        drop_onto(&mut harness, &[&notes, &raw]);
+        assert_eq!(harness.state().commands, vec![Command::Open(raw.clone())]);
+
+        // Under Settings, a modal window on Windows, nothing is taken.
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+        harness.run();
+        assert!(harness.state().state(&harness.ctx).modal);
+        let file = dropped::tests::File(raw.clone());
+        harness.input_mut().dropped_files.push(Arc::new(file));
+        harness.run();
+        assert!(!harness.state().drops.looking());
+        assert_eq!(harness.state().commands.len(), 1);
+        assert_eq!(harness.state().refused.len(), 2);
     }
 
     #[test]
@@ -9845,7 +10027,7 @@ mod tests {
         harness.run();
         alt(&mut harness, Key::F, Some("f"));
         assert!(menu_open(&harness, "Menu") && menu_open(&harness, "File"));
-        assert_eq!(focused_name(&harness), "Open Image…");
+        assert_eq!(focused_name(&harness), "Open…");
         // Alt with another opens it at that one instead.
         alt(&mut harness, Key::E, Some("e"));
         assert!(menu_open(&harness, "Edit") && !menu_open(&harness, "File"));
@@ -9922,7 +10104,7 @@ mod tests {
         let check = Role::MenuItemCheckBox;
         let keys = |keys: &str| Some(keys.to_owned());
         assert_eq!(
-            menu_line(&harness, item, "Open Image…"),
+            menu_line(&harness, item, "Open…"),
             (true, keys("Ctrl+O"), None)
         );
         // Built and able to run, with a photo open: enabled, with its key.
