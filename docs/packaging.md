@@ -123,7 +123,7 @@ Apertrust Dev's are the same, under its names: `/Applications/Apertrust Dev.app`
 
 ## Nightly builds
 
-`.github/workflows/nightly-builds.yml` builds Apertrust Dev's packages each night at 01:00 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
+`.github/workflows/nightly-builds.yml` builds Apertrust Dev's packages each night at 01:18 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
 
 - **When**: only when main has changed since the commit the `nightly` tag points at. A run by hand from the Actions tab builds the same way, and its `force` input builds and publishes an unchanged main too. One run at a time; a second waits.
 - **The jobs**: `check` compares main with the tag; then three builds, each `tools/package.sh --dev` with cargo-packager 0.11.8, from a full clone so the version is computed: `macos` on `macos-15` (both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin`), `windows` on `windows-2025` (the installer and the zip), `linux` on `ubuntu-24.04` (the AppImage and the tarball). Each uploads its packages as an artifact, kept seven days.

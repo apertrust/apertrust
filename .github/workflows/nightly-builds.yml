@@ -7,7 +7,7 @@ name: Nightly builds
 # fails, or from a branch other than main.
 on:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "18 1 * * *"   # off the hour, which GitHub delays most
   workflow_dispatch:
     inputs:
       force:
