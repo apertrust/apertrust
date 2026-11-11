@@ -62,7 +62,11 @@ Releases and the nightly builds of Apertrust Dev are on the [Releases page](http
   xattr -d com.apple.quarantine ~/Downloads/Apertrust*.dmg
   ```
 
-  Then open the disk image and drag the app into Applications. An app already copied from a quarantined image needs the same, for the app: `xattr -dr com.apple.quarantine "/Applications/Apertrust Dev.app"` (or `/Applications/Apertrust.app`).
+  Then open the disk image and drag the app into Applications. If the app still won't open, or was copied from an image before its quarantine was removed, remove the app's too:
+
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/Apertrust*.app
+  ```
 
   Or, without Terminal, where macOS names an unidentified developer: open the disk image once, then choose Open Anyway in System Settings › Privacy & Security and confirm, and do the same for the app the first time it opens. On macOS 14 and earlier, Control-click it and choose Open instead.
 - **Windows**: SmartScreen says "Windows protected your PC": choose More info, then Run anyway.
