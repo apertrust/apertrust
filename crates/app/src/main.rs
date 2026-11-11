@@ -648,23 +648,21 @@ const BUTTONS_ROOM: f32 = 78.0;
 /// Mission Control, the Window menu and screen readers. As the start window (`start`), the
 /// size `placement` holds, `start_placement`'s, and neither resized nor maximised.
 fn window(placement: &settings::Window, start: bool) -> egui::ViewportBuilder {
-    let [width, height] = placement
-        .size
-        .unwrap_or(settings::registry::WINDOW_SIZE.default());
+    let size = inner_size(placement, start);
     let viewport = egui::ViewportBuilder::default()
         .with_title(APP_NAME)
         .with_app_id(APP_ID)
         .with_icon(icon());
     let viewport = if start {
         viewport
-            .with_inner_size([width, height])
-            .with_min_inner_size([width, height])
-            .with_max_inner_size([width, height])
+            .with_inner_size(size)
+            .with_min_inner_size(size)
+            .with_max_inner_size(size)
             .with_resizable(false)
             .with_maximize_button(false)
     } else {
         viewport
-            .with_inner_size([width.max(WINDOW_MIN[0]), height.max(WINDOW_MIN[1])])
+            .with_inner_size(size)
             .with_min_inner_size(WINDOW_MIN)
             .with_maximized(MAXIMISES && !PLACE_AFTER_CREATION && placement.maximized)
     };
@@ -685,6 +683,49 @@ fn window(placement: &settings::Window, start: bool) -> egui::ViewportBuilder {
     }
 }
 
+/// The inner size, in logical pixels, the window is made at from `placement`: the start
+/// window's as it is (`start`), the main window's never under [`WINDOW_MIN`].
+fn inner_size(placement: &settings::Window, start: bool) -> [f32; 2] {
+    let size = placement
+        .size
+        .unwrap_or(settings::registry::WINDOW_SIZE.default());
+    if start {
+        size
+    } else {
+        [size[0].max(WINDOW_MIN[0]), size[1].max(WINDOW_MIN[1])]
+    }
+}
+
+/// The inner size, in logical pixels, the window made at `size` is given once it exists on
+/// macOS (`mac`): at most the largest monitor's size in points, the largest width and the
+/// largest height taken apart, as eframe caps it as it makes the window; the main window's
+/// never under [`WINDOW_MIN`], the start window's as it is (`start`). On macOS a window
+/// created at about the screen's visible size came back 20 points smaller (1450 by 848 of
+/// 1470 by 868, on a screen of 1470 by 956); setting its size again once it exists keeps
+/// it. None elsewhere, where the window keeps the size it is made at, and where no monitor
+/// is known.
+fn size_on_screen(
+    size: [f32; 2],
+    start: bool,
+    monitors: &[Monitor],
+    mac: bool,
+) -> Option<[f32; 2]> {
+    if !mac || monitors.is_empty() {
+        return None;
+    }
+    let largest = monitors
+        .iter()
+        .map(|m| m.points().size())
+        .fold(egui::Vec2::ZERO, egui::Vec2::max);
+    let size = egui::Vec2::from(size).min(largest);
+    let size = if start {
+        size
+    } else {
+        size.max(egui::Vec2::from(WINDOW_MIN))
+    };
+    Some([size.x, size.y])
+}
+
 /// Gives the frameless window on Windows the system's drop shadow and border, which winit
 /// leaves off without decorations; Windows 11 rounds its corners with them. Elsewhere the
 /// system or the compositor draws them.
@@ -700,8 +741,12 @@ fn frame_shadow(window: &egui_winit::winit::window::Window) {
 
 /// Moves the new window, not yet shown, where `placement` says, on a monitor that is still
 /// there ([`on_screen`]), then maximises it if it was, on macOS and Windows: there winit
-/// would place it on the monitor it is created on, with that monitor's scale factor.
-fn place(window: &egui_winit::winit::window::Window, placement: &settings::Window) {
+/// would place it on the monitor it is created on, with that monitor's scale factor. On
+/// macOS it is given its size again first ([`size_on_screen`]), the start window's as
+/// `start` says, since one created at about the screen's visible size came back 20 points
+/// smaller.
+fn place(window: &egui_winit::winit::window::Window, placement: &settings::Window, start: bool) {
+    use egui_winit::winit::dpi::LogicalSize;
     if !PLACE_AFTER_CREATION {
         return;
     }
@@ -711,6 +756,12 @@ fn place(window: &egui_winit::winit::window::Window, placement: &settings::Windo
             .unwrap_or(settings::registry::WINDOW_SIZE.default());
         let monitors = monitors(window);
         if let Some(spot) = on_screen(&position, size, &monitors, cfg!(target_os = "macos")) {
+            let inner = inner_size(placement, start);
+            let mac = cfg!(target_os = "macos");
+            if let Some([width, height]) = size_on_screen(inner, start, &monitors, mac) {
+                let size = LogicalSize::new(f64::from(width), f64::from(height));
+                let _ = window.request_inner_size(size);
+            }
             move_to(window, spot);
         }
     }
@@ -766,7 +817,11 @@ fn reshape(window: &egui_winit::winit::window::Window, placement: &settings::Win
         window.set_resizable(false);
         window.set_enabled_buttons(WindowButtons::CLOSE | WindowButtons::MINIMIZE);
     } else {
-        let size = [width.max(WINDOW_MIN[0]), height.max(WINDOW_MIN[1])];
+        // On macOS at most the largest monitor's, so a first run's default size, larger
+        // than a laptop's screen, never runs past its edge and is kept.
+        let size = inner_size(placement, false);
+        let mac = cfg!(target_os = "macos");
+        let size = size_on_screen(size, false, &monitors(window), mac).unwrap_or(size);
         let _ = window.request_inner_size(logical(size));
         window.set_min_inner_size(Some(logical(WINDOW_MIN)));
         window.set_resizable(true);
@@ -859,6 +914,13 @@ struct Monitor {
     primary: bool,
 }
 
+impl Monitor {
+    /// Its rectangle in points, as macOS places windows.
+    fn points(&self) -> egui::Rect {
+        self.rect / self.scale_factor
+    }
+}
+
 /// Where to put a window's corner, in the unit its platform places windows in.
 #[derive(Debug, PartialEq)]
 enum Spot {
@@ -882,7 +944,7 @@ fn on_screen(
         let points = pixels / position.scale_factor;
         return monitors
             .iter()
-            .any(|m| (m.rect / m.scale_factor).contains(points))
+            .any(|m| m.points().contains(points))
             .then_some(Spot::Points(points));
     }
     let size = egui::Vec2::from(size);
@@ -2421,7 +2483,7 @@ impl App {
         let (placement, built_start) = built;
         if let Some(window) = cc.winit_window() {
             frame_shadow(window);
-            place(window, &placement);
+            place(window, &placement, built_start);
         }
         // Only the top panel's empty areas move the window, never its buttons.
         if OWN_TITLE_BAR && let Err(e) = apertrust_display::content_never_moves_window(cc) {
@@ -8987,6 +9049,163 @@ mod tests {
         // 1200 by 732 points at a scale factor of 2, inside 2880 by 1800 pixels.
         assert_eq!(gone, Some(Spot::Pixels(egui::pos2(480.0, 100.0))));
         assert_eq!(on_screen(&at(0.0, 0.0, 1.0), size, &[], false), None);
+    }
+
+    /// The Mac of 1470 by 956 points at 2, the report's.
+    fn mac_monitor() -> Monitor {
+        Monitor {
+            rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(2940.0, 1912.0)),
+            scale_factor: 2.0,
+            primary: true,
+        }
+    }
+
+    /// A window kept as wide as the screen, zoomed on a Mac of 1470 by 956 points at 2,
+    /// opens at that size and place: given its size again once it exists, as one created
+    /// at about the screen's visible size came back 20 points smaller; at most the largest
+    /// monitor's, each way apart, as eframe caps it; and at the size it is made at
+    /// elsewhere.
+    #[test]
+    fn a_full_width_window_reopens_at_its_size_and_place() {
+        let kept = settings::Window {
+            size: Some([1470.0, 868.0]),
+            position: Some(settings::Position {
+                pixels: [0.0, 66.0],
+                scale_factor: 2.0,
+            }),
+            maximized: false,
+        };
+        let position = kept.position.expect("a place");
+        let size = inner_size(&kept, false);
+        let monitors = [mac_monitor()];
+        let spot = on_screen(&position, size, &monitors, true).expect("on the screen");
+        assert_eq!(spot, Spot::Points(egui::pos2(0.0, 33.0)));
+        let restored = size_on_screen(size, false, &monitors, true);
+        assert_eq!(restored, Some([1470.0, 868.0]));
+        // Larger than the screen, as when kept on a larger one.
+        let larger = size_on_screen([1600.0, 1000.0], false, &monitors, true);
+        assert_eq!(larger, Some([1470.0, 956.0]));
+        // The main window never under its least; the start window at its own size.
+        let small = size_on_screen([800.0, 500.0], false, &monitors, true);
+        assert_eq!(small, Some(WINDOW_MIN));
+        let start = start_placement(&kept, 1.0);
+        let start_size = inner_size(&start, true);
+        assert_eq!(start_size, [820.0, 520.0]);
+        let start_restored = size_on_screen(start_size, true, &monitors, true);
+        assert_eq!(start_restored, Some(start_size));
+        // Elsewhere, and with no monitor known, the size it was made at stands.
+        assert_eq!(size_on_screen(size, false, &monitors, false), None);
+        assert_eq!(size_on_screen(size, false, &[], true), None);
+    }
+
+    /// On a first run the main window follows the start window at the default size, larger
+    /// than the Mac's 1470 by 956 points: `reshape` gives it at most the screen's, as eframe
+    /// gives a window it makes, so it never runs past the screen's edge to be kept so; the
+    /// size it asks for stands elsewhere.
+    #[test]
+    fn the_main_window_after_the_start_window_fits_the_screen() {
+        let first = settings::Window {
+            size: None,
+            position: None,
+            maximized: false,
+        };
+        let size = inner_size(&first, false);
+        assert_eq!(size, settings::registry::WINDOW_SIZE.default());
+        let monitors = [mac_monitor()];
+        let fitted = size_on_screen(size, false, &monitors, true);
+        assert_eq!(fitted, Some([1470.0, 956.0]));
+        assert_eq!(size_on_screen(size, false, &monitors, false), None);
+    }
+
+    /// With a second monitor at a scale of 1 to the right of the Mac's: a corner on it is
+    /// found on its rectangle in points, and the size is capped at the largest width and
+    /// the largest height of the two, as eframe caps it. winit gives a Mac's monitor's corner
+    /// as its place in points times its own scale factor, so this one's, 1470 points to the
+    /// right, is at 1470 pixels.
+    #[test]
+    fn a_window_on_a_second_monitor_is_capped_at_the_largest_one() {
+        let screen = Monitor {
+            rect: egui::Rect::from_min_size(egui::pos2(1470.0, 0.0), egui::vec2(2560.0, 1440.0)),
+            scale_factor: 1.0,
+            primary: false,
+        };
+        let points = egui::Rect::from_min_max(egui::pos2(1470.0, 0.0), egui::pos2(4030.0, 1440.0));
+        assert_eq!(screen.points(), points);
+        let monitors = [mac_monitor(), screen];
+        let corner = settings::Position {
+            pixels: [3000.0, 100.0],
+            scale_factor: 1.0,
+        };
+        let spot = on_screen(&corner, [1200.0, 700.0], &monitors, true);
+        assert_eq!(spot, Some(Spot::Points(egui::pos2(3000.0, 100.0))));
+        let capped = size_on_screen([3000.0, 2000.0], false, &monitors, true);
+        assert_eq!(capped, Some([2560.0, 1440.0]));
+        // A height the Mac's screen alone would cut, under the second's.
+        let tall = size_on_screen([1000.0, 1200.0], false, &monitors, true);
+        assert_eq!(tall, Some([1000.0, 1200.0]));
+    }
+
+    /// The start window's size and place never reach the main window's kept placement: not
+    /// while it shows, nor while the main window, given its own back, still has the start
+    /// window's size; the main window's own size is kept once it has it.
+    #[test]
+    fn the_start_window_leaves_the_main_window_s_placement_as_kept() {
+        let folder = settings::testing::Folder::new("start-placement");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let kept = settings::Window {
+            size: Some([1470.0, 868.0]),
+            position: Some(settings::Position {
+                pixels: [0.0, 66.0],
+                scale_factor: 2.0,
+            }),
+            maximized: false,
+        };
+        let settings = Settings {
+            window: kept,
+            ..settings
+        };
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        let mut start = start::Window::new(true, 1.0);
+        let ctx = egui::Context::default();
+        // A frame of the window at `size` points, its corner at `at`, at a scale factor of 2.
+        let frame = |size: egui::Vec2, at: egui::Pos2| {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                ..Default::default()
+            };
+            let viewport = input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            viewport.native_pixels_per_point = Some(2.0);
+            viewport.maximized = Some(false);
+            viewport.fullscreen = Some(false);
+            viewport.outer_rect = Some(egui::Rect::from_min_size(at, size));
+            input
+        };
+        let mut run = |shell: &mut Shell, start: &mut start::Window, input| {
+            run_frame(&ctx, input, |ui| {
+                let size = ui.ctx().input(|i| i.viewport_rect().size()) * ui.ctx().zoom_factor();
+                let tracks = start.keeps_placement(size);
+                keep(shell, &mut keeper, ui.ctx(), tracks);
+            });
+        };
+        let centred = egui::pos2(325.0, 207.0);
+        run(&mut shell, &mut start, frame(start::SIZE, centred));
+        assert_eq!(shell.window, kept);
+        // Something opens: the main window, still at the start window's size for a frame.
+        start.shown = false;
+        start.settling = Some(start::SIZE);
+        run(&mut shell, &mut start, frame(start::SIZE, centred));
+        assert_eq!(shell.window, kept);
+        // Then at its own, which it keeps from then on.
+        let own = egui::vec2(1470.0, 868.0);
+        run(&mut shell, &mut start, frame(own, egui::pos2(0.0, 33.0)));
+        assert_eq!(shell.window, kept);
+        let narrower = egui::vec2(1200.0, 868.0);
+        run(
+            &mut shell,
+            &mut start,
+            frame(narrower, egui::pos2(0.0, 33.0)),
+        );
+        assert_eq!(shell.window.size, Some([1200.0, 868.0]));
     }
 
     #[test]
