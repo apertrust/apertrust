@@ -8291,7 +8291,6 @@ mod tests {
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
-        // Rows are the bottom's; the panel is at the left by default.
         shell.grid.position = apertrust_ui::components::GridPosition::Bottom;
         assert_eq!(shell.grid.rows, 1);
         shell.resize_grid(GridEdgeAction::Resize(3));
