@@ -243,6 +243,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **History and undo** (decision 78; [history.md](history.md)): `history`'s log of steps, each completed change a step with its source, note and batch, darktable's undo merging; the session's undo records; `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `Step` and `Hide`; `Event::History`, a fact; the log saved in the sidecar's version 2.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): `picker` and `picker.slang`, the active picker and stored samples, the reduction at an operation and on the frame, sample-only renders, a pick applied through `Module::pick`, `Event::Picker` and `Event::Samples`.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
 - **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
@@ -713,6 +714,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Switched modules** (decision 32): a module's reset available only while the session reports it edited, a switched module while it is on, or while a change is pending; a switched module that is off told to screen readers as "Not applied", with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): the quads and picker rows drawn, the marks over the photo with their pointer and keys, the central bar's words, and the Colour picker section in the History tab.
 
 ## apertrust-ui
 
@@ -867,6 +869,8 @@ From decision 42 ([docs/gui.md](gui.md), Slider values and choices):
 
 - darktable's fine-control popup as the popup service's `Kind::Slider`, drawn on every platform, opened by Enter, a right-click, Shift+F10 or the Menu key, with `SliderAction::Cancel` on its cancel;
 - `Choice`'s list as the service's dropdown, with darktable's type-to-filter.
+
+From decision 79 ([pickers.md](pickers.md)): the on-photo overlay primitives ([gui.md](gui.md#on-photo-overlays)), `PickerButton` and the picker's marks.
 
 ## apertrust-display
 
@@ -1251,7 +1255,7 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 - Its Master, 4 ways and Masks tabs, with every `gui_init` control in darktable's order under its labels and group labels.
 - Each control is one `colorbalancergb` parameter; a percentage is the parameter times 100, `contrast` and `grey_fulcrum` at 18.45 % among them. darktable UCS is the default formula (decision 22).
 - It plans `colorbalancergb` only while a control is off its default, as in darktable (decision 32).
-- The luminance ranges graph and the mask display wait for the renderer, and the pickers, in the definition, for their tool.
+- The luminance ranges graph and the mask display wait for the renderer, and the pickers, in the definition, for their tool ([pickers.md](pickers.md), decision 79).
 - B4 holds the module's values to darktable's golden cases' parameters.
 
 #### Tone curve
@@ -1300,6 +1304,7 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 ### Planned
 
 - **Camera presets and tuning** (decision 27): preset rows listing a photo's options after their own under a heading (`PresetRow::camera`, `Module::listed`) and taking a tuning addressed like a control (`PresetRow::tuning`, `Module::tuning`), `Module::preset` given the tuning and the module's values. Then White balance's camera presets, stored in `preset` by darktable's name, and Finetune ([docs/modules/white-balance.md](modules/white-balance.md), Build).
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): `Picker`, `Definition::pickers`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick`, and each built module's pickers.
 - **Switched modules** (decision 32): `Definition::switched` for every module darktable leaves off on a new photo: off until a control is written, then on with darktable's defaults, its reset turning it off.
   - `check::accept` refusing a switched module over an operation every photo runs, and `check::switched_defaults` holding its defaults to its operation's.
   - Grain at darktable's 25 %, Soften's 50 %, Vignetting's −0.5 and Haze removal's 0.2, each module version 2 with its migration.

@@ -199,6 +199,12 @@ Planned: each virtual copy's history is one log of steps in its sidecar, a step 
 
 Details: [history.md](history.md).
 
+### Colour pickers
+
+Planned: one active picker per session, a module's or the Colour picker module's, and stored samples beside it. The engine reduces the area on the GPU at the module's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the module's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
+
+Details: [pickers.md](pickers.md).
+
 ### Export
 
 An export is a job of the engine's session, beside live editing: darktable's sizes, resample, formats, variables and file-on-disk rules, written by `apertrust-export`, which has no GPU (decision 56).

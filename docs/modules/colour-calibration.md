@@ -81,7 +81,7 @@ It also decides what a reset of the illuminant gives (C1). Where As shot is cust
 
 **What the panel does not draw yet,** each a gap of the renderer or of a tool still to come:
 
-- the CAT tab's readout row: the CCT readout and the illuminant's colour, which a row drawing a text and a swatch the module computes will bring, and the picker beside them, with its tool;
+- the CAT tab's readout row: the CCT readout and the illuminant's colour, which a row drawing a text and a swatch the module computes will bring, and the picker beside them, designed in [pickers.md](../pickers.md) (decision 79, its pull request 79.9), with its tool;
 - as shot in camera listed on a colour raw only, as darktable's `reload_defaults` lists it: a choice's options do not follow the photo yet, so it is listed on every photo, and on one with no camera's light it renders the stored light through CAT16;
 - hue's track painted round the hues and chroma's from grey to the hue's colour, the temperature's along the loci, and the area mapping target's tracks, which painted tracks will bring (the module panel's row kinds); plain meanwhile;
 - the area colour mapping's input patch with its L, h and c, its target patch and its title's "(active)", which come with the picker; its settings are drawn disabled meanwhile;

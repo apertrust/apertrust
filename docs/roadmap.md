@@ -130,6 +130,21 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [ ] A fine-control popup for sliders, as darktable's (decision 42).
 - [x] The slider's marker as a setting, Triangle, Circle or Square, Square by default, kept whole at the track's ends (decision 75).
 
+### Pickers
+
+darktable's colour pickers and its Colour picker module, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
+
+- [ ] 79.1 The reduction kernel on the frame and the Colour picker's picker through the session, regions mapped through the geometry.
+- [ ] 79.2 Module pickers in the modules crate: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` and its checks.
+- [ ] 79.3 Module pickers in the engine: the reduction at an operation's input and output, sample-only renders, a pick applied as one change.
+- [ ] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
+- [ ] 79.5 The picker button and the picker's marks in the design system.
+- [ ] 79.6 The app: quads and picker rows, the marks over the photo, the pointer, the keys and focus.
+- [ ] 79.7 to 79.13 Each module's pickers: Exposure, White balance, Colour calibration, Colour balance RGB, AgX, then RGB curve and RGB levels with their modules.
+- [ ] 79.14 Stored samples through the session.
+- [ ] 79.15 The scopes restricted to the Colour picker's selection.
+- [ ] 79.16 The Colour picker module in the History tab: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
+
 ### Scopes
 
 - [x] Histogram, waveform, RGB parade and vectorscope, counted on the GPU after each frame, with clipping totals (decision 19).

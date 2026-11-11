@@ -121,7 +121,7 @@ Planned (decision 27; `docs/modules/white-balance.md`, The camera's presets and 
 - `apertrust-raw` parses the file and carries the camera's presets in the image context, which this operation's `defaults` read for `_find_coeffs`' fallback;
 - the module stores a camera preset by darktable's name where darktable stores its position in the list, and binds `preset` as `camera`.
 
-The picker (from image area) comes later.
+The picker (from image area) is White balance's, designed in [pickers.md](../pickers.md) (decision 79): the means of the mosaic's CFA colours over the area, at temperature's input.
 
 ## Gradients
 

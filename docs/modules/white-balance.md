@@ -35,7 +35,7 @@ darktable's page, top to bottom: the button bar, Settings, Finetune, the SCENE I
 - `as_shot`: the as-shot coefficients and `preset` as shot.
 - `d65`: the camera's D65 coefficients (`_calculate_bogus_daylight_wb`, the temperature port's daylight multipliers, Emerald's 1, darktable's being no number on a three-colour sensor) and `preset` camera reference.
 - `d65_late`: the as-shot coefficients and `preset` as shot to reference, under which colorin applies the late correction (decision 21).
-- `spot`, from image area, is the picker's, drawn disabled until the picker comes (`Module::preset` gives `None`).
+- `spot`, from image area, is the picker's, drawn disabled until the picker comes (`Module::preset` gives `None`); choosing it turns the picker on, and a pick stores it ([below](#controls), After a pick).
 - `user`, user modified, is never applied. darktable restores the coefficients its session last had from temperature and tint (`mod_coeff`), which no edit stores (principle 5's first pass, decision 27), so its `preset` gives `None` and it is drawn disabled.
 
 The first three are offered on every photo, as darktable lists them. Without a colour matrix, camera reference writes darktable's D65 coefficients then, every one 1, darktable's own. Its `reload_defaults` looks for the camera's Daylight preset there, but compares the file's names, which its reader lowercases, with "Daylight" and "DirectSunlight", so it never finds one (decision 27).
@@ -47,6 +47,11 @@ The first three are offered on every photo, as darktable lists them. Without a c
 - camera reference with the D65 ones;
 - where the coefficients are any of the camera's presets, the stored `preset` (decision 27, [below](#the-cameras-presets-and-finetune));
 - user modified otherwise, which `matching` names though no command applies it.
+
+**After a pick** (decision 79, [pickers.md](../pickers.md#the-first-passs-pickers)), Settings shows "from image area", the `preset` the pick stored, as darktable's combobox shows it at once (`temperature.c:1967`), and only in the session it was picked. Whenever the module is shown again, darktable's `gui_update` works the label out from the coefficients alone, as above (`temperature.c:1195-1360`), and a picked balance matches nothing, so it is "user modified" (`DT_IOP_TEMP_USER`, `:1338`):
+
+- **When:** as the photo opens, and when Undo, Redo or a `GoTo` bring back White balance's values, as darktable redraws the module then; never right after a pick or a Settings change.
+- **The stored setting** becomes user modified in the session's edit, as darktable sets `p->preset`, and is saved only with the next change. It is never a history step of its own, and nothing is written on open (decision 77).
 
 An option writes its values as they are, with no follow writes, as `_preset_tune_callback` writes its parameters without `gui_changed`.
 
@@ -238,7 +243,7 @@ What is not built yet, and what brings it:
 
 - **The button bar:** darktable's five settings as icon toggles above Settings, the one Settings names pressed, shown by darktable's `button_bar` preference, on by default; a second row of the Settings preset row, waiting for a row that draws a preset row's options as buttons.
 - **The camera's presets with Finetune:** designed by decision 27 ([The camera's presets and Finetune](#the-cameras-presets-and-finetune)), planned in the tasks of [Build](#build). Camera reference without a colour matrix is not among them: its 1, 1, 1 is darktable's own, whose fallback to the camera's Daylight preset never matches.
-- **From image area:** the picker, with Colour calibration's and Exposure's.
+- **From image area:** the picker, designed in [pickers.md](../pickers.md) (decision 79, its pull request 79.8): its toggle and Settings' `spot` turning it on, its pick writing the coefficients and `preset` from the mosaic's means over the area.
 - **The trouble message:** "white balance applied twice (details)" while Colour calibration adapts and the coefficients are off the camera's reference (decision 27), planned after this module.
 - **Painted tracks:** darktable's coloured-sliders preference ("no color" by default; a click on SCENE ILLUMINANT TEMP cycles it), an interface setting with its tool ([README.md](README.md), rule 12); plain tracks meanwhile.
 - **A monochrome raw:** darktable shows "white balance disabled for camera" in place of the controls; the pipeline takes no monochrome raw yet. A four-colour sensor's labels (cyan, yellow, green, magenta, reordered) and Emerald wait with temperature's port of one.
@@ -250,8 +255,8 @@ What is not built yet, and what brings it:
 
 ## Phases
 
-- **Phase 2:** the module with W0 to W9, built. Then the trouble message.
-- **Phase 3:** the camera's presets with Finetune (decision 27, its tasks in [Build](#build), the generic ones free to start before); the picker.
+- **Phase 2:** the module with W0 to W9, built. Then the trouble message. The picker, after the picker's engine and app ([pickers.md](../pickers.md#the-plan)).
+- **Phase 3:** the camera's presets with Finetune (decision 27, its tasks in [Build](#build), the generic ones free to start before).
 
 ## Build
 

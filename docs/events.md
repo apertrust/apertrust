@@ -52,7 +52,7 @@ The topics, `Fact`, as built:
 
 Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
 
-Planned facts: the active photo's history, `Fact::History`, whole each time (decision 78; [history.md](history.md#the-history-event)); a readout, by module (decision 19); the selection and the active photo (decision 37); and a page of the collection shown, by page.
+Planned facts: the active photo's history, `Fact::History`, whole each time (decision 78; [history.md](history.md#the-history-event)); a readout, by module (decision 19); the active colour picker's reading, `Fact::Picker`, and the stored samples, `Fact::Samples` (decision 79; [pickers.md](pickers.md#events)); the selection and the active photo (decision 37); and a page of the collection shown, by page.
 
 ## The events the session sends
 
@@ -87,7 +87,7 @@ Last, `live` (decision 77): whether the photo is live and commands on the edit a
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `History`, the active photo's steps, end and what Undo and Redo would do, at an open and after each batch that changed them (decision 78; [history.md](history.md#the-history-event)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `Picker` and `Samples`, the active colour picker's reading and the stored samples', after the frame or render they measured (decision 79; [pickers.md](pickers.md#events)); `History`, the active photo's steps, end and what Undo and Redo would do, at an open and after each batch that changed them (decision 78; [history.md](history.md#the-history-event)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 
@@ -304,7 +304,7 @@ Kept from darktable:
   - `FILMROLLS_IMPORTED` as an import job's end;
   - `DEVELOP_MIPMAP_UPDATED` as a still's or a thumbnail's arrival;
   - `DEVELOP_PREVIEW_PIPE_FINISHED` and `DEVELOP_UI_PIPE_FINISHED` as `Frame` and `Readout`;
-  - `CONTROL_PICKERDATA_READY` as a picker's readout;
+  - `CONTROL_PICKERDATA_READY` as `Picker`, a picker's reading ([pickers.md](pickers.md#events));
 - a worker's events queued for the GUI thread, as `G_PRIORITY_HIGH_IDLE` queues them;
 - nothing sent after shutdown;
 - `-d signal`.

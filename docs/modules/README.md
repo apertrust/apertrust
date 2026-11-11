@@ -112,7 +112,7 @@ darktable's scene-referred preset lists these modules in no group; darktable rea
 
 - **Photos,** Apertrust's own tab, first (decisions 37, 38 and 73): Browse, pinned, with Folders in folder mode (Phase 2) and Albums and Smart albums (Phase 5); Filters, Keywords, Metadata and Styles (Phase 3).
 - **Styles** are darktable's styles, bundles of module values with no parameters of their own, with content tabs All and Favourites. Applying one is one change, or a layer with opacity (Phase 4). It is in the Photos tab because darktable's styles module is a lighttable module.
-- **History,** Apertrust's own tab, last (decision 38): the edit's history, drawn disabled until built.
+- **History,** Apertrust's own tab, last (decision 38): the edit's history, drawn disabled until built, and the Colour picker module, darktable's color picker utility, under the Scopes pinned there ([pickers.md](../pickers.md#the-colour-picker-module), decision 79, planned).
 - **Scopes** (decision 19): pinned over the modules in every tab but the Photos tab, as darktable's histogram sits over its groups. Its drags send Exposure's commands, so nothing is owned twice.
 - **Layers** (Phase 4): Apertrust's own model, pinned in the four groups' tabs. A layer's mask, opacity and blend mode become the blend settings of each instance it adds; it owns no operation parameter.
 - **AI denoise and AI erase** are Apertrust's own models (Phase 6), not darktable's, so in no darktable group; their tab is decided with their design.
@@ -148,7 +148,7 @@ Port specs, module pages and code cite these by number.
    - An edit from another photo that holds one keeps it, shown last, chosen and disabled, "Not available for this photo".
    - Options darktable lists on no photo, kept only for old darktable edits, are left out until the import of darktable's edits needs them (decision 51, planned).
 9. **Left out:** every module darktable marks deprecated, and modules that do another's job: colour zones (the colour equalizer's), monochrome (colour calibration's grey), base curve and the other display-referred legacy tone tools. Tone mappers are the exception: each is a module of its own ([Tone mappers](#tone-mappers)).
-10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. The module's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
+10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. A picker is declared in `Definition::pickers` with darktable's flags and applied by `Module::pick` ([pickers.md](../pickers.md), decision 79). The module's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
 11. **Layers** replace darktable's instances and per-module masks (decision 34; [layers.md](../layers.md)). A module works on layers unless the tables above say background only.
 12. **darktable's interface settings** (decision 29).
     - darktable's own settings for a tool, kept in darktablerc and never in an edit, are rows of the module (`Row::ToolSetting`), kept in `settings.toml` under `[tools.<module>]` once the tool comes (decision 43).
