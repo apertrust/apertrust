@@ -429,6 +429,10 @@ start-recent-about = { $kind }, { $path }
 start-recent-about-missing = { $kind }, { $path }. { $why }
 start-browse = Огляд…
 start-open = Відкрити
+start-copyright = © 2026
+start-tagline =
+    Вільний, недеструктивний
+    редактор raw-фотографій
 
 ## Налаштування
 

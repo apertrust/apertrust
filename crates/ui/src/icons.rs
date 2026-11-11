@@ -118,6 +118,11 @@ pub enum Icon {
     History,
     Folder,
     Metadata,
+    /// The open kinds that come with the library, beside `Folder`: a library, a project.
+    Library,
+    Project,
+    /// A magnifier: Browse…, which finds a library's or a project's file anywhere.
+    Search,
     /// One photo: Browse's top line while a photo is open alone.
     Photo,
     /// A photo struck through: the grid panel's empty state, a folder with no raws.
@@ -161,7 +166,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 75] = [
+    pub const ALL: [Icon; 78] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -209,6 +214,9 @@ impl Icon {
         Icon::History,
         Icon::Folder,
         Icon::Metadata,
+        Icon::Library,
+        Icon::Project,
+        Icon::Search,
         Icon::Photo,
         Icon::PhotoOff,
         Icon::Histogram,
@@ -371,6 +379,9 @@ impl Icon {
             Icon::History => derived!("history", "rotate-ccw-clock", 22.0),
             Icon::Folder => derived!("folder", "folder", 22.0),
             Icon::Metadata => derived!("metadata", "tag", 22.0),
+            Icon::Library => derived!("library", "library", 16.0),
+            Icon::Project => derived!("project", "briefcase", 16.0),
+            Icon::Search => derived!("search", "search", 16.0),
             Icon::Photo => derived!("photo", "image", 14.0),
             Icon::PhotoOff => derived!("photo-off", "image-off", 16.0),
             Icon::Histogram => own!("histogram", 14.0),

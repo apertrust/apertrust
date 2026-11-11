@@ -3730,6 +3730,7 @@ impl App {
             // Where the app draws the window's frame, but in full screen.
             close: CAPTION_BUTTONS && room.is_some(),
             keys: !state.modal,
+            version: apertrust_base::program!().version,
         };
         let asked = start::show(ui, &recents, &mut self.start.list, shown);
         let mut gesture = None;
@@ -6871,14 +6872,14 @@ mod tests {
             maximized: true,
         };
         let start = start_placement(&main, 1.0);
-        assert_eq!(start.size, Some([760.0, 520.0]));
-        // (1400 - 760) / 2 = 320 points, 640 pixels at 2; (900 - 520) / 2 = 190, 380.
+        assert_eq!(start.size, Some([820.0, 520.0]));
+        // (1400 - 820) / 2 = 290 points, 580 pixels at 2; (900 - 520) / 2 = 190, 380.
         let at = start.position.expect("a place");
-        assert_eq!(at.pixels, [840.0, 480.0]);
+        assert_eq!(at.pixels, [780.0, 480.0]);
         assert_eq!(at.scale_factor, 2.0);
         assert!(!start.maximized);
         let larger = start_placement(&main, 1.5);
-        assert_eq!(larger.size, Some([1140.0, 780.0]));
+        assert_eq!(larger.size, Some([1230.0, 780.0]));
         let first = settings::Window {
             size: None,
             position: None,
@@ -7069,6 +7070,7 @@ mod tests {
                         home: None,
                         close: false,
                         keys: !state.modal,
+                        version: "0.1.0+197~g9201df0",
                     };
                     both.asked
                         .extend(start::show(ui, &recents, &mut both.list, shown));

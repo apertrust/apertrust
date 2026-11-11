@@ -21,22 +21,26 @@
 //!
 //! - A strip at the top, where the Mac's window buttons sit and, on Windows and Linux, the
 //!   close button the app draws; a drag on it moves the window.
-//! - The recents, newest first, each with its kind's icon, its name and its path, the
-//!   chosen one on `accent` with its icon and words in `text_on_accent`. One found gone, or
-//!   whose opening failed, is marked so, with Locate… and Remove from the List. To screen
-//!   readers a list box of options, each named by its name and described by its kind, its
-//!   path and why it cannot be opened, where it cannot.
-//! - The buttons: New Library…, New Project…, Open Folder… and Browse… at the start, the
-//!   library's two and Browse… disabled until Phase 5; Open, the accent button, at the end.
+//! - Two columns. The first third, on `sunken`, a `separator` hairline at its end, holds
+//!   what a splash screen would: the full logo, the version cut at its `~`, the copyright
+//!   and what the app is; then room for a start-up status, empty for now; and at its foot
+//!   the ways in, New Library…, New Project…, Open Folder… and Browse…, a quiet list of
+//!   icon and words, the library's two and Browse… disabled until Phase 5.
+//! - The other two thirds: the recents, newest first, each with its kind's icon, its name
+//!   and its path, the chosen one on `accent` with its icon and words in `text_on_accent`.
+//!   One found gone, or whose opening failed, is marked so, with Locate… and Remove from
+//!   the List. To screen readers a list box of options, each named by its name and
+//!   described by its kind, its path and why it cannot be opened, where it cannot. Under
+//!   them at the end Open, the accent button, level with the last of the ways in.
 //! - The keys: ↑, ↓, Home and End choose in the list and Enter opens the recent chosen
 //!   while the list has the focus, as its chosen row does; Escape closes the window, as its
-//!   close button does; Tab goes from the list to the buttons.
+//!   close button does; Tab goes from the list to the ways in, then to Open.
 
 use std::path::{Path, PathBuf};
 
 use apertrust_ui::components::{Button, caption_button, focus_ring_centred, middle_cut};
 use apertrust_ui::i18n::Args;
-use apertrust_ui::{Icon, theme, tr, translator};
+use apertrust_ui::{Icon, fonts, theme, tr, translator};
 use eframe::egui::{
     self, Align, Key, Layout, Modifiers, Rect, Sense, UiBuilder, accesskit::Role, pos2, vec2,
 };
@@ -45,7 +49,7 @@ use crate::export;
 use crate::library::{Missing, Recent};
 
 /// The start window's size, in points: the wireframe's.
-pub const SIZE: egui::Vec2 = vec2(760.0, 520.0);
+pub const SIZE: egui::Vec2 = vec2(820.0, 520.0);
 
 /// The strip at its top, in points, where the window buttons are, the Mac's centred in it.
 pub const STRIP: f32 = 40.0;
@@ -54,6 +58,9 @@ pub const STRIP: f32 = 40.0;
 const ROW: f32 = 52.0;
 const ICON_COLUMN: f32 = 44.0;
 const ICON: f32 = 28.0;
+
+/// The logo's width in the first column, in points, where the column has room.
+const LOGO_WIDTH: f32 = 220.0;
 
 /// What the person asked of the start window.
 #[derive(Clone, Debug, PartialEq)]
@@ -185,6 +192,15 @@ pub struct Shown<'a> {
     /// Whether its keys are its own: not while a modal dialog or alert, About among them,
     /// is over it, whose Escape is its own.
     pub keys: bool,
+    /// The build's version with its commit, `0.1.0+197~g9201df0`, which the window shows
+    /// cut at its `~`.
+    pub version: &'a str,
+}
+
+/// The version as the start window shows it, cut at its `~` as darktable's splash cuts
+/// it: `0.1.0+197` of `0.1.0+197~g9201df0`.
+fn short_version(version: &str) -> &str {
+    version.split('~').next().unwrap_or(version)
 }
 
 /// Draws the start window over the whole of `ui`'s window: `recents`, newest first, `list`
@@ -199,6 +215,7 @@ pub fn show(
         home,
         close,
         keys: own_keys,
+        version,
     } = shown;
     let ctx = ui.ctx().clone();
     let t = theme(&ctx);
@@ -209,6 +226,17 @@ pub fn show(
     };
     let whole = ctx.content_rect();
     ui.painter().rect_filled(whole, 0.0, t.colors.panel);
+
+    // The two columns: the first third on `sunken`, a hairline of `separator` at its end.
+    let split = (whole.left() + whole.width() / 3.0).round();
+    let first = Rect::from_min_max(whole.min, pos2(split, whole.bottom()));
+    let second = Rect::from_min_max(pos2(split, whole.top()), whole.max);
+    ui.painter().rect_filled(first, 0.0, t.colors.sunken);
+    let edge = Rect::from_min_max(
+        pos2(split - t.shape.hairline, whole.top()),
+        pos2(split, whole.bottom()),
+    );
+    ui.painter().rect_filled(edge, 0.0, t.colors.separator);
 
     // The strip: a drag on it moves the window, a right-click opens its menu; not
     // focusable, so Tab never stops on it.
@@ -224,28 +252,58 @@ pub fn show(
         asked.push(Asked::Menu);
     }
 
+    // The first column's top, what a splash screen would show: the logo, the version, the
+    // copyright and what the app is. The room under them is a start-up status's, to come.
+    let words = translator(&ctx);
+    let mut splash = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_max(
+                pos2(first.left() + t.spacing.xxl, strip.bottom() + t.spacing.xxl),
+                pos2(first.right() - t.spacing.xxl, first.bottom()),
+            ))
+            .layout(Layout::top_down(Align::Min)),
+    );
+    splash.style_mut().interaction.selectable_labels = false;
+    splash.spacing_mut().item_spacing.y = 0.0;
+    let width = LOGO_WIDTH.min(splash.available_width());
+    crate::about::logo(&t).show(&mut splash, width, &words.text("app-name"));
+    let quiet = |text: &str, size: f32| {
+        let text = egui::RichText::new(text)
+            .size(size)
+            .color(t.colors.text_secondary);
+        egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend)
+    };
+    splash.add_space(t.spacing.m);
+    splash.add(quiet(short_version(version), t.text.section_title));
+    splash.add_space(t.spacing.xxs);
+    splash.add(quiet(&words.text("start-copyright"), t.text.small));
+    splash.add_space(t.spacing.xl);
+    splash.add(quiet(&words.text("start-tagline"), t.text.heading));
+
+    // The second column: the recents under their heading, and Open alone at the foot.
     let heading = tr(&ctx, "start-recents");
     let font = egui::FontId::new(
         t.text.section_title,
-        egui::FontFamily::Name(apertrust_ui::fonts::MEDIUM.into()),
+        egui::FontFamily::Name(fonts::MEDIUM.into()),
     );
     let galley = ui
         .painter()
         .layout_no_wrap(heading.clone(), font, t.colors.text_strong);
-    let at = pos2(whole.left() + t.spacing.xxl, strip.bottom() + t.spacing.xs);
+    let at = pos2(second.left() + t.spacing.xxl, strip.bottom() + t.spacing.xs);
     let heading_bottom = at.y + galley.size().y;
     ui.painter().galley(at, galley, t.colors.text_strong);
 
-    // The buttons' bar along the bottom, parted from the list by a separator.
-    let bar_height = t.spacing.l + t.sizes.control + t.spacing.xl;
-    let bar = Rect::from_min_max(pos2(whole.left(), whole.bottom() - bar_height), whole.max);
-    let line = Rect::from_min_size(bar.min, vec2(bar.width(), t.shape.separator_width));
-    ui.painter().rect_filled(line, 0.0, t.colors.separator);
-
+    let foot = Rect::from_min_max(
+        pos2(
+            second.left() + t.spacing.xl,
+            whole.bottom() - t.spacing.xl - t.sizes.control,
+        ),
+        pos2(second.right() - t.spacing.xl, whole.bottom() - t.spacing.xl),
+    );
     let inset = t.spacing.m + t.spacing.xxs;
     let rows = Rect::from_min_max(
-        pos2(whole.left() + inset, heading_bottom + t.spacing.m),
-        pos2(whole.right() - inset, bar.top()),
+        pos2(second.left() + inset, heading_bottom + t.spacing.m),
+        pos2(second.right() - inset, foot.top() - t.spacing.l),
     );
     ui.scope_builder(
         UiBuilder::new()
@@ -275,39 +333,38 @@ pub fn show(
         },
     );
 
-    // The buttons, from the start, so screen readers and Tab meet them as they are seen:
-    // the library's two and Browse… come with Phase 5.
-    let words = translator(&ctx);
+    // The ways in, at the first column's foot, the last ending level with Open, their icons
+    // under the logo's edge. Drawn after the list, so Tab goes from it to them, then to
+    // Open: the library's two and Browse… come with Phase 5.
     let later = words.text("section-tab-later");
-    let inner = Rect::from_min_max(
-        pos2(bar.left() + t.spacing.xl, bar.top() + t.spacing.l),
-        pos2(bar.right() - t.spacing.xl, bar.bottom() - t.spacing.xl),
-    );
+    let ways = [
+        (Icon::Library, "action-new-library", false),
+        (Icon::Project, "action-new-project", false),
+        (Icon::Folder, "action-open-folder", true),
+        (Icon::Search, "start-browse", false),
+    ];
+    let gap = t.spacing.xxs;
+    let height = ways.len() as f32 * (t.sizes.row + gap) - gap;
     let mut start = ui.new_child(
         UiBuilder::new()
-            .max_rect(inner)
-            .layout(Layout::left_to_right(Align::Center)),
+            .max_rect(Rect::from_min_max(
+                pos2(first.left() + t.spacing.xxl - inset, foot.bottom() - height),
+                pos2(first.right() - t.spacing.xxl + inset, foot.bottom()),
+            ))
+            .layout(Layout::top_down(Align::Min)),
     );
-    start.spacing_mut().item_spacing.x = t.spacing.m;
-    for id in ["action-new-library", "action-new-project"] {
-        let text = words.text(id);
-        Button::new(&text)
-            .enabled(false)
-            .tip(&later)
-            .show(&mut start);
+    start.spacing_mut().item_spacing.y = gap;
+    for (icon, id, enabled) in ways {
+        let tip = (!enabled).then_some(later.as_str());
+        let response = way_in(&mut start, icon, &words.text(id), tip);
+        if response.clicked() && id == "action-open-folder" {
+            asked.push(Asked::OpenFolder);
+        }
     }
-    let open_folder = words.text("action-open-folder");
-    if Button::new(&open_folder).show(&mut start).clicked() {
-        asked.push(Asked::OpenFolder);
-    }
-    let browse = words.text("start-browse");
-    Button::new(&browse)
-        .enabled(false)
-        .tip(&later)
-        .show(&mut start);
+
     let mut end = ui.new_child(
         UiBuilder::new()
-            .max_rect(inner)
+            .max_rect(foot)
             .layout(Layout::right_to_left(Align::Center)),
     );
     let chosen = recents.get(list.chosen).filter(|recent| opens(recent));
@@ -334,6 +391,53 @@ pub fn show(
         }
     }
     asked
+}
+
+/// One of the ways in, as wide as `ui`: its icon and its `words`, with no plate, on
+/// `hover` under the pointer and in the focus ring after a key, its icon a step darker than
+/// its words until then. Disabled where it comes `later`, which its tooltip says.
+fn way_in(ui: &mut egui::Ui, icon: Icon, words: &str, later: Option<&str>) -> egui::Response {
+    let t = theme(ui.ctx());
+    let enabled = later.is_none();
+    let size = vec2(ui.available_width(), t.sizes.row);
+    // A disabled one is allocated in a disabled scope, as the design system's buttons are:
+    // it ignores input, takes no focus and keeps its tooltip.
+    let (rect, response) = ui
+        .add_enabled_ui(enabled, |ui| ui.allocate_exact_size(size, Sense::click()))
+        .inner;
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let hovered = enabled && response.hovered();
+        if hovered {
+            painter.rect_filled(rect, t.shape.radius, t.colors.hover);
+        }
+        let (icon_ink, ink) = if !enabled {
+            (t.colors.text_disabled, t.colors.text_disabled)
+        } else if hovered || response.has_focus() {
+            (t.colors.text, t.colors.text_strong)
+        } else {
+            (t.colors.text_secondary, t.colors.text)
+        };
+        let pad = t.spacing.m + t.spacing.xxs;
+        let side = t.sizes.icon_large;
+        let at = Rect::from_min_size(
+            pos2(rect.left() + pad, rect.center().y - side / 2.0),
+            vec2(side, side),
+        );
+        icon.paint(painter, at, icon_ink);
+        let font = egui::FontId::proportional(t.text.body);
+        let galley = painter.layout_no_wrap(words.to_owned(), font, ink);
+        let y = rect.center().y - galley.size().y / 2.0;
+        painter.galley(pos2(at.right() + t.spacing.m, y), galley, ink);
+        if response.has_focus() {
+            focus_ring_centred(painter, rect, &t);
+        }
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(Role::Button, enabled, words));
+    match later {
+        Some(tip) => response.on_hover_text(tip).on_disabled_hover_text(tip),
+        None => response,
+    }
 }
 
 /// The list's keys, read before anything is drawn: while the list has the focus, its chosen

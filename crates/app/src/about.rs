@@ -303,8 +303,9 @@ impl About {
     }
 }
 
-/// The full logo in `t`'s colours: paper letters on a dark theme, ink on a light one.
-fn logo(t: &apertrust_ui::Theme) -> Picture {
+/// The full logo in `t`'s colours: paper letters on a dark theme, ink on a light one;
+/// the start window's too.
+pub(crate) fn logo(t: &apertrust_ui::Theme) -> Picture {
     if t.dark { LOGO_DARK } else { LOGO }
 }
 

@@ -39,6 +39,9 @@ struct Shown {
 
 const HOME: &str = "/Users/me";
 
+/// The build's version, fixed, so the snapshots hold from one commit to the next.
+const VERSION: &str = "0.1.0+197~g9201df0";
+
 /// Five recents, newest first, the fourth gone.
 fn sample() -> Vec<(PathBuf, Option<Mark>)> {
     [
@@ -89,6 +92,7 @@ fn themed(
                     home: Some(Path::new(HOME)),
                     close: shown.close,
                     keys: true,
+                    version: VERSION,
                 };
                 let asked = show(ui, &recents, &mut shown.list, window);
                 shown.asked.extend(asked);
@@ -202,6 +206,43 @@ fn the_list_s_keys_choose_and_open_and_escape_closes() {
     assert_eq!(harness.state().asked, [Asked::Open(family)]);
     press(&mut harness, egui::Key::Escape);
     assert_eq!(harness.state().asked.last(), Some(&Asked::Close));
+}
+
+/// The ways in sit in the first third, in order, the last ending level with Open; the
+/// recents and Open in the other two thirds.
+#[test]
+fn the_ways_in_are_in_the_first_column_ending_level_with_open() {
+    let harness = window(sample());
+    let split = SIZE.x / 3.0;
+    let button = |name: &str| harness.get_by_role_and_label(Role::Button, name).rect();
+    let ways = ["New Library…", "New Project…", "Open Folder…", "Browse…"].map(button);
+    for pair in ways.windows(2) {
+        assert!(pair[0].bottom() <= pair[1].top(), "{pair:?}");
+    }
+    for way in ways {
+        assert!(way.right() <= split, "{way:?}");
+        assert_eq!(way.height(), 26.0, "{way:?}");
+    }
+    let open = button("Open");
+    assert!(open.left() >= split, "{open:?}");
+    assert!((ways[3].bottom() - open.bottom()).abs() < 0.5, "{open:?}");
+    for row in harness.get_all_by_role(Role::ListBoxOption) {
+        let row = row.rect();
+        assert!(row.left() >= split, "{row:?}");
+    }
+}
+
+/// The first column shows the version cut at its `~`, the copyright and what the app is,
+/// on two lines.
+#[test]
+fn the_version_is_cut_at_its_tilde() {
+    let harness = window(sample());
+    harness.get_by_label("0.1.0+197");
+    assert!(harness.query_by_label_contains("g9201df0").is_none());
+    harness.get_by_label("© 2026");
+    harness.get_by_label("A free, non-destructive\nraw photo editor");
+    assert_eq!(short_version("0.1.0"), "0.1.0");
+    assert_eq!(short_version("0.0.0+12~gabc1234-dirty"), "0.0.0+12");
 }
 
 /// Tab goes from the list to the buttons, the first that can be pressed.
