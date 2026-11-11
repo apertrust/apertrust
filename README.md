@@ -56,14 +56,14 @@ Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.m
 
 Releases and the nightly builds of Apertrust Dev are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it:
 
-- **macOS** refuses it as from an unidentified developer, or says it "is damaged and can't be opened". Drag the app from the disk image into Applications, then remove the download's quarantine in Terminal:
+- **macOS** refuses the disk image, and the app in it, as from an unidentified developer, or says it "is damaged and can't be opened". Before opening the disk image, remove the download's quarantine from it in Terminal; the app copied out of it then opens too:
 
   ```sh
-  xattr -dr com.apple.quarantine "/Applications/Apertrust Dev.app"   # a nightly
-  xattr -dr com.apple.quarantine /Applications/Apertrust.app         # a release
+  xattr -d com.apple.quarantine ~/Downloads/Apertrust-dev_*.dmg   # a nightly
+  xattr -d com.apple.quarantine ~/Downloads/Apertrust_*.dmg       # a release
   ```
 
-  Or open it once, then choose Open Anyway in System Settings › Privacy & Security and confirm. On macOS 14 and earlier, Control-click the app and choose Open.
+  Then open the disk image and drag the app into Applications. An app already copied from a quarantined image needs the same, for the app: `xattr -dr com.apple.quarantine "/Applications/Apertrust Dev.app"` (or `/Applications/Apertrust.app`).
 - **Windows**: SmartScreen says "Windows protected your PC": choose More info, then Run anyway.
 - **Linux**: make the AppImage executable (`chmod +x`) and run it.
 
