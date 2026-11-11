@@ -854,6 +854,14 @@ impl Keeper {
         engine::cache_limit(&self.store)
     }
 
+    /// From which size a photo with no edit shows a render of its raw, as
+    /// `library.raw_thumbnails_from` gives it now, which the session is given as it starts
+    /// and again each time it changes.
+    pub fn raw_thumbnails(&self) -> apertrust_engine::session::library::RawThumbnails {
+        self.store
+            .get(&engine::registry::LIBRARY_RAW_THUMBNAILS_FROM)
+    }
+
     /// Takes in a frame's settings at `now`, which the store writes once they have stood
     /// still for a second. Returns how long until they will have, for a frame then.
     pub fn frame(&mut self, now: Instant, settings: &Settings) -> Option<Duration> {

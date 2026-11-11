@@ -693,6 +693,9 @@ fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
         let stopping = scope.spawn(|| control.shutdown());
         events.ended(a);
         events.ended(c);
+        // The hidden job, which sends no events, has told its stop, so no late word of it
+        // reaches the count below.
+        heard.until(|told| matches!(told, Told::Stopped("hidden", _)));
         assert_eq!(control.state(b), Some(State::Running));
         go.send(()).unwrap();
         stopping.join().unwrap();

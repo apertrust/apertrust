@@ -80,6 +80,33 @@ pub(crate) fn read_preview_source(
     source: &RawSource,
     longest: u32,
 ) -> Result<Option<Preview>, Error> {
+    read_source(source, longest, false).map(|(picture, _)| picture)
+}
+
+/// The embedded picture as [`read_preview_file`] reads it, with the stored size of the
+/// largest the file holds; `None` for both where it holds none.
+pub type Embedded = (Option<Preview>, Option<(u32, u32)>);
+
+/// Reads the raw file's embedded picture as [`read_preview_file`] does, with the size of the
+/// largest the file holds as it is stored, before it is made smaller or turned upright:
+/// what darktable's `dt_imageio_large_thumbnail` gives `_init_8` to compare. `None` for
+/// both where the file holds none rawler reads.
+pub fn read_embedded_file(path: impl AsRef<Path>, longest: u32) -> Result<Embedded, Error> {
+    let path = path.as_ref();
+    let source = RawSource::new(path).map_err(|source| Error::Read {
+        path: path.to_owned(),
+        source,
+    })?;
+    read_source(&source, longest, true)
+}
+
+/// The embedded picture at most `longest` on its longer side, upright, and where `sized`
+/// the stored size of the largest the file holds, which reads both of rawler's pictures.
+pub(crate) fn read_source(
+    source: &RawSource,
+    longest: u32,
+    sized: bool,
+) -> Result<Embedded, Error> {
     let longest = longest.max(1);
     // A parser bug on an odd file must not take the application down.
     let read = catch_unwind(AssertUnwindSafe(|| {
@@ -93,23 +120,27 @@ pub(crate) fn read_preview_source(
             .map_or(Orientation::Normal, |tag| {
                 orientation_from(RawlerOrientation::from_u16(tag))
             });
-        Ok::<_, Error>(
-            embedded(&*decoder, source, &params, longest).map(|picture| (picture, orientation)),
-        )
+        let (picture, size) = embedded(&*decoder, source, &params, longest, sized);
+        Ok::<_, Error>((picture.map(|picture| (picture, orientation)), size))
     }))
     .map_err(|_| Error::Decode("the decoder panicked reading the embedded picture".to_owned()))??;
-    Ok(read.map(|(picture, orientation)| turn(&shrink(&picture, longest), orientation)))
+    let (read, size) = read;
+    let picture = read.map(|(picture, orientation)| turn(&shrink(&picture, longest), orientation));
+    Ok((picture, size))
 }
 
 /// The smaller of the file's thumbnail and preview that is at least `longest` on its longer
 /// side, else the larger; a picture rawler fails to decode counts as none. The thumbnail is
-/// the smaller by its nature, so the preview is decoded only where it is not enough.
+/// the smaller by its nature, so the preview is decoded only where it is not enough, unless
+/// `sized` asks for the stored size of the larger too: then each is decoded once, and the
+/// size comes with the choice.
 fn embedded(
     decoder: &dyn Decoder,
     source: &RawSource,
     params: &RawDecodeParams,
     longest: u32,
-) -> Option<Preview> {
+    sized: bool,
+) -> (Option<Preview>, Option<(u32, u32)>) {
     // rawler's pictures are the `image` crate's, read here without naming its types.
     macro_rules! rgba {
         ($picture:expr) => {
@@ -125,14 +156,21 @@ fn embedded(
     }
     let side = |p: &Preview| p.width.max(p.height);
     let thumbnail = rgba!(decoder.thumbnail_image(source, params)).filter(|p| side(p) > 0);
-    if let Some(thumbnail) = thumbnail.as_ref().filter(|p| side(p) >= longest) {
-        return Some(thumbnail.clone());
+    let enough = |p: &&Preview| side(p) >= longest;
+    if !sized && let Some(thumbnail) = thumbnail.as_ref().filter(enough) {
+        return (Some(thumbnail.clone()), None);
     }
     let preview = rgba!(decoder.preview_image(source, params)).filter(|p| side(p) > 0);
-    match (thumbnail, preview) {
-        (Some(thumbnail), Some(preview)) if side(&thumbnail) > side(&preview) => Some(thumbnail),
-        (thumbnail, preview) => preview.or(thumbnail),
-    }
+    let larger = match (&thumbnail, &preview) {
+        (Some(thumbnail), Some(preview)) if side(thumbnail) > side(preview) => Some(thumbnail),
+        (thumbnail, preview) => preview.as_ref().or(thumbnail.as_ref()),
+    };
+    let size = larger.map(|larger| (larger.width, larger.height));
+    let picture = match thumbnail.as_ref().filter(enough) {
+        Some(thumbnail) => Some(thumbnail.clone()),
+        None => larger.cloned(),
+    };
+    (picture, size.filter(|_| sized))
 }
 
 /// `picture` at most `longest` pixels on its longer side, each pixel the mean of those

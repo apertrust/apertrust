@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_raw::DateTime;
 
@@ -78,6 +78,10 @@ pub enum LibraryCommand {
     /// inside it ([`inside`]). Answered by [`LibraryEvent::SubfoldersOf`]. A new open or a
     /// close drops it.
     Subfolders { folder: PathBuf },
+    /// From which size a photo with no edit shows a render of its raw rather than the
+    /// camera's embedded picture, the engine's setting `library.raw_thumbnails_from`, for
+    /// the thumbnails and opening pictures from now on; answered by nothing.
+    RawThumbnails(RawThumbnails),
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -514,16 +518,28 @@ pub fn thumbnail_key(folder: &Path, photo: &str, size: u32) -> Option<ThumbnailK
         return None;
     }
     let path = folder.join(photo);
-    let meta = std::fs::metadata(&path).ok()?;
-    let modified = meta.modified().ok()?;
-    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    let stamp = raw_stamp(&path)?;
     let slot = thumbnail_slot(&path, size);
     let mut version = EMBEDDED.to_vec();
     version.extend_from_slice(apertrust_raw::PREVIEW_VERSION.as_bytes());
     version.push(0);
-    version.extend_from_slice(&meta.len().to_le_bytes());
-    version.extend_from_slice(&since.as_nanos().to_le_bytes());
+    version.extend_from_slice(&stamp);
     Some(ThumbnailKey { slot, version })
+}
+
+/// A file as a thumbnail's version knows it: its size in bytes, a little-endian `u64`,
+/// then its modified time in nanoseconds since the Unix epoch, a little-endian `u128`.
+pub type RawStamp = [u8; 24];
+
+/// The [`RawStamp`] of the file at `path`; `None` where its size or modified time cannot
+/// be read.
+pub fn raw_stamp(path: &Path) -> Option<RawStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    let since = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+    let mut stamp = [0; 24];
+    stamp[..8].copy_from_slice(&meta.len().to_le_bytes());
+    stamp[8..].copy_from_slice(&since.as_nanos().to_le_bytes());
+    Some(stamp)
 }
 
 /// The sizes a thumbnail is kept at in the cache, smallest first (`docs/cache.md`,
@@ -537,6 +553,242 @@ pub const EMBEDDED: &[u8] = b"embedded\0";
 /// starts with, its edit's hash and the render version after it (the library's step 6),
 /// which an opening photo shows first, stale or not (decision 77).
 pub const RENDERED: &[u8] = b"rendered\0";
+
+/// The operations and viewport pipeline used for rendered thumbnails. Increment this
+/// whenever an operation or the pipeline changes the pixels a saved edit produces,
+/// including colour conversion, quantisation and thumbnail averaging, and whenever a
+/// module's or an operation's defaults change, which every render of a photo with no edit
+/// ([`UNALTERED`]) holds. This is separate
+/// from the application's build version so unrelated changes keep the cache useful.
+pub const THUMBNAIL_RENDER_VERSION: u32 = 1;
+
+/// A rendered thumbnail's version: [`RENDERED`], the BLAKE3 hash of the sidecar's
+/// exact saved bytes ([`crate::index::hash`]), then [`THUMBNAIL_RENDER_VERSION`] as
+/// four little-endian bytes.
+pub fn rendered_version(edit_hash: &[u8; 32]) -> Vec<u8> {
+    let mut version = RENDERED.to_vec();
+    version.extend_from_slice(edit_hash);
+    version.extend_from_slice(&THUMBNAIL_RENDER_VERSION.to_le_bytes());
+    version
+}
+
+/// Whether a rendered thumbnail was made from these saved bytes and the current
+/// render version. Other rendered versions may still be shown while a new one comes. A
+/// photo with no edit's render ([`UNALTERED`]) never matches here: it is current only with
+/// the facts of the raw as it is now, which [`unaltered_facts`] checks.
+pub fn rendered_matches(version: &[u8], edit_hash: &[u8; 32]) -> bool {
+    *edit_hash != UNALTERED && version == rendered_version(edit_hash)
+}
+
+/// A rendered thumbnail's version for a photo with no edit: [`rendered_version`] of
+/// [`UNALTERED`], then the raw's facts darktable's rule read as it was written, so a grid
+/// read of it decides with no look at the raw: 1 or 0 for an embedded picture, its stored
+/// width and height, the raw's width and height, each a little-endian `u32`, 1 or 0 for
+/// Phase One, then the raw's [`RawStamp`] as they were read. A render whose facts could not
+/// be read is [`rendered_version`] of [`UNALTERED`] alone, so a later read looks again.
+pub fn unaltered_version(facts: &RawFacts, stamp: &RawStamp) -> Vec<u8> {
+    let mut version = rendered_version(&UNALTERED);
+    let (width, height) = facts.embedded.unwrap_or((0, 0));
+    version.push(u8::from(facts.embedded.is_some()));
+    for word in [width, height, facts.raw.0, facts.raw.1] {
+        version.extend_from_slice(&word.to_le_bytes());
+    }
+    version.push(u8::from(facts.phase_one));
+    version.extend_from_slice(stamp);
+    version
+}
+
+/// The facts a rendered thumbnail of a photo with no edit records, at the current render
+/// version and of the raw at `stamp` ([`unaltered_version`]); `None` for any other version,
+/// one of a raw since replaced or one that records none.
+pub fn unaltered_facts(version: &[u8], stamp: &RawStamp) -> Option<RawFacts> {
+    let recorded = version.strip_prefix(rendered_version(&UNALTERED).as_slice())?;
+    let (facts, recorded) = recorded.split_at_checked(18)?;
+    if recorded != stamp {
+        return None;
+    }
+    let [present, rest @ .., phase_one] = facts else {
+        return None;
+    };
+    let words: Vec<u32> = rest
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|word| u32::from_le_bytes(*word))
+        .collect();
+    let [width, height, raw_width, raw_height] = words[..] else {
+        return None;
+    };
+    (*present <= 1 && *phase_one <= 1).then_some(RawFacts {
+        embedded: (*present == 1).then_some((width, height)),
+        raw: (raw_width, raw_height),
+        phase_one: *phase_one == 1,
+    })
+}
+
+/// The edit hash a rendered thumbnail of a photo with no edit carries in its version, in
+/// place of its sidecar's: every such photo, with no sidecar or one at the defaults,
+/// renders alike.
+pub const UNALTERED: [u8; 32] = [0; 32];
+
+/// Whether `version` is a rendered thumbnail of a photo with no edit, whatever its render
+/// version.
+pub fn rendered_unaltered(version: &[u8]) -> bool {
+    version
+        .strip_prefix(RENDERED)
+        .is_some_and(|rest| rest.starts_with(&UNALTERED))
+}
+
+/// darktable's `plugins/lighttable/thumbnail_raw_min_level` (Preferences › Lighttable ›
+/// Thumbnails), the engine's setting `library.raw_thumbnails_from`: from which size a photo
+/// with no edit shows a render of its raw rather than the camera's embedded picture. Each
+/// size is one of darktable's thumbnail levels, `dt_mipmap_size_t` ([`LEVELS`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RawThumbnails {
+    Always,
+    Small,
+    Vga,
+    P720,
+    P1080,
+    Wqxga,
+    K4,
+    K5,
+    K6,
+    K8,
+    #[default]
+    Never,
+    Auto,
+}
+
+/// Kept by darktable's own strings in `settings.toml`, in its order.
+impl apertrust_base::settings::Choice for RawThumbnails {
+    const OPTIONS: &'static [(RawThumbnails, &'static str)] = &[
+        (RawThumbnails::Always, "always"),
+        (RawThumbnails::Small, "small"),
+        (RawThumbnails::Vga, "VGA"),
+        (RawThumbnails::P720, "720p"),
+        (RawThumbnails::P1080, "1080p"),
+        (RawThumbnails::Wqxga, "WQXGA"),
+        (RawThumbnails::K4, "4K"),
+        (RawThumbnails::K5, "5K"),
+        (RawThumbnails::K6, "6K"),
+        (RawThumbnails::K8, "8K"),
+        (RawThumbnails::Never, "never"),
+        (RawThumbnails::Auto, "auto"),
+    ];
+}
+
+/// What darktable's raw-thumbnail rule reads of a raw besides the setting (`_init_8` of
+/// `mipmap_cache.c`): the stored size of the largest embedded picture, `None` where it
+/// holds none or it cannot be read; the raw's size, its whole readout, as `dt_image_t`'s
+/// width and height; and whether Phase One made it, whose embedded picture darktable
+/// never takes, its orientation misread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawFacts {
+    pub embedded: Option<(u32, u32)>,
+    pub raw: (u32, u32),
+    pub phase_one: bool,
+}
+
+impl RawFacts {
+    /// Whether a camera of `make` is Phase One's, as darktable tells it, by the make's
+    /// start.
+    pub fn phase_one(make: &str) -> bool {
+        make.starts_with("Phase One")
+    }
+
+    /// A raw nothing could be read of: no embedded picture, so rendered.
+    pub const UNREADABLE: RawFacts = RawFacts {
+        embedded: None,
+        raw: (0, 0),
+        phase_one: false,
+    };
+}
+
+/// darktable's thumbnail levels 0 to 9, `DT_MIPMAP_0` to `DT_MIPMAP_9`: the largest
+/// picture each holds, width by height (`mipmap_cache.c`, `mipsizes`, at the reference
+/// release). Level 10 holds any size.
+pub const LEVELS: [(u32, u32); 10] = [
+    (180, 110),
+    (360, 225),
+    (720, 450),
+    (1440, 900),
+    (1920, 1200),
+    (2560, 1600),
+    (4096, 2560),
+    (5120, 3200),
+    (6144, 3456),
+    (7680, 4320),
+];
+
+impl RawThumbnails {
+    /// The level from which a render is shown, as darktable's
+    /// `dt_mipmap_cache_get_min_mip_from_pref` gives it: always the first, each size its
+    /// own, auto every one (10, `DT_MIPMAP_LDR_MAX`), never none.
+    fn threshold(self) -> Option<usize> {
+        match self {
+            RawThumbnails::Always => Some(0),
+            RawThumbnails::Small => Some(1),
+            RawThumbnails::Vga => Some(2),
+            RawThumbnails::P720 => Some(3),
+            RawThumbnails::P1080 => Some(4),
+            RawThumbnails::Wqxga => Some(5),
+            RawThumbnails::K4 => Some(6),
+            RawThumbnails::K5 => Some(7),
+            RawThumbnails::K6 => Some(8),
+            RawThumbnails::K8 => Some(9),
+            RawThumbnails::Auto => Some(LEVELS.len()),
+            RawThumbnails::Never => None,
+        }
+    }
+
+    /// Whether a photo with no edit shows a render of its raw, where one is in hand, for a
+    /// picture of at most `asked`, rather than the camera's embedded picture, as
+    /// darktable's `_init_8` chooses:
+    ///
+    /// - a Phase One raw, or one with no embedded picture or one that cannot be read, is
+    ///   rendered whatever the choice;
+    /// - never: the embedded picture;
+    /// - asked at a level above the choice's: the render;
+    /// - at or below it: the embedded picture, unless it is smaller on both sides than the
+    ///   level's own size (any size at the last level, darktable's 999999999 by 999999999)
+    ///   and than the raw's less 4 pixels.
+    pub fn shows_render(self, asked: (u32, u32), facts: &RawFacts) -> bool {
+        let Some((width, height)) = facts.embedded.filter(|_| !facts.phase_one) else {
+            return true;
+        };
+        let Some(threshold) = self.threshold() else {
+            return false;
+        };
+        let level = level(asked);
+        if level > threshold {
+            return true;
+        }
+        // darktable's last level, `mipsizes[10]`, is 999999999 on both sides.
+        let (level_width, level_height) =
+            LEVELS.get(level).copied().unwrap_or((u32::MAX, u32::MAX));
+        let (raw_width, raw_height) = facts.raw;
+        width < level_width
+            && height < level_height
+            && width < raw_width.saturating_sub(4)
+            && height < raw_height.saturating_sub(4)
+    }
+
+    /// Whether [`Self::shows_render`] at `asked` is the render whatever the raw holds.
+    pub fn renders_at(self, asked: (u32, u32)) -> bool {
+        self.threshold()
+            .is_some_and(|threshold| level(asked) > threshold)
+    }
+}
+
+/// darktable's level for a picture of at most `width` by `height`, as
+/// `dt_mipmap_cache_get_matching_size` chooses it: the first that holds it, else 10.
+pub fn level((width, height): (u32, u32)) -> usize {
+    LEVELS
+        .iter()
+        .position(|&(w, h)| w >= width && h >= height)
+        .unwrap_or(LEVELS.len())
+}
 
 /// The cache's slot of the thumbnail of the raw at `path` at `size`, whatever picture it
 /// holds: the photo, its virtual copy and the size.
@@ -999,5 +1251,192 @@ mod tests {
         assert!(took < Duration::from_secs(2), "returned after {took:?}");
         drop(done);
         releaser.join().unwrap();
+    }
+
+    #[test]
+    fn a_rendered_version_names_the_exact_saved_edit_and_renderer() {
+        let hash = crate::index::hash(b"saved sidecar bytes");
+        let version = rendered_version(&hash);
+        assert_eq!(&version[..RENDERED.len()], RENDERED);
+        assert_eq!(&version[RENDERED.len()..RENDERED.len() + 32], &hash);
+        assert_eq!(
+            &version[RENDERED.len() + 32..],
+            &THUMBNAIL_RENDER_VERSION.to_le_bytes()
+        );
+        assert!(rendered_matches(&version, &hash));
+        assert!(!rendered_matches(
+            &version,
+            &crate::index::hash(b"another edit")
+        ));
+        let mut older = version.clone();
+        *older.last_mut().unwrap() ^= 1;
+        assert!(!rendered_matches(&older, &hash));
+        assert!(!rendered_matches(RENDERED, &hash));
+        assert!(!rendered_unaltered(&version));
+        assert!(rendered_unaltered(&rendered_version(&UNALTERED)));
+        assert!(rendered_unaltered(&[RENDERED, &UNALTERED, b"old"].concat()));
+        assert!(!rendered_unaltered(&[EMBEDDED, &UNALTERED].concat()));
+    }
+
+    /// A photo with no edit's render records the facts darktable's rule read, each read
+    /// back as written for the raw it read; none for a raw since replaced, a version that
+    /// records none or another edit's, and none of them matches as an edit's render does.
+    #[test]
+    fn an_unaltered_render_records_the_raws_facts() {
+        let stamp = [7; 24];
+        for facts in [
+            RawFacts {
+                embedded: Some((1616, 1080)),
+                raw: (9504, 6336),
+                phase_one: false,
+            },
+            RawFacts {
+                embedded: None,
+                raw: (6048, 4024),
+                phase_one: true,
+            },
+        ] {
+            let version = unaltered_version(&facts, &stamp);
+            assert!(rendered_unaltered(&version));
+            assert!(!rendered_matches(&version, &UNALTERED));
+            assert_eq!(unaltered_facts(&version, &stamp), Some(facts));
+            let mut replaced = stamp;
+            replaced[0] ^= 1;
+            assert_eq!(unaltered_facts(&version, &replaced), None);
+        }
+        let plain = rendered_version(&UNALTERED);
+        assert_eq!(unaltered_facts(&plain, &stamp), None);
+        assert!(!rendered_matches(&plain, &UNALTERED));
+        let hash = crate::index::hash(b"saved sidecar bytes");
+        assert_eq!(unaltered_facts(&rendered_version(&hash), &stamp), None);
+        let facts = RawFacts {
+            embedded: None,
+            raw: (1, 1),
+            phase_one: false,
+        };
+        let mut longer = unaltered_version(&facts, &stamp);
+        longer.push(0);
+        assert_eq!(unaltered_facts(&longer, &stamp), None);
+    }
+
+    /// A grid cell's size takes darktable's level whose picture holds it: 128 takes 360 by
+    /// 225, as 110 rows are too few; 1024 takes 1920 by 1200; past 7680 by 4320, the last.
+    #[test]
+    fn a_size_takes_darktable_s_first_level_that_holds_it() {
+        assert_eq!(level((128, 128)), 1);
+        assert_eq!(level((180, 110)), 0);
+        assert_eq!(level((256, 256)), 2);
+        assert_eq!(level((512, 512)), 3);
+        assert_eq!(level((1024, 1024)), 4);
+        assert_eq!(level((2400, 1600)), 5);
+        assert_eq!(level((8000, 8000)), 10);
+    }
+
+    fn facts(embedded: Option<(u32, u32)>) -> RawFacts {
+        RawFacts {
+            embedded,
+            raw: (6048, 4024),
+            phase_one: false,
+        }
+    }
+
+    /// darktable's `_init_8`, from the reference release: a 1024 cell is 1080p's level,
+    /// 1920 by 1200, so a 1620 by 1080 embedded picture is smaller than it and rendered at
+    /// or below that level, and shown under never or above it.
+    #[test]
+    fn a_1024_cell_compares_the_embedded_picture_with_its_level_s_size() {
+        let embedded = facts(Some((1620, 1080)));
+        let cell = (1024, 1024);
+        assert!(!RawThumbnails::Never.shows_render(cell, &embedded));
+        assert!(RawThumbnails::P1080.shows_render(cell, &embedded));
+        assert!(RawThumbnails::Auto.shows_render(cell, &embedded));
+        assert!(RawThumbnails::P720.shows_render(cell, &embedded));
+        // At a level above it, as large as its level: the embedded picture.
+        let full = facts(Some((6000, 4000)));
+        assert!(!RawThumbnails::Auto.shows_render(cell, &full));
+        assert!(!RawThumbnails::P1080.shows_render(cell, &full));
+        assert!(RawThumbnails::P720.shows_render(cell, &full));
+    }
+
+    /// A 128 cell is small's level, 360 by 225: a 320 by 240 embedded picture is not
+    /// smaller on both sides, so it is shown; one of 160 by 120 is not.
+    #[test]
+    fn a_128_cell_shows_an_embedded_picture_as_large_as_its_level() {
+        let cell = (128, 128);
+        assert!(!RawThumbnails::Auto.shows_render(cell, &facts(Some((320, 240)))));
+        assert!(!RawThumbnails::Small.shows_render(cell, &facts(Some((320, 240)))));
+        assert!(RawThumbnails::Auto.shows_render(cell, &facts(Some((160, 120)))));
+        assert!(RawThumbnails::Always.shows_render(cell, &facts(Some((320, 240)))));
+    }
+
+    /// An embedded picture within 4 pixels of the raw's own size is shown, however small
+    /// beside the level.
+    #[test]
+    fn an_embedded_picture_the_raw_s_size_is_shown() {
+        let small_raw = RawFacts {
+            embedded: Some((640, 480)),
+            raw: (644, 484),
+            phase_one: false,
+        };
+        assert!(!RawThumbnails::Auto.shows_render((1024, 1024), &small_raw));
+        let larger_raw = RawFacts {
+            raw: (645, 485),
+            ..small_raw
+        };
+        assert!(RawThumbnails::Auto.shows_render((1024, 1024), &larger_raw));
+    }
+
+    /// With no embedded picture, or one that cannot be read, and for a Phase One raw, a
+    /// render is shown under every choice, never included.
+    #[test]
+    fn no_embedded_picture_or_phase_one_is_rendered_even_under_never() {
+        let phase_one = RawFacts {
+            phase_one: true,
+            ..facts(Some((6000, 4000)))
+        };
+        for raw in [RawThumbnails::Never, RawThumbnails::Auto, RawThumbnails::K8] {
+            assert!(raw.shows_render((256, 256), &facts(None)), "{raw:?}");
+            assert!(
+                raw.shows_render((256, 256), &RawFacts::UNREADABLE),
+                "{raw:?}"
+            );
+            assert!(raw.shows_render((256, 256), &phase_one), "{raw:?}");
+        }
+        assert!(RawFacts::phase_one("Phase One A/S"));
+        assert!(!RawFacts::phase_one("Hasselblad"));
+    }
+
+    /// The last level holds any size, as darktable's `mipsizes[10]` of 999999999 does: an
+    /// embedded picture is smaller than it however large.
+    #[test]
+    fn darktable_s_choices_and_ids() {
+        use apertrust_base::settings::Choice;
+        let central = (2400, 1600);
+        assert_eq!(level((10_000, 8_000)), 10);
+        assert!(RawThumbnails::Auto.shows_render((10_000, 8_000), &facts(Some((6000, 4000)))));
+        assert!(!RawThumbnails::Auto.shows_render((5000, 3000), &facts(Some((6000, 4000)))));
+        // Larger than the size asked at the last level, still smaller than it.
+        let large = RawFacts {
+            embedded: Some((11_000, 8_500)),
+            raw: (12_000, 9_000),
+            phase_one: false,
+        };
+        assert!(RawThumbnails::Auto.shows_render((10_000, 8_000), &large));
+        // The central panel is WQXGA's level, 2560 by 1600.
+        assert!(!RawThumbnails::Wqxga.shows_render(central, &facts(Some((6000, 4000)))));
+        assert!(RawThumbnails::Wqxga.shows_render(central, &facts(Some((1620, 1080)))));
+        assert!(RawThumbnails::P1080.renders_at(central));
+        assert!(!RawThumbnails::Wqxga.renders_at(central));
+        assert!(!RawThumbnails::Never.renders_at((128, 128)));
+        assert!(RawThumbnails::Always.renders_at((128, 128)));
+        let ids: Vec<&str> = RawThumbnails::OPTIONS.iter().map(|(_, id)| *id).collect();
+        assert_eq!(
+            ids,
+            [
+                "always", "small", "VGA", "720p", "1080p", "WQXGA", "4K", "5K", "6K", "8K",
+                "never", "auto"
+            ]
+        );
+        assert_eq!(RawThumbnails::default(), RawThumbnails::Never);
     }
 }

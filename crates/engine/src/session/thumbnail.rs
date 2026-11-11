@@ -18,9 +18,13 @@
 //! Kinds; `docs/library.md`, Thumbnails), around the library's reading of the camera's
 //! embedded picture ([`library::thumbnail`]).
 //!
-//! - **A read first:** the cache's entry for the photo's slot, at the version its file and
-//!   the embedded picture's reading give ([`library::thumbnail_key`]), sent as the library
-//!   would send it.
+//! - **A read first:** the cache's entry for the photo's slot, a render at any version
+//!   ([`rendered`]) or the embedded picture at the version its file and the embedded
+//!   picture's reading give ([`library::thumbnail_key`]), sent as the library would send
+//!   it.
+//! - **One lock,** `WRITES`, orders the replacements and the sends: held only to look at
+//!   the slot's version and send or write, never through a read or a decode, so cached
+//!   thumbnails come in parallel, and an embedded picture never follows a render.
 //! - **On a miss:** the library reads and sends the picture as without a cache, then the
 //!   job writes it to the cache as a JPEG of quality 90, through the export's JPEG writer,
 //!   so a write never delays the picture shown. A write past the limit asks for an
@@ -49,13 +53,40 @@ use std::time::{Duration, Instant};
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_export::Image;
 use apertrust_export::jpeg::{self, Options, Subsample};
-use apertrust_library::ops::{self as library, LibraryEvent, Thumbnail, ThumbnailKey};
+use apertrust_library::ops::{
+    self as library, LibraryEvent, RawFacts, RawThumbnails, Thumbnail, ThumbnailKey,
+};
 
 use super::cache::Upkeep;
 
 /// The library's reading of a thumbnail, [`library::thumbnail`]: a test's own in its place.
 pub(crate) type Read =
     fn(u64, &Path, &str, u32, &(dyn Fn(LibraryEvent) + Send + Sync), &(dyn Fn() -> bool + Sync));
+
+/// What darktable's raw-thumbnail rule reads of the raw at a path, [`raw_facts`]: a test's
+/// own in its place.
+pub(crate) type Facts = fn(&Path) -> RawFacts;
+
+/// The raw's facts for darktable's raw-thumbnail rule, read from the file: its metadata
+/// without the pixels, and its embedded pictures. One that cannot be read has none, and is
+/// rendered.
+pub(crate) fn raw_facts(path: &Path) -> RawFacts {
+    let read = || {
+        let file = apertrust_raw::RawFile::open(path).ok()?;
+        let (raw, _) = file.metadata().ok()?;
+        let (_, embedded) = file.embedded(1).unwrap_or((None, None));
+        Some(RawFacts {
+            embedded,
+            raw: (raw.width, raw.height),
+            phase_one: RawFacts::phase_one(&raw.camera.make),
+        })
+    };
+    read().unwrap_or(RawFacts::UNREADABLE)
+}
+
+/// Orders the thumbnails' cache replacements and the events that send them: an embedded
+/// picture never replaces a render, nor is sent after one.
+static WRITES: Mutex<()> = Mutex::new(());
 
 /// The JPEG a thumbnail is kept as: quality 90, chroma halved across.
 const OPTIONS: Options = Options {
@@ -65,29 +96,32 @@ const OPTIONS: Options = Options {
 };
 
 /// What a thumbnail job asks for: `photo` of `folder` at `size`, for the open numbered
-/// `open`.
+/// `open`, under the setting `raw`.
 pub(crate) struct Asked<'a> {
     pub open: u64,
     pub folder: &'a Path,
     pub photo: &'a str,
     pub size: u32,
+    pub raw: RawThumbnails,
 }
 
 /// Sends the thumbnail `asked` names to `observer` as [`library::thumbnail`] does, from the
 /// cache where `cached` holds it, and keeps one read in the cache; with no cache, the
-/// library's reading alone. `read` is [`library::thumbnail`].
+/// library's reading alone. `read` is [`library::thumbnail`], `facts` [`raw_facts`].
 pub(crate) fn serve(
     cached: Option<(&Upkeep, &Tally)>,
     asked: &Asked<'_>,
     observer: &(dyn Fn(LibraryEvent) + Send + Sync),
     cancel: &(dyn Fn() -> bool + Sync),
     read: Read,
+    facts: Facts,
 ) {
     let Asked {
         open,
         folder,
         photo,
         size,
+        raw,
     } = *asked;
     let Some((upkeep, tally)) = cached else {
         return read(open, folder, photo, size, observer, cancel);
@@ -97,16 +131,46 @@ pub(crate) fn serve(
     }
     let started = Instant::now();
     let key = library::thumbnail_key(folder, photo, size);
-    if let Some(image) = key.as_ref().and_then(|key| hit(upkeep, key)) {
-        if cancel() {
-            return;
-        }
+    let send = |image| {
         observer(LibraryEvent::Thumbnail {
             open,
             photo: photo.to_owned(),
             size,
-            image: Some(image),
-        });
+            image,
+        })
+    };
+    // A read first, the slot's render, current or stale, else its embedded picture,
+    // decoded outside the replacement lock.
+    let found = key.as_ref().and_then(|key| {
+        rendered_hit(upkeep, &key.slot)
+            .or_else(|| hit(upkeep, key).map(|image| (key.version.clone(), image)))
+    });
+    // A render of a photo with no edit stands where darktable's rule shows one for this
+    // raw at this size, decided from the facts its version records of the raw as it is,
+    // the raw read only for a render that records none or of a raw since replaced; else
+    // the embedded picture takes its slot, the render's version what it replaces.
+    let asks = (size, size);
+    let (found, unaltered) = match found {
+        Some((version, image)) if library::rendered_unaltered(&version) => {
+            let read = || {
+                let path = folder.join(photo);
+                (library::raw_stamp(&path))
+                    .and_then(|stamp| library::unaltered_facts(&version, &stamp))
+                    .unwrap_or_else(|| facts(&path))
+            };
+            let shows = raw.renders_at(asks) || raw.shows_render(asks, &read());
+            if shows {
+                (Some((version, image)), None)
+            } else {
+                (None, Some(version))
+            }
+        }
+        found => (found, None),
+    };
+    if let (Some(key), Some((version, image))) = (&key, found) {
+        if !send_current(upkeep, &key.slot, Some(version), Some(image), cancel, &send) {
+            return;
+        }
         let took = started.elapsed();
         tally.count(|counts| {
             counts.hits += 1;
@@ -119,15 +183,31 @@ pub(crate) fn serve(
     // A miss: read and sent as without a cache, the picture kept as it goes out.
     let sent = Mutex::new(None);
     let keep = |event: LibraryEvent| {
-        if let LibraryEvent::Thumbnail { image, .. } = &event {
-            *sent.lock().unwrap_or_else(PoisonError::into_inner) = image.clone();
+        let LibraryEvent::Thumbnail { image, .. } = event else {
+            return observer(event);
+        };
+        *sent.lock().unwrap_or_else(PoisonError::into_inner) = image.clone();
+        match &key {
+            // The slow read may end after a render has updated the grid: it never
+            // replaces that render, but the one of a photo with no edit it stands for.
+            Some(key) => {
+                send_current(upkeep, &key.slot, unaltered.clone(), image, cancel, &send);
+            }
+            None => send(image),
         }
-        observer(event);
     };
     read(open, folder, photo, size, &keep, cancel);
     let took = started.elapsed();
     let image = sent.into_inner().unwrap_or_else(PoisonError::into_inner);
     let written = match (key, image) {
+        // The embedded picture in place of a render of the photo with no edit that the
+        // setting does not show.
+        (Some(key), Some(image))
+            if !cancel()
+                && let Some(over) = &unaltered =>
+        {
+            replace_unaltered(upkeep, &key, &image, photo, over, cancel)
+        }
         (Some(key), Some(image)) if !cancel() => write(upkeep, &key, &image, photo),
         _ => false,
     };
@@ -139,6 +219,62 @@ pub(crate) fn serve(
     let ms = took.as_secs_f64() * 1e3;
     let kept = if written { ", written" } else { "" };
     tracing::trace!(target: "perf", "thumbnail of {photo} at {size}: read, {ms:.1} ms{kept}");
+}
+
+/// Sends `picture`, read from `slot` at `version` or chosen over the render there of that
+/// version (`None` where it was not read from the cache), unless a render has taken the
+/// slot since: then that render, read and decoded outside the replacement lock, which is
+/// held only to look at the slot's version and send, so a render's own event never
+/// follows an older picture. False, sending nothing, once cancelled.
+fn send_current(
+    upkeep: &Upkeep,
+    slot: &[u8],
+    mut version: Option<Vec<u8>>,
+    mut picture: Option<Thumbnail>,
+    cancel: &(dyn Fn() -> bool + Sync),
+    send: &dyn Fn(Option<Thumbnail>),
+) -> bool {
+    loop {
+        {
+            let _sending = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
+            if cancel() {
+                return false;
+            }
+            let now = (upkeep.cache().version(THUMBNAILS, slot).ok()).flatten();
+            let rendered = now.filter(|now| now.starts_with(library::RENDERED));
+            if rendered.is_none() || rendered == version {
+                send(picture);
+                return true;
+            }
+        }
+        // One that cannot be read leaves the picture in hand to be sent.
+        let Some((newer, image)) = rendered_hit(upkeep, slot) else {
+            let _sending = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
+            if cancel() {
+                return false;
+            }
+            send(picture);
+            return true;
+        };
+        (version, picture) = (Some(newer), Some(image));
+    }
+}
+
+/// The last rendered picture of this slot, current or stale, with its version. A
+/// malformed JPEG is a miss, allowing the embedded picture to stand in until rendering
+/// succeeds.
+pub(super) fn rendered_hit(upkeep: &Upkeep, slot: &[u8]) -> Option<(Vec<u8>, Thumbnail)> {
+    let (version, bytes) = upkeep.cache().read_any(THUMBNAILS, slot).ok()??;
+    if !version.starts_with(library::RENDERED) {
+        return None;
+    }
+    let picture = apertrust_raw::read_jpeg(&bytes).ok()?;
+    let image = Thumbnail {
+        width: picture.width,
+        height: picture.height,
+        pixels: picture.pixels.into(),
+    };
+    Some((version, image))
 }
 
 /// The picture the cache holds for `key`, or none: missing, of another version, or one
@@ -174,12 +310,134 @@ pub(crate) fn encode(image: &Thumbnail) -> Option<Vec<u8>> {
 /// Writes `image` to the cache under `key`, asking for an eviction where that takes the
 /// limited kinds past the limit; whether it was written. A picture that cannot be
 /// encoded, or a write that fails, is left out, said under `-d perf`.
-fn write(upkeep: &Upkeep, key: &ThumbnailKey, image: &Thumbnail, photo: &str) -> bool {
+pub(super) fn write(upkeep: &Upkeep, key: &ThumbnailKey, image: &Thumbnail, photo: &str) -> bool {
+    write_checked(upkeep, key, image, photo, Over::Embedded, &|| false)
+}
+
+/// Publishes a completed picture in cache replacement order. A superseded worker
+/// cannot send an old picture after a newer worker has replaced and published it.
+pub(super) fn publish_if_current(cancel: &(dyn Fn() -> bool + Sync), publish: impl FnOnce()) {
+    let _writing = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
+    if !cancel() {
+        publish();
+    }
+}
+
+/// Writes a render only while its saved edit is still current, checking after JPEG
+/// encoding and under the cache replacement lock.
+pub(super) fn write_if_current(
+    upkeep: &Upkeep,
+    key: &ThumbnailKey,
+    image: &Thumbnail,
+    photo: &str,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> bool {
+    write_checked(upkeep, key, image, photo, Over::Embedded, cancel)
+}
+
+/// Replaces a previous render after the saved edit returns to defaults. Cancellation
+/// is checked under the replacement lock, so a superseded reset writes nothing.
+pub(super) fn replace_with_embedded(
+    upkeep: &Upkeep,
+    key: &ThumbnailKey,
+    image: &Thumbnail,
+    photo: &str,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> bool {
+    if !key.version.starts_with(library::EMBEDDED) {
+        return false;
+    }
+    write_checked(upkeep, key, image, photo, Over::Any, cancel)
+}
+
+/// Drops a previous rendered slot after a reset with no embedded picture. Other
+/// versions are kept, and a superseded reset does nothing. Returns whether the
+/// desired state holds, including a slot that was already absent.
+pub(super) fn remove_rendered_if_current(
+    upkeep: &Upkeep,
+    path: &Path,
+    size: u32,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> bool {
+    let _writing = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
+    if cancel() {
+        return false;
+    }
+    let slot = library::thumbnail_slot(path, size);
+    let cache = upkeep.cache();
+    match cache.read_any(THUMBNAILS, &slot) {
+        Ok(Some((version, _))) if version.starts_with(library::RENDERED) => {
+            cache.remove(THUMBNAILS, &slot).is_ok()
+        }
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+/// Writes the embedded picture `image` over the render of a photo with no edit, the slot's
+/// version `over`, which the setting does not show at this size, unless another render has
+/// taken the slot since.
+pub(super) fn replace_unaltered(
+    upkeep: &Upkeep,
+    key: &ThumbnailKey,
+    image: &Thumbnail,
+    photo: &str,
+    over: &[u8],
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> bool {
+    write_checked(upkeep, key, image, photo, Over::Version(over), cancel)
+}
+
+/// What a write may replace.
+enum Over<'a> {
+    /// Anything but a render that can be read.
+    Embedded,
+    /// Anything, as a reset does.
+    Any,
+    /// Only the entry of this version.
+    Version(&'a [u8]),
+}
+
+fn write_checked(
+    upkeep: &Upkeep,
+    key: &ThumbnailKey,
+    image: &Thumbnail,
+    photo: &str,
+    over: Over<'_>,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> bool {
     let Some(jpeg) = encode(image) else {
         tracing::debug!(target: "perf", "thumbnail of {photo} not cached: it cannot be encoded");
         return false;
     };
     let cache = upkeep.cache();
+    let rendered = |version: &Option<Vec<u8>>| {
+        version
+            .as_ref()
+            .is_some_and(|version| version.starts_with(library::RENDERED))
+    };
+    // A render that cannot be read is replaced: told before the lock, which decodes nothing.
+    let before = (cache.version(THUMBNAILS, &key.slot).ok()).flatten();
+    let unreadable = rendered(&before) && rendered_hit(upkeep, &key.slot).is_none();
+    let _writing = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
+    if cancel() {
+        return false;
+    }
+    let now = (cache.version(THUMBNAILS, &key.slot).ok()).flatten();
+    let replaces = match over {
+        // A rendered picture may have arrived while the embedded JPEG was read. Keep
+        // it rather than replacing an edit's picture with the camera's original.
+        Over::Embedded => {
+            !key.version.starts_with(library::EMBEDDED)
+                || !rendered(&now)
+                || (unreadable && now == before)
+        }
+        Over::Any => true,
+        Over::Version(over) => now.as_deref() == Some(over),
+    };
+    if !replaces {
+        return false;
+    }
     if let Err(error) = cache.write(THUMBNAILS, &key.slot, &key.version, &jpeg) {
         tracing::debug!(target: "perf", "thumbnail of {photo} not cached: {error}");
         return false;
@@ -249,3 +507,5 @@ impl Drop for Tally {
 
 #[cfg(test)]
 mod tests;
+
+pub(super) mod rendered;

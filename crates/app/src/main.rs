@@ -54,6 +54,7 @@ mod dropped;
 mod export;
 mod export_again;
 mod exposure;
+mod fade;
 mod folder;
 mod jobs;
 mod library;
@@ -86,7 +87,7 @@ use apertrust_base::folders::{self, Folders, Given};
 use apertrust_base::settings::CONF_FLAG;
 use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
-use apertrust_engine::session::library::{EditState, Source};
+use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
     CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand, Places,
     Session, Values, ViewOnly,
@@ -1077,6 +1078,9 @@ struct App {
     /// The texture of the mirror's picture of a photo opening, with its generation
     /// (decision 77).
     picture: Option<(u64, egui::TextureHandle)>,
+    /// That picture fading out over the photo's first live frame, its texture taken from
+    /// `picture` (decision 77).
+    fade: Option<fade::Fade>,
     /// The grid panel's thumbnails as textures, made of what the mirror holds.
     thumbnails: thumbnails::Textures,
     /// The thumbnails asked for of the photos in the grid panel's sight.
@@ -1092,6 +1096,9 @@ struct App {
     /// The disk cache's limit the session was last given, sent again as its settings
     /// change it (decision 76).
     cache_limit: Limit,
+    /// From which size a photo with no edit shows a render of its raw, as the session was
+    /// last given it.
+    raw_thumbnails: RawThumbnails,
     /// Whether the main window had the focus at the last frame.
     focused: bool,
     /// The folders the app started with, which Settings › Storage shows.
@@ -2333,9 +2340,9 @@ fn open_cache(folder: &Path) -> Option<Arc<Cache>> {
     }
 }
 
-/// The disk cache's limit `now` where it differs from the `last` the session was given,
-/// which then becomes it; none where it is the same.
-fn changed(last: &mut Limit, now: Limit) -> Option<Limit> {
+/// A setting `now` where it differs from the `last` the session was given, which then
+/// becomes it; none where it is the same.
+fn changed<T: PartialEq + Copy>(last: &mut T, now: T) -> Option<T> {
     (now != *last).then(|| {
         *last = now;
         now
@@ -2472,6 +2479,11 @@ impl App {
             cache,
             move || ctx.request_repaint(),
         );
+        // The setting of the thumbnails of photos with no edit, before any is asked for.
+        let raw_thumbnails = keeper.raw_thumbnails();
+        session.send(Command::Library(LibraryCommand::RawThumbnails(
+            raw_thumbnails,
+        )));
         let mut app = Self {
             session,
             mirror: Mirror::new(modules, jobs::Mirror::new(places.home.clone())),
@@ -2500,6 +2512,7 @@ impl App {
             quit: alerts::Guard::default(),
             quit_again: false,
             picture: None,
+            fade: None,
             thumbnails: thumbnails::Textures::default(),
             thumbnails_asked: thumbnails::Asking::default(),
             kept,
@@ -2507,6 +2520,7 @@ impl App {
             started: apertrust_engine::names::now(),
             downloads: paths::downloads(),
             cache_limit,
+            raw_thumbnails,
             focused: true,
             storage_folders,
             storage_shown: storage::View::default(),
@@ -2559,6 +2573,15 @@ impl App {
     fn follow_cache_limit(&mut self) {
         for command in cache_commands(&mut self.cache_limit, self.keeper.cache_limit()) {
             self.session.send(command);
+        }
+    }
+
+    /// Gives the session the thumbnails' setting where Settings changed it, applied at
+    /// once to the thumbnails asked for from then on and the photo open.
+    fn follow_raw_thumbnails(&mut self) {
+        if let Some(raw) = changed(&mut self.raw_thumbnails, self.keeper.raw_thumbnails()) {
+            let command = LibraryCommand::RawThumbnails(raw);
+            self.session.send(Command::Library(command));
         }
     }
 
@@ -2880,6 +2903,12 @@ impl App {
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     Reaction::FolderFailed { path, reason } => {
                         self.shell.missing.insert(path, reason);
+                    }
+                    Reaction::Swapped { open, generation } => {
+                        // The system's reduce-motion preference, read as each fade begins.
+                        let reduce = apertrust_display::reduce_motion();
+                        let kept = &mut self.picture;
+                        self.fade = fade::Fade::begin(ctx, kept, open, generation, reduce);
                     }
                 }
             }
@@ -3539,6 +3568,9 @@ impl App {
             && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
         {
             self.photo_at(ui, slot, placed, frame);
+            // The first picture fading out over the first live frame, until it ends.
+            let open = self.mirror.photo.open().unwrap_or_default();
+            fade::Fade::paint(&mut self.fade, &ui.painter_at(slot), placed, open);
         } else if message.is_none()
             && failure.is_none()
             && let (Some((shown, generation)), Some(placed)) = (picture, &placed)
@@ -3873,17 +3905,28 @@ impl App {
     }
 }
 
-/// The largest size with `size`'s shape that fits `bounds`, never larger than `size`, each
-/// side rounded and at least a pixel, as the engine fits the viewport (`pipeline::fit`).
-fn fit((width, height): (u32, u32), (room_width, room_height): (u32, u32)) -> (u32, u32) {
+/// The largest size with `size`'s shape that fits `bounds`, larger than `size` too, each
+/// side rounded and at least a pixel, as the engine fits the viewport (`pipeline::fit`) but
+/// for its cap: an opening photo's picture takes the place its live frame will.
+fn fit_scaled((width, height): (u32, u32), (room_width, room_height): (u32, u32)) -> (u32, u32) {
     if width == 0 || height == 0 {
         return (0, 0);
     }
-    let scale = (f64::from(room_width) / f64::from(width))
-        .min(f64::from(room_height) / f64::from(height))
-        .min(1.0);
+    let scale =
+        (f64::from(room_width) / f64::from(width)).min(f64::from(room_height) / f64::from(height));
     let side = |n: u32| ((f64::from(n) * scale).round() as u32).max(1);
     (side(width), side(height))
+}
+
+/// Whether `size` has `place`'s shape but for each side's rounding to whole pixels, as a
+/// picture smaller or larger than the photo has the shape of the place fitted to the photo:
+/// sides within half a pixel of the four make one ratio, the cross terms' extra half pixel
+/// included.
+fn same_shape((width, height): (u32, u32), (place_width, place_height): (u32, u32)) -> bool {
+    let [width, height, place_width, place_height] =
+        [width, height, place_width, place_height].map(u64::from);
+    let apart = (width * place_height).abs_diff(height * place_width);
+    2 * apart <= width + height + place_width + place_height + 1
 }
 
 /// Where the photo goes in `block`, for a room of `bounds` physical pixels at `ppp` (the
@@ -3891,7 +3934,8 @@ fn fit((width, height): (u32, u32), (room_width, room_height): (u32, u32)) -> (u
 /// at the size the engine renders the edit at, so a frame rendered for it is shown pixel
 /// for pixel and one rendered for another size, as while the window resizes, scaled to the
 /// size its successor will have; before them, an opening photo's `picture` in its own
-/// shape (decision 77). `None` with neither.
+/// shape, scaled to fit `bounds` as the live frame will be (decision 77). `None` with
+/// neither.
 fn place_photo(
     block: &PhotoFrame,
     bounds: (u32, u32),
@@ -3902,33 +3946,44 @@ fn place_photo(
     let (width, height) = match (values, picture) {
         _ if bounds.0 == 0 || bounds.1 == 0 => (0, 0),
         (Some(values), _) => values.viewport_size(bounds),
-        (None, Some(picture)) => fit((picture.image.width, picture.image.height), bounds),
+        (None, Some(picture)) => fit_scaled((picture.image.width, picture.image.height), bounds),
         (None, None) => return None,
     };
     Some(block.place(egui::vec2(width as f32, height as f32) / ppp, ppp))
 }
 
-/// Draws an opening photo's `picture` of `generation` as it is, unmarked, letterboxed in
-/// the place the photo takes, `placed`, never larger than itself (decision 77); its
-/// texture made once for each picture and kept in `kept`.
+/// Draws an opening photo's `picture` of `generation` unmarked, scaled to the place the
+/// photo takes, `placed`: from the photo's values on, the place its live frame covers, so
+/// the live frame swaps in with nothing moving (decision 77); the whole place where it has
+/// the picture's shape, else letterboxed in it. Its texture, made once for each picture and
+/// kept in `kept`, filters linearly. Returns where it was drawn.
 fn paint_picture(
     painter: &egui::Painter,
     placed: &Placed,
     picture: &Picture,
     generation: u64,
     kept: &mut Option<(u64, egui::TextureHandle)>,
-) {
-    let ppp = painter.pixels_per_point();
-    let room = placed.photo.size() * ppp;
+) -> egui::Rect {
     let image = (picture.image.width, picture.image.height);
-    let (width, height) = fit(image, (room.x.round() as u32, room.y.round() as u32));
-    let size = egui::vec2(width as f32, height as f32) / ppp;
-    let corner = egui::Rect::from_center_size(placed.photo.center(), size).min;
-    let rect =
-        egui::Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(corner, ppp), size);
+    let rect = picture_rect(placed, image, painter.pixels_per_point());
     let texture = picture_texture(painter.ctx(), kept, picture, generation);
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
+    rect
+}
+
+/// Where a picture of `image`'s size is drawn in the place the photo takes, `placed`, at
+/// `ppp`: the whole place where it has the picture's shape, else letterboxed in it.
+fn picture_rect(placed: &Placed, image: (u32, u32), ppp: f32) -> egui::Rect {
+    let room = placed.photo.size() * ppp;
+    let room = (room.x.round() as u32, room.y.round() as u32);
+    if same_shape(image, room) {
+        return placed.photo;
+    }
+    let (width, height) = fit_scaled(image, room);
+    let size = egui::vec2(width as f32, height as f32) / ppp;
+    let corner = egui::Rect::from_center_size(placed.photo.center(), size).min;
+    egui::Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(corner, ppp), size)
 }
 
 /// The texture of the mirror's picture of a photo opening, `picture` of `generation`, made
@@ -4167,6 +4222,7 @@ impl eframe::App for App {
         if !taken.settings.is_empty() {
             keep_log(&self.kept, &self.shell.log);
             self.follow_cache_limit();
+            self.follow_raw_thumbnails();
         }
         for asked in taken.storage {
             self.storage_asked(asked);
@@ -5324,6 +5380,26 @@ mod tests {
         let reset = set("cache.limit", None);
         assert_eq!(changed(&mut last, reset), Some(Limit::Bytes(4_000_000_000)));
         assert_eq!(last, Limit::Bytes(4_000_000_000));
+    }
+
+    /// The thumbnails' setting is read from the engine's settings, darktable's never by
+    /// default, and sent again only when Settings changes it.
+    #[test]
+    fn the_raw_thumbnails_setting_is_sent_again_only_when_it_changes() {
+        let folder = settings::testing::Folder::new("raw-thumbnails");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let mut last = keeper.raw_thumbnails();
+        assert_eq!(last, RawThumbnails::Never);
+        let mut set = |value: Option<toml::Value>| {
+            keeper.apply(&settings, "library.raw_thumbnails_from", value.as_ref());
+            keeper.raw_thumbnails()
+        };
+        let p720 = set(Some("720p".into()));
+        assert_eq!(changed(&mut last, p720), Some(RawThumbnails::P720));
+        let same = set(Some("720p".into()));
+        assert_eq!(changed(&mut last, same), None);
+        let reset = set(None);
+        assert_eq!(changed(&mut last, reset), Some(RawThumbnails::Never));
     }
 
     /// A limit Settings changed is sent, then the sizes asked again, so Storage's total and
@@ -7907,6 +7983,155 @@ mod tests {
         harness.run();
         assert!(harness.query_by_label("Rendering…").is_some());
         harness.snapshot("opening-rendering");
+    }
+
+    /// A photo's slot as the central panel places and draws it while the photo opens, its
+    /// picture's rectangle and the photo's place kept from the last frame.
+    struct Places {
+        mirror: Mirror,
+        picture: Option<(u64, egui::TextureHandle)>,
+        drawn: Option<egui::Rect>,
+        placed: Option<Placed>,
+    }
+
+    /// A slot at twice the scale whose room is 1800 pixels wide, with a photo opening whose
+    /// picture, `width` by `height`, has come and nothing else.
+    fn places_scene(width: u32, height: u32) -> Harness<'static, Places> {
+        let mut mirror = crate::mirror::tests::mirror();
+        mirror.opening(PathBuf::from("IMG_2041.ARW"), 2, Instant::now());
+        mirror.apply(Event::OpenPreview(apertrust_engine::session::OpenPreview {
+            open: 2,
+            picture: Some(apertrust_engine::session::library::Thumbnail {
+                width,
+                height,
+                pixels: vec![128; (width * height * 4) as usize].into(),
+            }),
+            source: apertrust_engine::session::PreviewSource::Embedded,
+        }));
+        Harness::builder()
+            .with_size(egui::vec2(964.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .build_ui_state(
+                |ui, scene: &mut Places| {
+                    // As `App::central_panel` places and draws it.
+                    let slot = ui.max_rect();
+                    let block = PhotoFrame::new(slot, Margin::Points(24.0));
+                    let ppp = ui.pixels_per_point();
+                    let room = block.bounds();
+                    let bounds = ((room.x * ppp).floor() as u32, (room.y * ppp).floor() as u32);
+                    let open = matches!(scene.mirror.photo, PhotoState::Open(_));
+                    let values = open.then_some(&scene.mirror.values);
+                    let picture = scene.mirror.picture();
+                    scene.placed =
+                        place_photo(&block, bounds, ppp, values, picture.map(|(p, _)| p));
+                    let painter = ui.painter_at(slot);
+                    scene.drawn = match (picture, &scene.placed) {
+                        (Some((shown, generation)), Some(placed)) => Some(paint_picture(
+                            &painter,
+                            placed,
+                            shown,
+                            generation,
+                            &mut scene.picture,
+                        )),
+                        _ => None,
+                    };
+                },
+                Places {
+                    mirror,
+                    picture: None,
+                    drawn: None,
+                    placed: None,
+                },
+            )
+    }
+
+    /// The photo's place, and where its picture was drawn, in the last frame.
+    fn places(harness: &Harness<'_, Places>) -> (egui::Rect, Option<egui::Rect>) {
+        let scene = harness.state();
+        (scene.placed.expect("a place").photo, scene.drawn)
+    }
+
+    /// An opening photo's picture is scaled to the photo's place, upscaled when smaller
+    /// than the room and downscaled when larger: before its values the picture's own shape
+    /// fitted to the room, from them on the place the engine renders at, which the live
+    /// frame covers (decision 77). The two agree within a pixel for pictures of 1024 pixels
+    /// or more; a 128 or 256 pixel thumbnail's rounded shape may step as the values come.
+    #[test]
+    fn an_opening_photo_s_picture_covers_the_place_its_live_frame_takes() {
+        use crate::mirror::tests::photo;
+        // A 6000 by 4000 photo's picture from the cache, and its camera's, larger than the
+        // room.
+        for (width, height) in [(1024, 683), (2048, 1365)] {
+            let mut harness = places_scene(width, height);
+            harness.run();
+            let (before, drawn) = places(&harness);
+            assert_eq!(
+                drawn,
+                Some(before),
+                "{width} by {height}, before its values"
+            );
+            assert_eq!(before.width() * 2.0, 1800.0, "{width} by {height}");
+            let mirror = &mut harness.state_mut().mirror;
+            mirror.apply(Event::Opened(Photo {
+                path: PathBuf::from("IMG_2041.ARW"),
+                ..photo(2)
+            }));
+            mirror.apply(Event::Values(Values {
+                live: false,
+                extent: [6000, 4000],
+                ..photo_values(0.0, 0)
+            }));
+            harness.run();
+            let (after, drawn) = places(&harness);
+            assert_eq!(drawn, Some(after), "{width} by {height}, with its values");
+            assert_eq!(after.size() * 2.0, egui::vec2(1800.0, 1200.0));
+            // The picture's sides are rounded, its shape the photo's to within a pixel.
+            let apart = (before.size() - after.size()) * 2.0;
+            assert!(
+                apart.abs().max_elem() <= 1.0,
+                "{width} by {height}: {apart:?}"
+            );
+        }
+    }
+
+    /// A photo whose edit crops it to another shape than its picture's: from its values on,
+    /// the picture is letterboxed inside the place the live frame covers, centred and
+    /// smaller than it on one side, never stretched to it (decision 77).
+    #[test]
+    fn an_opening_photo_s_picture_of_another_shape_is_letterboxed_in_its_place() {
+        use crate::mirror::tests::photo;
+        for (width, height) in [(1024, 683), (2048, 1365)] {
+            let mut harness = places_scene(width, height);
+            let mirror = &mut harness.state_mut().mirror;
+            mirror.apply(Event::Opened(Photo {
+                path: PathBuf::from("IMG_2041.ARW"),
+                ..photo(2)
+            }));
+            // A square crop of the 3:2 photo.
+            mirror.apply(Event::Values(Values {
+                live: false,
+                extent: [4000, 4000],
+                ..photo_values(0.0, 0)
+            }));
+            harness.run();
+            let (place, drawn) = places(&harness);
+            let drawn = drawn.expect("the picture drawn");
+            assert!(
+                (place.width() - place.height()).abs() * 2.0 <= 1.0,
+                "{place:?}"
+            );
+            assert!(place.contains_rect(drawn), "{drawn:?} in {place:?}");
+            assert_eq!(drawn.width(), place.width(), "{width} by {height}");
+            assert!(drawn.height() < place.height(), "{width} by {height}");
+            let off = (drawn.center() - place.center()) * 2.0;
+            assert!(off.abs().max_elem() <= 1.0, "{width} by {height}: {off:?}");
+            // Its own shape, within a pixel.
+            let shape = drawn.width() / drawn.height();
+            assert!(
+                (shape - width as f32 / height as f32).abs() < 0.01,
+                "{width} by {height}: {shape}"
+            );
+        }
     }
 
     #[test]

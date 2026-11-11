@@ -26,6 +26,12 @@
 //! pipeline rebuilt over the same input keeps its compiled kernels and the cache points
 //! and whole-image results that still hold (decision 28).
 
+mod still;
+
+#[cfg(test)]
+pub(crate) use still::{EDITING_QUIET, TEST_BAND_BYTES};
+pub(crate) use still::{LastChange, Sources, Still, StillError};
+
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::num::NonZeroU64;
@@ -434,13 +440,30 @@ impl Plan {
     ) -> Option<(&'static str, &'static str, u64)> {
         self.operations
             .iter()
-            .find_map(|op| self.oversized_in(op, limit, input_bytes))
+            .find_map(|op| self.oversized_in(op, 0, limit, input_bytes))
     }
 
-    /// `op`'s first binding of more than `limit` bytes, with its entry point.
+    /// [`Self::oversized_binding`] among the passes a render from operation `first` runs
+    /// that skips the first `skipped[op]` passes of each, as a still that reads cached
+    /// results does.
+    fn oversized_binding_from(
+        &self,
+        first: usize,
+        skipped: &[usize],
+        limit: u64,
+        input_bytes: u64,
+    ) -> Option<(&'static str, &'static str, u64)> {
+        (self.operations.iter().zip(skipped))
+            .skip(first)
+            .find_map(|(op, &skip)| self.oversized_in(op, skip, limit, input_bytes))
+    }
+
+    /// `op`'s first binding of more than `limit` bytes, with its entry point, past its
+    /// first `skip` passes.
     fn oversized_in(
         &self,
         op: &PlannedOperation,
+        skip: usize,
         limit: u64,
         input_bytes: u64,
     ) -> Option<(&'static str, &'static str, u64)> {
@@ -451,6 +474,7 @@ impl Plan {
         op.passes
             .iter()
             .zip(&op.dispatches)
+            .skip(skip)
             .find_map(|(pass, dispatches)| {
                 let largest = dispatches
                     .iter()
@@ -485,7 +509,7 @@ impl Plan {
             if tiled.contains(&index) {
                 return None;
             }
-            if let Some((_, _, bytes)) = self.oversized_in(op, limits.binding, input) {
+            if let Some((_, _, bytes)) = self.oversized_in(op, 0, limits.binding, input) {
                 return Some((index, bytes, limits.binding));
             }
             let output = match op.output {

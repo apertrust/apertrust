@@ -371,6 +371,20 @@ applies = "at-once"
 page = "photos"
 group = "thumbnails"
 
+# darktable's plugins/lighttable/thumbnail_raw_min_level, with its options and default:
+# from which size a photo with no edit shows the engine's render of its raw rather than
+# the camera's embedded picture, in the grid and as an opening photo's first picture
+# (docs/library.md, Thumbnails). Only a photo opened is rendered; the others keep their
+# embedded picture. The app hands it to the session (LibraryCommand::RawThumbnails).
+[library.raw_thumbnails_from]
+owner = "engine"
+kind = "choice"
+type = "apertrust_library::ops::RawThumbnails"
+default = "never"
+applies = "at-once"
+page = "photos"
+group = "thumbnails"
+
 # Where the grid panel is: along the bottom, or a column at the left or right, from the
 # grid bar's options menu and View › Grid Panel Position (docs/gui.md, Its position).
 [grid_panel.position]
