@@ -549,6 +549,12 @@ start-recent-about-missing = { $kind }, { $path }. { $why }
 start-browse = Browse…
 # The accent button, which opens the recent chosen.
 start-open = Open
+# The column at its start: the copyright under the version, and what the app is, on
+# two lines.
+start-copyright = © 2026
+start-tagline =
+    A free, non-destructive
+    raw photo editor
 
 ## Settings
 

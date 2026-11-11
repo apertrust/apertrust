@@ -39,6 +39,9 @@ struct Shown {
 
 const HOME: &str = "/Users/me";
 
+/// The build's version, fixed, so the snapshots hold from one commit to the next.
+const VERSION: &str = "0.1.0+197~g9201df0";
+
 /// Five recents, newest first, the fourth gone.
 fn sample() -> Vec<(PathBuf, Option<Mark>)> {
     [
@@ -62,13 +65,22 @@ fn themed(
     recents: Vec<(PathBuf, Option<Mark>)>,
     close: bool,
 ) -> Harness<'static, Shown> {
+    localised(theme, Locale::EnGb, recents, close)
+}
+
+fn localised(
+    theme: Theme,
+    locale: Locale,
+    recents: Vec<(PathBuf, Option<Mark>)>,
+    close: bool,
+) -> Harness<'static, Shown> {
     // A frame's time as a display's, so two clicks a frame apart are a double-click.
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, theme.clone());
-            apertrust_ui::set_locale(ctx, Locale::EnGb);
+            apertrust_ui::set_locale(ctx, locale);
             ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
         })
         .build_ui_state(
@@ -89,6 +101,7 @@ fn themed(
                     home: Some(Path::new(HOME)),
                     close: shown.close,
                     keys: true,
+                    version: VERSION,
                 };
                 let asked = show(ui, &recents, &mut shown.list, window);
                 shown.asked.extend(asked);
@@ -204,21 +217,92 @@ fn the_list_s_keys_choose_and_open_and_escape_closes() {
     assert_eq!(harness.state().asked.last(), Some(&Asked::Close));
 }
 
-/// Tab goes from the list to the buttons, the first that can be pressed.
+/// The ways in sit in the first third, in order, the last ending level with Open; the
+/// recents and Open in the other two thirds.
 #[test]
-fn tab_goes_from_the_list_to_the_buttons() {
+fn the_ways_in_are_in_the_first_column_ending_level_with_open() {
+    let harness = window(sample());
+    let split = SIZE.x / 3.0;
+    let button = |name: &str| harness.get_by_role_and_label(Role::Button, name).rect();
+    let ways = ["New Library…", "New Project…", "Open Folder…", "Browse…"].map(button);
+    for pair in ways.windows(2) {
+        assert!(pair[0].bottom() <= pair[1].top(), "{pair:?}");
+    }
+    for way in ways {
+        assert!(way.right() <= split, "{way:?}");
+        assert_eq!(way.height(), 26.0, "{way:?}");
+    }
+    let open = button("Open");
+    assert!(open.left() >= split, "{open:?}");
+    assert!((ways[3].bottom() - open.bottom()).abs() < 0.5, "{open:?}");
+    for row in harness.get_all_by_role(Role::ListBoxOption) {
+        let row = row.rect();
+        assert!(row.left() >= split, "{row:?}");
+    }
+}
+
+/// The first column shows the version cut at its `~`, the copyright and what the app is,
+/// on two lines.
+#[test]
+fn the_version_is_cut_at_its_tilde() {
+    let harness = window(sample());
+    harness.get_by_label("0.1.0+197");
+    assert!(harness.query_by_label_contains("g9201df0").is_none());
+    harness.get_by_label("© 2026");
+    harness.get_by_label("A free, non-destructive\nraw photo editor");
+    assert_eq!(short_version("0.1.0"), "0.1.0");
+    assert_eq!(short_version("0.0.0+12~gabc1234-dirty"), "0.0.0+12");
+}
+
+/// Tab follows the reading order, the first column then the second: from the list it goes
+/// to Open, then round to the first of the ways in that can be pressed; Shift+Tab from the
+/// list goes back to that one.
+#[test]
+fn tab_follows_the_reading_order() {
     let mut recents = sample();
     recents.retain(|(_, mark)| mark.is_none());
-    let mut harness = window(recents);
-    press(&mut harness, egui::Key::Tab);
-    assert!(
+    let focused = |harness: &Harness<'_, Shown>, name: &str| {
         harness
-            .get_by_role_and_label(Role::Button, "Open Folder…")
+            .get_by_role_and_label(Role::Button, name)
             .is_focused()
-    );
+    };
+    let mut harness = window(recents.clone());
+    press(&mut harness, egui::Key::Tab);
+    assert!(focused(&harness, "Open"));
+    press(&mut harness, egui::Key::Tab);
+    assert!(focused(&harness, "Open Folder…"));
+    let mut harness = window(recents);
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Tab);
+    harness.run();
+    assert!(focused(&harness, "Open Folder…"));
     // The list's keys are the list's alone: Enter presses the button with the focus.
     press(&mut harness, egui::Key::Enter);
     assert_eq!(harness.state().asked, [Asked::OpenFolder]);
+}
+
+/// A way in that comes later says so under the pointer.
+#[test]
+fn a_way_in_that_comes_later_says_so() {
+    let mut harness = window(sample());
+    assert!(
+        harness
+            .query_by_label("Coming in a later version")
+            .is_none()
+    );
+    harness
+        .get_by_role_and_label(Role::Button, "New Library…")
+        .hover();
+    harness.run();
+    harness.get_by_label("Coming in a later version");
+}
+
+/// A longer translation of what the app is wraps within the first column.
+#[test]
+fn the_words_wrap_within_the_first_column() {
+    let harness = localised(Theme::default(), Locale::Pseudo, sample(), false);
+    let words = apertrust_ui::Translator::new(Locale::Pseudo).text("start-tagline");
+    let shown = harness.get_by_label(&words).rect();
+    assert!(shown.right() < SIZE.x / 3.0, "{shown:?}");
 }
 
 /// A click chooses a recent, Open opens the one chosen, and a double-click opens one.
