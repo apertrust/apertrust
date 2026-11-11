@@ -2801,7 +2801,12 @@ impl App {
     /// anything in it is not on disk yet, and reads the new photo's from beside it.
     fn open(&mut self, path: PathBuf) {
         let session = &self.session;
-        open_photo(path, &mut self.mirror, &mut |command| session.send(command));
+        open_photo(
+            path,
+            &mut self.remembered,
+            &mut self.mirror,
+            &mut |command| session.send(command),
+        );
     }
 
     /// Opens what Open… or a drop asked for, or asks the alert that says why nothing opens,
@@ -4276,17 +4281,26 @@ fn started(open: Start, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     }
 }
 
-/// Opens the raw at `path` in place of the photo open, and its folder behind it, a way in
-/// that makes it the tree's root, unless it is the root already, chosen then where another
-/// folder of its tree is active (`docs/gui.md`, File); from a photo alone it opens folder
-/// mode.
-fn open_photo(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+/// Opens the raw at `path` in place of the photo open, and its folder behind it
+/// (`docs/gui.md`, File): where that folder is the root or inside its tree, chosen there
+/// as a click in the tree chooses it, through [`change_folder`], the root and the recents
+/// staying, unless it is active already; elsewhere opened as a way in that makes it the
+/// tree's root and a recent. From a photo alone it opens folder mode.
+fn open_photo(
+    path: PathBuf,
+    remembered: &mut Remembered,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
     let folder = mirror.folder.to_show(&path);
     let open = send(Command::Open(path.clone()));
     mirror.opening(path, open, Instant::now());
     match folder {
         Some(folder::Show::Open(folder)) => open_folder(folder, mirror, send),
-        Some(folder::Show::Choose(root)) => choose_folder(root, mirror, send),
+        // The photo is that folder's, so it stays, and none is waited for.
+        Some(folder::Show::Choose(folder)) => {
+            change_folder(folder, FolderChange::Choose, None, remembered, mirror, send);
+        }
         None => {}
     }
 }
@@ -5927,7 +5941,12 @@ mod tests {
         let mut sent = Vec::new();
         let folder = PathBuf::from("/photos");
         open_folder(folder.clone(), &mut m, &mut sender(&mut sent));
-        open_photo(folder.join("a.ARW"), &mut m, &mut sender(&mut sent));
+        open_photo(
+            folder.join("a.ARW"),
+            &mut Remembered::default(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
         m.apply(Event::Opened(mirror::tests::photo(2)));
         assert!(!shows_start(opened(&m), false, false, false));
         sent.clear();
@@ -5947,7 +5966,12 @@ mod tests {
         assert!(matches!(m.photo, PhotoState::None));
         // Another photo opened takes its events again.
         let mut more = Vec::new();
-        open_photo(folder.join("a.ARW"), &mut m, &mut sender(&mut more));
+        open_photo(
+            folder.join("a.ARW"),
+            &mut Remembered::default(),
+            &mut m,
+            &mut sender(&mut more),
+        );
         m.apply(Event::Opened(mirror::tests::photo(1)));
         assert!(matches!(m.photo, PhotoState::Open(_)));
         // Nothing open: nothing to close.
@@ -5969,7 +5993,12 @@ mod tests {
         open_folder(at.clone(), &mut m, &mut sender(&mut sent));
         m.apply(folder_opened(1, &at));
         m.apply(listed(1, &["R0001175.DNG", "R0001176.DNG"], true));
-        open_photo(at.join("R0001176.DNG"), &mut m, &mut sender(&mut sent));
+        open_photo(
+            at.join("R0001176.DNG"),
+            &mut Remembered::default(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
         let mut remembered = Remembered::default();
         remembered.remember(&m);
         (m, sent, remembered, at)
@@ -6166,6 +6195,7 @@ mod tests {
         let clicked = at.join("R0001175.DNG");
         open_photo(
             clicked.clone(),
+            &mut remembered,
             &mut m,
             &mut sender(&mut sent),
         );
@@ -6281,6 +6311,7 @@ mod tests {
         let photo = absolute.join("x.ARW");
         open_photo(
             photo.clone(),
+            &mut remembered,
             &mut m,
             &mut sender(&mut sent),
         );
@@ -6447,6 +6478,61 @@ mod tests {
         );
         assert_eq!(remembered.waiting, None);
         assert_eq!(photo_shown(&m), None);
+    }
+
+    /// File › Open… of a raw in the open root's tree keeps the root and the recents: its
+    /// folder is chosen there, as a click in the tree chooses it, and the raw opens; the
+    /// root's own raw chooses the root. A raw elsewhere opens its folder as a way in, the
+    /// tree's root and a recent.
+    #[test]
+    fn a_raw_opened_inside_the_root_s_tree_chooses_its_folder_there() {
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let joins = |reactions: Vec<Reaction>| {
+            reactions
+                .into_iter()
+                .filter_map(|reaction| match reaction {
+                    Reaction::FolderOpened(path) => Some(path),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        // In a subfolder of the root.
+        let other = at.join("Other");
+        let raw = other.join("x.dng");
+        open_photo(raw.clone(), &mut remembered, &mut m, &mut sender(&mut sent));
+        let chosen = Command::Library(LibraryCommand::Open(Source::Folder(other.clone())));
+        assert_eq!(sent[2..], [Command::Open(raw.clone()), chosen]);
+        assert_eq!(m.folder.root(), Some(at.as_path()));
+        assert_eq!(m.folder.shown(), Some(other.as_path()));
+        assert!(joins(m.apply(folder_opened(4, &other))).is_empty());
+        assert_eq!(photo_shown(&m), Some(raw.as_path()));
+        let kept = recents::Last {
+            kind: recents::OpenKind::Folder,
+            path: at.clone(),
+            folder: None,
+            photo: None,
+        };
+        let left = at_exit(kept, None, &m);
+        assert_eq!((left.path, left.folder), (at.clone(), Some(other.clone())));
+        assert_eq!(left.photo.as_deref(), Some("x.dng"));
+
+        // The root's own raw: the root chosen again, still no recent.
+        let own = at.join("R0001175.DNG");
+        open_photo(own.clone(), &mut remembered, &mut m, &mut sender(&mut sent));
+        let root = Command::Library(LibraryCommand::Open(Source::Folder(at.clone())));
+        assert_eq!(sent[4..], [Command::Open(own.clone()), root]);
+        assert!(joins(m.apply(folder_opened(6, &at))).is_empty());
+        assert_eq!(m.folder.root(), Some(at.as_path()));
+        assert_eq!(photo_shown(&m), Some(own.as_path()));
+
+        // Outside the tree: a way in, the new root and a recent.
+        let elsewhere = PathBuf::from("/photos/Else");
+        let raw = elsewhere.join("y.dng");
+        open_photo(raw.clone(), &mut remembered, &mut m, &mut sender(&mut sent));
+        let opened = Command::Library(LibraryCommand::Open(Source::Folder(elsewhere.clone())));
+        assert_eq!(sent[6..], [Command::Open(raw), opened]);
+        assert_eq!(m.folder.root(), Some(elsewhere.as_path()));
+        assert_eq!(joins(m.apply(folder_opened(8, &elsewhere))), [elsewhere]);
     }
 
     /// What was open last: the root `/photos/Wedding`, with the folder of its tree and the
@@ -6625,7 +6711,12 @@ mod tests {
         let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
         let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
         m.apply(folder_opened(1, &kept.path));
-        open_photo(kept.path.join("a.ARW"), &mut m, &mut sender(&mut sent));
+        open_photo(
+            kept.path.join("a.ARW"),
+            &mut Remembered::default(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
         m.apply(listed(1, &["a.ARW", "b.ARW"], true));
         reopened(&mut reopening, &mut m, &mut sender(&mut sent));
         assert_eq!(sent.len(), 2, "{sent:?}");
@@ -7071,10 +7162,15 @@ mod tests {
             started_with(Start::Photo(PathBuf::from("/photos/a.ARW")), &mut m);
             let mut sent = Vec::new();
             let chosen = PathBuf::from(chosen);
-            open_photo(chosen.clone(), &mut m, &mut |command| {
-                sent.push(command);
-                sent.len() as u64 + 1
-            });
+            open_photo(
+                chosen.clone(),
+                &mut Remembered::default(),
+                &mut m,
+                &mut |command| {
+                    sent.push(command);
+                    sent.len() as u64 + 1
+                },
+            );
             assert_eq!(sent, [Command::Open(chosen), listed()]);
             assert_eq!(m.folder.shown(), Some(folder.as_path()));
         }

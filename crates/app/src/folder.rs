@@ -134,7 +134,7 @@ pub enum Outcome {
 /// What File › Open… does to the folder ([`FolderState::to_show`]).
 #[derive(Debug, PartialEq)]
 pub enum Show {
-    /// The root, chosen in its tree, which stays.
+    /// This folder, the root or one inside it, chosen in its tree, which stays.
     Choose(PathBuf),
     /// This folder, opened as a way in: the tree's root from now on.
     Open(PathBuf),
@@ -411,19 +411,20 @@ impl FolderState {
         }
     }
 
-    /// What File › Open… of the photo at `photo` does to the folder, a way in (`docs/gui.md`,
-    /// File): the photo's folder opened as the tree's root, even where it is active inside
-    /// another root's tree; where it is the root already, the root chosen if another folder
-    /// of its tree is active, and nothing if it is. Paths compare as absolute, since a raw
-    /// named on the command line may be relative.
+    /// What File › Open… of the photo at `photo` does to the folder (`docs/gui.md`, File):
+    /// where the photo's folder is the root or inside its tree, the root and the tree stay
+    /// and that folder is chosen in it, unless it is active already; elsewhere, or with no
+    /// root, it is opened as a way in, the tree's root and a recent from then on. Paths
+    /// compare as absolute, since a raw named on the command line may be relative.
     pub fn to_show(&self, photo: &Path) -> Option<Show> {
         let folder = std::path::absolute(photo.parent()?).ok()?;
         let absolute = |path: Option<&Path>| path.and_then(|path| std::path::absolute(path).ok());
-        if absolute(self.root()).as_ref() != Some(&folder) {
+        let inside = absolute(self.root()).is_some_and(|root| library::inside(&root, &folder));
+        if !inside {
             return Some(Show::Open(folder));
         }
         let active = absolute(self.shown()).as_ref() == Some(&folder);
-        (!active).then(|| Show::Choose(self.root.clone().unwrap_or(folder)))
+        (!active).then_some(Show::Choose(folder))
     }
 
     /// Takes in `event`, if it is the folder's: a `Library` event of the latest command, or
@@ -1075,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn a_photo_opened_is_a_way_in_to_its_folder_unless_that_is_the_root() {
+    fn a_photo_opened_is_a_way_in_to_its_folder_unless_that_is_in_the_root_s_tree() {
         // The folders compare as absolute, so on Windows they take the current drive.
         let absolute = |path: &str| std::path::absolute(path).unwrap();
         let mut state = FolderState::default();
@@ -1097,12 +1098,23 @@ mod tests {
         // Another folder of its tree active: the root chosen, which stays.
         state.choosing(root.join("Edits"), 2);
         assert_eq!(state.to_show(photo), Some(Show::Choose(root.clone())));
-        // The photo's folder active inside the root's tree, or elsewhere: opened as the
-        // root.
+        // The photo's folder inside the root's tree: chosen there, the root staying, and
+        // nothing where it is active already.
         let inside = Path::new("/photos/a/Edits/y.ARW");
+        assert_eq!(state.to_show(inside), None);
+        let deeper = Path::new("/photos/a/Selects/Day 1/z.ARW");
         assert_eq!(
-            state.to_show(inside),
-            Some(Show::Open(absolute("/photos/a/Edits")))
+            state.to_show(deeper),
+            Some(Show::Choose(absolute("/photos/a/Selects/Day 1")))
+        );
+        // Outside it: opened as the root, a way in; a `..` that leads out of it too.
+        assert_eq!(
+            state.to_show(Path::new("/photos/ab/y.ARW")),
+            Some(Show::Open(absolute("/photos/ab")))
+        );
+        assert_eq!(
+            state.to_show(Path::new("/photos/a/Edits/../../b/y.ARW")),
+            Some(Show::Open(absolute("/photos/a/Edits/../../b")))
         );
         assert_eq!(
             state.to_show(Path::new("/photos/b/y.ARW")),

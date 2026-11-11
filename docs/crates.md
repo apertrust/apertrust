@@ -462,7 +462,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 
 - File › Open Folder… (`open-folder`, Ctrl+Shift+O, in the group after Open…) shows rfd's asynchronous folder dialog. It starts in the open folder, else the open photo's, else Pictures.
 - The folder chosen is sent as `Command::Library(Open(Folder))`.
-- File › Open… of a photo is a way in to its folder, opened as the tree's root (`folder::Show::Open`); where the folder is the root already, the root is chosen if another folder of its tree is active (`Show::Choose`), and nothing changes if it is (`FolderState::to_show`).
+- File › Open… of a photo, Open With's and a drop's: where its folder is the open root or inside its tree, that folder is chosen there (`folder::Show::Choose`, through `change_folder`), the root and the recents staying, and nothing changes if it is active already; elsewhere it is a way in to its folder, opened as the tree's root (`Show::Open`) (`FolderState::to_show`).
 - Opening a folder opens no photo.
 - A folder dropped onto the window opens the same way, raws dropped as Open…'s do ([Drag and drop](#drag-and-drop)).
 
