@@ -195,8 +195,10 @@ pub struct Browse<'a> {
     /// The tree's root, the folder a way in opened, which stays as folders are chosen in the
     /// tree (`FolderState::root`).
     pub root: Option<&'a Path>,
-    /// The root's photo count, once a listing of it has given every photo.
-    pub root_count: Option<usize>,
+    /// The raws in each folder of the tree as far as they are known, by path: the root's
+    /// from its listing, the others' as the tree's walk has counted them
+    /// (`FolderState::counts`).
+    pub counts: &'a HashMap<PathBuf, usize>,
     /// The recents' folders, newest first.
     pub recent: &'a [Recent<'a>],
     pub open: Open,
@@ -228,13 +230,14 @@ fn shown(folder: &Folder) -> Option<&Path> {
 
 impl Browse<'_> {
     /// The photo count of the folder at `path` where it is known: the active folder's once
-    /// its listing has given every photo, else the root's as its own listing gave it.
+    /// its listing has given every photo, else as the root's listing or the tree's walk
+    /// counted it; none for a folder the walk has not reached.
     fn count(&self, path: &Path) -> Option<usize> {
         match self.folder {
             Folder::Open(listing) if listing.path == path && listing.done => {
                 Some(listing.photos.len())
             }
-            _ => self.root_count.filter(|_| self.root == Some(path)),
+            _ => self.counts.get(path).copied(),
         }
     }
 
@@ -1125,7 +1128,7 @@ mod tests {
             let browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
-                root_count: None,
+                counts: &HashMap::new(),
                 recent: &recent,
                 open,
                 tree: &kept,
@@ -1185,6 +1188,41 @@ mod tests {
         );
     }
 
+    /// Each folder the tree's walk has counted has its count, for screen readers as on its
+    /// row; one not reached yet has none.
+    #[test]
+    fn a_walked_folder_has_its_count_and_one_not_reached_none() {
+        let mut harness = sized(egui::vec2(320.0, 700.0), |ui, actions| {
+            let (folder, recent, keys) = (wedding(), recent(), keys());
+            let counts = HashMap::from([(PathBuf::from("/photos/Wedding/Edits"), 7)]);
+            let browse = Browse {
+                folder: &folder,
+                root: shown(&folder),
+                counts: &counts,
+                recent: &recent,
+                open: OPEN_ALL,
+                tree: &BTreeMap::new(),
+                inside: &HashMap::new(),
+                keys: &keys,
+                home: None,
+            };
+            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+        });
+        harness.run();
+        let description = |name: &str| {
+            let row = harness.get_by_role_and_label(Role::TreeItem, name);
+            row.accesskit_node().data().description().map(str::to_owned)
+        };
+        assert_eq!(
+            description("Edits").as_deref(),
+            Some("7 photos, /photos/Wedding/Edits")
+        );
+        assert_eq!(
+            description("Selects").as_deref(),
+            Some("/photos/Wedding/Selects")
+        );
+    }
+
     /// A subfolder opens a level of its own: its subfolders once listed, a quiet line
     /// while they are read, and no chevron where it has none.
     #[test]
@@ -1211,7 +1249,7 @@ mod tests {
             let browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
-                root_count: None,
+                counts: &HashMap::new(),
                 recent: &[],
                 open: OPEN_ALL,
                 tree: &tree,
@@ -1269,7 +1307,7 @@ mod tests {
                 let browse = Browse {
                     folder: &folder,
                     root: shown(&folder),
-                    root_count: None,
+                    counts: &HashMap::new(),
                     recent: &[],
                     open: OPEN_ALL,
                     tree: &tree,
@@ -1302,7 +1340,7 @@ mod tests {
             let browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
-                root_count: None,
+                counts: &HashMap::new(),
                 recent: &[],
                 open: OPEN_ALL,
                 tree: &tree,
@@ -1367,7 +1405,7 @@ mod tests {
                 let browse = Browse {
                     folder: &folder,
                     root: shown(&folder),
-                    root_count: None,
+                    counts: &HashMap::new(),
                     recent: &recent,
                     open: OPEN_ALL,
                     tree: &BTreeMap::new(),
@@ -1464,7 +1502,7 @@ mod tests {
             let browse = Browse {
                 folder: &folder,
                 root: Some(portraits),
-                root_count: Some(120),
+                counts: &HashMap::from([(portraits.to_owned(), 120)]),
                 recent: &recent,
                 open: OPEN_ALL,
                 tree: &BTreeMap::new(),
@@ -1598,7 +1636,7 @@ mod tests {
             let browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
-                root_count: None,
+                counts: &HashMap::new(),
                 recent: &recent,
                 open: OPEN_ALL,
                 tree: &BTreeMap::new(),
@@ -2196,7 +2234,7 @@ mod tests {
                     let browse = Browse {
                         folder: &folder,
                         root: shown(&folder),
-                        root_count: None,
+                        counts: &HashMap::new(),
                         recent: &recent,
                         open: OPEN_ALL,
                         tree: &tree,
@@ -2236,7 +2274,7 @@ mod tests {
                 let browse = Browse {
                     folder: &folder,
                     root: Some(trip),
-                    root_count: Some(212),
+                    counts: &HashMap::from([(trip.to_owned(), 212)]),
                     recent: &recent,
                     open: OPEN_ALL,
                     tree: &tree,
@@ -2262,7 +2300,7 @@ mod tests {
                 let browse = Browse {
                     folder: &folder,
                     root: None,
-                    root_count: None,
+                    counts: &HashMap::new(),
                     recent: &recent,
                     open: OPEN_ALL,
                     tree: &BTreeMap::new(),

@@ -3256,7 +3256,7 @@ impl App {
         let browse = library::Browse {
             folder,
             root: self.mirror.folder.root(),
-            root_count: self.mirror.folder.root_count(),
+            counts: self.mirror.folder.counts(),
             recent: &recent,
             open: self.shell.browse_open(),
             tree: &self.shell.tree,
@@ -8981,7 +8981,7 @@ mod tests {
                     let browse = library::Browse {
                         folder: &folder::Folder::None,
                         root: None,
-                        root_count: None,
+                        counts: &HashMap::new(),
                         recent: &[],
                         open: shell.browse_open(),
                         tree: &BTreeMap::new(),

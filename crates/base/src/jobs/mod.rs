@@ -36,7 +36,7 @@
 //! workers (J2); plain events, not a proxy into the toolkit (J3); message ids, not
 //! translated text (J4); the workers from the threads alone (J5); no kicker thread
 //! (J6); the throttle in the API (J7); every progress a job's (J8); [`Control::shutdown`]
-//! cancelling what can be cancelled and finishing the rest (J9); a failure a failure, not
+//! cancelling every running job but one shown as not cancellable, which finishes (J9); a failure a failure, not
 //! a cancel (J10); a job cancelled while queued leaving its queue at once (J14); a
 //! priority that saturates at 255 (J15); a job added after shutdown discarded (J16);
 //! done and a total in place of a fraction (J18); and the rest of its row in its events
@@ -791,8 +791,9 @@ impl Control {
     }
 
     /// Stops the control (difference J9): every queued job discarded, every running job
-    /// that can be cancelled from its progress cancelled, the rest finished, then the
-    /// workers joined. Never from a job's body, whose worker it would wait for.
+    /// cancelled but one whose progress says it cannot be, which finishes, so a job the
+    /// jobs window never shows cannot hold the quit; then the workers joined. Never from a
+    /// job's body, whose worker it would wait for.
     pub fn shutdown(&self) {
         let shared = &*self.shared;
         {
@@ -805,12 +806,14 @@ impl Control {
                     log_discard(&entry.job.identity, "shutting down");
                     discard(shared, inner, entry.job.id);
                 }
+                // A job with no progress is cancelled too: nothing shows it, and nothing
+                // could stop it otherwise.
                 let cancellable: Vec<JobId> = inner
                     .jobs
                     .values()
                     .filter(|live| {
                         live.state == State::Running
-                            && live.shown.as_ref().is_some_and(|p| p.cancellable)
+                            && live.shown.as_ref().is_none_or(|p| p.cancellable)
                     })
                     .map(|live| live.record.id)
                     .collect();

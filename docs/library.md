@@ -266,18 +266,19 @@ Decision 54's layer 4, in `crates/library/src/ops.rs`. Clients see only `Library
 
 ### Events
 
-Every event names the open or close it is about in its `open` field, read by `LibraryEvent::open()`: the command it answers, or, for a thumbnail, the open of its folder.
+Every event names the open or close it is about in its `open` field, read by `LibraryEvent::open()`: the command it answers, or, for a thumbnail, the open of its folder, and for the tree's walk, the open that made its root.
 
 | Event | Fields | Meaning |
 | --- | --- | --- |
 | `Opened` | `open`, `name: String`, `folder: PathBuf` | The folder was listed and its sidecars read: its name, the last part of its path, and the path as asked for. |
-| `Subfolders` | `open`, `names: Vec<String>` | The folder's subfolders, hidden ones left out, a link to a folder counted as one, as the system's file browser sorts them ([Subfolders and their order](#subfolders-and-their-order)); sent once, before the photos, empty where there is none. |
-| `SubfoldersOf` | `open`, `folder: PathBuf`, `names: Vec<String>`, `unreadable: Option<String>` | The subfolders of `folder`, as `LibraryCommand::Subfolders` asked, in the open folder's number: hidden ones left out, as the system's file browser sorts them, empty where there is none. `unreadable: Option<String>` says why the folder could not be listed, its `names` empty then. |
+| `Subfolders` | `open`, `names: Vec<String>` | The folder's subfolders, hidden ones left out (a dot, and on the Mac and Windows the system's own hidden flag), a link to a folder counted as one, a Mac package as a file ([The listing](#the-listing)), as the system's file browser sorts them ([Subfolders and their order](#subfolders-and-their-order)); sent once, before the photos, empty where there is none. |
+| `SubfoldersOf` | `open`, `folder: PathBuf`, `names: Vec<String>`, `unreadable: Option<String>` | The subfolders of `folder`, as `LibraryCommand::Subfolders` asked, in the open folder's number: hidden ones left out (a dot, and on the Mac and Windows the system's own hidden flag), a link to a folder counted as one, a Mac package as a file, as the system's file browser sorts them, empty where there is none. `unreadable: Option<String>` says why the folder could not be listed, its `names` empty then. |
 | `Listed` | `open`, `photos: Vec<Photo>`, `done: bool` | More of the folder's photos, in name order across chunks, at most `ops::CHUNK` (256) each; the last says `done`, and an empty folder sends one, empty and done. |
 | `Taken` | `open`, `times: Vec<Option<DateTime>>` | When each photo was taken, sent once after the last chunk: one for each photo listed, in the listing's order, the camera's clock from the raw's EXIF (`apertrust_raw::DateTime`), `None` where it holds none or cannot be read. Read 16 at a time once every photo is sent, so the photos show first. |
 | `Failed` | `open`, `reason: String` | The folder could not be listed, in plain words: missing, no folder, unreadable, or gone while it was read. It ends the open, in place of `Opened`. |
 | `Closed` | `open` | No folder is open: the answer to `Close`, whose number it names. |
 | `Thumbnail` | `open`, `photo: String`, `size: u32`, `image: Option<Thumbnail>` | A photo's thumbnail at the size asked for: the camera's embedded picture, upright, or `None` where the raw holds none that can be read, said too so a client asks no more. |
+| `Walked` | `open`, `folders: Vec<WalkedFolder>`, `done: bool` | More folders of the tree under the root, walked breadth first after the root's own listing ([The tree's walk](#the-trees-walk)): each `WalkedFolder` its `folder: PathBuf`, `raws: usize`, the files the decoder reads by their extensions, `subfolders: Vec<String>` and `unreadable: Option<String>`, why it could not be read, its counts empty then. `open` is the number of the open that made the folder the tree's root, which later opens inside the tree keep; the last batch says `done`. |
 
 **A `Thumbnail`** is 8-bit RGBA, rows top to bottom, four bytes a pixel, upright: its `width`, `height` and `pixels`, an `Arc<[u8]>`, so the event's copies cost nothing.
 
@@ -314,6 +315,13 @@ Each thumbnail asked for is a job on darktable's `SystemForeground` queue, as da
 - its body `ops::thumbnail`, handed an observer and a cancel closure as the folder's is, which reads the raw's embedded picture (`apertrust_raw::read_preview_file`, without decoding the mosaic) and sends one `Thumbnail`; it asks its cancel before it reads and before it sends, and reads nothing for a name that is no plain file name.
 
 A new `Open` or a `Close` cancels every thumbnail asked for before it.
+
+An `Open` outside the tree, which makes a new root, or of the root itself again, as a recent or Open Folder… opens it, starts the tree's walk, a job on darktable's `SystemBackground` queue, as its background thumbnail job (backthumbs) runs:
+
+- kind `walk`, with no progress, so it shows in neither the spinner nor the jobs window, numbered by that open;
+- it waits until the root's own photos are listed (its `Listed` saying `done`, or its reading ended otherwise), so the root shows first;
+- its body `ops::walk`, handed the root, an observer and a cancel closure, which reads the folders on a thread of its own and sends `Walked` batches ([The tree's walk](#the-trees-walk)), so a share that hangs holds that thread alone, never the job's worker;
+- an `Open` inside the tree leaves it running; a new root, the root opened again, a `Close` or the session's end cancels it.
 
 Each `LibraryCommand::Subfolders` is a job on `UserBackground`, beside the folder's reading:
 
@@ -391,7 +399,7 @@ From decision 54 and the steps; none of these names exist in the code yet.
 
 Decision 53. `crates/library/src/listing.rs`. `Listing::start(folder, options)` lists one folder, not its subfolders, on a worker thread of its own with `std::fs` alone, and sends what it finds over a bounded channel (`Listing::events`), so the caller never waits on the folder: a slow share costs the worker's time, not the interface's, and a caller that reads slowly holds the worker back instead of letting results pile up. `Listing::cancel`, or dropping the `Listing`, stops it; `Listing::collect` waits for the whole of it as a `Folder`.
 
-**What it reads and skips:**
+**What it reads and skips,** by one rule the tree's walk shares (`listing::kind`), so a folder is a folder, or hidden, to both alike:
 
 | Entry | What the listing does |
 | --- | --- |
@@ -399,6 +407,8 @@ Decision 53. `crates/library/src/listing.rs`. `Listing::start(folder, options)` 
 | `NAME.apxmp`, the raw's whole name plus `sidecar::SUFFIX` | The raw's sidecar, matched byte for byte for now; with no raw, an `Orphan` |
 | A subfolder, or a link to one | Its name alone, never descended into |
 | A name starting with a dot | Skipped and counted as hidden, except a stale temporary (below) |
+| A folder the system's own flag hides: Finder's `UF_HIDDEN` on the Mac (one `lstat` a folder), the hidden attribute on Windows (the directory listing's own data) | Skipped and counted as hidden |
+| A Mac package, a folder named `.app`, `.bundle`, `.framework`, `.photoslibrary` or `.plugin` | A file, not a subfolder |
 | A name that is not text (not valid UTF-8) | Not listed, whatever it is; counted and warned of once per listing |
 | Anything else | Skipped and counted |
 
@@ -411,6 +421,22 @@ Decision 53. `crates/library/src/listing.rs`. `Listing::start(folder, options)` 
 **Stale temporaries.** The one hidden file the listing touches is a leftover temporary of Apertrust's own safe write, `.~NAME.XXXXXX.tmp`, told by its name alone (`apertrust_base::fs::is_temporary_name`). One more than a day old and a plain file is removed (`apertrust_base::fs::remove_if_stale`) and counted in `Summary::stale_removed`; younger ones, and any file that merely looks similar, stay hidden files. It is the one thing Apertrust removes from a person's folder.
 
 **Bulk listing** is planned (step 7, [Listing in bulk](#listing-in-bulk)).
+
+### The tree's walk
+
+`crates/library/src/walk.rs`. A folder opened as Browse's root is read in two steps: first its own photos and its first level of subfolders, as above (`Opened`, `Subfolders`, `Listed`); then the whole tree under it, walked in the background (`ops::walk`, `walk::walk`), for each folder's raw count and subfolders, which Browse's tree shows as they come. The folders are read on a thread of its own, as the listing's are: a folder on a share that hangs holds that thread alone, and the caller, which batches what has come, returns once cancelled without waiting for it.
+
+- **Directory entries alone:** each folder's entries are read once; its raws are counted by the decoder's extensions (`apertrust_raw::extensions()`, the list `Listed` uses) and its subfolders named in [`browser_order`](#subfolders-and-their-order). Nothing is decoded, no file is measured, no sidecar or metadata is read, and no thumbnail.
+- **Breadth first:** the root, then every folder one level down, then the next level, so shallow folders get their counts first.
+- **Left out,** by [the listing's rule](#the-listing): hidden folders and files, a Mac package counted as a file, a name that is not text. A link to a folder, a junction on Windows, is named as a subfolder, as the listing names it, but never walked into, so a loop of them ends; a link named as a raw counts by its name, as the listing lists it. A folder Windows marks as a cloud placeholder (OneDrive's) is a folder and is walked.
+- **Another device:** on Unix a folder on another device than the root's, a mount point inside the tree, is named but not walked into, so Browse asks for its subfolders as it opens it. On Windows another volume mounted in a folder is walked, as reading its volume would cost a handle a folder.
+- **A folder that cannot be read** is recorded with why (`WalkedFolder::unreadable`), and the walk goes on.
+- **Batches:** at most `walk::BATCH` (64) folders, each folder found waiting at most `walk::BATCH_WAIT` (250 ms) for others, timed by the caller, so a folder that hangs never holds back those found before it; the last says `done`.
+- **Cancelling:** the caller asks the cancel every 20 ms and tells the reading thread to stop, which asks before each folder and between its entries.
+- **No cap:** the walk has no depth or size limit, and the app keeps each folder's name and count for the session, while the root stays the tree's.
+- On a Mac, `~/Pictures`, 378 folders walked of the 384 `find` lists, the Photos library a package and dot folders left out, and 57,056 files, 8,796 of them raws, walks in about 32 ms warm, 179 ms cold, its first batch after 3 to 21 ms.
+
+Not built: watching the tree for changes on disk, so a folder added while it is open shows once it is opened again; and showing a folder's photos with its subfolders' ("include subfolders").
 
 ### Subfolders and their order
 

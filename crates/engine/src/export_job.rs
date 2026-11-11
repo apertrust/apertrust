@@ -1068,6 +1068,22 @@ pub(crate) mod testing {
                 .unwrap_or_else(PoisonError::into_inner)
                 .recv();
         }
+
+        /// [`Hold::wait`], ending early once `cancelled` answers true, as a job's cancel
+        /// ends a wait: false then.
+        pub(crate) fn wait_unless(&self, cancelled: impl Fn() -> bool) -> bool {
+            let _ = self.began.send(());
+            let permit = self.permit.lock().unwrap_or_else(PoisonError::into_inner);
+            loop {
+                if cancelled() {
+                    return false;
+                }
+                match permit.recv_timeout(std::time::Duration::from_millis(5)) {
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+                }
+            }
+        }
     }
 
     /// A GPU task whose first step waits for its hold first.

@@ -218,6 +218,7 @@ fn kind(event: &Event) -> &'static str {
             LibraryEvent::Taken { .. } => "Library Taken",
             LibraryEvent::Closed { .. } => "Library Closed",
             LibraryEvent::Thumbnail { .. } => "Library Thumbnail",
+            LibraryEvent::Walked { .. } => "Library Walked",
         },
         Event::Cache(_) => "Cache",
         Event::Failed(_) => "Failed",

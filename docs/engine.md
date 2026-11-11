@@ -1205,7 +1205,7 @@ flowchart TD
 | J6 | A kicker thread every 2 s | None | A correct condvar loop needs none |
 | J7 | Each job throttles its progress | The API, at darktable's 0.5 s | Every caller gets darktable's rate |
 | J8 | Progress without a job (Lua) | Every progress a job's | Lua is its one caller; a script's task is a job |
-| J9 | Quit waits 5 s, then each running job finishes | Asks first; cancellable jobs stop, others finish, queued ones go | Decision 56's quit alert; a move never stops halfway |
+| J9 | Quit waits 5 s, then each running job finishes | Asks first; cancellable jobs and those with no progress stop, others finish, queued ones go | Decision 56's quit alert; a move never stops halfway; a hidden job, as the tree's walk, never holds the quit |
 | J10 | A failed store cancels the export | A body ends failed, with its cause as a code, its item, its file and the error in plain words | The jobs window says why |
 | J11 | The sidecar writer a never-ending `SYSTEM_FG` job | The session's edit writer thread | A save never queues behind a worker |
 | J12 | The background jobs panel | One spinner and a modeless jobs window | The app's design ([gui.md](gui.md), The jobs window) |
@@ -1861,7 +1861,7 @@ Event::ExportPreview { through, preview }   the dialog's lines, for the latest P
 - **The job.** `Event::ExportPreview { through, preview }` is sent by a `UserForeground` job with no progress, on a job worker, `through` the command's number.
   - The session keeps the latest preview's job and cancels it when a new command comes (a `UserForeground` queue has no deduplication, so a cancel is the supersede).
   - A cancelled preview sends nothing; a preview that had already answered has, so a client keeps the answer with the highest `through`. No GPU is used.
-  - Dropping the session waits for a preview that is running, since a job without a progress is not cancelled by the shutdown (decision 57, J9), and its body is a few file-system calls.
+  - Dropping the session cancels a preview that is running, as the shutdown cancels every job without a progress (decision 57, J9).
 - **The open photo is the active photo.** It is taken from the session's memory as the command is handled, like an export's live photo, only if it is among `photos`. Only its size is reported (`ActiveSize`): the output as `apertrust_export::size` computes it from its extent after every geometry, or the D8 problem, a side too large for the format, a size that leaves no pixel, a photo whose edit does not bind. Another photo's extent needs a decode, which the preview never makes.
 - **What is read of the other photos.** No image is decoded. A probe expands the path with and without values no photo has, to see whether it uses the shooting data a file records and, apart, what only a decode gives (the camera's name as the decoder reads it, the ISO, the exposure bias, the image's sizes). `apertrust_raw::read_exif_file`, the metadata alone, is read for each photo only if the path uses the first. For the second the open photo has them, and another photo's `PhotoName::exact` is false, those variables showing empty.
 - **The names.** For each photo, in order, its file with the extension of the format (`Fate::File`: the number added for Create unique filename included, whether a file is under the plain name, and `Action`: write, number, overwrite or skip with the reason) or `Fate::NoName`.

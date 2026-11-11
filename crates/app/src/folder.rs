@@ -29,6 +29,10 @@
 //!   subfolders listed and the recents stay as they were (`docs/gui.md`, Browse).
 //! - **The photos** accumulate from the `Listed` chunks, in the listing's order, until one says
 //!   `done`.
+//! - **The tree's walk** comes in `Walked` batches after the root's own listing, in the
+//!   number of the open that made the session's tree, which an open inside it keeps: each
+//!   folder's raw count, and its subfolders where nothing has listed them yet, so the tree
+//!   asks for none it has. A walk of an earlier tree is dropped ([`FolderState::counts`]).
 //! - **A failure** is `Failed`, or the reading's job ending cancelled (the jobs window's
 //!   Cancel): the open is then over, with its reason, or none for a cancel.
 //! - **The thumbnails** come one `Thumbnail` at a time, kept by photo and size with the
@@ -168,8 +172,18 @@ pub struct FolderState {
     /// Browse's root: the folder a way in opened, at the top of the tree, which a folder
     /// chosen in the tree keeps; none with nothing open, and once a way in failed.
     root: Option<PathBuf>,
-    /// The root's photo count, once a listing of it has given every photo.
-    root_count: Option<usize>,
+    /// The session's tree, whose walk the counts come from: the first folder opened, kept
+    /// while each later open lies inside it, as the session keeps it; none once closed.
+    tree: Option<PathBuf>,
+    /// The number of the open that made [`FolderState::tree`] the session's, whose walk's
+    /// batches are taken in.
+    walk: u64,
+    /// The raws in each folder of the tree, by path: a folder's from its own listing once
+    /// every photo is listed, the others' as the tree's walk counted them.
+    counts: HashMap<PathBuf, usize>,
+    /// The folders listed since the walk began, their subfolders or their photos, which
+    /// are fresher than what the walk says of them: it leaves them.
+    listed: HashSet<PathBuf>,
     /// Whether the latest open is a way in, which set the root, rather than a folder chosen
     /// in the tree.
     way_in: bool,
@@ -180,9 +194,7 @@ impl FolderState {
     /// the root from now on, and what was listed of the tree before is dropped.
     pub fn opening(&mut self, path: PathBuf, number: u64) {
         self.root = Some(path.clone());
-        self.root_count = None;
         self.way_in = true;
-        self.inside.clear();
         self.ask(path, number);
     }
 
@@ -199,8 +211,25 @@ impl FolderState {
         }
     }
 
-    /// The folder at `path` is asked for by the command numbered `number`.
+    /// The folder at `path` is asked for by the command numbered `number`. Outside the
+    /// session's tree it becomes the tree, as the session makes it, whose walk comes in that
+    /// number: what was listed and counted of the tree before is dropped. The tree's root
+    /// opened again is walked again, in that number, what it says replacing what is known;
+    /// a folder inside the tree keeps the tree and what is known of it.
     fn ask(&mut self, path: PathBuf, number: u64) {
+        let kept = self
+            .tree
+            .as_deref()
+            .is_some_and(|tree| library::inside(tree, &path));
+        if !kept {
+            self.tree = Some(path.clone());
+            self.inside.clear();
+            self.counts.clear();
+        }
+        if !kept || self.tree.as_deref() == Some(path.as_path()) {
+            self.walk = number;
+            self.listed.clear();
+        }
         self.latest = number;
         self.job = None;
         self.folder = Folder::Opening { path };
@@ -235,7 +264,9 @@ impl FolderState {
         self.job = None;
         self.folder = Folder::None;
         self.root = None;
-        self.root_count = None;
+        self.tree = None;
+        self.counts.clear();
+        self.listed.clear();
         self.generation += 1;
         self.reorder();
     }
@@ -396,9 +427,19 @@ impl FolderState {
         self.root.as_deref()
     }
 
-    /// The root's photo count, once a listing of it has given every photo.
+    /// The root's photo count, once a listing of it has given every photo or the walk has
+    /// counted it.
+    #[cfg(test)]
     pub fn root_count(&self) -> Option<usize> {
-        self.root_count
+        self.root
+            .as_ref()
+            .and_then(|root| self.counts.get(root).copied())
+    }
+
+    /// The raws in each folder of the tree as far as they are known, by path: the root's
+    /// from its listing, the rest as the walk has reached them.
+    pub fn counts(&self) -> &HashMap<PathBuf, usize> {
+        &self.counts
     }
 
     /// The folder shown, the active folder, whose photos the grid panel shows: the open one,
@@ -431,6 +472,12 @@ impl FolderState {
     /// the job that command started. Returns what the app is to do about it, if anything.
     pub fn apply(&mut self, event: &Event) -> Option<Outcome> {
         match event {
+            Event::Library(LibraryEvent::Walked { open, folders, .. }) => {
+                if self.tree.is_some() && *open == self.walk {
+                    self.walked(folders);
+                }
+                None
+            }
             Event::Library(event) if event.open() == self.latest => self.library(event),
             Event::Job { event, command } => {
                 self.job_event(event, *command);
@@ -469,6 +516,7 @@ impl FolderState {
                     listing.subfolders = names.clone();
                     let listed = Ok(names.clone());
                     self.inside.insert(listing.path.clone(), listed);
+                    self.listed.insert(listing.path.clone());
                 }
                 None
             }
@@ -483,14 +531,21 @@ impl FolderState {
                     None => Ok(names.clone()),
                 };
                 self.inside.insert(folder.clone(), listed);
+                self.listed.insert(folder.clone());
                 None
             }
             LibraryEvent::Listed { photos, done, .. } => {
                 if let Folder::Open(listing) = &mut self.folder {
                     listing.photos.extend(photos.iter().cloned());
                     listing.done |= *done;
-                    if *done && self.root.as_ref() == Some(&listing.path) {
-                        self.root_count = Some(listing.photos.len());
+                    // Every folder of the tree listed whole has its count, fresher than the
+                    // walk's.
+                    let in_tree = (self.tree.as_deref())
+                        .is_some_and(|tree| library::inside(tree, &listing.path));
+                    if *done && in_tree {
+                        self.counts
+                            .insert(listing.path.clone(), listing.photos.len());
+                        self.listed.insert(listing.path.clone());
                     }
                     self.reorder();
                 }
@@ -540,6 +595,28 @@ impl FolderState {
                 }
                 None
             }
+            // Taken in by `apply`, by the tree's number.
+            LibraryEvent::Walked { .. } => None,
+        }
+    }
+
+    /// Takes in a batch of the tree's walk: each folder's raw count and its subfolders, so
+    /// the tree asks for none it has, but for a folder listed since the walk began, whose
+    /// own listing is fresher; a folder the walk could not read keeps no count, and its
+    /// tree row offers to try again.
+    fn walked(&mut self, folders: &[library::WalkedFolder]) {
+        for walked in folders {
+            if self.listed.contains(&walked.folder) {
+                continue;
+            }
+            let listed = match &walked.unreadable {
+                Some(why) => Err(why.clone()),
+                None => {
+                    self.counts.insert(walked.folder.clone(), walked.raws);
+                    Ok(walked.subfolders.clone())
+                }
+            };
+            self.inside.insert(walked.folder.clone(), listed);
         }
     }
 
@@ -548,7 +625,6 @@ impl FolderState {
     fn unroot(&mut self) {
         if self.way_in {
             self.root = None;
-            self.root_count = None;
         }
     }
 
@@ -744,9 +820,9 @@ mod tests {
         })
     }
 
-    /// A subfolder's subfolders are asked for once an open and kept by its path; a new
-    /// open drops them, and what comes late for the open before it, so the same folder
-    /// opened again asks again; Try Again forgets what came.
+    /// A subfolder's subfolders are asked for once an open and kept by its path; the root
+    /// opened again keeps them, its walk to come in their place, but drops what comes late
+    /// for the open before it; Try Again forgets what came.
     #[test]
     fn a_subfolder_s_subfolders_are_asked_once_an_open() {
         let mut state = FolderState::default();
@@ -764,12 +840,15 @@ mod tests {
             state.inside().get(&edits),
             Some(&Ok(vec!["Picks".to_owned()]))
         );
-        // Opened again: asked again, and the late answer of the open before is dropped.
+        // Opened again: kept, and the late answer of the open before is dropped.
         state.opening(PathBuf::from("/photos/Wedding"), 5);
         state.apply(&opened(5, "/photos/Wedding"));
-        state.apply(&subfolders_of(4, &edits, &["Picks"], None));
-        assert!(state.inside().is_empty());
-        assert!(state.ask_inside(&edits));
+        state.apply(&subfolders_of(4, &edits, &["Late"], None));
+        assert_eq!(
+            state.inside().get(&edits),
+            Some(&Ok(vec!["Picks".to_owned()]))
+        );
+        assert!(!state.ask_inside(&edits));
         // A folder that could not be listed says why, and Try Again asks again.
         state.apply(&subfolders_of(5, &edits, &[], Some("the share is down")));
         assert_eq!(
@@ -779,6 +858,101 @@ mod tests {
         assert!(!state.ask_inside(&edits));
         state.forget_inside(&edits);
         assert!(state.ask_inside(&edits));
+    }
+
+    /// A batch of the tree's walk in the open numbered `open`: each folder with its raws and
+    /// subfolders, or unreadable where its raws are `None`.
+    fn walked(open: u64, folders: &[(&str, Option<usize>, &[&str])]) -> Event {
+        let folders = folders
+            .iter()
+            .map(|(folder, raws, subfolders)| library::WalkedFolder {
+                folder: PathBuf::from(folder),
+                raws: raws.unwrap_or(0),
+                subfolders: subfolders.iter().map(|name| (*name).to_owned()).collect(),
+                unreadable: raws.is_none().then(|| "cannot be read".to_owned()),
+            })
+            .collect();
+        Event::Library(LibraryEvent::Walked {
+            open,
+            folders,
+            done: false,
+        })
+    }
+
+    /// The tree's walk fills each folder's count and its subfolders, which the tree then
+    /// asks for no more, but leaves the root's count its listing gave; it goes on while a
+    /// folder chosen in the tree is shown. A folder not walked yet is asked for as before; a
+    /// walk of an earlier tree, or after a close, is dropped.
+    #[test]
+    fn the_tree_s_walk_fills_the_counts_and_an_earlier_tree_s_is_dropped() {
+        let mut state = FolderState::default();
+        let wedding = PathBuf::from("/photos/Wedding");
+        let edits = wedding.join("Edits");
+        state.opening(wedding.clone(), 4);
+        state.apply(&opened(4, "/photos/Wedding"));
+        state.apply(&listed(4, &["a.ARW", "b.ARW", "c.ARW"], true));
+        assert_eq!(state.counts().get(&edits), None, "not reached yet");
+        state.apply(&walked(
+            4,
+            &[
+                ("/photos/Wedding", Some(99), &["Edits", "Locked"]),
+                ("/photos/Wedding/Edits", Some(2), &["Picks"]),
+                ("/photos/Wedding/Locked", None, &[]),
+            ],
+        ));
+        assert_eq!(state.root_count(), Some(3), "the listing's");
+        assert_eq!(state.counts().get(&edits), Some(&2));
+        let locked = wedding.join("Locked");
+        assert_eq!(state.counts().get(&locked), None);
+        assert_eq!(
+            state.inside().get(&locked),
+            Some(&Err("cannot be read".to_owned()))
+        );
+        assert!(!state.ask_inside(&edits), "known from the walk");
+        // The fallback: a folder the walk has not reached is asked for.
+        let picks = edits.join("Picks");
+        assert!(state.ask_inside(&picks));
+
+        // A folder chosen in the tree: the walk goes on in the root's number, and the
+        // folder's own listing, fresher, keeps its count.
+        state.choosing(edits.clone(), 5);
+        state.apply(&opened(5, "/photos/Wedding/Edits"));
+        state.apply(&listed(5, &["x.ARW", "y.ARW", "z.ARW", "w.ARW"], true));
+        assert_eq!(state.counts().get(&edits), Some(&4));
+        state.apply(&walked(
+            4,
+            &[
+                ("/photos/Wedding/Edits", Some(2), &["Picks"]),
+                ("/photos/Wedding/Edits/Picks", Some(1), &[]),
+            ],
+        ));
+        assert_eq!(state.counts().get(&picks), Some(&1));
+        assert_eq!(state.counts().get(&edits), Some(&4), "its listing's");
+
+        // The root opened again, as a recent opens it: walked again, its counts replacing
+        // the old walk's, which is dropped; what is known stays meanwhile.
+        state.opening(wedding.clone(), 8);
+        assert_eq!(state.counts().get(&picks), Some(&1));
+        assert!(
+            !state.ask_inside(&edits),
+            "kept for a way in inside the tree"
+        );
+        state.apply(&walked(4, &[("/photos/Wedding/Edits/Picks", Some(9), &[])]));
+        assert_eq!(state.counts().get(&picks), Some(&1));
+        state.apply(&walked(8, &[("/photos/Wedding/Edits/Picks", Some(2), &[])]));
+        assert_eq!(state.counts().get(&picks), Some(&2));
+
+        // A new root: the earlier walk is dropped, its own taken in.
+        state.opening(PathBuf::from("/photos/Other"), 6);
+        assert!(state.counts().is_empty());
+        state.apply(&walked(4, &[("/photos/Wedding/Selects", Some(5), &[])]));
+        assert!(state.counts().is_empty());
+        state.apply(&walked(6, &[("/photos/Other/Day 1", Some(4), &[])]));
+        assert_eq!(state.counts().len(), 1);
+        // Closed: nothing more.
+        state.closing(7);
+        state.apply(&walked(6, &[("/photos/Other/Day 2", Some(4), &[])]));
+        assert!(state.counts().is_empty());
     }
 
     fn failed(open: u64) -> Event {
