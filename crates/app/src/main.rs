@@ -156,7 +156,7 @@ enum Start {
 const IN_FOLDER_FLAG: &str = "--in-folder";
 
 /// Reads `args`, the command line after the program's name, `look` saying what its path
-/// is on the disk ([`start`]), unless `--in-folder` comes anywhere in it, when the disk is
+/// is on the disk ([`start()`]), unless `--in-folder` comes anywhere in it, when the disk is
 /// not asked here and every path is its. A flag of the user data folder or the cache
 /// folder without one is an error, so that another is never used in its place, as is
 /// `--conf` without its setting.
