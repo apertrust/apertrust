@@ -52,7 +52,7 @@ The topics, `Fact`, as built:
 
 Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
 
-Planned facts: a readout, by module (decision 19); the selection and the active photo (decision 37); and a page of the collection shown, by page.
+Planned facts: the active photo's history, `Fact::History`, whole each time (decision 78; [history.md](history.md#the-history-event)); a readout, by module (decision 19); the selection and the active photo (decision 37); and a page of the collection shown, by page.
 
 ## The events the session sends
 
@@ -81,13 +81,13 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 - each preset row's matching option (`PresetState`) and each view's coordinates (`CoordinateState`, [engine.md](engine.md#preset-rows-and-lossless-views));
 - whether the module is edited.
 
-Then come `settings`, the parameters no module owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Planned (decision 32): whether each module is on, `ModuleState::enabled`, and a switched module counting as edited while on.
+Then come `settings`, the parameters no module owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Planned (decision 32): whether each module is on, `ModuleState::enabled`, and a switched module counting as edited while on. Planned (decision 78): whether the History tab's eye hides each module from the view, `ModuleState::hidden`.
 
 Last, `live` (decision 77): whether the photo is live and commands on the edit are taken, false from `Opened` until its raw is decoded and uploaded, true from the batch of its first live frame ([A photo opening](#a-photo-opening)).
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `History`, the active photo's steps, end and what Undo and Redo would do, at an open and after each batch that changed them (decision 78; [history.md](history.md#the-history-event)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 
@@ -178,6 +178,7 @@ A job that needs the person's answer is to send a notice naming its question, an
 
 - **The channel orders every send.** One producer's events arrive in the order it sent them.
 - **Within a batch** (the commands the engine thread took together, [session-protocol.md](session-protocol.md#numbers-and-batches)): an `Opened` or a command's `Failed` comes in the commands' order; then the `Values` after them; then the batch's `Frame`, or the render's failure; then any scopes readings that arrived, a frame's reading always after its frame. A GPU error during the batch drops its frame, and its `Failed` comes after the batch's other events, before the scopes readings. An `Opened` comes in the turn its open's metadata reaches the engine thread, after the commands sent before that turn, followed by its `Values { live: false }`; the turn its raw arrives sends `Values { live: true }`, then the `Frame` (decision 77, [A photo opening](#a-photo-opening)).
+- **Planned (decision 78):** a batch whose commands changed the history sends its `History` once, after its `Values` and before its `Frame`; at an open, `History` follows `Values { live: false }` ([history.md](history.md#the-history-event)).
 - **A job's events come in order**, since the observer runs under the control's lock. Its `Added` is sent as it is added, before a worker can take it, so its body's own events, such as an export's, come after it.
 - **Across producers only the numbers order events.** The writer's `Saved` may arrive before the `Values` it includes.
 - **In process every event is delivered exactly once, in order.** Nothing is coalesced in process: a client applies each fact over the last.
@@ -319,6 +320,7 @@ Kept from darktable:
 
 ## What is planned
 
+- **`History`**, a fact, with the library's step 9 ([history.md](history.md#the-history-event)).
 - **`CollectionChanged`**, with darktable's reason and property, with the first change to a collection ([Lower crates report through an observer](#lower-crates-report-through-an-observer)).
 - **Notices for the user**, `Event::Notice { message, photo }` and its place in the app, with the library's step 12 ([Notices for the user](#notices-for-the-user)).
 - **The remote protocol**, with the server or MCP, whichever comes first ([session-protocol.md](session-protocol.md#remote-clients)).

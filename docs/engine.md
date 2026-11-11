@@ -1109,10 +1109,13 @@ Built (`session::thumbnail::rendered`, `pipeline::still`). The live photo's save
 
 ### History and undo
 
-History and undo live in the session, as its ordered list of edits (Phase 2). From their first build they are saved in the sidecar as its log of steps and the log's end (decision 47), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. Compress History and Discard History are the sidecar's ([Edits](#edits)).
+Decisions 47 and 78, planned; the design in full is [history.md](history.md). History and undo live in the session, as each virtual copy's log of steps and its end, first in the session's memory and then saved in the sidecar's version 2, so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight.
 
-- A gesture is merged into one step on its `done`; a cancelled gesture (`CancelGesture`, decision 42) leaves none.
-- A command on several selected photos, a rating or Apply edit, is one step, which one Undo takes back on every photo it changed (decision 37).
+- A completed change is one step, with its source, note and batch, holding each module's whole state after it; a gesture merges into one step on its `done`, a cancelled gesture (`CancelGesture`, decision 42) leaves none, and a `SetControl` repeated on one control within darktable's 10 s and 2 s merges into the step before it.
+- Undo and Redo take back and put back the session's undo records, as darktable's undo does (a step with the steps it dropped, a `GoTo`, a `Compress`, a `Truncate`), and with none move the log's end.
+- `Undo`, `Redo`, `GoTo { step }`, `Compress` and `Truncate` (darktable's compress and its Ctrl-click) are commands on the edit; `Reset` is a step; `Step { source, note, commands }` makes several of the edit's commands one step with a source and a note, refused whole (`InStep { index, error }`); `Hide { module, hidden }` is the History tab's eye, view state only. The session answers with one `History` fact, after the batch's `Values` and before its `Frame`.
+- A command on several selected photos, a rating or Apply edit, is one step on each photo, sharing a batch id, which one Undo takes back on every photo it changed (decision 37).
+- The log is `history`'s (`Log`, `Step`, fold, merge, compress), used by the session and by `apertrust-cli` alike.
 
 ### Several photos
 
@@ -2115,7 +2118,7 @@ A value set by a command is rejected when out of its parameter's range (decision
 Decision 47, planned ([library.md](library.md#version-2)).
 
 - The sidecar holds the photo's name, its fingerprint (decision 53) and the build, then its virtual copies, one at first, each with a random id, a number and a name, its **history** as a log of steps and the log's end (darktable's `history_end`), its snapshots and its clock vector.
-- A step is one gesture, a `done` change: a random id, a hybrid logical clock, and each module it touched with the values version 1 writes for it, or `off` for a reset that turns a switched module off (decision 32), with the ratings, reject, labels, keywords and metadata it set and a batch's id.
+- A step is one completed change (a gesture ending with `done`, a reset, a preset, a `Step`), a control's quick repeats merged (decision 78): a random id, a hybrid logical clock, its source, note and batch ([history.md](history.md#a-step), decision 78), and each module it touched with the values version 1 writes for it, or `off` for a reset that turns a switched module off (decision 32), with the ratings, reject, labels, keywords and metadata it set.
 - The edit the session binds is, for each module, its values at its last step up to the end, otherwise its defaults.
 - Version 1 reads as one virtual copy whose history is one step holding its modules; version 0 still opens.
 - Decision 43's rules hold: anything a save would drop, metadata included, makes the photo view-only (decision 52).
@@ -2416,4 +2419,5 @@ What is still undecided in the engine, by part. Each says what the engine does m
 
 ### Several photos
 
-- **Smaller items of the one view** (decision 37), settled when each is built: what Undo takes back after a batch once another photo is active; the stills' display colour when the window moves to another screen.
+- **Smaller items of the one view** (decision 37), settled when each is built: the stills' display colour when the window moves to another screen.
+- [x] **What Undo takes back after a batch once another photo is active:** settled by decision 78, the batch on every photo where its step is still the end ([history.md](history.md#behaviour)).

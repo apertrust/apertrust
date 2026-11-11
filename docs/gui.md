@@ -639,7 +639,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 | Copy or Apply Parts… | `copy-apply-parts` | — | Declared; Phase 3 |
 | Save Edit as Style… | `save-style` | — | New, Phase 3, with Styles |
 | — | | | |
-| Reset Edit | `reset` | — until undo exists | Built |
+| Reset Edit | `reset` | None, as darktable's discard history has no default key | Built |
 | —, Windows and Linux | | | |
 | Settings…, Windows and Linux | `settings` | Ctrl+, | Built |
 
@@ -1960,7 +1960,7 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
   - **The switch** to the photo's values happens in one frame, as the mirror takes its values in (`Event::Values`, which the session sends with its `Opened`); its Scopes section comes with them and shows its first reading as it arrives.
   - **Opening in stages** (decision 77, built: `Shown::Opening`): the session sends the values milliseconds after the open, before it decodes the raw, as `Values { live: false }`. Each control shows the photo's value, kept marks included, drawn disabled, with the resets, preset rows, buttons and the keys on the edit, so nothing dragged is lost or applied before the photo is live; their tooltip says why, "Opening IMG_2041…" (`controls-opening`, with the file's name, its extension left out), shown at the pointer over each row of controls on the edit, asked before the controls' own tips, and each such row's description for screen readers; a group's header, a tool's setting, an action and the guides keep their own tips; Scopes stays as with no photo. A change the session refused as `NotLive`, sent just as the photo was asked for, is dropped with nothing said. With `Values { live: true }`, in the batch of the first live frame, the controls enable in the same frame as the picture's swap.
   - The defaults are the definition's own, not the photo's (`Module::defaults` needs one): a preset row reads what they match, and a lossless view's coordinates are the module's view of them, both on the no-photo image (`ImageContext::full(0, 0)`); a row whose module cannot say reads Custom, and a view whose module cannot is left out, as the session leaves it out.
-- **The History tab** shows the active photo's history as its sidecar keeps it, a log of steps saved from the history's first build (decision 47), so it is there again when the photo reopens. Compress History and Discard History act on it, and its Snapshots section lists the snapshots saved in the sidecar, each holding its edit whole (planned with the library's virtual copies and snapshots). It is to be drawn on the wireframe first.
+- **The History tab** shows the active photo's history as its sidecar keeps it, a log of steps (decisions 47 and 78), so it is there again when the photo reopens: a line per step, newest first and numbered from 1, each with its source, a tooltip of its changes, a click going to it, Shift-click opening its module and an eye hiding its module from the view; below them the Default lines, the modules every photo runs, unnumbered, never greyed or selected, a click opening the module, with no eye; and Original, 0, the only line highlighted at end 0. Compress History acts on it, as darktable's compress history stack does, and Ctrl-click on it (Cmd-click on the Mac) truncates, dropping the steps after the end, as darktable's Ctrl-click does, its tooltip saying so; Reset is a step. Its design is the wireframe's History frame, and what it draws and sends is [history.md](history.md#in-the-app)'s. Its Snapshots section lists the snapshots saved in the sidecar, each holding its edit whole (planned with the library's virtual copies and snapshots).
 - **The edge.** The side panel's edge towards the photo, `PanelEdge` in `apertrust-ui`, is the separator between them, `shape.separator_width` (2 points) wide, and resizes the panel.
   - Dragged, the panel follows the pointer in the same frame, the point taken hold of staying under it.
   - The column-resize cursor shows over it and while it is dragged, and the line brightens from `separator` to `border`, as it does while the edge has focus.
@@ -2997,7 +2997,7 @@ Ctrl means Cmd on macOS.
 | App | Export Again | None, so anyone used to darktable can bind Ctrl+E to it | Built on the Mac |
 | App | Undo, Redo | Ctrl+Z; Ctrl+Shift+Z, and Ctrl+Y on Windows and Linux | Not built |
 | App | Copy edit, Apply edit | Ctrl+Shift+C, Ctrl+Shift+V | Not built; Copy or apply parts has no key. Apply edit acts on every selected photo |
-| App | Reset | None until undo exists, since a reset by accident could not be taken back | Its button; the active photo only |
+| App | Reset | None, as darktable's discard history has no default key | Its button; the active photo only |
 | App | Side-panel tabs 1 to 5 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold. With the Photos tab first, the sixth has no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types − |
 | App | Interface scale | None by default: View › Interface Size and Settings set it, and a user may give it keys | egui's zoom factor, from 50% to 300% in steps of 10%. egui's own zoom keys are off, so the registry owns them. `actions.rs` still gives it Ctrl+=, Ctrl+− and Ctrl+0 until the photo's zoom is built, when they move to it |
 | App | Next and previous pane | F6, Shift+F6 | Between the regions, as above |

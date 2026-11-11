@@ -193,6 +193,12 @@ The library's design and API are in [library.md](library.md), decisions 46 to 55
 
 The library is built in steps, folder mode first ([roadmap.md, The library's steps](roadmap.md#the-librarys-steps)).
 
+### History and undo
+
+Planned: each virtual copy's history is one log of steps in its sidecar, a step being one completed change with its source and note, and Undo and Redo take back the session's undo records, as darktable's, or move the log's end, so they survive reopening the photo. Every client of a session uses the same commands, `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate` and `Step`, and draws one `History` fact; the CLI works on the sidecar through the same engine functions (decisions 47 and 78).
+
+Details: [history.md](history.md).
+
 ### Export
 
 An export is a job of the engine's session, beside live editing: darktable's sizes, resample, formats, variables and file-on-disk rules, written by `apertrust-export`, which has no GPU (decision 56).

@@ -13,6 +13,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 - [docs/plugins.md](docs/plugins.md): the operation interface, one crate per operation, manifests and schemas, passes, slots, the image context, third-party plugins (planned).
 - [docs/settings.md](docs/settings.md): the settings schema and store, `--conf`, the user data folders, edits in another folder (decision 43).
 - [docs/cache.md](docs/cache.md): the on-disk cache (decision 76, planned): its folder and kinds, one file per entry, the limit or Unlimited, eviction, what never goes in it, Settings › Storage and `apertrust-cli cache`.
+- [docs/history.md](docs/history.md): undo, redo and the edit's history (decision 78, planned): a step and what merges, the log in the sidecar, `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate` and `Step` through the session with one `History` fact, the History tab and `apertrust-cli history`, the plan.
 - [docs/library.md](docs/library.md): the library: one photo, folder mode, the Library and the Project, the code's four layers, `LibraryCommand` and `LibraryEvent`, listing and the index, sidecars, finding photos on several computers, a server, a library's cache and thumbnails (decisions 46 to 55 and 71).
 - [docs/events.md](docs/events.md): the event API (decision 59). [docs/session-protocol.md](docs/session-protocol.md): the protocol every client reaches the engine through.
 - [docs/gui.md](docs/gui.md): the GUI's architecture (decision 36): the design system, themes, Fluent, actions, accessibility, settings, UI tests; a dark default theme, British English (the source), American English, Ukrainian and Polish.
@@ -164,7 +165,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `batch`, `serve` and `mcp` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `history`, `batch`, `serve` and `mcp` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |

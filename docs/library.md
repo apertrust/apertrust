@@ -521,7 +521,7 @@ Decision 53. Every sidecar is written whole, through `sidecar::write_xml`, which
 
 ### The XMP layer
 
-Decision 50, built, `crates/library/src/xmp.rs`. Any valid XMP packet read into a tree of properties and written back in a canonical compact form, for the `.apxmp`, darktable's `.xmp` and, later, the files an export writes. It is XMP and nothing about what any property means, on quick-xml alone.
+Decision 50, built, `crates/library/src/xmp.rs`. Its target is conformance to ISO 16684-1:2019 (which revises ISO 16684-1:2012, whose text Adobe publishes free as the XMP Specification Part 1), held by its fixtures, to which step 8.2 adds a sidecar with a history that ExifTool and exiv2 read without error. Any valid XMP packet read into a tree of properties and written back in a canonical compact form, for the `.apxmp`, darktable's `.xmp` and, later, the files an export writes. It is XMP and nothing about what any property means, on quick-xml alone.
 
 - **The tree:** `Xmp` (its toolkit, `about`, the declared prefixes, its properties in order); `Property`, a `Name` and a `Node`; a `Node`'s `Value` simple, a resource, a struct, or an array (`ArrayKind`: Bag, Seq or Alt), with its `Qualifier`s, `xml:lang` first.
 - **`Xmp::parse` and `Xmp::parse_bytes`** read what a packet can be: an `<?xpacket?>` wrapper, a byte order mark and UTF-16, `x:xmpmeta` or a bare `rdf:RDF`, several descriptions merged in order, attribute and element forms, `rdf:parseType="Resource"`, nested descriptions, `rdf:resource`, `rdf:value` qualifiers, CDATA. Every form gives the same `Node`; an error names the line, and RDF beyond XMP's subset is refused, not guessed.
@@ -541,18 +541,18 @@ Decision 47, planned (steps 8, 9 and 11 to 17). Version 2 holds the parts below,
 - A deleted one leaves a tombstone, so a sync cannot bring it back.
 - Albums, the protocol and the thumbnail cache name one as `photo#id`.
 
-**Its history,** per virtual copy, an ordered list of steps, as darktable's XMP holds `darktable:history`.
+**Its history,** per virtual copy, an ordered list of steps, as darktable's XMP holds `darktable:history`; the library's step 9, designed in full in [history.md](history.md) (decision 78).
 
-- **A step** is what one gesture changed (decision 28's `done`): a random id; its clock; each module it touched with its stored values after it, a reset that turns a switched module off being the entry `off` (decision 32); the ratings, reject, labels, keywords and metadata it set; and a batch's id, so Undo finds the batch in every photo after a restart (decision 37).
-- **The end** (`apertrust:end`) is the last step applied, darktable's `history_end`. The edit is, for each module, its values at its last step up to the end, otherwise its defaults, off if it is switched.
-- **Undo and Redo** move the end; a change after Undo drops the steps after it.
-- **Compress History** drops the steps after the end, keeps for each module and field its last entry with its step id and clock, and records the clocks it covered, so a copy still holding the folded steps is known to be older.
+- **A step** is one completed change (a gesture ending with `done`, a reset, a preset, a `Step`), a control's quick repeats merged (decision 78): a random id; its clock; its source and an optional note; each module it touched with its stored values after it, a reset that turns a switched module off being the entry `off` (decision 32); the ratings, reject, labels, keywords and metadata it set; and a batch's id, so Undo finds the batch in every photo after a restart (decision 37).
+- **The end** (`apertrust:end`) is the last step applied, by its id, darktable's `history_end`. The edit is, for each module, its values at its last step up to the end, otherwise its defaults, off if it is switched.
+- **Undo and Redo** take back the session's undo records while the photo is open, otherwise they move the end; a change after Undo drops the later steps, which Undo brings back while the photo is open ([history.md](history.md#behaviour)).
+- **Compress History** drops the steps after the end, keeps for each module and field its last entry with its step id and clock, and advances the copy's clock vector with a clock of its own, so a copy still holding the folded steps is known to be older. Undo puts the log back while the photo is open. Each move of the end, Undo, Redo and going to a step, advances the clock vector likewise.
 - **Discard History** is a step that resets the edit.
 - **Only the log is stored,** never the edit's state beside it, which could disagree with it. A step is about 100 to 300 bytes, so 200 steps make about 40 kB.
 
-**Its snapshots,** per virtual copy, each with an id, a name, its clock and the edit it shows, whole, as one compressed step, so Compress cannot break one. Restore Snapshot is a step. (darktable's are a point in the history, in memory, ten at most.)
+**Its snapshots,** per virtual copy, each with an id, a name, its clock and the edit it shows, whole, as one compressed step, so Compress cannot break one. Restore Snapshot is a step. The library's step 16 adds them to the history's API and its tab's Snapshots section ([history.md](history.md)). (darktable's are a point in the history, in memory, ten at most.)
 
-**Its clocks:** hybrid logical clocks, UTC milliseconds, a counter and the machine id (`2026-03-14T14:02:11.120Z 0 a1b2c3d4`).
+**Its clocks:** hybrid logical clocks, UTC milliseconds, a counter and the machine id (`2026-03-14T14:02:11.120Z 0 a1b2c3d4`), each written as three fields, the time an XMP Date (`apertrust:when`) beside `apertrust:counter` and `apertrust:machine`, so other tools read it as a date ([history.md](history.md#in-the-sidecar)).
 
 - A machine that reads a later clock moves its own past it.
 - Each step, snapshot, tombstone and library-file entry has one, and each virtual copy keeps its clock vector, the latest clock of each machine that changed it.
@@ -560,7 +560,7 @@ Decision 47, planned (steps 8, 9 and 11 to 17). Version 2 holds the parts below,
 
 **Its photo groups,** by id, so they survive a rebuild.
 
-**The session's undo and history are this log from their first build** ([engine.md](engine.md#session-and-threads)), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. A version 1 sidecar is read as one virtual copy whose history is one step holding its modules; version 0 still opens. The text layer is to gain the comparison of two copies ([Comparing two copies](#comparing-two-copies)); the engine keeps the typed reading with the module definitions ([engine.md](engine.md#version-2)).
+**The session's undo and history are this log** ([history.md](history.md); [engine.md](engine.md#history-and-undo)), first in the session's memory and saved here as soon as version 2 lands (the library's step 8.2), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. A version 1 sidecar is read as one virtual copy whose history is one step holding its modules; version 0 still opens. The text layer is to gain the comparison of two copies ([Comparing two copies](#comparing-two-copies)); the engine keeps the typed reading with the module definitions ([engine.md](engine.md#version-2)).
 
 **Never overwritten by an older build** (decisions 43 and 52): an edit holding anything a save would drop opens for viewing only, metadata included. That is a newer file or module version, a module this build neither knows nor has retired, or, at the edit's own versions, a control, value, operation, parameter or element it cannot keep.
 
@@ -573,7 +573,7 @@ Decisions 47 and 49, planned with the first raster mask, in Phase 4. `IMG_2041.A
 - **The reference,** in the `.apxmp`, as darktable's `dt_dtdata_ref_t`: the entry's name, its kind, its origin (made by a person, or regenerable by a model), its size, its bit depth and its producer, and no path. The entry is looked up in the `.apdata` beside the `.apxmp` the reference came from, so moving a folder breaks nothing. On read the SHA-1 is checked against the name; a missing or damaged entry shows that mask or fill as missing, and the rest of the edit opens.
 - **Entries never change.** A changed mask is a new entry. A virtual copy, a snapshot or a history step names the entries it uses, so going back in the history or restoring a snapshot finds its masks. Readers ignore entries they do not know, and writers keep entries they cannot attribute, so an older Apertrust never drops what a newer one wrote.
 - **Writes:** the whole zip rewritten through the safe write, never while a reader holds it open on Windows. A zip that cannot be read to its end is never rewritten, swept or merged from.
-- **Cleanup,** darktable's sweep: an entry is removed only when no step of the photo's saved history, no virtual copy and no snapshot names it, decided once the history is final (a photo left, Compress History), never on reset or undo. Only entries of a kind a built-in producer registers are swept, so a build without some kind's producer leaves its entries alone. The file goes once it is empty.
+- **Cleanup,** darktable's sweep: an entry is removed only when no step of the photo's saved history, no virtual copy and no snapshot names it, decided once the history is final, when the photo is left and its undo records are gone, never on reset, undo, Compress or Truncate, which defer the sweep to the photo's leaving. Only entries of a kind a built-in producer registers are swept, so a build without some kind's producer leaves its entries alone. The file goes once it is empty.
 - **It follows the `.apxmp` everywhere:** it lives where that photo's `.apxmp` lives, beside the photo or mirrored in the library's folder, a virtual copy's beside its `.apxmp` with the same suffix where darktable gives one. Everything that carries the `.apxmp` carries it: Move, Rename and Copy (a sidecar that cannot be moved is copied, since its data exist nowhere else), Delete, copy or reference on import, Import library… and Export as Project…. Pasting an edit onto another photo copies the entries its references need, as darktable's `dt_dtdata_merge`. Until Phase 4, these operations carry any `.apdata` they meet.
 - **Two copies combine** by taking every entry either holds, which loses nothing, since entries are named by their bytes (decision 52).
 
@@ -620,7 +620,7 @@ Decision 52, planned (steps 10 to 13).
 - **Two copies of one sidecar** (a conflict copy, a sidecar changed outside Apertrust, the file found changed before a write) are compared virtual copy by virtual copy, by id, through their clock vectors:
   - the same vector: nothing to do;
   - one at or below the other for every machine: that copy is only older, and the newer replaces it;
-  - neither, and both changed the edit: the copy whose last step is later stays, and the other becomes a new virtual copy with its own history, named after its machine and time ("From MacBook, 5 Nov 14:02"; in folder mode "From another computer"), the activity saying so.
+  - neither, and both changed the edit: the copy whose latest clock is later, its clock vector included, stays, and the other becomes a new virtual copy with its own history, named after its machine and time ("From MacBook, 5 Nov 14:02"; in folder mode "From another computer"), the activity saying so. A copy whose only change was an Undo, a Truncate or a Compress counts as later by that move's clock (decision 78).
 - **Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step, in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on the other never splits a photo. A module-by-module merge comes later, as a setting.
 - **A virtual copy only one side has** is kept; one a side deleted stays deleted if the deletion is later than the other side's last step on it.
 - **When copies are compared:**

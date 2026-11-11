@@ -35,6 +35,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Fusion | Chains of per-pixel operations fused into one kernel from Phase 2, the mechanism still open; one pass per operation until then (12, 22) | — |
 | Threads | A UI thread; an engine thread owning GPU submission, its frames in two display buffers; one submit gate shared with the window (17, 18) | Rendering on the UI thread; a second device |
 | Opening a photo | In three stages: the best picture in hand at once, a cached rendered thumbnail or the camera's embedded picture, unmarked; the values from the sidecar and the raw's metadata before the decode, read-only, commands on the edit refused until live; then the live frame in one swap; a newer open cancelling an older, one decode at a time (77) | One blocking step; a preview mark; edits queued until live; a low-resolution first render before measuring |
+| History and undo | One log of steps per virtual copy, saved in the sidecar; a step one completed change with its source, note and batch, each module's whole state after it, darktable's undo merging a control's quick repeats; Undo and Redo taking back the session's undo records as darktable's, else moving the log's end; `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `Reset` and `Step` through the session, one whole `History` fact ([history.md](../history.md); 47, 78, planned) | Undo in memory only; steps as deltas; a history event of deltas |
 | Scopes and readouts | Counted on the GPU after each frame, read back without waiting, sent as events (19) | Readback and binning on the CPU |
 | Operations | Native plugins, one crate each (Slang source, setup, manifest, schema), built in at compile time; third-party ones later as declarative packages with WebAssembly logic (20, 21) | Loading darktable modules; native shared-library plugins |
 | Raw decoding | rawler, its camera data trusted and fixed upstream; the camera named as darktable names it (23, 24) | RawSpeed, LibRaw |
@@ -59,7 +60,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Data files | A top-level `data/`, each file embedded at build time by the crate that parses it (45) | Files read from an installed folder |
 | Library | One photo from a terminal, folder mode first, the Library and the Project; nested albums and smart albums; Open With into folder mode (46) | A database as the truth |
 | Edits and sidecars | `.apxmp` and the optional `.apdata` beside the photos, or in a library's folder; version 2 holds the history as a log of steps (47, 48, 49) | A central folder of edits; history in memory only |
-| Metadata | Apertrust's own XMP layer on quick-xml; EXIF read by rawler (50) | exiv2, exiftool-rs |
+| Metadata | Apertrust's own XMP layer on quick-xml, its target conformance to ISO 16684-1:2019, held by its fixtures; EXIF read by rawler (50) | exiv2, exiftool-rs |
 | darktable edits | Imported once every module they use is ported; ratings, labels and keywords read either way (51) | A partial import |
 | Several computers | Two copies of a sidecar compared by clock vectors; diverged edits kept as a second virtual copy; metadata combined field by field; no locks (52) | Keeping one side by modified time; locks |
 | Finding folders and photos | Roots by an id file; photos by root, path and fingerprint; listing in bulk; safe writes; a queue per root (53) | Volume UUIDs or absolute paths; a whole-file hash |
@@ -122,6 +123,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0018](0018-one-submit-gate-for-the-engine-and-the-window.md) | One submit gate for the engine and the window |
 | [0019](0019-scopes-and-readouts-counted-on-the-gpu.md) | Scopes and readouts counted on the GPU |
 | [0077](0077-a-photo-opens-in-stages.md) | A photo opens in stages |
+| [0078](0078-undo-redo-and-the-edits-history.md) | Undo, redo and the edit's history |
 
 ## Operations and the plugin interface
 

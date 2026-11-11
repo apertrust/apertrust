@@ -93,7 +93,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
   - The first four, `Open(Source::Folder)`, `Close`, `Thumbnails` and `Subfolders`, are built ([Commands](#commands)). `Show` and `Page` are planned; meanwhile the client keeps the photos listed and asks for the thumbnails of the cells it draws.
   - Clients see `PhotoRef`, `Target` and `Rules`, never the library's lower layers ([library.md](library.md#planned)). Its events are `Event::Library(LibraryEvent)` ([events.md](events.md#lower-crates-report-through-an-observer)).
 - **A library's cache removed**, `CacheCommand::Remove { library }`, with the library's step 27 (decision 76): a `cache-clear` job as Clear's, skipping a library's cache another process has open, and `Event::Cache` listing each library's cache. The cache's types are `apertrust-base`'s `cache`, as the jobs' are its `jobs`.
-- **Undo and Redo**, asked by the client; history lives in the session (Phase 2; decision 47).
+- **History and undo** (decision 78): `Undo`, `Redo`, `GoTo { step }`, `Compress`, `Truncate` and `Step { source, note, commands }` on the edit, `Reset` a step, and the eye's `Hide { module, hidden }`, answered by one `History` fact; the design in [history.md](history.md#through-the-session).
 - **`Sync`** and the handshake, for remote clients ([below](#remote-clients)).
 - **Masks and layers**, `render_viewport(region, zoom)`, later phases.
 
@@ -139,7 +139,7 @@ On purpose, so that the protocol stays one boundary:
 - **Files the client should read.** The engine opens no settings file or folder (decision 43): a client reads its settings and an export preset and sends their values.
 - **A bus.** No subscriptions and no handlers run inside the engine on a client's behalf ([events.md](events.md#against-darktable)).
 - **A second API.** The library has no API beside its commands here: no SQL or query language beyond darktable's rules, no traits with one implementation (decision 54).
-- **History in the client.** Undo and history are the session's; a client asks for them.
+- **History in the client.** Undo and history are the session's; a client asks for them and draws the `History` fact ([history.md](history.md)).
 
 ## Tests
 

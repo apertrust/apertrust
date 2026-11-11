@@ -242,12 +242,13 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
+- **History and undo** (decision 78; [history.md](history.md)): `history`'s log of steps, each completed change a step with its source, note and batch, darktable's undo merging; the session's undo records; `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `Step` and `Hide`; `Event::History`, a fact; the log saved in the sidecar's version 2.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
 - **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `history`, `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 
@@ -280,6 +281,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 - A number a moved range leaves outside is clamped after each `--set` and `--reset`, and as the edit is read (decision 30).
 - An edit a newer Apertrust wrote is refused and left as it is (decision 43).
 - Planned (decision 32): `edit --reset MODULE`, the module's reset, turning a switched module off, and `edit` showing a switched module that is on.
+- Planned (decision 78; [history.md](history.md#the-cli)): `edit` adding one step for all its flags, with `--note TEXT`, `--clear` resetting within that step; and `history FILE`, listing the steps with `--undo [N]`, `--redo [N]`, `--to STEP|original`, `--compress` and `--truncate`.
 
 ### export
 
