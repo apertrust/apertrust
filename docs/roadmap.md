@@ -96,7 +96,7 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 
 ### The window and the shell
 
-- [x] A design system, translation and the egui shell, in [gui.md](gui.md)'s build order (decision 36). The design system: dark (the default), light and high-contrast themes checked for contrast, with a neutral surround for the photo; IBM Plex Sans; icons.
+- [x] A design system, translation and the egui shell, in [gui.md](gui.md)'s build order (decision 36). The design system: dark (the default), grey, light and high-contrast themes checked for contrast, with a neutral surround for the photo; IBM Plex Sans; icons.
 - [x] Translation: British English, Ukrainian and Polish from the start (the translations are drafts awaiting native review), and American English as an overlay of British English's spelling.
 - [x] Screen readers: every control reports its name, role and value through AccessKit.
 - [x] The shell: the top panel, the side panel with its tabs, the central bar, the photo with its shooting data under it, and the grid panel.

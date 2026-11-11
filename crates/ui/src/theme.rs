@@ -17,8 +17,8 @@
 //! Themes: every colour, size and duration a component uses, named by its role (a
 //! token), and read from TOML (`docs/gui.md`, decision 36).
 //!
-//! Three themes are built in: dark, the default, light and high contrast. A user's theme
-//! file names one of them in `extends` and overrides any of its tokens. Every theme is
+//! Four themes are built in: dark, the default, grey, light and high contrast. A user's
+//! theme file names one of them in `extends` and overrides any of its tokens. Every theme is
 //! checked when it loads: text against its backgrounds for WCAG AA contrast, and the
 //! photo's surround for neutrality. A theme that fails still loads; the issues name the
 //! tokens.
@@ -36,17 +36,25 @@ pub enum Builtin {
     /// A neutral dark grey, the default.
     #[default]
     Dark,
+    /// darktable's elegant grey: a middle-grey surround, panels a step darker.
+    Grey,
     Light,
     HighContrast,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 3] = [Builtin::Dark, Builtin::Light, Builtin::HighContrast];
+    pub const ALL: [Builtin; 4] = [
+        Builtin::Dark,
+        Builtin::Grey,
+        Builtin::Light,
+        Builtin::HighContrast,
+    ];
 
     /// The name a theme file's `extends` uses, and settings keep ([`Choice`]).
     pub const fn id(self) -> &'static str {
         match self {
             Builtin::Dark => "dark",
+            Builtin::Grey => "grey",
             Builtin::Light => "light",
             Builtin::HighContrast => "high-contrast",
         }
@@ -55,6 +63,7 @@ impl Builtin {
     fn source(self) -> &'static str {
         match self {
             Builtin::Dark => include_str!("../themes/dark.toml"),
+            Builtin::Grey => include_str!("../themes/grey.toml"),
             Builtin::Light => include_str!("../themes/light.toml"),
             Builtin::HighContrast => include_str!("../themes/high-contrast.toml"),
         }
@@ -69,6 +78,7 @@ impl Builtin {
 impl Choice for Builtin {
     const OPTIONS: &'static [(Builtin, &'static str)] = &[
         (Builtin::Dark, Builtin::Dark.id()),
+        (Builtin::Grey, Builtin::Grey.id()),
         (Builtin::Light, Builtin::Light.id()),
         (Builtin::HighContrast, Builtin::HighContrast.id()),
     ];
@@ -154,8 +164,9 @@ pub struct Theme {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Colors {
-    /// The top panel, the central bar and the grid panel. The same as the
-    /// panel in the built-in themes, so regions part by separators, not by tone.
+    /// The top panel, the central bar and the grid panel. The same as the panel in the
+    /// dark, light and high-contrast themes, so regions part by separators, not by tone; a
+    /// step darker in the grey theme.
     #[serde(with = "hex")]
     pub surface: Color32,
     /// The side panel and its sections.
@@ -218,6 +229,11 @@ pub struct Colors {
     /// unticked checkbox's fill there.
     #[serde(with = "hex")]
     pub button_hover: Color32,
+    /// A text button's words on `button_hover`, and egui's own widgets' under the pointer:
+    /// `text` in the dark, light and high-contrast themes; `text_strong` in the grey theme,
+    /// whose lighter hover plate leaves `text` under 4.5:1.
+    #[serde(with = "hex")]
+    pub text_on_button_hover: Color32,
     /// Any plate while pressed, a step back towards the ground; an unticked checkbox's fill
     /// then.
     #[serde(with = "hex")]
@@ -276,7 +292,7 @@ pub struct Colors {
     #[serde(with = "hex")]
     pub menu_hover: Color32,
     /// The words, key and marks of the chosen line on `menu_hover`: `text_strong` in the
-    /// dark and light themes; dark on a light band in high contrast, as the system's own
+    /// dark, grey and light themes; dark on a light band in high contrast, as the system's own
     /// high-contrast mode draws it.
     #[serde(with = "hex")]
     pub text_on_menu_hover: Color32,
@@ -311,7 +327,7 @@ pub struct Colors {
     #[serde(with = "hex")]
     pub kept_marker: Color32,
     /// A scroll bar's thumb on its `sunken` track: quiet, about 2.5:1 against the track in
-    /// the dark and light themes, so that a scroll bar is never bright.
+    /// the dark, grey and light themes, so that a scroll bar is never bright.
     #[serde(with = "hex")]
     pub scroll_thumb: Color32,
     /// The thumb under the pointer: a clear step up, and at least 3:1 against the track.
@@ -494,7 +510,7 @@ pub enum ThemeError {
     #[error("the theme file is not valid TOML or misses a token: {0}")]
     Toml(#[from] toml::de::Error),
     #[error(
-        "the theme extends \"{0}\", which is not a built-in theme (dark, light, high-contrast)"
+        "the theme extends \"{0}\", which is not a built-in theme (dark, grey, light, high-contrast)"
     )]
     UnknownBase(String),
     #[error("`extends` must name a built-in theme, as text")]
@@ -617,6 +633,15 @@ impl Theme {
             ),
             ("text_secondary", c.text_secondary, "panel", c.panel, TEXT),
             ("text_secondary", c.text_secondary, "raised", c.raised, TEXT),
+            // A row's lesser words under the pointer, and on the chosen line of a list.
+            ("text_secondary", c.text_secondary, "hover", c.hover, TEXT),
+            (
+                "text_secondary",
+                c.text_secondary,
+                "list_chosen",
+                c.list_chosen,
+                TEXT,
+            ),
             (
                 "surround_text",
                 c.text_on_surround(),
@@ -642,7 +667,13 @@ impl Theme {
             ),
             // A button's words on its plate in each state.
             ("text", c.text, "button", c.button, TEXT),
-            ("text", c.text, "button_hover", c.button_hover, TEXT),
+            (
+                "text_on_button_hover",
+                c.text_on_button_hover,
+                "button_hover",
+                c.button_hover,
+                TEXT,
+            ),
             ("text", c.text, "button_pressed", c.button_pressed, TEXT),
             // A ticked box is a control's part on every ground it is drawn on, and so is
             // its tick on it in each state, a disabled one's included.
@@ -859,6 +890,7 @@ impl Theme {
             ("control_outline", c.control_outline),
             ("button", c.button),
             ("button_hover", c.button_hover),
+            ("text_on_button_hover", c.text_on_button_hover),
             ("button_pressed", c.button_pressed),
             ("button_edge", c.button_edge),
             ("check", c.check),
@@ -960,7 +992,12 @@ impl Theme {
         for (state, fill, border, text) in [
             (&mut w.noninteractive, c.panel, c.divider, c.text),
             (&mut w.inactive, c.button, Color32::TRANSPARENT, c.text),
-            (&mut w.hovered, c.button_hover, Color32::TRANSPARENT, c.text),
+            (
+                &mut w.hovered,
+                c.button_hover,
+                Color32::TRANSPARENT,
+                c.text_on_button_hover,
+            ),
             (&mut w.active, c.button_pressed, c.button_edge, c.text),
             (&mut w.open, c.raised, c.border, c.text),
         ] {
@@ -1155,7 +1192,7 @@ mod tests {
     fn a_plate_lifts_under_the_pointer_and_dips_when_pressed() {
         // How far a plate's tone stands from the panel it is drawn on.
         let apart = |c: &Colors, plate: Color32| contrast(plate, c.panel);
-        for which in [Builtin::Dark, Builtin::Light] {
+        for which in [Builtin::Dark, Builtin::Grey, Builtin::Light] {
             let c = Theme::builtin(which).colors;
             let [rest, hover, pressed] =
                 [c.button, c.button_hover, c.button_pressed].map(|plate| apart(&c, plate));
@@ -1226,11 +1263,17 @@ mod tests {
             set_theme(&ctx, theme.clone());
             let c = &theme.colors;
             let w = ctx.global_style().visuals.widgets.clone();
-            for (state, fill, edge) in [
-                (w.inactive, c.button, Color32::TRANSPARENT),
-                (w.hovered, c.button_hover, Color32::TRANSPARENT),
-                (w.active, c.button_pressed, c.button_edge),
+            for (state, fill, edge, words) in [
+                (w.inactive, c.button, Color32::TRANSPARENT, c.text),
+                (
+                    w.hovered,
+                    c.button_hover,
+                    Color32::TRANSPARENT,
+                    c.text_on_button_hover,
+                ),
+                (w.active, c.button_pressed, c.button_edge, c.text),
             ] {
+                assert_eq!(state.fg_stroke.color, words, "{which:?}");
                 assert_eq!(state.bg_fill, fill, "{which:?}");
                 assert_eq!(state.weak_bg_fill, fill, "{which:?}");
                 assert_eq!(state.bg_stroke.color, edge, "{which:?}");
@@ -1433,8 +1476,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(renamed.check(), faint.check());
-        // The dark and light themes draw the chosen line's text as before, in text_strong.
-        for which in [Builtin::Dark, Builtin::Light] {
+        // The dark, grey and light themes draw the chosen line's text as before, in
+        // text_strong.
+        for which in [Builtin::Dark, Builtin::Grey, Builtin::Light] {
             let c = Theme::builtin(which).colors;
             assert_eq!(c.text_on_menu_hover, c.text_strong, "{which:?}");
         }

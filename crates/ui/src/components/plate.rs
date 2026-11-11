@@ -173,12 +173,15 @@ pub(crate) fn paint_plate(painter: &Painter, rect: Rect, plate_: Plate, touch: T
     }
 }
 
-/// The words on `plate` when `touch`ed.
+/// The words on `plate` when `touch`ed: on a default plate under the pointer, in
+/// `text_on_button_hover`, as `button_hover` asks.
 pub(crate) fn words_colour(t: &Theme, plate: Plate, touch: Touch) -> Color32 {
     if !touch.enabled {
         t.colors.text_disabled
     } else if plate == Plate::Primary {
         t.colors.text_on_accent
+    } else if plate == Plate::Default && touch.hovered && !touch.pressed {
+        t.colors.text_on_button_hover
     } else {
         t.colors.text
     }
@@ -245,6 +248,38 @@ mod tests {
         };
         assert_eq!(fill(Plate::Default, focused), Some(c.button));
         assert_eq!(fill(Plate::Quiet, focused), None);
+    }
+
+    #[test]
+    fn a_default_plate_s_words_take_their_own_colour_under_the_pointer() {
+        for which in Builtin::ALL {
+            let t = Theme::builtin(which);
+            let c = &t.colors;
+            let words = |p, touch| words_colour(&t, p, touch);
+            let [rest, hover, pressed] = [
+                touched(true, false, false),
+                touched(true, true, false),
+                touched(true, true, true),
+            ];
+            assert_eq!(words(Plate::Default, rest), c.text, "{which:?}");
+            assert_eq!(
+                words(Plate::Default, hover),
+                c.text_on_button_hover,
+                "{which:?}"
+            );
+            assert_eq!(words(Plate::Default, pressed), c.text, "{which:?}");
+            // A quiet plate under the pointer is `button`, its words `text`.
+            assert_eq!(words(Plate::Quiet, hover), c.text, "{which:?}");
+        }
+        // Only the grey theme's differ from `text`.
+        for which in Builtin::ALL {
+            let c = Theme::builtin(which).colors;
+            assert_eq!(
+                c.text_on_button_hover == c.text,
+                which != Builtin::Grey,
+                "{which:?}"
+            );
+        }
     }
 
     #[test]

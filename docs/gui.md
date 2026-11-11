@@ -23,7 +23,7 @@ What the interface looks like and how it behaves is designed on the [UI wirefram
 
 Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its renderer and its modules, and steps 7 to 9 their first parts:
 
-- `apertrust-ui` with the tokens, the three themes, the fonts, the icons and the gallery, photographed in every theme and in the pseudo-locale ([Design system](#design-system)).
+- `apertrust-ui` with the tokens, the four themes, the fonts, the icons and the gallery, photographed in every theme and in the pseudo-locale ([Design system](#design-system)).
 - Translation, with British and American English, Ukrainian, Polish and the pseudo-locale, and the check for literal strings ([Translation](#translation)).
 - The controls in `crates/ui/src/components`: the slider row, icon button, segmented control, choice list, colour swatches and value field, with AccessKit on in the app and interaction tests for each ([Components](#components)).
 - The painted widgets: [the curve](#the-curve), [the equalizer](#the-equalizer) and [the scopes](#the-scopes) (the histogram, the waveform, the RGB parade and the vectorscope). The app's Scopes section is pinned in the editing tabs and fed by the engine's counts for all four.
@@ -184,7 +184,7 @@ Every colour, size and duration a component uses is a token: a named value in th
 
 | Group | Tokens | Notes |
 | --- | --- | --- |
-| Colour | Surfaces (surface for the top panel and the bars, panel, raised, sunken); the scrim under About and, once designed, the splash screen, and the drop shadow round hosted windows on Wayland, and on Windows once its dialogs are undecorated (decision 41); text (primary, strong, secondary, disabled); border, divider, separator; menus' neutral hover and the text on it, faint edge and shadow (`menu_hover`, `text_on_menu_hover`, `menu_edge`, `menu_shadow`); the outline of a control that is only an outline at rest, an unticked checkbox (`control_outline`, 3:1 on `panel` and `sunken`; `text_secondary` under the pointer); the plate of what is pressed, at rest, under the pointer and pressed, and its edge, none but in high contrast (`button`, `button_hover`, `button_pressed`, `button_edge`); a ticked checkbox's fill in its three states and its tick (`check`, `check_hover`, `check_pressed`, `check_mark`); accent, with a primary button's hover and press (`accent_hover`, `accent_pressed`), accent text, focus ring, selection, and the value field's neutral selection; slider track, fill, handle (with its hover and drag looks); kept marker; scroll bar thumb (with its hover and drag looks); a histogram behind a graph (`graph_histogram`); warning, error, success; shadow and highlight clipping; mask overlay; the close button's hover; the colour labels, darktable's five; a scrim over thumbnails | Authored in sRGB (`ui-conventions`) |
+| Colour | Surfaces (surface for the top panel and the bars, panel, raised, sunken); the scrim under About and, once designed, the splash screen, and the drop shadow round hosted windows on Wayland, and on Windows once its dialogs are undecorated (decision 41); text (primary, strong, secondary, disabled); border, divider, separator; menus' neutral hover and the text on it, faint edge and shadow (`menu_hover`, `text_on_menu_hover`, `menu_edge`, `menu_shadow`); the outline of a control that is only an outline at rest, an unticked checkbox (`control_outline`, 3:1 on `panel` and `sunken`; `text_secondary` under the pointer); the plate of what is pressed, at rest, under the pointer and pressed, and its edge, none but in high contrast (`button`, `button_hover`, `button_pressed`, `button_edge`); a text button's words on its plate under the pointer (`text_on_button_hover`, 4.5:1 on `button_hover`: `text` but in the grey theme, where it is `text_strong`; a theme that changes `text` sets it too); a ticked checkbox's fill in its three states and its tick (`check`, `check_hover`, `check_pressed`, `check_mark`); accent, with a primary button's hover and press (`accent_hover`, `accent_pressed`), accent text, focus ring, selection, and the value field's neutral selection; slider track, fill, handle (with its hover and drag looks); kept marker; scroll bar thumb (with its hover and drag looks); a histogram behind a graph (`graph_histogram`); warning, error, success; shadow and highlight clipping; mask overlay; the close button's hover; the colour labels, darktable's five; a scrim over thumbnails | Authored in sRGB (`ui-conventions`) |
 | Photo surround | The background around the photos in the central panel, in Photo and in the slideshow | Neutral grey only (a* = b* = 0), so it never tints how colour is judged |
 | Surround text | Text on the photo surround: the caption under the photo, its file name, exposure and the marks of its rating and labels | Checked at 4.5:1 against the surround, which the light theme's mid grey fails with the panels' secondary text |
 | Typography | Body 13, small 12, caption 11, title 14, section title 15 (a module's header), heading; Regular, Medium and SemiBold (decision 36), headings and group labels Medium, SemiBold only where it marks a choice ([below](#quieter-icons-lighter-headings-2-point-borders)) | Points, before scaling |
@@ -200,12 +200,14 @@ Colours that are data are not tokens: a hue track shows real hues, and a scope s
 
 A theme is a full set of token values, stored as TOML in `crates/ui/themes`.
 
-- **Three built-in themes are compiled in:** dark (the default), light and high contrast. A user's theme file extends one of them and overrides any of its tokens (`extends = "dark"`).
+- **Four built-in themes are compiled in:** dark (the default), grey, light and high contrast, offered in that order. A user's theme file extends one of them and overrides any of its tokens (`extends = "dark"`).
 - **The default theme is a neutral dark grey.** The wireframe is drawn light so that it is easy to read; its colours show roles, not the theme.
-- **One grey, parted by separators:** the top panel, the bars, the side panel and, in the dark theme, the photo's surround share one tone (#2D2D2D), and regions and sections part by `separator`, a line or band darker than the surfaces (#191919), not by lighter rules or steps of tone. Wells and the side panel's tab strip are a step darker (`sunken`), menus and popovers a step lighter (`raised`); dialog windows, the jobs window and Linux's alert among them, sit on `panel`. The light theme follows the same structure with its own greys; high contrast keeps black with grey separators.
+- **One grey, parted by separators:** the top panel, the bars, the side panel and, in the dark theme, the photo's surround share one tone (#2D2D2D), and regions and sections part by `separator`, a line or band darker than the surfaces (#191919), not by lighter rules or steps of tone. Wells and the side panel's tab strip are a step darker (`sunken`), menus and popovers a step lighter (`raised`); dialog windows, the jobs window and Linux's alert among them, sit on `panel`. The light theme follows the same structure with its own greys; high contrast keeps black with grey separators. The grey theme parts the top panel and the bars from the side panel by a step of tone as well as by separators.
+- **The grey theme,** after darktable's `darktable-elegant-grey`, keeps neutral greys only, R = G = B: the photo's surround middle grey, L\* 50 (#777777), its caption black (4.7:1); the panels a step darker, L\* 35 (#525252), with soft light text (#D8D8D8, 5.5:1), the top panel and the bars a little darker again (#4C4C4C), menus darker than the panel (#4A4A4A), as darktable's grey tooltips are; a text button's plate #5E5E5E, lifting to #666666 under the pointer with its words in `text_strong` (5.0:1). The status colours and the accent's text are lighter than the dark theme's, to pass on grey.
+- **Why a middle-grey surround:** ISO 3664 and ISO 12646 ask for a neutral surround, ISO 12646 at most 20% of white's luminance (#777777 is 18%); darktable's darkroom is middle grey in every theme.
 - **The accent is amber** in every theme, and rare ([Product choices](#product-choices)).
 - **Every theme is checked when it loads:**
-  - text against its background, for WCAG AA contrast (4.5:1, and 3:1 for large text and controls), a button's words on its plate in each state and a primary button's on `accent`, `accent_hover` and `accent_pressed` among them;
+  - text against its background, for WCAG AA contrast (4.5:1, and 3:1 for large text and controls), a button's words on its plate in each state, a primary button's on `accent`, `accent_hover` and `accent_pressed`, and `text_secondary` on `hover` and `list_chosen` among them;
   - a ticked checkbox's fill against `panel`, `raised` and `sunken`, pressed against `panel`, and its tick on it in each state and on `text_disabled`, at 3:1; where the theme edges plates, `button_edge` against `panel` and `raised` at 3:1;
   - a menu's chosen line: its `menu_hover` band apart from `raised` in every theme, `text_on_menu_hover` on it at 4.5:1; in the high-contrast theme and any theme extending it, the band 3:1 against `raised`, its text at 7:1 and `text_disabled` on it at 3:1, each problem named once;
   - the photo surround, for neutrality;
@@ -280,8 +282,8 @@ An interface for photo editing must not be too contrasty, so:
 One model for the three controls, as the wireframe's "Controls · checkboxes, text buttons and icon buttons: states and places · decided" and "Controls · checkboxes, text buttons and icon buttons in dark, light and high contrast · decided" frames draw them. Built in `crates/ui/src/components`: `Checkbox`, `Button`, `IconButton` and `ToolButton`, drawn from one plate and one focus ring (`plate.rs`), each taking a `ButtonState` to be drawn in one state whatever the pointer does, as the gallery's strip of states shows them in each theme.
 
 - **Elevation.** What you fill in is a well, `sunken` (value fields, text fields, Boxed choices, lists). What you press is a plate, `button`, a step apart from `sunken`, `panel` and `raised` alike, so the plate is the same in every place and no place overrides it. In the light theme the plate is grey (#D8D8D2), a step darker than the ground, since its wells and menus are white.
-- **Hover and press.** Under the pointer a plate lifts a step (`button_hover`); pressed it dips a step back towards the ground (`button_pressed`). No border appears on either.
-- **High contrast.** Every ground is black there, so every plate has a 1-point edge, `button_edge`, white, and `text_disabled` while disabled; the dark and light themes' `button_edge` is transparent, no edge.
+- **Hover and press.** Under the pointer a plate lifts a step (`button_hover`), a text button's words on it in `text_on_button_hover`; pressed it dips a step back towards the ground (`button_pressed`). No border appears on either.
+- **High contrast.** Every ground is black there, so every plate has a 1-point edge, `button_edge`, white, and `text_disabled` while disabled; the other themes' `button_edge` is transparent, no edge.
 - **Focus** is one ring for the three: 1.5 points of `focus_ring` with a point of ground, `shape.focus_gap`, between it and the control, shown only after a key (`FocusVisible`). It never changes the fill, so amber marks no press.
 - **Disabled** keeps the shape: the words, the icon and a box's edge in `text_disabled`, a ticked box filled `text_disabled`. A disabled primary button is drawn as a disabled default one, so amber always means it will act. A disabled text button or checkbox is the design system's widget allocated in egui's disabled scope, so it keeps its tooltip and takes no focus, and painted at full strength, its tokens dimming it. A control inside a disabled parent is drawn by the same rules.
 
@@ -289,7 +291,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 | --- | --- | --- | --- | --- |
 | Checkbox, unticked | Empty, a `control_outline` edge | `button_hover`, edge `text_secondary` | `button_pressed`, edge `text_secondary` | Empty, edge `text_disabled` |
 | Checkbox, ticked | `check`, the `check_mark` tick | `check_hover` | `check_pressed` | `text_disabled`, the tick kept |
-| Text button | `button` | `button_hover` | `button_pressed` | `button`, words `text_disabled` |
+| Text button | `button` | `button_hover`, words `text_on_button_hover` | `button_pressed` | `button`, words `text_disabled` |
 | Primary button | `accent` | `accent_hover` | `accent_pressed` | As a disabled text button |
 | Quiet button, icon button | None | `button` | `button_pressed` | None |
 
@@ -297,7 +299,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 - **Text buttons** (`Button`): 22 points high (`sizes.control`), 8 points at each end, `radius`, body text; at least a given width with its words at its start (`Button::width`), and the keys that do the same at its end in `text_secondary` (`Button::keys`), as the central panel's Open Folder… and Open… under a folder that failed. Default, a plate, for dialogs' rows, the jobs and log windows, the log's newer-lines button, About, the central panel's cards, a module's action row (`ActionRow`); primary (`Button::primary`), amber with `text_on_accent`, one in a dialog: Export's Export and an alert's default. A destructive button's words are `text`, as any button's: its words say what it does.
 - **Quiet buttons** (`ToolButton`): a plate only while touched, on the bars alone, the top panel's Import…, Export… and Reset, so a row of them is no wall of boxes.
 - **Icon buttons** (`IconButton`, and the jobs spinner) are always quiet. A toggle that is on shows its filled icon with no plate. A toggle with no filled form, a quad's picker, and a button whose menu is open, the ☰, » and ⋮ among them, are drawn pressed: `raised` with a `border` hairline.
-- **egui's own widgets left,** the gallery's selectable chips and the Export dialog's preset line, a list's line, take the plate through the theme: `Theme::apply` maps egui's rest, hover and active onto `button`, `button_hover` and `button_pressed`, `button_edge` on the pressed one alone, so a chip or a line at rest or under the pointer has no edge. egui draws a focused widget as active, so these show focus as pressed. Browse's folder lines are list lines: the rows' `hover` band and their focus ring.
+- **egui's own widgets left,** the gallery's selectable chips and the Export dialog's preset line, a list's line, take the plate through the theme: `Theme::apply` maps egui's rest, hover and active onto `button`, `button_hover` and `button_pressed`, its words under the pointer onto `text_on_button_hover`, `button_edge` on the pressed one alone, so a chip or a line at rest or under the pointer has no edge. egui draws a focused widget as active, so these show focus as pressed. Browse's folder lines are list lines: the rows' `hover` band and their focus ring.
 - **Not yet on the plate,** still on `hover` with the old ring: Not saved in the top panel, the window's caption buttons, the central bar's zoom and layer menu, the scopes' overlay buttons, and a section header's toggle ring.
 - **Tokens' roles:** `hover` is the rows' band alone (a choice row, a slider's value, a list's line); `accent_subtle` is behind something selected, never a press.
 
@@ -763,7 +765,7 @@ An Apertrust Help item joins once a user guide exists.
 A dialog of Apertrust's own on every platform (decision 39): a modal over a scrim (`scrim`), about 440 points wide, built in `crates/app/src/about.rs`. With a future splash screen, it is the one exception to decision 41's native modal windows, and the same on every platform, where macOS's About panel would show the bundle's own fields.
 
 - **Its page:**
-  - the full logo, 260 points wide and centred, in its own colours, never tinted (`apertrust-logo.svg`, ink letters, in the light theme; `apertrust-logo-dark.svg`, paper letters, in the dark and high-contrast themes), rendered with resvg at the pixel size it is drawn at, as the icons are (`Picture`);
+  - the full logo, 260 points wide and centred, in its own colours, never tinted (`apertrust-logo.svg`, ink letters, in the light theme; `apertrust-logo-dark.svg`, paper letters, in the dark, grey and high-contrast themes), rendered with resvg at the pixel size it is drawn at, as the icons are (`Picture`);
   - "Version" and the version as the startup banner gives it, from the app's `apertrust_base::program!()` (decision 44), 14 points in Medium;
   - in secondary text, "Copyright © 2026 Apertrust developers." and "Free software under the GNU General Public License, version 3 or later.";
   - two buttons centred under them, Credits and Licence.
@@ -844,7 +846,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 
 **Feedback, undo and focus.** An item gives the feedback its button or key gives, and is undone as they are: Reset Edit is a history step once history exists, and a batch (a rating or Apply Edit on several photos) is one step, which one Undo takes back. The central bar's toggles, the layouts and the workspaces change only what is shown and are not steps. A menu never waits for the engine: Undo's step and every enabled state come from the session mirror. When a menu closes, focus returns to the control that had it.
 
-**Theme.** No light menus over a dark interface: on the Mac the app's appearance follows its theme (dark for the dark and high-contrast themes, light for the light one), so the menus, the title bar's traffic lights and the file dialogs match; on Windows and Linux the drawn menus use the theme's tokens.
+**Theme.** No light menus over a dark interface: on the Mac the app's appearance follows its theme (dark for the dark, grey and high-contrast themes, light for the light one), so the menus, the title bar's traffic lights and the file dialogs match; on Windows and Linux the drawn menus use the theme's tokens.
 
 **What a script sees.** Nothing new. A menu is one more way to run an action: the items that send session commands (Reset Edit, Undo and Redo, Auto, Copy and Apply, Rotate and Flip) send what their buttons send, and History records them the same way. The selection is the session's (decision 37), so Select All and Select None are commands too; the layouts, the central bar's toggles and the workspaces are interface state, which the session never sees.
 
@@ -856,7 +858,7 @@ The ☰'s menu on Windows and Linux, drawn by the popup service as its pull-down
 | --- | --- | --- |
 | The ☰ at rest, under the pointer, focused | As the top panel's other icon buttons | Opens the menu on a click, Enter, Space, ↓ or F10; while it is open, a click or F10 closes it |
 | Open | The ☰ marked as pressed; the menu under it, listing the menus as submenus | ↓ and ↑ move through its items, wrapping round, separators skipped; → opens a submenu and ← closes it; Esc closes a level, and the last returns focus to what had it; plain keys and typed text are the menu's alone (decision 40); a key with a modifier or an F-key that runs an action closes it, and so does a dialog opening |
-| Item under the pointer or keys | A 5-point-cornered `menu_hover` band, never the accent, which the popup service's lists, a choice's included, share with its text; its words, key and marks in `text_on_menu_hover`, which is `text_strong` in the dark and light themes; the high-contrast theme's band is white with black text, as the system's own high-contrast mode draws it, a disabled line on it in `text_disabled` (3.4:1) | A click, Enter or Space runs it; a letter moves to the next item starting with it |
+| Item under the pointer or keys | A 5-point-cornered `menu_hover` band, never the accent, which the popup service's lists, a choice's included, share with its text; its words, key and marks in `text_on_menu_hover`, which is `text_strong` in the dark, grey and light themes; the high-contrast theme's band is white with black text, as the system's own high-contrast mode draws it, a disabled line on it in `text_disabled` (3.4:1) | A click, Enter or Space runs it; a letter moves to the next item starting with it |
 | Disabled | Disabled text | Still reached by the keys and read as unavailable, so screen-reader users learn it exists; does nothing |
 | Checked | The `check` icon at its start, since IBM Plex Sans may lack ✓ | Read as checked |
 | Submenu | A chevron at its end | Opens on →, Enter or Space, or once the pointer has rested 0.2 s on its line, which also closes another level's submenu, so the pointer can cross other lines on its way; ← closes it. The pause is a constant (`PAUSE`), not a motion token: it reads intent, and nothing moves |
@@ -1017,7 +1019,7 @@ sequenceDiagram
   - Whether the window keeps repainting while a menu is open is for a hand check on the M4. If not, it holds still while a plain list is open, which costs nothing, since nothing in the list depends on the photo.
 - **The menu runs nothing.** Every item's target is one object of a class of the crate's own, whose `chosen:` notes the item's tag, its id's index. So a key equivalent AppKit takes while the menu is open only chooses its item, whose action the app then runs. Once AppKit's call returns, `chosen` is called with the id, or none; were the action ever sent after the call returned, it would be read on the run loop's next turn.
 - **Not muda's context menus,** which are `unsafe`, cannot place the chosen item over the control, report no highlighted item and answer through the menu bar's one channel. muda stays for the menu bar.
-- **Appearance.** The app's appearance follows the theme: light for the light theme, dark for the dark and high-contrast ones, so native popups, the menu bar's menus and the file dialogs match. AppKit gives its high-contrast menus when the user has Increase Contrast on; Apple asks apps not to set those appearances themselves, so the high-contrast theme's native popups are only as contrasty as macOS's. Built for the popups alone: each menu and submenu is given Aqua or Dark Aqua from the theme as it opens. The app's own appearance, for the menu bar and the file dialogs, is not set yet.
+- **Appearance.** The app's appearance follows the theme: light for the light theme, dark for the dark, grey and high-contrast ones, so native popups, the menu bar's menus and the file dialogs match. AppKit gives its high-contrast menus when the user has Increase Contrast on; Apple asks apps not to set those appearances themselves, so the high-contrast theme's native popups are only as contrasty as macOS's. Built for the popups alone: each menu and submenu is given Aqua or Dark Aqua from the theme as it opens. The app's own appearance, for the menu bar and the file dialogs, is not set yet.
 
 ### Focus and keys
 
@@ -1978,6 +1980,7 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
   | Theme | Rest | Under the pointer | Dragged | On |
   | --- | --- | --- | --- | --- |
   | Dark | #606060 (2.5:1) | #767676 (3.5:1) | #8C8C8C (4.7:1) | #232323 |
+  | Grey | #828282 (2.5:1) | #9A9A9A (3.5:1) | #B2B2B2 (4.6:1) | #444444 |
   | Light | #A3A39C (2.5:1) | #87877F (3.6:1) | #72726B (4.8:1) | white |
   | High contrast | #A0A0A0 (8:1) | #D0D0D0 (13.6:1) | #FFFFFF (21:1) | black |
 
@@ -2048,7 +2051,7 @@ The central panel's photo is for looking: nothing is drawn on it, and its marks 
   | --- | --- | --- | --- |
   | `margin` | 10 points | 0 to 100 | `plugins/darkroom/ui/border_size`, 10, the darkroom's border |
   | `proof_margin` | 0.12 of the slot's smaller side (darktable's 0.2 less 40%) | 0.05 to 0.4 | `darkroom/ui/color_assessment_total_border_width`, 0.2, ISO 12646's colour assessment border |
-  | `background` | The theme's: `dark` in the dark theme, `medium` in the light, `black` in high contrast | `black`, `very-dark`, `dark`, `medium`, `light`, `white` | None: darktable's colour assessment has a mid grey alone ([below](#the-background)) |
+  | `background` | The theme's: `dark` in the dark theme, `medium` in the grey and the light, `black` in high contrast | `black`, `very-dark`, `dark`, `medium`, `light`, `white` | None: darktable's colour assessment has a mid grey alone ([below](#the-background)) |
 
 - **Proof margin** (the central bar's second button, action `proof-margin`) takes `proof_margin` in place of `margin`, sized as darktable sizes its colour assessment border (`dt_dev_configure`): the photo kept that far from the slot's edge on every side (and the caption's height besides), all of it the surround.
   - darktable paints the border's inner 0.4 white (ISO 12646); Apertrust paints no white, so Proof margin only gives the photo more room.
@@ -2070,7 +2073,7 @@ Built. The surround behind the photo is one of six neutral greys (`Background`),
 
 - **Neutral.** Each grey has R = G = B, so its chromaticity is the display's white, as ISO 12646 asks of the surround (within 0.005 of white in u′v′). ISO 12646 keeps the surround at most 20% of white's luminance and prefers 3%.
 - **Light and White** are viewing choices, outside that limit; they carry no mark in the menu.
-- **The default follows the theme:** a theme's own `photo_surround` is its default, Dark in the dark theme, Medium in the light (#777777: #808080, 22%, was just outside the limit), Black in high contrast. The six greys are the same in every theme; `Theme::with_background` puts the one chosen in place of the theme's.
+- **The default follows the theme:** a theme's own `photo_surround` is its default, Dark in the dark theme, Medium in the grey and the light (#777777: #808080, 22%, was just outside the limit), Black in high contrast. The six greys are the same in every theme; `Theme::with_background` puts the one chosen in place of the theme's.
 - **What it covers:** what `photo_surround` covers in the central panel, the slot, the Proof margin and the slideshow. The top panel, the bars and the grid panel keep the theme's colours, so the top panel stops matching the surround when the choice is not the theme's.
 - **The caption** passes 4.5:1 on each: `Colors::text_on_surround` takes whichever of `surround_text` (light text) and `surround_text_on_light` (dark text, 4.7:1 on Medium) reads better, so the first on Black, Very dark and Dark, the second from Medium up. Each theme sets both; high contrast's are white and black.
 - **The menu,** through the popup service (AppKit's on the Mac), lists the six with the one in use checked. Its items are actions, `background-black` to `background-white`, with no default keys.
@@ -3114,7 +3117,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 
 | Page | Group | Rows |
 | --- | --- | --- |
-| General | Interface | Theme, Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75) |
+| General | Interface | Theme (Dark, Grey, Light or High contrast), Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75) |
 | General | Start | Reopen what was open last (`library.reopen_last`, on), its help in its tooltip ([The start window](#the-start-window)) |
 | General | Confirmations | Ask before overwriting an exported file (`export.ask_before_overwrite`) |
 | General | Diagnostics | Keep a log of this session (`log.keep`, off), Log (`log.domains`, a list of the `-d` domains and Verbose, all but Memory and Verbose ticked); each with its help in its tooltip ([The log window](#the-log-window)) |
@@ -3249,7 +3252,7 @@ show_selected = false       # from Phase 3
 
 Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 6 to 9 have their first parts built, and what is left of each is listed with it.
 
-1. `apertrust-ui`: the tokens, the dark, light and high-contrast themes, the fonts, the icons and the gallery; snapshot tests running in CI.
+1. `apertrust-ui`: the tokens, the dark (the default), grey, light and high-contrast themes, the fonts, the icons and the gallery; snapshot tests running in CI.
 2. Translation, in `apertrust-ui`'s `i18n` module: British and American English, Ukrainian, Polish and the pseudo-locale; the check for literal strings.
 3. The controls and the slider row, with AccessKit and interaction tests.
 4. The section frame and the side panel: icon tabs, pinned and scrolling sections.
@@ -3296,7 +3299,7 @@ Phase 3 adds, for the interface:
 
   Warnings are orange, so they never read as the accent.
 - **No accent while a value is edited:** the value field's text, its selection and its cursor stay neutral, whether its slider is dragged or a value typed.
-- **Three themes are built in:** dark, light and high contrast. Users may write their own theme files, as overrides of a built-in theme, checked when they load.
+- **Four themes are built in:** dark (the default), grey, light and high contrast. Users may write their own theme files, as overrides of a built-in theme, checked when they load.
 - **The interface is in British English**, as the docs are: colour, grey, centre, customise.
   - The module names follow: Colour balance RGB, Colour calibration.
   - darktable's module names keep darktable's spelling where they are cited.

@@ -8,6 +8,10 @@
 tab-color = Color
 panel-customise-tabs = Customize tabs…
 
+## Themes
+
+theme-grey = Gray
+
 ## The top panel
 
 window-minimise = Minimize
@@ -35,6 +39,10 @@ grid-cell-colour-labels = Color labels
 ## Folder mode
 
 folder-cancelled = Reading { $folder } was canceled
+
+## Settings
+
+setting-theme-option-grey = Gray
 
 ## About Apertrust
 

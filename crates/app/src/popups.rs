@@ -118,8 +118,8 @@ struct Look {
 }
 
 impl Look {
-    /// Light for the light theme, dark for the dark and high-contrast ones (`docs/gui.md`,
-    /// Popups: Appearance).
+    /// Light for the light theme, dark for the dark, grey and high-contrast ones
+    /// (`docs/gui.md`, Popups: Appearance).
     fn of(ctx: &egui::Context) -> Look {
         Look {
             scale: ctx.zoom_factor(),

@@ -96,6 +96,7 @@ slider-value-tip-mac = Click, or press Return on the slider, to type a value.
 ## Themes
 
 theme-dark = Dark
+theme-grey = Grey
 theme-light = Light
 theme-high-contrast = High contrast
 
@@ -592,6 +593,7 @@ settings-group-cache = Cache
 # -help, where it has one, is its label's tooltip.
 setting-theme-label = Theme
 setting-theme-option-dark = Dark
+setting-theme-option-grey = Grey
 setting-theme-option-light = Light
 setting-theme-option-high-contrast = High contrast
 setting-locale-label = Language

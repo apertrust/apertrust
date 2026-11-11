@@ -383,6 +383,7 @@ mod tests {
         for (which, file) in [
             (Builtin::Light, "apertrust-logo"),
             (Builtin::Dark, "apertrust-logo-dark"),
+            (Builtin::Grey, "apertrust-logo-dark"),
             (Builtin::HighContrast, "apertrust-logo-dark"),
         ] {
             let mut harness = dialog(which, egui::vec2(800.0, 600.0), Page::About);
