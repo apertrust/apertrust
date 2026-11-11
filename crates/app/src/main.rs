@@ -3303,6 +3303,12 @@ impl App {
                 library::Action::ShowInFolder(path) => jobs::reveal(&jobs::Reveal::File(path)),
                 library::Action::Remove(path) => self.shell.forget_recent(&path),
                 library::Action::Locate(path) => self.shell.locate = Some(path),
+                // Open Recent's Clear Menu, run as its item runs, on the list as it stands.
+                library::Action::ClearRecents => {
+                    self.shell.show_recents(ctx);
+                    let state = self.state(ctx);
+                    self.shell.run(ActionId::CLEAR_RECENT, &state, ctx, &[]);
+                }
             }
         }
         if repaint {
@@ -6747,6 +6753,29 @@ mod tests {
         m.apply(listed(2, &["b.ARW"], true));
         reopened(&mut reopening, &mut m, &mut sender(&mut sent));
         assert_eq!((sent.len(), reopening), (2, None));
+    }
+
+    /// Browse's Clear Menu runs Open Recent's, as `carry_out` runs it: the one list of
+    /// recents empties, Browse's and Open Recent's both, and Open Recent's Clear Menu is
+    /// disabled after it.
+    #[test]
+    fn browse_s_clear_menu_clears_the_recents_open_recent_shows() {
+        let mut shell = opened_on("photos");
+        shell.remember_folder(PathBuf::from("/photos/A"));
+        shell.remember_folder(PathBuf::from("/photos/B"));
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        assert_eq!(shell.recent_folders().len(), 2);
+        assert_eq!(shell.show_recents(&ctx).len(), 2);
+        let clear = actions::action(ActionId::CLEAR_RECENT).expect("declared");
+        assert!(clear.enabled(&shell.state(&ctx, false, false)));
+        // `library::Action::ClearRecents`, carried out.
+        shell.show_recents(&ctx);
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(shell.run(ActionId::CLEAR_RECENT, &state, &ctx, &[]), None);
+        assert!(shell.recent_folders().is_empty());
+        assert!(shell.show_recents(&ctx).is_empty());
+        assert!(!clear.enabled(&shell.state(&ctx, false, false)));
     }
 
     /// A kept folder that is gone fails as its reading does, never waited for at the start,

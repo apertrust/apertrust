@@ -91,6 +91,9 @@ pub enum Action {
     Remove(PathBuf),
     /// Locate…: the platform's folder dialog, asking where a missing recent went.
     Locate(PathBuf),
+    /// Clear Menu, the recents' list's last item: File › Open Recent's own, which empties
+    /// the one list of recents both show.
+    ClearRecents,
 }
 
 /// A recent: its open kind, which names it ([`OpenKind::label`]), its path, and why it
@@ -463,12 +466,16 @@ fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
 /// List.
 fn recents_menu(ctx: &egui::Context, browse: &Browse<'_>) -> (Vec<Entry>, Vec<PathBuf>) {
     let words = translator(ctx);
+    // Open Recent's Clear Menu, its words and its state: with no recent, disabled.
+    let clear = Item::new(CLEAR_RECENTS, words.text("action-clear-recent"))
+        .enabled(!browse.recent.is_empty());
     if browse.recent.is_empty() {
         let none = Item::new("none", words.text("browse-recents-none")).enabled(false);
-        return (vec![Entry::Item(none)], Vec::new());
+        let entries = vec![Entry::Item(none), Entry::Separator, Entry::Item(clear)];
+        return (entries, Vec::new());
     }
     let open = browse.root;
-    let entries = browse
+    let mut entries: Vec<Entry> = browse
         .recent
         .iter()
         .enumerate()
@@ -501,13 +508,20 @@ fn recents_menu(ctx: &egui::Context, browse: &Browse<'_>) -> (Vec<Entry>, Vec<Pa
             Entry::Submenu(Submenu::new(format!("missing:{i}"), text, entries))
         })
         .collect();
+    entries.extend([Entry::Separator, Entry::Item(clear)]);
     let paths = browse.recent.iter().map(|r| r.path.to_owned()).collect();
     (entries, paths)
 }
 
+/// The id of Clear Menu in the recents' list.
+const CLEAR_RECENTS: &str = "clear-recent";
+
 /// What the item `id` of the recents' list asks for, of the path it stood for in
 /// `listed`, the list as it was built.
 fn recent_action(id: &str, listed: &[PathBuf]) -> Option<Action> {
+    if id == CLEAR_RECENTS {
+        return Some(Action::ClearRecents);
+    }
     let (what, i) = id.split_once(':')?;
     let path = listed.get(i.parse::<usize>().ok()?)?.clone();
     match what {
@@ -1831,6 +1845,50 @@ mod tests {
             harness.run();
             assert_eq!(*harness.state(), [action], "{item}");
         }
+    }
+
+    /// The recents' list ends with Open Recent's Clear Menu, after a separator, which asks
+    /// for the recents to be cleared; with none it is there, disabled, as Open Recent's is.
+    #[test]
+    fn the_recents_end_with_clear_menu_disabled_with_none() {
+        let mut harness = wedding_browsed();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::ComboBox, "What is open")
+            .click();
+        harness.run();
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        let (folder, recent, keys) = (wedding(), recent(), keys());
+        let browse = Browse {
+            folder: &folder,
+            root: shown(&folder),
+            counts: &HashMap::new(),
+            recent: &recent,
+            open: OPEN_ALL,
+            tree: &BTreeMap::new(),
+            inside: &HashMap::new(),
+            keys: &keys,
+            home: None,
+        };
+        let (entries, _) = recents_menu(&ctx, &browse);
+        assert!(matches!(
+            entries[entries.len() - 2..],
+            [Entry::Separator, Entry::Item(_)]
+        ));
+        let clear = harness.get_by_role_and_label(Role::MenuItem, "Clear menu");
+        assert!(!clear.accesskit_node().is_disabled());
+        clear.click();
+        harness.run();
+        assert_eq!(*harness.state(), [Action::ClearRecents]);
+
+        let mut none = browsed(egui::vec2(320.0, 700.0), wedding, Vec::new, OPEN_ALL, true);
+        none.run();
+        none.get_by_role_and_label(Role::ComboBox, "What is open")
+            .click();
+        none.run();
+        let clear = none.get_by_role_and_label(Role::MenuItem, "Clear menu");
+        assert!(clear.accesskit_node().is_disabled());
     }
 
     /// ＋ holds the two ways to open with their keys, and the library and the project to
