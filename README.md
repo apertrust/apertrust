@@ -59,8 +59,7 @@ Releases and the nightly builds of Apertrust Dev are on the [Releases page](http
 - **macOS** refuses the disk image, and the app in it, as from an unidentified developer, or says it "is damaged and can't be opened". Before opening the disk image, remove the download's quarantine from it in Terminal; the app copied out of it then opens too:
 
   ```sh
-  xattr -d com.apple.quarantine ~/Downloads/Apertrust-dev_*.dmg   # a nightly
-  xattr -d com.apple.quarantine ~/Downloads/Apertrust_*.dmg       # a release
+  xattr -d com.apple.quarantine ~/Downloads/Apertrust*.dmg
   ```
 
   Then open the disk image and drag the app into Applications. An app already copied from a quarantined image needs the same, for the app: `xattr -dr com.apple.quarantine "/Applications/Apertrust Dev.app"` (or `/Applications/Apertrust.app`).
