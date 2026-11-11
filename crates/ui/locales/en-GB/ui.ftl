@@ -522,7 +522,9 @@ folders-recent-missing = This folder could not be opened. { $reason }
 # The tooltip of a recent folder that is no longer where it was.
 folders-recent-gone = This folder is no longer there.
 folder-reading = Reading { $folder }…
-folder-empty = No raw photos in { $folder }
+folder-empty = No photos available
+# Under it in the grid panel, where the folder has subfolders.
+folder-empty-hint = Choose a subfolder in Browse.
 folder-failed = Could not open { $folder }: { $reason }
 folder-cancelled = Reading { $folder } was cancelled
 # A folder is open with photos, and none is.

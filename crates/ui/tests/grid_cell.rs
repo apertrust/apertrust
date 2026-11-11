@@ -743,14 +743,14 @@ fn an_empty_panel_says_why_and_a_filled_one_has_no_such_text() {
         .build_ui(|ui| {
             let none = |_: usize| unreachable!("no photo to ask for");
             GridPanel::new(0, None, none)
-                .empty("No raw photos in Wedding")
+                .empty("No photos available")
                 .show(ui);
         });
     harness.run();
     assert!(
         painted_text(&harness)
             .iter()
-            .any(|text| text == "No raw photos in Wedding")
+            .any(|text| text == "No photos available")
     );
     harness.get_by_role_and_label(Role::List, "Grid panel");
 }

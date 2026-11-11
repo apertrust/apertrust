@@ -3305,7 +3305,8 @@ impl App {
                 _ => None,
             };
             let active = mirror.folder.active_shown();
-            let says = library::Empty::of(&mirror.folder.folder).grid_says(ui.ctx());
+            let empty = library::Empty::of(&mirror.folder.folder);
+            let (says, hint) = (empty.grid_says(ui.ctx()), empty.grid_hint(ui.ctx()));
             let photos = mirror.folder.photos();
             let order = mirror.folder.order();
             let thumb = |i: usize| {
@@ -3331,6 +3332,9 @@ impl App {
                 .square(grid.square_thumbnails);
             if let Some(says) = &says {
                 panel = panel.empty(says);
+            }
+            if let Some(hint) = &hint {
+                panel = panel.empty_hint(hint);
             }
             let output = panel.show(ui);
             let clicked = match (output.action, listing) {

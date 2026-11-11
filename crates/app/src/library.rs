@@ -130,8 +130,9 @@ pub enum Empty<'a> {
     Reading(&'a Path),
     /// It could not be read, or its reading was cancelled (`None`).
     Failed(&'a Path, Option<&'a str>),
-    /// It has no raws.
-    NoRaws(&'a str),
+    /// It has no raws: whether its listing found subfolders, as Browse's tree shows them
+    /// under it.
+    NoRaws { subfolders: bool },
     /// It has photos, and none is open.
     NoneChosen,
 }
@@ -144,16 +145,29 @@ impl<'a> Empty<'a> {
             Folder::Opening { path } => Empty::Reading(path),
             Folder::Failed { path, reason } => Empty::Failed(path, reason.as_deref()),
             Folder::Open(listing) if !listing.done => Empty::Reading(&listing.path),
-            Folder::Open(listing) if listing.photos.is_empty() => Empty::NoRaws(&listing.name),
+            Folder::Open(listing) if listing.photos.is_empty() => Empty::NoRaws {
+                subfolders: !listing.subfolders.is_empty(),
+            },
             Folder::Open(_) | Folder::Alone { .. } => Empty::NoneChosen,
         }
     }
 
-    /// What the grid panel says with it: "No raw photos in …" where the folder has none, and
-    /// nothing else, since it is empty in every other state, as gui.md has it.
+    /// What the grid panel says with it: "No photos available" where the folder has no raws,
+    /// and nothing else, since it is empty in every other state, as gui.md has it.
     pub fn grid_says(&self, ctx: &egui::Context) -> Option<String> {
         match self {
-            Empty::NoRaws(name) => Some(with_folder(ctx, "folder-empty", name)),
+            Empty::NoRaws { .. } => Some(translator(ctx).text("folder-empty")),
+            _ => None,
+        }
+    }
+
+    /// The grid panel's hint under what it says: where the folder with no raws has
+    /// subfolders, to choose one in Browse; else none.
+    pub fn grid_hint(&self, ctx: &egui::Context) -> Option<String> {
+        match self {
+            Empty::NoRaws {
+                subfolders: true, ..
+            } => Some(translator(ctx).text("folder-empty-hint")),
             _ => None,
         }
     }
@@ -882,9 +896,10 @@ fn open_this_row(ui: &mut egui::Ui, words: &str, shown: &str) -> egui::Response 
 
 /// The central panel's empty state in the middle of `slot`: with nothing open "No folder
 /// open", the fallback for the moments the start window waits ([`Empty::Start`]), and "No
-/// photo selected", each one line alone on the surround, in its text colour, the ways in
-/// being File's, Browse's and the keys'; else a card with the heading, and under
-/// a folder that failed or has no raws the two ways to open with their keys.
+/// photo selected" in an open folder, with raws or none, the grid panel saying which, each
+/// one line alone on the surround, in its text colour, the ways in being File's, Browse's
+/// and the keys'; else a card with the heading, and under a folder that failed the two ways
+/// to open with their keys.
 pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) -> Vec<Action> {
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
@@ -904,13 +919,15 @@ pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) 
                 None => with_folder(&ctx, "folder-cancelled", &shown),
             }
         }
-        Empty::NoRaws(name) => with_folder(&ctx, "folder-empty", name),
-        Empty::NoneChosen => words.text("folder-no-photo"),
+        Empty::NoRaws { .. } | Empty::NoneChosen => words.text("folder-no-photo"),
     };
-    let buttons = matches!(what, Empty::NoRaws(_) | Empty::Failed(..));
+    let buttons = matches!(what, Empty::Failed(..));
     // A line alone where nothing is open or chosen yet; the card where there is more to say
     // or do.
-    let boxed = !matches!(what, Empty::Start | Empty::NoneChosen);
+    let boxed = !matches!(
+        what,
+        Empty::Start | Empty::NoRaws { .. } | Empty::NoneChosen
+    );
 
     let width = (slot.width() - 2.0 * t.spacing.xl).clamp(0.0, 420.0);
     let margin = t.spacing.l;
@@ -1005,7 +1022,18 @@ mod tests {
         );
         // Listed but for a chunk: still reading; then none, or some.
         assert!(matches!(Empty::of(&listing(0, false)), Empty::Reading(_)));
-        assert_eq!(Empty::of(&listing(0, true)), Empty::NoRaws("Wedding"));
+        assert_eq!(
+            Empty::of(&listing(0, true)),
+            Empty::NoRaws { subfolders: false }
+        );
+        let Folder::Open(mut parent) = listing(0, true) else {
+            unreachable!()
+        };
+        parent.subfolders = vec!["Day 1".to_owned()];
+        assert_eq!(
+            Empty::of(&Folder::Open(parent)),
+            Empty::NoRaws { subfolders: true }
+        );
         assert_eq!(Empty::of(&listing(3, true)), Empty::NoneChosen);
     }
 
@@ -2048,10 +2076,13 @@ mod tests {
 
     #[test]
     fn a_folder_with_no_raws_a_failed_one_and_one_with_no_photo_chosen_each_say_so() {
+        // With no raws, the line a folder with raws has: the grid panel says there are none.
         let mut empty = card(listing(0, true));
         empty.run();
-        empty.get_by_label("No raw photos in Wedding");
-        empty.get_by_label("Open Folder…");
+        empty.get_by_label("No photo selected");
+        assert!(empty.query_by_label("No photos available").is_none());
+        assert!(empty.query_by_label("Open Folder…").is_none());
+        assert!(empty.query_by_label("Open…").is_none());
 
         let failed = Folder::Failed {
             path: PathBuf::from("/photos/gone"),
@@ -2094,10 +2125,11 @@ mod tests {
             });
         let on_surround = theme(&chosen.ctx).colors.text_on_surround();
         assert_eq!(colour, Some(on_surround));
-        // Nothing open is a line alone too, as quiet.
+        // Nothing open, and a folder with no raws, are a line alone too, as quiet.
         let mut start = card(Folder::None);
         start.run();
         assert!(!start.output().shapes.iter().any(filled));
+        assert!(!empty.output().shapes.iter().any(filled));
     }
 
     #[test]
@@ -2106,11 +2138,22 @@ mod tests {
         apertrust_ui::install(&ctx, Theme::default());
         assert_eq!(
             Empty::of(&listing(0, true)).grid_says(&ctx).as_deref(),
-            Some("No raw photos in Wedding")
+            Some("No photos available")
         );
         for folder in [Folder::None, wedding(), listing(0, false)] {
             assert_eq!(Empty::of(&folder).grid_says(&ctx), None);
+            assert_eq!(Empty::of(&folder).grid_hint(&ctx), None);
         }
+        // The hint only where the folder's listing found subfolders.
+        assert_eq!(Empty::of(&listing(0, true)).grid_hint(&ctx), None);
+        let Folder::Open(mut parent) = listing(0, true) else {
+            unreachable!()
+        };
+        parent.subfolders = vec!["Day 1".to_owned()];
+        assert_eq!(
+            Empty::of(&Folder::Open(parent)).grid_hint(&ctx).as_deref(),
+            Some("Choose a subfolder in Browse.")
+        );
     }
 
     /// The Photos tab's Browse in the dark and light themes, and the central panel with

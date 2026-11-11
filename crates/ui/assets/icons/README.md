@@ -47,6 +47,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `folder`, `folder-filled` | Lucide's `folder` |
 | `metadata`, `metadata-filled` | Lucide's `tag` |
 | `photo` | Lucide's `image` |
+| `photo-off` | Lucide's `image-off` |
 | `base`, `color`, `correct`, `effect` and their filled forms | Drawn for Apertrust: darktable's module group shapes (decision 38) |
 | `histogram`, `waveform`, `parade`, `vectorscope`, `log-scale`, `clip-shadows`, `clip-highlights` | Drawn for Apertrust: the scopes' graphs and toggles |
 | `minimise`, `maximise`, `restore`, `close` | Drawn for Apertrust: the window's caption buttons, as the systems draw theirs |
