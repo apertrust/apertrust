@@ -377,7 +377,7 @@ group = "thumbnails"
 owner = "app"
 kind = "choice"
 type = "apertrust_ui::components::GridPosition"
-default = "bottom"
+default = "left"
 applies = "at-once"
 
 # How many rows of thumbnails the grid panel shows at the bottom, as its edge was dragged:

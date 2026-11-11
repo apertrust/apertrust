@@ -8291,6 +8291,8 @@ mod tests {
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        // Rows are the bottom's; the panel is at the left by default.
+        shell.grid.position = apertrust_ui::components::GridPosition::Bottom;
         assert_eq!(shell.grid.rows, 1);
         shell.resize_grid(GridEdgeAction::Resize(3));
         keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
@@ -8446,6 +8448,7 @@ mod tests {
             grid: settings::Grid {
                 rows: 2,
                 columns: 3,
+                position: GridPosition::Bottom,
                 ..settings::Grid::default()
             },
             ..Settings::default()
@@ -8494,8 +8497,16 @@ mod tests {
 
     #[test]
     fn the_grid_bar_s_labels_turns_the_captions_off_and_the_panel_loses_their_height() {
-        use apertrust_ui::components::{ThumbnailSize, grid_panel_height};
-        let mut harness = window(&Settings::default(), 30);
+        use apertrust_ui::components::{GridPosition, ThumbnailSize, grid_panel_height};
+        // At the bottom, where the captions add to the panel's height.
+        let settings = Settings {
+            grid: settings::Grid {
+                position: GridPosition::Bottom,
+                ..settings::Grid::default()
+            },
+            ..Settings::default()
+        };
+        let mut harness = window(&settings, 30);
         harness.run();
         let ctx = harness.ctx.clone();
         let size = ThumbnailSize::Medium;

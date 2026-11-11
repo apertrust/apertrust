@@ -2183,7 +2183,7 @@ The row under the photo has three zones: the file name at its start, the photo's
 
 ### The grid panel
 
-The current folder's or album's thumbnails, along the window's bottom by default, except under the side panel, or in a column at the window's left or right ([Position](#its-position)). The grid bar, holding Sort, Labels and Zoom, is a column at its left end at the bottom and a row across its top at a side ([The grid bar](#the-grid-bar)).
+The current folder's or album's thumbnails, in a column at the window's left by default, or at its right, or along its bottom except under the side panel ([Position](#its-position)). The grid bar, holding Sort, Labels and Zoom, is a column at its left end at the bottom and a row across its top at a side ([The grid bar](#the-grid-bar)).
 
 **Built** as `GridPanel`: `GridCell`s, each a square of the grid bar's size with its caption under it ([The cell](#the-cell)), with the grid bar, Sort, Labels and Zoom and its options menu's Position: along the window's bottom in rows, the bar a column at its left end, scrolling sideways, or at the left or right in columns, scrolling up and down, the bar a row across its top, as many as `GridEdge`, its edge, was dragged to.
 
@@ -2249,7 +2249,7 @@ With a cell focused the arrows move as the cells lie:
 
 #### Its position
 
-- **Bottom, Left or Right,** from the grid bar's options menu (a right-click on the grid bar, in either of its forms: **Position › Left, Right, Bottom**, the one in use checked) and from View › Grid Panel Position. Bottom is the default.
+- **Bottom, Left or Right,** from the grid bar's options menu (a right-click on the grid bar, in either of its forms: **Position › Left, Right, Bottom**, the one in use checked) and from View › Grid Panel Position. Left is the default.
 - **At the bottom** it runs along the window's bottom under the central panel, the side panel beside it running the window's height, and the grid bar is a column at its left end.
 - **At the left or right** it is a column the window's height under the top panel, the grid bar a row across its top, its edge on the side towards the central panel.
 - **The rule:** when the grid panel and the side panel are on the same side, the side panel takes the outer place, at the window's edge, and the grid panel sits between it and the central panel. The side panel is always on the right for now; moving it (Position › Left, Right in its own options menu) is planned, apart from the grid panel's position.
