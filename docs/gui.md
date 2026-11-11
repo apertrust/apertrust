@@ -11,7 +11,7 @@ What the interface looks like and how it behaves is designed on the [UI wirefram
 | Part | Sections |
 | --- | --- |
 | How it fits together | [What is built](#what-is-built), [Goals](#goals), [Why egui](#why-egui), [Display colour](#display-colour), [Layers](#layers), [A frame](#a-frame) |
-| Foundations | [Design system](#design-system) (tokens, themes, components), [Translation](#translation) |
+| Foundations | [Design system](#design-system) (tokens, themes, components, [on-photo overlays](#on-photo-overlays)), [Translation](#translation) |
 | The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog), [The start window](#the-start-window) |
 | The panels | [The shell](#the-shell) (the layouts, selection, workspaces, the top panel, the side panel, the photo frame, the central bar, the caption, the grid panel), [Module panels from definitions](#module-panels-from-definitions) |
 | Controls | [Slider values and choices](#slider-values-and-choices), [Painted widgets](#painted-widgets): [the curve](#the-curve), [the equalizer](#the-equalizer), [the scopes](#the-scopes) |
@@ -302,6 +302,28 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 - **egui's own widgets left,** the gallery's selectable chips and the Export dialog's preset line, a list's line, take the plate through the theme: `Theme::apply` maps egui's rest, hover and active onto `button`, `button_hover` and `button_pressed`, its words under the pointer onto `text_on_button_hover`, `button_edge` on the pressed one alone, so a chip or a line at rest or under the pointer has no edge. egui draws a focused widget as active, so these show focus as pressed. Browse's folder lines are list lines: the rows' `hover` band and their focus ring.
 - **Not yet on the plate,** still on `hover` with the old ring: Not saved in the top panel, the window's caption buttons, the central bar's zoom and layer menu, the scopes' overlay buttons, and a section header's toggle ring.
 - **Tokens' roles:** `hover` is the rows' band alone (a choice row, a slider's value, a list's line); `accent_subtle` is behind something selected, never a press.
+
+### On-photo overlays
+
+One language for every mark drawn on the photo: pickers and their samples, masks' shapes, gradients, the brush, retouch's shapes, guides and their labels. It is darktable's line, from its picker drawing (`src/views/darkroom.c:331-470`), the wireframe's "On-photo overlays · one language" frame. The design system's `overlay` module draws it, given the photo's rectangle on screen and the marks in the photo's coordinates; no tool draws a line of its own. Planned with the pickers ([pickers.md](pickers.md#on-the-photo), 79.4), before any mark on the photo; masks' overlays (Phase 4) use the same primitives.
+
+- **The line:** 1 point of white at 80 % over 3 points of black at 40 %, so it reads on any photo, light or dark, and needs no colour. Its ends and corners are square, and a rectangle's lines fall on the screen's pixels.
+- **Three weights:**
+
+  | Weight | Drawn | For |
+  | --- | --- | --- |
+  | Normal | The line | What is active: the picker's area or point, the shape being edited |
+  | Selected | Twice as thick, and a mark twice as large | What the pointer or the list points at |
+  | Secondary | The line dashed, 4 points on and 4 off | What is shown but not edited: stored samples, other shapes |
+
+- **Two handles,** stroked with the same line, never filled with interface colour:
+  - **squares,** 10 points across, for what bounds or resizes: an area's corners, a shape's bounding box;
+  - **circles** for points and for what turns: a point picker, a gradient's pivot, a rotation.
+- **Colour on the photo** only where it is the photo's: a picker's sampled colour at the point's centre ([pickers.md](pickers.md#on-the-photo)); and a mask's display colour. Nothing else is coloured.
+- **The focus ring** is the only interface colour on the photo: the theme's ring round the mark that has the keyboard's focus, as on any control.
+- **Labels** on the photo, a guide's or a shape's, keep to the same rule: white over the line's black, no interface colour.
+- **Sizes are in points,** darktable's logical pixels (`darkroom.c:434`, `:795`, `:4375`), the same at every zoom, except where a mark measures the frame's own pixels in points, as a point picker's half-pixel does ([pickers.md](pickers.md#on-the-photo)). This is the one place the overlay's sizes are stated.
+- **Tests:** snapshots of each weight and handle over light, dark and busy photos in every theme, the line's contrast held by a test over white and black.
 
 ## Translation
 
@@ -1962,7 +1984,7 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
   - **The switch** to the photo's values happens in one frame, as the mirror takes its values in (`Event::Values`, which the session sends with its `Opened`); its Scopes section comes with them and shows its first reading as it arrives.
   - **Opening in stages** (decision 77, built: `Shown::Opening`): the session sends the values milliseconds after the open, before it decodes the raw, as `Values { live: false }`. Each control shows the photo's value, kept marks included, drawn disabled, with the resets, preset rows, buttons and the keys on the edit, so nothing dragged is lost or applied before the photo is live; their tooltip says why, "Opening IMG_2041…" (`controls-opening`, with the file's name, its extension left out), shown at the pointer over each row of controls on the edit, asked before the controls' own tips, and each such row's description for screen readers; a group's header, a tool's setting, an action and the guides keep their own tips; Scopes stays as with no photo. A change the session refused as `NotLive`, sent just as the photo was asked for, is dropped with nothing said. With `Values { live: true }`, in the batch of the first live frame, the controls enable in the same frame as the picture's swap.
   - The defaults are the definition's own, not the photo's (`Module::defaults` needs one): a preset row reads what they match, and a lossless view's coordinates are the module's view of them, both on the no-photo image (`ImageContext::full(0, 0)`); a row whose module cannot say reads Custom, and a view whose module cannot is left out, as the session leaves it out.
-- **The History tab** shows the active photo's history as its sidecar keeps it, a log of steps (decisions 47 and 78), so it is there again when the photo reopens: a line per step, newest first and numbered from 1, each with its source, a tooltip of its changes, a click going to it, Shift-click opening its module and an eye hiding its module from the view; below them the Default lines, the modules every photo runs, unnumbered, never greyed or selected, a click opening the module, with no eye; and Original, 0, the only line highlighted at end 0. Compress History acts on it, as darktable's compress history stack does, and Ctrl-click on it (Cmd-click on the Mac) truncates, dropping the steps after the end, as darktable's Ctrl-click does, its tooltip saying so; Reset is a step. Its design is the wireframe's History frame, and what it draws and sends is [history.md](history.md#in-the-app)'s. Its Snapshots section lists the snapshots saved in the sidecar, each holding its edit whole (planned with the library's virtual copies and snapshots).
+- **The History tab** shows the active photo's history as its sidecar keeps it, a log of steps (decisions 47 and 78), so it is there again when the photo reopens: a line per step, newest first and numbered from 1, each with its source, a tooltip of its changes, a click going to it, Shift-click opening its module and an eye hiding its module from the view; below them the Default lines, the modules every photo runs, unnumbered, never greyed or selected, a click opening the module, with no eye; and Original, 0, the only line highlighted at end 0. Compress History acts on it, as darktable's compress history stack does, and Ctrl-click on it (Cmd-click on the Mac) truncates, dropping the steps after the end, as darktable's Ctrl-click does, its tooltip saying so; Reset is a step. Its design is the wireframe's History frame, and what it draws and sends is [history.md](history.md#in-the-app)'s. Its Snapshots section lists the snapshots saved in the sidecar, each holding its edit whole (planned with the library's virtual copies and snapshots). Its Colour picker section, darktable's color picker utility, sits under the Scopes pinned there: the live sample, numbered stored samples and the scopes restricted to the selection ([pickers.md](pickers.md#the-colour-picker-module), decision 79, planned).
 - **The edge.** The side panel's edge towards the photo, `PanelEdge` in `apertrust-ui`, is the separator between them, `shape.separator_width` (2 points) wide, and resizes the panel.
   - Dragged, the panel follows the pointer in the same frame, the point taken hold of staying under it.
   - The column-resize cursor shows over it and while it is dragged, and the line brightens from `separator` to `border`, as it does while the edge has focus.
@@ -2376,7 +2398,7 @@ Each module is darktable's page as darktable has it, with no Advanced controls t
 | Guides | darktable's guides widget, for a module with `IOP_FLAGS_GUIDES_WIDGET`: a `ToggleRow`, Show guides, with the global guide settings button (`IconButton`, the grid) at its end, drawn disabled, off, until the module's guides come; its words shared by every module (`messages::GUIDES`) | `Row::Guides` |
 
 - **A collapsible group whose rows are to come** (AgX's Show curve, before a read-only graph row) is a `Row::Group` with no rows, which `Definition::check` takes, drawn disabled and closed with the tooltip a titled tab with no rows has, "Coming in a later version" (`CollapsibleGroup::disabled`, `section-tab-later`).
-- **A quad with nothing behind it** is not drawn until its tool runs, so Exposure has no picker yet. Drawing it disabled needs a disabled state on `SliderRow`'s quad first.
+- **A quad with nothing behind it** is not drawn until its tool runs, so Exposure has no picker yet. Drawing it disabled needs a disabled state on `SliderRow`'s quad first. A picker's quad names its picker (`Quad::Picker(id)`) and is the design system's `PickerButton`, planned ([pickers.md](pickers.md#the-picker-button), decision 79).
 
 #### View rows
 
@@ -2497,7 +2519,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   | cancels the popup: Esc, leaving it, a press outside, an app key | `SliderAction::Cancel` | `CancelGesture { module }`, which puts the module back as it was before the gesture ([engine.md](engine.md), Session and threads) |
   | clicks a choice's marker (●, or ○ under the pointer or focus; decision 42) | `ChoiceAction::ToggleKeep` | `Keep { module, control, kept }`, releasing a kept choice or keeping one |
   | presses the header's reset | `SectionAction::Reset` | `ResetModule { module }` |
-  | presses the quad | `SliderAction::Quad` | a pick from the photo, once pickers exist |
+  | presses the quad | `SliderAction::Quad` | a picker's `PickerCommand::On` or `Off` ([pickers.md](pickers.md#the-picker-button), planned) |
   | chooses a preset row's option | `ChoiceAction::Set`, the option's index | `ApplyPreset { module, preset, option }` |
 
 ### The renderer
@@ -2552,7 +2574,7 @@ None of these blocks a module built so far:
 - **How a widened track looks,** which Colour calibration's temperature row needs first (its track over 3000 to 7000 K, its range 1667 to 25000). darktable draws the parts of a widened track outside the soft range in its insensitive colour (`_draw_baseline`), so the soft range stays visible within the span shown, where Apertrust draws the whole span alike. darktable also remaps a gradient track's stops onto the visible range, from positions over the hard range, where `Track::Gradient` places its stops along the track whatever it spans, so a colour band over a soft range or a widened span would show the wrong colours at each value.
 - **Track shapes.** `SliderRow` maps the track linearly, as darktable's sliders do. `Track` has temperature, tint and hue, but not the saturation and luminance bands the definition offers; the renderer draws those plain.
 - **Markers and resets.** `Choice`'s Blended style has the kept marker; a choice's reset (darktable's quick second click), and `Segmented`'s and the toggle's marker and reset, remain. Only `Choice` has a quad, which a choice with a picker needs.
-- **The quad's tools:** a quad's disabled state, and the tools behind it: the picker and the line.
+- **The quad's tools:** a quad's disabled state, and the tools behind it: the picker, designed in [pickers.md](pickers.md) (decision 79), and the line.
 - **A disabled control's tooltip cannot say why:** Compensate camera exposure on a photo with no bias shows its promise, not that the camera recorded none.
 - **Colour balance RGB** leaves these rows out until they come (`docs/modules/colour-balance-rgb.md`, Gaps): a showmask quad, which `Quad` lacks; a read-only graph among the custom widgets, its luminance ranges'; a track following another control's value, its chroma at the wheel's hue; and words for a tab's tooltip and the module's own.
 - **The Tone equalizer** (`docs/modules/tone-equalizer.md`, Gaps): a `Quad` for darktable's wand, an Auto that solves one control from the photo, which its two mask compensations have; and its showmask button, drawn as a disabled checkbox meanwhile.

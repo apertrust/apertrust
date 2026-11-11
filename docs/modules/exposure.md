@@ -154,5 +154,5 @@ A synthetic image is already white balanced, so the tests' colour calibration ad
 ## Phases
 
 - **Built (Phase 2, step 6 of `docs/gui.md`, and the first pass, decision 2):** darktable's page, with rows E0, E3, E4, E6 to E9, E14 and E30 to E32: Mode, Compensate camera exposure, Highlight preservation mode, Exposure, Percentile, Target level, Black level correction and the Area exposure mapping group, with no Advanced controls (decision 29).
-- **Later in Phase 2:** the picker and Auto, with E50 and E51, once the readback question is decided.
+- **Later in Phase 2:** the picker, with E50, designed in [pickers.md](../pickers.md) (decision 79, its pull request 79.7): its pick in correction and measure modes, the Area exposure mapping's settings kept in settings, the patches and the L readout. Auto with E51.
 - **Phase 4:** layers, with E60.

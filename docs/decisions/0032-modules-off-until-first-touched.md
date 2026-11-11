@@ -16,7 +16,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 **Commands:**
 
-- Any write of a control turns a switched module on, whatever the value: `SetControl` on a control or a view's coordinate, `ApplyPreset`, their follow writes, and Auto and pickers when they come. A script turns a module on at its defaults by setting a control to its default.
+- Any write of a control turns a switched module on, whatever the value: `SetControl` on a control or a view's coordinate, `ApplyPreset`, their follow writes, and Auto and pickers when they come; a picker turned on turns its module on as darktable's does, before any write ([0079](0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md)). A script turns a module on at its defaults by setting a control to its default.
 - `ResetControl` and `Keep` never turn one on, and leave an on module on.
 - `ResetModule` clears its values and marks and turns it off; `Reset` turns every module off.
 

@@ -37,4 +37,4 @@ The Scopes section shows what the viewport's frame holds (a histogram, a wavefor
 ## Consequences
 
 - On the M4 at 2400×1600 the count takes 0.64 to 0.67 ms of GPU time with the totals or histogram, 1.25 ms with the waveform.
-- Open: scopes and readouts of a zoomed viewport, which need a small whole-image pipe; a readout with an argument (the cursor) or an area (pickers); how a reading drives an Auto.
+- Open: scopes and readouts of a zoomed viewport, which need a small whole-image pipe; a readout with an argument (the cursor); how a reading drives an Auto. A reading over an area is a picker's, the engine's own reduction rather than an operation's readout, read back through the same staging pair ([0079](0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md)), which also restricts the scopes' count to the Colour picker's selection on request.

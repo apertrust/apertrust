@@ -97,14 +97,14 @@ A slider nudged with the arrow keys or the wheel sends a completed change each t
 
 A completed change merges into the step before it when all of these hold:
 
-- both have the same **target**, darktable's widget: the control a `SetControl` or `ResetControl` names, or the preset row an `ApplyPreset` names, of the same module; so a reset or a preset on the target changed last merges too, and a `SetControl` gesture counts as one change;
+- both have the same **target**, darktable's widget: the control a `SetControl` or `ResetControl` names, the preset row an `ApplyPreset` names, or the picker a pick came from ([pickers.md](pickers.md#what-a-pick-writes)), of the same module; so a reset or a preset on the target changed last merges too, and a `SetControl` gesture counts as one change;
 - both have the same source, You or Auto, no note and no batch, and neither is a `Step` of several commands;
-- the step is the log's last and the end, made by the session's previous command on the edit, with no Undo, Redo, GoTo, Compress, Truncate or other command on the edit between;
+- the step is the log's last and the end, made by the session's previous command on the edit (a pick counting as the `Picker` command that asked for its reading, [pickers.md](pickers.md#what-a-pick-writes)), with no Undo, Redo, GoTo, Compress, Truncate or other command on the edit between;
 - the change's first write came less than 10 s after the step's first, and, once the first frame whose `through` includes the step's last change is published, less than 2 s after that publication. Until that frame is published only the 10 s counts.
 
 The merged step keeps its id, its entries take the new state and its clock becomes the latest. The two times are darktable's defaults, constants rather than settings. The session's clock is injected, so tests merge and split without waiting.
 
-**Pickers and Auto** send their writes as `Step { source: Auto }` with gesture semantics: a picker's drag is `done: false` changes ending with `done: true`, one step, merged as a slider's.
+**Pickers and Auto** write with source Auto and gesture semantics. A picker's pick is a change the session makes itself as the reading arrives, through the module's `pick` ([pickers.md](pickers.md#what-a-pick-writes), decision 79): a drag's readings are `done: false` changes ending with the release's `done: true`, one step, merged as a slider's, its target the picker. Auto sends its writes as `Step { source: Auto }`.
 
 darktable's history items merge further: a module's consecutive changes are one item until the person focuses another module (`_dev_add_history_item_ext`). Apertrust lists each undo step, so the History tab and Undo always agree.
 
@@ -169,7 +169,7 @@ All but `Hide` are commands on the edit (`on_edit`): each ends a gesture under w
 - `source` cannot be `StepSource::Default`, which the session alone writes;
 - it completes as one change when it holds any command but `SetControl { done: false }`; one of `done: false` changes alone is a gesture's change with that source, continued by the next such `Step` on the module and completed by one ending with `done: true`;
 - a client's plain commands are steps of source You with no note;
-- the app sends Auto's and a picker's writes as `Step { source: Auto }`, a style's as `Step { source: Style, note }` (Phase 3), and its own changes of several commands as `Step { source: You }`; the MCP adapter sends one `Step { source: Assistant, note }` per request (Phase 6).
+- the app sends Auto's writes as `Step { source: Auto }` (a picker's are the session's own, [pickers.md](pickers.md#what-a-pick-writes)), a style's as `Step { source: Style, note }` (Phase 3), and its own changes of several commands as `Step { source: You }`; the MCP adapter sends one `Step { source: Assistant, note }` per request (Phase 6).
 
 **A batch id is the session's,** never a client's: one command acting on several photos gets one `BatchId`, written into each photo's step. A client cannot make two requests one batch, nor two clients collide on an id.
 
@@ -410,4 +410,4 @@ The library's step 9 ([roadmap.md](roadmap.md#the-librarys-steps)), one pull req
 | 9.8 | Compress and Truncate: `Compress` and `Truncate`, their undo records, the tab's button with Ctrl-click (Cmd-click on the Mac) and its tooltip | engine, app | snapshots |
 | 9.9 | The CLI: `edit` adding a step with `--note`, and `history` | cli | MCP |
 
-**Later, with their features:** Auto's and pickers' steps with the first Auto; styles' steps and Create a style… with styles (Phase 3); batches with several photos (decision 37); the assistant's steps with MCP (Phase 6); ratings, labels and metadata as steps (steps 14 and 15); snapshots (step 16); virtual copies' own logs (step 11); diverged logs (step 12); layers' entries and their eye (Phase 4).
+**Later, with their features:** Auto's steps with the first Auto; pickers' with their pull requests ([pickers.md](pickers.md#the-plan)), source Auto once 9.1 has landed; styles' steps and Create a style… with styles (Phase 3); batches with several photos (decision 37); the assistant's steps with MCP (Phase 6); ratings, labels and metadata as steps (steps 14 and 15); snapshots (step 16); virtual copies' own logs (step 11); diverged logs (step 12); layers' entries and their eye (Phase 4).
