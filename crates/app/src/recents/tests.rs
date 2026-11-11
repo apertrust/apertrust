@@ -56,14 +56,14 @@ fn answered(recents: &mut Recents) {
 fn the_newest_comes_first_an_opened_one_moves_to_the_top_and_ten_are_kept() {
     let mut recents = Recents::nowhere();
     for (i, name) in ["a", "b", "c"].into_iter().enumerate() {
-        recents.opened_at(Kind::Folder, folder(name), 100 + i as u64);
+        recents.opened_at(OpenKind::Folder, folder(name), 100 + i as u64);
     }
     assert_eq!(paths(&recents), [folder("c"), folder("b"), folder("a")]);
     // Opened again, once, at the top.
-    recents.opened_at(Kind::Folder, folder("a"), 200);
+    recents.opened_at(OpenKind::Folder, folder("a"), 200);
     assert_eq!(paths(&recents), [folder("a"), folder("c"), folder("b")]);
     for i in 0..12 {
-        recents.opened_at(Kind::Folder, folder(&format!("n{i}")), 300 + i);
+        recents.opened_at(OpenKind::Folder, folder(&format!("n{i}")), 300 + i);
     }
     assert_eq!(recents.entries().count(), MOST);
     assert_eq!(paths(&recents)[0], folder("n11"));
@@ -76,9 +76,9 @@ fn the_newest_comes_first_an_opened_one_moves_to_the_top_and_ten_are_kept() {
 fn a_folder_opened_after_the_clock_was_set_back_still_goes_to_the_top() {
     let mut recents = Recents::nowhere();
     for i in 0..10 {
-        recents.opened_at(Kind::Folder, folder(&format!("n{i}")), 1000 + i);
+        recents.opened_at(OpenKind::Folder, folder(&format!("n{i}")), 1000 + i);
     }
-    recents.opened_at(Kind::Folder, folder("late"), 5);
+    recents.opened_at(OpenKind::Folder, folder("late"), 5);
     assert_eq!(recents.entries().count(), MOST);
     let top = recents.entries().next().cloned();
     assert_eq!(
@@ -90,10 +90,10 @@ fn a_folder_opened_after_the_clock_was_set_back_still_goes_to_the_top() {
     let (mut one, _) = Recents::open(file.clone(), none);
     let (mut two, _) = Recents::open(file.clone(), none);
     for i in 0..10 {
-        one.opened_at(Kind::Folder, folder(&format!("n{i}")), 1000 + i);
+        one.opened_at(OpenKind::Folder, folder(&format!("n{i}")), 1000 + i);
     }
     one.flush();
-    two.opened_at(Kind::Folder, folder("late"), 5);
+    two.opened_at(OpenKind::Folder, folder("late"), 5);
     two.flush();
     let (read, _) = Recents::open(file, none);
     assert_eq!(read.entries().count(), MOST);
@@ -105,8 +105,8 @@ fn the_list_goes_through_state_toml_and_back() {
     let (_dir, file) = state("round-trip");
     let (mut recents, warnings) = Recents::open(file.clone(), none);
     assert!(warnings.is_empty(), "{warnings:?}");
-    recents.opened_at(Kind::Folder, folder("a"), 100);
-    recents.opened_at(Kind::Folder, folder("b"), 200);
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
+    recents.opened_at(OpenKind::Folder, folder("b"), 200);
     recents.flush();
     let expected = "version = 1\n\n\
         [[recent]]\nkind = \"folder\"\nopened = 200\npath = \"/photos/b\"\n\n\
@@ -126,17 +126,17 @@ fn two_instances_keep_each_other_s_entries() {
     let (mut two, _) = Recents::open(file.clone(), none);
     one.flush();
     two.flush();
-    one.opened_at(Kind::Folder, folder("a"), 100);
+    one.opened_at(OpenKind::Folder, folder("a"), 100);
     one.flush();
-    two.opened_at(Kind::Folder, folder("b"), 200);
+    two.opened_at(OpenKind::Folder, folder("b"), 200);
     two.flush();
     let (read, _) = Recents::open(file.clone(), none);
     assert_eq!(paths(&read), [folder("b"), folder("a")]);
     // The first removes a, which the second never saw; the second's next write keeps it gone.
     let (mut one, _) = Recents::open(file.clone(), none);
-    one.remove(Kind::Folder, &folder("a"));
+    one.remove(OpenKind::Folder, &folder("a"));
     one.flush();
-    two.opened_at(Kind::Folder, folder("c"), 300);
+    two.opened_at(OpenKind::Folder, folder("c"), 300);
     two.flush();
     let (read, _) = Recents::open(file, none);
     assert_eq!(paths(&read), [folder("c"), folder("b")]);
@@ -169,8 +169,8 @@ fn a_missing_folder_is_marked_off_the_caller_s_thread_and_unmarked_once_it_is_ba
     let (dir, _) = state("missing");
     let gone = dir.0.join("gone");
     let mut recents = Recents::nowhere();
-    recents.opened_at(Kind::Folder, dir.0.clone(), 100);
-    recents.opened_at(Kind::Folder, gone.clone(), 200);
+    recents.opened_at(OpenKind::Folder, dir.0.clone(), 100);
+    recents.opened_at(OpenKind::Folder, gone.clone(), 200);
     recents.check();
     // Nothing waits: what has not been answered is unmarked.
     let start = Instant::now();
@@ -180,13 +180,13 @@ fn a_missing_folder_is_marked_off_the_caller_s_thread_and_unmarked_once_it_is_ba
     recents.check();
     assert!(recents.asking.len() <= 2);
     answered(&mut recents);
-    assert!(recents.missing(Kind::Folder, &gone));
-    assert!(!recents.missing(Kind::Folder, &dir.0));
+    assert!(recents.missing(OpenKind::Folder, &gone));
+    assert!(!recents.missing(OpenKind::Folder, &dir.0));
     // Back, as a share reconnected: the next check, on focus or as Browse shows, unmarks it.
     std::fs::create_dir(&gone).expect("made");
     recents.check();
     answered(&mut recents);
-    assert!(!recents.missing(Kind::Folder, &gone));
+    assert!(!recents.missing(OpenKind::Folder, &gone));
 }
 
 /// An answer to a question asked before its folder was opened again says nothing of it.
@@ -195,12 +195,12 @@ fn a_late_answer_never_marks_a_folder_opened_since() {
     let (dir, _) = state("late");
     let gone = dir.0.join("gone");
     let mut recents = Recents::nowhere();
-    recents.opened_at(Kind::Folder, gone.clone(), 100);
+    recents.opened_at(OpenKind::Folder, gone.clone(), 100);
     recents.check();
     // Opened, as a folder made meanwhile would be, before the answer is taken.
-    recents.opened_at(Kind::Folder, gone.clone(), 200);
+    recents.opened_at(OpenKind::Folder, gone.clone(), 200);
     answered(&mut recents);
-    assert!(!recents.missing(Kind::Folder, &gone));
+    assert!(!recents.missing(OpenKind::Folder, &gone));
 }
 
 #[test]
@@ -208,20 +208,20 @@ fn an_entry_is_removed_or_pointed_elsewhere_and_kept_so() {
     let (_dir, file) = state("remove");
     let (mut recents, _) = Recents::open(file.clone(), none);
     for (i, name) in ["a", "b", "c"].into_iter().enumerate() {
-        recents.opened_at(Kind::Folder, folder(name), 100 + i as u64);
+        recents.opened_at(OpenKind::Folder, folder(name), 100 + i as u64);
     }
-    recents.mark(Kind::Folder, &folder("b"), false);
-    assert!(recents.remove(Kind::Folder, &folder("c")));
-    assert!(!recents.remove(Kind::Folder, &folder("z")));
+    recents.mark(OpenKind::Folder, &folder("b"), false);
+    assert!(recents.remove(OpenKind::Folder, &folder("c")));
+    assert!(!recents.remove(OpenKind::Folder, &folder("z")));
     // Pointed at itself, it stays as it is.
-    assert!(recents.repoint(Kind::Folder, &folder("a"), folder("a")));
+    assert!(recents.repoint(OpenKind::Folder, &folder("a"), folder("a")));
     assert_eq!(paths(&recents), [folder("b"), folder("a")]);
     // Re-pointed, it keeps its place and is no longer missing.
-    assert!(recents.repoint(Kind::Folder, &folder("b"), folder("b2")));
+    assert!(recents.repoint(OpenKind::Folder, &folder("b"), folder("b2")));
     assert_eq!(paths(&recents), [folder("b2"), folder("a")]);
-    assert!(!recents.missing(Kind::Folder, &folder("b2")));
+    assert!(!recents.missing(OpenKind::Folder, &folder("b2")));
     // Onto an entry already there: one entry, in the re-pointed one's place.
-    assert!(recents.repoint(Kind::Folder, &folder("b2"), folder("a")));
+    assert!(recents.repoint(OpenKind::Folder, &folder("b2"), folder("a")));
     assert_eq!(paths(&recents), [folder("a")]);
     recents.flush();
     let (read, _) = Recents::open(file, none);
@@ -250,7 +250,7 @@ fn a_damaged_state_toml_is_set_aside_and_the_list_starts_empty() {
         assert!(!warnings[0].contains("Secret"), "{name}: {warnings:?}");
         assert_eq!(recents.entries().count(), 0, "{name}");
         assert!(dir.0.join("state.toml.bak").exists(), "{name}");
-        recents.opened_at(Kind::Folder, folder("b"), 100);
+        recents.opened_at(OpenKind::Folder, folder("b"), 100);
         recents.flush();
         let (read, warnings) = Recents::open(file, none);
         assert!(warnings.is_empty(), "{name}: {warnings:?}");
@@ -264,11 +264,11 @@ fn a_damaged_state_toml_is_set_aside_and_the_list_starts_empty() {
 fn damage_met_by_a_later_write_keeps_the_last_write_s_entries() {
     let (dir, file) = state("damaged-later");
     let (mut recents, _) = Recents::open(file.clone(), none);
-    recents.opened_at(Kind::Folder, folder("a"), 100);
-    recents.opened_at(Kind::Folder, folder("b"), 200);
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
+    recents.opened_at(OpenKind::Folder, folder("b"), 200);
     recents.flush();
     std::fs::write(&file, "not = [toml").expect("written");
-    recents.opened_at(Kind::Folder, folder("c"), 300);
+    recents.opened_at(OpenKind::Folder, folder("c"), 300);
     recents.flush();
     assert!(dir.0.join("state.toml.bak").exists());
     let (read, _) = Recents::open(file, none);
@@ -284,11 +284,11 @@ fn a_write_that_failed_is_tried_again() {
     // A folder in the file's place: it can be neither read nor written.
     std::fs::remove_file(&file).expect("removed");
     std::fs::create_dir(&file).expect("made");
-    recents.opened_at(Kind::Folder, folder("a"), 100);
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
     recents.flush();
     assert!(file.is_dir());
     std::fs::remove_dir(&file).expect("removed");
-    recents.opened_at(Kind::Folder, folder("b"), 200);
+    recents.opened_at(OpenKind::Folder, folder("b"), 200);
     recents.flush();
     let (read, _) = Recents::open(file, none);
     assert_eq!(paths(&read), [folder("b"), folder("a")]);
@@ -306,8 +306,8 @@ fn what_this_build_cannot_read_is_kept() {
     let (mut recents, warnings) = Recents::open(file.clone(), none);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert_eq!(recents.entries().count(), 0);
-    recents.opened_at(Kind::Folder, folder("a"), 100);
-    recents.opened_at(Kind::Folder, folder("b"), 200);
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
+    recents.opened_at(OpenKind::Folder, folder("b"), 200);
     recents.flush();
     let written = text(&file);
     assert!(written.contains("last = \"kept\""), "{written}");
@@ -321,7 +321,7 @@ fn what_this_build_cannot_read_is_kept() {
     std::fs::write(&file, newer).expect("written");
     let (mut recents, warnings) = Recents::open(file.clone(), none);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
-    recents.opened_at(Kind::Folder, folder("a"), 100);
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
     recents.flush();
     assert_eq!(text(&file), newer);
 }
@@ -334,9 +334,9 @@ fn what_was_open_last_is_kept_beside_the_list_and_taken_out() {
     std::fs::write(&file, "version = 1\nother = 1\n").expect("written");
     let (mut recents, _) = Recents::open(file.clone(), none);
     assert_eq!(recents.last(), None);
-    recents.opened_at(Kind::Folder, folder("a"), 100);
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
     let last = Last {
-        kind: Kind::Folder,
+        kind: OpenKind::Folder,
         path: folder("a"),
         folder: Some(folder("a/Day 1")),
         photo: Some("IMG_2041.ARW".to_owned()),
@@ -375,7 +375,7 @@ fn what_was_open_last_is_the_last_set_of_two_instances() {
     let (mut one, _) = Recents::open(file.clone(), none);
     let (mut two, _) = Recents::open(file.clone(), none);
     let last = |name: &str| Last {
-        kind: Kind::Folder,
+        kind: OpenKind::Folder,
         path: folder(name),
         folder: None,
         photo: None,
@@ -384,9 +384,27 @@ fn what_was_open_last_is_the_last_set_of_two_instances() {
     one.flush();
     two.set_last(Some(last("b")));
     two.flush();
-    one.opened_at(Kind::Folder, folder("c"), 100);
+    one.opened_at(OpenKind::Folder, folder("c"), 100);
     one.flush();
     let (read, _) = Recents::open(file, none);
     assert_eq!(read.last(), Some(&last("b")));
     assert_eq!(paths(&read), [folder("c")]);
+}
+
+/// A folder's label, its open kind and its name, with no marks around the name, and the
+/// kind's own name, in each language.
+#[test]
+fn a_folder_s_label_and_its_kind_s_name_in_each_language() {
+    use apertrust_ui::i18n::Locale;
+    let name = "2026-10 Lisbon";
+    for (locale, label, kind) in [
+        (Locale::EnGb, "Folder: 2026-10 Lisbon", "Folder"),
+        (Locale::EnUs, "Folder: 2026-10 Lisbon", "Folder"),
+        (Locale::Uk, "Тека: 2026-10 Lisbon", "Тека"),
+        (Locale::Pl, "Folder: 2026-10 Lisbon", "Folder"),
+    ] {
+        let words = Translator::new(locale);
+        assert_eq!(OpenKind::Folder.label(&words, name), label, "{locale:?}");
+        assert_eq!(OpenKind::Folder.name(&words), kind, "{locale:?}");
+    }
 }

@@ -51,6 +51,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use apertrust_ui::i18n::{Args, Translator};
 use toml::{Table, Value};
 
 /// How many entries are kept, Open Recent's ten (`docs/gui.md`, File).
@@ -65,23 +66,45 @@ const KEY: &str = "recent";
 /// The key of what was open last.
 const LAST: &str = "last";
 
-/// What an entry is. Libraries and projects join folders in Phase 5.
+/// What an entry is, an open kind: what a window holds, which one photo opened alone is
+/// not. Libraries and projects join folders in Phase 5, each with its label in
+/// [`OpenKind::label`] and its name in [`OpenKind::name`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Kind {
+pub enum OpenKind {
     Folder,
 }
 
-impl Kind {
+impl OpenKind {
+    /// What one of this kind called `name` is called where a recent or what is open is
+    /// named by itself, "Folder: 2026-10 Lisbon": Open Recent's items, and Browse's top line
+    /// and its recents, to screen readers too.
+    pub fn label(self, words: &Translator, name: &str) -> String {
+        let id = match self {
+            OpenKind::Folder => "open-kind-folder",
+        };
+        let mut args = Args::new();
+        args.set("name", name);
+        words.text_with(id, Some(&args))
+    }
+
+    /// The kind's own name, "Folder": the start window's caption at a recent's row's end,
+    /// and what screen readers hear of the row's kind.
+    pub fn name(self, words: &Translator) -> String {
+        words.text(match self {
+            OpenKind::Folder => "start-kind-folder",
+        })
+    }
+
     /// Its id in the file.
     const fn id(self) -> &'static str {
         match self {
-            Kind::Folder => "folder",
+            OpenKind::Folder => "folder",
         }
     }
 
-    fn from_id(id: &str) -> Option<Kind> {
+    fn from_id(id: &str) -> Option<OpenKind> {
         match id {
-            "folder" => Some(Kind::Folder),
+            "folder" => Some(OpenKind::Folder),
             _ => None,
         }
     }
@@ -91,7 +114,7 @@ impl Kind {
 /// since 1970.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
-    pub kind: Kind,
+    pub kind: OpenKind,
     pub path: PathBuf,
     pub opened: u64,
 }
@@ -102,7 +125,7 @@ pub struct Entry {
 /// active folder, if any.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Last {
-    pub kind: Kind,
+    pub kind: OpenKind,
     pub path: PathBuf,
     pub folder: Option<PathBuf>,
     pub photo: Option<String>,
@@ -112,7 +135,7 @@ impl Last {
     /// What `value` holds, or None where this build cannot read it.
     fn read(value: &Value) -> Option<Last> {
         let table = value.as_table()?;
-        let kind = Kind::from_id(table.get("kind")?.as_str()?)?;
+        let kind = OpenKind::from_id(table.get("kind")?.as_str()?)?;
         let path = PathBuf::from(table.get("path")?.as_str()?);
         let folder = match table.get("folder") {
             Some(folder) => Some(PathBuf::from(folder.as_str()?)),
@@ -158,7 +181,7 @@ impl Item {
     /// it lacks, or malformed.
     fn known(value: &Value) -> Option<Entry> {
         let table = value.as_table()?;
-        let kind = Kind::from_id(table.get("kind")?.as_str()?)?;
+        let kind = OpenKind::from_id(table.get("kind")?.as_str()?)?;
         let path = PathBuf::from(table.get("path")?.as_str()?);
         let opened = u64::try_from(table.get("opened")?.as_integer()?).ok()?;
         Some(Entry { kind, path, opened })
@@ -190,7 +213,7 @@ impl Item {
         }
     }
 
-    fn is(&self, kind: Kind, path: &Path) -> bool {
+    fn is(&self, kind: OpenKind, path: &Path) -> bool {
         matches!(self, Item::Known(e) if e.kind == kind && e.path == path)
     }
 }
@@ -199,8 +222,8 @@ impl Item {
 #[derive(Clone, Debug, PartialEq)]
 enum Change {
     Opened(Entry),
-    Removed(Kind, PathBuf),
-    Repointed(Kind, PathBuf, PathBuf),
+    Removed(OpenKind, PathBuf),
+    Repointed(OpenKind, PathBuf, PathBuf),
     Cleared,
     /// The list written as it is, even empty: the move of the old setting's.
     Kept,
@@ -317,7 +340,7 @@ fn read(file: &Path) -> Read {
                     let known = value
                         .get("kind")
                         .and_then(Value::as_str)
-                        .and_then(Kind::from_id);
+                        .and_then(OpenKind::from_id);
                     if known.is_some() {
                         read.warnings
                             .push(format!("{KEY}[{i}] cannot be read; kept as it is"));
@@ -462,7 +485,7 @@ impl Drop for Writer {
 }
 
 /// A path asked about, with the question's answers still to come.
-type Key = (Kind, PathBuf);
+type Key = (OpenKind, PathBuf);
 
 /// The list of what was opened, newest first, kept in `state.toml`.
 pub struct Recents {
@@ -477,8 +500,8 @@ pub struct Recents {
     /// its entry was opened, removed or re-pointed after the question.
     asking: HashMap<Key, bool>,
     /// Where the checks' threads answer, and the end they answer to.
-    answers: Receiver<(Kind, PathBuf, Option<bool>)>,
-    answer: Sender<(Kind, PathBuf, Option<bool>)>,
+    answers: Receiver<(OpenKind, PathBuf, Option<bool>)>,
+    answer: Sender<(OpenKind, PathBuf, Option<bool>)>,
     writer: Option<Writer>,
 }
 
@@ -522,7 +545,7 @@ impl Recents {
                 // Oldest first, a second apart, so the newest stays at the top.
                 for (i, path) in old().into_iter().take(MOST).enumerate().rev() {
                     let opened = now.saturating_sub(i as u64);
-                    recents.opened_at(Kind::Folder, path, opened);
+                    recents.opened_at(OpenKind::Folder, path, opened);
                 }
                 // The list, even an empty one, so the old setting is never read again.
                 recents.changes.push(Change::Kept);
@@ -541,19 +564,19 @@ impl Recents {
     }
 
     /// `path` was opened now: it goes to the top, once, and is no longer missing.
-    pub fn opened(&mut self, kind: Kind, path: PathBuf) {
+    pub fn opened(&mut self, kind: OpenKind, path: PathBuf) {
         self.opened_at(kind, path, now());
     }
 
     /// `path` was opened at `opened`, in seconds since 1970, or after the newest entry
     /// where that is later.
-    pub fn opened_at(&mut self, kind: Kind, path: PathBuf, opened: u64) {
+    pub fn opened_at(&mut self, kind: OpenKind, path: PathBuf, opened: u64) {
         self.forget(kind, &path);
         self.change(Change::Opened(Entry { kind, path, opened }));
     }
 
     /// Remove from the List: takes `path` out. Returns whether it was there.
-    pub fn remove(&mut self, kind: Kind, path: &Path) -> bool {
+    pub fn remove(&mut self, kind: OpenKind, path: &Path) -> bool {
         let there = self.items.iter().any(|item| item.is(kind, path));
         self.forget(kind, path);
         self.change(Change::Removed(kind, path.to_owned()));
@@ -563,7 +586,7 @@ impl Recents {
     /// What Locate… does once a new path is chosen: the entry at `from` points to `to`,
     /// keeping its place, no longer missing. Returns whether it was there; `to` the same as
     /// `from` changes nothing.
-    pub fn repoint(&mut self, kind: Kind, from: &Path, to: PathBuf) -> bool {
+    pub fn repoint(&mut self, kind: OpenKind, from: &Path, to: PathBuf) -> bool {
         let there = self.items.iter().any(|item| item.is(kind, from));
         if !there || from == to {
             return there;
@@ -599,7 +622,7 @@ impl Recents {
 
     /// Marks `path` there or missing, as a check would.
     #[cfg(test)]
-    pub fn mark(&mut self, kind: Kind, path: &Path, there: bool) {
+    pub fn mark(&mut self, kind: OpenKind, path: &Path, there: bool) {
         let key = (kind, path.to_owned());
         if there {
             self.missing.remove(&key);
@@ -609,7 +632,7 @@ impl Recents {
     }
 
     /// Whether a check found `path` missing.
-    pub fn missing(&self, kind: Kind, path: &Path) -> bool {
+    pub fn missing(&self, kind: OpenKind, path: &Path) -> bool {
         self.missing.contains(&(kind, path.to_owned()))
     }
 
@@ -684,7 +707,7 @@ impl Recents {
 
     /// Forgets what is known of `path`'s being there: it is no longer missing, and a
     /// question about it still under way no longer counts.
-    fn forget(&mut self, kind: Kind, path: &Path) {
+    fn forget(&mut self, kind: OpenKind, path: &Path) {
         let key = (kind, path.to_owned());
         self.missing.remove(&key);
         if let Some(still) = self.asking.get_mut(&key) {
@@ -700,10 +723,10 @@ impl Recents {
 
 /// Whether `path` is there as a `kind`: a folder that is a folder. None where it cannot be
 /// told.
-fn there(kind: Kind, path: &Path) -> Option<bool> {
+fn there(kind: OpenKind, path: &Path) -> Option<bool> {
     match std::fs::metadata(path) {
         Ok(metadata) => Some(match kind {
-            Kind::Folder => metadata.is_dir(),
+            OpenKind::Folder => metadata.is_dir(),
         }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Some(false),
         Err(_) => None,

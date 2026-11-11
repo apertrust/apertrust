@@ -77,6 +77,7 @@ fn themed(
                     .recents
                     .iter()
                     .map(|(path, mark)| Recent {
+                        kind: crate::recents::OpenKind::Folder,
                         path,
                         missing: mark.map(|mark| match mark {
                             Mark::Gone => Missing::Gone,
