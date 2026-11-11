@@ -70,6 +70,7 @@ slider-value-tip-mac = Клацніть або натисніть Return на п
 ## Теми
 
 theme-dark = Темна
+theme-grey = Сіра
 theme-light = Світла
 theme-high-contrast = Висока контрастність
 
@@ -461,6 +462,7 @@ settings-group-diagnostics = Діагностика
 settings-group-cache = Кеш
 setting-theme-label = Тема
 setting-theme-option-dark = Темна
+setting-theme-option-grey = Сіра
 setting-theme-option-light = Світла
 setting-theme-option-high-contrast = Висока контрастність
 setting-locale-label = Мова

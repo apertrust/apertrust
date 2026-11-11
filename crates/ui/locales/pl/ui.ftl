@@ -70,6 +70,7 @@ slider-value-tip-mac = Kliknij lub naciśnij Return na suwaku, aby wpisać warto
 ## Motywy
 
 theme-dark = Ciemny
+theme-grey = Szary
 theme-light = Jasny
 theme-high-contrast = Wysoki kontrast
 
@@ -463,6 +464,7 @@ settings-group-diagnostics = Diagnostyka
 settings-group-cache = Pamięć podręczna
 setting-theme-label = Motyw
 setting-theme-option-dark = Ciemny
+setting-theme-option-grey = Szary
 setting-theme-option-light = Jasny
 setting-theme-option-high-contrast = Wysoki kontrast
 setting-locale-label = Język

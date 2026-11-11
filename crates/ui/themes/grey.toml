@@ -1,0 +1,135 @@
+# Apertrust's grey theme, after darktable's darktable-elegant-grey: a middle-grey surround,
+# L* 50, panels a step darker with soft light text (docs/gui.md, decision 36).
+# Every token is named by its role; crates/ui/src/theme.rs says what each one is for.
+# Colours are sRGB, #RRGGBB or #RRGGBBAA. Sizes are points, before scaling.
+
+name = "grey"
+dark = true
+
+[colors]
+surface = "#4C4C4C"
+panel = "#525252"
+raised = "#4A4A4A"
+scrim = "#00000066"
+sunken = "#444444"
+photo_surround = "#777777"
+surround_text = "#A0A0A0"
+surround_text_on_light = "#000000"
+text = "#D8D8D8"
+text_strong = "#F0F0F0"
+text_secondary = "#CECECE"
+text_disabled = "#A2A2A2"
+text_on_accent = "#1A1408"
+border = "#6E6E6E"
+menu_edge = "#FFFFFF14"
+menu_shadow = "#0000003D"
+control_outline = "#A2A2A2"
+button = "#5E5E5E"
+button_hover = "#666666"
+text_on_button_hover = "#F0F0F0"
+button_pressed = "#565656"
+button_edge = "#00000000"
+check = "#D8D8D8"
+check_hover = "#F0F0F0"
+check_pressed = "#CECECE"
+check_mark = "#444444"
+divider = "#5E5E5E"
+separator = "#3C3C3C"
+accent = "#F5A524"
+accent_hover = "#FFB833"
+accent_pressed = "#DB8F14"
+accent_text = "#FFC766"
+accent_subtle = "#6B5222"
+focus_ring = "#FFC766"
+selection = "#765A1C"
+field_selection = "#5E5E5E"
+hover = "#585858"
+menu_hover = "#606060"
+text_on_menu_hover = "#F0F0F0"
+list_chosen = "#545454"
+close_hover = "#C42B1C"
+text_on_close_hover = "#FFFFFF"
+slider_track = "#6E6E6E"
+slider_fill = "#BDBDBD"
+slider_handle = "#D8D8D8"
+slider_handle_outline = "#525252"
+slider_handle_hover = "#F0F0F0"
+slider_handle_active = "#FFC766"
+kept_marker = "#D8D8D8"
+scroll_thumb = "#828282"
+scroll_thumb_hover = "#9A9A9A"
+scroll_thumb_active = "#B2B2B2"
+channel_red = "#FFA69E"
+channel_green = "#7FD68C"
+channel_blue = "#9AC0FF"
+graph_histogram = "#F1F1F180"
+warning = "#FFB48A"
+error = "#FFB8B0"
+success = "#9BE6A6"
+clip_shadows = "#2F6BFF"
+clip_highlights = "#FF3B30"
+mask_overlay = "#FF3B3080"
+guides = "#FFFFFF66"
+frame_ring = "#CECECE"
+thumb_scrim = "#00000099"
+text_on_thumb_scrim = "#FFFFFF"
+warning_on_thumb_scrim = "#FFB833"
+label_red = "#FF7A73"
+label_yellow = "#D9B44F"
+label_green = "#5BB974"
+label_blue = "#5CA4F2"
+label_purple = "#BA8AEA"
+
+[text]
+body = 13.0
+small = 12.0
+caption = 11.0
+title = 14.0
+section_title = 15.0
+heading = 16.0
+
+[spacing]
+xxs = 2.0
+xs = 4.0
+s = 6.0
+m = 8.0
+l = 12.0
+xl = 16.0
+xxl = 24.0
+
+[sizes]
+row = 26.0
+panel_line = 24.0
+control = 22.0
+field = 18.0
+icon = 14.0
+icon_large = 16.0
+section_header = 30.0
+top_bar = 44.0
+slider_row = 37.0
+track_strip = 16.0
+marker_column = 16.0
+value_column = 54.0
+side_panel = 320.0
+section_list = 240.0
+
+[shape]
+radius_small = 3.0
+radius = 4.0
+radius_large = 5.0
+menu_radius = 8.0
+popup_radius = 6.0
+hairline = 1.0
+focus_gap = 1.0
+popup_hairline = 0.5
+separator_width = 2.0
+track = 4.0
+
+[elevation]
+shadow_offset = [0, 2]
+shadow_blur = 12
+shadow_spread = 1
+
+[motion]
+hover_ms = 80.0
+open_ms = 120.0

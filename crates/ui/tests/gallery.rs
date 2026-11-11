@@ -106,6 +106,11 @@ fn the_gallery_in_the_dark_theme() {
 }
 
 #[test]
+fn the_gallery_in_the_grey_theme() {
+    photograph(Builtin::Grey, Locale::EnGb, "gallery-grey");
+}
+
+#[test]
 fn the_gallery_in_the_light_theme() {
     photograph(Builtin::Light, Locale::EnGb, "gallery-light");
 }

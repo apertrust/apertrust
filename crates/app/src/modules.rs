@@ -5071,6 +5071,11 @@ mod tests {
     }
 
     #[test]
+    fn tone_curve_in_the_grey_theme() {
+        photograph_tone_curve(Builtin::Grey, Locale::EnGb, "tone-curve-grey");
+    }
+
+    #[test]
     fn tone_curve_in_the_light_theme() {
         photograph_tone_curve(Builtin::Light, Locale::EnGb, "tone-curve-light");
     }
@@ -5149,6 +5154,11 @@ mod tests {
     #[test]
     fn exposure_in_the_dark_theme() {
         photograph(Builtin::Dark, Locale::EnGb, "exposure-dark");
+    }
+
+    #[test]
+    fn exposure_in_the_grey_theme() {
+        photograph(Builtin::Grey, Locale::EnGb, "exposure-grey");
     }
 
     #[test]
