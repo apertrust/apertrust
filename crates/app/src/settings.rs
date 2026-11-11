@@ -1130,7 +1130,7 @@ mod tests {
                     },
                     thumbnails: ThumbnailSize::Medium,
                     rows: 1,
-                    position: GridPosition::Bottom,
+                    position: GridPosition::Left,
                     columns: 1,
                     labels: true,
                     square_thumbnails: false,
