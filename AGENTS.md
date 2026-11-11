@@ -37,7 +37,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 
 ## Project skills
 
-The skills, agents and commands live in the agent kit, [apertrust/agent-kit](https://github.com/apertrust/agent-kit), version 0.1.0 for this checkout. It is optional (a Claude Code plugin, or its `install.sh` into the git-ignored `.claude/` or `.agents/`); the rules are in this file, checked by CI and review either way. Follow a skill when its task comes up:
+The skills, agents and commands live in the agent kit, [apertrust/agent-kit](https://github.com/apertrust/agent-kit), version 0.2.0 for this checkout. It is optional (a Claude Code plugin, or its `install.sh` into the git-ignored `.claude/`, `.agents/` or `.codex/agents/`); Codex skills and command workflows install under `.agents/skills/`. The rules are in this file, checked by CI and review either way. Follow a skill when its task comes up:
 
 - `port-module`: a darktable port, from the spec to the golden and gradient checks.
 - `golden-tests`: the harness and the raw corpus: cases, ΔE results, tolerances, when a baseline may change.
