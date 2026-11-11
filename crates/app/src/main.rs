@@ -74,7 +74,7 @@ mod testing;
 mod thumbnails;
 mod viewport;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1100,6 +1100,9 @@ struct App {
     storage_shown: storage::View,
     /// What was open last, while it reopens at the start ([`reopened`]).
     reopening: Option<Reopening>,
+    /// The photo last active in each folder this run, and the one the folder changed to
+    /// waits to open ([`Remembered`]).
+    remembered: Remembered,
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
@@ -2508,6 +2511,7 @@ impl App {
             storage_folders,
             storage_shown: storage::View::default(),
             reopening: None,
+            remembered: Remembered::default(),
             start: start::Window::new(false, settings.scale),
         };
         // Finder's files at the launch, which macOS hands over as it finishes launching,
@@ -2815,26 +2819,41 @@ impl App {
     }
 
     /// Opens the folder at `path` in the library, its photos going into the grid panel, a
-    /// way in: it becomes Browse's root and, once open, the first of the recents. The photo
-    /// open stays open (`docs/events.md`, The library's events).
+    /// way in: it becomes Browse's root and, once open, the first of the recents; Open
+    /// Folder…, Open Recent, Browse's recents and Open This Folder, Locate… and a dropped
+    /// folder. The photo shown follows it ([`change_folder`]).
     fn open_folder(&mut self, path: PathBuf) {
-        let session = &self.session;
-        open_folder(path, &mut self.mirror, &mut |command| session.send(command));
+        self.change_folder(path, FolderChange::WayIn);
     }
 
-    /// Shows the folder at `path`, chosen in Browse's tree, in the grid panel
-    /// ([`choose_folder`]).
+    /// Shows the folder at `path`, chosen in Browse's tree, in the grid panel. The photo
+    /// shown follows it ([`change_folder`]).
     fn choose_folder(&mut self, path: PathBuf) {
+        self.change_folder(path, FolderChange::Choose);
+    }
+
+    /// The active folder changed to `path` by `change` ([`change_folder`]).
+    fn change_folder(&mut self, path: PathBuf, change: FolderChange) {
         let session = &self.session;
-        choose_folder(path, &mut self.mirror, &mut |command| session.send(command));
+        change_folder(
+            path,
+            change,
+            self.shell.recents.last(),
+            &mut self.remembered,
+            &mut self.mirror,
+            &mut |command| session.send(command),
+        );
     }
 
     /// File › Close ([`close`]): what was open last is forgotten where it is the folder
-    /// closed, and no longer reopens; a photo opened alone leaves it.
+    /// closed, and no longer reopens; a photo opened alone leaves it. The photos remembered
+    /// this run are forgotten too.
     fn close(&mut self) {
         let session = &self.session;
         let closed = self.mirror.folder.root().map(Path::to_owned);
-        close(&mut self.mirror, &mut |command| session.send(command));
+        close(&mut self.remembered, &mut self.mirror, &mut |command| {
+            session.send(command)
+        });
         forget_last(&mut self.shell.recents, closed.as_deref());
         self.reopening = None;
     }
@@ -2864,6 +2883,9 @@ impl App {
         reopened(&mut self.reopening, &mut self.mirror, &mut |command| {
             session.send(command)
         });
+        self.remembered.remember(&self.mirror);
+        self.remembered
+            .restore(&mut self.mirror, &mut |command| session.send(command));
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -4221,6 +4243,7 @@ impl eframe::App for App {
         keep_at_exit(
             &mut self.shell.recents,
             self.reopening.as_ref(),
+            self.remembered.waiting.as_ref(),
             &self.mirror,
         );
         self.shell.recents.flush();
@@ -4290,17 +4313,145 @@ fn choose_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>)
 }
 
 /// File › Close: the photo open closed, its edit saved as the session saves any photo it
-/// leaves, and the folder open closed, so the central panel shows where to start. Nothing
-/// that is not open is closed.
-fn close(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
-    if !matches!(mirror.photo, PhotoState::None) {
-        send(Command::Close);
-        mirror.closing();
-    }
+/// leaves, and the folder open closed, so the central panel shows where to start; the
+/// photos `remembered` this run are forgotten, as what was open last is. Nothing that is
+/// not open is closed.
+fn close(remembered: &mut Remembered, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    *remembered = Remembered::default();
+    close_photo(mirror, send);
     if !matches!(mirror.folder.folder, folder::Folder::None) {
         let close = send(Command::Library(LibraryCommand::Close));
         mirror.folder.closing(close);
     }
+}
+
+/// The photo open, or opening, closed with the folder left open: the session saves its
+/// edit as it saves any photo it leaves and frees it, and the side panel shows no photo.
+/// With none, nothing.
+fn close_photo(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    if !matches!(mirror.photo, PhotoState::None) {
+        send(Command::Close);
+        mirror.closing();
+    }
+}
+
+/// The photo last active in each folder this run, by the folder's path, kept in memory
+/// alone, and the one the folder changed to waits to open once its listing holds it
+/// ([`change_folder`]).
+#[derive(Debug, Default)]
+struct Remembered {
+    photos: HashMap<PathBuf, PathBuf>,
+    waiting: Option<Waiting>,
+}
+
+/// A remembered photo to open once the folder the library command numbered `open` lists
+/// it, and how many of that folder's photos have been looked through for it.
+#[derive(Debug, PartialEq)]
+struct Waiting {
+    open: u64,
+    photo: PathBuf,
+    looked: usize,
+}
+
+impl Remembered {
+    /// Takes in the photo active now, opening or open, as the last active in the folder
+    /// shown where it is one of that folder's.
+    fn remember(&mut self, mirror: &Mirror) {
+        let (Some(photo), Some(folder)) = (mirror.photo.asked(), mirror.folder.shown()) else {
+            return;
+        };
+        if photo.parent() == Some(folder)
+            && self.photos.get(folder).map(PathBuf::as_path) != Some(photo)
+        {
+            self.photos.insert(folder.to_owned(), photo.to_owned());
+        }
+    }
+
+    /// Opens the photo waited for once the folder chosen lists it, as a click in the grid
+    /// panel opens one, unless a photo was asked for meanwhile or another folder is; a
+    /// listing that ends without it, or a folder that could not be read, ends the wait.
+    fn restore(&mut self, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+        let Some(waiting) = &mut self.waiting else {
+            return;
+        };
+        let asked = !matches!(mirror.photo, PhotoState::None);
+        if mirror.folder.latest() != waiting.open || asked {
+            self.waiting = None;
+            return;
+        }
+        match &mirror.folder.folder {
+            folder::Folder::Opening { .. } => {}
+            folder::Folder::Open(listing) => {
+                let name = waiting.photo.file_name();
+                if listed_since(listing, &mut waiting.looked, name) {
+                    let photo = waiting.photo.clone();
+                    let open = send(Command::Open(photo.clone()));
+                    mirror.opening(photo, open, Instant::now());
+                    self.waiting = None;
+                } else if listing.done {
+                    self.waiting = None;
+                }
+            }
+            _ => self.waiting = None,
+        }
+    }
+}
+
+/// Whether the photos `listing` has listed since the first `looked` hold the one named
+/// `name`, `looked` moved past them: a photo waited for is looked for once in each chunk.
+fn listed_since(listing: &folder::Listing, looked: &mut usize, name: Option<&OsStr>) -> bool {
+    let new = listing.photos.get(*looked..).unwrap_or_default();
+    *looked = listing.photos.len();
+    new.iter()
+        .any(|photo| Some(OsStr::new(&photo.name)) == name)
+}
+
+/// How the active folder changes ([`change_folder`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FolderChange {
+    /// A way in ([`open_folder`]): the folder becomes Browse's root.
+    WayIn,
+    /// A folder chosen in Browse's tree ([`choose_folder`]): the root stays.
+    Choose,
+}
+
+/// The active folder changes to `path` by `change`, as the person asked: the one place the
+/// rule that the photo shown is always one of the active folder's is kept (`docs/gui.md`,
+/// Browse). The photo open is closed unless it is one of that folder's; then the photo
+/// last active there this run, `remembered`, or else the one what was open last, `last`,
+/// records for that folder, opens once the folder lists it. With none, or one gone from
+/// it, none is shown. File › Open… of a raw and the start's reopening open a photo of
+/// their own, and go round it.
+fn change_folder(
+    path: PathBuf,
+    change: FolderChange,
+    last: Option<&recents::Last>,
+    remembered: &mut Remembered,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
+    // As the library is asked for it, so it compares with the photo's folder.
+    let path = std::path::absolute(&path).unwrap_or(path);
+    remembered.remember(mirror);
+    let photo = mirror.photo.asked();
+    let stays = photo.is_some_and(|photo| photo.parent() == Some(path.as_path()));
+    if !stays {
+        close_photo(mirror, send);
+    }
+    let kept = last
+        .filter(|last| last.folder.as_deref().unwrap_or(&last.path) == path)
+        .and_then(|last| last.photo.as_deref())
+        .map(|name| path.join(name));
+    let photo = remembered.photos.get(&path).cloned().or(kept);
+    match change {
+        FolderChange::WayIn => open_folder(path, mirror, send),
+        FolderChange::Choose => choose_folder(path, mirror, send),
+    }
+    remembered.waiting = photo.filter(|_| !stays).map(|photo| Waiting {
+        open: mirror.folder.latest(),
+        photo,
+        looked: 0,
+    });
 }
 
 /// Whether each of `paths`, Open Recent's as a menu shows them, can be opened, by place:
@@ -4427,12 +4578,8 @@ fn reopened(reopening: &mut Option<Reopening>, mirror: &mut Mirror, send: &mut S
         folder::Folder::Open(listing) => {
             let none_asked = matches!(mirror.photo, PhotoState::None);
             let name = asked.photo.as_deref().and_then(Path::file_name);
-            let new = listing.photos.get(asked.looked..).unwrap_or_default();
-            let listed = new
-                .iter()
-                .any(|photo| Some(OsStr::new(&photo.name)) == name);
+            let listed = listed_since(listing, &mut asked.looked, name);
             let waits = name.is_some() && !listing.done;
-            asked.looked = listing.photos.len();
             match asked.photo.take() {
                 // Opened as it is, in the folder shown: no way in, so the tree keeps its root.
                 Some(photo) if listed && none_asked => {
@@ -4458,30 +4605,36 @@ fn reopened(reopening: &mut Option<Reopening>, mirror: &mut Mirror, send: &mut S
     }
 }
 
-/// What was open last, as the app ends with `mirror` ([`at_exit`]); while it still
-/// reopens, `reopening`, as it was, so quitting early drops none of it.
-fn keep_at_exit(recents: &mut Recents, reopening: Option<&Reopening>, mirror: &Mirror) {
+/// What was open last, as the app ends with `mirror` and the photo `waiting` for its
+/// folder's listing ([`at_exit`]); while it still reopens, `reopening`, as it was, so
+/// quitting early drops none of it.
+fn keep_at_exit(
+    recents: &mut Recents,
+    reopening: Option<&Reopening>,
+    waiting: Option<&Waiting>,
+    mirror: &Mirror,
+) {
     if reopening.is_none()
         && let Some(last) = recents.last().cloned()
     {
-        recents.set_last(Some(at_exit(last, mirror)));
+        recents.set_last(Some(at_exit(last, waiting, mirror)));
     }
 }
 
 /// What was open last, `last`, as the app ends with `mirror`: where its root is still the
 /// tree's, the folder active in it where that is another, and the photo active there,
-/// opening or open but never one whose open failed; else `last` as it was, so a photo
-/// opened alone, or another folder, leaves it.
-fn at_exit(last: recents::Last, mirror: &Mirror) -> recents::Last {
+/// opening or open but never one whose open failed, or else the one `waiting` for that
+/// folder's listing; else `last` as it was, so a photo opened alone, or another folder,
+/// leaves it.
+fn at_exit(last: recents::Last, waiting: Option<&Waiting>, mirror: &Mirror) -> recents::Last {
     if mirror.folder.root() != Some(last.path.as_path()) {
         return last;
     }
     let active = mirror.folder.shown().map(Path::to_owned);
-    let photo = match &mirror.photo {
-        PhotoState::Opening { path, .. } => Some(path.as_path()),
-        PhotoState::Open(photo) => Some(photo.path.as_path()),
-        PhotoState::None | PhotoState::Failed { .. } => None,
-    };
+    let waited = waiting
+        .filter(|waiting| waiting.open == mirror.folder.latest())
+        .map(|waiting| waiting.photo.as_path());
+    let photo = mirror.photo.asked().or(waited);
     let photo = photo.filter(|photo| photo.parent() == active.as_deref());
     let name = photo.and_then(Path::file_name);
     recents::Last {
@@ -5778,7 +5931,7 @@ mod tests {
         m.apply(Event::Opened(mirror::tests::photo(2)));
         assert!(!shows_start(opened(&m), false, false, false));
         sent.clear();
-        close(&mut m, &mut sender(&mut sent));
+        close(&mut Remembered::default(), &mut m, &mut sender(&mut sent));
         assert_eq!(
             sent,
             [Command::Close, Command::Library(LibraryCommand::Close)]
@@ -5800,8 +5953,500 @@ mod tests {
         // Nothing open: nothing to close.
         let mut nothing = mirror::tests::mirror();
         let mut none = Vec::new();
-        close(&mut nothing, &mut sender(&mut none));
+        close(
+            &mut Remembered::default(),
+            &mut nothing,
+            &mut sender(&mut none),
+        );
         assert!(none.is_empty());
+    }
+
+    /// The folder `AT` open with `R0001176.DNG` active, opening as a click in the grid
+    /// panel opens it, its subfolders `New 1`, empty, and `Day 2`.
+    fn at_with_its_photo() -> (Mirror, Vec<Command>, Remembered, PathBuf) {
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let at = PathBuf::from("/photos/AT");
+        open_folder(at.clone(), &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &at));
+        m.apply(listed(1, &["R0001175.DNG", "R0001176.DNG"], true));
+        open_photo(at.join("R0001176.DNG"), &mut m, &mut sender(&mut sent));
+        let mut remembered = Remembered::default();
+        remembered.remember(&m);
+        (m, sent, remembered, at)
+    }
+
+    /// The photo the central panel shows, open or opening.
+    fn photo_shown(m: &Mirror) -> Option<&Path> {
+        m.photo.asked()
+    }
+
+    /// Choosing another folder in Browse's tree closes the photo of the folder left,
+    /// through the session's `Close` alone, the folder staying: an empty subfolder, or one
+    /// with photos and none remembered, shows no photo, the editing tabs as with none
+    /// active, and what was open last keeps the folder with no photo.
+    #[test]
+    fn a_folder_chosen_in_the_tree_shows_no_photo_of_the_folder_left() {
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let new = at.join("New 1");
+        change_folder(
+            new.clone(),
+            FolderChange::Choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let chosen = Command::Library(LibraryCommand::Open(Source::Folder(new.clone())));
+        assert_eq!(sent[2..], [Command::Close, chosen]);
+        assert_eq!(photo_shown(&m), None);
+        assert_eq!(m.shown(), Shown::Nothing);
+        m.apply(folder_opened(4, &new));
+        m.apply(listed(4, &[], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 4);
+        assert_eq!(
+            library::Empty::of(&m.folder.folder),
+            library::Empty::NoRaws { subfolders: false }
+        );
+        assert_eq!(m.folder.root(), Some(at.as_path()));
+        let kept = recents::Last {
+            kind: recents::OpenKind::Folder,
+            path: at.clone(),
+            folder: None,
+            photo: Some("R0001176.DNG".to_owned()),
+        };
+        let left = at_exit(kept.clone(), None, &m);
+        assert_eq!((left.folder, left.photo), (Some(new.clone()), None));
+
+        // One with photos and none remembered: none shown, and none opened once listed.
+        let day = at.join("Day 2");
+        change_folder(
+            day.clone(),
+            FolderChange::Choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(sent.len(), 5, "nothing to close: {sent:?}");
+        m.apply(folder_opened(5, &day));
+        m.apply(listed(5, &["a.DNG", "b.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 5);
+        assert_eq!(photo_shown(&m), None);
+        assert_eq!(
+            library::Empty::of(&m.folder.folder),
+            library::Empty::NoneChosen
+        );
+    }
+
+    /// Going back to a folder opens the photo last active in it this run, as a click in the
+    /// grid panel does, once its listing holds it and not before; one gone from it shows
+    /// none. What was open last then agrees.
+    #[test]
+    fn a_folder_chosen_again_reopens_its_photo_once_listed() {
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let new = at.join("New 1");
+        change_folder(
+            new.clone(),
+            FolderChange::Choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        m.apply(folder_opened(4, &new));
+        m.apply(listed(4, &[], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+
+        // Back to AT: nothing opens while it is read, nor before its listing holds the
+        // photo; then it opens.
+        change_folder(
+            at.clone(),
+            FolderChange::Choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(sent.len(), 5);
+        // Quitting meanwhile keeps the photo waited for, not the folder without it.
+        let new_kept = recents::Last {
+            kind: recents::OpenKind::Folder,
+            path: at.clone(),
+            folder: Some(new.clone()),
+            photo: None,
+        };
+        let waits = at_exit(new_kept, remembered.waiting.as_ref(), &m);
+        assert_eq!(
+            (waits.folder, waits.photo.as_deref()),
+            (None, Some("R0001176.DNG"))
+        );
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(5, &at));
+        m.apply(listed(5, &["R0001175.DNG"], false));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 5);
+        assert_eq!(photo_shown(&m), None);
+        m.apply(listed(5, &["R0001176.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        let photo = at.join("R0001176.DNG");
+        assert_eq!(sent[5..], [Command::Open(photo.clone())]);
+        assert_eq!(photo_shown(&m), Some(photo.as_path()));
+        let kept = recents::Last {
+            kind: recents::OpenKind::Folder,
+            path: at.clone(),
+            folder: Some(new.clone()),
+            photo: None,
+        };
+        let back = at_exit(kept, None, &m);
+        assert_eq!(
+            (back.folder, back.photo.as_deref()),
+            (None, Some("R0001176.DNG"))
+        );
+
+        // The photo gone from AT by the next time: none shown.
+        change_folder(
+            new.clone(),
+            FolderChange::Choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        m.apply(folder_opened(8, &new));
+        m.apply(listed(8, &[], true));
+        change_folder(
+            at.clone(),
+            FolderChange::Choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        m.apply(folder_opened(9, &at));
+        m.apply(listed(9, &["R0001175.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 9, "{sent:?}");
+        assert_eq!(photo_shown(&m), None);
+        assert_eq!(remembered.waiting, None);
+    }
+
+    /// [`at_with_its_photo`], then `New 1` chosen and listed, then AT chosen again, its
+    /// photo waited for, AT's open numbered 5.
+    fn waiting_for_at() -> (Mirror, Vec<Command>, Remembered, PathBuf) {
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        for folder in [at.join("New 1"), at.clone()] {
+            change_folder(
+                folder,
+                FolderChange::Choose,
+                None,
+                &mut remembered,
+                &mut m,
+                &mut sender(&mut sent),
+            );
+            if sent.len() == 4 {
+                m.apply(folder_opened(4, &at.join("New 1")));
+                m.apply(listed(4, &[], true));
+                remembered.restore(&mut m, &mut sender(&mut sent));
+            }
+        }
+        assert_eq!(sent.len(), 5);
+        assert!(remembered.waiting.is_some());
+        (m, sent, remembered, at)
+    }
+
+    /// The photo waited for gives way: to a photo asked for meanwhile, to another folder
+    /// chosen before its listing, whose stale listing then opens nothing, and to a folder
+    /// that could not be read.
+    #[test]
+    fn a_photo_waited_for_gives_way_to_what_the_person_asks_and_to_a_failure() {
+        // A cell clicked before the listing holds it.
+        let (mut m, mut sent, mut remembered, at) = waiting_for_at();
+        let clicked = at.join("R0001175.DNG");
+        open_photo(
+            clicked.clone(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(sent[5..], [Command::Open(clicked.clone())]);
+        m.apply(folder_opened(5, &at));
+        m.apply(listed(5, &["R0001175.DNG", "R0001176.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 6, "{sent:?}");
+        assert_eq!(photo_shown(&m), Some(clicked.as_path()));
+
+        // Another folder chosen before AT's listing comes: its listing then is stale.
+        let (mut m, mut sent, mut remembered, at) = waiting_for_at();
+        let new = at.join("New 1");
+        let choose = FolderChange::Choose;
+        change_folder(
+            new.clone(),
+            choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(remembered.waiting, None);
+        m.apply(folder_opened(5, &at));
+        m.apply(listed(5, &["R0001176.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(6, &new));
+        m.apply(listed(6, &[], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 6, "{sent:?}");
+        assert_eq!(photo_shown(&m), None);
+
+        // AT could not be read.
+        let (mut m, mut sent, mut remembered, _) = waiting_for_at();
+        m.apply(Event::Library(LibraryEvent::Failed {
+            open: 5,
+            reason: "No such folder".to_owned(),
+        }));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!((sent.len(), remembered.waiting), (5, None));
+    }
+
+    /// What the session still sends of the photo closed as the folder changed is dropped:
+    /// the photo stays closed, and the wait for the next still opens its photo.
+    #[test]
+    fn the_closed_photo_s_late_events_change_nothing() {
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let new = at.join("New 1");
+        let choose = FolderChange::Choose;
+        change_folder(
+            new.clone(),
+            choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        // The photo was opened by command 2.
+        m.apply(Event::Opened(mirror::tests::photo(2)));
+        m.apply(Event::Values(mirror::tests::report(1.0, 2)));
+        assert_eq!(photo_shown(&m), None);
+        assert_eq!(m.shown(), Shown::Nothing);
+        m.apply(folder_opened(4, &new));
+        m.apply(listed(4, &[], true));
+        change_folder(
+            at.clone(),
+            choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        m.apply(folder_opened(5, &at));
+        m.apply(listed(5, &["R0001176.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        let photo = at.join("R0001176.DNG");
+        assert_eq!(sent[5..], [Command::Open(photo.clone())]);
+        assert_eq!(photo_shown(&m), Some(photo.as_path()));
+    }
+
+    /// Open This Folder from a photo alone keeps the photo, which is that folder's; and a
+    /// folder named by a relative path is the photo's absolute folder.
+    #[test]
+    fn the_photo_s_own_folder_keeps_it_whatever_its_path_is_written_as() {
+        let mut m = mirror::tests::mirror();
+        started_with(Start::Photo(PathBuf::from("/photos/a.ARW")), &mut m);
+        let (mut sent, mut remembered) = (Vec::new(), Remembered::default());
+        let folder = PathBuf::from("/photos");
+        let way_in = FolderChange::WayIn;
+        change_folder(
+            folder.clone(),
+            way_in,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(
+            sent,
+            [Command::Library(LibraryCommand::Open(Source::Folder(
+                folder
+            )))]
+        );
+        assert_eq!(photo_shown(&m), Some(Path::new("/photos/a.ARW")));
+        assert_eq!(remembered.waiting, None);
+
+        let relative = PathBuf::from("relative-photos");
+        let absolute = std::path::absolute(&relative).unwrap();
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        open_folder(relative.clone(), &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &absolute));
+        m.apply(listed(1, &["x.ARW"], true));
+        let photo = absolute.join("x.ARW");
+        open_photo(
+            photo.clone(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let choose = FolderChange::Choose;
+        change_folder(
+            relative,
+            choose,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert!(!sent.contains(&Command::Close), "{sent:?}");
+        assert_eq!(photo_shown(&m), Some(photo.as_path()));
+    }
+
+    /// File › Close forgets the photos remembered this run, as it forgets what was open
+    /// last: the folder opened again waits for none.
+    #[test]
+    fn close_forgets_the_photos_remembered_this_run() {
+        let (mut m, mut sent, mut remembered, at) = waiting_for_at();
+        close(&mut remembered, &mut m, &mut sender(&mut sent));
+        assert!(remembered.photos.is_empty());
+        assert_eq!(remembered.waiting, None);
+        let way_in = FolderChange::WayIn;
+        change_folder(
+            at,
+            way_in,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(remembered.waiting, None);
+    }
+
+    /// The folder's reading cancelled from the jobs window while its photo waits ends the
+    /// wait: nothing opens.
+    #[test]
+    fn a_reading_cancelled_while_its_photo_waits_ends_the_wait() {
+        use apertrust_engine::jobs::{Message, Progress, Queue, State};
+        let (mut m, mut sent, mut remembered, _) = waiting_for_at();
+        let job = crate::jobs::tests::ids(1)[0];
+        let added = apertrust_engine::session::JobEvent::Added {
+            job,
+            kind: "folder",
+            queue: Some(Queue::UserBackground),
+            title: Message::new("job-folder"),
+            cancellable: true,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
+        };
+        let cancelled = apertrust_engine::session::JobEvent::Ended {
+            job,
+            state: State::Cancelled,
+            outcome: None,
+            failure: None,
+            at: std::time::SystemTime::UNIX_EPOCH,
+            offers: Vec::new(),
+        };
+        m.apply(Event::Job {
+            event: added,
+            command: Some(5),
+        });
+        m.apply(Event::Job {
+            event: cancelled,
+            command: None,
+        });
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!((sent.len(), remembered.waiting), (5, None));
+        assert_eq!(photo_shown(&m), None);
+    }
+
+    /// A way in, as Open Folder…, Open Recent, Browse's recents or a dropped folder open
+    /// one, follows the same rule as the tree: the photo of the folder left closes, and the
+    /// photo last active in the folder opened this run opens once it is listed.
+    #[test]
+    fn a_folder_opened_as_a_way_in_shows_its_own_photo_or_none() {
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        // Open Folder… of another folder.
+        let other = PathBuf::from("/photos/Other");
+        let way_in = FolderChange::WayIn;
+        change_folder(
+            other.clone(),
+            way_in,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let opened = Command::Library(LibraryCommand::Open(Source::Folder(other.clone())));
+        assert_eq!(sent[2..], [Command::Close, opened]);
+        assert_eq!(photo_shown(&m), None);
+        assert_eq!(m.folder.root(), Some(other.as_path()));
+        m.apply(folder_opened(4, &other));
+        m.apply(listed(4, &["x.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!((sent.len(), photo_shown(&m)), (4, None));
+        // AT again from a recent: its photo opens once listed, the folder a way in.
+        change_folder(
+            at.clone(),
+            way_in,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(sent.len(), 5, "nothing to close: {sent:?}");
+        m.apply(folder_opened(5, &at));
+        m.apply(listed(5, &["R0001175.DNG", "R0001176.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        let photo = at.join("R0001176.DNG");
+        assert_eq!(sent[5..], [Command::Open(photo.clone())]);
+        assert_eq!(photo_shown(&m), Some(photo.as_path()));
+        assert_eq!(m.folder.root(), Some(at.as_path()));
+        // Open This Folder, or the folder opened again: its own photo stays as it is.
+        change_folder(
+            at.clone(),
+            way_in,
+            None,
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(sent.len(), 7, "nothing closed: {sent:?}");
+        assert_eq!(photo_shown(&m), Some(photo.as_path()));
+        assert_eq!(remembered.waiting, None);
+    }
+
+    /// A recent not opened this run waits for the photo what was open last records for it,
+    /// where that is the folder opened; a photo it records in a subfolder is not that
+    /// folder's, and none is shown.
+    #[test]
+    fn a_recent_not_opened_this_run_shows_the_photo_kept_for_it() {
+        let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+        let kept = last(Some("b.ARW"));
+        let way_in = FolderChange::WayIn;
+        change_folder(
+            kept.path.clone(),
+            way_in,
+            Some(&kept),
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(sent[2], Command::Close);
+        m.apply(folder_opened(4, &kept.path));
+        m.apply(listed(4, &["a.ARW", "b.ARW"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent[4..], [Command::Open(kept.path.join("b.ARW"))]);
+
+        let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+        let in_day = kept_last(Some("Day 1"), Some("b.ARW"));
+        let path = in_day.path.clone();
+        change_folder(
+            path,
+            way_in,
+            Some(&in_day),
+            &mut remembered,
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(remembered.waiting, None);
+        assert_eq!(photo_shown(&m), None);
     }
 
     /// What was open last: the root `/photos/Wedding`, with the folder of its tree and the
@@ -5872,7 +6517,7 @@ mod tests {
         assert_eq!(sent[2..], [Command::Open(day.join("b.ARW"))]);
         assert_eq!(reopening, None);
         assert_eq!(m.folder.root(), Some(kept.path.as_path()));
-        assert_eq!(at_exit(last(None), &m), kept);
+        assert_eq!(at_exit(last(None), None, &m), kept);
         // The subfolder gone: the root is chosen again, and no photo opens.
         let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
         let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
@@ -5903,10 +6548,10 @@ mod tests {
             }
         }
         assert_eq!(shell.recents.last(), Some(&kept));
-        keep_at_exit(&mut shell.recents, reopening.as_ref(), &m);
+        keep_at_exit(&mut shell.recents, reopening.as_ref(), None, &m);
         assert_eq!(shell.recents.last(), Some(&kept));
         // Once it has ended, the end keeps what is open then.
-        keep_at_exit(&mut shell.recents, None, &m);
+        keep_at_exit(&mut shell.recents, None, None, &m);
         assert_eq!(shell.recents.last(), Some(&last(None)));
     }
 
@@ -5927,13 +6572,13 @@ mod tests {
             }
         }
         assert_eq!(shell.recents.last(), Some(&kept));
-        keep_at_exit(&mut shell.recents, None, &m);
+        keep_at_exit(&mut shell.recents, None, None, &m);
         assert_eq!(shell.recents.last(), Some(&kept), "Quit");
         let root = m.folder.root().map(Path::to_owned);
-        close(&mut m, &mut sender(&mut sent));
+        close(&mut Remembered::default(), &mut m, &mut sender(&mut sent));
         forget_last(&mut shell.recents, root.as_deref());
         assert_eq!(shell.recents.last(), Some(&kept), "Close");
-        keep_at_exit(&mut shell.recents, None, &m);
+        keep_at_exit(&mut shell.recents, None, None, &m);
         assert_eq!(shell.recents.last(), Some(&kept), "Quit after Close");
         // Close of another root leaves it too; of its own root forgets it.
         forget_last(&mut shell.recents, Some(Path::new("/photos/Other")));
@@ -5951,9 +6596,9 @@ mod tests {
         let mut sent = Vec::new();
         open_folder(root.clone(), &mut m, &mut sender(&mut sent));
         m.apply(folder_opened(1, &root));
-        assert_eq!(at_exit(last(Some("a.ARW")), &m), last(None));
+        assert_eq!(at_exit(last(Some("a.ARW")), None, &m), last(None));
         m.opening(root.join("b.ARW"), 2, Instant::now());
-        assert_eq!(at_exit(last(None), &m), last(Some("b.ARW")));
+        assert_eq!(at_exit(last(None), None, &m), last(Some("b.ARW")));
         m.apply(Event::Failed(
             apertrust_engine::session::SessionError::Open {
                 open: 2,
@@ -5961,13 +6606,13 @@ mod tests {
             },
         ));
         assert!(matches!(m.photo, PhotoState::Failed { .. }));
-        assert_eq!(at_exit(last(Some("b.ARW")), &m), last(None));
+        assert_eq!(at_exit(last(Some("b.ARW")), None, &m), last(None));
         // Another root: what was kept stays.
         let other = recents::Last {
             path: PathBuf::from("/photos/Other"),
             ..last(Some("c.ARW"))
         };
-        assert_eq!(at_exit(other.clone(), &m), other);
+        assert_eq!(at_exit(other.clone(), None, &m), other);
     }
 
     /// The reopened folder's photo waits for nothing: a photo asked for meanwhile wins, a

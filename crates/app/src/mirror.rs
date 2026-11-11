@@ -587,6 +587,15 @@ pub enum PhotoState {
 }
 
 impl PhotoState {
+    /// The photo asked for, open or opening: the photo shown; none for one that failed.
+    pub fn asked(&self) -> Option<&Path> {
+        match self {
+            PhotoState::Opening { path, .. } => Some(path),
+            PhotoState::Open(photo) => Some(&photo.path),
+            PhotoState::None | PhotoState::Failed { .. } => None,
+        }
+    }
+
     /// The image context a module's view of the pending values reads ([`Pending::show`]):
     /// the open photo's, as the session reports it in `Photo` (decision 27), so a view
     /// that reads the camera, as White balance's temperature and tint read its matrix,
