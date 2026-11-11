@@ -46,7 +46,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `history`, `history-filled` | Lucide's `rotate-ccw-clock` |
 | `folder`, `folder-filled` | Lucide's `folder` |
 | `metadata`, `metadata-filled` | Lucide's `tag` |
-| `library` | Lucide's `library` |
+| `library` | Lucide's `library`, its third book drawn as a face |
 | `project` | Lucide's `briefcase` |
 | `search` | Lucide's `search`, from Feather |
 | `photo` | Lucide's `image` |
