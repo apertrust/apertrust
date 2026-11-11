@@ -441,6 +441,9 @@ pub struct Sizes {
     pub marker_column: f32,
     pub value_column: f32,
     pub side_panel: f32,
+    /// The height a list scrolls in inside a section, so the section keeps its height
+    /// whatever the list holds: ten one-line rows (`panel_line`). Browse's groups.
+    pub section_list: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

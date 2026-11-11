@@ -109,6 +109,7 @@ track_strip = 16.0
 marker_column = 16.0
 value_column = 54.0
 side_panel = 320.0
+section_list = 240.0
 
 [shape]
 radius_small = 3.0

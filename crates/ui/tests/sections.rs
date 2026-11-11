@@ -18,7 +18,7 @@
 //! AccessKit (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction,
+    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, section_list,
 };
 use apertrust_ui::{Icon, Locale, Theme};
 use egui::Key;
@@ -1035,4 +1035,88 @@ fn the_tab_strip_is_a_row_high_and_its_first_name_is_on_the_content_edge() {
     let edge = header.left() - t.spacing.xxs + t.spacing.l;
     let left = drawn_name(&harness, "Basic").pos.x;
     assert!((left - edge).abs() < 0.01, "{left} against the edge {edge}");
+}
+
+/// A section holding a [`section_list`] of `lines` lines, then a line after it, recording
+/// the section body's rectangle.
+fn listed(lines: usize) -> Harness<'static, egui::Rect> {
+    Harness::builder()
+        .with_size(egui::vec2(320.0, 700.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            move |ui, body: &mut egui::Rect| {
+                PanelBody::new().show(ui, |ui| {
+                    Section::new("Listed", true).show(ui, |ui| {
+                        *body = ui.max_rect();
+                        section_list(ui, "lines", |ui| {
+                            for i in 0..lines {
+                                ui.label(format!("Line {i}"));
+                            }
+                        });
+                    });
+                    ui.label("After the section");
+                });
+            },
+            egui::Rect::NOTHING,
+        )
+}
+
+/// A list inside a section keeps the section's height whatever it holds and scrolls; its
+/// scroll bar shows only with the pointer over the list, and then in the body's end margin.
+#[test]
+fn a_section_list_keeps_its_height_scrolls_and_floats_its_bar_in_the_end_margin() {
+    let mut short = listed(3);
+    short.run();
+    let mut long = listed(60);
+    long.run();
+    let end =
+        |harness: &Harness<'_, egui::Rect>| harness.get_by_label("After the section").rect().top();
+    assert_eq!(end(&short), end(&long));
+    // The list is `section_list` high, the body's bottom margin and the hairline after it.
+    let t = apertrust_ui::theme(&long.ctx);
+    let first = long.get_by_label("Line 0").rect();
+    let tall = end(&long) - first.top();
+    assert!(tall >= t.sizes.section_list, "{tall}");
+    assert!(tall < t.sizes.section_list + 2.0 * t.spacing.l, "{tall}");
+
+    // Painted in the body's end margin, with some colour: the bar.
+    let body = *long.state();
+    let margin = egui::Rangef::new(body.right(), body.right() + Section::body_margin(&t));
+    let bar = |harness: &Harness<'_, egui::Rect>| {
+        harness
+            .output()
+            .shapes
+            .iter()
+            .any(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) => {
+                    rect.fill.a() > 0
+                        && rect.rect.width() > 0.0
+                        && margin.contains(rect.rect.left())
+                        && margin.contains(rect.rect.right())
+                }
+                _ => false,
+            })
+    };
+    assert!(!bar(&long), "hidden with the pointer away");
+    long.hover_at(first.center());
+    long.run_steps(20);
+    assert!(bar(&long), "shown with the pointer over the list");
+    // A list that fits has none.
+    short.hover_at(short.get_by_label("Line 0").rect().center());
+    short.run_steps(20);
+    assert!(!bar(&short));
+
+    // The lines scroll under the wheel, the section staying as it was.
+    assert!(long.get_by_label("Line 59").rect().top() > end(&long));
+    long.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -4000.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers: egui::Modifiers::NONE,
+    });
+    long.run_steps(60);
+    assert!(long.get_by_label("Line 59").rect().bottom() < end(&long));
+    assert_eq!(end(&long), end(&short));
 }

@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use apertrust_ui::components::{
     Button, ChoiceBox, CollapsibleGroup, IconButton, Section, SectionAction, context_menu,
-    focus_ring_centred, middle_cut, pull_down,
+    focus_ring_centred, middle_cut, pull_down, section_list,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::popup::{self, Entry, Item, Submenu};
@@ -247,7 +247,6 @@ impl Browse<'_> {
 /// photo, Folders holds Open This Folder alone, and ⋯ holds Open This Folder, then Show in
 /// Finder, which shows the photo in its folder.
 pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
-    let t = theme(ui.ctx());
     let words = translator(ui.ctx());
     let mut actions = Vec::new();
     let title = words.text("section-browse");
@@ -263,21 +262,19 @@ pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     let out = Section::new(&title, browse.open.browse)
         .options_menu(options)
         .show(ui, |ui| {
+            // The section's body has a module's margins: the top line starts 4 points under
+            // the header and 12 in from the sides, as a module's first row does.
             ui.spacing_mut().item_spacing.y = 0.0;
-            ui.add_space(t.spacing.xs);
-            let margin = t.spacing.l;
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(margin as i8, 0))
-                .show(ui, |ui| {
-                    top_line(ui, browse, &mut actions);
-                    let group = words.text("browse-folders");
-                    let toggled = CollapsibleGroup::new(&group, browse.open.folders)
-                        .show(ui, |ui| tree(ui, browse, &mut actions));
-                    if toggled {
-                        actions.push(Action::ToggleFolders);
-                    }
-                    ui.add_space(t.spacing.m);
-                });
+            top_line(ui, browse, &mut actions);
+            // Its groups scroll under it, Browse keeping its height.
+            section_list(ui, "browse groups", |ui| {
+                let group = words.text("browse-folders");
+                let toggled = CollapsibleGroup::new(&group, browse.open.folders)
+                    .show(ui, |ui| tree(ui, browse, &mut actions));
+                if toggled {
+                    actions.push(Action::ToggleFolders);
+                }
+            });
         });
     if out.actions.contains(&SectionAction::Toggle) {
         actions.push(Action::Toggle);
@@ -539,6 +536,10 @@ impl TreeRow<'_> {
         let t = theme(ui.ctx());
         let size = vec2(ui.available_width(), t.sizes.panel_line);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        // The list is short: a row the keys reach is scrolled into sight.
+        if response.gained_focus() {
+            response.scroll_to_me(None);
+        }
         let indent = (self.level.saturating_sub(1)) as f32 * LEVEL_INDENT;
         let chevron_side = Icon::ChevronEnd.size();
         let chevron = Rect::from_min_size(
@@ -787,6 +788,10 @@ fn retry_row(ui: &mut egui::Ui, level: usize, why: &str) -> bool {
     let t = theme(ui.ctx());
     let size = vec2(ui.available_width(), t.sizes.panel_line);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    // The list is short: a row the keys reach is scrolled into sight.
+    if response.gained_focus() {
+        response.scroll_to_me(None);
+    }
     let words = translator(ui.ctx()).text("browse-unreadable");
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
@@ -834,6 +839,10 @@ fn open_this_row(ui: &mut egui::Ui, words: &str, shown: &str) -> egui::Response 
     let t = theme(ui.ctx());
     let size = vec2(ui.available_width(), t.sizes.panel_line);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    // The list is short: a row the keys reach is scrolled into sight.
+    if response.gained_focus() {
+        response.scroll_to_me(None);
+    }
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let band = rect.expand2(vec2(t.spacing.xs, 0.0));
@@ -1307,6 +1316,98 @@ mod tests {
             .filter_map(|row| row.accesskit_node().label())
             .collect();
         assert_eq!(rows, ["Wedding", "Edits", "Selects"]);
+    }
+
+    /// Browse keeps its height whatever its tree holds, the groups scrolling under the top
+    /// line, which stays where it is; the top line has a module's margins.
+    #[test]
+    fn browse_keeps_its_height_and_its_top_line_while_the_tree_scrolls() {
+        let with = |subfolders: usize| {
+            move || {
+                let Folder::Open(mut listing) = listing(120, true) else {
+                    unreachable!()
+                };
+                listing.subfolders = (0..subfolders).map(|i| format!("Day {i}")).collect();
+                Folder::Open(listing)
+            }
+        };
+        // Browse, then a line after it, to find where it ends.
+        let drawn = |subfolders: usize| {
+            let folder = with(subfolders);
+            sized(egui::vec2(320.0, 1200.0), move |ui, actions| {
+                let (folder, recent, keys) = (folder(), recent(), keys());
+                let browse = Browse {
+                    folder: &folder,
+                    root: shown(&folder),
+                    root_count: None,
+                    recent: &recent,
+                    open: OPEN_ALL,
+                    tree: &BTreeMap::new(),
+                    inside: &HashMap::new(),
+                    keys: &keys,
+                    home: None,
+                };
+                PanelBody::new().show(ui, |ui| {
+                    actions.extend(super::browse(ui, &browse));
+                    ui.label("After Browse");
+                });
+            })
+        };
+        let mut short = drawn(2);
+        short.run();
+        let mut long = drawn(60);
+        long.run();
+        let end = |harness: &Harness<'_, Vec<Action>>| harness.get_by_label("After Browse").rect();
+        assert_eq!(end(&short).top(), end(&long).top());
+        // The top line's box, centred in its one-line row, starts where a module's first
+        // row starts, under its header and in from the panel's start.
+        let mut module = Harness::builder()
+            .with_size(egui::vec2(320.0, 200.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, first: &mut egui::Pos2| {
+                    PanelBody::new().show(ui, |ui| {
+                        Section::new("Exposure", true)
+                            .module()
+                            .show(ui, |ui| *first = ui.cursor().min);
+                    });
+                },
+                egui::Pos2::ZERO,
+            );
+        module.run();
+        let first = *module.state();
+        let line = theme(&long.ctx).sizes.panel_line;
+        let top_line = long.get_by_label("What is open").rect();
+        assert_eq!(top_line.left(), first.x);
+        assert_eq!(top_line.center().y, first.y + line / 2.0);
+        // The groups scroll, the last row out of sight below Browse until then; the top
+        // line does not.
+        let row = |harness: &Harness<'_, Vec<Action>>, name: &str| {
+            harness.get_by_role_and_label(Role::TreeItem, name).rect()
+        };
+        let root = row(&long, "Wedding");
+        assert!(row(&long, "Day 59").top() > end(&long).top());
+        long.hover_at(root.center());
+        long.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -4000.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        });
+        long.run_steps(60);
+        assert!(row(&long, "Day 59").bottom() < end(&long).top());
+        assert!(row(&long, "Wedding").top() < root.top());
+        assert_eq!(long.get_by_label("What is open").rect(), top_line);
+        assert_eq!(end(&long).top(), end(&short).top());
+        // A row that takes the focus out of sight is scrolled back into it.
+        assert!(row(&long, "Wedding").bottom() < top_line.bottom());
+        long.get_by_role_and_label(Role::TreeItem, "Wedding")
+            .focus();
+        long.run_steps(60);
+        let back = row(&long, "Wedding");
+        assert!(back.top() >= top_line.bottom(), "{back:?}");
+        assert!(back.bottom() <= end(&long).top(), "{back:?}");
     }
 
     /// With a subfolder chosen, the root stays at the tree's top and in the top line, with
@@ -2110,7 +2211,7 @@ mod tests {
         // A photo alone, as the wireframe's one-photo column draws it.
         let mut tab = themed(
             Theme::builtin(Builtin::Dark),
-            egui::vec2(320.0, 160.0),
+            egui::vec2(320.0, 360.0),
             move |ui, actions| {
                 let panel = theme(ui.ctx()).colors.panel;
                 ui.painter().rect_filled(ui.max_rect(), 0.0, panel);
