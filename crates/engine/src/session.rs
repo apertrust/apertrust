@@ -347,6 +347,9 @@ pub(crate) enum Inbox {
     Task(Waiting),
     Open(Box<Stage>),
     Evict,
+    /// The edit writer saved a file: the live photo's thumbnail may now wait for its
+    /// settle.
+    Saved,
     Stop,
 }
 
@@ -855,6 +858,11 @@ impl Session {
         let ask: cache::Ask = Arc::new(move || {
             let _ = asks.send(Inbox::Evict);
         });
+        // The edit writer wakes it as it saves, for the live photo's thumbnail.
+        let saves = commands.clone();
+        let saved: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = saves.send(Inbox::Saved);
+        });
         let (outbox, events) = outbox::channel(wake);
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
@@ -876,6 +884,7 @@ impl Session {
                 // drop, which waits for its workers, never waits for them.
                 let received = received;
                 engine.load = load;
+                engine.writer.on_saved(saved);
                 engine.cache = cache.map(|options| {
                     let stop = Arc::clone(&stopping);
                     Upkeep::start(options, &engine.jobs.control, ask, stop)
@@ -890,18 +899,28 @@ impl Session {
                     // or a task waits for one, looks at the GPU between them, as often as
                     // `GpuContext::wait` does.
                     let polling = engine.reading() || engine.jobs.background.waiting();
-                    let first = if polling && !stopping.load(Ordering::Relaxed) {
-                        match received.recv_timeout(POLL_INTERVAL) {
-                            Ok(first) => Some(first),
-                            Err(mpsc::RecvTimeoutError::Timeout) => None,
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        }
+                    // Else until the thumbnail is due, or a task asleep wakes, whichever is
+                    // first.
+                    let wake = (engine.jobs.background.wakes_at())
+                        .map(|at| at.saturating_duration_since(Instant::now()));
+                    let wait = if polling {
+                        Some(POLL_INTERVAL)
                     } else {
-                        match received.recv() {
-                            Ok(first) => Some(first),
-                            Err(mpsc::RecvError) => break,
-                        }
+                        [engine.thumbnail_wait(), wake].into_iter().flatten().min()
                     };
+                    let first =
+                        if let Some(wait) = wait.filter(|_| !stopping.load(Ordering::Relaxed)) {
+                            match received.recv_timeout(wait) {
+                                Ok(first) => Some(first),
+                                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                            }
+                        } else {
+                            match received.recv() {
+                                Ok(first) => Some(first),
+                                Err(mpsc::RecvError) => break,
+                            }
+                        };
                     let mut batch = Vec::new();
                     let mut stop = false;
                     // What an open's job read, taken after the commands sent before it and
@@ -916,6 +935,7 @@ impl Session {
                                 break;
                             }
                             Inbox::Evict => engine.evict_cache(),
+                            Inbox::Saved => {}
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
                                 stop = true;
@@ -951,6 +971,7 @@ impl Session {
                         }
                         // What arrived meanwhile, during the batch's render included.
                         events.extend(engine.scopes());
+                        engine.thumbnail_tick(false);
                         events
                     };
                     let events = match catch_unwind(AssertUnwindSafe(work)) {
@@ -1059,8 +1080,15 @@ struct Job {
 struct Writes {
     /// Edits handed over and not yet written, by file.
     pending: BTreeMap<PathBuf, usize>,
+    /// The hash of the live photo's sidecar's bytes as last saved, when, and the handover
+    /// it answers, for its thumbnail: only `live`'s.
+    saved: BTreeMap<PathBuf, ([u8; 32], Instant, u64)>,
+    /// The live photo's sidecar, whose saves `saved` keeps.
+    live: Option<PathBuf>,
     /// Files whose last write failed.
     failed: BTreeSet<PathBuf>,
+    /// Told after each successful write.
+    on_saved: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Writer {
@@ -1164,9 +1192,34 @@ impl Writer {
         }
     }
 
+    /// The exact bytes acknowledged for this handover, after a real write or a held
+    /// packet. Older acknowledgements cannot identify a newer pending edit.
+    fn saved_for(&self, path: &Path, through: Option<u64>) -> Option<([u8; 32], Instant)> {
+        let through = through?;
+        self.lock()
+            .saved
+            .get(path)
+            .filter(|(_, _, saved)| *saved == through)
+            .map(|(hash, at, _)| (*hash, *at))
+    }
+
     /// Whether the last write of `path` failed.
     fn failed(&self, path: &Path) -> bool {
         self.lock().failed.contains(path)
+    }
+
+    /// Calls `saved` after each successful write.
+    fn on_saved(&self, saved: Arc<dyn Fn() + Send + Sync>) {
+        self.lock().on_saved = Some(saved);
+    }
+
+    /// Keeps the saved hash of `live`'s writes alone from now on, the live photo's sidecar,
+    /// or of none as a photo closes.
+    fn watch(&self, live: Option<&Path>) {
+        let mut writes = self.lock();
+        writes.live = live.map(Path::to_owned);
+        let Writes { saved, live, .. } = &mut *writes;
+        saved.retain(|path, _| live.as_ref() == Some(path));
     }
 }
 
@@ -1198,6 +1251,17 @@ fn write_edits(writes: Vec<(Job, usize)>, shared: &(Mutex<Writes>, Condvar), out
             Ok(())
         };
         let failed = result.is_err();
+        // A held acknowledgement preserves the original packet, including its build
+        // and formatting. Its thumbnail identity must describe those actual bytes.
+        let saved_hash = if failed {
+            None
+        } else if write {
+            Some(apertrust_library::index::hash(xml.as_bytes()))
+        } else {
+            std::fs::read(&path)
+                .ok()
+                .map(|bytes| apertrust_library::index::hash(&bytes))
+        };
         let event = match result {
             Ok(()) => {
                 let name = sidecar::file_name(&path);
@@ -1231,12 +1295,27 @@ fn write_edits(writes: Vec<(Job, usize)>, shared: &(Mutex<Writes>, Condvar), out
                 state.pending.remove(&path);
             }
         }
+        let mut told = None;
         if failed {
             state.failed.insert(path);
         } else {
             state.failed.remove(&path);
+            match saved_hash {
+                Some(hash) if state.live.as_ref() == Some(&path) => {
+                    let saved = (hash, Instant::now(), through);
+                    state.saved.insert(path.clone(), saved);
+                }
+                _ => {
+                    state.saved.remove(&path);
+                }
+            }
+            told = state.on_saved.clone();
         }
         written.notify_all();
+        drop(state);
+        if let Some(saved) = told {
+            saved();
+        }
     }
 }
 
@@ -1303,6 +1382,13 @@ struct Engine {
     /// The thumbnail jobs asked for of that folder that may not have ended, which the next
     /// open or a close cancels.
     thumbnails: Vec<JobId>,
+    rendered_thumbnails: thumbnail::rendered::State,
+    /// When the live photo last rendered a frame, which a thumbnail's still yields to
+    /// (`pipeline::EDITING_QUIET`).
+    last_change: pipeline::LastChange,
+    /// From which size a photo with no edit shows a render of its raw: the client's
+    /// setting, `LibraryCommand::RawThumbnails`.
+    raw_thumbnails: library::RawThumbnails,
     /// The jobs listing subfolders inside that folder's tree, which the next open or a close
     /// cancels.
     subfolders: Vec<JobId>,
@@ -1545,6 +1631,17 @@ struct Opening {
 struct Open {
     /// The edit's file, beside the photo.
     sidecar: PathBuf,
+    thumbnail_hash: Option<[u8; 32]>,
+    thumbnail_saved_at: Option<Instant>,
+    thumbnail_through: Option<u64>,
+    /// Whether Phase One made the raw, whose embedded picture darktable never takes.
+    phase_one: bool,
+    /// What its open read of the raw's embedded picture, for darktable's raw-thumbnail
+    /// rule.
+    embedded: open::EmbeddedRead,
+    /// The raw's size and modified time as its open read them, which a render of it with
+    /// no edit records.
+    stamp: Option<library::RawStamp>,
     image: ImageContext,
     /// The raw's mosaic, once decoded and uploaded: the photo is live from then on
     /// (decision 77).
@@ -1670,6 +1767,9 @@ impl Engine {
             folder: None,
             shown: None,
             thumbnails: Vec::new(),
+            rendered_thumbnails: thumbnail::rendered::State::default(),
+            last_change: pipeline::LastChange::default(),
+            raw_thumbnails: library::RawThumbnails::default(),
             subfolders: Vec::new(),
             tree: None,
             walk: None,
@@ -1811,6 +1911,13 @@ impl Engine {
         if let Some(opening) = self.opening.take() {
             self.jobs.control.cancel(opening.job);
         }
+        self.writer.watch(None);
+        // A still of it asleep, yielding to the editing now over, wakes to hurry.
+        if let Some(open) = &self.open
+            && let Some(job) = (self.rendered_thumbnails).depart(&open.sidecar.with_extension(""))
+        {
+            self.jobs.background.wake_job(job);
+        }
         if let Some(pipeline) = self.open.take().and_then(|open| open.pipeline) {
             self.kernels = pipeline.into_kernels();
         }
@@ -1841,6 +1948,7 @@ impl Engine {
     /// Saves what the photo's edit still needs, then drops the photo.
     fn close_saving(&mut self) {
         self.save_unsaved();
+        self.thumbnail_tick(true);
         self.close();
     }
 
@@ -1849,7 +1957,11 @@ impl Engine {
     /// the writer. A panic saving the edit still ends the jobs first, `inbox` going before
     /// the control waits for its workers, and goes on once they have.
     fn finish(mut self, inbox: mpsc::Receiver<Inbox>) {
-        let saved = catch_unwind(AssertUnwindSafe(|| self.close_saving()));
+        let saved = catch_unwind(AssertUnwindSafe(|| {
+            self.save_unsaved();
+            self.rendered_thumbnails.cancel_all(&self.jobs.control);
+            self.close();
+        }));
         // The tree's walk is cancelled first: the shutdown would too, but a walk is never
         // what the session waits for.
         if let Some(walk) = self.walk.take() {
@@ -2273,6 +2385,16 @@ impl Engine {
             && open.view_only.is_none()
         {
             let xml = sidecar::to_xml(&open.edit, self.operations, &self.modules, &self.build);
+            if !held || self.writer.failed(&open.sidecar) {
+                let hash = apertrust_library::index::hash(xml.as_bytes());
+                if open.thumbnail_hash != Some(hash) {
+                    self.rendered_thumbnails
+                        .invalidate(&open.sidecar.with_extension(""));
+                }
+                open.thumbnail_hash = Some(hash);
+                open.thumbnail_saved_at = None;
+            }
+            open.thumbnail_through = Some(self.applied);
             self.writer
                 .write(open.sidecar.clone(), xml, self.applied, held);
             open.unsaved = false;
@@ -2321,7 +2443,8 @@ impl Engine {
             open,
             path: path.to_owned(),
             started,
-            longest: self.size.map(|(width, height)| width.max(height)),
+            room: self.size,
+            raw: self.raw_thumbnails,
             load: Arc::clone(&self.load),
             cache: self.cache.clone(),
             operations: self.operations,
@@ -2363,7 +2486,13 @@ impl Engine {
                 tracing::debug!(target: "perf", "open {name}: values, at {ms:.0} ms");
                 None
             }
-            Stage::Decoding { .. } => {
+            Stage::Decoding {
+                embedded, stamp, ..
+            } => {
+                if let Some(photo) = &mut self.open {
+                    photo.embedded = embedded;
+                    photo.stamp = stamp;
+                }
                 #[cfg(test)]
                 self.decoding.push(open);
                 self.compile(&name);
@@ -2414,6 +2543,7 @@ impl Engine {
     fn install(&mut self, read: open::Read, open: u64) -> Photo {
         let open::Read {
             metadata,
+            hash,
             edit,
             view_only,
         } = read;
@@ -2421,6 +2551,7 @@ impl Engine {
             .map(|opening| opening.path.clone())
             .unwrap_or_default();
         let image = metadata.image;
+        let phase_one = library::RawFacts::phase_one(&metadata.camera);
         let photo = Photo {
             path: path.clone(),
             open,
@@ -2434,8 +2565,16 @@ impl Engine {
             image: Box::new(image.clone()),
         };
         let options = listed_options(&self.modules, &image);
+        // Its saves are the ones its thumbnail waits for.
+        self.writer.watch(Some(&sidecar::path_for(&path)));
         self.open = Some(Open {
             sidecar: sidecar::path_for(&path),
+            thumbnail_hash: hash,
+            thumbnail_saved_at: Some(Instant::now()),
+            thumbnail_through: None,
+            phase_one,
+            embedded: open::EmbeddedRead::Unread,
+            stamp: None,
             image,
             input: None,
             sensor: metadata.sensor,
@@ -2683,9 +2822,16 @@ impl Engine {
                 self.subfolders(folder);
                 return;
             }
+            // The live photo's thumbnail is chosen again under it.
+            LibraryCommand::RawThumbnails(raw) => {
+                self.raw_thumbnails = raw;
+                self.rendered_thumbnails.forget_done();
+                return;
+            }
             LibraryCommand::Open(source) => Some(source),
             LibraryCommand::Close => None,
         };
+        self.rendered_thumbnails.clear_asked();
         if let Some(older) = self.folder.take() {
             self.jobs.control.cancel(older);
         }
@@ -2879,7 +3025,9 @@ impl Engine {
         let hold = self.thumbnails_hold.take();
         // The command's jobs share one tally, logged once the last has ended.
         let cached = (self.cache.clone()).map(|upkeep| (upkeep, Arc::new(Tally::new(size))));
+        let raw = self.raw_thumbnails;
         for photo in photos.into_iter().rev() {
+            self.rendered_thumbnails.asked(open, &folder, &photo, size);
             let key = format!("{open}/{size}/{photo}").into_bytes();
             let description = format!("thumbnail of {photo} at {size}");
             let (outbox, folder) = (self.jobs.outbox.clone(), folder.clone());
@@ -2898,10 +3046,12 @@ impl Engine {
                         folder: &folder,
                         photo: &photo,
                         size,
+                        raw,
                     };
                     let cached = cached.as_ref().map(|(upkeep, tally)| (upkeep, &**tally));
                     let cancel = || context.cancelled();
-                    thumbnail::serve(cached, &asked, &tell, &cancel, library::thumbnail);
+                    let (read, facts) = (library::thumbnail, thumbnail::raw_facts);
+                    thumbnail::serve(cached, &asked, &tell, &cancel, read, facts);
                     Ok(())
                 })
                 .dedup(key)
@@ -2958,6 +3108,14 @@ impl Engine {
             }
         };
         let pipeline = open.pipeline.insert(pipeline);
+        // A thumbnail reading what this frame writes stops before it, and the others wait
+        // for the editing to pause.
+        let path = open.sidecar.with_extension("");
+        (self.rendered_thumbnails).before_frame(&path, &self.jobs.control, pipeline);
+        *self
+            .last_change
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
         let output = pipeline.output();
         let desc = output.desc();
         let bytes = desc.buffer_size();
@@ -3398,15 +3556,20 @@ mod tests {
                 values,
             });
         }
-        if path.ends_with("wide.ARW") {
-            let [width, height] = [1100, 72];
+        if path.ends_with("wide.ARW") || path.ends_with("thumbnail-large.ARW") {
+            let [width, height] = if path.ends_with("thumbnail-large.ARW") {
+                [3104, 2064]
+            } else {
+                [1100, 72]
+            };
             let mut camera = image.camera.expect("a raw's");
             camera.width = width;
-            camera.crop = [2, 2, 1096, 68];
-            camera.declared = [6, 4, 1088, 62];
+            camera.height = height;
+            camera.crop = [2, 2, width - 4, height - 4];
+            camera.declared = [6, 4, width - 12, height - 10];
             let image = ImageContext {
                 camera: Some(camera),
-                ..ImageContext::full(1088, 62)
+                ..ImageContext::full(width - 12, height - 10)
             };
             let mosaic = vec![2000; (width * height) as usize];
             return Ok(open::testing::photo(image, [width, height], mosaic));
@@ -4492,7 +4655,7 @@ mod tests {
                 {
                     Inbox::Open(stage) => events.extend(self.engine.stage(*stage)),
                     Inbox::Task(waiting) => self.engine.jobs.background.add(waiting),
-                    Inbox::Command(..) | Inbox::Evict | Inbox::Stop => {}
+                    Inbox::Command(..) | Inbox::Evict | Inbox::Saved | Inbox::Stop => {}
                 }
             }
             events
@@ -7182,6 +7345,25 @@ mod tests {
         std::fs::remove_dir_all(folder.parent().unwrap()).unwrap();
     }
 
+    #[test]
+    fn a_held_save_hashes_the_preserved_packet_instead_of_new_serialisation() {
+        let photo = scratch("held-thumbnail-hash");
+        let path = sidecar::path_for(&photo);
+        let original = b"<x:xmpmeta>packet from an older build</x:xmpmeta>";
+        std::fs::write(&path, original).unwrap();
+        let (sent, _saved) = outbox::channel(Arc::new(|| {}));
+        let writer = Writer::start(sent);
+        writer.watch(Some(&path));
+        writer.write(path.clone(), XML.to_owned(), 1, true);
+        writer.flush(None);
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(
+            writer.lock().saved.get(&path).map(|(hash, _, _)| *hash),
+            Some(apertrust_library::index::hash(original))
+        );
+        remove(&photo);
+    }
+
     /// The writer writes only the latest of a file's edits waiting, and a held one in place
     /// of one still to write is written (decision 42). Held up in another file's write by
     /// its state, which the test holds, the writer finds both of `p`'s waiting together.
@@ -8588,6 +8770,74 @@ mod tests {
         assert!(ends[2..].iter().all(|end| *end == Ok(1)), "{ends:?}");
     }
 
+    /// A task asleep whose job is cancelled is dropped at the next step, with nothing left
+    /// to wake, and its body hears it cancelled.
+    #[test]
+    fn a_task_asleep_is_dropped_as_its_job_is_cancelled() {
+        let mut driven = Driven::new(&[]);
+        let (told, mut heard) = Heard::start();
+        let synthetic = Synthetic::new("asleep", Queue::UserBackground, 2, &told)
+            .cancellable()
+            .fault(Fault::StepSleeps(1));
+        let job = (driven.engine.jobs).add(0, Queue::UserBackground, |tasks| synthetic.job(tasks));
+        heard.until(&Told::Handed("asleep"));
+        for item in driven.inbox.try_iter() {
+            if let Inbox::Task(waiting) = item {
+                driven.engine.jobs.background.add(waiting);
+            }
+        }
+        driven.engine.jobs.step(&driven.gpu);
+        let background = &driven.engine.jobs.background;
+        assert!(background.wakes_at().is_some() && !background.waiting());
+        assert!(driven.engine.jobs.control.cancel(job));
+        driven.engine.jobs.step(&driven.gpu);
+        assert_eq!(driven.engine.jobs.background.wakes_at(), None);
+        heard.until(&Told::Ended("asleep", Err(TaskError::Cancelled)));
+    }
+
+    /// A task asleep has stepped, so it counts in the stack's limit of 30 and is never the
+    /// one that goes: past 30, the oldest that has not stepped does. Woken, it runs to its
+    /// end, and no other task is stopped.
+    #[test]
+    fn a_task_asleep_keeps_its_place_in_the_stack_s_limit() {
+        fn take(driven: &mut Driven) {
+            for item in driven.inbox.try_iter() {
+                if let Inbox::Task(waiting) = item {
+                    driven.engine.jobs.background.add(waiting);
+                }
+            }
+        }
+        let mut driven = Driven::new(&[]);
+        let (told, mut heard) = Heard::start();
+        let foreground = Queue::SystemForeground;
+        let sleeper = Synthetic::new("sleeper", foreground, 2, &told).fault(Fault::StepSleeps(1));
+        let job = (driven.engine.jobs).add(0, foreground, |tasks| sleeper.job(tasks));
+        heard.until(&Told::Handed("sleeper"));
+        take(&mut driven);
+        driven.engine.jobs.step(&driven.gpu);
+        assert!(driven.engine.jobs.background.wakes_at().is_some(), "asleep");
+        let many = Synthetic::new("many", foreground, 1, &told).tasks(30);
+        (driven.engine.jobs).add(0, foreground, |tasks| many.job(tasks));
+        heard.until(&Told::Handed("many"));
+        take(&mut driven);
+        assert_eq!(heard.ends("many", 1), [Err(TaskError::Stopped)]);
+        driven.engine.jobs.background.wake_job(job);
+        let deadline = Instant::now() + TEST_WAIT;
+        let ended = |seen: &[Told], label| {
+            (seen.iter())
+                .filter(|told| matches!(told, Told::Ended(l, _) if *l == label))
+                .count()
+        };
+        while ended(&heard.seen, "sleeper") < 1 || ended(&heard.seen, "many") < 30 {
+            driven.engine.jobs.step(&driven.gpu);
+            heard.steps();
+            assert!(Instant::now() < deadline, "heard {:?}", heard.seen);
+        }
+        assert!(heard.seen.contains(&Told::Ended("sleeper", Ok(2))));
+        let ends = heard.ends("many", 30);
+        assert!(ends[1..].iter().all(|end| *end == Ok(1)), "{ends:?}");
+    }
+
     #[test]
     fn a_panic_ending_the_jobs_still_lets_the_session_end() {
         let mut driven = Driven::new(&[]);
@@ -9476,5 +9726,1274 @@ mod tests {
         assert_eq!(events.iter().filter(|e| told(e)).count(), workers + 3);
         drop(session);
         remove(&path);
+    }
+    mod rendered_thumbnails {
+        use super::*;
+        use crate::jobs::{GpuTask, Step};
+        use apertrust_base::cache::{Cache, Limit, THUMBNAILS};
+        use apertrust_modules::haze_removal::HazeRemoval;
+        use thumbnail::rendered::{THUMBNAIL_SETTLE, ThumbnailPlan};
+
+        fn cached(name: &str) -> (Driven, Arc<Cache>, PathBuf) {
+            cached_with(name, &[&Sample])
+        }
+
+        fn with_cache(driven: &mut Driven, folder: &Path) -> Arc<Cache> {
+            let cache = Arc::new(Cache::create(folder.join("cache")).unwrap());
+            driven.engine.cache = Some(Upkeep::start(
+                CacheOptions {
+                    cache: cache.clone(),
+                    limit: Limit::Unlimited,
+                },
+                &driven.engine.jobs.control,
+                Arc::new(|| {}),
+                Arc::new(AtomicBool::new(false)),
+            ));
+            cache
+        }
+
+        /// The synthetic photo `embedded.ARW`, whose raw holds an embedded picture of 64 by
+        /// 48, opened with a cache.
+        fn cached_embedded(name: &str) -> (Driven, Arc<Cache>, PathBuf) {
+            let path = scratch(name).with_file_name("embedded.ARW");
+            std::fs::write(&path, b"synthetic raw").unwrap();
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.run([
+                Command::Open(path.clone()),
+                Command::Resize {
+                    width: 40,
+                    height: 40,
+                },
+            ]);
+            driven.settle();
+            (driven, cache, path)
+        }
+
+        /// Steps the jobs until each slot holds no render, the camera's picture or none.
+        fn embedded_only(driven: &mut Driven, cache: &Cache, path: &Path) {
+            let deadline = Instant::now() + TEST_WAIT;
+            let rendered = |slot: &Option<Vec<u8>>| {
+                slot.as_ref()
+                    .is_some_and(|version| version.starts_with(library::RENDERED))
+            };
+            while slots(cache, path).iter().any(rendered)
+                || driven.engine.jobs.control.pending() > 0
+            {
+                step(driven);
+                assert!(Instant::now() < deadline);
+            }
+        }
+
+        fn cached_with(
+            name: &str,
+            modules: &'static [&'static dyn Module],
+        ) -> (Driven, Arc<Cache>, PathBuf) {
+            let path = scratch(name);
+            std::fs::write(&path, b"synthetic raw").unwrap();
+            let mut driven = Driven::new(modules);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.open(&path);
+            (driven, cache, path)
+        }
+
+        /// The large synthetic photo beside `path`, opened at 512 pixels with haze removal,
+        /// whose full-resolution part a still reads in place, saved.
+        fn large_with_haze(driven: &mut Driven, path: &Path) -> PathBuf {
+            let large = path.with_file_name("thumbnail-large.ARW");
+            std::fs::write(&large, b"synthetic raw").unwrap();
+            driven.run([
+                Command::Open(large.clone()),
+                Command::Resize {
+                    width: 512,
+                    height: 512,
+                },
+            ]);
+            let events = driven.settle();
+            assert!(failures(&events).is_empty());
+            driven.run([haze(0.3, true)]);
+            driven.engine.writer.flush(None);
+            large
+        }
+
+        fn haze(value: f32, done: bool) -> Command {
+            Command::SetControl {
+                module: "hazeremoval".into(),
+                control: "strength".into(),
+                value: ControlValue::Number(value),
+                done,
+            }
+        }
+
+        fn step(driven: &mut Driven) {
+            for item in driven.inbox.try_iter() {
+                if let Inbox::Task(waiting) = item {
+                    driven.engine.jobs.background.add(waiting);
+                }
+            }
+            driven.engine.jobs.step(&driven.gpu);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        /// Steps the jobs until none is left.
+        fn finish(driven: &mut Driven) {
+            let deadline = Instant::now() + TEST_WAIT;
+            while driven.engine.jobs.control.pending() > 0 {
+                step(driven);
+                assert!(Instant::now() < deadline);
+            }
+        }
+
+        /// Ages the photo's last save past the settle.
+        fn settled(driven: &mut Driven, path: &Path) {
+            let sidecar = sidecar::path_for(path);
+            let mut writes = driven.engine.writer.lock();
+            writes.saved.get_mut(&sidecar).unwrap().1 -= Duration::from_secs(2);
+        }
+
+        fn slots(cache: &Cache, path: &Path) -> Vec<Option<Vec<u8>>> {
+            (library::THUMBNAIL_SIZES.iter())
+                .map(|&size| cache.version(THUMBNAILS, &library::thumbnail_slot(path, size)))
+                .map(Result::unwrap)
+                .collect()
+        }
+
+        fn written(driven: &mut Driven, cache: &Cache, path: &Path, hash: &[u8; 32]) -> Vec<Event> {
+            let deadline = Instant::now() + TEST_WAIT;
+            loop {
+                step(driven);
+                // A photo with no edit's render records its raw's facts.
+                let stamp = library::raw_stamp(path).expect("the raw's stamp");
+                let current = |version: &Vec<u8>| match *hash == library::UNALTERED {
+                    true => library::unaltered_facts(version, &stamp).is_some(),
+                    false => library::rendered_matches(version, hash),
+                };
+                if slots(cache, path)
+                    .iter()
+                    .all(|slot| slot.as_ref().is_some_and(current))
+                {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "all thumbnail slots written");
+            }
+            driven.saved.events()
+        }
+
+        fn library_hash(path: &Path) -> [u8; 32] {
+            apertrust_library::index::hash(&std::fs::read(path).unwrap())
+        }
+
+        #[test]
+        fn a_saved_edit_settles_once_and_updates_the_requested_cell() {
+            let (mut driven, cache, path) = cached("rendered-settle");
+            driven.engine.rendered_thumbnails.asked(
+                19,
+                path.parent().unwrap(),
+                "synthetic.ARW",
+                256,
+            );
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            let hash = library_hash(&sidecar::path_for(&path));
+            // Saved a moment ago: it waits for the settle, then wakes for it.
+            driven.engine.thumbnail_tick(false);
+            assert_eq!(driven.engine.jobs.control.pending(), 0);
+            let wait = driven
+                .engine
+                .thumbnail_wait()
+                .expect("a wake for the settle");
+            assert!(
+                wait <= THUMBNAIL_SETTLE && wait > Duration::ZERO,
+                "{wait:?}"
+            );
+            settled(&mut driven, &path);
+            assert_eq!(driven.engine.thumbnail_wait(), Some(Duration::ZERO));
+            driven.engine.thumbnail_tick(false);
+            let events = written(&mut driven, &cache, &path, &hash);
+            assert!(events.iter().any(|event| matches!(
+                event,
+                Event::Library(LibraryEvent::Thumbnail {
+                    open: 19,
+                    size: 256,
+                    image: Some(_),
+                    ..
+                })
+            )));
+            // Every size has a version of exactly the sidecar bytes, and an upright JPEG.
+            for size in library::THUMBNAIL_SIZES {
+                let (version, jpeg) = cache
+                    .read_any(THUMBNAILS, &library::thumbnail_slot(&path, size))
+                    .unwrap()
+                    .unwrap();
+                assert!(library::rendered_matches(&version, &hash));
+                let image = apertrust_raw::read_jpeg(&jpeg).unwrap();
+                assert!(image.width.max(image.height) <= size);
+            }
+            finish(&mut driven);
+            assert_eq!(driven.engine.thumbnail_wait(), None);
+            // No second render for the same saved edit, idle or leaving.
+            driven.engine.thumbnail_tick(false);
+            assert_eq!(driven.engine.jobs.control.pending(), 0);
+            driven.engine.thumbnail_tick(true);
+            assert_eq!(driven.engine.jobs.control.pending(), 0);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// The same saved edit is not rendered again in a later session: its render in the
+        /// cache is found by its version, with no job.
+        #[test]
+        fn a_render_in_the_cache_is_not_made_again_by_the_next_session() {
+            let (mut driven, cache, path) = cached("rendered-next-session");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            written(
+                &mut driven,
+                &cache,
+                &path,
+                &library_hash(&sidecar::path_for(&path)),
+            );
+            finish(&mut driven);
+            drop(driven);
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.open(&path);
+            driven.engine.thumbnail_tick(true);
+            assert_eq!(driven.engine.jobs.control.pending(), 0);
+            assert_eq!(driven.engine.thumbnail_wait(), None);
+            drop((driven, cache));
+            remove(&path);
+        }
+
+        #[test]
+        fn leaving_saves_the_last_gesture_and_renders_without_a_second_decode() {
+            let (mut driven, cache, path) = cached("rendered-leave");
+            driven.run([set("brightness", ControlValue::Number(1.1), false)]);
+            driven.run([Command::Close]);
+            driven.engine.writer.flush(None);
+            assert!(driven.engine.open.is_none());
+            let hash = library_hash(&sidecar::path_for(&path));
+            written(&mut driven, &cache, &path, &hash);
+            assert_eq!(driven.engine.uploaded.len(), 1);
+            // The writer keeps no saved hash of a photo no longer open.
+            finish(&mut driven);
+            assert!(driven.engine.writer.lock().saved.is_empty());
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A photo whose edit settled and rendered, closed and opened again, shows that
+        /// render first, from the slot of 1024.
+        #[test]
+        fn a_reopened_photo_shows_its_render_first() {
+            let (mut driven, cache, path) =
+                cached_with("rendered-reopen", &[&Sample, &HazeRemoval]);
+            let large = large_with_haze(&mut driven, &path);
+            settled(&mut driven, &large);
+            driven.engine.thumbnail_tick(false);
+            written(
+                &mut driven,
+                &cache,
+                &large,
+                &library_hash(&sidecar::path_for(&large)),
+            );
+            finish(&mut driven);
+            driven.run([Command::Close]);
+            driven.saved.events();
+            driven.run([Command::Open(large.clone())]);
+            driven.settle();
+            let previews: Vec<OpenPreview> = (driven.saved.events().into_iter())
+                .filter_map(|event| match event {
+                    Event::OpenPreview(preview) => Some(preview),
+                    _ => None,
+                })
+                .collect();
+            let [preview] = previews.as_slice() else {
+                panic!("one picture: {previews:?}");
+            };
+            assert_eq!(preview.source, PreviewSource::Rendered);
+            let picture = preview.picture.as_ref().unwrap();
+            assert_eq!(picture.width.max(picture.height), 1024);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// Under never, a photo with no edit whose raw holds an embedded picture is never
+        /// rendered, explicit default parameters included, and a reset puts the embedded
+        /// picture back in place of the edit's render.
+        #[test]
+        fn defaults_keep_the_embedded_picture_and_reset_puts_it_back() {
+            let (mut driven, cache, path) = cached_embedded("rendered-defaults");
+            driven.engine.thumbnail_tick(true);
+            embedded_only(&mut driven, &cache, &path);
+            driven.run([
+                Command::Set {
+                    operation: "colorout".into(),
+                    param: "intent".into(),
+                    value: Value::Choice(0),
+                },
+                Command::RetrySave,
+            ]);
+            driven.engine.writer.flush(None);
+            driven.engine.thumbnail_tick(true);
+            embedded_only(&mut driven, &cache, &path);
+            driven.run([set("brightness", ControlValue::Number(1.0), true)]);
+            driven.engine.writer.flush(None);
+            driven.engine.thumbnail_tick(true);
+            let hash = library_hash(&sidecar::path_for(&path));
+            written(&mut driven, &cache, &path, &hash);
+            driven.run([Command::Reset]);
+            driven.engine.writer.flush(None);
+            driven.engine.thumbnail_tick(true);
+            embedded_only(&mut driven, &cache, &path);
+            let embedded = |slot: &Option<Vec<u8>>| {
+                slot.as_ref()
+                    .is_some_and(|version| version.starts_with(library::EMBEDDED))
+            };
+            assert!(slots(&cache, &path).iter().all(embedded));
+            drop(driven);
+            remove(&path);
+        }
+
+        /// The still made from the tick's own plan equals the live frame at its size, byte
+        /// for byte before the JPEG, reading the live pipe's cached image and, with haze
+        /// removal, its whole-image result in place, while a live frame of another size
+        /// renders between its turns; and with its downscale in bands, each starting at
+        /// its own row.
+        #[test]
+        fn the_still_equals_the_live_frame_at_the_same_size_before_jpeg() {
+            for (haze, banded) in [(false, false), (true, false), (false, true)] {
+                let band = banded.then_some(96 << 10);
+                pipeline::TEST_BAND_BYTES.set(band);
+                let mut driven = Driven::new(&[&Sample, &HazeRemoval]);
+                let path = scratch(if haze {
+                    "rendered-equality-haze"
+                } else {
+                    "rendered-equality"
+                });
+                let path = path.with_file_name("wide.ARW");
+                driven.run([
+                    Command::Open(path.clone()),
+                    Command::Resize {
+                        width: 512,
+                        height: 512,
+                    },
+                ]);
+                driven.settle();
+                driven.run([set("brightness", ControlValue::Number(0.7), true)]);
+                if haze {
+                    driven.run([self::haze(0.3, true)]);
+                }
+                let events = driven.run([Command::Resize {
+                    width: 1024,
+                    height: 1024,
+                }]);
+                let expected = frame(&driven.gpu, &events);
+                driven.run([Command::Resize {
+                    width: if haze { 512 } else { 2400 },
+                    height: if haze { 512 } else { 1600 },
+                }]);
+                let open = driven.engine.open.as_ref().unwrap();
+                let Ok(ThumbnailPlan { plan, .. }) = driven.engine.thumbnail_plan(open) else {
+                    panic!("a still's plan");
+                };
+                let budget = driven.engine.limits.budget;
+                let pipeline = driven
+                    .engine
+                    .open
+                    .as_mut()
+                    .unwrap()
+                    .pipeline
+                    .as_mut()
+                    .unwrap();
+                let (mut still, sources) =
+                    pollster::block_on(pipeline.still(&driven.gpu, *plan, budget)).unwrap();
+                if haze {
+                    assert!(
+                        still.reused_results > 0,
+                        "the equality case must reuse the full-resolution result"
+                    );
+                }
+                if banded {
+                    assert!(still.bands > 4, "a downscale in bands: {}", still.bands);
+                } else {
+                    assert_eq!(still.bands, 1);
+                }
+                let deadline = Instant::now() + TEST_WAIT;
+                let mut turns = 0;
+                let pixels = loop {
+                    match still.step(&driven.gpu).unwrap() {
+                        Step::Done((_, pixels)) => break pixels,
+                        Step::Again => {
+                            driven.gpu.wait().unwrap();
+                        }
+                        Step::Wait(_) => unreachable!("a still that yields to nothing"),
+                    }
+                    // A live frame of another size, between the still's turns, writes
+                    // nothing it reads.
+                    if turns == 1 {
+                        driven.run([Command::Resize {
+                            width: 700,
+                            height: 700,
+                        }]);
+                        let live = driven.engine.open.as_ref().unwrap().pipeline.as_ref();
+                        assert!(!live.unwrap().writes(&sources));
+                    }
+                    turns += 1;
+                    assert!(Instant::now() < deadline);
+                };
+                pipeline::TEST_BAND_BYTES.set(None);
+                assert_eq!(
+                    bytemuck::cast_slice::<[f32; 4], u8>(&pixels),
+                    &expected,
+                    "haze={haze}, banded={banded}"
+                );
+                drop(driven);
+                remove(&path);
+            }
+        }
+
+        #[test]
+        fn quitting_saves_the_edit_without_starting_a_thumbnail() {
+            let (mut driven, cache, path) = cached("rendered-quit");
+            driven.run([set("brightness", ControlValue::Number(0.9), false)]);
+            let Driven { engine, inbox, .. } = driven;
+            engine.finish(inbox);
+            assert!(sidecar::path_for(&path).is_file());
+            assert_eq!(slots(&cache, &path), [None, None, None, None]);
+            remove(&path);
+        }
+
+        /// A render under way as the session ends is cancelled, never waited for to its end.
+        #[test]
+        fn quitting_cancels_a_render_under_way() {
+            let (mut driven, cache, path) =
+                cached_with("rendered-quit-running", &[&Sample, &HazeRemoval]);
+            let large = large_with_haze(&mut driven, &path);
+            settled(&mut driven, &large);
+            driven.engine.thumbnail_tick(false);
+            let job = driven
+                .engine
+                .rendered_thumbnails
+                .job(&large)
+                .expect("a render");
+            // Under way.
+            let deadline = Instant::now() + TEST_WAIT;
+            while driven.engine.jobs.control.state(job) != Some(State::Running) {
+                step(&mut driven);
+                assert!(Instant::now() < deadline);
+            }
+            let Driven { engine, inbox, .. } = driven;
+            let quitting = Instant::now();
+            engine.finish(inbox);
+            assert!(
+                quitting.elapsed() < Duration::from_secs(5),
+                "{:?}",
+                quitting.elapsed()
+            );
+            assert_eq!(slots(&cache, &large), [None, None, None, None]);
+            remove(&path);
+        }
+
+        #[test]
+        fn a_cancel_keeps_an_older_builds_exact_sidecar_hash() {
+            let (mut driven, cache, path) = cached("rendered-held-bytes");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            let sidecar = sidecar::path_for(&path);
+            let xml = std::fs::read_to_string(&sidecar)
+                .unwrap()
+                .replace(BUILD, "0.1.0");
+            std::fs::write(&sidecar, &xml).unwrap();
+            driven.run([Command::Open(path.clone())]);
+            driven.settle();
+            driven.run([set("brightness", ControlValue::Number(1.3), false)]);
+            driven.run([Command::CancelGesture {
+                module: "sample".into(),
+            }]);
+            driven.engine.writer.flush(None);
+            assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml);
+            driven.engine.thumbnail_tick(true);
+            written(
+                &mut driven,
+                &cache,
+                &path,
+                &apertrust_library::index::hash(xml.as_bytes()),
+            );
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A still that cannot be made, its buffers past the budget or a binding past the
+        /// GPU's, is refused once: no job, nothing to wait for, until the edit changes.
+        #[test]
+        fn a_refused_thumbnail_is_not_tried_again_for_the_same_edit() {
+            for name in ["budget", "binding"] {
+                let (mut driven, cache, path) = cached(&format!("rendered-refused-{name}"));
+                driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+                driven.engine.writer.flush(None);
+                settled(&mut driven, &path);
+                match name {
+                    "budget" => driven.engine.limits.budget = 1,
+                    _ => driven.engine.limits.binding = 1,
+                }
+                driven.engine.thumbnail_tick(false);
+                assert_eq!(driven.engine.jobs.control.pending(), 0, "{name}");
+                assert_eq!(driven.engine.thumbnail_wait(), None, "{name}");
+                driven.engine.thumbnail_tick(true);
+                assert_eq!(driven.engine.jobs.control.pending(), 0, "{name}");
+                assert_eq!(slots(&cache, &path), [None, None, None, None]);
+                drop(driven);
+                remove(&path);
+            }
+        }
+
+        /// No idle wake while the thumbnail waits for something else: a failed write, and
+        /// a write under way, which wakes the engine as it ends.
+        #[test]
+        fn a_thumbnail_waits_for_the_writer_without_waking() {
+            let (mut driven, _cache, path) = cached("rendered-save-retry");
+            let sidecar = sidecar::path_for(&path);
+            std::fs::create_dir(&sidecar).unwrap();
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            assert!(driven.engine.writer.failed(&sidecar));
+            assert_eq!(driven.engine.thumbnail_wait(), None);
+            std::fs::remove_dir(&sidecar).unwrap();
+            let (wake, woken) = mpsc::channel();
+            driven.engine.writer.on_saved(Arc::new(move || {
+                let _ = wake.send(());
+            }));
+            driven.run([Command::RetrySave]);
+            assert_eq!(driven.engine.thumbnail_wait(), None);
+            driven.engine.writer.flush(None);
+            woken
+                .try_recv()
+                .expect("the writer wakes the engine as it saves");
+            assert!(
+                driven
+                    .engine
+                    .thumbnail_wait()
+                    .is_some_and(|wait| wait <= THUMBNAIL_SETTLE)
+            );
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A folder opened while the photo stays open saves nothing of a gesture under way
+        /// and makes no thumbnail: only leaving the photo does.
+        #[test]
+        fn a_folder_change_keeping_the_photo_neither_saves_nor_renders() {
+            let (mut driven, _cache, path) = cached("rendered-folder");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            driven.run([set("brightness", ControlValue::Number(1.2), false)]);
+            let before = std::fs::read(sidecar::path_for(&path)).unwrap();
+            let folder = path.parent().unwrap().to_owned();
+            driven.run([Command::Library(LibraryCommand::Open(
+                library::Source::Folder(folder),
+            ))]);
+            driven.engine.writer.flush(None);
+            assert!(driven.engine.open.as_ref().unwrap().unsaved);
+            assert_eq!(std::fs::read(sidecar::path_for(&path)).unwrap(), before);
+            assert!(driven.engine.rendered_thumbnails.job(&path).is_none());
+            drop(driven);
+            remove(&path);
+        }
+
+        #[test]
+        fn departure_retains_a_kernel_first_used_by_its_thumbnail() {
+            let (mut driven, cache, path) =
+                cached_with("rendered-first-kernel", &[&Sample, &HazeRemoval]);
+            let before = driven
+                .engine
+                .open
+                .as_ref()
+                .unwrap()
+                .pipeline
+                .as_ref()
+                .unwrap()
+                .kernels();
+            driven.run([haze(0.3, false), Command::Close]);
+            assert!(
+                driven.engine.kernels.len() > before,
+                "the departure's first-use kernel stays in the session cache"
+            );
+            driven.engine.writer.flush(None);
+            written(
+                &mut driven,
+                &cache,
+                &path,
+                &library_hash(&sidecar::path_for(&path)),
+            );
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A still reading the live pipe in place goes on through a live frame of another
+        /// size, is cancelled before a frame that writes what it reads, is tried again once
+        /// the edit settles, and outlives its photo's departure.
+        #[test]
+        fn a_still_reading_the_live_pipe_stops_only_for_a_frame_that_writes_it() {
+            let (mut driven, cache, path) =
+                cached_with("rendered-source-lifetime", &[&Sample, &HazeRemoval]);
+            let large = large_with_haze(&mut driven, &path);
+            settled(&mut driven, &large);
+            driven.engine.thumbnail_tick(false);
+            let job = driven
+                .engine
+                .rendered_thumbnails
+                .job(&large)
+                .expect("a render");
+            // Under way, reading the live raw stage.
+            let deadline = Instant::now() + TEST_WAIT;
+            while driven.engine.jobs.control.state(job) != Some(State::Running) {
+                step(&mut driven);
+                assert!(Instant::now() < deadline);
+            }
+            driven.gpu.wait().unwrap();
+            driven.run([Command::Resize {
+                width: 600,
+                height: 600,
+            }]);
+            assert_eq!(
+                driven.engine.jobs.control.state(job),
+                Some(State::Running),
+                "a resize writes nothing a still reads"
+            );
+            // A change to the raw stage writes its cache point: the still stops first.
+            driven.run([
+                Command::Set {
+                    operation: "temperature".into(),
+                    param: "red".into(),
+                    value: Value::Float(1.1),
+                },
+                set("brightness", ControlValue::Number(0.7), false),
+            ]);
+            assert!(
+                matches!(
+                    driven.engine.jobs.control.state(job),
+                    None | Some(State::Cancelled)
+                ),
+                "cancelled jobs may already have left the control"
+            );
+            finish(&mut driven);
+            assert_eq!(
+                slots(&cache, &large),
+                [None, None, None, None],
+                "a still of mixed sources is never kept"
+            );
+            driven.run([set("brightness", ControlValue::Number(0.7), true)]);
+            driven.engine.writer.flush(None);
+            let hash = library_hash(&sidecar::path_for(&large));
+            driven.engine.thumbnail_tick(true);
+            let job = driven
+                .engine
+                .rendered_thumbnails
+                .job(&large)
+                .expect("a new render");
+            let other = path.with_file_name("after.ARW");
+            driven.run([Command::Open(other)]);
+            assert!(
+                driven.engine.rendered_thumbnails.hurried(&large),
+                "a departed photo's still reads its buffers at once"
+            );
+            driven.settle();
+            assert_ne!(
+                driven.engine.jobs.control.state(job),
+                Some(State::Cancelled),
+                "another photo has its own buffers"
+            );
+            written(&mut driven, &cache, &large, &hash);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A still whose photo has left submits all it reads of the live pipe in its next
+        /// turn, its downscale's bands together, so the old buffers go when the GPU is done.
+        #[test]
+        fn a_departed_photo_s_still_reads_the_live_pipe_in_one_turn() {
+            let (mut driven, _cache, path) =
+                cached_with("rendered-hurry", &[&Sample, &HazeRemoval]);
+            let large = large_with_haze(&mut driven, &path);
+            pipeline::TEST_BAND_BYTES.set(Some(4 << 20));
+            let open = driven.engine.open.as_ref().unwrap();
+            let Ok(ThumbnailPlan { plan, .. }) = driven.engine.thumbnail_plan(open) else {
+                panic!("a still's plan");
+            };
+            let budget = driven.engine.limits.budget;
+            let pipeline = driven
+                .engine
+                .open
+                .as_mut()
+                .unwrap()
+                .pipeline
+                .as_mut()
+                .unwrap();
+            let (mut still, sources) =
+                pollster::block_on(pipeline.still(&driven.gpu, *plan, budget)).unwrap();
+            pipeline::TEST_BAND_BYTES.set(None);
+            assert!(still.bands > 4, "{}", still.bands);
+            assert!(!sources.released());
+            sources.hurry();
+            assert_eq!(still.step(&driven.gpu).unwrap(), Step::Again);
+            assert!(sources.released(), "everything read in one turn");
+            let deadline = Instant::now() + TEST_WAIT;
+            while matches!(still.step(&driven.gpu).unwrap(), Step::Again) {
+                driven.gpu.wait().unwrap();
+                assert!(Instant::now() < deadline);
+            }
+            drop(driven);
+            remove(&large);
+        }
+
+        /// A job that ends, its still run through or never run, as a cancelled one, is
+        /// forgotten: no later frame waits on what it read.
+        #[test]
+        fn an_ended_job_is_forgotten() {
+            let (mut driven, _cache, path) = cached("rendered-forgotten");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            let job = driven
+                .engine
+                .rendered_thumbnails
+                .job(&path)
+                .expect("a render");
+            driven.engine.jobs.control.cancel(job);
+            finish(&mut driven);
+            driven.engine.thumbnail_tick(false);
+            assert_ne!(driven.engine.rendered_thumbnails.job(&path), Some(job));
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A change to the live photo during a still postpones the still's next turn until
+        /// the photo has stood still for `EDITING_QUIET` after it.
+        #[test]
+        fn a_change_postpones_the_still_s_next_turn() {
+            let (mut driven, _cache, path) = cached("rendered-yield");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            let open = driven.engine.open.as_ref().unwrap();
+            let Ok(ThumbnailPlan { plan, .. }) = driven.engine.thumbnail_plan(open) else {
+                panic!("a still's plan");
+            };
+            let budget = driven.engine.limits.budget;
+            let pipeline = driven
+                .engine
+                .open
+                .as_mut()
+                .unwrap()
+                .pipeline
+                .as_mut()
+                .unwrap();
+            let (mut still, _) =
+                pollster::block_on(pipeline.still(&driven.gpu, *plan, budget)).unwrap();
+            still.yield_to(Arc::clone(&driven.engine.last_change));
+            let changed = Instant::now();
+            driven.run([set("brightness", ControlValue::Number(0.9), false)]);
+            let left = still.left();
+            assert!(left > 0);
+            while changed.elapsed() < pipeline::EDITING_QUIET - Duration::from_millis(20) {
+                let Step::Wait(until) = still.step(&driven.gpu).unwrap() else {
+                    panic!("a wait within the quiet");
+                };
+                assert!(until >= changed + pipeline::EDITING_QUIET);
+                assert!(until <= Instant::now() + pipeline::EDITING_QUIET);
+                assert_eq!(still.left(), left, "no turn within the quiet");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            std::thread::sleep(pipeline::EDITING_QUIET);
+            still.step(&driven.gpu).unwrap();
+            assert_eq!(still.left(), left - 1, "a turn once the photo stood still");
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A still yielding to a change leaves the engine thread nothing to poll: its task
+        /// sleeps out of the turns until the quiet ends, and the thread's wait is that long.
+        #[test]
+        fn a_yielding_still_leaves_nothing_to_poll() {
+            let (mut driven, _cache, path) = cached("rendered-no-poll");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            let job = driven
+                .engine
+                .rendered_thumbnails
+                .job(&path)
+                .expect("a render");
+            // Its task handed to the engine thread.
+            let deadline = Instant::now() + TEST_WAIT;
+            while !driven.engine.jobs.background.waiting() {
+                for item in driven.inbox.try_iter() {
+                    if let Inbox::Task(waiting) = item {
+                        driven.engine.jobs.background.add(waiting);
+                    }
+                }
+                assert!(Instant::now() < deadline);
+            }
+            let changed = Instant::now();
+            driven.run([set("brightness", ControlValue::Number(0.9), false)]);
+            driven.gpu.wait().unwrap();
+            driven.engine.jobs.step(&driven.gpu);
+            let background = &driven.engine.jobs.background;
+            assert!(!background.waiting(), "nothing to poll while it waits");
+            let wakes = background.wakes_at().expect("a wake");
+            assert!(wakes >= changed + pipeline::EDITING_QUIET);
+            assert!(wakes <= Instant::now() + pipeline::EDITING_QUIET);
+            // Stepped again before then, it stays asleep.
+            driven.engine.jobs.step(&driven.gpu);
+            assert!(!driven.engine.jobs.background.waiting());
+            std::thread::sleep(wakes.saturating_duration_since(Instant::now()));
+            driven.engine.jobs.step(&driven.gpu);
+            assert!(
+                driven.engine.jobs.background.waiting(),
+                "a turn once it wakes"
+            );
+            assert_eq!(driven.engine.jobs.control.state(job), Some(State::Running));
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A still asleep, yielding to editing, wakes as its photo leaves: the next step
+        /// submits its reads of the old pipe, with no wait for the quiet's end.
+        #[test]
+        fn a_departing_still_asleep_wakes_to_hurry() {
+            let (mut driven, _cache, path) = cached("rendered-asleep-hurry");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            let deadline = Instant::now() + TEST_WAIT;
+            while !driven.engine.jobs.background.waiting() {
+                for item in driven.inbox.try_iter() {
+                    if let Inbox::Task(waiting) = item {
+                        driven.engine.jobs.background.add(waiting);
+                    }
+                }
+                assert!(Instant::now() < deadline);
+            }
+            // A frame just now, with the saved edit unchanged.
+            *driven.engine.last_change.lock().unwrap() = Some(Instant::now());
+            driven.engine.jobs.step(&driven.gpu);
+            assert!(driven.engine.jobs.background.wakes_at().is_some(), "asleep");
+            let thumbnails = &driven.engine.rendered_thumbnails;
+            assert!(!thumbnails.released(&path), "it reads the live pipe");
+            driven.run([Command::Close]);
+            let background = &driven.engine.jobs.background;
+            assert!(background.waiting(), "woken as its photo leaves");
+            assert_eq!(background.wakes_at(), None);
+            driven.engine.jobs.step(&driven.gpu);
+            let thumbnails = &driven.engine.rendered_thumbnails;
+            assert!(thumbnails.released(&path), "its reads submitted at once");
+            drop(driven);
+            remove(&path);
+        }
+
+        fn raw_thumbnails(driven: &mut Driven, raw: library::RawThumbnails) {
+            driven.run([Command::Library(LibraryCommand::RawThumbnails(raw))]);
+        }
+
+        fn previews(driven: &mut Driven) -> Vec<OpenPreview> {
+            (driven.saved.events().into_iter())
+                .filter_map(|event| match event {
+                    Event::OpenPreview(preview) => Some(preview),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        /// A photo never edited is rendered as it leaves where darktable's rule renders it:
+        /// under never, only a raw with no embedded picture; under always, every photo, its
+        /// version the defaults' own. Back to never, a photo with an embedded picture puts
+        /// it back after an edit's reset.
+        #[test]
+        fn an_unedited_photo_is_rendered_as_the_setting_says() {
+            // No embedded picture: rendered under never.
+            let (mut driven, cache, path) = cached("rendered-unedited");
+            driven.engine.thumbnail_tick(true);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert!(!sidecar::path_for(&path).exists(), "no sidecar is written");
+            drop(driven);
+            remove(&path);
+            // An embedded picture: kept under never, rendered under always.
+            let (mut driven, cache, path) = cached_embedded("rendered-unedited-embedded");
+            driven.engine.thumbnail_tick(true);
+            embedded_only(&mut driven, &cache, &path);
+            raw_thumbnails(&mut driven, library::RawThumbnails::Always);
+            driven.engine.thumbnail_tick(true);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            // Made already: no second render.
+            driven.engine.thumbnail_tick(true);
+            assert_eq!(driven.engine.jobs.control.pending(), 0);
+            raw_thumbnails(&mut driven, library::RawThumbnails::Never);
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.run([Command::Reset]);
+            driven.engine.writer.flush(None);
+            driven.engine.thumbnail_tick(true);
+            embedded_only(&mut driven, &cache, &path);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// The photo at `path` in a session of its own on the cache beside it, under `raw`,
+        /// opened with the panel's size unknown and closed, its jobs done: how many stills
+        /// it prepared, and its first picture's source.
+        fn next_session(path: &Path, raw: library::RawThumbnails) -> (usize, PreviewSource) {
+            let mut driven = Driven::new(&[&Sample]);
+            with_cache(&mut driven, path.parent().unwrap());
+            raw_thumbnails(&mut driven, raw);
+            driven.run([Command::Open(path.to_owned())]);
+            driven.settle();
+            let first = previews(&mut driven)
+                .first()
+                .expect("a first picture")
+                .source;
+            driven.run([Command::Close]);
+            finish(&mut driven);
+            (driven.engine.rendered_thumbnails.stills, first)
+        }
+
+        /// A photo with no edit prepares a still only where a size shows its render, and
+        /// none once its render is made, read in the next session from what the render
+        /// records of the raw: under never, none as it leaves with an embedded picture, its
+        /// slots the camera's; one for a raw with none, then none. Under auto and 720p with
+        /// the 64 by 48 embedded picture, one, then none, its render the next session's
+        /// first picture.
+        #[test]
+        fn a_photo_with_no_edit_prepares_a_still_only_where_one_shows() {
+            use library::RawThumbnails::{Auto, Never, P720};
+            let (mut driven, cache, path) = cached_embedded("still-never-embedded");
+            raw_thumbnails(&mut driven, Never);
+            driven.run([Command::Close]);
+            embedded_only(&mut driven, &cache, &path);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 0);
+            drop(driven);
+            remove(&path);
+            let (mut driven, cache, path) = cached("still-never-none");
+            raw_thumbnails(&mut driven, Never);
+            driven.run([Command::Close]);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            drop(driven);
+            let (stills, _) = next_session(&path, Never);
+            assert_eq!(stills, 0, "made already");
+            remove(&path);
+            for raw in [Auto, P720] {
+                let name = format!("still-{raw:?}-embedded");
+                let (mut driven, cache, path) = cached_embedded(&name);
+                raw_thumbnails(&mut driven, raw);
+                driven.run([Command::Close]);
+                written(&mut driven, &cache, &path, &library::UNALTERED);
+                finish(&mut driven);
+                assert_eq!(driven.engine.rendered_thumbnails.stills, 1, "{raw:?}");
+                drop(driven);
+                let next = next_session(&path, raw);
+                assert_eq!(next, (0, PreviewSource::Rendered), "{raw:?}");
+                remove(&path);
+            }
+        }
+
+        /// A render of a photo with no edit records no facts where its raw is gone or was
+        /// replaced since the open: its version is the defaults' alone, so a later read
+        /// looks at the raw again.
+        #[test]
+        fn a_render_of_a_raw_gone_or_replaced_records_no_facts() {
+            for replaced in [false, true] {
+                let (mut driven, cache, path) = cached(&format!("rendered-gone-{replaced}"));
+                if replaced {
+                    std::fs::write(&path, b"another synthetic raw").unwrap();
+                } else {
+                    std::fs::remove_file(&path).unwrap();
+                }
+                driven.run([Command::Close]);
+                finish(&mut driven);
+                let slot = library::thumbnail_slot(&path, 1024);
+                let version = cache.version(THUMBNAILS, &slot).unwrap();
+                let plain = library::rendered_version(&library::UNALTERED);
+                assert_eq!(version.as_ref(), Some(&plain), "replaced {replaced}");
+                let stamp = library::raw_stamp(&path).unwrap_or_default();
+                assert_eq!(library::unaltered_facts(&plain, &stamp), None);
+                drop(driven);
+                remove(&path);
+            }
+        }
+
+        /// The render of a photo with no edit is its first picture only where darktable's
+        /// rule shows one at the panel's size: under never, the embedded picture, but for a
+        /// raw that holds none; under auto, the render here, as the 64 by 48 embedded
+        /// picture is smaller than the level of the panel's 40 by 40.
+        #[test]
+        fn an_opening_photo_with_no_edit_shows_its_render_as_the_setting_says() {
+            use library::RawThumbnails::{Always, Auto, Never};
+            for (raw, embedded, rendered) in [
+                (Never, true, false),
+                (Never, false, true),
+                (Always, true, true),
+                (Auto, true, true),
+            ] {
+                let name = format!("rendered-first-{raw:?}-{embedded}");
+                let (mut driven, cache, path) = if embedded {
+                    cached_embedded(&name)
+                } else {
+                    cached(&name)
+                };
+                let slot = library::thumbnail_slot(&path, 1024);
+                let picture = library::Thumbnail {
+                    width: 84,
+                    height: 62,
+                    pixels: vec![128; 84 * 62 * 4].into(),
+                };
+                let jpeg = thumbnail::encode(&picture).unwrap();
+                let version = library::rendered_version(&library::UNALTERED);
+                cache.write(THUMBNAILS, &slot, &version, &jpeg).unwrap();
+                raw_thumbnails(&mut driven, raw);
+                driven.run([Command::Close]);
+                previews(&mut driven);
+                driven.run([Command::Open(path.clone())]);
+                driven.settle();
+                let previews = previews(&mut driven);
+                let [preview] = previews.as_slice() else {
+                    panic!("one picture: {previews:?}");
+                };
+                let source = if rendered {
+                    PreviewSource::Rendered
+                } else {
+                    PreviewSource::Embedded
+                };
+                assert_eq!(preview.source, source, "{raw:?}, embedded {embedded}");
+                drop(driven);
+                remove(&path);
+            }
+        }
+
+        /// Times the still and its writes, and the live frame beside it, for docs/cache.md:
+        /// APERTRUST_THUMBNAIL_RAWS lists two raw paths, separated by the platform's
+        /// path-list separator, APERTRUST_THUMBNAIL_HAZE=1 adds haze removal, and
+        /// APERTRUST_THUMBNAIL_ROUNDS sets the runs of each, 3 by default. Hard links
+        /// keep the source raws and sidecars untouched.
+        #[test]
+        #[ignore = "needs 24 MP and 61 MP raws on the timing machine"]
+        fn time_rendered_thumbnails() {
+            let haze = std::env::var_os("APERTRUST_THUMBNAIL_HAZE").is_some();
+            let paths = std::env::split_paths(
+                &std::env::var_os("APERTRUST_THUMBNAIL_RAWS").expect("two raw paths"),
+            )
+            .collect::<Vec<_>>();
+            // Three runs of each, or as many as APERTRUST_THUMBNAIL_ROUNDS says.
+            let rounds = std::env::var("APERTRUST_THUMBNAIL_ROUNDS")
+                .ok()
+                .and_then(|rounds| rounds.parse().ok())
+                .unwrap_or(3);
+            for (index, source) in paths.iter().enumerate() {
+                for round in 0..rounds {
+                    let path = scratch(&format!("rendered-timing-{index}-{round}"));
+                    std::fs::hard_link(source, &path).unwrap();
+                    let mut driven = Driven::new(&[&Sample, &HazeRemoval]);
+                    driven.engine.load = open::files();
+                    driven.run([
+                        Command::Open(path.clone()),
+                        Command::Resize {
+                            width: 2400,
+                            height: 1600,
+                        },
+                    ]);
+                    let events = driven.settle();
+                    assert!(failures(&events).is_empty(), "{:?}", failures(&events));
+                    let change = |value| {
+                        if haze {
+                            self::haze(value, true)
+                        } else {
+                            set("brightness", ControlValue::Number(value), true)
+                        }
+                    };
+                    let latency = |events: &[Event]| {
+                        events
+                            .iter()
+                            .find_map(|event| match event {
+                                Event::Frame(frame) => Some(frame.latency_ms),
+                                _ => None,
+                            })
+                            .unwrap()
+                    };
+                    // The same change, settled, as the frames beside the still have it.
+                    if haze {
+                        driven.run([change(0.4)]);
+                    }
+                    // Alone, in the rhythm the still meets below: the photo still for
+                    // EDITING_QUIET, then four changes 20 ms apart, six times; the first of each
+                    // four after a pause apart, as the GPU slows while idle.
+                    let (mut alone_first, mut alone) = (Vec::new(), Vec::new());
+                    let mut passes = Vec::new();
+                    for turn in 0..24 {
+                        if turn % 4 == 0 {
+                            std::thread::sleep(pipeline::EDITING_QUIET);
+                        }
+                        let events = driven.run([change(if turn % 2 == 0 { 0.6 } else { 0.5 })]);
+                        if turn % 4 == 0 {
+                            alone_first.push(latency(&events));
+                        } else {
+                            alone.push(latency(&events));
+                        }
+                        if let Some(Event::Frame(frame)) =
+                            events.iter().find(|event| matches!(event, Event::Frame(_)))
+                        {
+                            passes = frame.timings.passes.clone();
+                        }
+                        driven.gpu.wait().unwrap();
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    // The last frame alone's GPU time, and its three slowest passes.
+                    let gpu_ms: f64 = passes.iter().map(|(_, ms)| ms).sum();
+                    passes.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    let slowest_passes = (passes.iter().take(3))
+                        .map(|(name, ms)| format!("{name} {ms:.2}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let open = driven.engine.open.as_ref().unwrap();
+                    let planning = Instant::now();
+                    let Ok(ThumbnailPlan { plan, .. }) = driven.engine.thumbnail_plan(open) else {
+                        panic!("a still's plan");
+                    };
+                    let plan_ms = planning.elapsed().as_secs_f64() * 1e3;
+                    let budget = driven.engine.limits.budget;
+                    let prepare = Instant::now();
+                    let (mut still, _) = pollster::block_on(
+                        driven
+                            .engine
+                            .open
+                            .as_mut()
+                            .unwrap()
+                            .pipeline
+                            .as_mut()
+                            .unwrap()
+                            .still(&driven.gpu, (*plan).clone(), budget),
+                    )
+                    .unwrap();
+                    let prepare_ms = prepare.elapsed().as_secs_f64() * 1e3;
+                    // The GPU woken from the pause above, as a still meets it after an edit.
+                    driven.run([change(0.55)]);
+                    driven.gpu.wait().unwrap();
+                    let render = Instant::now();
+                    let mut slowest = 0.0f64;
+                    loop {
+                        let turn = Instant::now();
+                        if matches!(still.step(&driven.gpu).unwrap(), Step::Done(_)) {
+                            break;
+                        }
+                        driven.gpu.wait().unwrap();
+                        slowest = slowest.max(turn.elapsed().as_secs_f64() * 1e3);
+                    }
+                    let render_ms = render.elapsed().as_secs_f64() * 1e3;
+                    // Beside the live frame, as a person editing would have it: the still takes
+                    // a turn once the photo has stood still, then the editing resumes, four
+                    // changes 20 ms apart, the still asked for a turn after each, as the engine
+                    // thread asks; then the photo stands still again.
+                    let (mut still, _) = pollster::block_on(
+                        driven
+                            .engine
+                            .open
+                            .as_mut()
+                            .unwrap()
+                            .pipeline
+                            .as_mut()
+                            .unwrap()
+                            .still(&driven.gpu, *plan, budget),
+                    )
+                    .unwrap();
+                    still.yield_to(Arc::clone(&driven.engine.last_change));
+                    let (mut resumed, mut editing) = (Vec::new(), Vec::new());
+                    let mut turn = 0;
+                    let (size, pixels) = 'still: loop {
+                        std::thread::sleep(pipeline::EDITING_QUIET);
+                        if let Step::Done(picture) = still.step(&driven.gpu).unwrap() {
+                            break 'still picture;
+                        }
+                        for change_at in 0..4 {
+                            let events =
+                                driven.run([change(if turn % 2 == 0 { 0.6 } else { 0.5 })]);
+                            turn += 1;
+                            let ms = latency(&events);
+                            if change_at == 0 {
+                                resumed.push(ms);
+                            } else {
+                                editing.push(ms);
+                            }
+                            driven.gpu.wait().unwrap();
+                            let left = still.left();
+                            if let Step::Done(picture) = still.step(&driven.gpu).unwrap() {
+                                break 'still picture;
+                            }
+                            assert_eq!(still.left(), left, "no turn while the photo changes");
+                            std::thread::sleep(Duration::from_millis(20));
+                        }
+                    };
+                    let cache =
+                        Arc::new(Cache::create(path.parent().unwrap().join("cache")).unwrap());
+                    let upkeep = Upkeep::start(
+                        CacheOptions {
+                            cache,
+                            limit: Limit::Unlimited,
+                        },
+                        &driven.engine.jobs.control,
+                        Arc::new(|| {}),
+                        Arc::new(AtomicBool::new(false)),
+                    );
+                    let image = thumbnail::rendered::rgba(size, &pixels);
+                    let write = Instant::now();
+                    for size in library::THUMBNAIL_SIZES {
+                        let image = thumbnail::rendered::average(&image, size);
+                        assert!(thumbnail::write(
+                            &upkeep,
+                            &library::ThumbnailKey {
+                                slot: library::thumbnail_slot(&path, size),
+                                version: library::rendered_version(&[0; 32])
+                            },
+                            &image,
+                            "timing"
+                        ));
+                    }
+                    let write_ms = write.elapsed().as_secs_f64() * 1e3;
+                    let spread = |times: &mut Vec<f64>| {
+                        times.sort_by(f64::total_cmp);
+                        (times[0], times[times.len() / 2], times[times.len() - 1])
+                    };
+                    let (alone_min, alone_median, alone_max) = spread(&mut alone);
+                    let (first_min, first_median, first_max) = spread(&mut alone_first);
+                    let over =
+                        |times: &[f64], max: f64| times.iter().filter(|&&ms| ms > max).count();
+                    let (editing_over, resumed_over) =
+                        (over(&editing, alone_max), over(&resumed, first_max));
+                    let (_, editing_median, editing_max) = spread(&mut editing);
+                    let (_, resumed_median, resumed_max) = spread(&mut resumed);
+                    eprintln!(
+                        "{}{} round {round}: prepare {prepare_ms:.2} ms, render {render_ms:.2} ms \
+                         (slowest turn {slowest:.2} ms), JPEG writes {write_ms:.2} ms; frame \
+                         alone {alone_min:.2} / {alone_median:.2} / {alone_max:.2} ms, its first \
+                         after a pause {first_min:.2} / {first_median:.2} / {first_max:.2} ms; \
+                         editing beside the still median {editing_median:.2}, worst \
+                         {editing_max:.2} ms, {editing_over} of {} over the slowest alone; \
+                         resumed after a turn median {resumed_median:.2}, worst {resumed_max:.2} \
+                         ms, {resumed_over} of {} over the slowest first alone; frame alone on the GPU {gpu_ms:.2} ms, slowest passes \
+                         {slowest_passes}; a plan {plan_ms:.2} ms",
+                        source.display(),
+                        if haze { " (haze)" } else { "" },
+                        editing.len(),
+                        resumed.len(),
+                    );
+                    drop(driven);
+                    remove(&path);
+                }
+            }
+        }
     }
 }

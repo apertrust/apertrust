@@ -47,7 +47,7 @@ use std::time::Instant;
 
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_base::jobs::{Context, Interrupted};
-use apertrust_library::ops::{self as library, Thumbnail};
+use apertrust_library::ops::{self as library, RawStamp, RawThumbnails, Thumbnail};
 use apertrust_modules::Module;
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Operation};
 use apertrust_raw::{Exif, Pixels, RawImage};
@@ -100,9 +100,10 @@ pub(crate) trait RawFile {
     /// Its metadata without the pixels, in milliseconds; refused where it is no mosaic
     /// the raw stage develops.
     fn metadata(&self) -> Result<Metadata, SessionError>;
-    /// The camera's embedded picture, upright, at most `longest` on its longer side;
-    /// `None` where it holds none.
-    fn preview(&self, longest: u32) -> Option<Thumbnail>;
+    /// The camera's embedded picture, upright, at most `longest` on its longer side, and
+    /// where `sized` the stored size of the largest the file holds, darktable's
+    /// raw-thumbnail rule's; `None` for both where it holds none.
+    fn preview(&self, longest: u32, sized: bool) -> (Option<Thumbnail>, Option<(u32, u32)>);
     /// Its decode: the metadata again, from the decode, and the mosaic.
     fn decode(&self) -> Result<(Metadata, Mosaic), SessionError>;
 }
@@ -173,17 +174,25 @@ impl RawFile for File {
         self.metadata_of(&raw, exif)
     }
 
-    fn preview(&self, longest: u32) -> Option<Thumbnail> {
-        match self.file.preview(longest) {
-            Ok(preview) => preview.map(|preview| Thumbnail {
-                width: preview.width,
-                height: preview.height,
-                pixels: preview.pixels.into(),
-            }),
+    fn preview(&self, longest: u32, sized: bool) -> (Option<Thumbnail>, Option<(u32, u32)>) {
+        let read = if sized {
+            self.file.embedded(longest)
+        } else {
+            self.file.preview(longest).map(|preview| (preview, None))
+        };
+        match read {
+            Ok((preview, size)) => {
+                let picture = preview.map(|preview| Thumbnail {
+                    width: preview.width,
+                    height: preview.height,
+                    pixels: preview.pixels.into(),
+                });
+                (picture, size)
+            }
             Err(error) => {
                 let name = sidecar::file_name(&self.path);
                 tracing::debug!(target: "raw", "no embedded picture of {name}: {error}");
-                None
+                (None, None)
             }
         }
     }
@@ -279,8 +288,14 @@ pub(crate) enum Stage {
         open: u64,
         read: Result<Box<Read>, SessionError>,
     },
-    /// Step 4 has the decode slot and begins to decode.
-    Decoding { open: u64 },
+    /// Step 4 has the decode slot and begins to decode, with what steps 1 and 3 read of
+    /// the raw's embedded picture, and the raw's size and modified time as step 1 read
+    /// them.
+    Decoding {
+        open: u64,
+        embedded: EmbeddedRead,
+        stamp: Option<RawStamp>,
+    },
     /// Step 4's decode, or its failure.
     Decoded {
         open: u64,
@@ -295,17 +310,31 @@ impl Stage {
     pub(crate) fn open(&self) -> u64 {
         match *self {
             Stage::Read { open, .. }
-            | Stage::Decoding { open }
+            | Stage::Decoding { open, .. }
             | Stage::Decoded { open, .. }
             | Stage::Gone { open, .. } => open,
         }
     }
 }
 
+/// What the open read of the raw's embedded picture, for darktable's raw-thumbnail rule:
+/// nothing, where a rendered picture was its first; that there is one, read at the panel's
+/// size with no more, only under never or always, whose choice at the thumbnails' sizes
+/// needs no size; or its stored size, `None` where there is none, read or recorded by a
+/// render of the photo with no edit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum EmbeddedRead {
+    #[default]
+    Unread,
+    Present,
+    Sized(Option<(u32, u32)>),
+}
+
 /// What step 2 read: the raw's metadata and the photo's edit.
 pub(crate) struct Read {
     pub metadata: Metadata,
     pub edit: Edit,
+    pub hash: Option<[u8; 32]>,
     pub view_only: Option<ViewOnly>,
 }
 
@@ -317,8 +346,10 @@ pub(crate) struct Run {
     pub path: PathBuf,
     /// When the `Open` reached the session, which each stage's time counts from.
     pub started: Instant,
-    /// The longer side of the last `Resize`, which the embedded picture is read at.
-    pub longest: Option<u32>,
+    /// The last `Resize`, whose longer side the embedded picture is read at.
+    pub room: Option<(u32, u32)>,
+    /// From which size a photo with no edit shows a render of its raw.
+    pub raw: RawThumbnails,
     pub load: Load,
     pub cache: Option<Upkeep>,
     pub operations: &'static [&'static dyn Operation],
@@ -396,7 +427,11 @@ fn since(started: Instant) -> f64 {
 fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let (open, name) = (run.open, sidecar::file_name(&run.path));
     let cancelled = || context.cancelled();
-    // Step 1, the rendered thumbnail.
+    // Step 1, the rendered thumbnail; one of the photo with no edit only where the
+    // setting shows it at the panel's size, decided from the raw's facts it records, else
+    // after the embedded picture where that depends on its size.
+    let room = run.room.unwrap_or((u32::MAX, u32::MAX));
+    let stamp = library::raw_stamp(&run.path);
     let rendered = run
         .cache
         .as_ref()
@@ -404,6 +439,28 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     if cancelled() {
         return;
     }
+    let recorded = |version: &[u8]| {
+        (stamp.as_ref()).and_then(|stamp| library::unaltered_facts(version, stamp))
+    };
+    let mut embedded_read = EmbeddedRead::Unread;
+    let (rendered, unaltered) = match rendered {
+        Some((version, picture)) if run.raw.renders_at(room) => {
+            if let Some(facts) = recorded(&version) {
+                embedded_read = EmbeddedRead::Sized(facts.embedded);
+            }
+            (Some(picture), None)
+        }
+        Some((version, picture)) if library::rendered_unaltered(&version) => {
+            match recorded(&version) {
+                Some(facts) => {
+                    embedded_read = EmbeddedRead::Sized(facts.embedded);
+                    (run.raw.shows_render(room, &facts).then_some(picture), None)
+                }
+                None => (None, Some(picture)),
+            }
+        }
+        rendered => (rendered.map(|(_, picture)| picture), None),
+    };
     let sent_rendered = rendered.is_some();
     if let Some(picture) = rendered {
         preview(run, &name, Some(picture), PreviewSource::Rendered);
@@ -422,10 +479,16 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
             return;
         }
     };
+    // What darktable's raw-thumbnail rule reads of the raw beside its embedded picture.
+    let mut raw = (0, 0);
+    let mut phase_one = false;
     let read = file.metadata().and_then(|metadata| {
-        let (edit, view_only) = edit(run, context, &metadata.image)?;
+        raw = (metadata.sensor.width, metadata.sensor.height);
+        phase_one = library::RawFacts::phase_one(&metadata.camera);
+        let (edit, view_only, hash) = edit(run, context, &metadata.image)?;
         Ok(Box::new(Read {
             metadata,
+            hash,
             edit,
             view_only,
         }))
@@ -438,13 +501,34 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     if failed {
         return;
     }
-    // Step 3, the embedded picture, where no rendered one was sent.
+    // Step 3, the embedded picture, where no rendered one was sent, or the render it is
+    // smaller than: its stored size read, from the same decode, where step 1 found no
+    // record of it and the choice may depend on it: a render of the photo with no edit
+    // waiting on it, or a setting but never and always, whose choice at the thumbnails'
+    // sizes needs no size.
     if !sent_rendered {
-        let picture = file.preview(run.longest.unwrap_or(u32::MAX));
+        let by_size = !matches!(run.raw, RawThumbnails::Never | RawThumbnails::Always);
+        let sized = embedded_read == EmbeddedRead::Unread && (unaltered.is_some() || by_size);
+        let (picture, embedded) = file.preview(room.0.max(room.1), sized);
         if cancelled() {
             return;
         }
-        preview(run, &name, picture, PreviewSource::Embedded);
+        embedded_read = match (embedded_read, sized, &picture) {
+            (EmbeddedRead::Sized(recorded), ..) => EmbeddedRead::Sized(recorded),
+            (_, true, _) | (_, false, None) => EmbeddedRead::Sized(embedded),
+            (_, false, Some(_)) => EmbeddedRead::Present,
+        };
+        let facts = library::RawFacts {
+            embedded,
+            raw,
+            phase_one,
+        };
+        match unaltered {
+            Some(render) if run.raw.shows_render(room, &facts) => {
+                preview(run, &name, Some(render), PreviewSource::Rendered);
+            }
+            _ => preview(run, &name, picture, PreviewSource::Embedded),
+        }
     }
     // Step 4, the decode, one at a time.
     let Ok(turn) = run.decodes.take(context) else {
@@ -455,7 +539,15 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     if cancelled() {
         return;
     }
-    delivery.send(Stage::Decoding { open }, false);
+    let embedded = embedded_read;
+    delivery.send(
+        Stage::Decoding {
+            open,
+            embedded,
+            stamp,
+        },
+        false,
+    );
     #[cfg(test)]
     if let Some(hold) = &run.hold {
         hold.wait();
@@ -489,9 +581,9 @@ fn preview(run: &Run, name: &str, picture: Option<Thumbnail>, source: PreviewSou
     }));
 }
 
-/// The largest of the photo's rendered thumbnails the cache holds, stale or not; none
-/// where it holds none or one that cannot be read.
-fn rendered(cache: &Upkeep, path: &Path) -> Option<Thumbnail> {
+/// The largest of the photo's rendered thumbnails the cache holds, stale or not, with its
+/// version; none where it holds none or one that cannot be read.
+fn rendered(cache: &Upkeep, path: &Path) -> Option<(Vec<u8>, Thumbnail)> {
     largest_first().find_map(|size| {
         let slot = library::thumbnail_slot(path, size);
         let (version, jpeg) = cache.cache().read_any(THUMBNAILS, &slot).ok()??;
@@ -499,22 +591,21 @@ fn rendered(cache: &Upkeep, path: &Path) -> Option<Thumbnail> {
             return None;
         }
         let picture = apertrust_raw::read_jpeg(&jpeg).ok()?;
-        Some(Thumbnail {
+        let picture = Thumbnail {
             width: picture.width,
             height: picture.height,
             pixels: picture.pixels.into(),
-        })
+        };
+        Some((version, picture))
     })
 }
 
 /// The photo's edit, from its sidecar as the edit writer reads it once it has written what
 /// it was handed of it, clamped as an opened edit is, and whether a newer Apertrust wrote
 /// it: none for a photo never edited.
-fn edit(
-    run: &Run,
-    context: &Context<'_>,
-    image: &ImageContext,
-) -> Result<(Edit, Option<ViewOnly>), SessionError> {
+type ReadEdit = (Edit, Option<ViewOnly>, Option<[u8; 32]>);
+
+fn edit(run: &Run, context: &Context<'_>, image: &ImageContext) -> Result<ReadEdit, SessionError> {
     let sidecar = sidecar::path_for(&run.path);
     let snapshot = context
         .wait(&run.snapshot)
@@ -523,7 +614,7 @@ fn edit(
         .map(Snapshot::xml);
     let xml = match snapshot {
         Some(Ok(Some(xml))) => xml,
-        Some(Ok(None)) | None => return Ok((Edit::default(), None)),
+        Some(Ok(None)) | None => return Ok((Edit::default(), None, None)),
         Some(Err(error)) => {
             return Err(SessionError::Sidecar(sidecar::SidecarError::from(error)));
         }
@@ -550,7 +641,11 @@ fn edit(
             tracing::warn!(target: "pipe", "{warning}");
         }
     }
-    Ok((edit, view_only))
+    Ok((
+        edit,
+        view_only,
+        Some(apertrust_library::index::hash(xml.as_bytes())),
+    ))
 }
 
 /// A test's synthetic raws, read as files are: the engine's tests', and its clients' through
@@ -605,18 +700,19 @@ pub(crate) mod testing {
             (self.develop)(&self.path).map(|(metadata, _)| metadata)
         }
 
-        fn preview(&self, longest: u32) -> Option<Thumbnail> {
+        fn preview(&self, longest: u32, sized: bool) -> (Option<Thumbnail>, Option<(u32, u32)>) {
             if !self.path.ends_with("embedded.ARW") {
-                return None;
+                return (None, None);
             }
             let width = longest.min(64);
             let height = width * 3 / 4;
             let pixels = vec![200; (width * height * 4) as usize];
-            Some(Thumbnail {
+            let picture = Thumbnail {
                 width,
                 height,
                 pixels: pixels.into(),
-            })
+            };
+            (Some(picture), sized.then_some((64, 48)))
         }
 
         fn decode(&self) -> Result<(Metadata, Mosaic), SessionError> {

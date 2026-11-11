@@ -169,6 +169,7 @@ The groundwork for orientation:
 - Only the engine thread adds them, since it owns the control: a worker asks it through the inbox (`Inbox::Evict`), one arriving after the session's `Stop` dropped. As the session ends, its stop flag is the cancel of base's `tidy`, `walk` and eviction's listing, asked before each subfolder, and of eviction's removals, so quitting never waits for a cold walk.
 - `-d perf` logs the walk's sizes, the temporaries tidied and its time, each kind under `verbose`, each walk for the sizes, and each eviction's and Clear's removals, failures and time; a cache that cannot be tidied, walked, evicted or cleared is a warning.
 - **Thumbnails,** `session::thumbnail`: a thumbnail job reads the cache first, by the library's `thumbnail_key`, and decodes a hit with `apertrust_raw::read_jpeg`; on a miss it sends the library's reading, then encodes it with the export's JPEG writer at quality 90, 4:2:2, writes it and calls `Upkeep::check`. No picture, or one that cannot be encoded, is sent and not kept; with no cache the library's reading alone. One `-d perf` line for each `Thumbnails` command once its last job ends (`Tally`), each thumbnail under `verbose`.
+- **Live rendered thumbnails,** `session::thumbnail::rendered` and `pipeline::still`: the live photo's saved edit rendered from its live pipe at 1024 pixels as a `SystemForeground` job, reading the pipe's cached image and whole-image results in place, its turns waiting while the photo changes (`EDITING_QUIET`, 150 ms), after a one-second settle and as the photo leaves, and written to the thumbnails kind; a reset puts the embedded picture back ([engine.md](engine.md#rendered-thumbnails-of-the-live-photo)).
 
 - A job's body hands the engine thread `GpuTask`s through its `Tasks`. They are stepped one a turn, after the live frame, by darktable's queue order and ageing, with one step's work on the GPU at a time.
 - A cancelled job's task is dropped before its next step.
@@ -207,6 +208,7 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 - `LibraryCommand::Close` cancels it and answers `Closed` at once.
 - An `Open` outside the session's `tree`, or of its root again, starts the tree's walk: a job of kind `walk` on darktable's `SystemBackground` queue, as its backthumbs job runs, with no progress, in that open's number, which waits until the root's photos are listed, its body `apertrust_library::ops::walk`. An `Open` inside the tree leaves it; a new root, the root again, a `Close` or `Engine::finish` cancels it, and the jobs' shutdown cancels every job with no progress too.
 - `LibraryCommand::Thumbnails { photos, size }`: each photo a job of kind `thumbnail` on darktable's `SystemForeground` queue, with no progress, deduplicated by the open, the photo and the size, added from the last so the first asked is read first; its body is `apertrust_library::ops::thumbnail`, sending `LibraryEvent::Thumbnail` naming the folder's open. A new open or a close cancels those not yet sent; with no folder open nothing is read.
+- `LibraryCommand::RawThumbnails(raw)`: the setting the thumbnail jobs, the open's picture and the live photo's render follow from then on; the live photo's thumbnail is chosen again.
 - `LibraryCommand::Subfolders { folder }`: a cancellable job of kind `subfolders` on `UserBackground`, with no progress, its body `apertrust_library::ops::subfolders`, handed the tree's root, the first folder opened, kept while each later `Open` lies inside it (the session's `tree`), which refuses a folder outside it and lists through `listing::subfolders` on the listing's own thread, answered by `SubfoldersOf` in the open folder's number; a new open or a close cancels it, and with no folder open it is not added.
 - Every library event names the number of its folder's open or close and is a notice. Opening a folder opens no photo.
 - `session::library` re-exports the library's `ops`.
@@ -241,7 +243,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
-- **The cache** (decision 76): Apertrust's own rendered thumbnails in it; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
+- **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
@@ -387,6 +389,8 @@ Raw decoding with rawler (decision 23).
 **Shooting data.** `read_exif_file` and `read_exif` give the shooting data darktable's variables read (`Exif`), from rawler's metadata, without decoding the image.
 
 **The embedded picture.** `read_preview_file` and `read_preview` (`src/preview.rs`) read the camera's own picture without decoding the mosaic, as darktable's thumbnails show it before their render: rawler's thumbnail (a DNG's) when it is at least the size asked, else its preview, else the larger of the two; at most the size asked on its longer side, each pixel the mean of those under it, never made larger; turned upright by the EXIF Orientation, since the camera stores it as the sensor sees it; 8-bit RGBA (`Preview`). A raw with none gives `None`. `tests/preview.rs` holds the corpus's pictures at 256 pixels to `tests/corpus/previews.txt` and each upright where its raw decodes.
+
+**For darktable's raw-thumbnail rule:** `read_embedded_file` and `RawFile::embedded` give the embedded picture as `read_preview_file` does, with the stored size of the largest the raw holds, as `dt_imageio_large_thumbnail` gives `_init_8` ([library.md](library.md#thumbnails)).
 
 **For the cache's thumbnails** (decision 76): `PREVIEW_VERSION`, rawler's version and the reading's own, held to `Cargo.lock`'s rawler by a test, so updating rawler fails until it is raised; and `read_jpeg`, a baseline JPEG of three components back into 8-bit RGBA through rawler's own JPEG decoder, an error, never a panic, for what is no such JPEG or does not end with its end marker, as one cut short.
 
@@ -698,7 +702,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - It returns the reactions the app owes: `Reaction::Jobs`, the jobs window to open or update, and `Reaction::Preview`, a preview for the Export dialog.
 - A refused command's number (`SessionError::Refused`) drops its pending change and the save it would have waited for.
 - It is tested by feeding it event sequences. There is no bus and no subscriptions: panels draw from the mirror each frame.
-- **A photo opening in stages** (decision 77): asked for, the mirror takes the largest thumbnail the folder holds of it as its `Picture`, which `OpenPreview` replaces for its own open where larger or rendered; `Values { live: false }` show read-only (`Shown::Opening`, every control drawn disabled, the module sections' rows of controls saying "Opening IMG_2041…" at the pointer and in their AccessKit description); the first live frame drops the picture, the controls enabled in the same apply. The picture is placed and drawn by `place_photo` and `paint_picture`, letterboxed in the photo's place and never enlarged, until the first frame. `Mirror::rendering` tells the central bar to say Rendering… once the photo is still not live `RENDERING_AFTER`, a second, after the click (`CentralBar::status`). A `NotLive` refusal is dropped with nothing said, and a failure after `Opened` fails the open.
+- **A photo opening in stages** (decision 77): asked for, the mirror takes the largest thumbnail the folder holds of it as its `Picture`, which `OpenPreview` replaces for its own open where larger or rendered; `Values { live: false }` show read-only (`Shown::Opening`, every control drawn disabled, the module sections' rows of controls saying "Opening IMG_2041…" at the pointer and in their AccessKit description); the first live frame drops the picture, the controls enabled in the same apply, and tells the app so (`Reaction::Swapped`), which fades the picture's texture out over the frame in `fade::FADE`, 120 ms, eased out, repainting only meanwhile, unless `apertrust_display::reduce_motion` says otherwise or the theme's motion is zero (`animation_time`). The picture is placed and drawn by `place_photo` and `paint_picture`, scaled to the photo's place until the first live frame: the whole place where the picture has its shape (`same_shape`), otherwise letterboxed in it. Before the photo's values, the place is the picture's own shape fitted to the room. `Mirror::rendering` tells the central bar to say Rendering… once the photo is still not live `RENDERING_AFTER`, a second, after the click (`CentralBar::status`). A `NotLive` refusal is dropped with nothing said, and a failure after `Opened` fails the open.
 
 ### Planned
 
@@ -882,6 +886,8 @@ The window's platform code, an FFI crate that may use `unsafe`. On macOS:
   - `autoenablesItems` is off, and every item's target is an object of its own class that notes the tag chosen, so the menu runs nothing.
   - It is shown with `popUpMenuPositioningItem:atLocation:inView:` from the main run loop, outside winit's handler, and calls back with the id chosen once AppKit's call has returned.
 
+On every platform, `reduce_motion` reads the system's preference for less motion: on macOS `NSWorkspace.accessibilityDisplayShouldReduceMotion`, on Windows `SPI_GETCLIENTAREAANIMATION`; on Linux it is not read, GNOME's `enable-animations` needing GIO or D-Bus, so it says no.
+
 **Planned** (decision 41): Windows' task dialog and owner disabling; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`.
 
 ## Operation crates
@@ -1020,6 +1026,8 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - `fs::persist_retrying` and `Retry`: a rename Windows refuses (sharing violation, access denied) is tried again for about a second (ten times 100 ms). `apertrust-export`'s `disk` uses it for its own renames.
 - `fs::is_temporary_name` and `fs::remove_if_stale`: a temporary is told by its name alone, and removed when it is a plain file more than a day old. The library's listing calls it for the folder it lists.
 - The settings store's `FileStorage` keeps its own write: its permissions, visible `.{pid}-{n}.tmp` names and one-minute tidy differ.
+
+The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts the handle's count, as a reset discards a rendered thumbnail where the camera has no embedded picture; `Cache::version(kind, slot)` reads an entry's version alone, from its first bytes, without setting its last use.
 
 ### Jobs
 
@@ -1352,7 +1360,9 @@ The rest of the Export dialog's build ([docs/gui.md](gui.md), The Export dialog)
 
 ## apertrust-library
 
-Folder mode, libraries and projects (decisions 46, 47 and 52 to 55), with no GPU. It depends on quick-xml, thiserror, `apertrust-base`'s `fs` part and `apertrust-raw`, never on the engine, modules, plugin or wgpu.
+Folder mode, libraries and projects (decisions 46, 47 and 52 to 55), with no GPU. It depends on quick-xml, thiserror, `apertrust-base`'s `fs` part and its `settings::Choice`, and `apertrust-raw`, never on the engine, modules, plugin or wgpu.
+
+A rendered thumbnail's version is the library's, for the engine and the index alike: `ops::rendered_version` and `rendered_matches`, with `THUMBNAIL_RENDER_VERSION`, and `UNALTERED`, `rendered_unaltered`, `unaltered_version` and `unaltered_facts` for a photo with no edit, whose version records the raw's facts and its size and modified time (`RawStamp`, `raw_stamp`) ([cache.md](cache.md#thumbnails)). So is darktable's raw-thumbnail setting, `ops::RawThumbnails`, the `Choice` of the engine's `library.raw_thumbnails_from`, with darktable's levels (`LEVELS`, `level`), what its rule reads of a raw (`RawFacts`) and `shows_render` ([library.md](library.md#thumbnails)).
 
 Its design and API are in [library.md](library.md).
 

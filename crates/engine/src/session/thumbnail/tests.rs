@@ -68,6 +68,32 @@ fn read(
     });
 }
 
+/// How many times the test's facts were read, by the raw's path.
+static FACT_READS: Mutex<Option<HashMap<PathBuf, usize>>> = Mutex::new(None);
+
+/// The test's raws' facts for darktable's rule, of a raw of 6048 by 4024: the embedded
+/// picture `read` gives, but 6000 by 4000 for `large.ARW`; none for `none.ARW`; and
+/// `phase.ARW` is Phase One's.
+fn facts(path: &Path) -> RawFacts {
+    *FACT_READS
+        .lock()
+        .unwrap()
+        .get_or_insert_default()
+        .entry(path.to_owned())
+        .or_default() += 1;
+    let embedded = match path.file_name().and_then(|name| name.to_str()) {
+        Some("none.ARW") => None,
+        Some("large.ARW") => Some((6000, 4000)),
+        Some("odd.ARW") => Some((511, 383)),
+        _ => Some((64, 48)),
+    };
+    RawFacts {
+        embedded,
+        raw: (6048, 4024),
+        phase_one: path.ends_with("phase.ARW"),
+    }
+}
+
 fn reads(path: &Path) -> usize {
     let reads = READS.lock().unwrap();
     reads
@@ -161,6 +187,16 @@ impl Drop for Bench {
 }
 
 fn serve_with(cached: Option<(&Upkeep, &Tally)>, folder: &Path, photo: &str) -> Vec<LibraryEvent> {
+    serve_raw(cached, folder, photo, RawThumbnails::Never)
+}
+
+/// [`serve_with`] under the thumbnails' setting `raw`.
+fn serve_raw(
+    cached: Option<(&Upkeep, &Tally)>,
+    folder: &Path,
+    photo: &str,
+    raw: RawThumbnails,
+) -> Vec<LibraryEvent> {
     let events = Mutex::new(Vec::new());
     let tell = |event| events.lock().unwrap().push(event);
     let asked = Asked {
@@ -168,8 +204,9 @@ fn serve_with(cached: Option<(&Upkeep, &Tally)>, folder: &Path, photo: &str) -> 
         folder,
         photo,
         size: 256,
+        raw,
     };
-    serve(cached, &asked, &tell, &|| false, read);
+    serve(cached, &asked, &tell, &|| false, read, facts);
     events.into_inner().unwrap()
 }
 
@@ -306,6 +343,7 @@ fn the_picture_is_sent_before_it_is_written() {
         folder: &bench.folder,
         photo: "A.ARW",
         size: 256,
+        raw: RawThumbnails::Never,
     };
     let tally = Tally::new(256);
     serve(
@@ -314,6 +352,7 @@ fn the_picture_is_sent_before_it_is_written() {
         &tell,
         &|| false,
         read,
+        facts,
     );
     assert_eq!(*told.lock().unwrap(), 1);
     assert_eq!(bench.entries(), 1);
@@ -331,9 +370,17 @@ fn a_cancel_after_the_read_writes_nothing() {
         folder: &bench.folder,
         photo: "A.ARW",
         size: 256,
+        raw: RawThumbnails::Never,
     };
     let tally = Tally::new(256);
-    serve(Some((&bench.upkeep, &tally)), &asked, &tell, &cancel, read);
+    serve(
+        Some((&bench.upkeep, &tally)),
+        &asked,
+        &tell,
+        &cancel,
+        read,
+        facts,
+    );
     assert!(read_by_now.into_inner());
     assert_eq!(bench.entries(), 0);
     assert_eq!(tally.counts(), (0, 1, 0));
@@ -427,4 +474,309 @@ fn zune_jpeg_still_misreads_the_export_s_4_2_0_so_thumbnails_stay_4_2_2() {
         pixels: kept.pixels.into(),
     };
     assert!(worst(&image, &kept) <= 6);
+}
+
+/// Both the exact edit's render and an older render are preferable to the camera's
+/// picture. The event needs no extra flags: either replaces the cell's pixels alike.
+#[test]
+fn rendered_entries_are_served_current_or_stale() {
+    for (name, version) in [
+        (
+            "rendered-current",
+            library::rendered_version(&apertrust_library::index::hash(b"edit")),
+        ),
+        (
+            "rendered-stale",
+            [library::RENDERED, b"old renderer and edit"].concat(),
+        ),
+    ] {
+        let bench = Bench::new(name, &["A.ARW"], Limit::Bytes(1 << 30));
+        let path = bench.folder.join("A.ARW");
+        let slot = library::thumbnail_slot(&path, 256);
+        let jpeg = encode(&gradient_of(32, 24)).unwrap();
+        bench
+            .cache
+            .write(THUMBNAILS, &slot, &version, &jpeg)
+            .unwrap();
+        let tally = Tally::new(256);
+        let image = picture(&bench.serve("A.ARW", &tally)).unwrap();
+        assert_eq!((image.width, image.height), (32, 24));
+        assert_eq!(reads(&path), 0);
+        assert_eq!(tally.counts(), (1, 0, 0));
+    }
+}
+
+#[test]
+fn an_embedded_write_keeps_a_rendered_entry_that_arrived_meanwhile() {
+    let bench = Bench::new("rendered-race", &["A.ARW"], Limit::Bytes(1 << 30));
+    let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();
+    let rendered = ThumbnailKey {
+        slot: embedded.slot.clone(),
+        version: library::rendered_version(&apertrust_library::index::hash(b"edit")),
+    };
+    assert!(write(
+        &bench.upkeep,
+        &rendered,
+        &gradient_of(32, 24),
+        "A.ARW"
+    ));
+    assert!(!write(&bench.upkeep, &embedded, &gradient(), "A.ARW"));
+    let (version, _) = bench
+        .cache
+        .read_any(THUMBNAILS, &embedded.slot)
+        .unwrap()
+        .unwrap();
+    assert_eq!(version, rendered.version);
+}
+
+#[test]
+fn an_unreadable_rendered_entry_falls_back_to_the_embedded_picture() {
+    let bench = Bench::new("rendered-broken", &["A.ARW"], Limit::Bytes(1 << 30));
+    let path = bench.folder.join("A.ARW");
+    let slot = library::thumbnail_slot(&path, 256);
+    bench
+        .cache
+        .write(THUMBNAILS, &slot, library::RENDERED, b"broken jpeg")
+        .unwrap();
+    let image = picture(&bench.serve("A.ARW", &Tally::new(256))).unwrap();
+    assert_eq!(image, gradient());
+    assert_eq!(reads(&path), 1);
+    assert!(
+        bench
+            .cache
+            .read_any(THUMBNAILS, &slot)
+            .unwrap()
+            .unwrap()
+            .0
+            .starts_with(library::EMBEDDED)
+    );
+}
+
+#[test]
+fn reset_replaces_a_render_but_a_superseded_write_changes_nothing() {
+    let bench = Bench::new("rendered-reset", &["A.ARW"], Limit::Bytes(1 << 30));
+    let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();
+    let rendered = ThumbnailKey {
+        slot: embedded.slot.clone(),
+        version: library::rendered_version(&apertrust_library::index::hash(b"edit")),
+    };
+    assert!(write(
+        &bench.upkeep,
+        &rendered,
+        &gradient_of(32, 24),
+        "A.ARW"
+    ));
+    assert!(!replace_with_embedded(
+        &bench.upkeep,
+        &embedded,
+        &gradient(),
+        "A.ARW",
+        &|| true
+    ));
+    assert!(rendered_hit(&bench.upkeep, &embedded.slot).is_some());
+    assert!(replace_with_embedded(
+        &bench.upkeep,
+        &embedded,
+        &gradient(),
+        "A.ARW",
+        &|| false
+    ));
+    assert!(!write_if_current(
+        &bench.upkeep,
+        &rendered,
+        &gradient_of(32, 24),
+        "A.ARW",
+        &|| true
+    ));
+    let (version, _) = bench
+        .cache
+        .read_any(THUMBNAILS, &embedded.slot)
+        .unwrap()
+        .unwrap();
+    assert_eq!(version, embedded.version);
+}
+
+#[test]
+fn a_reset_without_an_embedded_picture_removes_only_the_rendered_slot() {
+    let bench = Bench::new("rendered-remove", &["none.ARW"], Limit::Bytes(1 << 30));
+    let path = bench.folder.join("none.ARW");
+    let key = ThumbnailKey {
+        slot: library::thumbnail_slot(&path, 256),
+        version: library::rendered_version(&apertrust_library::index::hash(b"edit")),
+    };
+    assert!(write(&bench.upkeep, &key, &gradient(), "none.ARW"));
+    assert_eq!(bench.entries(), 1);
+    assert!(!remove_rendered_if_current(
+        &bench.upkeep,
+        &path,
+        256,
+        &|| true
+    ));
+    assert!(remove_rendered_if_current(
+        &bench.upkeep,
+        &path,
+        256,
+        &|| false
+    ));
+    assert_eq!(bench.entries(), 0);
+    assert!(remove_rendered_if_current(
+        &bench.upkeep,
+        &path,
+        256,
+        &|| false
+    ));
+}
+
+#[test]
+fn a_slow_embedded_read_does_not_downgrade_a_render_that_arrived() {
+    fn render_during_read(
+        open: u64,
+        folder: &Path,
+        photo: &str,
+        size: u32,
+        observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+        _: &(dyn Fn() -> bool + Sync),
+    ) {
+        let cache = Cache::open(folder.join("cache"));
+        let slot = library::thumbnail_slot(&folder.join(photo), size);
+        let version = library::rendered_version(&apertrust_library::index::hash(b"new edit"));
+        let jpeg = encode(&gradient_of(32, 24)).unwrap();
+        cache.write(THUMBNAILS, &slot, &version, &jpeg).unwrap();
+        observer(LibraryEvent::Thumbnail {
+            open,
+            photo: photo.to_owned(),
+            size,
+            image: Some(gradient()),
+        });
+    }
+    let bench = Bench::new("rendered-event-race", &["A.ARW"], Limit::Bytes(1 << 30));
+    let events = Mutex::new(Vec::new());
+    serve(
+        Some((&bench.upkeep, &Tally::new(256))),
+        &Asked {
+            open: 3,
+            folder: &bench.folder,
+            photo: "A.ARW",
+            size: 256,
+            raw: RawThumbnails::Never,
+        },
+        &|event| events.lock().unwrap().push(event),
+        &|| false,
+        render_during_read,
+        facts,
+    );
+    let image = picture(&events.into_inner().unwrap()).unwrap();
+    assert_eq!((image.width, image.height), (32, 24));
+}
+
+/// A render of a photo with no edit is shown at 256, VGA's level of 720 by 450, as
+/// darktable's rule shows it, else the camera's embedded picture takes its slot: never, the
+/// embedded picture, but with none or for a Phase One raw; always, the render; auto and a
+/// size at the cell's level, the render where the embedded picture is smaller than the
+/// level (64 by 48 and 511 by 383, not 6000 by 4000); a size below it, the render.
+#[test]
+fn a_render_of_a_photo_with_no_edit_is_shown_as_the_setting_says() {
+    use RawThumbnails::{Always, Auto, Never, Small, Vga};
+    let cases = [
+        (Never, "large.ARW", false),
+        (Never, "none.ARW", true),
+        (Never, "phase.ARW", true),
+        (Always, "large.ARW", true),
+        (Auto, "A.ARW", true),
+        (Auto, "odd.ARW", true),
+        (Auto, "large.ARW", false),
+        (Small, "large.ARW", true),
+        (Vga, "large.ARW", false),
+        (Vga, "odd.ARW", true),
+    ];
+    for (raw, photo, shown) in cases {
+        let name = format!("raw-{raw:?}-{photo}");
+        let bench = Bench::new(&name, &[photo], Limit::Bytes(1 << 30));
+        let slot = library::thumbnail_slot(&bench.folder.join(photo), 256);
+        let version = library::rendered_version(&library::UNALTERED);
+        let jpeg = encode(&gradient_of(32, 24)).unwrap();
+        bench
+            .cache
+            .write(THUMBNAILS, &slot, &version, &jpeg)
+            .unwrap();
+        let tally = Tally::new(256);
+        let cached = Some((&bench.upkeep, &tally));
+        let image = picture(&serve_raw(cached, &bench.folder, photo, raw));
+        let size = image.map(|image| (image.width, image.height));
+        assert_eq!(size == Some((32, 24)), shown, "{raw:?} {photo}");
+        let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
+        if shown {
+            assert_eq!(kept, version, "{raw:?} {photo}");
+        } else {
+            assert!(kept.starts_with(library::EMBEDDED), "{raw:?} {photo}");
+        }
+    }
+}
+
+/// A render of a photo with no edit that records its raw's facts is decided from them under
+/// auto, with no look at the raw: here a 64 by 48 embedded picture, smaller than the level,
+/// though the raw itself would say 6000 by 4000. Once the raw is replaced, its facts are
+/// read again: the embedded picture of 6000 by 4000 then takes the slot.
+#[test]
+fn a_render_that_records_its_facts_is_shown_with_no_read_of_the_raw() {
+    let bench = Bench::new("raw-facts", &["large.ARW"], Limit::Bytes(1 << 30));
+    let path = bench.folder.join("large.ARW");
+    let slot = library::thumbnail_slot(&path, 256);
+    let recorded = RawFacts {
+        embedded: Some((64, 48)),
+        raw: (6048, 4024),
+        phase_one: false,
+    };
+    let version = library::unaltered_version(&recorded, &library::raw_stamp(&path).unwrap());
+    let jpeg = encode(&gradient_of(32, 24)).unwrap();
+    bench
+        .cache
+        .write(THUMBNAILS, &slot, &version, &jpeg)
+        .unwrap();
+    let tally = Tally::new(256);
+    let serve = || {
+        let cached = Some((&bench.upkeep, &tally));
+        picture(&serve_raw(
+            cached,
+            &bench.folder,
+            "large.ARW",
+            RawThumbnails::Auto,
+        ))
+    };
+    let image = serve().unwrap();
+    assert_eq!((image.width, image.height), (32, 24));
+    let fact_reads = || {
+        let reads = FACT_READS.lock().unwrap();
+        reads.as_ref().and_then(|reads| reads.get(&path)).copied()
+    };
+    assert_eq!(fact_reads(), None, "the raw's facts are not read");
+    assert_eq!(reads(&path), 0, "the raw is not read");
+    // The raw replaced, by one of another length.
+    std::fs::write(&path, b"another raw").unwrap();
+    let image = serve().unwrap();
+    assert_eq!(
+        (image.width, image.height),
+        (64, 48),
+        "the embedded picture"
+    );
+    assert_eq!(fact_reads(), Some(1), "the raw's facts are read again");
+}
+
+/// An edited photo's render is shown whatever the setting.
+#[test]
+fn an_edited_photo_s_render_is_shown_whatever_the_setting() {
+    let bench = Bench::new("raw-edited", &["odd.ARW"], Limit::Bytes(1 << 30));
+    let slot = library::thumbnail_slot(&bench.folder.join("odd.ARW"), 256);
+    let version = library::rendered_version(&apertrust_library::index::hash(b"edit"));
+    let jpeg = encode(&gradient_of(32, 24)).unwrap();
+    bench
+        .cache
+        .write(THUMBNAILS, &slot, &version, &jpeg)
+        .unwrap();
+    for raw in [RawThumbnails::Never, RawThumbnails::Auto] {
+        let tally = Tally::new(256);
+        let events = serve_raw(Some((&bench.upkeep, &tally)), &bench.folder, "odd.ARW", raw);
+        let image = picture(&events).unwrap();
+        assert_eq!((image.width, image.height), (32, 24), "{raw:?}");
+    }
 }

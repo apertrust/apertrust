@@ -23,7 +23,7 @@ use std::sync::mpsc;
 use std::time::SystemTime;
 
 use apertrust_base::cache::{THUMBNAILS, Usage};
-use apertrust_library::ops::LibraryEvent;
+use apertrust_library::ops::{LibraryEvent, RawThumbnails};
 
 use super::*;
 use crate::session::thumbnail::{Asked, Tally, serve};
@@ -656,6 +656,7 @@ fn time_the_walk() {
                         folder: parent,
                         photo: name.to_str().unwrap(),
                         size,
+                        raw: RawThumbnails::Never,
                     };
                     let tell = |_: LibraryEvent| {};
                     serve(
@@ -664,6 +665,7 @@ fn time_the_walk() {
                         &tell,
                         &|| false,
                         apertrust_library::ops::thumbnail,
+                        crate::session::thumbnail::raw_facts,
                     );
                 }
                 let (hits, misses, written) = tally.counts();

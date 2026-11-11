@@ -47,7 +47,10 @@ pub use exif::{DateTime, Exif};
 pub use lens::{
     DngCorrection, FujifilmCorrection, LensCorrection, OlympusCorrection, SonyCorrection,
 };
-pub use preview::{PREVIEW_VERSION, Preview, read_jpeg, read_preview, read_preview_file};
+pub use preview::{
+    Embedded, PREVIEW_VERSION, Preview, read_embedded_file, read_jpeg, read_preview,
+    read_preview_file,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -289,6 +292,12 @@ impl RawFile {
     /// Its embedded picture, as [`read_preview_file`] reads it.
     pub fn preview(&self, longest: u32) -> Result<Option<Preview>, Error> {
         preview::read_preview_source(&self.source, longest)
+    }
+
+    /// Its embedded picture with the stored size of the largest, as [`read_embedded_file`]
+    /// reads it.
+    pub fn embedded(&self, longest: u32) -> Result<Embedded, Error> {
+        preview::read_source(&self.source, longest, true)
     }
 
     /// Decodes it, as [`decode_file`] does, with its shooting data, as [`RawFile::metadata`].

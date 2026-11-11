@@ -410,6 +410,28 @@ impl Cache {
         self.read_entry(kind, slot, None, SystemTime::now())
     }
 
+    /// The version of `slot`'s entry in the limited `kind`, read from its first bytes alone,
+    /// without its last use set: for a writer asking whether the entry is already the one
+    /// it would write. `None` where there is none, or it is not an entry.
+    pub fn version(&self, kind: Kind, slot: &[u8]) -> io::Result<Option<Vec<u8>>> {
+        limited(kind)?;
+        let file = match File::open(self.entry_path(kind, slot)) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let mut head = [0; MAGIC.len() + 4];
+        let mut file = file.take(u64::MAX);
+        if file.read_exact(&mut head).is_err() || head[..MAGIC.len()] != MAGIC {
+            return Ok(None);
+        }
+        let length = u32::from_le_bytes(head[MAGIC.len()..].try_into().expect("four bytes"));
+        let mut version = Vec::new();
+        file.set_limit(u64::from(length));
+        file.read_to_end(&mut version)?;
+        Ok((version.len() == length as usize).then_some(version))
+    }
+
     /// [`Cache::read`] as at `now`.
     fn read_at(
         &self,
@@ -585,6 +607,24 @@ impl Cache {
         for kind in limited_kinds() {
             let usage = taken.of(kind);
             self.count(kind, |sizes| sizes.subtract(usage));
+        }
+        Ok(removed)
+    }
+
+    /// Removes one entry of a limited kind, for a derived picture that no longer
+    /// represents its source. A missing slot returns false and creates nothing.
+    pub fn remove(&self, kind: Kind, slot: &[u8]) -> io::Result<bool> {
+        limited(kind)?;
+        let _removing = self.removing();
+        let path = self.entry_path(kind, slot);
+        let bytes = match fs::metadata(&path) {
+            Ok(meta) => meta.len(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let removed = remove(&path)?;
+        if removed {
+            self.count(kind, |usage| usage.subtract(Usage { entries: 1, bytes }));
         }
         Ok(removed)
     }

@@ -264,4 +264,46 @@ mod tests {
         assert!(textures.picture("a", 256).is_none());
         assert_eq!(textures.len(), 0);
     }
+
+    #[test]
+    fn a_rendered_thumbnail_event_replaces_the_embedded_cell_texture() {
+        let ctx = egui::Context::default();
+        let mut folder = folder_with(&[("a", 256, Some((4, 3)))]);
+        let mut textures = Textures::default();
+        textures.sync(&ctx, &folder);
+        let embedded = textures.picture("a", 256).unwrap();
+        let generation = folder.generation();
+        let rendered = Thumbnail {
+            width: 4,
+            height: 3,
+            pixels: [220, 40, 10, 255].repeat(12).into(),
+        };
+        folder.apply(&Event::Library(LibraryEvent::Thumbnail {
+            open: 1,
+            photo: "a".to_owned(),
+            size: 256,
+            image: Some(rendered.clone()),
+        }));
+        assert!(folder.generation() > generation);
+        assert_eq!(
+            folder.thumbnail("a", 256).unwrap().image.as_ref(),
+            Some(&rendered)
+        );
+        textures.sync(&ctx, &folder);
+        let updated = textures.picture("a", 256).unwrap();
+        assert_ne!(updated.texture, embedded.texture);
+        assert_eq!(updated.size, embedded.size);
+        assert_eq!(textures.len(), 1);
+        textures.sync(&ctx, &folder);
+        assert_eq!(textures.picture("a", 256), Some(updated));
+        // A completion from an earlier folder cannot replace this cell.
+        folder.apply(&Event::Library(LibraryEvent::Thumbnail {
+            open: 0,
+            photo: "a".to_owned(),
+            size: 256,
+            image: None,
+        }));
+        textures.sync(&ctx, &folder);
+        assert_eq!(textures.picture("a", 256), Some(updated));
+    }
 }

@@ -19,9 +19,9 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 
 | Stage | When | Central panel | Side panel | Events |
 | --- | --- | --- | --- | --- |
-| 1. The picture | The click's frame, then within tens of milliseconds | The best picture in hand, fitted, unmarked | Every module at its defaults, drawn disabled, as now | `OpenPreview` |
-| 2. The values | Milliseconds after the `Open` | The same picture | The photo's values from its sidecar, drawn disabled | `Opened`, `Values { live: false }` |
-| 3. Live | Once the raw is decoded, uploaded and rendered | The live frame, in one swap; then scopes | The values, enabled | `Values { live: true }`, then `Frame` |
+| 1. The picture | The click's frame, then within tens of milliseconds | The best picture in hand, its own shape fitted to the room, unmarked | Every module at its defaults, drawn disabled, as now | `OpenPreview` |
+| 2. The values | Milliseconds after the `Open` | The same picture, in the place the live frame will cover | The photo's values from its sidecar, drawn disabled | `Opened`, `Values { live: false }` |
+| 3. Live | Once the raw is decoded, uploaded and rendered | The live frame, in one swap, the picture fading out over it in 120 ms unless the system asks for reduced motion; then scopes | The values, enabled | `Values { live: true }`, then `Frame` |
 
 **The session's side.** `Open(path)` saves and closes the photo before it, cancels the earlier open's job, and adds a job of kind `open` on `SystemForeground`, with no progress, so it is never shown ([0057](0057-jobs-as-darktables-control-jobs.md)). Its body, on a job worker:
 
@@ -62,10 +62,10 @@ Refused, not queued:
 
 **The picture for stage 1.**
 
-- **In the frame of the click,** the app shows the best picture its mirror already holds for that photo: the largest thumbnail the grid panel has received, fitted. This is the app's own state, with no round trip. `OpenPreview` replaces it when it is larger or rendered.
+- **In the frame of the click,** the app shows the best picture its mirror already holds for that photo: the largest thumbnail the grid panel has received, scaled to the place the photo takes: before the photo's values, its own shape fitted to the room; from them on, the place the live frame covers. This is the app's own state, with no round trip. `OpenPreview` replaces it when it is larger or rendered.
 - **The session's order:** the largest cached rendered thumbnail (at most 1024 pixels, step 6's), else the camera's embedded picture at the central panel's size, else none, the central panel saying "Opening IMG_2041.ARW".
 - **The session fetches it,** not the app through the library's `Thumbnails`. So it comes with no folder open (one photo from a terminal), to every client, at the panel's size, and with the open's number. The cache is the handle the binary hands the session ([0076](0076-the-cache-kinds-limits-and-control.md)) and the raw is the file the `Open` names, so the engine opens no folder by itself ([0043](0043-settings-and-apertrusts-folders.md)).
-- **No mark.** The picture is shown as it is, with no mark, badge or words over it. Until the live frame there is no scopes graph, no clipping overlay, no value under the cursor, no zoom past fit and no on-photo tool, and the swap to the live frame is one swap.
+- **No mark.** The picture is shown scaled to the place the photo takes, the place the live frame covers once the photo's values have come, with no mark, badge or words over it. Until the live frame there is no scopes graph, no clipping overlay, no value under the cursor, no zoom past fit and no on-photo tool, and the swap to the live frame is one swap.
 - **Two quiet hints instead:**
   - while the photo is not live, the disabled controls' tooltip says why, "Opening IMG_2041…", a message id with the file's name;
   - only if the photo is still not live about 1 second after the click (a slow share, lavapipe or WARP), the central bar shows a quiet "Rendering…" beside its other contents, never over the photo, gone when the live frame arrives. A fast open shows nothing.

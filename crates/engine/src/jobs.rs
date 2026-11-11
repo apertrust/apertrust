@@ -62,6 +62,9 @@ pub trait GpuTask: Send + 'static {
 pub enum Step<T> {
     /// It stepped and has more: it waits for another turn.
     Again,
+    /// It has nothing to submit before this instant: it stays out of the turns until
+    /// then, and the engine thread, with nothing else due, sleeps until then.
+    Wait(Instant),
     /// It is done: this goes to its body.
     Done(T),
 }
@@ -157,12 +160,22 @@ pub(crate) struct Waiting {
 /// wait together.
 trait Stepping: Send {
     /// One step; whether the task is over, its output then kept for [`Stepping::answer`],
-    /// so a GPU error the step caused, heard only after it, still fails it.
-    fn step(&mut self, gpu: &GpuContext) -> Result<bool, String>;
+    /// so a GPU error the step caused, heard only after it, still fails it, or waits.
+    fn step(&mut self, gpu: &GpuContext) -> Result<Stepped, String>;
     /// Sends the body the output of the step that ended the task.
     fn answer(&mut self);
     /// Ends the task with `failure`, telling its body, its output dropped.
     fn fail(&mut self, failure: String);
+}
+
+/// What a step of a task came to.
+enum Stepped {
+    /// It has more.
+    Again,
+    /// It is over.
+    Done,
+    /// It has nothing to submit until then.
+    Until(Instant),
 }
 
 struct Handing<T: GpuTask> {
@@ -173,12 +186,13 @@ struct Handing<T: GpuTask> {
 }
 
 impl<T: GpuTask> Stepping for Handing<T> {
-    fn step(&mut self, gpu: &GpuContext) -> Result<bool, String> {
+    fn step(&mut self, gpu: &GpuContext) -> Result<Stepped, String> {
         match self.task.step(gpu)? {
-            Step::Again => Ok(false),
+            Step::Again => Ok(Stepped::Again),
+            Step::Wait(until) => Ok(Stepped::Until(until)),
             Step::Done(output) => {
                 self.output = Some(output);
-                Ok(true)
+                Ok(Stepped::Done)
             }
         }
     }
@@ -236,6 +250,8 @@ pub(crate) struct Background {
     queues: Queues<Queued>,
     /// The last step's work while it, or anything submitted before it, is on the GPU.
     in_flight: Option<InFlight>,
+    /// Tasks out of the turns until their instant, with their queue ([`Step::Wait`]).
+    asleep: Vec<(Instant, Queue, Queued)>,
     /// The next task's number.
     next: u64,
 }
@@ -245,6 +261,35 @@ impl Background {
     /// for commands without blocking for long.
     pub(crate) fn waiting(&self) -> bool {
         !self.queues.is_empty() || self.in_flight.is_some()
+    }
+
+    /// When the first task asleep wakes, for the engine thread to wait no longer than
+    /// that; `None` with none asleep.
+    pub(crate) fn wakes_at(&self) -> Option<Instant> {
+        self.asleep.iter().map(|(at, _, _)| *at).min()
+    }
+
+    /// Puts each task whose instant has come back in its queue.
+    fn wake(&mut self) {
+        let now = Instant::now();
+        self.wake_where(|at, _| at <= now);
+    }
+
+    /// Puts the tasks of `job` asleep back in their queue at once, as a still hurried as
+    /// its photo leaves has reads to submit.
+    pub(crate) fn wake_job(&mut self, job: JobId) {
+        self.wake_where(|_, waiting| waiting.job == job);
+    }
+
+    /// Puts each task asleep that `woken` picks back in its queue.
+    fn wake_where(&mut self, woken: impl Fn(Instant, &Waiting) -> bool) {
+        let (woken, asleep): (Vec<_>, Vec<_>) = std::mem::take(&mut self.asleep)
+            .into_iter()
+            .partition(|(at, _, queued)| woken(*at, &queued.waiting));
+        self.asleep = asleep;
+        for (_, queue, queued) in woken {
+            self.queue(queue, queued);
+        }
     }
 
     /// Queues a task handed by a body, as darktable adds a job to its queue.
@@ -264,9 +309,12 @@ impl Background {
         // darktable's stack discards its bottom job past 30, never one that has started,
         // since a running job has left its queue; a task that has stepped waits in it, so
         // the oldest that has not stepped goes in its place, or the new one if none has
-        // not (difference J17). The stack then never passes 30, and `schedule::add`
-        // discards nothing.
-        if queue == Queue::SystemForeground && self.queues.list(queue).len() >= schedule::MAX_JOBS {
+        // not (difference J17). The tasks asleep count with it, having stepped, so one
+        // waking finds room. The stack then never passes 30, and `schedule::add` discards
+        // nothing.
+        let asleep = self.asleep.iter().filter(|(_, of, _)| *of == queue).count();
+        let held = self.queues.list(queue).len() + asleep;
+        if queue == Queue::SystemForeground && held >= schedule::MAX_JOBS {
             let oldest = self
                 .queues
                 .list(queue)
@@ -311,6 +359,7 @@ impl Background {
         if !self.idle(gpu) {
             return;
         }
+        self.wake();
         self.sweep(control);
         let Some((queue, entry)) = schedule::pick(&mut self.queues, false) else {
             return;
@@ -324,21 +373,22 @@ impl Background {
         let start = Instant::now();
         let outcome = stepped(gpu, waiting.task.as_mut());
         let stepped = start.elapsed();
+        let stepped_queued = |identity, waiting| Queued {
+            identity,
+            waiting,
+            stepped: true,
+        };
         match outcome {
             // Its next step is a job of its queue again.
-            Ok(false) => {
-                let stepped = true;
-                self.queue(
-                    queue,
-                    Queued {
-                        identity,
-                        waiting,
-                        stepped,
-                    },
-                );
+            Ok(Stepped::Again) => self.queue(queue, stepped_queued(identity, waiting)),
+            // Nothing submitted: out of the turns until then, nothing to wait for.
+            Ok(Stepped::Until(until)) => {
+                self.asleep
+                    .push((until, queue, stepped_queued(identity, waiting)));
+                return;
             }
             // Done, and the GPU refused nothing of its last step: the body hears it.
-            Ok(true) => waiting.task.answer(),
+            Ok(Stepped::Done) => waiting.task.answer(),
             Err(failure) => {
                 tracing::error!(target: "control", "{} failed: {failure}", identity.description);
                 waiting.task.fail(failure);
@@ -398,6 +448,8 @@ impl Background {
     /// Drops every task whose job is no longer running: cancelled, so before its next
     /// step, or ended without waiting for it.
     fn sweep(&mut self, control: &Control) {
+        let running = |queued: &Queued| control.state(queued.waiting.job) == Some(State::Running);
+        self.asleep.retain(|(_, _, queued)| running(queued));
         for queue in Queue::ALL {
             while let Some(entry) = self.queues.remove(queue, |queued| {
                 control.state(queued.waiting.job) != Some(State::Running)
@@ -414,7 +466,7 @@ impl Background {
 
 /// Runs one step inside error scopes of its own, a panic caught: whether the task is
 /// over, or why it failed, the GPU's first error for the step included.
-fn stepped(gpu: &GpuContext, task: &mut dyn Stepping) -> Result<bool, String> {
+fn stepped(gpu: &GpuContext, task: &mut dyn Stepping) -> Result<Stepped, String> {
     let memory = gpu.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| task.step(gpu)));
@@ -461,6 +513,8 @@ pub(crate) mod testing {
         StepFails(usize),
         /// This step records a copy the GPU refuses.
         StepInvalid(usize),
+        /// This step, the first time, submits nothing and waits an hour.
+        StepSleeps(usize),
     }
 
     type Gate = Arc<Mutex<Receiver<()>>>;
@@ -589,6 +643,7 @@ pub(crate) mod testing {
                             fault: self.fault,
                             told: self.told.clone(),
                             buffer: None,
+                            slept: false,
                         };
                         tasks.hand(context, task)
                     })
@@ -636,6 +691,8 @@ pub(crate) mod testing {
         fault: Fault,
         told: Sender<Told>,
         buffer: Option<wgpu::Buffer>,
+        /// Whether it has slept, as [`Fault::StepSleeps`] asks.
+        slept: bool,
     }
 
     impl GpuTask for Steps {
@@ -655,6 +712,10 @@ pub(crate) mod testing {
             match self.fault {
                 Fault::StepPanics(at) if at == step => panic!("step {step} panicked"),
                 Fault::StepFails(at) if at == step => return Err(format!("step {step} failed")),
+                Fault::StepSleeps(at) if at == step && !self.slept => {
+                    self.slept = true;
+                    return Ok(Step::Wait(Instant::now() + Duration::from_secs(3600)));
+                }
                 _ => {}
             }
             let buffer = self.buffer.get_or_insert_with(|| {

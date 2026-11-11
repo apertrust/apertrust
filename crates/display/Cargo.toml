@@ -21,7 +21,7 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 # The blocks a sheet's calls are scheduled on the run loop with; objc2-app-kit's already.
 block2 = "0.6.2"
 objc2 = "0.6.5"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSAppearance", "NSApplication", "NSButton", "NSCell", "NSControl", "NSEvent", "NSFont", "NSGraphicsContext", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "objc2-core-foundation", "objc2-quartz-core"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSAppearance", "NSApplication", "NSButton", "NSCell", "NSControl", "NSEvent", "NSFont", "NSGraphicsContext", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSAccessibility", "objc2-core-foundation", "objc2-quartz-core"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGColorSpace"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSArray", "NSDate", "NSDictionary", "NSEnumerator", "NSGeometry", "NSObjCRuntime", "NSObject", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults", "NSValue"] }
@@ -30,7 +30,7 @@ objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["
 [target.'cfg(windows)'.dependencies]
 # The console calls that attach the windowed app to the terminal it was started from
 # (`console.rs`); the version eframe and rfd already bring.
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
 
 [lints]
 workspace = true

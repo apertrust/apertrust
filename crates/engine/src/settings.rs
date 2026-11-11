@@ -218,6 +218,7 @@ mod tests {
         assert_eq!(
             ids,
             [
+                "library.raw_thumbnails_from",
                 "engine.adapter",
                 "engine.memory_budget",
                 "cache.limited",

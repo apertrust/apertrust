@@ -78,6 +78,10 @@ pub enum Reaction {
     FolderOpened(PathBuf),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
     FolderFailed { path: PathBuf, reason: String },
+    /// The first live frame of the photo the open numbered `open` replaced its first
+    /// picture, the mirror's of `generation`: the central panel fades that picture out over
+    /// the frame (decision 77). Only that swap: never an edit's frame, nor another photo's.
+    Swapped { open: u64, generation: u64 },
 }
 
 /// What the side panel's editing tabs draw (`docs/gui.md`, The side panel): the values
@@ -375,8 +379,12 @@ impl Mirror {
             Event::Frame(frame) => {
                 self.frame = Some(frame);
                 self.failure = None;
-                if self.live {
-                    self.picture = None;
+                if self.live
+                    && self.picture.take().is_some()
+                    && let Some(open) = self.photo.open()
+                {
+                    let generation = self.picture_generation;
+                    reactions.push(Reaction::Swapped { open, generation });
                 }
             }
             Event::Scopes(reading) => self.scopes.receive(&reading),
@@ -1875,13 +1883,32 @@ pub(crate) mod tests {
         let Some(frame) = gpu_frame(6) else {
             return;
         };
-        m.apply(Event::Frame(frame));
+        // The swap the central panel fades, once: an edit's frame after it is not one.
+        let generation = m.picture().map(|(_, generation)| generation).unwrap();
+        assert_eq!(
+            m.apply(Event::Frame(frame)),
+            [Reaction::Swapped {
+                open: 5,
+                generation
+            }]
+        );
+        assert_eq!(m.apply(Event::Frame(gpu_frame(7).unwrap())), []);
         assert_eq!(m.shown(), Shown::Photo { editable: true });
         assert!(m.takes_edits() && m.live());
         assert!(m.values.modules[0].controls[0].available);
         assert_eq!(m.picture(), None);
         assert_eq!(m.opening_name(), None);
         assert!(!m.rendering(now + RENDERING_AFTER));
+        // Another photo, with no picture in hand: its first frame replaces the last photo's
+        // frame by a cut, never a fade.
+        m.opening(PathBuf::from("/photos/Wedding/b.ARW"), 8, now);
+        assert!(m.frame.is_none() && m.picture().is_none());
+        m.apply(Event::Opened(Photo {
+            path: PathBuf::from("/photos/Wedding/b.ARW"),
+            ..photo(8)
+        }));
+        m.apply(Event::Values(report(0.0, 9)));
+        assert_eq!(m.apply(Event::Frame(gpu_frame(9).unwrap())), []);
     }
 
     /// The session's picture is taken for the latest open alone, before it is live: an

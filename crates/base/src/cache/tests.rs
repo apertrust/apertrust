@@ -956,3 +956,52 @@ fn the_tidy_removes_write_checks_left_behind() {
         assert!(cache.folder().join(name).exists(), "{name}");
     }
 }
+
+#[test]
+fn removing_one_slot_updates_its_count_and_preserves_the_others() {
+    let (_folder, cache) = cache();
+    assert!(!cache.remove(THUMBNAILS, b"missing").unwrap());
+    assert!(!cache.folder().exists());
+    cache.write(THUMBNAILS, b"one", b"v", b"first").unwrap();
+    cache.write(THUMBNAILS, b"two", b"v", b"second").unwrap();
+    cache.walk(&never).unwrap().unwrap();
+    let before = cache.sizes().unwrap().of(THUMBNAILS);
+    assert_eq!(before.entries, 2);
+    assert!(cache.remove(THUMBNAILS, b"one").unwrap());
+    assert!(!cache.remove(THUMBNAILS, b"one").unwrap());
+    assert_eq!(cache.read(THUMBNAILS, b"one", b"v").unwrap(), None);
+    assert_eq!(
+        cache.read(THUMBNAILS, b"two", b"v").unwrap(),
+        Some(b"second".to_vec())
+    );
+    let after = cache.sizes().unwrap().of(THUMBNAILS);
+    assert_eq!(after.entries, 1);
+    assert!(after.bytes < before.bytes);
+    assert_eq!(cache.walk(&never).unwrap().unwrap().of(THUMBNAILS), after);
+}
+
+#[test]
+fn a_slot_s_version_is_read_alone_without_setting_its_last_use() {
+    let (_folder, cache) = cache();
+    assert_eq!(cache.version(THUMBNAILS, b"slot").unwrap(), None);
+    cache.write(THUMBNAILS, b"slot", b"v2", b"bytes").unwrap();
+    let path = cache.entry_path(THUMBNAILS, b"slot");
+    let old = SystemTime::now() - Duration::from_secs(3 * 86_400);
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    assert_eq!(
+        cache.version(THUMBNAILS, b"slot").unwrap(),
+        Some(b"v2".to_vec())
+    );
+    assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
+    // A file that is no entry, or is cut short in its version, has none.
+    fs::write(&path, b"APC").unwrap();
+    assert_eq!(cache.version(THUMBNAILS, b"slot").unwrap(), None);
+    let short = [b"APC1".as_slice(), &9u32.to_le_bytes(), b"v2"].concat();
+    fs::write(&path, short).unwrap();
+    assert_eq!(cache.version(THUMBNAILS, b"slot").unwrap(), None);
+}

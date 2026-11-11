@@ -54,19 +54,23 @@
 //! a click on the Dock icon of the running app likewise, through [`receive_reopen`] and
 //! [`take_reopened`].
 //!
+//! [`reduce_motion`] reads the system's preference for less motion: on macOS and Windows,
+//! not on Linux.
+//!
 //! On Windows the app is a windowed program, with no console of its own:
 //! [`attach_to_terminal`] attaches it to the terminal it was started from, so what it
 //! prints shows there.
 
 #![allow(
     unsafe_code,
-    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes, the open-documents and reopen events' among them; on Windows, the console calls that attach the app to its terminal; on Wayland, wayland-client's views of winit's display and toplevels, to set a dialog's parent"
+    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes, the open-documents and reopen events' among them; on Windows, the console calls that attach the app to its terminal and the reading of its animation setting; on Wayland, wayland-client's views of winit's display and toplevels, to set a dialog's parent"
 )]
 
 mod alert;
 mod console;
 mod dialog;
 mod menu_bar;
+mod motion;
 mod opened;
 mod popup_menu;
 mod title_bar;
@@ -77,6 +81,7 @@ pub use console::attach_to_terminal;
 pub use dialog::set_parent;
 pub use dialog::{begin_sheet, end_sheet, keep_out_of_tabs, show_without_focus};
 pub use menu_bar::{handling_key_repeat, no_system_full_screen_item};
+pub use motion::reduce_motion;
 pub use opened::{
     on_opened_files, on_reopen, receive_opened_files, receive_reopen, take_opened_files,
     take_reopened,
