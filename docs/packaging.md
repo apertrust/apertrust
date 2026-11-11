@@ -115,7 +115,7 @@ Every package holds `apertrust-cli` beside the app:
 
 The packages are not signed with a developer's certificate yet, so each system warns the first time:
 
-- **macOS**: the app and the disk image are signed ad hoc (`codesign --sign -`), with the hardened runtime, and not notarised, so Gatekeeper refuses a downloaded copy as from an unidentified developer. To open it once: Control-click the app in Applications and choose Open (macOS 14 and earlier), or open System Settings › Privacy & Security and choose Open Anyway (macOS 15); or remove the download's quarantine with `xattr -dr com.apple.quarantine /Applications/Apertrust.app`.
+- **macOS**: the app and the disk image are signed ad hoc (`codesign --sign -`), with the hardened runtime, and not notarised, so Gatekeeper refuses a downloaded copy as from an unidentified developer, or calls it damaged. Removing the download's quarantine always works: `xattr -dr com.apple.quarantine /Applications/Apertrust.app`. For the unidentified developer alone, opening it once and then choosing Open Anyway in System Settings › Privacy & Security also works (macOS 15 and later), as does Control-clicking the app and choosing Open (macOS 14 and earlier).
 - **Windows**: SmartScreen says "Windows protected your PC" for the installer and the executables: More info › Run anyway.
 - **Linux**: neither the AppImage nor the tarball is signed; make the AppImage executable (`chmod +x`) and run it.
 

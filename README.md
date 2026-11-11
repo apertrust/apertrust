@@ -52,6 +52,23 @@ Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.m
 - **The command line** edits, exports JPEG and PNG at darktable's sizes with file names from darktable's variables, and lists a folder.
 - **Platforms:** macOS (Metal), Windows (Direct3D 12) and Linux (Vulkan) pass CI, with software GPUs where there is no hardware one.
 
+## Downloads
+
+Releases and the nightly builds of Apertrust Dev are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it:
+
+- **macOS** refuses it as from an unidentified developer, or says it "is damaged and can't be opened". Drag the app from the disk image into Applications, then remove the download's quarantine in Terminal:
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/Apertrust Dev.app"   # a nightly
+  xattr -dr com.apple.quarantine /Applications/Apertrust.app         # a release
+  ```
+
+  Or open it once, then choose Open Anyway in System Settings › Privacy & Security and confirm. On macOS 14 and earlier, Control-click the app and choose Open.
+- **Windows**: SmartScreen says "Windows protected your PC": choose More info, then Run anyway.
+- **Linux**: make the AppImage executable (`chmod +x`) and run it.
+
+[docs/packaging.md](docs/packaging.md#unsigned-packages) says why, and what each package holds.
+
 ## How it works
 
 - **Engine:** a GPU pipeline on wgpu (Vulkan, Metal, Direct3D 12) that keeps every intermediate image on the GPU. Without a hardware GPU it runs on a software one, more slowly.
