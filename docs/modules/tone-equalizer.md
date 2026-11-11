@@ -137,13 +137,13 @@ The Advanced tab opens with darktable's graph of the bands: `Row::Custom` with `
 
 So after a drag the nodes sit on the curve. +1 EV at −4 EV from flat bands sets 0.96, 0.65, 0.09 and 0.04 EV from the −4 EV band out, and −0.01 at the ends, where the falloff alone gives 1, 0.61, 0.14, 0.01 and 0.0003. Under the pointer, a ring of radius σ/√2 on the curve shows how far a drag reaches, and the node in reach is filled.
 
-Every change while the pointer moves sets the bands whose value, rounded to the two decimals their sliders show, changes. The release, or the pointer leaving the graph, ends the gesture on each band it moved, as darktable's `area_enter_leave_notify` commits the drag, so history merges it into one step. The pointer's last move before the release counts, as darktable's last motion does. A double-click resets the nine bands, as its tooltip, darktable's, says.
+Every change while the pointer moves sets the bands whose value, rounded to the two decimals their sliders show, changes. The release, or the pointer leaving the graph, ends the gesture on each band it moved, as darktable's `area_enter_leave_notify` commits the drag, the bands' `done: true` writes sent together as one `Step { source: You }` (decision 78; [history.md](../history.md#what-makes-a-step)), so the drag is one history step. The pointer's last move before the release counts, as darktable's last motion does. A double-click resets the nine bands, as its tooltip, darktable's, says: nine `ResetControl`s sent as one `Step`, one history step.
 
 **By keyboard** the graph is one focus stop:
 
 - Page Up and Page Down choose a band, Home and End the first and the last.
 - The arrows move it by 0.01 EV: Shift ten, Alt a tenth, but never less than the 0.01 EV its slider shows, as a slider row's keys.
-- Delete resets it and Shift+Delete all nine.
+- Delete resets it and Shift+Delete all nine, as one `Step`.
 - Each band is a slider for screen readers, named as its own slider is.
 
 **The mask's histogram** behind the bands, with darktable's warnings where the mask overflows them, waits for the engine's `mask_histogram` readout (decision 19). Until it comes the graph draws none and no warning.
