@@ -17,11 +17,11 @@
 //! The grid panel's grid bar, driven through AccessKit and photographed (`docs/gui.md`,
 //! The grid bar).
 
-use apertrust_ui::Theme;
 use apertrust_ui::components::{
     GridBarAction, GridEdge, GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Sort,
     SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_width,
 };
+use apertrust_ui::{Icon, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
@@ -895,4 +895,99 @@ fn the_scroll_bar_is_photographed() {
     harness.hover_at(egui::pos2(list.left() + 60.0, list.bottom() - 8.0));
     harness.run();
     harness.snapshot("grid-panel-scroll-bar");
+}
+
+/// With no photos, the panel shows the struck-through photo, the message under it and the
+/// hint under that, inside the strip and wrapped to a one-column side's width.
+#[test]
+fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
+    let mut results = egui_kittest::SnapshotResults::new();
+    let message = "No photos available";
+    let hint = "Choose a subfolder in Browse.";
+    for (position, name) in [
+        (GridPosition::Bottom, "grid-panel-empty"),
+        (GridPosition::Left, "grid-panel-empty-left"),
+    ] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(640.0, 300.0))
+            .with_context_setup(install)
+            .build_ui(move |ui| {
+                let ctx = ui.ctx().clone();
+                let size = ThumbnailSize::Small;
+                let thumb = |_| unreachable!("no photos");
+                let panel = GridPanel::new(0, None, thumb)
+                    .size(size)
+                    .position(position)
+                    .empty(message)
+                    .empty_hint(hint);
+                if position == GridPosition::Bottom {
+                    egui::Panel::bottom("grid panel")
+                        .exact_size(grid_panel_height(&ctx, size, true, 1))
+                        .frame(egui::Frame::NONE)
+                        .show(ui, |ui| panel.show(ui));
+                } else {
+                    egui::Panel::left("grid panel")
+                        .exact_size(grid_panel_width(&ctx, size, 1))
+                        .resizable(false)
+                        .frame(egui::Frame::NONE)
+                        .show(ui, |ui| panel.show(ui));
+                }
+            });
+        harness.run();
+        let list = harness
+            .get_by_role_and_label(Role::List, "Grid panel")
+            .rect();
+        let shapes = &harness.output().shapes;
+        let text = |words: &str| {
+            shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == words => {
+                        Some(text.visual_bounding_rect())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{words} is drawn, {position:?}"))
+        };
+        // The icon: an icon's texture of its size, in the panel but not in its grid bar,
+        // whose buttons are icons too.
+        let bar = harness
+            .get_by_role_and_label(Role::Toolbar, "Grid bar")
+            .rect();
+        let side = Icon::PhotoOff.size();
+        let icons: Vec<egui::Rect> = shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Mesh(mesh) if mesh.texture_id != egui::TextureId::default() => {
+                    Some(mesh.calc_bounds())
+                }
+                _ => None,
+            })
+            .filter(|rect| {
+                (rect.width() - side).abs() < 1.0
+                    && (rect.height() - side).abs() < 1.0
+                    && list.contains_rect(*rect)
+                    && !bar.intersects(*rect)
+            })
+            .collect();
+        let [icon] = icons[..] else {
+            panic!("one icon in the panel, {icons:?}, {position:?}");
+        };
+        let (said, hinted) = (text(message), text(hint));
+        for part in [icon, said, hinted] {
+            assert!(
+                list.contains_rect(part),
+                "{part:?} in {list:?}, {position:?}"
+            );
+        }
+        assert!(icon.bottom() <= said.top() && said.bottom() <= hinted.top());
+        // Each centred under the icon, to the pixel the icon is snapped to.
+        for part in [said, hinted] {
+            assert!(
+                (part.center().x - icon.center().x).abs() <= 1.0,
+                "{part:?} under {icon:?}, {position:?}"
+            );
+        }
+        results.add(harness.try_snapshot(name));
+    }
 }

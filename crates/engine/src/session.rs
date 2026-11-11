@@ -293,6 +293,9 @@ pub enum Command {
     /// Holds the next folder's reading before it begins, for a test.
     #[cfg(test)]
     HoldFolder(export_job::testing::Hold),
+    /// Holds the next tree's walk once its root is listed, before it walks, for a test.
+    #[cfg(test)]
+    HoldWalk(export_job::testing::Hold),
     /// Holds each thumbnail the next [`LibraryCommand::Thumbnails`] asks for before it is
     /// read, for a test.
     #[cfg(test)]
@@ -327,6 +330,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::HoldExport(_)
         | Command::HoldPreview(_)
         | Command::HoldFolder(_)
+        | Command::HoldWalk(_)
         | Command::HoldThumbnails(_)
         | Command::HoldDecode(_)
         | Command::HoldClear(_) => false,
@@ -1306,6 +1310,9 @@ struct Engine {
     /// each later open lies inside it, as Browse shows a folder inside its tree, so the
     /// siblings of the folder last opened can be listed; a close forgets it.
     tree: Option<PathBuf>,
+    /// The job walking that tree for each folder's raw count ([`library::walk`]), which a
+    /// new root or a close cancels, and an open inside the tree leaves running.
+    walk: Option<JobId>,
     /// Holds the next export's renders for a test.
     #[cfg(test)]
     export_hold: Option<export_job::testing::Hold>,
@@ -1315,6 +1322,9 @@ struct Engine {
     /// Holds the next folder's reading for a test.
     #[cfg(test)]
     folder_hold: Option<export_job::testing::Hold>,
+    /// Holds the next tree's walk for a test.
+    #[cfg(test)]
+    walk_hold: Option<export_job::testing::Hold>,
     /// Holds the next thumbnails asked for, for a test.
     #[cfg(test)]
     thumbnails_hold: Option<export_job::testing::Hold>,
@@ -1662,12 +1672,15 @@ impl Engine {
             thumbnails: Vec::new(),
             subfolders: Vec::new(),
             tree: None,
+            walk: None,
             #[cfg(test)]
             export_hold: None,
             #[cfg(test)]
             preview_hold: None,
             #[cfg(test)]
             folder_hold: None,
+            #[cfg(test)]
+            walk_hold: None,
             #[cfg(test)]
             thumbnails_hold: None,
             #[cfg(test)]
@@ -1837,6 +1850,11 @@ impl Engine {
     /// the control waits for its workers, and goes on once they have.
     fn finish(mut self, inbox: mpsc::Receiver<Inbox>) {
         let saved = catch_unwind(AssertUnwindSafe(|| self.close_saving()));
+        // The tree's walk is cancelled first: the shutdown would too, but a walk is never
+        // what the session waits for.
+        if let Some(walk) = self.walk.take() {
+            self.jobs.control.cancel(walk);
+        }
         self.jobs.finish(&self.gpu, inbox);
         if let Err(panic) = saved {
             std::panic::resume_unwind(panic);
@@ -1927,6 +1945,11 @@ impl Engine {
                 #[cfg(test)]
                 Command::HoldFolder(hold) => {
                     self.folder_hold = Some(hold);
+                    Ok(())
+                }
+                #[cfg(test)]
+                Command::HoldWalk(hold) => {
+                    self.walk_hold = Some(hold);
                     Ok(())
                 }
                 #[cfg(test)]
@@ -2160,6 +2183,7 @@ impl Engine {
             | Command::HoldExport(_)
             | Command::HoldPreview(_)
             | Command::HoldFolder(_)
+            | Command::HoldWalk(_)
             | Command::HoldThumbnails(_)
             | Command::HoldDecode(_)
             | Command::HoldClear(_) => {
@@ -2646,7 +2670,9 @@ impl Engine {
     /// `UserBackground` queue, a folder's reading as darktable's film import (decision 57),
     /// cancellable, its events going out as [`Event::Library`]. A close cancels the reading
     /// and answers at once. Either cancels the thumbnails and subfolders asked for before it.
-    /// An open outside [`Self::tree`] becomes the tree's root; one inside it keeps it.
+    /// An open outside [`Self::tree`] becomes the tree's root, whose whole tree is walked
+    /// ([`Self::walk_tree`]); the root opened again is walked again; a folder inside it
+    /// keeps the tree and its walk.
     fn library(&mut self, command: LibraryCommand, events: &mut Vec<Event>) {
         let source = match command {
             LibraryCommand::Thumbnails { photos, size } => {
@@ -2670,13 +2696,24 @@ impl Engine {
         let Some(source) = source else {
             self.shown = None;
             self.tree = None;
+            if let Some(walk) = self.walk.take() {
+                self.jobs.control.cancel(walk);
+            }
             events.push(Event::Library(LibraryEvent::Closed { open }));
             return;
         };
         let library::Source::Folder(path) = &source;
         self.shown = Some((open, path.clone()));
-        if !(self.tree.as_deref()).is_some_and(|root| library::inside(root, path)) {
+        // A new root's walk starts once its own photos are listed, or its reading ends
+        // otherwise, when the sender goes.
+        let (listed, walk) = mpsc::channel::<()>();
+        let new_root = !(self.tree.as_deref()).is_some_and(|root| library::inside(root, path));
+        // The root opened again, as a recent or Open Folder… opens it, is walked again,
+        // so its counts are fresh; a folder inside it keeps the walk.
+        let again = self.tree.as_deref() == Some(path.as_path());
+        if new_root || again {
             self.tree = Some(path.clone());
+            self.walk_tree(open, path.clone(), walk);
         }
         let message = jobs::Message::new("job-folder").with("folder", path.as_path());
         let description = format!("reading {}", path.display());
@@ -2689,13 +2726,59 @@ impl Engine {
                 if let Some(hold) = &hold {
                     hold.wait();
                 }
-                let tell = |event| outbox.send(Event::Library(event));
+                let tell = |event| {
+                    let last = matches!(
+                        event,
+                        LibraryEvent::Listed { done: true, .. } | LibraryEvent::Failed { .. }
+                    );
+                    outbox.send(Event::Library(event));
+                    if last {
+                        // The walk may have ended already: nothing waits then.
+                        let _ = listed.send(());
+                    }
+                };
                 library::open(open, &source, &tell, &|| context.cancelled());
                 Ok(())
             })
             .progress(message, true)
         });
         self.folder = Some(job);
+    }
+
+    /// The whole tree under `root`, made the tree's root by the open numbered `open`, walked
+    /// by a job on darktable's `SystemBackground` queue, as its background thumbnail job
+    /// (backthumbs) runs, with no progress, so the jobs window never shows it, its batches
+    /// going out as
+    /// [`Event::Library`] in that open's number; the walk before it cancelled. It starts once
+    /// `listed` says the root's own photos are listed, or its reading has ended.
+    fn walk_tree(&mut self, open: u64, root: PathBuf, listed: mpsc::Receiver<()>) {
+        if let Some(older) = self.walk.take() {
+            self.jobs.control.cancel(older);
+        }
+        let outbox = self.jobs.outbox.clone();
+        let description = format!("walking the tree of {}", root.display());
+        #[cfg(test)]
+        let hold = self.walk_hold.take();
+        let job = self.jobs.add(open, Queue::SystemBackground, |_| {
+            jobs::Job::new("walk", description, move |context| {
+                // Listed, or the reading gone: either way the walk goes on; cancelled, not.
+                if let Err(jobs::Interrupted::Cancelled) = context.wait(&listed) {
+                    return Ok(());
+                }
+                #[cfg(test)]
+                if let Some(hold) = &hold
+                    && !hold.wait_unless(|| context.cancelled())
+                {
+                    return Ok(());
+                }
+                // The folders are read on the library's own thread, so a share that hangs
+                // holds that thread alone, never this worker.
+                let tell = |event| outbox.send(Event::Library(event));
+                library::walk(open, &root, &tell, &|| context.cancelled());
+                Ok(())
+            })
+        });
+        self.walk = Some(job);
     }
 
     /// [`LibraryCommand::Subfolders`]: `folder`'s subfolders listed by a job on darktable's
@@ -8562,7 +8645,8 @@ mod tests {
                 | LibraryEvent::Failed { .. }
                 | LibraryEvent::Taken { .. }
                 | LibraryEvent::Closed { .. }
-                | LibraryEvent::Thumbnail { .. } => Topic::Notice,
+                | LibraryEvent::Thumbnail { .. }
+                | LibraryEvent::Walked { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),
@@ -8854,10 +8938,36 @@ mod tests {
             ),
             "{own:?}"
         );
-        // The open's events, all before its job's end, sent by the same worker.
+        // Then the tree's walk, in the open's number, after the open's own photos are
+        // listed.
+        let walked =
+            |e: &Event| matches!(e, Event::Library(LibraryEvent::Walked { done: true, .. }));
+        if !events.iter().any(walked) {
+            events.extend(until(&session, &wakes, walked));
+        }
         let library = library_of(&events, open);
         let all = events.iter().filter(|e| matches!(e, Event::Library(_)));
         assert_eq!(all.count(), library.len());
+        let at = |pick: fn(&&LibraryEvent) -> bool| library.iter().position(pick).unwrap();
+        let listed_at = at(|e| matches!(e, LibraryEvent::Listed { done: true, .. }));
+        let walked_at = at(|e| matches!(e, LibraryEvent::Walked { .. }));
+        assert!(listed_at < walked_at, "{library:?}");
+        let tree: Vec<&library::WalkedFolder> = library
+            .iter()
+            .flat_map(|e| match e {
+                LibraryEvent::Walked { folders, .. } => folders.iter().collect(),
+                _ => Vec::new(),
+            })
+            .collect();
+        assert_eq!(tree.len(), 2, "{tree:?}");
+        assert_eq!((&tree[0].folder, tree[0].raws), (&folder, 2));
+        assert_eq!(tree[0].subfolders, ["Day 1"]);
+        assert_eq!((&tree[1].folder, tree[1].raws), (&folder.join("Day 1"), 0));
+        // The open's own events, all before its job's end, sent by the same worker.
+        let library: Vec<&LibraryEvent> = library
+            .into_iter()
+            .filter(|e| !matches!(e, LibraryEvent::Walked { .. }))
+            .collect();
         let [
             LibraryEvent::Opened {
                 name,
@@ -8890,6 +9000,122 @@ mod tests {
                 .any(|e| matches!(e, Event::Opened(_) | Event::Values(_)))
         );
         drop(session);
+        remove(&path);
+    }
+
+    /// Whether `event` is the last batch of the walk numbered `open`.
+    fn walk_done(open: u64) -> impl Fn(&Event) -> bool {
+        move |e: &Event| matches!(e, Event::Library(LibraryEvent::Walked { open: o, done: true, .. }) if *o == open)
+    }
+
+    /// The opens whose walk sent anything among `events`.
+    fn walks(events: &[Event]) -> Vec<u64> {
+        let mut walks: Vec<u64> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Library(LibraryEvent::Walked { open, .. }) => Some(*open),
+                _ => None,
+            })
+            .collect();
+        walks.dedup();
+        walks
+    }
+
+    /// A new root cancels the walk before it, and so does a close: a walk held once its
+    /// root is listed sends nothing after either, though let go after them, while the new
+    /// root's walk goes on. A folder opened inside the tree starts no walk of its own; the
+    /// root opened again is walked again.
+    #[test]
+    fn a_new_root_or_a_close_cancels_the_walk_and_a_folder_inside_starts_none() {
+        let gpu = gpu();
+        let (folder, path) = photo_folder("library-walk-cancel");
+        let (other, other_path) = photo_folder("library-walk-other");
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let mut events = Vec::new();
+        for close in [false, true] {
+            let (hold, begun, permit) = export_job::testing::Hold::new();
+            session.send(Command::HoldWalk(hold));
+            let held = session.send(open_folder(&folder));
+            begun.recv_timeout(TEST_WAIT).expect("the walk begins");
+            if close {
+                let closed = session.send(Command::Library(LibraryCommand::Close));
+                let is = |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == closed);
+                events.extend(until(&session, &wakes, is));
+            } else {
+                let next = session.send(open_folder(&other));
+                events.extend(until(&session, &wakes, walk_done(next)));
+            }
+            drop(permit);
+            // A walk after it, on the same queue, ends once the held one has run out.
+            let after = session.send(open_folder(&other));
+            events.extend(until(&session, &wakes, walk_done(after)));
+            assert!(!walks(&events).contains(&held), "close {close}: {events:?}");
+            events.clear();
+        }
+
+        // Inside the tree: no walk of its own.
+        let inside = session.send(open_folder(&other.join("Day 1")));
+        follow(&session, &wakes, &mut events, inside, ended);
+        let root = session.send(open_folder(&folder));
+        events.extend(until(&session, &wakes, walk_done(root)));
+        assert!(!walks(&events).contains(&inside), "{events:?}");
+        // The root again: walked again.
+        let again = session.send(open_folder(&folder));
+        events.extend(until(&session, &wakes, walk_done(again)));
+        drop(session);
+        remove(&path);
+        remove(&other_path);
+    }
+
+    /// The walk waits while the root's own reading is held, and comes after its listing.
+    #[test]
+    fn the_walk_waits_for_the_root_s_reading() {
+        let gpu = gpu();
+        let (folder, path) = photo_folder("library-walk-waits");
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldFolder(hold));
+        let open = session.send(open_folder(&folder));
+        begun.recv_timeout(TEST_WAIT).expect("the reading begins");
+        let mut events = Vec::new();
+        let quiet = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < quiet {
+            let _ = wakes.recv_timeout(Duration::from_millis(20));
+            events.extend(session.events());
+        }
+        assert!(walks(&events).is_empty(), "{events:?}");
+        drop(permit);
+        events.extend(until(&session, &wakes, walk_done(open)));
+        let library = library_of(&events, open);
+        let listed = library
+            .iter()
+            .position(|e| matches!(e, LibraryEvent::Listed { done: true, .. }));
+        let walked = library
+            .iter()
+            .position(|e| matches!(e, LibraryEvent::Walked { .. }));
+        assert!(listed < walked, "{library:?}");
+        drop(session);
+        remove(&path);
+    }
+
+    /// Dropping the session mid-walk returns at once: the walk is cancelled, though it has
+    /// no progress and would otherwise wait on its folders for ever.
+    #[test]
+    fn dropping_the_session_mid_walk_returns_promptly() {
+        let gpu = gpu();
+        let (folder, path) = photo_folder("library-walk-drop");
+        let (session, _wakes) = start_with(&gpu, &[], synthetic);
+        let (hold, begun, _permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldWalk(hold));
+        session.send(open_folder(&folder));
+        begun.recv_timeout(TEST_WAIT).expect("the walk begins");
+        let started = Instant::now();
+        drop(session);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
         remove(&path);
     }
 
@@ -9091,7 +9317,11 @@ mod tests {
             "{own:?}"
         );
         assert!(library_of(&events, first).is_empty());
-        let listed = library_of(&events, second);
+        // The reading's own events, the tree's walk in the same number aside.
+        let listed: Vec<&LibraryEvent> = library_of(&events, second)
+            .into_iter()
+            .filter(|e| !matches!(e, LibraryEvent::Walked { .. }))
+            .collect();
         assert!(
             matches!(listed.last(), Some(LibraryEvent::Taken { .. })),
             "{listed:?}"

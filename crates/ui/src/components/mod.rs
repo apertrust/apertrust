@@ -91,7 +91,7 @@ pub use photo_frame::{
     PhotoFrame, Placed, middle_cut,
 };
 pub use plate::ButtonState;
-pub use section::{Section, SectionAction, SectionOutput};
+pub use section::{Section, SectionAction, SectionOutput, section_list};
 pub use segmented::Segmented;
 pub use side_panel::{
     PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction, quiet_scroll,

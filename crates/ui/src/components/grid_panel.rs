@@ -28,7 +28,8 @@
 //! one. With a cell focused, ← and → move the focus to the next or previous photo, Home and
 //! End to the first and last, and Enter or Space opens the one focused; the panel scrolls
 //! to keep it in sight. The active photo's cell is scrolled into view when it changes.
-//! With no photos it is drawn empty and, where the app gives one, says why.
+//! With no photos it is drawn empty and, where the app gives one, says why: a struck-through
+//! photo over the message, and a hint under it where the app gives one too.
 //!
 //! The grid bar holds Sort and Labels at its start and Zoom at its end: Sort and Zoom each
 //! open their menu through the popup service, the one in use checked, and Labels shows or
@@ -297,6 +298,7 @@ pub struct GridPanel<'a, F: Fn(usize) -> Thumb<'a>> {
     thumb: F,
     active: Option<usize>,
     empty: Option<&'a str>,
+    hint: Option<&'a str>,
     sort: Sort,
     size: ThumbnailSize,
     lines: usize,
@@ -321,6 +323,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
             thumb,
             active,
             empty: None,
+            hint: None,
             sort: Sort {
                 key: SortKey::CaptureTime,
                 descending: false,
@@ -336,6 +339,13 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
     /// What the panel says while it has no photos, translated; nothing by default.
     pub fn empty(mut self, message: &'a str) -> Self {
         self.empty = Some(message);
+        self
+    }
+
+    /// What to do about it, translated, under the message while it has no photos; nothing
+    /// by default.
+    pub fn empty_hint(mut self, hint: &'a str) -> Self {
+        self.hint = Some(hint);
         self
     }
 
@@ -436,13 +446,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
         };
         if self.count == 0 {
             if let Some(message) = self.empty {
-                ui.painter().text(
-                    area.center(),
-                    egui::Align2::CENTER_CENTER,
-                    message,
-                    egui::FontId::proportional(t.text.body),
-                    t.colors.text_secondary,
-                );
+                empty(ui, area, message, self.hint);
             }
             return GridPanelOutput {
                 bar: self.bar(ui, header, bar_id),
@@ -708,6 +712,46 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
             Some(Answer::Chosen(chosen)) => GridBarAction::from_id(&chosen),
             _ => None,
         }
+    }
+}
+
+/// The panel's empty state, centred in `area`: a struck-through photo, `message` under it
+/// and `hint`, smaller, under that, all muted, each line wrapped to the area's width so a
+/// column at a side holds them too.
+fn empty(ui: &Ui, area: Rect, message: &str, hint: Option<&str>) {
+    let t = theme(ui.ctx());
+    let painter = ui.painter_at(area);
+    let colour = t.colors.text_secondary;
+    let width = (area.width() - 2.0 * t.spacing.m).max(0.0);
+    let centred = |text: &str, size: f32| {
+        let mut job = egui::text::LayoutJob::simple(
+            text.to_owned(),
+            egui::FontId::proportional(size),
+            colour,
+            width,
+        );
+        job.halign = Align::Center;
+        painter.layout_job(job)
+    };
+    let message = centred(message, t.text.body);
+    let hint = hint.map(|hint| centred(hint, t.text.small));
+    let icon = Icon::PhotoOff.size();
+    let mut height = icon + t.spacing.s + message.size().y;
+    if let Some(hint) = &hint {
+        height += t.spacing.xxs + hint.size().y;
+    }
+    let mut y = area.center().y - height / 2.0;
+    let x = area.center().x;
+    Icon::PhotoOff.paint(
+        &painter,
+        Rect::from_min_size(pos2(x - icon / 2.0, y), vec2(icon, icon)),
+        colour,
+    );
+    y += icon + t.spacing.s;
+    let below = message.size().y;
+    painter.galley(pos2(x, y), message, colour);
+    if let Some(hint) = hint {
+        painter.galley(pos2(x, y + below + t.spacing.xxs), hint, colour);
     }
 }
 

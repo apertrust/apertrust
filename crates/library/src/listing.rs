@@ -22,7 +22,9 @@
 //! costs the worker's time, not the interface's. The channel is bounded, so a caller that
 //! reads slowly holds the worker back instead of letting results pile up. The caller can
 //! cancel, and a deadline passed is reported as an event while the listing goes on. Hidden
-//! files (names starting with a dot) are not listed, and subfolders only by their names,
+//! entries (names starting with a dot, and folders the system's own flag hides) are not
+//! listed, nor a Mac package as a folder (`kind`, the rule the tree's walk shares), and
+//! subfolders only by their names,
 //! sorted as the system's file browser sorts them ([`browser_order`]), without descending
 //! into them; bulk listing is planned. The one hidden file it touches is a leftover
 //! temporary of Apertrust's own safe write (`.~NAME.XXXXXX.tmp`, decision 53) more than a
@@ -90,7 +92,8 @@ pub struct Summary {
     /// Names that are not text (not valid UTF-8, possible on Linux), which are not
     /// listed, whatever they are.
     pub not_text: usize,
-    /// Names starting with a dot, folders among them, but for the temporaries removed.
+    /// Names starting with a dot, folders among them, but for the temporaries removed,
+    /// and folders the system's own flag hides.
     pub hidden: usize,
     /// Temporaries of writes that never ended, found by their name alone
     /// (`apertrust_base::fs::is_temporary_name`), older than a day, and removed.
@@ -503,14 +506,14 @@ impl Job {
                 }
                 continue;
             }
-            let is_folder = match entry.file_type() {
-                Ok(kind) if kind.is_dir() => true,
-                // A link counts as what it points to.
-                Ok(kind) if kind.is_symlink() => {
-                    fs::metadata(entry.path()).is_ok_and(|meta| meta.is_dir())
+            let is_folder = match kind(&entry, &name) {
+                Kind::Folder { .. } => true,
+                Kind::File => false,
+                Kind::Hidden => {
+                    summary.hidden += 1;
+                    continue;
                 }
-                Ok(_) => false,
-                Err(_) => {
+                Kind::Unreadable => {
                     summary.unreadable += 1;
                     continue;
                 }
@@ -569,6 +572,98 @@ fn stat(path: &Path) -> Option<FileStat> {
     })
 }
 
+/// What a folder's entry is, by the one rule the listing and the tree's walk share
+/// (`docs/library.md`, The listing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    /// Hidden: a name that starts with a dot, or a folder the system's own flag hides
+    /// (Finder's `UF_HIDDEN` on the Mac, the hidden attribute on Windows).
+    Hidden,
+    /// A folder, or, `link`, a link to one, named as a subfolder but never walked into.
+    Folder { link: bool },
+    /// Anything else, a Mac package among them, a link to a file too: a raw where its
+    /// name says so.
+    File,
+    /// Its type could not be read.
+    Unreadable,
+}
+
+/// What `entry`, named `name`, is ([`Kind`]). A folder's flags are read where the system
+/// keeps them, one `lstat` a folder on the Mac and the listing's own data on Windows; a
+/// link is followed once to see whether it points to a folder.
+pub(crate) fn kind(entry: &fs::DirEntry, name: &str) -> Kind {
+    if name.starts_with('.') {
+        return Kind::Hidden;
+    }
+    let Ok(file_type) = entry.file_type() else {
+        return Kind::Unreadable;
+    };
+    if file_type.is_symlink() {
+        // A link counts as what it points to; a junction on Windows is one too.
+        let folder = fs::metadata(entry.path()).is_ok_and(|meta| meta.is_dir());
+        return if folder {
+            Kind::Folder { link: true }
+        } else {
+            Kind::File
+        };
+    }
+    if !file_type.is_dir() || package(name) {
+        Kind::File
+    } else if hidden_by_flag(entry) {
+        Kind::Hidden
+    } else {
+        Kind::Folder { link: false }
+    }
+}
+
+/// The extensions of the Mac's packages, folders Finder shows as one file: never listed
+/// as subfolders or walked into.
+#[cfg(target_os = "macos")]
+const PACKAGES: [&str; 5] = ["app", "bundle", "framework", "photoslibrary", "plugin"];
+
+/// Whether the folder `name` is a Mac package, by its extension ([`PACKAGES`]).
+#[cfg(target_os = "macos")]
+fn package(name: &str) -> bool {
+    PACKAGES
+        .iter()
+        .any(|extension| has_extension(name, extension))
+}
+
+/// Elsewhere a folder is a folder, whatever its name.
+#[cfg(not(target_os = "macos"))]
+fn package(_name: &str) -> bool {
+    false
+}
+
+/// Whether Finder's hidden flag is set on the folder `entry` names; a folder whose flags
+/// cannot be read is shown.
+#[cfg(target_os = "macos")]
+fn hidden_by_flag(entry: &fs::DirEntry) -> bool {
+    use std::os::macos::fs::MetadataExt as _;
+    /// `UF_HIDDEN` in `<sys/stat.h>`: Finder hides the item.
+    const UF_HIDDEN: u32 = 0x8000;
+    entry
+        .metadata()
+        .is_ok_and(|meta| meta.st_flags() & UF_HIDDEN != 0)
+}
+
+/// Whether the hidden attribute is set on the folder `entry` names, from the directory
+/// listing's own data; a folder whose attributes cannot be read is shown.
+#[cfg(windows)]
+fn hidden_by_flag(entry: &fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt as _;
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    entry
+        .metadata()
+        .is_ok_and(|meta| meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+}
+
+/// Elsewhere a dot name alone hides a folder.
+#[cfg(not(any(target_os = "macos", windows)))]
+fn hidden_by_flag(_entry: &fs::DirEntry) -> bool {
+    false
+}
+
 /// Whether `name` ends in `.extension`, in any case.
 fn has_extension(name: &str, extension: &str) -> bool {
     name.rsplit_once('.')
@@ -576,7 +671,7 @@ fn has_extension(name: &str, extension: &str) -> bool {
 }
 
 /// Whether the decoder reads files of this name, by its extension in any case.
-fn is_raw(name: &str) -> bool {
+pub(crate) fn is_raw(name: &str) -> bool {
     apertrust_raw::extensions()
         .iter()
         .any(|extension| has_extension(name, extension))
@@ -666,7 +761,7 @@ pub(crate) mod stall {
     }
 
     /// Waits while `folder` is held.
-    pub(super) fn wait(folder: &Path) {
+    pub(crate) fn wait(folder: &Path) {
         let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
         while held.iter().any(|held| held == folder) {
             held = RELEASED.wait(held).unwrap_or_else(PoisonError::into_inner);

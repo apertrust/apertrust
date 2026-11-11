@@ -75,6 +75,14 @@ pub struct Section<'a> {
     peek: bool,
 }
 
+impl Section<'_> {
+    /// The body's margin at its start and end, 12 points (`spacing.l`): a module's rows
+    /// start inside it, and a [`section_list`]'s scroll bar floats in its end.
+    pub fn body_margin(t: &crate::Theme) -> f32 {
+        t.spacing.l
+    }
+}
+
 impl<'a> Section<'a> {
     /// A utility section: options only. `title` is translated.
     pub fn new(title: &'a str, open: bool) -> Self {
@@ -263,7 +271,7 @@ impl<'a> Section<'a> {
         drop(toggle);
 
         if self.open {
-            let margin = t.spacing.l;
+            let margin = Section::body_margin(&t);
             if !self.tabs.is_empty() {
                 // The tabs start on the header's bottom edge, whatever the item spacing,
                 // and hang out by their padding so the first name sits on the content's
@@ -333,4 +341,42 @@ impl<'a> Section<'a> {
         output.actions.append(&mut pressed);
         output
     }
+}
+
+/// A list scrolling inside a section's body: every scrolling area inside a module is one,
+/// so they all look and behave alike. It is `sizes.section_list` high whatever `add` draws,
+/// so the section keeps its height, and scrolls when the content is taller. Its scroll bar
+/// is egui's floating one in the quiet bar's colours ([`super::quiet_scroll`]), drawn in
+/// the body's end margin ([`Section::body_margin`]), clear of the rows: hidden until the
+/// pointer is over the list and the content is taller than it, then a thin thumb on its
+/// `sunken` track, as wide as the side panel's under the pointer and while dragged. Call
+/// it inside a section's body; `id_salt` tells it from another list there.
+pub fn section_list<R>(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let t = theme(ui.ctx());
+    let margin = Section::body_margin(&t);
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(width, t.sizes.section_list), Sense::hover());
+    let mut list = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect.with_max_x(rect.right() + margin))
+            .layout(*ui.layout()),
+    );
+    list.spacing_mut().scroll = egui::style::ScrollStyle {
+        bar_width: ui.spacing().scroll.bar_width,
+        // The quiet thumb's colours, not the text's.
+        foreground_color: false,
+        ..egui::style::ScrollStyle::floating()
+    };
+    let area = egui::ScrollArea::vertical()
+        .id_salt(id_salt)
+        .auto_shrink([false, false])
+        .content_margin(Margin {
+            right: margin as i8,
+            ..Margin::ZERO
+        });
+    super::quiet_scroll(&mut list, area, add)
 }

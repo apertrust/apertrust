@@ -660,12 +660,13 @@ fn ended_carries_what_the_body_set() {
     );
 }
 
-/// Shutting down: a running job that can be cancelled is, one that cannot finishes,
-/// one queued is discarded unrun, and a job added afterwards is discarded too, its queue
-/// reported (difference J16).
+/// Shutting down: a running job that can be cancelled is, and so is one with no progress,
+/// which nothing else could stop; one shown as not cancellable finishes, one queued is
+/// discarded unrun, and a job added afterwards is discarded too, its queue reported
+/// (difference J16).
 #[test]
 fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
-    let (control, mut events) = control(2);
+    let (control, mut events) = control(3);
     let (tell, mut heard) = told();
     let (_never, wait) = mpsc::channel();
     let a = control.add(
@@ -677,8 +678,12 @@ fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
         UserForeground,
         counting("b", 1, Some(wait), &tell).progress(Message::new("job-test"), false),
     );
+    // Hidden, and waiting for a go that never comes: only its cancel ends it.
+    let (_never_hidden, wait) = mpsc::channel();
+    control.add(UserBackground, counting("hidden", 1, Some(wait), &tell));
     heard.until(|told| *told == Told::Started("a"));
     heard.until(|told| *told == Told::Started("b"));
+    heard.until(|told| *told == Told::Started("hidden"));
     let c = control.add(
         UserBackground,
         cancellable(counting("c", 1, None, &tell), "c"),
@@ -700,7 +705,7 @@ fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
     heard.until(|told| *told == Told::Stopped("b", Ok(1)));
     let mut started = heard.started();
     started.sort_unstable();
-    assert_eq!(started, ["a", "b"], "c never ran");
+    assert_eq!(started, ["a", "b", "hidden"], "c never ran");
     assert_eq!(control.pending(), 0);
 
     let late = control.add(

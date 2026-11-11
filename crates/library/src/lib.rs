@@ -19,13 +19,15 @@
 //!
 //! Built so far: [`sidecar`], the `.apxmp` file's text layer (layer 1), [`listing`], one
 //! folder's raws and their sidecars, listed on a worker thread, [`index`], that listing
-//! with each sidecar read, in memory, and [`ops`], the commands and events clients see
-//! (layer 4), opening a folder first.
+//! with each sidecar read, in memory, [`walk`], the walk of a folder's whole tree for its
+//! folders' raw counts, and [`ops`], the commands and events clients see (layer 4),
+//! opening a folder first.
 
 pub mod index;
 pub mod listing;
 pub mod ops;
 pub mod sidecar;
+pub mod walk;
 pub mod xmp;
 
 pub use index::{Counts, Edit, Index, Sidecar};

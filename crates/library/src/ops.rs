@@ -21,8 +21,9 @@
 //!
 //! Built so far: opening a folder ([`open`]), which reports the folder, its subfolders and
 //! its photos, each with what its sidecar says, then their capture times, closing it,
-//! listing a subfolder's own subfolders for Browse's tree ([`subfolders`]), and its photos'
-//! thumbnails
+//! walking the whole tree under the folder opened for each folder's raw count and
+//! subfolders ([`walk`]), listing a subfolder's own subfolders for Browse's tree
+//! ([`subfolders`]), and its photos' thumbnails
 //! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own. The
 //! session runs [`open`] and [`thumbnail`] as jobs' bodies and hands each an observer,
 //! which turns each [`LibraryEvent`] into its own event, and a cancel closure, the job's;
@@ -47,6 +48,7 @@ use crate::index::{Index, READERS, Sidecar};
 use crate::listing::Options;
 pub use crate::listing::browser_order;
 use crate::sidecar::Newer;
+pub use crate::walk::WalkedFolder;
 
 /// How many photos a [`LibraryEvent::Listed`] carries at most.
 pub const CHUNK: usize = 256;
@@ -135,6 +137,16 @@ pub enum LibraryEvent {
         size: u32,
         image: Option<Thumbnail>,
     },
+    /// More folders of the tree under the folder opened, walked breadth first after the
+    /// folder's own listing ([`walk`]): each with its raws counted and its subfolders
+    /// named, or why it could not be read. `open` is the number of the open that made the
+    /// folder the tree's root, which later opens inside the tree keep; the last batch says
+    /// `done`. A new root or a close stops it.
+    Walked {
+        open: u64,
+        folders: Vec<WalkedFolder>,
+        done: bool,
+    },
 }
 
 impl LibraryEvent {
@@ -148,7 +160,8 @@ impl LibraryEvent {
             | LibraryEvent::Failed { open, .. }
             | LibraryEvent::Taken { open, .. }
             | LibraryEvent::Closed { open }
-            | LibraryEvent::Thumbnail { open, .. } => open,
+            | LibraryEvent::Thumbnail { open, .. }
+            | LibraryEvent::Walked { open, .. } => open,
         }
     }
 }
@@ -247,6 +260,37 @@ pub fn subfolders(
         unreadable,
     });
     Ended::Listed
+}
+
+/// Walks the whole tree under `root`, the folder the open numbered `open` made the tree's
+/// root, telling `observer` what it finds as [`LibraryEvent::Walked`] batches
+/// ([`walk::walk`](crate::walk::walk)): directory entries alone, breadth first, hidden
+/// folders and links left out, a folder that cannot be read recorded as such. A relative
+/// `root`, or one with a `..` in it, is refused with a warning and nothing sent. A
+/// blocking call, made by a job's body; once `cancel` answers true nothing more is sent.
+pub fn walk(
+    open: u64,
+    root: &Path,
+    observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Ended {
+    if !inside(root, root) {
+        tracing::warn!("{}: no absolute folder; not walked", root.display());
+        return Ended::Failed;
+    }
+    let mut tell = |folders, done| {
+        observer(LibraryEvent::Walked {
+            open,
+            folders,
+            done,
+        });
+        true
+    };
+    if crate::walk::walk(root, &mut tell, cancel) {
+        Ended::Listed
+    } else {
+        Ended::Cancelled
+    }
 }
 
 /// Whether `folder` is `root` or a folder inside it, both absolute, with no `..` that could

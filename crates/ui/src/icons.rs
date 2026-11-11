@@ -120,6 +120,8 @@ pub enum Icon {
     Metadata,
     /// One photo: Browse's top line while a photo is open alone.
     Photo,
+    /// A photo struck through: the grid panel's empty state, a folder with no raws.
+    PhotoOff,
     /// The scopes' graphs: the histogram, the waveform, the RGB parade, the vectorscope.
     Histogram,
     Waveform,
@@ -159,7 +161,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 74] = [
+    pub const ALL: [Icon; 75] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -208,6 +210,7 @@ impl Icon {
         Icon::Folder,
         Icon::Metadata,
         Icon::Photo,
+        Icon::PhotoOff,
         Icon::Histogram,
         Icon::Waveform,
         Icon::Parade,
@@ -369,6 +372,7 @@ impl Icon {
             Icon::Folder => derived!("folder", "folder", 22.0),
             Icon::Metadata => derived!("metadata", "tag", 22.0),
             Icon::Photo => derived!("photo", "image", 14.0),
+            Icon::PhotoOff => derived!("photo-off", "image-off", 16.0),
             Icon::Histogram => own!("histogram", 14.0),
             Icon::Waveform => own!("waveform", 14.0),
             Icon::Parade => own!("parade", 14.0),
