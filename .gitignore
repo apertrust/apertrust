@@ -89,6 +89,8 @@ venv/
 .agents/
 .kimi-code/
 .opencode/
+.codex/agents/
+.codex/.agent-kit-installed
 .github/agents/
 .github/prompts/
 .github/skills/
