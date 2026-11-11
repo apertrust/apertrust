@@ -21,7 +21,7 @@
 //!
 //! - A strip at the top, where the Mac's window buttons sit and, on Windows and Linux, the
 //!   close button the app draws; a drag on it moves the window.
-//! - Two columns. The first third, on `sunken`, a `separator` hairline at its end, holds
+//! - Two columns. The first third, on `sunken`, a `divider` rule at its end, holds
 //!   what a splash screen would: the full logo, the version cut at its `~`, the copyright
 //!   and what the app is; then room for a start-up status, empty for now; and at its foot
 //!   the ways in, New Library…, New Project…, Open Folder… and Browse…, a quiet list of
@@ -34,7 +34,8 @@
 //!   them at the end Open, the accent button, level with the last of the ways in.
 //! - The keys: ↑, ↓, Home and End choose in the list and Enter opens the recent chosen
 //!   while the list has the focus, as its chosen row does; Escape closes the window, as its
-//!   close button does; Tab goes from the list to the ways in, then to Open.
+//!   close button does. Tab follows the reading order, the first column then the second:
+//!   from the list it goes to Open, and Shift+Tab from the list to the ways in.
 
 use std::path::{Path, PathBuf};
 
@@ -227,16 +228,24 @@ pub fn show(
     let whole = ctx.content_rect();
     ui.painter().rect_filled(whole, 0.0, t.colors.panel);
 
-    // The two columns: the first third on `sunken`, a hairline of `separator` at its end.
+    // The two columns: the first third on `sunken`, a `divider` rule at its end, as the
+    // Settings dialog's pages column has.
     let split = (whole.left() + whole.width() / 3.0).round();
     let first = Rect::from_min_max(whole.min, pos2(split, whole.bottom()));
     let second = Rect::from_min_max(pos2(split, whole.top()), whole.max);
     ui.painter().rect_filled(first, 0.0, t.colors.sunken);
-    let edge = Rect::from_min_max(
-        pos2(split - t.shape.hairline, whole.top()),
-        pos2(split, whole.bottom()),
+    let line = t.shape.separator_width;
+    let edge = Rect::from_x_y_ranges(split - line..=split, first.y_range());
+    ui.painter().rect_filled(edge, 0.0, t.colors.divider);
+    // Open's place at the second column's foot, which the ways in end level with.
+    let foot = Rect::from_min_max(
+        pos2(
+            second.left() + t.spacing.xl,
+            whole.bottom() - t.spacing.xl - t.sizes.control,
+        ),
+        pos2(second.right() - t.spacing.xl, whole.bottom() - t.spacing.xl),
     );
-    ui.painter().rect_filled(edge, 0.0, t.colors.separator);
+    let inset = t.spacing.m + t.spacing.xxs;
 
     // The strip: a drag on it moves the window, a right-click opens its menu; not
     // focusable, so Tab never stops on it.
@@ -267,18 +276,51 @@ pub fn show(
     splash.spacing_mut().item_spacing.y = 0.0;
     let width = LOGO_WIDTH.min(splash.available_width());
     crate::about::logo(&t).show(&mut splash, width, &words.text("app-name"));
-    let quiet = |text: &str, size: f32| {
+    // Words a translation may make longer wrap within the column, after the translator's
+    // own line break.
+    let quiet = |text: &str, size: f32, wrap: egui::TextWrapMode| {
         let text = egui::RichText::new(text)
             .size(size)
             .color(t.colors.text_secondary);
-        egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend)
+        egui::Label::new(text).wrap_mode(wrap)
     };
+    use egui::TextWrapMode::{Extend, Wrap};
     splash.add_space(t.spacing.m);
-    splash.add(quiet(short_version(version), t.text.section_title));
+    splash.add(quiet(short_version(version), t.text.section_title, Extend));
     splash.add_space(t.spacing.xxs);
-    splash.add(quiet(&words.text("start-copyright"), t.text.small));
+    splash.add(quiet(&words.text("start-copyright"), t.text.small, Wrap));
     splash.add_space(t.spacing.xl);
-    splash.add(quiet(&words.text("start-tagline"), t.text.heading));
+    splash.add(quiet(&words.text("start-tagline"), t.text.heading, Wrap));
+
+    // The ways in, at the first column's foot, the last ending level with Open, their icons
+    // under the logo's edge. Drawn in reading order, the first column before the second, so
+    // Tab and screen readers meet them before the recents: the library's two and Browse…
+    // come with Phase 5, and have no action yet.
+    let later = words.text("section-tab-later");
+    let ways = [
+        (Icon::Library, "action-new-library", None),
+        (Icon::Project, "action-new-project", None),
+        (Icon::Folder, "action-open-folder", Some(Asked::OpenFolder)),
+        (Icon::Search, "start-browse", None),
+    ];
+    let gap = t.spacing.xxs;
+    let height = ways.len() as f32 * (t.sizes.row + gap) - gap;
+    let mut start = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_max(
+                pos2(first.left() + t.spacing.xxl - inset, foot.bottom() - height),
+                pos2(first.right() - t.spacing.xxl + inset, foot.bottom()),
+            ))
+            .layout(Layout::top_down(Align::Min)),
+    );
+    start.spacing_mut().item_spacing.y = gap;
+    for (icon, id, action) in ways {
+        let tip = action.is_none().then_some(later.as_str());
+        let response = way_in(&mut start, icon, &words.text(id), tip);
+        if let Some(action) = action.filter(|_| response.clicked()) {
+            asked.push(action);
+        }
+    }
 
     // The second column: the recents under their heading, and Open alone at the foot.
     let heading = tr(&ctx, "start-recents");
@@ -293,14 +335,6 @@ pub fn show(
     let heading_bottom = at.y + galley.size().y;
     ui.painter().galley(at, galley, t.colors.text_strong);
 
-    let foot = Rect::from_min_max(
-        pos2(
-            second.left() + t.spacing.xl,
-            whole.bottom() - t.spacing.xl - t.sizes.control,
-        ),
-        pos2(second.right() - t.spacing.xl, whole.bottom() - t.spacing.xl),
-    );
-    let inset = t.spacing.m + t.spacing.xxs;
     let rows = Rect::from_min_max(
         pos2(second.left() + inset, heading_bottom + t.spacing.m),
         pos2(second.right() - inset, foot.top() - t.spacing.l),
@@ -332,35 +366,6 @@ pub fn show(
             });
         },
     );
-
-    // The ways in, at the first column's foot, the last ending level with Open, their icons
-    // under the logo's edge. Drawn after the list, so Tab goes from it to them, then to
-    // Open: the library's two and Browse… come with Phase 5.
-    let later = words.text("section-tab-later");
-    let ways = [
-        (Icon::Library, "action-new-library", false),
-        (Icon::Project, "action-new-project", false),
-        (Icon::Folder, "action-open-folder", true),
-        (Icon::Search, "start-browse", false),
-    ];
-    let gap = t.spacing.xxs;
-    let height = ways.len() as f32 * (t.sizes.row + gap) - gap;
-    let mut start = ui.new_child(
-        UiBuilder::new()
-            .max_rect(Rect::from_min_max(
-                pos2(first.left() + t.spacing.xxl - inset, foot.bottom() - height),
-                pos2(first.right() - t.spacing.xxl + inset, foot.bottom()),
-            ))
-            .layout(Layout::top_down(Align::Min)),
-    );
-    start.spacing_mut().item_spacing.y = gap;
-    for (icon, id, enabled) in ways {
-        let tip = (!enabled).then_some(later.as_str());
-        let response = way_in(&mut start, icon, &words.text(id), tip);
-        if response.clicked() && id == "action-open-folder" {
-            asked.push(Asked::OpenFolder);
-        }
-    }
 
     let mut end = ui.new_child(
         UiBuilder::new()
@@ -394,8 +399,9 @@ pub fn show(
 }
 
 /// One of the ways in, as wide as `ui`: its icon and its `words`, with no plate, on
-/// `hover` under the pointer and in the focus ring after a key, its icon a step darker than
-/// its words until then. Disabled where it comes `later`, which its tooltip says.
+/// `hover` under the pointer and in the focus ring after a key; until then its icon a step
+/// quieter, in `text_secondary`, its words in `text`. Disabled where it comes `later`,
+/// which its tooltip says.
 fn way_in(ui: &mut egui::Ui, icon: Icon, words: &str, later: Option<&str>) -> egui::Response {
     let t = theme(ui.ctx());
     let enabled = later.is_none();
