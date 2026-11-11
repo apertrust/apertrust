@@ -423,7 +423,7 @@ fn row(
         |n| n.to_string_lossy().into_owned(),
     );
     let path = export::shown(recent.path, home);
-    let kind = words.text("start-kind-folder");
+    let kind = recent.kind.name(&words);
     let gone = match recent.missing {
         Some(Missing::Gone) => Some(words.text("start-recent-gone")),
         Some(Missing::Failed(_)) => Some(words.text("start-recent-failed")),

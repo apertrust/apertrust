@@ -34,6 +34,7 @@ use apertrust_ui::{Icon, theme, tr, translator};
 use eframe::egui::{self, Align, Layout, Rect, Sense, UiBuilder, pos2, vec2};
 
 use crate::folder::Folder;
+use crate::recents::OpenKind;
 use crate::{export, jobs};
 
 /// Browse's id (decision 73), by which settings keep whether its section is open, and
@@ -92,9 +93,11 @@ pub enum Action {
     Locate(PathBuf),
 }
 
-/// A recent folder, with why it cannot be opened, if it cannot.
+/// A recent: its open kind, which names it ([`OpenKind::label`]), its path, and why it
+/// cannot be opened, if it cannot.
 #[derive(Clone, Copy, Debug)]
 pub struct Recent<'a> {
+    pub kind: OpenKind,
     pub path: &'a Path,
     pub missing: Option<Missing<'a>>,
 }
@@ -301,10 +304,11 @@ fn alone(folder: &Folder) -> Option<(&Path, &Path)> {
 }
 
 /// What the top line's box says, as the wireframe draws it: the folder opened, the tree's
-/// root, "Folder: 2026-10 Lisbon", whichever folder in its tree is chosen, its name cut in
-/// its middle to fit `width` in `font`, its count on its row in the tree; that it is being
-/// read; the name of a photo alone; or, with none open or the last open failed, that none
-/// is. Returns it cut, and whole.
+/// root, by its label, "Folder: 2026-10 Lisbon" ([`OpenKind::label`]), whichever folder in
+/// its tree is chosen, its name alone cut in its middle to fit `width` in `font`, so the
+/// kind always shows, its count on its row in the tree; that it is being read; the name of
+/// a photo alone; or, with none open or the last open failed, that none is. Returns it cut,
+/// and whole.
 fn open_line(
     ctx: &egui::Context,
     painter: &egui::Painter,
@@ -326,7 +330,8 @@ fn open_line(
             (_, Folder::Alone { .. }) => name.to_owned(),
             (None, _) => words.text("browse-no-folder"),
             (Some(_), _) if reading => words.text_with("folders-reading", Some(&args)),
-            (Some(_), _) => words.text_with("browse-open-folder", Some(&args)),
+            // Folder mode's form: what is open is a folder.
+            (Some(_), _) => OpenKind::Folder.label(&words, name),
         }
     };
     let whole_name = match browse.folder {
@@ -438,9 +443,10 @@ fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
 }
 
 /// The recents' list under the top line's box, with the paths its items stand for: each
-/// folder by its name, the tree's root checked, its path in its tooltip; a missing one marked,
-/// as a submenu whose first line says why, disabled, then Try Again where its opening
-/// failed this run, Locate… and Remove from the List.
+/// by its label, "Folder: 2026-10 Lisbon" ([`OpenKind::label`]), the tree's root checked,
+/// its path in its tooltip; a missing one marked, as a submenu whose first line says why,
+/// disabled, then Try Again where its opening failed this run, Locate… and Remove from the
+/// List.
 fn recents_menu(ctx: &egui::Context, browse: &Browse<'_>) -> (Vec<Entry>, Vec<PathBuf>) {
     let words = translator(ctx);
     if browse.recent.is_empty() {
@@ -453,14 +459,14 @@ fn recents_menu(ctx: &egui::Context, browse: &Browse<'_>) -> (Vec<Entry>, Vec<Pa
         .iter()
         .enumerate()
         .map(|(i, recent)| {
-            let label = name(recent.path);
+            let label = recent.kind.label(&words, &name(recent.path));
             let tip = export::shown(recent.path, browse.home);
             let Some(why) = recent.missing else {
                 let item = Item::new(format!("open:{i}"), label).tip(tip);
                 return Entry::Item(item.checked(open == Some(recent.path)));
             };
             let mut args = Args::new();
-            args.set("name", label.as_str());
+            args.set("label", label.as_str());
             let text = words.text_with("browse-recent-missing", Some(&args));
             let reason = Item::new(format!("why:{i}"), missing_words(ctx, why))
                 .enabled(false)
@@ -1013,10 +1019,12 @@ mod tests {
     fn recent() -> Vec<Recent<'static>> {
         vec![
             Recent {
+                kind: OpenKind::Folder,
                 path: Path::new("/photos/Portraits"),
                 missing: None,
             },
             Recent {
+                kind: OpenKind::Folder,
                 path: Path::new("/photos/Gone"),
                 missing: Some(Missing::Failed("the folder is missing")),
             },
@@ -1378,7 +1386,7 @@ mod tests {
             .click();
         harness.run();
         let toggled: Vec<_> = harness
-            .get_all_by_label("Portraits")
+            .get_all_by_label("Folder: Portraits")
             .filter_map(|node| node.accesskit_node().data().toggled())
             .collect();
         assert_eq!(toggled, [egui::accesskit::Toggled::True]);
@@ -1430,7 +1438,7 @@ mod tests {
         what.click();
         harness.run();
         // A check item, which the open folder would have checked.
-        harness.get_by_label("Portraits").click();
+        harness.get_by_label("Folder: Portraits").click();
         harness.run();
         assert_eq!(
             *harness.state(),
@@ -1452,6 +1460,7 @@ mod tests {
                 recent.insert(
                     0,
                     Recent {
+                        kind: OpenKind::Folder,
                         path: Path::new("/photos/Newer"),
                         missing: None,
                     },
@@ -1477,7 +1486,7 @@ mod tests {
         harness.run();
         moved.set(true);
         harness.run();
-        harness.get_by_label("Portraits").click();
+        harness.get_by_label("Folder: Portraits").click();
         harness.run();
         assert_eq!(
             *harness.state(),
@@ -1502,9 +1511,9 @@ mod tests {
             .get_by_role_and_label(Role::ComboBox, "What is open")
             .click();
         harness.run();
-        // The list's item, not the tree's row of the same name.
+        // The list's item, by its label, never the tree's row, by its name.
         let toggled: Vec<_> = harness
-            .get_all_by_label("Portraits")
+            .get_all_by_label("Folder: Portraits")
             .filter_map(|node| node.accesskit_node().data().toggled())
             .collect();
         assert_eq!(toggled, [egui::accesskit::Toggled::True]);
@@ -1544,7 +1553,7 @@ mod tests {
             .click();
         harness.run();
         harness
-            .get_by_role_and_label(Role::MenuItem, "Gone, not found")
+            .get_by_role_and_label(Role::MenuItem, "Folder: Gone, not found")
             .click();
         harness.run();
         harness
@@ -1645,7 +1654,7 @@ mod tests {
                 .click();
             harness.run();
             harness
-                .get_by_role_and_label(Role::MenuItem, "Gone, not found")
+                .get_by_role_and_label(Role::MenuItem, "Folder: Gone, not found")
                 .click();
             harness.run();
             let why =

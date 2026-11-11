@@ -1699,13 +1699,13 @@ impl Shell {
         self.missing.remove(&path);
         if self.recents.last().is_none_or(|last| last.path != path) {
             self.recents.set_last(Some(recents::Last {
-                kind: recents::Kind::Folder,
+                kind: recents::OpenKind::Folder,
                 path: path.clone(),
                 folder: None,
                 photo: None,
             }));
         }
-        self.recents.opened(recents::Kind::Folder, path);
+        self.recents.opened(recents::OpenKind::Folder, path);
         self.recents.save();
     }
 
@@ -1721,7 +1721,7 @@ impl Shell {
     /// forgotten.
     fn forget_recent(&mut self, path: &Path) {
         self.missing.remove(path);
-        self.recents.remove(recents::Kind::Folder, path);
+        self.recents.remove(recents::OpenKind::Folder, path);
         self.recents.save();
     }
 
@@ -1730,7 +1730,7 @@ impl Shell {
     fn located(&mut self, from: &Path, to: PathBuf) -> PathBuf {
         self.missing.remove(from);
         self.recents
-            .repoint(recents::Kind::Folder, from, to.clone());
+            .repoint(recents::OpenKind::Folder, from, to.clone());
         self.recents.save();
         self.recents.check();
         to
@@ -1742,7 +1742,7 @@ impl Shell {
     fn recent_folders(&self) -> Vec<library::Recent<'_>> {
         let folders = self.recents.entries();
         folders
-            .filter(|entry| entry.kind == recents::Kind::Folder)
+            .filter(|entry| entry.kind == recents::OpenKind::Folder)
             .map(|entry| {
                 let path = entry.path.as_path();
                 let failed = self
@@ -1751,6 +1751,7 @@ impl Shell {
                     .map(|why| library::Missing::Failed(why));
                 let gone = self.recents.missing(entry.kind, path);
                 library::Recent {
+                    kind: entry.kind,
                     path,
                     missing: failed.or(gone.then_some(library::Missing::Gone)),
                 }
@@ -1758,10 +1759,11 @@ impl Shell {
             .collect()
     }
 
-    /// Open Recent's items, newest first, from the recents as they are: each folder's name,
-    /// with the folders it is in, the nearest first, as far up as it takes to tell it from
-    /// another recent ([`told_apart`]), and its path in the tip, after why it cannot be
-    /// opened where it cannot. Nothing is asked of the disk.
+    /// Open Recent's items, newest first, from the recents as they are: each folder's
+    /// label ([`recents::OpenKind::label`]), its name with the folders it is in, the nearest
+    /// first, as far up as it takes to tell it from another recent ([`told_apart`]), and its
+    /// path in the tip, after why it cannot be opened where it cannot. Nothing is asked of
+    /// the disk.
     fn recent_items(&self, ctx: &egui::Context) -> Vec<menus::Recent> {
         let tr = translator(ctx);
         let recents = self.recent_folders();
@@ -1772,12 +1774,13 @@ impl Shell {
             .map(|(recent, names)| {
                 let mut names = names.into_iter();
                 let first = names.next().unwrap_or_default();
-                let words = names.fold(first, |words, parent| {
+                let name = names.fold(first, |words, parent| {
                     let mut args = apertrust_ui::i18n::Args::new();
                     args.set("name", words);
                     args.set("parent", parent);
                     tr.text_with("menu-recent-in", Some(&args))
                 });
+                let words = recent.kind.label(&tr, &name);
                 let path = recent.path.display().to_string();
                 let tip = match recent.missing {
                     Some(missing) => format!("{}\n{path}", library::missing_words(ctx, missing)),
@@ -4302,7 +4305,7 @@ fn close(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
 fn recent_states(recents: &Recents, paths: &[PathBuf]) -> [Option<bool>; recents::MOST] {
     let mut states = [None; recents::MOST];
     for (state, path) in states.iter_mut().zip(paths) {
-        *state = Some(!recents.missing(recents::Kind::Folder, path));
+        *state = Some(!recents.missing(recents::OpenKind::Folder, path));
     }
     states
 }
@@ -4381,7 +4384,7 @@ fn reopen(
 ) -> Option<Reopening> {
     let last = last.filter(|_| on)?;
     match last.kind {
-        recents::Kind::Folder => open_folder(last.path.clone(), mirror, send),
+        recents::OpenKind::Folder => open_folder(last.path.clone(), mirror, send),
     }
     let folder = last.folder.clone().filter(|folder| *folder != last.path);
     let active = folder.as_deref().unwrap_or(&last.path);
@@ -5716,7 +5719,7 @@ mod tests {
         reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, 1))));
         for reaction in reactions {
             if let Reaction::FolderOpened(path) = reaction {
-                recents.opened(recents::Kind::Folder, path);
+                recents.opened(recents::OpenKind::Folder, path);
                 recents.save();
             }
         }
@@ -5802,7 +5805,7 @@ mod tests {
     fn kept_last(folder: Option<&str>, photo: Option<&str>) -> recents::Last {
         let root = PathBuf::from("/photos/Wedding");
         recents::Last {
-            kind: recents::Kind::Folder,
+            kind: recents::OpenKind::Folder,
             folder: folder.map(|folder| root.join(folder)),
             path: root,
             photo: photo.map(str::to_owned),
@@ -6038,13 +6041,13 @@ mod tests {
             Some(library::Missing::Failed("No such folder"))
         );
         let gone = Path::new("/photos/Gone");
-        shell.recents.mark(recents::Kind::Folder, gone, false);
+        shell.recents.mark(recents::OpenKind::Folder, gone, false);
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let items = shell.show_recents(&ctx);
         let state = shell.state(&ctx, false, false);
         assert_eq!(state.recents[..3], [Some(true), Some(false), None]);
-        assert_eq!(items[0].words, "Wedding");
+        assert_eq!(items[0].words, "Folder: Wedding");
         assert!(
             items[0].tip.ends_with("\n/photos/Wedding"),
             "{}",
@@ -6288,6 +6291,7 @@ mod tests {
                     let recents: Vec<library::Recent<'_>> = paths
                         .iter()
                         .map(|path| library::Recent {
+                            kind: recents::OpenKind::Folder,
                             path,
                             missing: None,
                         })
@@ -6354,8 +6358,8 @@ mod tests {
         assert_eq!(close_window_runs(mac, &settings), ActionId::CLOSE_WINDOW);
     }
 
-    /// Open Recent's items name each folder, with as many of the folders it is in as tell it
-    /// from another of the same name, and their paths in the tips.
+    /// Open Recent's items label each folder, its name with as many of the folders it is in
+    /// as tell it from another of the same name, and their paths in the tips.
     #[test]
     fn open_recent_s_items_name_the_folders_and_tell_two_of_one_name_apart() {
         let mut shell = opened_on("photos");
@@ -6374,10 +6378,10 @@ mod tests {
         assert_eq!(
             words,
             [
-                "Wedding",
-                "Selects — Lisbon",
-                "Selects — Shoot — b",
-                "Selects — Shoot — a"
+                "Folder: Wedding",
+                "Folder: Selects — Lisbon",
+                "Folder: Selects — Shoot — b",
+                "Folder: Selects — Shoot — a"
             ]
         );
         assert_eq!(items[1].tip, "/photos/Lisbon/Selects");
@@ -8057,9 +8061,9 @@ mod tests {
                 .collect()
         };
         assert_eq!(shown(&shell), [(a.clone(), None), (b.clone(), None)]);
-        shell.recents.mark(recents::Kind::Folder, &b, false);
+        shell.recents.mark(recents::OpenKind::Folder, &b, false);
         shell.missing.insert(a.clone(), "refused".to_owned());
-        shell.recents.mark(recents::Kind::Folder, &a, false);
+        shell.recents.mark(recents::OpenKind::Folder, &a, false);
         let failed = Some(format!("{:?}", library::Missing::Failed("refused")));
         let gone = Some(format!("{:?}", library::Missing::Gone));
         assert_eq!(shown(&shell), [(a.clone(), failed), (b, gone)]);
@@ -12367,7 +12371,7 @@ mod tests {
         }
     }
 
-    /// The ☰'s File › Open Recent: the recents by name, a choice asking for its folder, a
+    /// The ☰'s File › Open Recent: the recents by label, a choice asking for its folder, a
     /// missing one disabled, and Clear Menu emptying the list, after which Clear Menu alone
     /// is there, disabled.
     #[test]
@@ -12380,7 +12384,7 @@ mod tests {
         harness.state_mut().shell.remember_folder(gone.clone());
         harness.state_mut().shell.remember_folder(wedding.clone());
         let recents = &mut harness.state_mut().shell.recents;
-        recents.mark(recents::Kind::Folder, &gone, false);
+        recents.mark(recents::OpenKind::Folder, &gone, false);
         harness.run();
         let open_recent = |harness: &mut Harness<'_, Bench>| {
             alt(harness, Key::F, Some("f"));
@@ -12392,9 +12396,14 @@ mod tests {
         };
         open_recent(&mut harness);
         let item = Role::MenuItem;
-        assert!(menu_line(&harness, item, "Wedding").0);
-        assert!(!menu_line(&harness, item, "Gone").0, "missing: disabled");
-        harness.get_by_role_and_label(item, "Wedding").click();
+        assert!(menu_line(&harness, item, "Folder: Wedding").0);
+        assert!(
+            !menu_line(&harness, item, "Folder: Gone").0,
+            "missing: disabled"
+        );
+        harness
+            .get_by_role_and_label(item, "Folder: Wedding")
+            .click();
         harness.run();
         assert_eq!(harness.state().chosen, [ActionId::OPEN_RECENT[0]]);
         assert_eq!(harness.state_mut().shell.open_recent.take(), Some(wedding));
@@ -12403,7 +12412,7 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().shell.recents.entries().count(), 0);
         open_recent(&mut harness);
-        assert!(harness.query_by_label("Wedding").is_none());
+        assert!(harness.query_by_label("Folder: Wedding").is_none());
         assert!(
             !menu_line(&harness, item, "Clear menu").0,
             "nothing to clear"
@@ -12432,7 +12441,7 @@ mod tests {
         harness.run();
         assert!(menu_open(&harness, "Open Recent"));
         harness
-            .get_by_role_and_label(Role::MenuItem, "Newer")
+            .get_by_role_and_label(Role::MenuItem, "Folder: Newer")
             .click();
         harness.run();
         assert_eq!(harness.state().chosen, [ActionId::OPEN_RECENT[0]]);

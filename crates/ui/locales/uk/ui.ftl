@@ -382,6 +382,10 @@ grid-thumbnail-size-tip =
     }
 grid-labels = Підписи
 
+## Що відкрито, за видом
+
+open-kind-folder = Тека: { $name }
+
 ## Режим теки: Файл › Відкрити теку…, розділ «Теки» вкладки «Бібліотека» та порожні стани
 
 action-open-folder = Відкрити теку…
@@ -389,10 +393,9 @@ open-folder-title = Відкрити теку
 section-browse = Огляд
 browse-folders = Теки
 browse-open-name = Що відкрито
-browse-open-folder = Тека: { $name }
 browse-no-folder = Жодної теки не відкрито
 browse-recents-none = Немає нещодавніх тек
-browse-recent-missing = { $name }, не знайдено
+browse-recent-missing = { $label }, не знайдено
 browse-try-again = Спробувати ще раз
 browse-locate = Знайти…
 browse-remove = Прибрати зі списку

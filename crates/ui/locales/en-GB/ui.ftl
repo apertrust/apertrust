@@ -471,6 +471,13 @@ grid-thumbnail-size-tip =
 # Its Labels button, which shows the captions under the thumbnails or hides them.
 grid-labels = Labels
 
+## Open kinds: what a window holds, named wherever a recent or what is open is
+
+# One of a kind by its name: Open Recent's items, and Browse's top line and its recents.
+# Libraries' and projects' join it here, open-kind-library and open-kind-project, with the
+# library, as start-kind-library and start-kind-project join the start window's.
+open-kind-folder = Folder: { $name }
+
 ## Folder mode: File › Open Folder…, the Photos tab's Browse and the empty states
 
 action-open-folder = Open Folder…
@@ -480,14 +487,14 @@ open-folder-title = Open Folder
 # of folders. Albums and Smart albums join it with the library.
 section-browse = Browse
 browse-folders = Folders
-# The top line's box: what screen readers call it, its words for a folder, or for none,
-# which the central panel says too with nothing open.
+# The top line's box: what screen readers call it, and its words for none, which the
+# central panel says too with nothing open; a folder's are its open kind's.
 browse-open-name = What is open
-browse-open-folder = Folder: { $name }
 browse-no-folder = No folder open
-# The box's list, the recents: with none; a missing one, marked, and what it offers.
+# The box's list, the recents: with none; a missing one, marked, its label its open kind's
+# ("Folder: 2026-10 Lisbon"), and what it offers.
 browse-recents-none = No recent folders
-browse-recent-missing = { $name }, not found
+browse-recent-missing = { $label }, not found
 browse-try-again = Try Again
 browse-locate = Locate…
 browse-remove = Remove from the List

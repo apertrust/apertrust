@@ -384,6 +384,10 @@ grid-thumbnail-size-tip =
     }
 grid-labels = Podpisy
 
+## Co jest otwarte, według rodzaju
+
+open-kind-folder = Folder: { $name }
+
 ## Tryb folderu: Plik › Otwórz folder…, sekcja Foldery karty Biblioteka i puste stany
 
 action-open-folder = Otwórz folder…
@@ -391,10 +395,9 @@ open-folder-title = Otwórz folder
 section-browse = Przeglądaj
 browse-folders = Foldery
 browse-open-name = Co jest otwarte
-browse-open-folder = Folder: { $name }
 browse-no-folder = Nie otwarto folderu
 browse-recents-none = Brak ostatnich folderów
-browse-recent-missing = { $name }, nie znaleziono
+browse-recent-missing = { $label }, nie znaleziono
 browse-try-again = Spróbuj ponownie
 browse-locate = Wskaż…
 browse-remove = Usuń z listy
