@@ -56,6 +56,7 @@ mod export_again;
 mod exposure;
 mod fade;
 mod folder;
+mod hardware;
 mod history;
 mod jobs;
 mod library;
@@ -337,6 +338,13 @@ fn main() -> eframe::Result {
         apertrust_base::log::print_version(program, &build(&program));
         return Ok(());
     }
+    // The helper Settings runs to list a graphics API's adapters (decision 81): it prints
+    // them and ends, never opening a window, so a driver that crashes as it loads ends it
+    // and not the app.
+    if let Some(backend) = hardware::helper_asked(std::env::args_os().skip(1)) {
+        hardware::print_listed(backend);
+        return Ok(());
+    }
     let Arguments {
         open,
         in_folder,
@@ -492,7 +500,6 @@ fn main() -> eframe::Result {
             options,
             Box::new(move |cc| {
                 started.set(true);
-                let budget = engine.budget;
                 Ok(Box::new(App::new(
                     cc,
                     open,
@@ -501,7 +508,7 @@ fn main() -> eframe::Result {
                     keeper,
                     settings,
                     engine_gate,
-                    budget,
+                    engine,
                     cache,
                     recents,
                     storage_folders,
@@ -1174,6 +1181,9 @@ struct App {
     storage_folders: storage::Folders,
     /// What Settings › Storage was last handed, so it is handed again only when it changes.
     storage_shown: storage::View,
+    /// What Settings › Processing's Hardware acceleration group is handed: the adapter in
+    /// use, and how to list the others.
+    hardware: hardware::Running,
     /// What was open last, while it reopens at the start ([`reopened`]).
     reopening: Option<Reopening>,
     /// The photo last active in each folder this run, and the one the folder changed to
@@ -2553,8 +2563,9 @@ impl App {
     /// looked at; `keeper` writes them back. Its window was made at `built`'s placement, as
     /// the start window where it says so, and is given the other where the start turns out
     /// otherwise, before it first shows.
-    /// Its session plans within `budget` bytes, `engine.memory_budget`, and keeps `cache`,
-    /// the disk cache, if the app could open one. Its dialogs are the host's. It keeps the
+    /// Its session plans within `engine`'s budget, `engine.memory_budget`, and keeps
+    /// `cache`, the disk cache, if the app could open one; Settings says whether the
+    /// adapter in use is the one `engine` chose. Its dialogs are the host's. It keeps the
     /// session's log in `kept` while settings say so.
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
@@ -2565,7 +2576,7 @@ impl App {
         keeper: Keeper,
         settings: Settings,
         gate: SubmitGate,
-        budget: u64,
+        engine: apertrust_engine::settings::Options,
         cache: Option<Arc<Cache>>,
         recents: Recents,
         storage_folders: storage::Folders,
@@ -2632,6 +2643,14 @@ impl App {
             queue: state.queue.clone(),
             gate,
         };
+        // What Settings' In use line says: the adapter the window opened, the engine's
+        // (decision 81), whether the setting chose it, and how its list of graphics cards
+        // is made.
+        let info = state.adapter.get_info();
+        let hardware = hardware::Running {
+            in_use: Some(hardware::InUse::of(&info, &engine.gpu.adapter)),
+            lister: Some(hardware::Lister::helper()),
+        };
         let places = export::places();
         let ctx = cc.egui_ctx.clone();
         let modules = apertrust_modules::MODULES;
@@ -2645,7 +2664,7 @@ impl App {
             apertrust_operations::OPERATIONS,
             modules,
             apertrust_base::program!().version,
-            budget,
+            engine.budget,
             cache,
             move || ctx.request_repaint(),
         );
@@ -2694,6 +2713,7 @@ impl App {
             focused: true,
             storage_folders,
             storage_shown: storage::View::default(),
+            hardware,
             reopening: None,
             remembered: Remembered::default(),
             start: start::Window::new(false, settings.scale),
@@ -3318,7 +3338,7 @@ impl App {
                 dialogs,
                 keeper,
                 &self.jobs_view,
-                &self.storage_shown,
+                (&self.storage_shown, &self.hardware),
                 id,
                 &state,
                 ctx,
@@ -4918,7 +4938,7 @@ fn run_action(
     dialogs: &mut dialog_host::AppDialogs,
     keeper: &Keeper,
     jobs: &[apertrust_ui::components::Job],
-    storage: &storage::View,
+    shown: (&storage::View, &hardware::Running),
     id: ActionId,
     state: &State,
     ctx: &egui::Context,
@@ -4941,7 +4961,10 @@ fn run_action(
     let command = shell.run(id, state, ctx, regions);
     if std::mem::take(&mut shell.settings) {
         let close = ctx.os() != OperatingSystem::Mac;
-        let settings = settings_dialog::Settings::new(keeper, close).with_storage(storage.clone());
+        let (storage, hardware) = shown;
+        let settings = settings_dialog::Settings::new(keeper, close)
+            .with_storage(storage.clone())
+            .with_hardware(hardware.clone());
         dialogs.open(settings, shell.settings_window, ctx);
     }
     if std::mem::take(&mut shell.export_asked) {
@@ -10911,7 +10934,7 @@ mod tests {
                             dialogs,
                             keeper,
                             &view,
-                            &storage::View::default(),
+                            (&storage::View::default(), &hardware::Running::default()),
                             id,
                             &state,
                             &ctx,

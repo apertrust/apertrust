@@ -103,6 +103,7 @@ tools/compare-cpu.sh --raws 7rv --add toneequal-eigf,bilat [--size PX --hq BOOL]
 # The app and the design system
 cargo run --release -p apertrust -- [--user-data-dir DIR] [FILE | FOLDER]   # a raw alone, or a folder
 cargo run --release -p apertrust -- --in-folder FILE...   # as Open With: the folder, the first file active
+cargo run --release -p apertrust -- --list-adapters [auto|dx12|vulkan]   # Settings' helper: an API's adapters as lines, no window
 cargo run -p apertrust-ui --example gallery    # tokens, themes, icons, components
 UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test gallery   # accept changed snapshots; review them like golden images
 ```

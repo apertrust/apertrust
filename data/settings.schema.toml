@@ -458,11 +458,14 @@ kind = "boolean"
 default = false
 applies = "at-once"
 
-# The GPU adapter the engine opens: the first whose name holds this text, ignoring case.
-# Empty takes wgpu's high-performance choice. One that names no adapter, as after a GPU
-# is removed or the folder moves to another machine, is warned of and wgpu's choice
-# taken, where a binary's own --adapter flag that names none is an error. After a
-# restart, since the window's device is the engine's (decision 17).
+# The GPU adapter the engine opens: the one of exactly this name, else the first whose
+# name holds this text, ignoring case; "cpu", reserved, the chosen API's software adapter
+# (WARP, lavapipe) whatever its name (decision 81). Empty takes wgpu's high-performance
+# choice. One that names no adapter, as after a GPU is removed or the folder moves to
+# another machine, is warned of and wgpu's choice taken, where a binary's own --adapter
+# flag that names none is an error. Settings draws it as a list of the adapters the
+# chosen API finds, listed by a helper process (the app's --list-adapters); what it keeps
+# stays a text. After a restart, since the window's device is the engine's (decision 17).
 [engine.adapter]
 owner = "engine"
 kind = "text"

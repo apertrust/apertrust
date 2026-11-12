@@ -53,6 +53,8 @@
 //! - An option chosen that the photo does not list, from another photo's edit (decision
 //!   30), is listed last, chosen and disabled, with a tooltip that says so. While it is
 //!   chosen, that tooltip is a line of the row's own and describes it to screen readers.
+//! - A separator may set the options after it apart, as Settings' CPU after the graphics
+//!   cards; the keys and the filter pass over it.
 //! - With no option chosen, the row shows a text of its own the list never offers: a
 //!   preset row's Custom while its controls hold none of its options (decision 2). It
 //!   counts towards the option's width, so the row keeps its layout whether it shows or
@@ -111,6 +113,10 @@ pub struct Choice<'a> {
     disabled_options: (&'a [usize], &'a str),
     /// An option the photo does not list, by index, and what it says of it.
     unlisted: Option<(usize, &'a str)>,
+    /// The option the list draws a separator before, by index.
+    separator: Option<usize>,
+    /// What screen readers hear of the row besides its name and value.
+    description: Option<&'a str>,
     /// The Boxed box's least width, so boxes in a column share one.
     min_box: f32,
 }
@@ -133,6 +139,8 @@ impl<'a> Choice<'a> {
             enabled: true,
             disabled_options: (&[], ""),
             unlisted: None,
+            separator: None,
+            description: None,
             min_box: 0.0,
         }
     }
@@ -209,9 +217,24 @@ impl<'a> Choice<'a> {
         self
     }
 
+    /// A separator in the list before the option `option`, by index, setting the options
+    /// after it apart: Settings' CPU after the graphics cards.
+    pub fn separator_before(mut self, option: usize) -> Self {
+        self.separator = Some(option);
+        self
+    }
+
+    /// What screen readers hear of the row besides its name and value, translated: what is
+    /// said under a Settings row, heard as the box gets the focus. It takes the place of an
+    /// unlisted option's.
+    pub fn description(mut self, text: &'a str) -> Self {
+        self.description = Some(text);
+        self
+    }
+
     /// The list under `anchor`, each option an item whose id is its index: the chosen one
     /// checked, the others the photo cannot use or the module does not port disabled, with
-    /// their tooltips.
+    /// their tooltips, and a separator where the row has one.
     fn list(&self, anchor: Rect) -> Request {
         let (disabled, disabled_tip) = self.disabled_options;
         let items = self
@@ -229,7 +252,11 @@ impl<'a> Choice<'a> {
                 }
             })
             .collect();
-        Request::dropdown(anchor, self.name, items)
+        let mut request = Request::dropdown(anchor, self.name, items);
+        if let Some(at) = self.separator.filter(|at| *at < request.entries.len()) {
+            request.entries.insert(at, crate::popup::Entry::Separator);
+        }
+        request
     }
 
     /// How wide its box is in the Boxed style: as wide as its widest option, never narrower
@@ -385,9 +412,9 @@ impl<'a> Choice<'a> {
             .unlisted
             .filter(|(option, _)| self.selected == Some(*option))
             .map(|(_, tip)| tip);
-        if let Some(tip) = unlisted {
+        if let Some(said) = self.description.or(unlisted) {
             ui.ctx()
-                .accesskit_node_builder(id, |node| node.set_description(tip));
+                .accesskit_node_builder(id, |node| node.set_description(said));
         }
 
         let mut action = None;

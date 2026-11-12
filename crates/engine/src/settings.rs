@@ -70,8 +70,9 @@ pub const BACKEND_VARIABLE: &str = "WGPU_BACKEND";
 /// the settings file (decision 43).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Flags {
-    /// `--adapter NAME`: the first adapter whose name contains it, an error where none
-    /// does; empty, wgpu's choice, whatever the file says.
+    /// `--adapter NAME`: the adapter of exactly that name, else the first whose name
+    /// contains it, ignoring case, `cpu` the software adapter (`gpu::matching`), an error
+    /// where none does; empty, wgpu's choice, whatever the file says.
     pub adapter: Option<String>,
     /// `--backend NAME`: the graphics API, an error where this build lacks it.
     pub backend: Option<Backend>,
@@ -395,6 +396,11 @@ mod tests {
             [Source::Flag("--adapter"), Source::Conf]
         );
 
+        // `cpu`, the software adapter's reserved name, as any other (decision 81).
+        let cpu = read_with(file, &["engine.adapter=cpu"], Flags::default());
+        assert_eq!(cpu.gpu.adapter, AdapterChoice::Named(gpu::CPU.to_owned()));
+        let cpu = read("version = 1\nengine.adapter = \"cpu\"\n", Flags::default());
+        assert_eq!(cpu.gpu.adapter, AdapterChoice::Preferred("cpu".to_owned()));
         // Over the default too; an empty one takes wgpu's choice.
         let over_default = read_with("", &["engine.adapter="], Flags::default());
         assert_eq!(over_default.gpu.adapter, AdapterChoice::Any);

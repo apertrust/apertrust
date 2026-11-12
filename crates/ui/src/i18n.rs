@@ -869,6 +869,9 @@ mod tests {
                 args.set("label", "Folder: 2026-10 Lisbon");
                 // The start window's recent, to screen readers: its path.
                 args.set("path", "~/Pictures/2026-10 Lisbon");
+                // Settings' Hardware acceleration: a graphics API and an adapter's names.
+                args.set("api", "Vulkan");
+                args.set("card", "AMD Radeon 780M Graphics");
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

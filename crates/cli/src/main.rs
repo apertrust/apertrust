@@ -128,7 +128,8 @@ struct Cli {
 enum Command {
     /// List GPU adapters and show the one the engine opens.
     Gpu {
-        /// Use the first adapter whose name contains this text, ignoring case; one that
+        /// Use the adapter of exactly this name, else the first whose name contains it,
+        /// ignoring case, or cpu for the software adapter (WARP, lavapipe); one that
         /// names none is an error. Before the settings' engine.adapter; empty for wgpu's
         /// choice.
         #[arg(long)]
@@ -219,7 +220,8 @@ enum Command {
             requires = "beside_export"
         )]
         interval: f64,
-        /// Use the first adapter whose name contains this text, ignoring case; one that
+        /// Use the adapter of exactly this name, else the first whose name contains it,
+        /// ignoring case, or cpu for the software adapter (WARP, lavapipe); one that
         /// names none is an error. Before the settings' engine.adapter; empty for wgpu's
         /// choice.
         #[arg(long)]
@@ -312,7 +314,8 @@ enum Command {
         /// Leave an operation out; repeat for more.
         #[arg(long = "skip", value_name = "OPERATION")]
         skips: Vec<String>,
-        /// Use the first adapter whose name contains this text, ignoring case; one that
+        /// Use the adapter of exactly this name, else the first whose name contains it,
+        /// ignoring case, or cpu for the software adapter (WARP, lavapipe); one that
         /// names none is an error. Before the settings' engine.adapter; empty for wgpu's
         /// choice.
         #[arg(long)]

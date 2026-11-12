@@ -627,13 +627,52 @@ setting-library-raw-thumbnails-from-option-never = Never
 setting-library-raw-thumbnails-from-option-auto = Auto
 setting-side-panel-tab-names-label = Show tab names
 setting-engine-adapter-label = Graphics card
-# What the graphics card's field shows while empty: the system's choice.
-setting-engine-adapter-hint = Automatic
 setting-engine-backend-label = Graphics API
 setting-engine-backend-option-auto = Automatic
 setting-engine-backend-option-dx12 = Direct3D 12
 setting-engine-backend-option-vulkan = Vulkan
 setting-engine-memory-budget-label = Memory budget
+# Processing's Hardware acceleration group (decision 81). The graphics card's list:
+# Automatic, with what it picks in brackets once known. $card is an adapter's name and
+# $api a graphics API's, never translated.
+settings-gpu-automatic = Automatic
+settings-gpu-automatic-card = Automatic ({ $card })
+settings-gpu-automatic-cpu = Automatic (CPU)
+# The graphics API's Automatic, with the API it picks.
+settings-gpu-automatic-api = Automatic ({ $api })
+# The software adapter, whatever the platform calls it: the processor renders.
+settings-gpu-cpu = CPU (no graphics card), slow
+# The software adapter where a sentence names it.
+settings-gpu-cpu-short = CPU
+# Why CPU cannot be chosen: the graphics API has no software adapter.
+settings-gpu-cpu-missing = Not found with { $api }
+# Where the API Automatic stands for is not known yet.
+settings-gpu-cpu-missing-unnamed = Not found with this graphics API
+# Under the row, in the warning colour, while the card kept is not on this computer.
+settings-gpu-not-found = Graphics card not found: Automatic used
+# The card kept, listed but not to be chosen.
+settings-gpu-not-found-item = Not found on this computer
+# Under the row, in the warning colour, after a change of the graphics API left the card
+# out.
+settings-gpu-dropped = { $card } isn’t available with { $api }: set to Automatic
+settings-gpu-dropped-unnamed = { $card } isn’t available with this graphics API: set to Automatic
+# Under the row while the cards are listed, after a moment.
+settings-gpu-listing = Looking for graphics cards…
+# Under the row, in the warning colour, where listing them failed.
+settings-gpu-not-listed = The graphics cards could not be listed
+# Under the graphics API's row, in the warning colour.
+settings-gpu-no-adapter = No graphics card found with { $api }: Automatic used
+settings-gpu-no-adapter-unnamed = No graphics card found: Automatic used
+# The line under the group's rows: the adapter and the graphics API running now.
+settings-gpu-in-use = In use
+settings-gpu-in-use-value = { $card }, { $api }
+# Graphics APIs' names, never translated; Direct3D 12 and Vulkan are the row's options.
+settings-gpu-api-metal = Metal
+settings-gpu-api-gl = OpenGL
+# Under the In use line, in the warning colour, with no graphics card in use.
+settings-gpu-software = No graphics card in use: { app-name } renders on the processor, which is slower
+# After it, where Automatic fell to the processor rather than the person choosing it.
+settings-gpu-driver = Updating the graphics driver may help
 setting-cache-limited-label = Limit the cache's size
 setting-cache-limited-help = Off, the cache is unlimited: nothing is removed from it to keep it within a size.
 setting-cache-limit-label = Cache limit

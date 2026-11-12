@@ -14,12 +14,15 @@ The graphics card was a text setting, `engine.adapter`, matched against adapter 
 
 | Row | Setting | What it holds |
 | --- | --- | --- |
-| Graphics card | `engine.adapter` | A list: Automatic, then each adapter the chosen API finds by name, then a separator and **Software (no graphics card), slow**, the software adapter (WARP or lavapipe). Stored as the adapter's name, as before, Automatic as the empty text |
+| Graphics card | `engine.adapter` | A list: Automatic, then each hardware adapter the chosen API finds by name, in the order Automatic ranks them, then a separator and **CPU (no graphics card), slow**, the software adapter, whatever the platform calls it (WARP, lavapipe). Stored as the adapter's name, as before, Automatic as the empty text and CPU as the reserved `cpu` |
 | Graphics API | `engine.backend` (new), Windows only (`platforms`) | Automatic, Direct3D 12, Vulkan. Hidden where the platform has one API |
 | Memory budget | `engine.memory_budget` | As before |
 
 - **Automatic** is the default of both lists and shows in brackets what it picks: wgpu's choice, the high-performance adapter on the first backend that has it.
-- **The card list** holds the adapters the chosen API finds, listed as the dialog opens, never loading a backend the setting leaves out. Changing the API lists them again; a card the new API lacks goes back to Automatic, saying so on the row.
+- **The card list** holds the adapters the chosen API finds, listed as the dialog opens by a short-lived helper process, so a driver that crashes as it is loaded takes down the helper, not Apertrust, and the row says the cards could not be listed. It never loads a backend the setting leaves out. A name two adapters share, the same card under Direct3D 12 and Vulkan or two identical GPUs, is listed once. Changing the API lists them again; a card the new API lacks goes back to Automatic, saying so on the row.
+- **Matching a stored name:** the adapter whose name is the stored text exactly, else, for a name typed by hand as before, the first whose name holds it; `cpu`, the software adapter of the chosen API.
+- **CPU where the API has none,** Vulkan on Windows or Linux without lavapipe, is listed disabled, saying it is not found with that API; the Mac, whose Metal has none, does not list it.
+- **The adapter's own name** for the software adapter is never shown: the list, the In use line and the warnings say CPU.
 - **A card no longer there,** after a GPU is removed or the settings come from another computer, shows "Graphics card not found: Automatic used" in the warning colour, and Automatic runs (decision 7).
 - **An "In use" line** under the rows always shows the adapter and API running now. Without a hardware GPU in use, a warning says that Apertrust renders on the processor and is slower.
 - **Restart now.** While a setting that applies after a restart differs from what runs, the note "Your choice applies when Apertrust restarts" has a Restart now button: Apertrust quits as Quit does, saving edits and settings, and starts again with the same arguments, folder and photo (planned).
@@ -32,11 +35,14 @@ The graphics card was a text setting, `engine.adapter`, matched against adapter 
 - **One combined list,** each card with its API ("RTX 5060 · Direct3D 12", "RTX 5060 · Vulkan"): one control, but every card twice and a technical word in front of everyone.
 - **The API only through `WGPU_BACKEND`:** nobody finds it, and a person cannot work round a broken driver from Settings.
 - **The software adapter only as a fallback:** a person whose driver misbehaves could not choose it.
+- **The software adapter stored by its name:** lavapipe's name carries the LLVM version, so a Mesa update would turn the choice into "not found" and run the hardware GPU the person moved away from.
+- **Listing the cards in Apertrust's own process:** a driver crashing as it loads would close Apertrust from Settings, as AMD's OpenGL driver did at start.
+- **Two identical GPUs told apart by their PCI slot:** a second stored field for machines photo editing rarely runs on.
 - **The note without Restart now:** a person must quit and start again by hand for a setting that only applies then.
 
 ## Consequences
 
 - `gpu::instance_descriptor` takes the backend setting; the app builds the window's instance from the same options, so the window and the engine never disagree on the device.
-- The settings schema uses decision 43's `platforms` field for the first time, and a choice whose options are listed at run time, the adapters, is a new kind beside `Choice`'s fixed options.
+- The settings schema uses decision 43's `platforms` field for the first time. It keeps `engine.adapter` a text; the Settings dialog draws its row as a list of what the helper lists.
 - Restart now is the app's, an action of its own, for every setting that applies after a restart; relaunching a macOS app bundle needs a spike first.
 - `apertrust-cli gpu` lists each backend's adapters and says which backends were loaded and why.
