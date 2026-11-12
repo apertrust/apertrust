@@ -10269,8 +10269,9 @@ mod tests {
             driven.run([Command::RetrySave]);
             assert_eq!(driven.engine.thumbnail_wait(), None);
             driven.engine.writer.flush(None);
+            // The writer calls back after releasing its lock, which `flush` may see first.
             woken
-                .try_recv()
+                .recv_timeout(Duration::from_secs(5))
                 .expect("the writer wakes the engine as it saves");
             assert!(
                 driven
