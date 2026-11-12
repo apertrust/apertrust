@@ -20,7 +20,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | C and C++ libraries | None compiled in or shipped unless no Rust option exists; ONNX Runtime the one exception, loaded at run time; libraries the platform provides, loaded at run time, outside the rule (5) | lcms2, exiv2, lensfun or RawSpeed compiled in |
 | Programs and platforms | Windows, macOS and Linux, first-class; two executables, `apertrust` and `apertrust-cli` (6) | Separate server and MCP programs |
 | Packaging | cargo-packager from one config, `packaging/Packager.toml`: an app bundle and disk image, an NSIS installer and a zip, an AppImage and a tarball, each with the CLI and the licences; signing and notarisation planned (68) | A script per platform; WiX; cargo-dist |
-| GPU | wgpu over Vulkan, Metal, DX12 and WebGPU; a GPU-resident fp32 pipeline on storage buffers (8) | A hand-written Vulkan and Metal layer; host copies between operations |
+| GPU | wgpu over Vulkan, Metal, DX12 and WebGPU; a GPU-resident fp32 pipeline on storage buffers (8); the primary backends, never GL; the graphics card, the API on Windows and the memory budget in Settings › Processing › Hardware acceleration, with Restart now (81) | A hand-written Vulkan and Metal layer; host copies between operations; GL kept; the API only through `WGPU_BACKEND` |
 | Without a GPU | The same kernels on a software GPU, lavapipe or WARP; what cannot bind there is refused, naming the pass and the sizes; image-shaped scratch bound in windows before Phase 3's exit (7, 15) | A CPU version of every operation; Slang's CPU target |
 | Kernels | Slang compiled to WGSL, committed and validated with naga; every differentiable kernel exports derivative entry points (9); workgroup memory written before it is read, wgpu's zeroing of it left out (80) | Plain WGSL |
 | Direct3D 12 | FXC pinned in the engine; no kernel writes a local at a run-time index (10) | DXC, a C++ library to ship |
@@ -111,6 +111,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0010](0010-fxc-on-direct3d-12-and-no-writes-at-run-time-indices.md) | FXC on Direct3D 12, and no writes at run-time indices |
 | [0011](0011-a-differentiable-pipeline-and-matching-a-reference-photo.md) | A differentiable pipeline, and matching a reference photo |
 | [0080](0080-workgroup-memory-written-before-it-is-read-and-not-zeroed.md) | Workgroup memory written before it is read, and not zeroed |
+| [0081](0081-hardware-acceleration-the-backends-the-graphics-card-and-the-api-as-settings.md) | Hardware acceleration: the backends, the graphics card and the API as settings |
 
 ## Engine
 

@@ -76,7 +76,7 @@ flowchart TB
 
 The pipeline runs on wgpu with kernels written in Slang, compiled ahead of time to WGSL, and stays resident on the GPU (decisions 8 and 9). Without a hardware GPU the same kernels run on a software one ([Software GPUs](#software-gpus)).
 
-**wgpu** gives one API over Vulkan, Metal, DX12 and browser WebGPU (decision 8). It already solves the host-side problem darktable's RFC #22732 proposes to build by hand, and it uses Metal natively on macOS, avoiding the MoltenVK problems vkdt ran into.
+**wgpu** gives one API over Vulkan, Metal, DX12 and browser WebGPU (decision 8). It already solves the host-side problem darktable's RFC #22732 proposes to build by hand, and it uses Metal natively on macOS, avoiding the MoltenVK problems vkdt ran into. Every process loads wgpu's primary backends, Direct3D 12 and Vulkan on Windows, Vulkan on Linux, Metal on macOS, never GL; on Windows wgpu chooses Vulkan wherever the GPU has a Vulkan driver, and Settings › Processing › Hardware acceleration chooses the graphics card and, on Windows, the API (decision 81).
 
 **Slang to WGSL** (decision 9). Real modules and generics suit a colour-maths library shared by 60 or more operations, where WGSL has no imports and no generics. Ports read almost line for line like darktable's OpenCL, so review is fast. Automatic differentiation lets the editor fit parameters. Slang's other selling point, one source to SPIR-V and Metal, does not apply here: wgpu and naga already take one WGSL source to every backend.
 
@@ -2269,7 +2269,7 @@ Decision 7. wgpu runs the same WGSL on a software GPU, a driver that implements 
 - The engine takes a hardware adapter when there is one and the software one otherwise, in the app and the CLI alike. The opened-image event reports a `DeviceType::Cpu` adapter, so the app can say editing will be slow.
 - Interactive editing needs Vulkan, Metal or DX12 on real hardware.
 - The pipeline is timed on lavapipe and WARP at viewport size and for a 60 MP export. If viewport editing is too slow there, the app says so and points to the CLI for batch work.
-- Untested: wgpu's OpenGL backend, which has compute from OpenGL 4.3, for GPUs without Vulkan.
+- Not loaded: wgpu's OpenGL backend (decision 81). The engine never chooses it, no test runs on it, and a broken OpenGL driver can crash as adapters are listed; `WGPU_BACKEND=gl` still asks for it, for experiments.
 - **Rejected:** a CPU version of every operation, which doubles each port and its gradient checks and drifts from the GPU path, as darktable's CPU and OpenCL code do in places; and Slang's CPU target, which means compiling its generated C++ or shipping LLVM (decision 5).
 
 **Bindings.** A software GPU may bind less at once than a hardware one. lavapipe binds 128 MiB, which a 61 MP raw's float mosaic exceeds; the hardware GPUs measured bind 2047 MiB (an RTX 5060 and a Radeon 780M on Vulkan) or 4095 MiB (the M4). So a pass whose image is larger than one binding runs in row strips, each binding a window of the whole buffer, and the viewport's demosaic runs in tiles (decision 14, [On a GPU that binds less](#on-a-gpu-that-binds-less)).
