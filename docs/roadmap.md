@@ -136,7 +136,7 @@ darktable's colour pickers and its Colour picker module, one API (decision 79; [
 
 - [x] 79.1 The reduction kernel on the frame and the Colour picker's picker through the session, regions mapped through the geometry.
 - [x] 79.2 Module pickers in the modules crate: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` and its checks.
-- [ ] 79.3 Module pickers in the engine: the reduction at an operation's input and output, sample-only renders, a pick applied as one change.
+- [x] 79.3 Module pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [ ] 79.5 The picker button and the picker's marks in the design system.
 - [ ] 79.6 The app: quads and picker rows, the marks over the photo, the pointer, the keys and focus.

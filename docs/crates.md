@@ -155,13 +155,16 @@ The groundwork for orientation:
 
 ### Colour pickers
 
-`picker` and `session/pickers.rs` (decision 79; [pickers.md](pickers.md)), 79.1 of its plan: the Colour picker module's own picker.
+`picker` and `session/pickers.rs` (decision 79; [pickers.md](pickers.md)), 79.1 and 79.3 of its plan: the Colour picker module's own picker, and module pickers.
 
-- `Command::Picker` with `On`, `Point`, `Area`, `Switch`, `Reset` and `Off` for `PickerRef::ColourPicker`, view state, never on the edit; `On` refused before the photo is live (`NotLive`) and for a module's picker (`UnknownPicker`), a move, switch or reset with none on (`NoPicker`).
-- Its point and area kept for the session in the original image's coordinates through every geometry (`Geometries`, `Place`, `pipeline::geometries`), darktable's defaults, and darktable's box in a buffer (`pixels`).
-- The engine's reduction kernel, `slang/picker.slang` (`picker_rgba`, `picker_combine`), in `pipeline::KERNELS`: up to 64 boxes' mean, minimum and maximum of four channels in one dispatch, the sums a fixed tree (`Reducer`).
+- `Command::Picker` with `On`, `Point`, `Area`, `Switch`, `Reset`, `Tools`, `Channel` and `Off`, view state, never a command on the edit; `On` refused before the photo is live (`NotLive`), for a module's picker on a photo open for viewing only (`ViewOnly`), for a picker no module declares (`UnknownPicker`) and a tool setting none of its pickers reads (`UnknownTool`); a move, switch or reset with none on (`NoPicker`).
+- Its point and area kept for the session in the original image's coordinates through every geometry (`Geometries`, `Place`, `pipeline::geometries`), darktable's defaults, and darktable's box in a buffer (`pixels`), and in an operation's buffer, after the downscale or on the sensor (`boxed`).
+- The engine's reduction kernel, `slang/picker.slang` (`picker_rgba`, `picker_mosaic`, `picker_combine`), in `pipeline::KERNELS`: up to 64 boxes' mean, minimum and maximum of four channels over up to two buffers, an RGBA one denoised by darktable's B-spline where asked or a mosaic per CFA colour (`Cfa`), the sums a fixed tree; a buffer larger than one binding read in row windows (`Reducer`, `Group`, `Layout`).
 - The frame measured under the active picker after each frame's copy and the scopes' count, and the frame shown when its region moves with nothing rendered; read back through `readback` and sent as `Event::Picker`, the region as drawn and the frame's RGB and Lab D50, after the frame it measured; `Picker(None)` as it turns off, by `Off` and as another photo opens or the photo closes.
-- A failure turns the pickers off for the session, reported once as `SessionError::Pickers`, never the frame.
+- A module's picker measured at its operation's input and output: in the render's own encoder right after the operation's last pass while what it reads changes (`Pipeline::render_probing`), else by a sample-only render (`Pipeline::sample`), which reads the edit cache where it holds the input, captures the operation's input into it, and cancels a still it would write under (`Pipeline::sample_writes`); its module turned on with `On`; sent as `Event::Picker`'s module part.
+- A reading applied through `Module::pick` as one change (`Edit::pick`, no follow writes, numbers held to their range, a hue wrapped): the first after `On`, each after a move and after `Tools` the module's latest reading measured again, never one an edit caused; a drag's steps saved with their release; the picker off as a command on the edit changes its module, unless it keeps.
+- The viewport planned within the budget less the two reducers' buffers (`picker::reserved`).
+- A failure turns the pickers off for the session, reported once as `SessionError::Pickers`, never the frame; a pick its module gets wrong is refused (`EditError::PickFailed`) and turns the picker off.
 
 ### Settings
 
@@ -260,7 +263,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **The rest of history** (decision 78; [history.md](history.md#the-plan)): `Hide`, `Compress` and `Truncate`; the log saved in the sidecar's version 2.
-- **Colour pickers** (decision 79; [pickers.md](pickers.md)): module pickers, the reduction at an operation's input and output, `picker_mosaic`, denoise and the other spaces, sample-only renders, a pick applied through `Module::pick`, `Tools` and `Channel`; stored samples and `Event::Samples`.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): the spaces other than the operation's own; stored samples and `Event::Samples`; a pick's change of source Auto, with history.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
 - **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
@@ -1134,7 +1137,7 @@ Modules (decision 28): what the user edits with, bound to operation parameters. 
 - `preset` and `matching`, for a preset row's options.
 - `view` and `unview`, for a lossless view's coordinates (decision 2).
 - `follow`: the other controls darktable's GUI writes with one, which the session writes in the same change (decision 27).
-- `pick` (decision 79): what a picker makes of a `Reading`, its operation's input and output `Stats`, given the values, the image context, the tool settings, the channel shown, the module's last reading and the keys held: the controls it writes and what its panel shows (`Picked`, `Shown`, `Patch`). Pure; none by default, and no built module picks yet.
+- `pick` (decision 79): what a picker makes of a `Reading`, its operation's input and output `Stats`, given the values, the image context, the tool settings, the channel shown, the module's last reading and the keys held: the controls it writes and what its panel shows (`Picked`, `Shown`, `Patch`). Pure; none by default, and no built module picks yet; the session calls it as a reading is applied.
 
 ### Definitions
 

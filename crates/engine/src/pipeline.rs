@@ -3479,6 +3479,46 @@ struct Submitted {
     copied: Option<wgpu::Buffer>,
 }
 
+/// A module's colour picker's measurement at its operation in a live render (decision
+/// 79): recorded right after the operation's last pass, given the buffers of its input
+/// and its output, while both are intact ([`Pipeline::render_probing`]).
+pub(crate) struct Probe<'a> {
+    /// The operation, as an index into [`Plan::operations`].
+    pub(crate) op: usize,
+    #[allow(clippy::type_complexity, reason = "a recording given two buffers")]
+    pub(crate) record:
+        Box<dyn FnOnce(&mut wgpu::CommandEncoder, &wgpu::Buffer, &wgpu::Buffer) + 'a>,
+}
+
+/// The copies between the edit cache and an operation's input a render records before
+/// that operation's passes.
+#[derive(Debug, Clone, Copy)]
+struct Copies {
+    /// The operation whose input the edit cache gives back.
+    restore: Option<usize>,
+    /// The operation whose input the edit cache takes.
+    capture: Option<usize>,
+}
+
+/// How a sample-only render runs ([`Pipeline::sample`]).
+#[derive(Debug, Clone, Copy)]
+enum Sampling {
+    /// Reading the edit cache alone, which holds the operation's input.
+    EditCache,
+    /// Running the passes from operation `first` with `copies`.
+    Passes { first: usize, copies: Copies },
+}
+
+impl Sampling {
+    /// The operation whose input it captures into the edit cache.
+    fn capture(self) -> Option<usize> {
+        match self {
+            Sampling::EditCache => None,
+            Sampling::Passes { copies, .. } => copies.capture,
+        }
+    }
+}
+
 /// A render in parts ([`Pipeline::parts`]), each one dispatch of one pass or a touch of a
 /// new buffer, for a job to submit one a step.
 pub(crate) struct Parts {
@@ -4185,8 +4225,22 @@ impl Pipeline {
         gpu: &GpuContext,
         then: impl FnOnce(&mut wgpu::CommandEncoder),
     ) -> Result<Timings, ComputeError> {
+        self.render_probing(gpu, None, then)
+            .map(|(timings, _)| timings)
+    }
+
+    /// [`Self::render_then`], recording `probe` right after its operation's last pass, while
+    /// that operation's input and output are intact, as a module's colour picker measures
+    /// them (decision 79); and whether it was recorded, which it is only where the render
+    /// runs the operation's passes.
+    pub(crate) fn render_probing(
+        &mut self,
+        gpu: &GpuContext,
+        probe: Option<Probe>,
+        then: impl FnOnce(&mut wgpu::CommandEncoder),
+    ) -> Result<(Timings, bool), ComputeError> {
         let start = Instant::now();
-        let submitted = self.submit(gpu, then, true);
+        let (submitted, probed) = self.submit(gpu, probe, then, true);
         gpu.wait()?;
         self.settle(&submitted);
         let Submitted {
@@ -4199,7 +4253,7 @@ impl Pipeline {
         let ticks = self.timer.as_ref().zip(copied.as_ref());
         let timings = Timings::read(gpu, ticks, &names, start)?;
         self.log_render(first, &runs, &names, &timings);
-        Ok(timings)
+        Ok((timings, probed))
     }
 
     /// [`Self::render_then`] without waiting for the GPU, and so untimed: the passes and
@@ -4211,7 +4265,7 @@ impl Pipeline {
         gpu: &GpuContext,
         then: impl FnOnce(&mut wgpu::CommandEncoder),
     ) {
-        let submitted = self.submit(gpu, then, false);
+        let (submitted, _) = self.submit(gpu, None, then, false);
         self.settle(&submitted);
         let from = self
             .plan
@@ -4223,13 +4277,15 @@ impl Pipeline {
     }
 
     /// Records the passes from the newest valid cache point to the end, the timestamps
-    /// where `timed` and the device has them, then `then`, and submits them.
+    /// where `timed` and the device has them, `probe` after its operation's last pass,
+    /// then `then`, and submits them; and whether `probe` was recorded.
     fn submit(
         &mut self,
         gpu: &GpuContext,
+        probe: Option<Probe>,
         then: impl FnOnce(&mut wgpu::CommandEncoder),
         timed: bool,
-    ) -> Submitted {
+    ) -> (Submitted, bool) {
         let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
         let mut first = self.newest_cache_point(&keys);
         // The edited operation: the first whose key changed since the last render.
@@ -4254,24 +4310,53 @@ impl Pipeline {
             }
         }
         let runs = self.runs_from(first);
-
-        let image = |buffer: Buffer| match buffer {
-            Buffer::Input => &self.input,
-            Buffer::Work(index) => &self.work[index],
-        };
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let copies = Copies { restore, capture };
+        let (names, probed) = self.record_passes(&mut encoder, &runs, copies, timed, probe);
+        let copied = self
+            .timer
+            .as_ref()
+            .filter(|_| timed)
+            .map(|timer| timer.copy_out(gpu, &mut encoder, names.len() as u32));
+        then(&mut encoder);
+        gpu.submit([encoder.finish()]);
+        let submitted = Submitted {
+            keys,
+            first,
+            capture,
+            runs,
+            names,
+            copied,
+        };
+        (submitted, probed)
+    }
+
+    /// Records the passes `runs` marks, in order, each operation's input first restored
+    /// from the edit cache or captured into it as `copies` asks, the timestamps where
+    /// `timed` and the device has them, and `probe` right after its operation's last pass;
+    /// the passes' names, and whether `probe` was recorded.
+    fn record_passes(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        runs: &[bool],
+        copies: Copies,
+        timed: bool,
+        mut probe: Option<Probe>,
+    ) -> (Vec<&'static str>, bool) {
+        let mut probed = false;
         let mut names = Vec::new();
         let mut previous = None;
-        let run = self.passes.iter().zip(&runs).filter(|&(_, &runs)| runs);
+        let run = self.passes.iter().zip(runs).filter(|&(_, &runs)| runs);
         for (pass, _) in run {
             if previous != Some(pass.op) {
+                probed |= self.measure(encoder, previous, &mut probe);
                 previous = Some(pass.op);
-                let input = image(self.plan.operations[pass.op].input).buffer();
+                let input = self.image(self.plan.operations[pass.op].input).buffer();
                 let edit = self.edit.as_ref().map(|edit| edit.buffer.buffer());
-                if let (Some(edit), true) = (edit, restore == Some(pass.op)) {
+                if let (Some(edit), true) = (edit, copies.restore == Some(pass.op)) {
                     encoder.copy_buffer_to_buffer(edit, 0, input, 0, input.size());
                 }
-                if let (Some(edit), true) = (edit, capture == Some(pass.op)) {
+                if let (Some(edit), true) = (edit, copies.capture == Some(pass.op)) {
                     encoder.copy_buffer_to_buffer(input, 0, edit, 0, input.size());
                 }
             }
@@ -4290,21 +4375,141 @@ impl Pipeline {
             drop(compute);
             names.push(pass.label);
         }
-        let copied = self
-            .timer
-            .as_ref()
-            .filter(|_| timed)
-            .map(|timer| timer.copy_out(gpu, &mut encoder, names.len() as u32));
-        then(&mut encoder);
-        gpu.submit([encoder.finish()]);
-        Submitted {
-            keys,
-            first,
-            capture,
-            runs,
-            names,
-            copied,
+        probed |= self.measure(encoder, previous, &mut probe);
+        (names, probed)
+    }
+
+    /// Records `probe`, taking it, where its operation is `op`, the one whose passes were
+    /// just recorded; whether it did.
+    fn measure(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        op: Option<usize>,
+        probe: &mut Option<Probe>,
+    ) -> bool {
+        let Some(probe) = probe.take_if(|probe| Some(probe.op) == op) else {
+            return false;
+        };
+        let planned = &self.plan.operations[probe.op];
+        (probe.record)(
+            encoder,
+            self.image(planned.input).buffer(),
+            self.image(planned.output).buffer(),
+        );
+        true
+    }
+
+    /// How a sample-only render at operation `op` runs ([`Self::sample`]), reading its
+    /// output too with `output`; `None` where the last render did not render the plan as
+    /// it is, or `op` lies in a viewport's tiles, which keep no input of theirs.
+    fn sampling(&self, op: usize, output: bool) -> Option<Sampling> {
+        let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
+        let tiled = (self.plan.tiled.as_ref()).is_some_and(|tiles| tiles.contains(&op));
+        if self.rendered != keys || op >= keys.len() || tiled {
+            return None;
         }
+        let held = self.edit.as_ref().and_then(|edit| edit.held);
+        if !output && held.is_some_and(|(at, key)| at == op && keys[op - 1] == key) {
+            return Some(Sampling::EditCache);
+        }
+        let mut first = (self.plan.cached.iter())
+            .zip(&self.held)
+            .filter(|&(&cached, held)| cached < op && *held == Some(keys[cached]))
+            .map(|(&cached, _)| cached + 1)
+            .max()
+            .unwrap_or(0);
+        let mut restore = None;
+        if let Some((at, key)) = held
+            && at > first
+            && at <= op
+            && keys[at - 1] == key
+        {
+            (first, restore) = (at, Some(at));
+        }
+        let capture = (restore != Some(op) && self.plan.edit_cache_takes(op)).then_some(op);
+        Some(Sampling::Passes {
+            first,
+            copies: Copies { restore, capture },
+        })
+    }
+
+    /// A sample-only render (decision 79; `docs/pickers.md`, When it runs): what a
+    /// module's colour picker reads at operation `op` when its area moves with no edit,
+    /// with no frame. Where the edit cache holds `op`'s input and only that is read,
+    /// `record` is given the edit cache, with no pass. Otherwise the render runs from the
+    /// newest cache point before `op`, or from the edit cache where it holds the input of
+    /// `op` or of an operation before it, up to `op`, and through `op`'s own passes with
+    /// `output`; it captures `op`'s input into the edit cache where the edit cache takes
+    /// it, making `op` the edited instance, as the first render after a change to it does;
+    /// then `record` is given `op`'s input and, with `output`, its output. One submission,
+    /// through the submit gate, not waited for. Whether it ran: not where the last render
+    /// did not render the plan as it is, or `op` lies in a viewport's tiles.
+    pub(crate) fn sample(
+        &mut self,
+        gpu: &GpuContext,
+        op: usize,
+        output: bool,
+        record: impl FnOnce(&mut wgpu::CommandEncoder, &wgpu::Buffer, Option<&wgpu::Buffer>),
+    ) -> bool {
+        let Some(sampling) = self.sampling(op, output) else {
+            return false;
+        };
+        let id = self.plan.operations[op].id;
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let Sampling::Passes { first, copies } = sampling else {
+            let edit = self.edit.as_ref().map(|edit| edit.buffer.buffer());
+            record(&mut encoder, edit.expect("an edit cache"), None);
+            gpu.submit([encoder.finish()]);
+            tracing::trace!(target: "perf", "sampled {id}'s input from the edit cache");
+            return true;
+        };
+        let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
+        // The passes before `op`, and its own where its output is read.
+        let runs: Vec<bool> = (self.runs_from(first).into_iter())
+            .zip(&self.passes)
+            .map(|(runs, pass)| runs && (pass.op < op || (output && pass.op == op)))
+            .collect();
+        let copies = Copies {
+            capture: copies.capture.filter(|_| output),
+            ..copies
+        };
+        let (names, _) = self.record_passes(&mut encoder, &runs, copies, false, None);
+        let planned = &self.plan.operations[op];
+        let input = self.image(planned.input).buffer();
+        if !output && let (Some(edit), Some(_)) = (&self.edit, sampling.capture()) {
+            encoder.copy_buffer_to_buffer(input, 0, edit.buffer.buffer(), 0, input.size());
+        }
+        record(
+            &mut encoder,
+            input,
+            output.then(|| self.image(planned.output).buffer()),
+        );
+        gpu.submit([encoder.finish()]);
+        // Only what it ran is taken as it leaves it; the cache points after the last
+        // operation it ran hold what they held, which no key change has touched.
+        let end = if output { op + 1 } else { op };
+        for (held, &cached) in self.held.iter_mut().zip(&self.plan.cached) {
+            if (first..end).contains(&cached) {
+                *held = Some(keys[cached]);
+            }
+        }
+        if let (Some(edit), Some(at)) = (&mut self.edit, sampling.capture()) {
+            edit.held = Some((at, keys[at - 1]));
+        }
+        let ran = (self.results.iter_mut().zip(&self.plan.operations))
+            .take(end)
+            .skip(first);
+        for (result, planned) in ran {
+            *result = Results::of(planned.whole_image);
+        }
+        let from = self
+            .plan
+            .operations
+            .get(first)
+            .map_or("", |planned| planned.id);
+        let passes = count(names.len(), "pass", "passes");
+        tracing::trace!(target: "perf", "sampled {id} after {passes} from {from}");
+        true
     }
 
     /// The operation a render begins at: the one after the newest cache point still

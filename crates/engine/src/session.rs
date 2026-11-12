@@ -67,8 +67,11 @@
 //! While a colour picker is on ([`Command::Picker`], decision 79; [`crate::picker`]), the
 //! frame is measured under it in a submission of its own after the scopes' count, and on
 //! the frame shown when its point or area moves, read back the same way and sent as
-//! [`Event::Picker`] after the frame it measured. The pickers are view state, never in the
-//! edit; a failure turns them off for the session, never the frame.
+//! [`Event::Picker`] after the frame it measured. A module's picker is measured at its
+//! operation in the viewport pipe too, in the render's own encoder or, when its area moves
+//! with no edit, by a sample-only render, and the session applies its readings through the
+//! module's pick. The pickers are view state, never in the edit; a failure turns them off
+//! for the session, never the frame.
 //!
 //! The session runs background jobs on darktable's control (decision 57,
 //! [`apertrust_base::jobs`]), one control per session: a command starts a job, whose
@@ -134,7 +137,8 @@ use crate::jobs::{self, Background, Queue, Tasks, Waiting};
 pub use crate::jobs::{JobEvent, JobId};
 use crate::names::Shot;
 pub use crate::picker::{
-    FrameReading, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Stats,
+    FrameReading, ModuleReading, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Shown,
+    Stats,
 };
 use crate::pipeline::{self, Kernels, Limits, Pipe, Pipeline, PlanError};
 use crate::scopes::Meter;
@@ -275,13 +279,16 @@ pub enum Command {
     /// counted for counts that frame again, without rendering.
     Scopes(Option<Graphs>),
     /// The active colour picker (decision 79; `docs/pickers.md`): turned on, its point or
-    /// area moved, switched between them, reset or turned off, the Colour picker module's
-    /// alone so far. View state, never a command on the edit. Answered by
-    /// [`Event::Picker`]; `On` refused before the photo is live
-    /// ([`SessionError::NotLive`]) and for a module's picker until 79.3, the session
-    /// running no module's picker yet, declared or not ([`SessionError::UnknownPicker`]),
-    /// a point, an area, a switch or a reset with no
-    /// picker on ([`SessionError::NoPicker`]).
+    /// area moved, switched between them, reset or turned off, a module's or the Colour
+    /// picker module's, and a module's pickers' tool settings and channel. View state,
+    /// never a command on the edit, though a module's picker writes the edit: its module
+    /// turned on with it, and its readings applied through the module's pick, the first
+    /// after it turns on and each after its region moves, a drag's one gesture. Answered by
+    /// [`Event::Picker`]; `On` refused before the photo is live ([`SessionError::NotLive`]),
+    /// for a module's picker on a photo open for viewing only ([`SessionError::ViewOnly`]),
+    /// and for a picker no module declares ([`SessionError::UnknownPicker`]); a point, an
+    /// area, a switch or a reset with no picker on ([`SessionError::NoPicker`]); a tool
+    /// setting no picker of the module reads ([`SessionError::UnknownTool`]).
     Picker(PickerCommand),
     /// Cancel a job, as its progress's cancel does (decision 57): a queued job never
     /// runs, and a running one stops at its body's next check, its GPU task dropped
@@ -407,6 +414,33 @@ fn on_edit(command: &Command) -> bool {
         | Command::HoldDecode(_)
         | Command::HoldClear(_) => false,
         _ => true,
+    }
+}
+
+/// What the live viewport of `viewport` bounds, over a raw uploaded as `sensor`, is
+/// planned within: `limits`, its budget less the colour pickers' buffers, which the plan's
+/// memory counts (decision 79).
+fn viewport_limits(limits: &Limits, viewport: [u32; 2], sensor: &ImageDesc) -> Limits {
+    let reserved = crate::picker::reserved(viewport, [sensor.width, sensor.height]);
+    Limits {
+        budget: limits.budget.saturating_sub(reserved),
+        ..*limits
+    }
+}
+
+/// The modules a command changes: one, by its id; `Some(None)` for every module, as
+/// `Reset` changes them; `None` for none, as a command off the edit, an operation's
+/// parameter and `RetrySave`.
+fn changed_module(command: &Command) -> Option<Option<String>> {
+    match command {
+        Command::SetControl { module, .. }
+        | Command::ResetControl { module, .. }
+        | Command::ResetModule { module }
+        | Command::CancelGesture { module }
+        | Command::Keep { module, .. }
+        | Command::ApplyPreset { module, .. } => Some(Some(module.clone())),
+        Command::Reset => Some(None),
+        _ => None,
     }
 }
 
@@ -835,10 +869,14 @@ pub enum SessionError {
     /// the rest of the session.
     #[error("the scopes are off: {0}")]
     Scopes(String),
-    /// [`PickerCommand::On`] named a module's picker: refused until 79.3, the session
-    /// running no module's picker yet, declared or not.
+    /// [`PickerCommand::On`] named a picker no module declares, or one whose operation
+    /// the plan lacks once its module is on.
     #[error("no module has that colour picker")]
     UnknownPicker,
+    /// [`PickerCommand::On`] or [`PickerCommand::Tools`] named a tool setting none of the
+    /// module's pickers reads.
+    #[error("no colour picker of the module reads the tool setting {0}")]
+    UnknownTool(&'static str),
     /// A colour picker's point, area, switch or reset with no picker on.
     #[error("no colour picker is on")]
     NoPicker,
@@ -1568,6 +1606,19 @@ struct Engine {
     /// Holds the next Clear of the cache, for a test.
     #[cfg(test)]
     clear_hold: Option<export_job::testing::Hold>,
+    /// A GPU error each render raises, for a test.
+    #[cfg(test)]
+    poison: Option<Poison>,
+}
+
+/// When a test makes a render raise a GPU error.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Poison {
+    /// Every render.
+    Always,
+    /// A render with a colour picker's reduction in its submission.
+    WithReduction,
 }
 
 /// The session's jobs (decision 57): its control, and the GPU tasks their bodies hand
@@ -1939,8 +1990,29 @@ impl Engine {
             compiled: 0,
             #[cfg(test)]
             clear_hold: None,
+            #[cfg(test)]
+            poison: None,
         };
         (engine, rejected)
+    }
+
+    /// Raises the GPU error [`Self::poison`] asks for, a buffer usage WebGPU refuses, in a
+    /// render that `reduced` at a colour picker's operation or not.
+    #[cfg(test)]
+    fn poison(poison: Option<&Poison>, gpu: &GpuContext, reduced: bool) {
+        let raise = match poison {
+            Some(Poison::Always) => true,
+            Some(Poison::WithReduction) => reduced,
+            None => false,
+        };
+        if raise {
+            let _ = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("poison"),
+                size: 4,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::MAP_WRITE,
+                mapped_at_creation: false,
+            });
+        }
     }
 
     /// Applies a batch of commands, then renders once if any of them changed the image.
@@ -2136,12 +2208,16 @@ impl Engine {
             // Values follow every change asked for, failed or not, so a client's own
             // value is replaced by the engine's either way.
             values |= on_edit(&command);
+            // The module a command changes: a module's colour picker on turns off as its
+            // module changes.
+            let changes = changed_module(&command);
             let result = match command {
                 Command::Open(path) => {
                     // Its number, which its `Opened` or its failure carries. What was
                     // asked for the photo before it is gone with it, its picker turned
                     // off.
                     self.picker_off(&mut events);
+                    self.pickers.forget_photo();
                     self.open(path, self.applied, at);
                     (values, render, save, cancelled) = (false, false, false, false);
                     resample = false;
@@ -2151,6 +2227,7 @@ impl Engine {
                 // its picker turning off.
                 Command::Close => {
                     self.picker_off(&mut events);
+                    self.pickers.forget_photo();
                     self.close_saving();
                     (values, render, save, cancelled) = (false, false, false, false);
                     resample = false;
@@ -2170,9 +2247,12 @@ impl Engine {
                     self.graphs = graphs;
                     Ok(())
                 }
-                Command::Picker(command) => self
-                    .picker(command, &mut events)
-                    .map(|moved| resample |= moved),
+                Command::Picker(command) => self.picker(command, &mut events).map(|effect| {
+                    resample |= effect.moved;
+                    values |= effect.values;
+                    render |= effect.render;
+                    save |= effect.save;
+                }),
                 Command::CancelJob { job } => self.jobs.cancel(job),
                 Command::RetryJob { job } => self.retry(job),
                 Command::Export {
@@ -2245,7 +2325,11 @@ impl Engine {
                 }),
             };
             match result {
-                Ok(()) => {}
+                Ok(()) => {
+                    if let Some(module) = changes {
+                        self.picker_module_changed(module.as_deref(), &mut events);
+                    }
+                }
                 // An open's failure names its open already.
                 Err(error @ SessionError::Open { .. }) => events.push(Event::Failed(error)),
                 Err(error) => events.push(Event::Failed(SessionError::Refused {
@@ -2300,6 +2384,9 @@ impl Engine {
             let size = [display.size.0, display.size.1];
             self.sample(&buffer, size, &mut events);
         }
+        // A module's picker at its operation, where the batch's render did not measure it:
+        // a sample-only render after the frame.
+        self.probe_alone(&mut events);
         events
     }
 
@@ -2799,13 +2886,8 @@ impl Engine {
         let start = Instant::now();
         let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
         let pipe = Pipe::Viewport { width, height };
-        let planned = pipeline::plan(
-            &bound.instances,
-            &open.image,
-            open.sensor,
-            pipe,
-            &self.limits,
-        );
+        let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
+        let planned = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits);
         let Ok(plan) = planned else {
             return;
         };
@@ -3258,11 +3340,60 @@ impl Engine {
 
     /// Renders the photo at the viewport's size and publishes it, once both are known. A
     /// module whose binding fails is left out of it and reported in `events`, once until
-    /// it binds again.
+    /// it binds again. A module's colour picker on is measured at its operation in the
+    /// render's own submission; a reduction there the GPU refuses turns the pickers off,
+    /// and the frame is rendered again without it.
     fn render(
         &mut self,
         since: Instant,
         events: &mut Vec<Event>,
+    ) -> Result<Option<Frame>, SessionError> {
+        let mut reduced = false;
+        if !self.pickers.probing() {
+            return self.render_frame(since, events, false, &mut reduced);
+        }
+        let (rendered, error) =
+            self.caught(|engine| engine.render_frame(since, events, true, &mut reduced));
+        let Some(error) = error else {
+            return rendered;
+        };
+        // What the failed submission left is not to be trusted: the frame from scratch, as
+        // after any GPU error.
+        let start_over = |engine: &mut Self| {
+            if let Some(open) = &mut engine.open {
+                open.pipeline = None;
+            }
+            engine.display = None;
+            if let Some(meter) = &mut engine.meter {
+                meter.discard();
+            }
+            engine.pickers.discard();
+        };
+        start_over(self);
+        // With no reduction in the submission, the error is the frame's.
+        if !reduced {
+            return Err(SessionError::Gpu(error));
+        }
+        // Without the reduction: only where that one renders was the reduction to blame,
+        // and the pickers go off; where it fails too, the error is the frame's.
+        let (again, retry_error) =
+            self.caught(|engine| engine.render_frame(since, events, false, &mut reduced));
+        if let Some(retry_error) = retry_error {
+            start_over(self);
+            return Err(SessionError::Gpu(retry_error));
+        }
+        self.pickers_fail(error, events);
+        again
+    }
+
+    /// [`Self::render`]'s one try, measuring at the module picker's operation with
+    /// `probe`; `reduced` says whether a reduction there went into its submission.
+    fn render_frame(
+        &mut self,
+        since: Instant,
+        events: &mut Vec<Event>,
+        probe: bool,
+        reduced: &mut bool,
     ) -> Result<Option<Frame>, SessionError> {
         let (Some(open), Some((width, height))) = (&mut self.open, self.size) else {
             return Ok(None);
@@ -3281,13 +3412,20 @@ impl Engine {
             }
         }
         open.failing = failing;
-        let plan = pipeline::plan(
-            &bound.instances,
-            &open.image,
-            open.sensor,
-            pipe,
-            &self.limits,
-        )?;
+        let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
+        let plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
+        let probing = probe
+            .then(|| {
+                let image = &open.image;
+                pickers::probing(
+                    &mut self.pickers,
+                    &plan,
+                    &bound.instances,
+                    image,
+                    self.applied,
+                )
+            })
+            .flatten();
         let pipeline = match open.pipeline.take() {
             Some(pipeline) => pollster::block_on(pipeline.update(&self.gpu, plan))?,
             // The photo's first, taking the kernels earlier photos compiled; the session
@@ -3342,9 +3480,25 @@ impl Engine {
         };
         let display = self.display.insert(display);
         let next = 1 - display.published;
-        let timings = pipeline.render_then(&self.gpu, |encoder| {
+        // A module's colour picker measured at its operation while what it reads changes,
+        // in the same submission, right after the operation's last pass.
+        let mut recorded = None;
+        let probe = Self::probe(
+            self.pickers.probe_mut(),
+            &self.gpu,
+            probing.as_ref(),
+            &mut recorded,
+        );
+        let rendered = pipeline.render_probing(&self.gpu, probe, |encoder| {
             encoder.copy_buffer_to_buffer(output.buffer(), 0, &display.buffers[next], 0, bytes);
-        })?;
+        });
+        *reduced = recorded.is_some();
+        #[cfg(test)]
+        Self::poison(self.poison.as_ref(), &self.gpu, *reduced);
+        let probing =
+            probing.filter(|probing| probing.missed() || matches!(rendered, Ok((_, true))));
+        let (timings, _) = rendered?;
+        let display = self.display.as_mut().expect("the display just used");
         display.published = next;
         display.through = self.applied;
         // The frame includes every change so far, which the history's merging times from.
@@ -3354,8 +3508,9 @@ impl Engine {
         let published = self.published_at.unwrap_or_else(Instant::now);
         open.history.published(published);
         let buffer = display.buffers[next].clone();
-        // Counted after the copy, if a client asks, then measured under the colour picker
-        // on; the readings come later.
+        // The reading at the operation on its way; then counted after the copy, if a
+        // client asks, then measured under the colour picker on; the readings come later.
+        self.probed(probing, recorded, events);
         self.count(&buffer, [desc.width, desc.height], self.applied, events);
         self.sample(&buffer, [desc.width, desc.height], events);
         Ok(Some(Frame {

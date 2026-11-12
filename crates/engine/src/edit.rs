@@ -27,7 +27,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use apertrust_modules::check::{self, ModuleError};
 use apertrust_modules::{
     Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, Mark, Module,
-    ModuleValues, Range, View,
+    ModuleValues, Picker, Range, Unit, View,
 };
 use apertrust_plugin::{ImageContext, Operation, Param, ParamError, ParamValues, Value};
 use thiserror::Error;
@@ -92,6 +92,16 @@ pub enum EditError {
         module: &'static str,
         preset: &'static str,
         option: &'static str,
+        message: String,
+    },
+    /// A module's colour picker's pick (decision 79) the module got wrong: a write of a
+    /// control the picker does not write, of a value its control cannot take, of a
+    /// choice's option the photo does not list, or a pick that panicked. The module's
+    /// fault; nothing is written.
+    #[error("{module}'s picker {picker} failed: {message}")]
+    PickFailed {
+        module: &'static str,
+        picker: &'static str,
         message: String,
     },
     /// A coordinate's value, within its own range, that would put one of its view's
@@ -335,6 +345,76 @@ impl Edit {
         Ok(())
     }
 
+    /// Writes what the module's colour picker `picker` picked (decision 79; `docs/pickers.md`,
+    /// What a pick writes): each control of `writes` takes its value and is kept, with no
+    /// follow writes, since a pick writes every control darktable's `color_picker_apply`
+    /// keeps consistent. A value is stored as the module's rule gave it, with one bound:
+    /// a number past the range the module's values give its control now, the
+    /// parameter's hard limits, is held at the nearer limit, and a hue, a control in
+    /// degrees over a whole turn, wrapped onto its turn instead, the same angle. A control
+    /// the picker does not write, a value its control cannot take or a choice's option
+    /// the photo does not list (decision 30) is the module's failure, and nothing is
+    /// written. It turns a switched module on (decision 32).
+    pub fn pick(
+        &mut self,
+        module: &dyn Module,
+        picker: &Picker,
+        writes: &Controls,
+        image: &ImageContext,
+    ) -> Result<(), EditError> {
+        let id = module.definition().id;
+        let failed = |message: String| EditError::PickFailed {
+            module: id,
+            picker: picker.id,
+            message,
+        };
+        let every = catch_unwind(AssertUnwindSafe(|| self.every(module, image))).ok();
+        let mut checked = Vec::new();
+        for (control, value) in writes.iter() {
+            if !picker.writes.contains(&control) {
+                return Err(failed(format!("it writes {control}, which it may not")));
+            }
+            let (_, found) = find_control(module, control)?;
+            let value = match (value, found.kind) {
+                (&ControlValue::Number(number), ControlKind::Number { min, max, .. }) => {
+                    let (min, max) = every
+                        .as_ref()
+                        .and_then(|every| range_now(module, control, every))
+                        .map_or((min, max), |range| (range.min, range.max));
+                    let turn = found.unit == Some(Unit::Degrees) && max - min == 360.0;
+                    ControlValue::Number(if turn {
+                        min + (number - min).rem_euclid(360.0)
+                    } else {
+                        number.clamp(min, max)
+                    })
+                }
+                (value, _) => value.clone(),
+            };
+            found
+                .check(&value)
+                .map_err(|error| failed(error.to_string()))?;
+            if let Some(unlisted) = unlisted(module, found, &value, image) {
+                return Err(failed(format!(
+                    "{control} {unlisted}, which this photo does not list"
+                )));
+            }
+            checked.push((control, value));
+        }
+        let values = self.modules.entry(id.to_owned()).or_default();
+        for (control, value) in checked {
+            values.set(control, value);
+            values.set_mark(control, Some(Mark::Kept));
+        }
+        self.switch_on(module);
+        Ok(())
+    }
+
+    /// Turns a switched module on (decision 32), as its picker turning on does, darktable
+    /// turning the module on with its picker; a module that is not switched is always on.
+    pub fn turn_on(&mut self, module: &dyn Module) {
+        self.switch_on(module);
+    }
+
     /// Sets `coordinate`, a coordinate of one of the module's lossless views, to `value`
     /// on `image` (decision 2), holding the view's other coordinates: those `held` keeps
     /// while the view's controls hold what it last wrote, else the module's view of the
@@ -434,7 +514,7 @@ impl Edit {
 
     /// Every control of the module on `image`: the edit's value over its default for the
     /// photo.
-    fn every(&self, module: &dyn Module, image: &ImageContext) -> Controls {
+    pub(crate) fn every(&self, module: &dyn Module, image: &ImageContext) -> Controls {
         let definition = module.definition();
         let mut values = module.defaults(image);
         if let Some(set) = self.modules.get(definition.id) {

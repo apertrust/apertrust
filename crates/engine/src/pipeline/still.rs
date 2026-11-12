@@ -463,20 +463,41 @@ impl Pipeline {
     /// passes after an operation's result, which every render runs, leave the result as
     /// it is, as the live pipe's own reuse of it requires.
     pub(crate) fn writes(&self, sources: &Sources) -> bool {
+        let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
+        let first = self.newest_cache_point(&keys);
+        self.writes_running(sources, first, keys.len())
+    }
+
+    /// [`Self::writes`] for the sample-only render a module's colour picker at operation
+    /// `op` runs, reading its output too with `output` (decision 79): it writes only what
+    /// it runs, from its first operation up to `op`, and `op` itself with `output`.
+    pub(crate) fn sample_writes(&self, sources: &Sources, op: usize, output: bool) -> bool {
+        match self.sampling(op, output) {
+            Some(Sampling::Passes { first, .. }) => {
+                self.writes_running(sources, first, if output { op + 1 } else { op })
+            }
+            Some(Sampling::EditCache) | None => false,
+        }
+    }
+
+    /// Whether a render running the operations from `first` up to `end`, exclusive,
+    /// writes what `sources` reads.
+    fn writes_running(&self, sources: &Sources, first: usize, end: usize) -> bool {
         if sources.released() {
             return false;
         }
-        let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
-        let first = self.newest_cache_point(&keys);
         let kept = |key: u64| {
             (self.plan.cached.iter())
                 .zip(&self.held)
-                .any(|(&op, held)| *held == Some(key) && op < first)
+                .any(|(&op, held)| *held == Some(key) && !(first..end).contains(&op))
         };
         if !sources.images.iter().all(|&key| kept(key)) {
             return true;
         }
-        let runs = self.runs_from(first);
+        let runs: Vec<bool> = (self.runs_from(first).into_iter())
+            .zip(&self.passes)
+            .map(|(runs, pass)| runs && pass.op < end)
+            .collect();
         sources.results.iter().any(|&(id, reused)| {
             let Some(place) = self.plan.operations.iter().position(|op| op.id == id) else {
                 return true;
@@ -501,7 +522,8 @@ impl Pipeline {
         })
     }
 
-    fn image(&self, buffer: Buffer) -> &GpuImage {
+    /// The image in `buffer`: the input, or a working buffer.
+    pub(super) fn image(&self, buffer: Buffer) -> &GpuImage {
         match buffer {
             Buffer::Input => &self.input,
             Buffer::Work(index) => &self.work[index],
