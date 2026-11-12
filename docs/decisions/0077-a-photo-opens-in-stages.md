@@ -2,7 +2,7 @@
 
 ## Context
 
-Opening a photo is one step on the engine thread: the raw decoded (135 to 245 ms at 61 MP on the M4), uploaded, its sidecar read, its kernels compiled (38 to 303 ms), its first frame rendered (302 to 388 ms for the 61 MP Sony 7R V). Until all of it is done the central panel says "Opening …" and the side panel shows every module at its defaults, drawn disabled; `Opened`, `Values` and the first `Frame` then come together. On WARP the first open compiles the raw stage's kernels for 34 to 39 s.
+Opening a photo is one step on the engine thread: the raw decoded (135 to 245 ms at 61 MP on the M4), uploaded, its sidecar read, its kernels compiled (38 to 303 ms), its first frame rendered (302 to 388 ms for the 61 MP Sony 7R V). Until all of it is done the central panel says "Opening …" and the side panel shows every module at its defaults, drawn disabled; `Opened`, `Values` and the first `Frame` then come together. On WARP the first open compiles the viewport's kernels in 0.9 s on a Ryzen 7 8845HS ([0080](0080-workgroup-memory-written-before-it-is-read-and-not-zeroed.md)).
 
 Opening should feel instant, in three stages: at once a picture of the photo, within milliseconds its module values, then the live frame. That raises four questions:
 
@@ -131,5 +131,5 @@ Refused, not queued:
   - kernels kept across photos.
 - **`Photo`** loses its decode and upload times, and decoding leaves the engine thread for the live photo too ([0017](0017-threads-and-the-engines-session.md)).
 - **The app's mirror** gains the opening states, the central bar its "Rendering…" after about 1 second, and the editing tabs the read-only values with their tooltip. The CLI's helpers that edit wait for `Values { live: true }`.
-- **On Linux,** rawler's `RawSource::new` populates the whole mapping as it is made, so the values wait for the whole file: the measurements say whether a mapping that is not populated is needed upstream. Compiling kernels off the engine thread, which WARP's 34 to 39 s holds today, is an open question ([engine.md](../engine.md#open-questions)).
+- **On Linux,** rawler's `RawSource::new` populates the whole mapping as it is made, so the values wait for the whole file: the measurements say whether a mapping that is not populated is needed upstream. Compiling kernels off the engine thread is an open question ([engine.md](../engine.md#open-questions)).
 - **The roadmap** lists it in Phase 2's folder mode, before the ways in (step 9b). The rendered thumbnail as stage 1's first source waits for step 6's rendered thumbnails; until then the embedded picture comes first.

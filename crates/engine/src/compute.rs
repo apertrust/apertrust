@@ -345,7 +345,13 @@ impl ImageKernel {
                 layout: None,
                 module: &module,
                 entry_point: Some(entry_point),
-                compilation_options: Default::default(),
+                // Every kernel writes its workgroup memory before reading it, so wgpu's
+                // zeroing of it is left out. On Direct3D 12 it made FXC take seconds over
+                // each reduction's shared arrays, and on WARP it ran at every dispatch too.
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    zero_initialize_workgroup_memory: false,
+                    ..Default::default()
+                },
                 cache: None,
             });
         if let Some(error) = scope.pop().await {

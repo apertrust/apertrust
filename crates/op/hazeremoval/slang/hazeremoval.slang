@@ -329,9 +329,8 @@ void select_begin(uint t: SV_GroupIndex)
 
 groupshared Atomic<uint> shared_bins[BINS];
 
-// Pixels a side each invocation of the counts and the ambient sums adds up. WebGPU
-// zero-initialises a workgroup's shared memory before it starts, which naga does from
-// one invocation, so fewer, larger workgroups spend less of their time on it.
+// Pixels a side each invocation of the counts and the ambient sums adds up, so fewer,
+// larger workgroups each clear and add up their 8 KB of bins once.
 static const uint BLOCK = 4;
 
 // Counts this digit of the selection's values whose higher digits match the prefix,
