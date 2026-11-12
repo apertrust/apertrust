@@ -6,7 +6,7 @@ Status: ported.
 
 - **Coverage:** every continuous parameter (coarseness, strength, mid-tones bias) and both of darktable's noise paths, the single position at full resolution and the 21-position lattice it averages away from it, in Slang (`crates/op/grain`), with its manifest and schema.
 - **The offset** darktable derives from the file name is no parameter: the golden cases set darktable's through `Settings`, and the operation renders every image at a provisional offset of 0. Planned: a seed stored in the edit (Deliberate differences).
-- **Planning:** in `OPERATIONS` with `default_enabled` off: an unedited photo does not run it, and the session plans it only while a module's binding sets one of its parameters (decision 28). The Grain module does, while its strength is off 0 (`docs/modules/grain.md`).
+- **Planning:** in `OPERATIONS` with `default_enabled` off: an unedited photo does not run it, and it is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the Grain module (`docs/modules/grain.md`).
 - **Checks:** darktable's grain is deterministic, and the port reproduces it: five golden cases pass with a mean ΔE2000 below 0.001.
 
 Golden result (five cases, four on test 0059's mire1.cr2, 3908×2602, one on hlrecovery.arw, 5492×3672, Apple M4, 48-byte pass header): every case passes, ΔE2000 mean 0.0008 at most, max 0.095 at most (Results). Gradients: the golden check passes the strength on four cases and on the synthetic sweep, at worst 3.8e-3, forward and reverse mode within 2.3e-6; the coarseness and the mid-tones bias, which that check cannot resolve, follow a float64 model per pixel in a GPU test, on at least 99.6% of pixels within 1%, through the lattice too (Gradients).
@@ -132,10 +132,10 @@ None: darktable has no OpenCL grain, and runs it on the CPU even with OpenCL on.
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Grain module is darktable's: coarseness, strength and mid-tones bias. As built, strength starts at 0 so an untouched module leaves the plan, darktable's 25 % its "darktable's default" preset (`docs/modules/README.md`). Under decision 32 the module is to be switched (planned): off until a control changes, then on with darktable's 25 %, 1600 ISO and 100 %, until its reset.
+In the first pass (decision 2) the Grain module is darktable's: coarseness, strength and mid-tones bias. The module is switched (decision 32): off until a control changes, then on with darktable's 25 %, 1600 ISO and 100 %, until its reset.
 
 - **The offset** has no control: provisionally 0 for every image, until the planned seed (Deliberate differences).
-- **Strength 0 is not a no-op** in the operation: darktable's lookup at `u = 0` moves lightness by 1.3e-4 L at mid-tones bias 0, 1.15e-3 L at 50 and 1.2e-3 L at 100, and the kernel keeps it. As built, the operation is left out of the plan while Strength is 0 (decision 28's `edit::instances`): Grain's binding sets nothing then, whatever the others hold, which is exact and saves the pass. Once the module is switched (decision 32, planned), it is off until a control changes and then renders whatever it holds, a strength of 0 included, as darktable's does.
+- **Strength 0 is not a no-op** in the operation: darktable's lookup at `u = 0` moves lightness by 1.3e-4 L at mid-tones bias 0, 1.15e-3 L at 50 and 1.2e-3 L at 100, and the kernel keeps it. The module is switched (decision 32): off until a control changes, and then it renders whatever it holds, a strength of 0 included, as darktable's does.
 
 ## Gradients
 

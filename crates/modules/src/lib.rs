@@ -308,6 +308,23 @@ pub trait Module: Send + Sync {
     }
 }
 
+/// A module's values saved before it became switched (decision 32), as its migration
+/// gives them back: on with every value, where they rendered something then, else off,
+/// their values dropped, since they rendered nothing, and their marks kept. A module that
+/// becomes switched raises its version, and its [`Module::migrate`] says whether an older
+/// edit rendered, writing first, where darktable's defaults differ from the older
+/// version's, those older defaults, so each edit binds what it bound.
+pub fn switched_from(mut values: ModuleValues, rendered: bool) -> ModuleValues {
+    if !rendered {
+        let set: Vec<String> = values.values().map(|(id, _)| id.to_owned()).collect();
+        for id in set {
+            values.remove(&id);
+        }
+    }
+    values.set_enabled(rendered);
+    values
+}
+
 /// One operation parameter's value: what a binding sets, and what the session reports
 /// for the parameters no module owns.
 #[derive(Debug, Clone, Copy, PartialEq)]

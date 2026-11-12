@@ -24,20 +24,20 @@
 //! no decimals, and the strength and the mid-tones bias as the percentages they are, with
 //! two. The binding goes back as darktable's slider does with a typed value, in f32.
 //!
-//! It drives `grain`, which an unedited photo does not run, and plans it only while the
-//! strength is off 0, whatever the coarseness and the bias hold: at a strength of 0
-//! darktable's grain still moves lightness by up to 1.2e-3 L, so the operation is left out
-//! there (`docs/ports/grain.md`, Tool binding notes). So the strength starts at 0,
-//! untouched, where darktable's new instance has 25 %, which becomes the "darktable's
-//! default" preset once the header's presets menu is built; the coarseness and the bias
-//! start at darktable's 1600 ISO and 100 %, the operation's own defaults, so the binding
-//! sets each only while it is off them. darktable's `channel`, which its GUI does not show
-//! and its `process()` ignores, is not ported.
+//! It is switched (decision 32), as darktable leaves grain off on a new photo: off, it
+//! renders nothing; any write of a control turns it on, with darktable's defaults for the
+//! others, 1600 ISO, 25 % and 100 %, the operation's own, until its reset turns it off. So
+//! the binding sets each control only while it is off its default, and on at its defaults
+//! the session plans `grain` at the operation's defaults, darktable's new instance. Version
+//! 1 started the strength at 0 and planned `grain` only while it was off 0; its edits
+//! migrate on where the strength was off 0, and off, their values dropped, where it was
+//! not. darktable's `channel`, which its GUI does not show and its `process()` ignores, is
+//! not ported.
 
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, Module, ModuleValues, Owned, Setting};
+use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct Grain;
 
@@ -84,21 +84,22 @@ const fn number(
 
 /// darktable's hard ranges are the controls', in the units its sliders show, and their
 /// tracks span them, as darktable sets no soft range. The ids are darktable's parameter
-/// names.
+/// names, and the defaults darktable's, its params' introspection defaults.
 static CONTROLS: [Control; 3] = [
     // 20 to 6400 ISO, darktable's 1600 the default; darktable steps it by 50 ISO.
     number("scale", (20.0, 6400.0), 50.0, 1600.0, Unit::Iso),
-    // 0 % to 100 %, untouched at 0; darktable steps it by 1 %.
-    number("strength", (0.0, 100.0), 1.0, 0.0, Unit::Percent),
+    // 0 % to 100 %, darktable's 25 % the default; darktable steps it by 1 %.
+    number("strength", (0.0, 100.0), 1.0, 25.0, Unit::Percent),
     // 0 % to 100 %, darktable's 100 % the default; darktable steps it by 1 %.
     number("midtones_bias", (0.0, 100.0), 1.0, 100.0, Unit::Percent),
 ];
 
 static DEFINITION: Definition = Definition {
     id: "grain",
-    version: 1,
+    version: 2,
     layers: false,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,
@@ -133,24 +134,32 @@ impl Module for Grain {
         &OWNS
     }
 
-    /// Nothing while the strength is at 0, its default, whatever the others hold, so the
-    /// operation stays out of the plan. Off it, the strength and each other control off
-    /// its default set their parameters, as darktable's sliders convert what they show;
-    /// a control at its default leaves its parameter at the operation's default, which is
-    /// the same value.
+    /// Each control off its default sets its parameter, as darktable's sliders convert
+    /// what they show; a control at its default leaves its parameter at the operation's
+    /// default, which is the same value.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
-        let Some(strength) = values.number("strength") else {
-            return Vec::new();
-        };
         let mut settings = Vec::new();
         if let Some(iso) = values.number("scale") {
             settings.push(Setting::new(GRAIN, "scale", Value::Float(scale(iso))));
         }
-        settings.push(Setting::new(GRAIN, "strength", Value::Float(strength)));
+        if let Some(strength) = values.number("strength") {
+            settings.push(Setting::new(GRAIN, "strength", Value::Float(strength)));
+        }
         if let Some(bias) = values.number("midtones_bias") {
             settings.push(Setting::new(GRAIN, "midtones_bias", Value::Float(bias)));
         }
         settings
+    }
+
+    /// Version 1 planned `grain` only while the strength was off 0, its default then: such
+    /// an edit is on, its values as they were, the strength among them; any other rendered
+    /// nothing, so it is off, its values dropped.
+    fn migrate(&self, from: u32, values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
+        }
+        let rendered = values.number("strength").is_some_and(|s| s != 0.0);
+        switched_from(values, rendered)
     }
 }
 
@@ -236,20 +245,20 @@ mod tests {
             };
             assert_eq!(bound(min).to_bits(), low.to_bits(), "{}", control.id);
             assert_eq!(bound(max).to_bits(), high.to_bits(), "{}", control.id);
-            if control.id != "strength" {
-                assert_eq!(
-                    bound(default).to_bits(),
-                    untouched.to_bits(),
-                    "{}",
-                    control.id
-                );
-            }
+            assert_eq!(
+                bound(default).to_bits(),
+                untouched.to_bits(),
+                "{}",
+                control.id
+            );
         }
         // The strength alone sets only itself; the others take the operation's defaults.
         assert_eq!(
-            bind(&[("strength", 25.0)]),
-            [Setting::new(GRAIN, "strength", Value::Float(25.0))]
+            bind(&[("strength", 30.0)]),
+            [Setting::new(GRAIN, "strength", Value::Float(30.0))]
         );
+        let image = crate::testing::image();
+        assert!(check::switched_defaults(&Grain, OPERATIONS, &image).is_empty());
     }
 
     #[test]
@@ -267,17 +276,46 @@ mod tests {
         assert!(bind(&defaults).is_empty());
     }
 
-    /// Grain stays out of the plan while the strength is 0, whatever the coarseness and the
-    /// bias hold.
+    /// Each control sets its parameter alone, whatever the strength holds: grain is
+    /// switched, so the session plans it while the module is on, not while the strength is
+    /// off 0.
     #[test]
-    fn at_a_strength_of_0_nothing_else_sets_anything() {
-        for set in [
-            &[("scale", 20.0)][..],
-            &[("scale", 6400.0)],
-            &[("midtones_bias", 0.0)],
-            &[("scale", 3200.0), ("midtones_bias", 52.7)],
-        ] {
-            assert!(bind(set).is_empty(), "{set:?}");
+    fn each_control_sets_its_parameter_alone() {
+        assert_eq!(
+            bind(&[("scale", 3200.0)]),
+            [Setting::new(GRAIN, "scale", Value::Float(scale(3200.0)))]
+        );
+        assert_eq!(
+            bind(&[("midtones_bias", 0.0)]),
+            [Setting::new(GRAIN, "midtones_bias", Value::Float(0.0))]
+        );
+        assert_eq!(
+            bind(&[("strength", 0.0)]),
+            [Setting::new(GRAIN, "strength", Value::Float(0.0))]
+        );
+    }
+
+    /// Version 1's edits: on where the strength was off 0, with their values; else off,
+    /// their values dropped and their marks kept.
+    #[test]
+    fn version_1_s_edits_migrate_on_where_they_rendered() {
+        let v1 = |set: &[(&str, f32)]| {
+            let mut values = ModuleValues::new();
+            for &(control, value) in set {
+                values.set(control, ControlValue::Number(value));
+                values.set_mark(control, Some(crate::Mark::Kept));
+            }
+            Grain.migrate(1, values)
+        };
+        let on = v1(&[("strength", 37.3), ("scale", 800.0)]);
+        assert!(on.enabled());
+        assert_eq!(on.number("strength"), Some(37.3));
+        assert_eq!(on.number("scale"), Some(800.0));
+        for set in [&[("scale", 3200.0)][..], &[("strength", 0.0)], &[]] {
+            let off = v1(set);
+            assert!(!off.enabled(), "{set:?}");
+            assert_eq!(off.values().count(), 0, "{set:?}");
+            assert_eq!(off.marks().count(), set.len(), "{set:?}");
         }
     }
 
@@ -317,6 +355,11 @@ mod tests {
         let differences =
             crate::testing::slider_differences(&Grain, &DEFINITION.defaults(), &DARKTABLE);
         assert!(differences.is_empty(), "{differences:#?}");
+        // darktable's defaults, its params' introspection defaults.
+        let defaults = DEFINITION.defaults();
+        assert_eq!(defaults.number("scale"), 1600.0);
+        assert_eq!(defaults.number("strength"), 25.0);
+        assert_eq!(defaults.number("midtones_bias"), 100.0);
         // The factor darktable's coarseness shows by is the one the binding undoes.
         assert_eq!(DARKTABLE[0].factor, SCALE_FACTOR);
         assert_eq!(scale(iso(SCALE.1)), SCALE.1);

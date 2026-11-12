@@ -41,5 +41,5 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 ## Consequences
 
-- Planned, a card each: Grain, Soften, Vignetting and Haze removal at darktable's defaults, each version 2 with its migration; Colour balance RGB, RGB primaries and the Tone equalizer switched at the defaults they have; the panel's reset and description; `apertrust-cli edit --reset MODULE`; a test that every module over optional operations is switched.
+- Built: Grain, Soften, Vignetting and Haze removal at darktable's defaults, each version 2 with its migration; Colour balance RGB, RGB primaries and the Tone equalizer switched at the defaults they have, version 2 too; the panel's reset and description; a test holding the switched modules to those darktable leaves off, every module over optional operations but the Tone curve, which is to become RGB curve. Planned: `apertrust-cli edit --reset MODULE`.
 - Colour balance rgb, as in darktable, runs only while its module is on, so an unedited photo has no gamut mapping darktable's lacks; its first step brings that mapping, measured and reported.

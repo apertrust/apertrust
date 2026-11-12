@@ -15,10 +15,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Haze removal's invariants (`docs/modules/haze-removal.md`, Invariants), one test per
-//! row, each named after its row: Z0 to Z4, the rows a first-pass table has (decision
-//! 22), and Z6, the distance at a strength of 0. The synthetic ramp and sweep run on CI's
-//! software GPUs, Z4 on the CPU. The raw.pixls.us corpus runs locally, with
-//! `APERTRUST_RAW_CORPUS` naming it, and darktable's chart with `APERTRUST_TEST_IMAGES`:
+//! row, each named after its row: a switched module's (decision 32), Z0 off, Z1 the
+//! first step, on at darktable's defaults, Z2 moved and reset, Z3 the order, Z4 the
+//! darktable match, Z7 on at darktable's defaults on the CPU and Z8 version 1's edits; Z5,
+//! on a layer, waits for Phase 4, and Z6 is withdrawn. The synthetic ramp and sweep run on
+//! CI's software GPUs, Z4, Z7 and Z8 on the CPU. The raw.pixls.us corpus runs locally,
+//! with `APERTRUST_RAW_CORPUS` naming it, and darktable's chart with
+//! `APERTRUST_TEST_IMAGES`:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-modules --test haze_removal -- --ignored --nocapture
@@ -34,6 +37,7 @@
 )]
 mod common;
 mod corpus;
+mod switched;
 
 use std::path::PathBuf;
 
@@ -42,7 +46,7 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{BUDGET, Tiling, export};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_modules::haze_removal::{DISTANCE, HazeRemoval, STRENGTH};
-use apertrust_modules::{Base, ControlValue, MODULES, Module};
+use apertrust_modules::{ControlValue, MODULES};
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::hazeremoval::{self, Settings};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, Value};
@@ -89,22 +93,11 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The first step (row Z1), made explicit: haze removal planned at the module's own
-    /// defaults, a strength of 0 and darktable's distance of 0.2, both written, over an
-    /// unedited photo. No edit plans it so, since the module plans haze removal only
-    /// while Strength is off 0; its first move off 0 adds this jump to its own.
-    fn first_step(&self) -> Vec<Instance<'static>> {
-        let mut instances = edit::instances(&Edit::default(), OPERATIONS, MODULES, &self.image)
-            .all()
-            .unwrap();
-        instances.push(Instance {
-            operation: apertrust_operations::operation(HAZEREMOVAL).unwrap(),
-            params: hazeremoval::values(&Settings {
-                strength: 0.0,
-                distance: 0.2,
-            }),
-        });
-        self.keep(instances, Frame)
+    /// The module on at darktable's defaults, a strength and a distance of 0.2: haze
+    /// removal planned at the operation's defaults, darktable's new instance (rows Z1 and
+    /// Z2).
+    fn on_at_defaults(&self) -> Vec<Instance<'static>> {
+        self.instances(&switched::on_at_defaults(&HazeRemoval, &self.image), Frame)
     }
 
     fn set(&mut self, set: &[(&str, f32)]) -> Rendered {
@@ -112,42 +105,16 @@ impl Bench {
     }
 }
 
-// Z0: every control at its default.
+// Z0: off.
 
-/// Edits that leave every control at its default: each written at its default, and each
-/// kept there.
-fn untouched() -> Vec<Edit> {
-    let mut written = Edit::default();
-    let mut kept = Edit::default();
-    for control in HazeRemoval.definition().controls {
-        written
-            .set_control(
-                &HazeRemoval,
-                control.id,
-                control.default(),
-                &common::photo(),
-            )
-            .unwrap();
-        kept.keep(&HazeRemoval, control.id, true).unwrap();
-    }
-    vec![written, kept]
-}
-
-/// Z0 on one pipeline, as the session renders: no edit, then haze removal joining and
-/// leaving the plan, then each untouched edit, every frame as the first.
+/// Z0 on one pipeline, as the session renders: no edit, then haze removal joining the
+/// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
+/// module off, every frame as the first.
 fn z0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.first_step();
+    let joined = bench.on_at_defaults();
     bench.render(&joined);
-    for edit in untouched() {
-        let values = edit.module(HAZEREMOVAL).unwrap();
-        let defaults = HazeRemoval.defaults(&bench.image);
-        let base = Base::new(OPERATIONS, &bench.image);
-        assert!(
-            HazeRemoval
-                .bind(&values.off_defaults(&defaults), &bench.image, &base)
-                .is_empty()
-        );
+    for edit in switched::off(&HazeRemoval) {
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "Z0 on {:?}",
@@ -157,7 +124,7 @@ fn z0_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn z0_every_control_at_its_default_renders_as_no_edit() {
+fn z0_off_renders_as_no_edit() {
     for pipe in [
         Pipe::Export,
         Pipe::Viewport {
@@ -173,8 +140,8 @@ fn z0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// Z0 on every corpus raw: the module at its defaults, written or kept, plans the very
-/// instances and cache keys no edit does, so the same frame.
+/// Z0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn z0_on_the_corpus() {
@@ -190,7 +157,7 @@ fn z0_on_the_corpus() {
                 .collect()
         };
         let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in untouched() {
+        for edit in switched::off(&HazeRemoval) {
             assert_eq!(keys(&bench.instances(&edit, Frame)), none, "Z0 on {name}");
         }
         raws += 1;
@@ -198,16 +165,17 @@ fn z0_on_the_corpus() {
     println!("Z0 holds on {raws} raws");
 }
 
-// Z1: the first step, measured and reported without a bound (decision 22).
+// Z1: the first step, on at darktable's defaults, measured and reported without a bound
+// (decision 22).
 
-/// The first step's jump on the ramp and on the sweep. At a strength of 0 each value
-/// becomes (I − A0) + A0, the input within one rounding at A0's magnitude.
+/// The first step's jump on the ramp and on the sweep: darktable's new instance removing
+/// haze at a strength of 0.2.
 #[test]
 fn z1_the_first_step_is_measured() {
     for (what, (picture, image)) in [("on the ramp", ramp()), ("on the sweep", sweep(-0.67))] {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
         let untouched = bench.edit(&Edit::default(), Frame);
-        let first = bench.first_step();
+        let first = bench.on_at_defaults();
         let first = bench.render(&first);
         let step = jump(&untouched.pixels, &first.pixels, |_| true);
         let moved = untouched
@@ -240,7 +208,7 @@ fn export_of(instances: &[Instance], image: &ImageContext, input: &GpuImage) -> 
 fn first_step_on(image: &ImageContext, input: &GpuImage) -> Jump {
     let bench = export_bench(image.clone(), input.clone());
     let before = export_of(&bench.instances(&Edit::default(), Frame), image, input);
-    let after = export_of(&bench.first_step(), image, input);
+    let after = export_of(&bench.on_at_defaults(), image, input);
     jump(&before, &after, |_| true)
 }
 
@@ -284,20 +252,26 @@ fn z1_on_the_corpus() {
 
 // Z2: each control moved, then reset.
 
-/// Moves of every control: the strength removing haze and adding it, the distance with a
-/// strength, and both at test 0166's values. Each changes the frame.
-const MOVES: [&[(&str, f32)]; 4] = [
+/// Moves of every control: the strength removing haze and adding it, a write of it at
+/// darktable's 0.2, which turns the module on, the distance alone, and both at test
+/// 0166's values. Each changes the frame.
+const MOVES: [&[(&str, f32)]; 6] = [
     &[(STRENGTH, 0.5)],
     &[(STRENGTH, -0.3)],
+    &[(STRENGTH, 0.2)],
+    &[(DISTANCE, 0.8)],
     &[(STRENGTH, 0.4), (DISTANCE, 0.8)],
     &[(STRENGTH, 0.9), (DISTANCE, 0.8)],
 ];
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete) and by
-/// `ResetModule` (the header's reset), on the bench's one pipeline, which haze removal
-/// joins with each move and leaves with each reset.
+/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
+/// control, which leaves the module on at darktable's defaults, and by `ResetModule` (the
+/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
+/// haze removal joins with each move and leaves with each module's reset.
 fn z2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
+    let on = bench.on_at_defaults();
+    let on = bench.render(&on);
     for set in MOVES {
         let mut edit = edit_of(set);
         let moved = bench.edit(&edit, Frame);
@@ -305,14 +279,18 @@ fn z2_holds(bench: &mut Bench) {
         for (control, _) in set {
             edit.reset_control(&HazeRemoval, control).unwrap();
         }
-        assert_eq!(edit, Edit::default());
         assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
+            edit.is_on(&HazeRemoval),
+            "{set:?}, reset control by control"
+        );
+        assert!(
+            exact(&on, &bench.edit(&edit, Frame)),
             "{set:?}, reset control by control"
         );
         let mut edit = edit_of(set);
         bench.edit(&edit, Frame);
         edit.reset_module(&HazeRemoval);
+        assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "{set:?}, the module reset"
@@ -321,7 +299,7 @@ fn z2_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn z2_a_control_moved_and_reset_renders_as_no_edit() {
+fn z2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     z2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -439,38 +417,46 @@ fn z4_the_golden_cases_values_bind_to_darktable_s_parameters() {
     }
 }
 
-// Z6: the distance does nothing while the strength is 0.
+// Z7: on at darktable's defaults, on the CPU.
 
-/// The distance moved while the strength is 0 binds nothing, so haze removal stays out
-/// of the plan and the frame is no edit's, exactly, on one pipeline as the session
-/// renders. It stays enabled there, as darktable's does.
-fn z6_holds(bench: &mut Bench) {
-    let none = bench.edit(&Edit::default(), Frame);
-    let base = Base::new(OPERATIONS, &bench.image);
-    let defaults = HazeRemoval.defaults(&bench.image);
-    for distance in [0.0, 0.05, 0.65, 1.0] {
-        let edit = edit_of(&[(DISTANCE, distance)]);
-        let values = edit.module(HAZEREMOVAL).unwrap().off_defaults(&defaults);
-        assert!(
-            HazeRemoval.bind(&values, &bench.image, &base).is_empty(),
-            "the distance at {distance}"
-        );
-        assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
-            "the distance at {distance} on {:?}",
-            bench.pipe
-        );
-    }
+/// The module's defaults, each made explicit, bind haze removal's own, and the module on
+/// at its defaults plans it with no parameter set, darktable's new instance; off, it
+/// plans none.
+#[test]
+fn z7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
+    switched::on_at_defaults_holds(&HazeRemoval, HAZEREMOVAL);
 }
 
+// Z8: version 1's edits.
+
+/// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
+/// bound: haze removal planned where the strength was off 0, version 1's untouched value,
+/// with the strength version 1 always wrote, and not planned, the module off, where it
+/// was not.
 #[test]
-fn z6_the_distance_at_strength_0_renders_as_no_edit() {
-    let (picture, image) = sweep(-0.67);
-    z6_holds(&mut Bench::picture(&picture, image, Pipe::Export));
-    let (mosaic, image) = small_raw(-0.67);
-    let viewport = Pipe::Viewport {
-        width: 40,
-        height: 30,
-    };
-    z6_holds(&mut Bench::mosaic(&mosaic, image, viewport));
+fn z8_version_1_s_edits_bind_what_they_bound() {
+    let image = common::photo();
+    for (saved, strength, distance) in [
+        (&[(STRENGTH, "0.9"), (DISTANCE, "0.8")][..], 0.9, 0.8),
+        (&[(STRENGTH, "-0.35")], -0.35, 0.2),
+        (&[(STRENGTH, "0.2")], 0.2, 0.2),
+    ] {
+        let edit = switched::version_1(HAZEREMOVAL, saved);
+        assert!(edit.is_on(&HazeRemoval), "{saved:?}");
+        let params = switched::bound(&edit, HAZEREMOVAL, &image).expect("planned");
+        let schema = apertrust_operations::operation(HAZEREMOVAL)
+            .unwrap()
+            .schema();
+        let bound = hazeremoval::settings(&schema.resolve(&params).unwrap());
+        assert_eq!(bound, Settings { strength, distance }, "{saved:?}");
+    }
+    for saved in [&[(DISTANCE, "0.8")][..], &[(STRENGTH, "0")], &[]] {
+        let edit = switched::version_1(HAZEREMOVAL, saved);
+        assert!(!edit.is_on(&HazeRemoval), "{saved:?}");
+        assert!(edit.is_empty(), "{saved:?}");
+        assert!(
+            switched::bound(&edit, HAZEREMOVAL, &image).is_none(),
+            "{saved:?}"
+        );
+    }
 }

@@ -2538,9 +2538,9 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
 `crates/app/src/modules.rs` draws any module's section from its definition and the mirror's values, with no code of the module's own.
 
 - **The section** is `Section::module()` with the module's title, its tabs when it has more than one (the tab shown is the app's state for the run), and presets drawn disabled until something is behind it; no options button and no Advanced controls toggle (decision 29). Whether it is open is the shell's, kept in settings by the module's id (`Shell::section_open`), open by default, on its first tab.
-- **A switched module that is off** (decision 32, planned) is drawn as any other, its controls at darktable's defaults as the session reports them, with no dimming and no switch: it is transparent to the person.
-  - The section's reset is available only while the session reports the module edited (`ModuleState::edited`: a switched module while it is on, any other while a control is off its default), and at once while a change is pending, on a photo that can be edited. The kept marker beside each control set is the other cue.
-  - To AccessKit the section is described as "Not applied" (`section-not-applied`) while the session reports it off (`ModuleState::enabled` false), and not while a pending change turns it on.
+- **A switched module that is off** (decision 32) is drawn as any other, its controls at darktable's defaults as the session reports them, with no dimming and no switch: it is transparent to the person.
+  - A switched module's reset is available only while the session reports it edited (`ModuleState::edited`, which a switched module is while it is on), and at once while a change turning it on is pending, on a photo that can be edited. Every other module's reset is available on a photo that can be edited, as before; it follows the same rule once kept marks count as edited. The kept marker beside each control set is the other cue.
+  - To AccessKit the section is described as "Not applied" (`section-not-applied`, through `Section::not_applied`) while the session reports it off (`ModuleState::enabled` false), and not while a pending change turns it on.
   - Its first change turns it on with darktable's defaults, the values it was already showing, as darktable's off module shows them.
 - **The rows:** those before every tab's, the open tab's, then those after. Each is laid out as above.
   - A slider is a `SliderRow` with the control's range, step, default, unit, decimals, track and fill, its track over the row's soft range where the definition gives one, the range, soft range and step those the session reports for the module's values (`ControlState::range`, decision 30), its mark from the mirror.
@@ -2573,7 +2573,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - Correct: Haze removal;
   - Effect: Vignetting, Soften and Grain;
   - nothing yet in Photos and History.
-- **A module joins the plan** on its first step off its defaults, as darktable's does (decision 32): colour balance rgb, say, with `default_enabled` off, runs only while its module is used. The pipeline keeps its kernels and matching cache points across a rebuild (decision 28), so that first step does not run the raw stage again. On the M4 an operation joining after the downscale costs its compilation and a render from the downscale, 15 to 17 ms for colour balance rgb at 30 and 61 MP with macOS's shader cache warm, against 225 to 469 ms built from nothing; a kernel the cache lacks, as after an update that changes it, compiles in about 75 ms instead of 7 to 9, once (`docs/engine.md`, Caching).
+- **A module joins the plan** once it is on, from the first write of one of its controls, as darktable's does (decision 32): colour balance rgb, say, with `default_enabled` off, runs only while its module is on. The pipeline keeps its kernels and matching cache points across a rebuild (decision 28), so that first step does not run the raw stage again. On the M4 an operation joining after the downscale costs its compilation and a render from the downscale, 15 to 17 ms for colour balance rgb at 30 and 61 MP with macOS's shader cache warm, against 225 to 469 ms built from nothing; a kernel the cache lacks, as after an update that changes it, compiles in about 75 ms instead of 7 to 9, once (`docs/engine.md`, Caching).
 
 ### What the renderer still lacks
 
@@ -2775,7 +2775,7 @@ Nothing new but the cancel. The client evaluates what is typed and sends numbers
 - **What ends a gesture:** any other command on the edit, refused or not, ends it as completed; a resize, the scopes and a cancel naming another module do not.
 - **Until a report includes it,** the app shows the module as reported when the gesture began.
 - A script that sends `done: false` changes cancels the same way.
-- **Tests:** a cancelled drag of White balance's coefficient putting `preset` back; `testing::Sample`'s clamp undone; a view's held coordinates restored; no write and `Saved` reported; a cancel after `done: true` or another command changing nothing; a photo open for viewing only refusing it; and, once decision 32's on state is built, a switched module the gesture turned on off again.
+- **Tests:** a cancelled drag of White balance's coefficient putting `preset` back; `testing::Sample`'s clamp undone; a view's held coordinates restored; no write and `Saved` reported; a cancel after `done: true` or another command changing nothing; a photo open for viewing only refusing it; and a switched module the gesture turned on off again (decision 32).
 
 ### The sliders' deviations from darktable
 

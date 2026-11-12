@@ -497,6 +497,7 @@ static DEFINITION: Definition = Definition {
     // Background only: the tone mapper's parameters are global (decision 33).
     layers: false,
     auto: false,
+    switched: false,
     controls: &CONTROLS,
     tabs: &[
         Tab {

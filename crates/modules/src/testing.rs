@@ -77,6 +77,7 @@ static DEFINITION: Definition = Definition {
     version: 1,
     layers: true,
     auto: false,
+    switched: false,
     controls: &[
         Control {
             id: "brightness",
@@ -420,6 +421,7 @@ static FAULTY: Definition = Definition {
     version: 1,
     layers: false,
     auto: false,
+    switched: false,
     controls: &[
         Control {
             id: "stray",
@@ -523,6 +525,7 @@ static DEFAULTLESS: Definition = Definition {
     version: 1,
     layers: false,
     auto: false,
+    switched: false,
     controls: &[Control {
         id: "amount",
         kind: ControlKind::Number {
@@ -581,6 +584,7 @@ static TWIN: Definition = Definition {
     version: 1,
     layers: false,
     auto: false,
+    switched: false,
     controls: &[
         Control {
             id: "x",

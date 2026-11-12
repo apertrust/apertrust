@@ -171,6 +171,7 @@ static DEFINITION: Definition = Definition {
     version: 2,
     layers: true,
     auto: true,
+    switched: false,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,

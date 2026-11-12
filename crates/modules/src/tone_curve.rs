@@ -83,6 +83,7 @@ static DEFINITION: Definition = Definition {
     version: 1,
     layers: true,
     auto: false,
+    switched: false,
     controls: &[
         Control {
             id: LUMA,

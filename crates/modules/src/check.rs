@@ -20,7 +20,7 @@
 //! with [`accept`] and leaves out the rest; the tests sweep every built-in module's
 //! binding with [`sweep`].
 
-use apertrust_plugin::{ImageContext, Operation, ParamError};
+use apertrust_plugin::{ImageContext, Operation, ParamError, Value};
 
 use crate::definition::{ControlKind, DefinitionError, MAX_POINTS};
 use crate::{Base, Control, ControlValue, Controls, Module, ModuleValues, Owned, Range, Setting};
@@ -141,6 +141,13 @@ pub enum ModuleError {
     /// A bug in the module: its defaults or its binding panicked.
     #[error("its binding failed: {0}")]
     Panicked(String),
+    /// A switched module owning a parameter of an operation every photo runs, which it
+    /// could not leave untouched while off (decision 32).
+    #[error("it is switched but owns {operation}.{param}, of an operation every photo runs")]
+    SwitchedOverBase {
+        operation: &'static str,
+        param: &'static str,
+    },
 }
 
 /// A module left out, and why.
@@ -192,6 +199,9 @@ fn admit(
             .ok_or(ModuleError::UnknownOperation(operation))?;
         if found.schema().param(param).is_none() {
             return Err(ModuleError::UnknownParam { operation, param });
+        }
+        if definition.switched && found.manifest().default_enabled {
+            return Err(ModuleError::SwitchedOverBase { operation, param });
         }
         let owner = if owns[..i].contains(&owns[i]) {
             Some(definition.id)
@@ -246,6 +256,61 @@ pub fn setting(
         .ok_or(ModuleError::UnknownParam { operation, param })?
         .check(setting.value)
         .map_err(|source| ModuleError::Param { operation, source })
+}
+
+/// The parameters whose default a switched module's control, made explicit, binds one
+/// f32 step away, as a percentage darktable's slider shows divided by 100 in f32 does:
+/// Colour balance RGB's two fulcrums at 18.45 %, which bind 0.18450001 for darktable's
+/// 0.1845 (its row B6). The render is exact all the same: a module on at its defaults
+/// binds no value, so its operations run at their own defaults.
+pub const ONE_STEP_FROM_DEFAULT: [(&str, &str); 2] = [
+    ("colorbalancergb", "grey_fulcrum"),
+    ("colorbalancergb", "mask_grey_fulcrum"),
+];
+
+/// What is wrong with a switched module's defaults on `image` (decision 32): each
+/// control's default for the photo, made explicit, must bind its operations' own defaults
+/// for the photo exactly, so the module on and untouched is darktable's new instance, but
+/// those of [`ONE_STEP_FROM_DEFAULT`], within one f32 step. Empty when they hold, and for a
+/// module that is not switched.
+pub fn switched_defaults(
+    module: &dyn Module,
+    operations: &[&dyn Operation],
+    image: &ImageContext,
+) -> Vec<String> {
+    if !module.definition().switched {
+        return Vec::new();
+    }
+    let base = Base::new(operations, image);
+    let mut values = ModuleValues::new();
+    for (control, value) in module.defaults(image).iter() {
+        values.set(control, value.clone());
+    }
+    values.set_enabled(true);
+    module
+        .bind(&values, image, &base)
+        .into_iter()
+        .filter(|setting| {
+            let default = base.get(setting.operation, setting.param);
+            let one_step = ONE_STEP_FROM_DEFAULT.contains(&(setting.operation, setting.param));
+            match (default, setting.value) {
+                (Some(Value::Float(default)), Value::Float(bound)) if one_step => {
+                    default.to_bits().abs_diff(bound.to_bits()) > 1
+                        || default.is_sign_negative() != bound.is_sign_negative()
+                }
+                _ => default != Some(setting.value),
+            }
+        })
+        .map(|setting| {
+            format!(
+                "its defaults bind {}.{} to {}, where the operation's default is {:?}",
+                setting.operation,
+                setting.param,
+                setting.value,
+                base.get(setting.operation, setting.param),
+            )
+        })
+        .collect()
 }
 
 /// What [`sweep`] tries a control at, from one end of its range to the other: every
@@ -541,6 +606,7 @@ mod tests {
                 version: 1,
                 layers: true,
                 auto: false,
+                switched: false,
                 controls: CONTROLS,
                 tabs: TABS,
                 before: &[],

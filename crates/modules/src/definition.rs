@@ -49,6 +49,12 @@ pub struct Definition {
     pub layers: bool,
     /// Whether the module has an Auto. The header draws no button for it.
     pub auto: bool,
+    /// Whether the module is switched (decision 32): one darktable leaves off on a new
+    /// photo, off until a command writes one of its controls, then on with darktable's
+    /// defaults for the rest until its reset turns it off. It owns no parameter of an
+    /// operation every photo runs ([`crate::check::accept`]), and its defaults bind its
+    /// operations' own ([`crate::check::switched_defaults`]).
+    pub switched: bool,
     pub controls: &'static [Control],
     /// One untitled tab draws no tab strip.
     pub tabs: &'static [Tab],
@@ -1551,6 +1557,7 @@ mod tests {
         version: 1,
         layers: true,
         auto: false,
+        switched: false,
         controls: CONTROLS,
         tabs: &[Tab {
             id: None,
@@ -1677,6 +1684,7 @@ mod tests {
         version: 1,
         layers: true,
         auto: false,
+        switched: false,
         controls: PAGE_CONTROLS,
         tabs: PAGE_TABS,
         before: &[Row::Slider(Slider::new("amount"))],
@@ -2617,6 +2625,7 @@ mod tests {
             version: 1,
             layers: true,
             auto: false,
+            switched: false,
             controls: &CONTROLS[..1],
             tabs: Box::leak(Box::new([Tab { id: None, rows }])),
             before: &[],
@@ -2683,6 +2692,7 @@ mod tests {
             version: 1,
             layers: true,
             auto: false,
+            switched: false,
             controls,
             tabs: Box::leak(Box::new([Tab { id: None, rows }])),
             before: &[],

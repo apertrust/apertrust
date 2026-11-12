@@ -1,10 +1,10 @@
 # Colour balance RGB
 
-Module `colorbalancergb`, version 1. It works on layers and has no Auto.
+Module `colorbalancergb`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
 It is darktable's color balance rgb in the first pass (decision 2). It has darktable's page: the Master, 4 ways and Masks tabs as content tabs, and the controls in `gui_init`'s order under darktable's labels in British spelling (decision 29).
 
-It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../ports/colorbalancergb.md)). An unedited photo does not run it: it is planned only while a control is off its default, as in darktable, where color balance rgb is off until the user turns it on (decision 32). The module owns every one of the operation's parameters; none is fixed.
+It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../ports/colorbalancergb.md)). An unedited photo does not run it: it is planned while the module is on, as in darktable, where color balance rgb is off until the user turns it on (decision 32). The module owns every one of the operation's parameters; none is fixed.
 
 **Status:** built, in `crates/modules/src/colour_balance_rgb.rs`. The app draws it from its definition (`docs/gui.md`, Module panels from definitions) in the Colour tab, after Output colour profile and before RGB primaries, in [README.md](README.md)'s order (decision 38).
 
@@ -14,13 +14,9 @@ It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../por
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
-**Planned: a switched module** (decision 32). Colour balance RGB becomes switched: off until a control changes, then on with darktable's defaults for every control not set, until its reset turns it off ([README.md](README.md), rule 4).
+**Switched** (decision 32; [README.md](README.md), rule 4). Colour balance RGB is off on a new photo, as darktable's color balance rgb is, and renders nothing. Any write of a control turns it on, whatever the value, with darktable's defaults for the others, until its reset turns it off; resetting one control leaves it on. Its defaults are darktable's, the operation's own, so its controls and binding are as they were: on at its defaults, the operation runs at its own defaults, darktable's new instance.
 
-- Its defaults are darktable's already, so its controls and binding stay as they are.
-- It becomes version 2: a version 1 edit migrates on where a value was off its defaults, which is when version 1 planned the operation, its values otherwise dropped.
-- Its rows become a switched module's ([README.md](README.md), Rows every table has). B0 becomes off; B1 measures what it measures today, the operation at its defaults, as the module on and untouched; B2's resets follow the switched rows; new rows after B5 hold on at darktable's defaults and version 1's edits.
-
-The rest of this page describes the module as built.
+- **Version 2.** Version 1 planned the operation while a control was off its default. A version 1 edit migrates on where a value was off its defaults, its values as they were; its values are otherwise dropped, since they rendered nothing (row B7).
 
 ## Controls
 
@@ -87,16 +83,18 @@ The tracks span the soft ranges, so Global offset chroma's drag runs over 1 %, C
 
 ## Invariants
 
-The rows every first-pass table has (decision 22; [README.md](README.md), Rows every table has). No control's unit is Apertrust's: the percentages are darktable's own display of its factors, and B4 holds the module's values to darktable's parameters.
+A switched module's rows (decision 32; [README.md](README.md), Rows every table has). No control's unit is Apertrust's: the percentages are darktable's own display of its factors, and B4 holds the module's values to darktable's parameters.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
-| B0 | None: every control at its default, written at it or kept there | | `bind`; the plan's instances and cache keys; the frame, on one pipeline that colour balance rgb joins and leaves on the way | `bind` returns nothing; instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
-| B1 | The first step | `colorbalancergb` planned at its defaults, the operation's, as any control's first move off its default plans it | Frame, ΔE2000 against B0's: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: the operation's gamut mapping, its Yrg chroma clip and its clips of negative channels act at any setting, as darktable's do | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
-| B2 | Each control, moved and reset | Contrast +20 %; Global brilliance −20 %; Global offset hue 120° with chroma 5 %; the formula JzAzBz; Global vibrance, Shadows lift luminance, Contrast grey fulcrum, White fulcrum and the formula together; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | `bind`; the frame | As B0, colour balance rgb leaving the plan | Exact | Ramp; the small raw through the viewport; 90D through the viewport and the export |
+| B0 | None: the module off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that colour balance rgb joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
+| B1 | The first step | The module on at darktable's defaults, the operation's: a control written at its default | Frame, ΔE2000 against no edit: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: the operation's gamut mapping, its Yrg chroma clip and its clips of negative channels act at any setting, as darktable's do | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
+| B2 | Each control, moved and reset | Contrast 0 %, a write at its default; contrast +20 %; Global brilliance −20 %; Global offset hue 120° with chroma 5 %; the formula JzAzBz; Global vibrance, Shadows lift luminance, Contrast grey fulcrum, White fulcrum and the formula together; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the module stays on and renders as B1's; the module's reset turns it off and renders as no edit, colour balance rgb leaving the plan | Exact | Ramp; the small raw through the viewport; 90D through the viewport and the export |
 | B3 | Two controls, in either order | Contrast +20 % and Global saturation −30 %; JzAzBz and Global brilliance +10 % | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | B4 | Every control, the darktable match | The values of darktable's tests 0083 (params version 4, JzAzBz) and 0093-colorbalancergb-ucs (version 5, darktable UCS), the golden cases `colorbalancergb` and `colorbalancergb-ucs` | The parameters the module binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters, and so the inputs the golden harness checks against darktable's render | One f32 step on a parameter; two f32 steps, 2.4e-7 relative, on a uniform word; the gamut table exact | The two cases' parameters, on the CPU |
 | B5 | Each control on a layer, Phase 4 | B2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As B2 | Ramp |
+| B6 | On at darktable's defaults | Every control's default made explicit; the module on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind the operation's own exactly, its two grey fulcrums within one f32 step, as a percentage divided by 100 lands (`check::ONE_STEP_FROM_DEFAULT`); on at its defaults colour balance rgb is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
+| B7 | Version 1's edits | Version 1 entries read from `.apxmp`: Contrast +20 %; Global vibrance +30 % and Contrast grey fulcrum 30 % with Contrast 0 %; the formula JzAzBz; and Contrast 0 % alone, and nothing | The module's state; the parameters bound | Those with a value off its default read on and bind what version 1 bound; the others read off, their values dropped, colour balance rgb not planned | Exact | The CPU |
 
 B4 is how the module matches darktable. The golden cases check the operation against darktable-cli at the cases' settings, means of 0.0057 and 0.0018 ΔE2000 (`docs/ports/colorbalancergb.md`). B4 holds the module's controls, set to those settings, to bind exactly those parameters.
 
@@ -108,11 +106,13 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/colour_balance_rgb.rs`
 
 | Row | Result |
 | --- | --- |
-| B0 | Holds, exactly. `bind` sets nothing with every control written at its default, or kept there. Frames byte-identical to no edit on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that colour balance rgb joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
+| B0 | Holds, exactly. Frames byte-identical to no edit, the module off and untouched or with every control kept, on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that colour balance rgb joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
 | B1 | darktable's behaviour: neutral and moderately saturated colours stay, colours near the gamut's edge move; corpus means of 0.0000 to 0.0274 ΔE2000 (below) |
-| B2 | Holds, exactly, on the ramp and on the small raw through the viewport, and on the 90D through the viewport and the export: every move changes the frame, and resets render as no edit |
+| B2 | Holds, exactly, on the ramp and on the small raw through the viewport, and on the 90D through the viewport and the export: every move changes the frame, a write at the default among them; reset control by control, the module renders as on at darktable's defaults; the module's reset renders as no edit |
 | B3 | Holds, exactly, on the sweep and on the 90D through the viewport and the export |
 | B4 | Holds. Test 0083's kernel inputs are the golden case's byte for byte; test 0093's are within 7.5e-8 relative, one f32 step from a percentage's division, its gamut table exact |
+| B6 | Holds |
+| B7 | Holds, exactly |
 
 B1 in detail, with darktable UCS, the default. Colour calibration runs on every colour raw (decision 27) from darktable's own defaults, As shot snapped to daylight or Planckian where darktable snaps, and compresses the gamut before colour balance rgb does.
 

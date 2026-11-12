@@ -1,10 +1,10 @@
 # RGB primaries
 
-Module `primaries`, version 1. It works on layers and has no Auto.
+Module `primaries`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
 It is darktable's rgb primaries in the first pass (decision 2). darktable's page has no tabs, sections or presets, only eight sliders, here in `gui_init`'s order under darktable's labels in British spelling (decision 29).
 
-It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries.md)), which an unedited photo does not run. The operation is planned only while a control is off its default, as in darktable, where rgb primaries is off until it is turned on. The module owns all eight of the operation's parameters; none is fixed.
+It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries.md)), which an unedited photo does not run. The operation is planned while the module is on, as in darktable, where rgb primaries is off until the user turns it on (decision 32). The module owns all eight of the operation's parameters; none is fixed.
 
 **Status:** built, in `crates/modules/src/rgb_primaries.rs`. The app draws it in the Colour tab from its definition (`docs/gui.md`, Module panels from definitions), after Colour balance RGB and before Colour calibration.
 
@@ -13,11 +13,9 @@ It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
-**Planned: RGB primaries becomes switched** (decision 32; [README.md](README.md), rule 4). It will be off until a control changes, then on with darktable's defaults for every control not set, until its reset turns it off. The rest of this page describes the module as built.
+**Switched** (decision 32; [README.md](README.md), rule 4). RGB primaries is off on a new photo, as darktable's rgb primaries is, and renders nothing. Any write of a control turns it on, whatever the value, with darktable's defaults for the others, until its reset turns it off; resetting one control leaves it on. Its defaults are darktable's, the operation's own, so its controls and binding are as they were: on at its defaults, the operation runs at its own defaults, darktable's new instance.
 
-- Its defaults are darktable's already, so its controls and binding stay as they are.
-- It becomes version 2: a version 1 edit migrates on where a value was off its defaults, its values otherwise dropped.
-- Its rows become a switched module's ([README.md](README.md), Rows every table has): P0 becomes off; P1 measures what it measures today, as the module on and untouched; P2's resets follow the switched rows; new rows after P6 hold on at darktable's defaults and version 1's edits.
+- **Version 2.** Version 1 planned the operation while a control was off its default. A version 1 edit migrates on where a value was off its defaults, its values as they were; its values are otherwise dropped, since they rendered nothing (row P8).
 
 ## Controls
 
@@ -67,17 +65,19 @@ The soft range also keeps a drag away from the hues that put the three primaries
 
 ## Invariants
 
-The rows every first-pass table has (decision 22; [README.md](README.md), Rows every table has), and P6 for the tint's hue. No control's unit is Apertrust's: degrees and the percentages are darktable's own display of its parameters, and P4 holds the module's values to darktable's parameters.
+A switched module's rows (decision 32; [README.md](README.md), Rows every table has), and P6 for the tint's hue. No control's unit is Apertrust's: degrees and the percentages are darktable's own display of its parameters, and P4 holds the module's values to darktable's parameters.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
-| P0 | None: every control at its default, written at it or kept there | | `bind`; the plan's instances and cache keys; the frame, on one pipeline that rgb primaries joins and leaves on the way | `bind` returns nothing; instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
-| P1 | The first step | `primaries` planned at its defaults, the operation's, as any control's first move off its default plans it | Frame, ΔE2000 against P0's: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: at its defaults the operation's matrix leaks red into blue and green, B + 0.0024 (R − B) and G + 0.000025 (R − G), greys untouched, as darktable's does (`docs/ports/primaries.md`, Per pixel) | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
-| P2 | Each control, moved and reset | Red hue +10°; Green purity +25 %; Blue hue −15° with Blue purity −30 %; Tint hue 120° with Tint purity 10 %; all eight at test 0152's values as its sliders show them; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | `bind`; the frame | As P0, rgb primaries leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
+| P0 | None: the module off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that rgb primaries joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
+| P1 | The first step | The module on at darktable's defaults, the operation's: a control written at its default | Frame, ΔE2000 against no edit: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: at its defaults the operation's matrix leaks red into blue and green, B + 0.0024 (R − B) and G + 0.000025 (R − G), greys untouched, as darktable's does (`docs/ports/primaries.md`, Per pixel) | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
+| P2 | Each control, moved and reset | Red hue 0°, a write at its default; red hue +10°; Green purity +25 %; Blue hue −15° with Blue purity −30 %; Tint hue 120° with Tint purity 10 %; all eight at test 0152's values as its sliders show them; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the module stays on and renders as P1's; the module's reset turns it off and renders as no edit, rgb primaries leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
 | P3 | Two controls, in either order | Red hue 9.5° and Tint purity 13.4 %; Green purity +23.5 % and Blue hue 13.1° | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | P4 | Every control, the darktable match | The values of darktable's test 0152-rgb-primaries, the golden case `primaries`: each field × factor + offset, unrounded | The parameters the module binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters, and so the inputs the golden harness checks against darktable's render | One f32 step on a parameter and on a setting's uniform word; 2.4e-7, two f32 steps of 1, on a matrix entry; every other word exact | The case's parameters, on the CPU |
 | P5 | Each control on a layer, Phase 4 | P2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As P2 | Sweep |
 | P6 | Tint hue, while Tint purity is 0 | −180°, −33.2°, 90°, 180° | The frame's pixels, against the first step's | The same: the white moves by the tint's purity alone, so the matrix is the defaults' | Exact, the pixels; the cache keys differ, as the parameter does | Sweep |
+| P7 | On at darktable's defaults | Every control's default made explicit; the module on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind the operation's own exactly; on at its defaults rgb primaries is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
+| P8 | Version 1's edits | Version 1 entries read from `.apxmp`: Red hue +10°; Tint hue 120° and Tint purity 10 % with Green purity 0 %; Tint hue −33.2° alone; and Red purity 0 % alone, and nothing | The module's state; the parameters bound | Those with a value off its default read on and bind what version 1 bound; the others read off, their values dropped, rgb primaries not planned | Exact | The CPU |
 
 P4 is how the module matches darktable. The golden case checks the operation against darktable-cli at the case's settings, a ΔE2000 mean of 0.0000, max 0.0002 (`docs/ports/primaries.md`), and P4 holds the module's controls set to those settings to bind those parameters.
 
@@ -89,12 +89,14 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/rgb_primaries.rs`. The
 
 | Row | Result |
 | --- | --- |
-| P0 | Holds, exactly. `bind` sets nothing with every control written at its default, or kept there. Frames byte-identical to no edit on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that rgb primaries joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
+| P0 | Holds, exactly. Frames byte-identical to no edit, the module off and untouched or with every control kept, on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that rgb primaries joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
 | P1 | Greys stay where they were; colours with far more red than blue move a little, as darktable's first step moves them (below) |
-| P2 | Holds, exactly, on the sweep, on the small raw through the viewport, and on the 90D through the viewport and the export: every move changes the frame, and resets render as no edit |
+| P2 | Holds, exactly, on the sweep and on the small raw through the viewport, and on the 90D through the viewport and the export: every move changes the frame, a write at the default among them; reset control by control, the module renders as on at darktable's defaults; the module's reset renders as no edit |
 | P3 | Holds, exactly, on the sweep and on the 90D through the viewport and the export |
 | P4 | Holds: six of the eight parameters exactly, two one f32 step off (below) |
 | P6 | Holds, exactly, at each of the four hues |
+| P7 | Holds |
+| P8 | Holds, exactly |
 
 P1's ΔE2000 against P0:
 

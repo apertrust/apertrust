@@ -33,6 +33,7 @@ fn module(id: &str) -> Entry {
         version: Some("2".to_owned()),
         kept: vec!["a".to_owned(), "b".to_owned()],
         auto: vec!["c".to_owned()],
+        enabled: (id == "look").then(|| "true".to_owned()),
         controls: vec![
             ("a".to_owned(), "0.3".to_owned()),
             ("curve".to_owned(), "0.25,0.2 0.75,0.8".to_owned()),
@@ -58,6 +59,7 @@ fn a_document_reads_back_as_written() {
         r#"apertrust:version="1""#,
         r#"x:xmptk="Apertrust 0.4.0+12~g1a2b3c4""#,
         r#"apertrust:module="look""#,
+        r#"apertrust:enabled="true""#,
         r#"apertrust:moduleVersion="2""#,
         r#"apertrust:kept="a b""#,
         r#"apertrust:auto="c""#,
@@ -68,6 +70,8 @@ fn a_document_reads_back_as_written() {
     ] {
         assert!(xml.contains(written), "{written} in {xml}");
     }
+    // A module off writes no `enabled`.
+    assert_eq!(xml.matches("apertrust:enabled").count(), 1, "{xml}");
     assert_eq!(Document::parse(&xml).unwrap(), document);
 }
 
@@ -128,6 +132,7 @@ fn entries_are_read_as_text_in_the_file_s_order() {
             version: Some("2.0".to_owned()),
             kept: vec!["strength".to_owned(), "grain".to_owned()],
             auto: Vec::new(),
+            enabled: None,
             controls: vec![
                 ("strength".to_owned(), "1.5".to_owned()),
                 ("style".to_owned(), "medium".to_owned()),

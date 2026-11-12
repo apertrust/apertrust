@@ -43,6 +43,7 @@ section-options = Параметри: { $section }
 section-toggle = Відкрити або закрити: { $section }. Утримуйте H над розділом, щоб побачити знімок без нього.
 section-tabs = Вкладки: { $section }
 section-tab-later = З'явиться в одній із наступних версій
+section-not-applied = Не застосовано
 choice-option-later = З'явиться в одній із наступних версій
 choice-option-unavailable = Недоступно для цього знімка
 

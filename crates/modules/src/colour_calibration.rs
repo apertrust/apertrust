@@ -504,6 +504,7 @@ static DEFINITION: Definition = Definition {
     // Background only until Phase 4's layers (`docs/modules/colour-calibration.md`).
     layers: false,
     auto: false,
+    switched: false,
     controls: &CONTROLS,
     tabs: &[
         Tab {

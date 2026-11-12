@@ -5571,6 +5571,7 @@ mod tests {
             Values {
                 modules: vec![ModuleState {
                     module: "twin",
+                    enabled: true,
                     edited,
                     controls,
                     presets: Vec::new(),
@@ -5702,6 +5703,7 @@ mod tests {
         let report = Values {
             modules: vec![ModuleState {
                 module: definition.id,
+                enabled: true,
                 edited: false,
                 controls: definition
                     .controls
@@ -7567,6 +7569,7 @@ mod tests {
         let definition = Sample.definition();
         let state = ModuleState {
             module: definition.id,
+            enabled: true,
             edited: false,
             controls: definition
                 .controls
@@ -7661,6 +7664,7 @@ mod tests {
             .definition();
         let untouched = ModuleState {
             module: exposure.id,
+            enabled: true,
             edited: false,
             controls: exposure
                 .controls

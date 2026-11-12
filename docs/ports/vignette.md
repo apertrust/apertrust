@@ -5,7 +5,7 @@ Source: darktable (the reference release, commit 20891f6c6f), `src/iop/vignette.
 Status: **ported**, without dithering.
 
 - **What:** every continuous parameter (fall-off start and radius, brightness, saturation, centre, width-to-height ratio, shape), the automatic ratio and clipping (`unbound`), in Slang (`crates/op/vignette`), with its manifest and schema.
-- **In the pipeline:** in `OPERATIONS` with `default_enabled` off. An unedited photo does not run it; the session plans it only while a module's binding sets one of its parameters (decision 28), as the Vignetting module's does (`docs/modules/vignetting.md`).
+- **In the pipeline:** in `OPERATIONS` with `default_enabled` off. An unedited photo does not run it; it is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the Vignetting module (`docs/modules/vignetting.md`).
 - **Not ported:** dithering. `prepare` returns `NotPorted` for 8-bit and 16-bit dithering, whose noise darktable draws from a sequence that depends on its thread count, and with which darktable's CPU path also switches its fall-off from linear to a raised cosine (Dithering; Deliberate differences).
 
 **Golden result** (six cases on test 0045's mire1.cr2, 3908×2602, Apple M4, 48-byte pass header): every case passes, ΔE2000 mean below 5e-5, max 0.0002 at most (Results).
@@ -161,7 +161,7 @@ That difference is ΔE2000 mean 0.133, p95 0.77, max 2.98, with 621 pixels over 
 In the first pass (decision 2) the Vignetting module, built (`docs/modules/vignetting.md`), is darktable's:
 
 - **Controls:** brightness, saturation, fall-off start and radius, centre, shape, automatic ratio and width/height ratio.
-- **Defaults:** brightness and saturation start at 0, so an untouched module leaves the plan; darktable's −50 % each and its lomo preset are presets (`docs/modules/README.md`).
+- **Defaults:** darktable's, brightness and saturation −0.5 among them; the module is switched (decision 32), so off it leaves the plan. darktable's lomo is a preset, to come with the presets menu (`docs/modules/README.md`).
 - **Brightness and saturation at 0 are a no-op** when `unbound` is on, darktable's default: brightness 0 and saturation 0 give every pixel back bit for bit, whatever the radii, ratio, shape and centre (`col + w · 0`, `col − (mv − col) · 0`; `crates/golden/tests/vignette.rs`).
 - **Clipping stays off:** the binding owns `unbound` and fixes it on, with no control, as darktable shows none. With `unbound` off, darktable clips the vignetted pixels to [0, 1] after each step, which also makes brightness 0 change pixels outside [0, 1] beyond the inner radius. After the tone mapper Apertrust's values mostly lie within [0, 1], but not always (HDR headroom, out-of-gamut colours).
 

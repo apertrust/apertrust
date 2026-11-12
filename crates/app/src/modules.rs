@@ -217,9 +217,14 @@ impl Pending {
                 Some((view, at)) => {
                     if let Ok(value) = view.coordinates[at].check(value) {
                         set_coordinate(module, state, view, at, value, image);
+                        // Any write turns a switched module on (decision 32).
+                        state.enabled = true;
                     }
                 }
                 None => {
+                    if control_mut(state, control).is_some() {
+                        state.enabled = true;
+                    }
                     if put(state, control, value.clone(), Some(Mark::Kept)) {
                         follow(module, state, &[control], None, image);
                     }
@@ -256,12 +261,23 @@ impl Pending {
                 for shown in &mut state.views {
                     shown.value = shown.default;
                 }
+                // The reset turns a switched module off (decision 32).
+                state.enabled = !definition.switched;
             }
         }
         follow_ranges(module, state, &before);
         coordinate_marks(definition, state);
         follow_availability(module, state, &before, image);
+        state.edited = edited(module, state);
     }
+}
+
+/// Whether the module's reset would change what `state` shows rendered, as the session
+/// reports it (`ModuleState::edited`): a control off its default for the photo, or a
+/// switched module on (decision 32). Its reset is available only then.
+pub fn edited(module: &dyn Module, state: &ModuleState) -> bool {
+    (module.definition().switched && state.enabled)
+        || state.controls.iter().any(|c| c.value != c.default)
 }
 
 /// Shows each number's range as the session will report it now that the values `state`
@@ -552,13 +568,39 @@ fn coordinate_marks(definition: &Definition, state: &mut ModuleState) {
     }
 }
 
+/// The curve a band graph draws through the bands from `start` EV to +0 EV, sampled: the
+/// module's curve for `values`, `None` where it says no curve fits them, and an error
+/// where its code panicked. A switched module that is off, not `enabled`, corrects
+/// nothing, so its curve is drawn flat (decision 32); on, it is the curve the operation
+/// renders, darktable's ripple at the defaults.
+fn equalizer_curve(
+    module: &dyn Module,
+    enabled: bool,
+    first: &str,
+    values: &Controls,
+    start: f32,
+) -> std::thread::Result<Option<Vec<f32>>> {
+    catch_unwind(AssertUnwindSafe(|| {
+        if !enabled {
+            return Some(vec![0.0; EQUALIZER_SAMPLES]);
+        }
+        let curve = module.curve(first, values)?;
+        Some(
+            (0..EQUALIZER_SAMPLES)
+                .map(|k| curve(start * (1.0 - k as f32 / (EQUALIZER_SAMPLES - 1) as f32)))
+                .collect::<Vec<f32>>(),
+        )
+    }))
+}
+
 /// Draws `module`'s section from its definition, with the values `state` mirrors, open
 /// or closed as `open` says, each of its collapsible groups open as `groups` says by the
 /// group's id. The section peeks while `peek` holds (`Section::peek`). Its reset is drawn
 /// disabled unless `editable`, as on a photo open for viewing only, whose controls the
-/// session reports unavailable. While `opening` holds the tooltip of a photo opening,
-/// read-only until it is live (decision 77), hovering its rows says why. Returns what the
-/// user did.
+/// session reports unavailable, and for a switched module unless it is edited, as one off
+/// never is (decision 32), whose section screen readers describe as not applied. While
+/// `opening` holds the tooltip of a photo opening, read-only until it is live (decision
+/// 77), hovering its rows says why. Returns what the user did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the section, each part apart"
@@ -591,11 +633,16 @@ pub fn section(
         .collect();
     let later_tip = words.text("section-tab-later");
 
+    // A switched module's reset is available only while it would change the render
+    // (decision 32): off, it has nothing to reset, and shows nothing more than that, but
+    // for screen readers, who hear "Not applied".
+    let resettable = state.edited || !definition.switched;
     let mut section = Section::new(&title, open)
         .module()
-        .reset(editable)
+        .reset(editable && resettable)
         .presets(false)
-        .peek(peek);
+        .peek(peek)
+        .not_applied(!state.enabled);
     if tabs.len() > 1 {
         section = section
             .tabs(&tabs, selected)
@@ -1448,17 +1495,9 @@ fn equalizer_row(
     for shown in &state.controls {
         values.set(shown.control, shown.value.clone());
     }
-    // The bands lie 1 EV apart up to +0 EV, and the curve is sampled over them: `None` where
-    // the module says no curve fits them, and an error where its code panicked.
+    // The bands lie 1 EV apart up to +0 EV.
     let start = -(bands.len().saturating_sub(1) as f32);
-    let drawn = catch_unwind(AssertUnwindSafe(|| {
-        let curve = module.curve(first, &values)?;
-        Some(
-            (0..EQUALIZER_SAMPLES)
-                .map(|k| curve(start * (1.0 - k as f32 / (EQUALIZER_SAMPLES - 1) as f32)))
-                .collect::<Vec<f32>>(),
-        )
-    }));
+    let drawn = equalizer_curve(module, state.enabled, first, &values, start);
     let width = catch_unwind(AssertUnwindSafe(|| module.curve_width(first, &values)));
     let mut args = Args::new();
     args.set("module", words.text(&messages::title(id)));
@@ -1630,6 +1669,7 @@ mod tests {
         let definition = module.definition();
         let mut state = ModuleState {
             module: definition.id,
+            enabled: !definition.switched,
             edited: false,
             controls: definition
                 .controls
@@ -3322,6 +3362,7 @@ mod tests {
         version: 1,
         layers: true,
         auto: false,
+        switched: false,
         controls: &[
             apertrust_modules::Control {
                 id: "mode",
@@ -3936,6 +3977,48 @@ mod tests {
         harness
     }
 
+    /// A switched module off (decision 32) draws as it would on, at darktable's defaults,
+    /// but for its reset, unavailable, and screen readers hear "Not applied" on its
+    /// section; a control's change turns it on at once, the reset available and the
+    /// description gone, and the reset turns it off again.
+    #[test]
+    fn a_switched_module_off_has_no_reset_and_says_not_applied() {
+        let mut harness = vignetting(untouched(&Vignetting));
+        harness.run();
+        let reset = |harness: &Harness<'_, Panel>| {
+            harness
+                .get_by_label("Reset Vignetting")
+                .accesskit_node()
+                .is_disabled()
+        };
+        let said = |harness: &Harness<'_, Panel>| {
+            harness
+                .get_by_role_and_label(Role::Button, "Vignetting")
+                .accesskit_node()
+                .description()
+                .is_some_and(|said| said.starts_with("Not applied"))
+        };
+        assert!(reset(&harness));
+        assert!(said(&harness));
+        // Nothing else is drawn disabled.
+        for (name, role) in VIGNETTING {
+            let node = harness.get_by_role_and_label(role, name);
+            assert!(!node.accesskit_node().is_disabled(), "{name}");
+        }
+
+        harness.get_by_label("Automatic ratio").click();
+        harness.run();
+        assert!(harness.state().state.enabled && harness.state().state.edited);
+        assert!(!reset(&harness));
+        assert!(!said(&harness));
+
+        harness.get_by_label("Reset Vignetting").click();
+        harness.run();
+        assert!(!harness.state().state.enabled);
+        assert!(reset(&harness));
+        assert!(said(&harness));
+    }
+
     #[test]
     fn vignetting_draws_darktable_s_page_in_order() {
         let mut harness = vignetting(untouched(&Vignetting));
@@ -3952,7 +4035,7 @@ mod tests {
         let label = harness.get_by_label("Position / form").rect().top();
         assert!(tops[3] < label && label < tops[4], "{label} among {tops:?}");
         // Each value as darktable's slider writes it, with its digits, in the page's
-        // order; brightness and saturation at 0, untouched, signed as their ranges span
+        // order; brightness and saturation at darktable's −0.5, signed as their ranges span
         // zero, as the centres' do. The radii are in percent, the rest numbers.
         let mut values: Vec<(f32, String)> = harness
             .get_all_by_role(Role::Slider)
@@ -3966,7 +4049,7 @@ mod tests {
         assert_eq!(
             values,
             [
-                "80.00%", "50.00%", "+0.000", "+0.000", "+0.000", "+0.000", "1.00", "1.000"
+                "80.00%", "50.00%", "−0.500", "−0.500", "+0.000", "+0.000", "1.00", "1.000"
             ]
         );
         assert_eq!(heard(&harness, "Fall-off start").as_deref(), Some("80.00%"));
@@ -4766,6 +4849,8 @@ mod tests {
                     ControlValue::Number(value),
                     Some(Mark::Kept),
                 );
+                // A band set turns the switched module on, as the session reports it.
+                (state.enabled, state.edited) = (true, true);
             }
         }
         let mut harness = panel(&ToneEqualizer, state);
@@ -4960,10 +5045,30 @@ mod tests {
         width: true,
     };
 
+    /// Off, the tone equalizer corrects nothing and its graph is flat; on at its defaults
+    /// it is the curve the operation renders, darktable's ripple of up to 0.025 EV.
+    #[test]
+    fn the_band_graph_is_flat_while_off_and_the_ripple_on_at_the_defaults() {
+        let values = ToneEqualizer.definition().defaults();
+        let first = tone_equalizer::BANDS[0];
+        let off = equalizer_curve(&ToneEqualizer, false, first, &values, -8.0)
+            .unwrap()
+            .unwrap();
+        assert!(off.iter().all(|&ev| ev == 0.0));
+        let on = equalizer_curve(&ToneEqualizer, true, first, &values, -8.0)
+            .unwrap()
+            .unwrap();
+        let highest = on.iter().copied().fold(f32::MIN, f32::max);
+        assert!((highest - 0.0253).abs() < 1e-3, "{highest}");
+    }
+
     #[test]
     fn a_graph_whose_module_panics_draws_no_curve_and_moves_nothing() {
         for module in [&CURVE_PANICS, &WIDTH_PANICS] {
-            let mut harness = panel(module, untouched(module));
+            let mut state = untouched(module);
+            // On, so the drawing asks the module for its curve, which panics.
+            (state.enabled, state.edited) = (true, true);
+            let mut harness = panel(module, state);
             harness.run();
             harness.get_by_role_and_label(Role::Tab, "Advanced").click();
             harness.run();

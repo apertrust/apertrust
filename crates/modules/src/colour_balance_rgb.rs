@@ -29,10 +29,11 @@
 //!
 //! Each control is one `colorbalancergb` parameter, shown as darktable's slider shows it:
 //! its percentages as percentages, so the binding divides them by 100, and its degrees
-//! and EV as they are. It drives `colorbalancergb`, which an unedited photo does not run,
-//! planned only while a control is off its default, as in darktable (decision 32): at
-//! its defaults it sets nothing, so it adds no operation and leaves the frame as it was.
-//! Its first step brings the operation's gamut mapping, as darktable's does.
+//! and EV as they are. It is switched (decision 32), as darktable leaves color balance rgb off
+//! on a new photo: off, it renders nothing; any write of a control turns it on, with
+//! darktable's defaults for the others, until its reset turns it off, `colorbalancergb`
+//! planned while it is on. Its first step, on at its defaults, brings the operation's
+//! gamut mapping, as darktable's does.
 //!
 //! The pickers on the hues and the fulcrums are in the definition, as darktable's page
 //! has them; the renderer draws a quad once its tool runs. Left out until the renderer
@@ -45,7 +46,7 @@ use apertrust_plugin::{ImageContext, Value};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Definition, Quad, Row, Slider, Tab, Track, Unit,
 };
-use crate::{Base, Module, ModuleValues, Owned, Setting};
+use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct ColourBalanceRgb;
 
@@ -142,17 +143,17 @@ const fn number(
     }
 }
 
-/// A percentage from −100 % to +100 %, untouched at 0: darktable's −1 to 1.
+/// A percentage from −100 % to +100 %, darktable's default 0: darktable's −1 to 1.
 const fn signed(id: &'static str, step: f32) -> Control {
     number(id, (-100.0, 100.0), step, 0.0, Unit::Percent)
 }
 
-/// A wheel's hue, 0° to 360°, untouched at 0.
+/// A wheel's hue, 0° to 360°, darktable's default 0.
 const fn wheel_hue(id: &'static str) -> Control {
     number(id, (0.0, 360.0), 1.0, 0.0, Unit::Degrees)
 }
 
-/// A wheel's chroma, 0 % to 100 %, untouched at 0.
+/// A wheel's chroma, 0 % to 100 %, darktable's default 0.
 const fn wheel_chroma(id: &'static str, step: f32) -> Control {
     number(id, (0.0, 100.0), step, 0.0, Unit::Percent)
 }
@@ -250,9 +251,10 @@ const fn chroma_row(control: &'static str, (min, max): (f32, f32)) -> Row {
 
 static DEFINITION: Definition = Definition {
     id: "colorbalancergb",
-    version: 1,
+    version: 2,
     layers: true,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[
         Tab {
@@ -359,8 +361,7 @@ impl Module for ColourBalanceRgb {
     }
 
     /// Each control off its default sets its parameter, a percentage over 100; the
-    /// formula sets the operation's choice of the same index. Any of them plans the
-    /// operation; none, at the defaults, plans nothing.
+    /// formula sets the operation's choice of the same index.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
         let mut settings: Vec<Setting> = PARAMETERS
             .iter()
@@ -377,6 +378,18 @@ impl Module for ColourBalanceRgb {
             settings.push(Setting::new(COLOR_BALANCE, FORMULA, Value::Choice(formula)));
         }
         settings
+    }
+
+    /// Version 1 planned `colorbalancergb` while a control was off its default, darktable's then
+    /// as now, and bound every one that was: such an edit is on, its values as they were;
+    /// any other rendered nothing, so it is off, its values dropped (decision 32).
+    fn migrate(&self, from: u32, values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
+        }
+        let off = values.off_defaults(&DEFINITION.defaults());
+        let rendered = off.values().next().is_some();
+        switched_from(values, rendered)
     }
 }
 

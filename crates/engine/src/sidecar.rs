@@ -28,7 +28,9 @@
 //!
 //! Numbers are written in their shortest exact form, choices by option id, points as
 //! `x,y` pairs separated by spaces, and the marks (`apertrust:kept`, `apertrust:auto`)
-//! as lists of control ids. An untouched control or module is left out.
+//! as lists of control ids. An untouched control or module is left out. A switched
+//! module that is on has `apertrust:enabled="true"`; one off writes no values, and only
+//! its marks, where it has any (decision 32).
 //!
 //! A saved edit always opens (decision 21): a module, control, operation or parameter
 //! the engine does not know, or a value it cannot read, is left out, a number outside
@@ -43,13 +45,15 @@
 //! ([`Newer`], decision 43): a file version above [`VERSION`], read as this version lays
 //! it out, a module version above its definition's or no whole number, or a module this
 //! build neither has nor has retired (`apertrust_modules::RETIRED`), whose values a save
-//! would lose. Such an edit opens for viewing only ([`ViewOnly`]); a retired module's
-//! values are left out with a warning, as an older build wrote them.
+//! would lose, or a module turned on that this build does not switch (decision 32). Such
+//! an edit opens for viewing only ([`ViewOnly`]); a retired module's values are left out
+//! with a warning, as an older build wrote them. A switched module off that holds a value
+//! off its defaults, which no build writes, is read as on, with a warning.
 
 use std::io;
 use std::path::Path;
 
-use apertrust_modules::{ControlValue, Mark, Module, ModuleValues, check};
+use apertrust_modules::{ControlValue, Definition, Mark, Module, ModuleValues, check};
 use apertrust_plugin::Operation;
 
 pub use apertrust_library::sidecar::{
@@ -147,6 +151,7 @@ pub fn to_xml(
             version: Some(definition.version.to_string()),
             kept: marked(Mark::Kept),
             auto: marked(Mark::Auto),
+            enabled: values.enabled().then(|| "true".to_owned()),
             controls: definition
                 .controls
                 .iter()
@@ -228,6 +233,7 @@ fn from_document(
                 version,
                 kept,
                 auto,
+                enabled,
                 controls,
             } => {
                 let found = read_module(
@@ -236,7 +242,7 @@ fn from_document(
                     (modules, retired),
                     (&module, version.as_deref()),
                     [(kept, Mark::Kept), (auto, Mark::Auto)],
-                    controls,
+                    (enabled, controls),
                 );
                 newer = newer.or(found);
             }
@@ -263,15 +269,15 @@ fn from_document(
     }
 }
 
-/// Reads one module's entry into `edit`; what in it tells a newer Apertrust wrote it, if
-/// anything does.
+/// Reads one module's entry into `edit`, `enabled` its `apertrust:enabled` as written;
+/// what in it tells a newer Apertrust wrote it, if anything does.
 fn read_module(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
     (modules, retired): (&[&dyn Module], &[&str]),
     (id, saved): (&str, Option<&str>),
     marks: [(Vec<String>, Mark); 2],
-    controls: Vec<(String, String)>,
+    (enabled, controls): (Option<String>, Vec<(String, String)>),
 ) -> Option<Newer> {
     let Some(module) = modules.iter().find(|m| m.definition().id == id) else {
         if retired.contains(&id) {
@@ -289,7 +295,15 @@ fn read_module(
     // A control an older version had and this one lacks goes to the migration, read by
     // the shape of its text.
     let older = matches!(saved, Some((_, Ok(saved))) if saved < has);
+    // `true` is the one value this build writes; any other is a newer build's, which a
+    // save would lose, so the module reads as if it had none and the photo is view-only.
+    let (enabled, unknown) = match enabled.as_deref().map(str::trim) {
+        None => (false, None),
+        Some("true") => (true, None),
+        Some(other) => (false, Some(other.to_owned())),
+    };
     let mut values = ModuleValues::new();
+    values.set_enabled(enabled);
     for (name, text) in controls {
         match definition.control(&name) {
             Some(control) => match control.parse(&text) {
@@ -361,10 +375,57 @@ fn read_module(
             None => warnings.push(format!("{id} has no control {name} to mark; left out")),
         }
     }
+    let mut enabled = switch(definition, &values, &mut checked, warnings);
+    if let Some(unknown) = unknown {
+        warnings.push(format!("{id}: enabled is {unknown:?}, a newer Apertrust's"));
+        enabled = enabled.or(Some(Newer::Enabled(id.to_owned())));
+    }
+    let newer = newer.or(enabled);
     if !checked.is_empty() {
         edit.modules.insert(definition.id.to_owned(), checked);
     }
     newer
+}
+
+/// A module's on or off as read into `checked` from `values`, after its migration
+/// (decision 32): a switched module on as `values` says, or as a value off its
+/// definition's defaults says, which no build writes for one off, with a warning, so it
+/// renders what it holds. A module this build does not switch is always on, and one
+/// turned on is a newer build's.
+///
+/// The defaults compared are the definition's, not the module's for the photo, as no
+/// image context is known while the file is read: a switched module whose defaults come
+/// from the photo, as Lens correction's will, would take a value at its per-photo default
+/// for one off it here, and read as on.
+fn switch(
+    definition: &Definition,
+    values: &ModuleValues,
+    checked: &mut ModuleValues,
+    warnings: &mut Vec<String>,
+) -> Option<Newer> {
+    let id = definition.id;
+    if !definition.switched {
+        if values.enabled() {
+            warnings.push(format!(
+                "{id} is turned on, and this build does not switch it"
+            ));
+            return Some(Newer::Enabled(id.to_owned()));
+        }
+        return None;
+    }
+    let mut on = values.enabled();
+    if !on
+        && checked
+            .off_defaults(&definition.defaults())
+            .values()
+            .next()
+            .is_some()
+    {
+        warnings.push(format!("{id} is off but holds values; read as on"));
+        on = true;
+    }
+    checked.set_enabled(on);
+    None
 }
 
 /// A control's value read without its control, by the shape of its text: a number,
@@ -598,6 +659,7 @@ mod tests {
         version: 2,
         layers: true,
         auto: true,
+        switched: false,
         controls: &[
             Control {
                 id: "strength",
@@ -1069,5 +1131,119 @@ mod tests {
         assert_eq!(loaded.edit, edited());
         assert_eq!(loaded.newer, None);
         assert_eq!(to_xml(&loaded.edit, OPERATIONS, MODULES, BUILD), fixture);
+    }
+
+    /// Grain, a switched module (decision 32), with the fake's modules.
+    const WITH_GRAIN: &[&dyn Module] = &[&Look, &apertrust_modules::grain::Grain];
+
+    /// A switched module on writes `enabled`, with only its values off darktable's
+    /// defaults, none at them; one off, only its marks, and nothing at all untouched.
+    #[test]
+    fn a_switched_module_on_writes_enabled_and_one_off_no_values() {
+        use apertrust_modules::grain::Grain;
+        let image = apertrust_modules::testing::image();
+        let mut edit = Edit::default();
+        edit.set_control(&Grain, "strength", ControlValue::Number(25.0), &image)
+            .unwrap();
+        edit.reset_control(&Grain, "strength").unwrap();
+        let xml = to_xml(&edit, OPERATIONS, WITH_GRAIN, BUILD);
+        for written in [
+            r#"apertrust:module="grain""#,
+            r#"apertrust:moduleVersion="2""#,
+            r#"apertrust:enabled="true"/>"#,
+        ] {
+            assert!(xml.contains(written), "{written} in {xml}");
+        }
+        let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert_eq!(loaded.edit, edit);
+        assert!(loaded.edit.is_on(&Grain));
+
+        let mut off = Edit::default();
+        off.keep(&Grain, "scale", true).unwrap();
+        let xml = to_xml(&off, OPERATIONS, WITH_GRAIN, BUILD);
+        assert!(!xml.contains("apertrust:enabled"), "{xml}");
+        assert!(!xml.contains("control:"), "{xml}");
+        let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+        assert_eq!(loaded.edit, off);
+        assert!(!loaded.edit.is_on(&Grain));
+        off.reset_module(&Grain);
+        let xml = to_xml(&off, OPERATIONS, WITH_GRAIN, BUILD);
+        assert!(!xml.contains("grain"), "{xml}");
+    }
+
+    /// A version 1 entry of a module that has since become switched migrates on where it
+    /// rendered, with its values, and off, its values dropped, where it did not; it reads
+    /// with no warning, and writes back as version 2.
+    #[test]
+    fn a_version_1_entry_of_a_switched_module_reads_on_where_it_rendered() {
+        use apertrust_modules::grain::Grain;
+        let xml = version_1(
+            r#"apertrust:module="grain" apertrust:moduleVersion="1" apertrust:kept="strength" c:strength="37.3" c:scale="800""#,
+        );
+        let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert!(loaded.edit.is_on(&Grain));
+        let values = loaded.edit.module("grain").unwrap();
+        assert_eq!(values.number("strength"), Some(37.3));
+        assert_eq!(values.number("scale"), Some(800.0));
+        let written = to_xml(&loaded.edit, OPERATIONS, WITH_GRAIN, BUILD);
+        assert!(
+            written.contains(r#"apertrust:moduleVersion="2""#),
+            "{written}"
+        );
+        assert!(written.contains(r#"apertrust:enabled="true""#), "{written}");
+
+        let xml =
+            version_1(r#"apertrust:module="grain" apertrust:moduleVersion="1" c:scale="3200""#);
+        let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert!(loaded.edit.is_empty());
+    }
+
+    /// A switched module off that holds a value off its defaults, which no build writes,
+    /// reads as on with a warning; `enabled` on a module this build does not switch is a
+    /// newer build's, so the photo opens for viewing only.
+    #[test]
+    fn enabled_is_repaired_or_read_as_a_newer_build_s() {
+        use apertrust_modules::grain::Grain;
+        let xml =
+            version_1(r#"apertrust:module="grain" apertrust:moduleVersion="2" c:strength="40""#);
+        let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+        assert!(loaded.edit.is_on(&Grain));
+        assert_eq!(
+            loaded.warnings,
+            ["grain is off but holds values; read as on"]
+        );
+        assert_eq!(loaded.newer, None);
+
+        let xml = version_1(
+            r#"apertrust:module="look" apertrust:moduleVersion="2" apertrust:enabled="true" c:strength="0.5""#,
+        );
+        let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+        assert_eq!(loaded.newer, Some(Newer::Enabled("look".to_owned())));
+        assert!(loaded.view_only().is_some());
+        assert!(!loaded.edit.module("look").unwrap().enabled());
+    }
+
+    /// `enabled` holding anything but `true` is a newer build's, which a save would lose:
+    /// the photo opens for viewing only, the module read as if it had none.
+    #[test]
+    fn enabled_other_than_true_is_a_newer_build_s() {
+        use apertrust_modules::grain::Grain;
+        for text in ["false", "1"] {
+            let xml = version_1(&format!(
+                r#"apertrust:module="grain" apertrust:moduleVersion="2" apertrust:enabled="{text}""#
+            ));
+            let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
+            assert_eq!(
+                loaded.newer,
+                Some(Newer::Enabled("grain".to_owned())),
+                "{text}"
+            );
+            assert!(loaded.view_only().is_some(), "{text}");
+            assert!(!loaded.edit.is_on(&Grain), "{text}");
+            assert_eq!(loaded.warnings.len(), 1, "{text}: {:?}", loaded.warnings);
+        }
     }
 }
