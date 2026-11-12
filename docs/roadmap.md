@@ -138,7 +138,7 @@ darktable's colour pickers and its Colour picker module, one API (decision 79; [
 - [x] 79.2 Module pickers in the modules crate: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` and its checks.
 - [x] 79.3 Module pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
-- [ ] 79.5 The picker button and the picker's marks in the design system.
+- [x] 79.5 The picker button and the picker's marks in the design system.
 - [ ] 79.6 The app: quads and picker rows, the marks over the photo, the pointer, the keys and focus.
 - [ ] 79.7 to 79.13 Each module's pickers: Exposure, White balance, Colour calibration, Colour balance RGB, AgX, then RGB curve and RGB levels with their modules.
 - [ ] 79.14 Stored samples through the session.

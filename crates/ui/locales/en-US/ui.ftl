@@ -56,6 +56,10 @@ menu-minimise = Minimize
 
 scope-vectorscope-tip = Colors by hue, the angle, and by saturation, the distance from the center.
 
+## Colour pickers
+
+picker-tip = Pick color from the photo
+
 ## Format options
 
 export-jpeg-subsample-tip = Chroma subsampling for the JPEG encoder. Auto: from the quality. 4:4:4: none. 4:4:0: color halved vertically. 4:2:2: halved horizontally. 4:2:0: halved both ways.

@@ -30,13 +30,15 @@ use crate::components::{
     CollapsibleGroup, ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction,
     FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, Quad, SaveState, Scale, Scope,
-    ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
-    Swatches, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction,
-    Track, VectorscopeBins, WaveformBins, Zoom, group_label,
+    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
+    PickerPlace, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
+    ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
+    group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
+use crate::overlay::Overlay;
 use crate::popup::{self, Answer, Entry, Item, Request, Submenu};
 use crate::theme::{self, Builtin, Theme, contrast};
 use crate::{Icon, set_locale, set_theme};
@@ -91,6 +93,12 @@ impl Gallery {
     pub fn show_overlays(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
         overlays(ui, &t);
+    }
+
+    /// Draws the Pickers section alone, as the snapshot tests photograph it.
+    pub fn show_pickers(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        pickers(ui, &t);
     }
 
     /// Draws the gallery on the panel's colour, as a page of its own.
@@ -161,6 +169,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "On-photo overlays");
         overlays(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Pickers");
+        pickers(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Jobs");
         jobs_section(ui, &t, &mut self.demo);
@@ -409,10 +420,9 @@ fn sample_picture(ctx: &egui::Context, landscape: bool) -> CellPicture {
 /// point marks, a point's centre once a frame pixel spans 10 points, the secondary weight
 /// with labels, and the focus ring.
 fn overlays(ui: &mut Ui, t: &Theme) {
-    use crate::overlay::{Mark, Overlay, Point, Weight};
+    use crate::overlay::{Mark, Point, Weight};
 
-    type Draw = fn(&Overlay, &OverlayPhoto, &Theme);
-    let rows: [(&str, bool, Draw); 6] = [
+    let rows: [(&str, bool, OverPhoto); 6] = [
         ("The line: normal, selected, secondary", false, |o, _, _| {
             for (weight, y) in Weight::ALL.into_iter().zip([0.25, 0.5, 0.75]) {
                 o.stroke(&Mark::new(weight).line([pos2(0.08, y), pos2(0.92, y)]));
@@ -485,6 +495,15 @@ fn overlays(ui: &mut Ui, t: &Theme) {
             },
         ),
     ];
+    over_photos(ui, t, &rows);
+}
+
+/// How a row of the overlay sections draws over each photo.
+type OverPhoto = fn(&Overlay, &OverlayPhoto, &Theme);
+
+/// `rows` of marks, each over a light, a dark and a busy photo, under the photos' names: a
+/// row's title, whether its photos are zoomed in, and what it draws.
+fn over_photos(ui: &mut Ui, t: &Theme, rows: &[(&str, bool, OverPhoto)]) {
     let ctx = ui.ctx().clone();
     ui.horizontal(|ui| {
         for ground in ["Light", "Dark", "Busy"] {
@@ -499,7 +518,7 @@ fn overlays(ui: &mut Ui, t: &Theme) {
             );
         }
     });
-    for (title, zoomed, draw) in rows {
+    for &(title, zoomed, draw) in rows {
         ui.label(title);
         ui.horizontal(|ui| {
             for ground in Ground::ALL {
@@ -516,6 +535,89 @@ fn overlays(ui: &mut Ui, t: &Theme) {
         ui.add_space(t.spacing.xs);
     }
 }
+
+/// The picker button's states (`docs/pickers.md`, The picker button), pinned as the
+/// buttons' strip pins them, then the active picker's marks over a light, a dark and a busy
+/// photo: an area with its handles, a point with its sampled colour, and each focused.
+fn pickers(ui: &mut Ui, t: &Theme) {
+    const COLUMN: f32 = 84.0;
+    let opening = {
+        let mut args = Args::new();
+        args.set("name", "IMG_2041");
+        crate::translator(ui.ctx()).text_with("controls-opening", Some(&args))
+    };
+    let states: [(&str, bool, ButtonState); 6] = [
+        ("Off", false, ButtonState::Rest),
+        ("Hover", false, ButtonState::Hover),
+        ("Held", false, ButtonState::Pressed),
+        ("On", true, ButtonState::Rest),
+        ("Focus", false, ButtonState::Focus),
+        ("Disabled", false, ButtonState::Disabled),
+    ];
+    ui.push_id("pickers", |ui| {
+        ui.horizontal(|ui| {
+            for (name, on, state) in states {
+                ui.allocate_ui(vec2(COLUMN, t.sizes.top_bar - 14.0), |ui| {
+                    ui.set_width(COLUMN);
+                    ui.horizontal(|ui| {
+                        let full = format!("Exposure: pick from the photo, {name}");
+                        let mut button = PickerButton::new(&full, on).state(state);
+                        if state == ButtonState::Disabled {
+                            button = button.disabled(&opening);
+                        }
+                        button.show(ui);
+                        ui.label(RichText::new(name).color(t.colors.text_secondary));
+                    });
+                });
+            }
+        });
+    });
+    ui.label(
+        RichText::new(
+            "18 by 18, as in a slider's quad, with no plate: the filled pipette while on, \
+             dimmed while disabled with its tooltip saying why.",
+        )
+        .color(t.colors.text_secondary),
+    );
+    ui.add_space(t.spacing.xs);
+    let marks: [(&str, bool, OverPhoto); 4] = [
+        (
+            "The active area, a square handle on each corner",
+            false,
+            |o, _, _| {
+                PickerMarks::new(PickerPlace::Area(PICKER_AREA)).paint(o);
+            },
+        ),
+        (
+            "The active point, its sampled colour at its centre",
+            false,
+            |o, photo, _| {
+                let at = pos2(0.5, 0.5);
+                let colour = photo.sample(at);
+                PickerMarks::new(PickerPlace::Point { at, colour }).paint(o);
+            },
+        ),
+        ("The area focused, after a key", false, |o, _, _| {
+            PickerMarks::new(PickerPlace::Area(PICKER_AREA))
+                .focused(true)
+                .paint(o);
+        }),
+        ("The point focused, after a key", false, |o, photo, _| {
+            let at = pos2(0.5, 0.5);
+            let colour = photo.sample(at);
+            PickerMarks::new(PickerPlace::Point { at, colour })
+                .focused(true)
+                .paint(o);
+        }),
+    ];
+    over_photos(ui, t, &marks);
+}
+
+/// The gallery's active area, in the photo's coordinates.
+const PICKER_AREA: egui::Rect = egui::Rect {
+    min: pos2(0.2, 0.22),
+    max: pos2(0.8, 0.78),
+};
 
 /// The overlay section's photos, in points.
 const OVERLAY_PHOTO: egui::Vec2 = vec2(180.0, 110.0);

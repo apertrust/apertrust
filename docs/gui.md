@@ -313,7 +313,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 
 ### On-photo overlays
 
-One language for every mark drawn on the photo: pickers and their samples, masks' shapes, gradients, the brush, retouch's shapes, guides and their labels. It is darktable's line, from its picker drawing (`src/views/darkroom.c:331-470`), the wireframe's "On-photo overlays · one language" frame. The design system's `overlay` module draws it, given the photo's rectangle on screen and the marks in the photo's coordinates; no tool draws a line of its own. Built with the pickers ([pickers.md](pickers.md#on-the-photo), 79.4), before any mark on the photo; nothing in the app draws with it yet, and masks' overlays (Phase 4) will use the same primitives.
+One language for every mark drawn on the photo: pickers and their samples, masks' shapes, gradients, the brush, retouch's shapes, guides and their labels. It is darktable's line, from its picker drawing (`src/views/darkroom.c:331-470`), the wireframe's "On-photo overlays · one language" frame. The design system's `overlay` module draws it, given the photo's rectangle on screen and the marks in the photo's coordinates; no tool draws a line of its own. Built with the pickers ([pickers.md](pickers.md#on-the-photo), 79.4), before any mark on the photo; the picker's marks, `PickerMarks` (79.5), draw with it, in the gallery; nothing in the app draws with it yet, and masks' overlays (Phase 4) will use the same primitives.
 
 - **The line:** 1 point of white at 80 % over 3 points of black at 40 %, so it reads on any photo, light or dark, and needs no colour. Its ends and corners are square, and a rectangle's lines fall on the screen's pixels.
 - **Three weights:**
@@ -2416,7 +2416,7 @@ Each module is darktable's page as darktable has it, with no Advanced controls t
 | Guides | darktable's guides widget, for a module with `IOP_FLAGS_GUIDES_WIDGET`: a `ToggleRow`, Show guides, with the global guide settings button (`IconButton`, the grid) at its end, drawn disabled, off, until the module's guides come; its words shared by every module (`messages::GUIDES`) | `Row::Guides` |
 
 - **A collapsible group whose rows are to come** (AgX's Show curve, before a read-only graph row) is a `Row::Group` with no rows, which `Definition::check` takes, drawn disabled and closed with the tooltip a titled tab with no rows has, "Coming in a later version" (`CollapsibleGroup::disabled`, `section-tab-later`).
-- **A quad with nothing behind it** is not drawn until its tool runs, so Exposure has no picker yet. Drawing it disabled needs a disabled state on `SliderRow`'s quad first. A picker's quad names its picker (`Quad::Picker(id)`) and is the design system's `PickerButton`, planned ([pickers.md](pickers.md#the-picker-button), decision 79).
+- **A quad with nothing behind it** is not drawn until its tool runs, so Exposure has no picker yet. Drawing it disabled needs a disabled state on `SliderRow`'s quad first. A picker's quad names its picker (`Quad::Picker(id)`) and will be the design system's `PickerButton`, built and shown in the gallery, drawn by no panel yet ([pickers.md](pickers.md#the-picker-button), decision 79).
 
 #### View rows
 

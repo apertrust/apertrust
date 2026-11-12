@@ -736,6 +736,17 @@ scope-clipped-highlights = Przycięte światła: { $highlights }%
 scope-clipped-both = Przycięte cienie: { $shadows }%, światła: { $highlights }%
 scope-empty = Nic jeszcze nie zmierzono
 
+## Próbniki koloru (docs/pickers.md, The picker button). $tip to własne słowa próbnika,
+## $command to modyfikator wskaźnika, tak jak zapisują go skróty: „Cmd” na Macu, „Ctrl” gdzie indziej
+
+picker-tip = Pobierz kolor ze zdjęcia
+picker-tip-area =
+    { $tip }
+    { $command }+kliknięcie lub kliknięcie prawym przyciskiem, aby zaznaczyć obszar
+picker-tip-area-quad =
+    { $tip }
+    { $command }+kliknięcie, aby zaznaczyć obszar
+
 ## Okno eksportu (docs/gui.md, The Export dialog): moduł eksportu darktable, nazwy
 ## wielką literą tylko pierwszego słowa. $count to liczba zdjęć, jedno zdjęcie to dokładnie
 ## liczba 1. $file to nazwa zdjęcia lub pliku, $source plik raw, $folder folder, $width

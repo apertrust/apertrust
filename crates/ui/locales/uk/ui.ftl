@@ -733,6 +733,17 @@ scope-clipped-highlights = Обрізано світел: { $highlights }%
 scope-clipped-both = Обрізано тіней: { $shadows }%, світел: { $highlights }%
 scope-empty = Ще нічого не виміряно
 
+## Піпетки (docs/pickers.md, The picker button). $tip — власні слова піпетки, $command —
+## модифікатор вказівника, як його пишуть скорочення: «Cmd» на Mac, «Ctrl» деінде
+
+picker-tip = Узяти колір зі знімка
+picker-tip-area =
+    { $tip }
+    { $command }+клацання або клацання правою кнопкою, щоб вибрати область
+picker-tip-area-quad =
+    { $tip }
+    { $command }+клацання, щоб вибрати область
+
 ## Вікно експорту (docs/gui.md, The Export dialog): модуль експорту darktable, назви
 ## з великої літери лише першого слова. $count — кількість знімків, один знімок — точне
 ## число 1. $file — назва знімка чи файлу, $source — вихідний raw, $folder — тека, $width

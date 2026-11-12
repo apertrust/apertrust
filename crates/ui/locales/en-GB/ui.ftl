@@ -925,6 +925,22 @@ scope-clipped-both = Shadows clipped: { $shadows }%, highlights clipped: { $high
 # Before anything has been measured for the graph.
 scope-empty = Nothing measured yet
 
+## Colour pickers (docs/pickers.md, The picker button). $tip is the picker's own words,
+## $command the pointer's modifier as shortcuts spell it: "Cmd" on the Mac, "Ctrl" elsewhere
+
+# A picker button's tooltip where its module gives none, darktable's "pick color from image".
+picker-tip = Pick colour from the photo
+# The tooltip of a picker that takes a point or an area: its words, then darktable's
+# "ctrl+click or right-click to select an area".
+picker-tip-area =
+    { $tip }
+    { $command }+click or right-click to select an area
+# The same on a slider's quad, which takes every mouse button alike: darktable's "ctrl+click
+# to select an area".
+picker-tip-area-quad =
+    { $tip }
+    { $command }+click to select an area
+
 ## The Export dialog (docs/gui.md, The Export dialog): darktable's export module, its
 ## labels in sentence case. $count is the photos, a single one the exact number 1. $file
 ## is a photo's name or a file's, $source the raw, $folder a folder, $width and $height
