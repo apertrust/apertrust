@@ -237,8 +237,9 @@ fn button_states(ui: &mut Ui, t: &Theme) {
             .state(state)
             .show(ui);
     });
-    // A toggle: off, on with its filled form, and on under the pointer; a picker on, which
-    // has no filled form, drawn pressed in a box, as a button whose menu is open is.
+    // A toggle: off, on with its filled form, and on under the pointer; a picker on, its
+    // filled pipette, as a button whose menu is open is drawn, never on a plate
+    // (decision 81).
     ui.horizontal(|ui| {
         label(ui, "Icon toggle");
         let toggles = [
@@ -260,8 +261,8 @@ fn button_states(ui: &mut Ui, t: &Theme) {
     });
     ui.label(
         RichText::new(
-            "Icon toggle: off; on, its filled form; on under the pointer; a picker on, with no \
-             filled form, drawn pressed, as a button whose menu is open is.",
+            "Icon toggle: off; on, its filled form; on under the pointer; a picker on, its \
+             filled form too. No plate in any state.",
         )
         .color(t.colors.text_secondary),
     );

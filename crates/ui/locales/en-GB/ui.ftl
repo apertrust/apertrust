@@ -45,6 +45,8 @@ panel-width = Side panel width
 section-reset = Reset { $section }
 section-presets = { $section } presets
 section-options = { $section } options
+# The tooltip of a module's options button, drawn disabled while its menu holds nothing.
+section-options-none = No options yet
 section-toggle = Open or close { $section }. Hold H over it to see the photo without it.
 # The name of a section's tab list, for screen readers.
 section-tabs = { $section } tabs

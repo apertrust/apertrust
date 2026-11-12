@@ -226,8 +226,8 @@ impl<'a> TopPanel<'a> {
     /// Draws the menu button, ☰, first, before the mark, where the system has no menu bar:
     /// on Windows and Linux (decision 39). It never folds. Pressed, or given ↓, it reports
     /// [`TopPanelAction::Menu`] for the app to open the menus as the popup
-    /// [`TopPanel::menu_popup`]; it is drawn pressed while that popup hangs from it, and a
-    /// press then closes it. Off by default.
+    /// [`TopPanel::menu_popup`]; it is drawn on while that popup hangs from it, and a press
+    /// then closes it. Off by default.
     pub fn menu_button(mut self, on: bool) -> Self {
         self.menu = on;
         self
@@ -735,8 +735,8 @@ fn menu_anchor_id() -> Id {
     Id::unique("apertrust-ui top panel menu anchor")
 }
 
-/// The ☰, with `keys` in its tooltip: a button that opens a menu, drawn pressed while the
-/// menu hangs from it. Pressed, or given ↓ while focused, it asks for the menu to open, or
+/// The ☰, with `keys` in its tooltip: a button that opens a menu, drawn on while the menu
+/// hangs from it. Pressed, or given ↓ while focused, it asks for the menu to open, or
 /// to close where it is open.
 fn menu_button(ui: &mut Ui, keys: Option<&str>) -> (egui::Response, Option<MenuPress>) {
     let ctx = ui.ctx().clone();

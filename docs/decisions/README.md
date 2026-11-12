@@ -49,7 +49,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Tone mapping | One tone mapper on the background per edit, a module of its own: AgX now, sigmoid and filmic rgb to come; a layer's own tone mapper replacing it within the layer's mask, planned with layers (33) | A fixed AgX; stacked tone mappers |
 | Layers | Masked module instances at their pipeline positions, in a fixed order; each slider scaled in its own unit; a mask's parts combined top to bottom, an empty mask changing nothing; retouch as layers listed between the adjustment layers and Image, applied first; darktable's blend modes; masks and retouch ported from darktable's master (34, 74, Phase 4) | Compositing at the end of the pipe; darktable's linear mix for every slider |
 | UI toolkit | egui, one interface for the desktop and a desktop browser (35) | Iced, Slint, GPUI, Tauri with web panels |
-| Design system | `apertrust-ui`: tokens and themes in TOML, IBM Plex Sans with Plex Mono for the log's lines, Fluent and ICU4X; British and American English, Ukrainian and Polish; AccessKit on (36); the slider's marker a setting, Triangle, Circle or Square, Square by default, whole at the track's ends (75) | egui's default look; gettext; darktable's triangle alone, cut off at the ends |
+| Design system | `apertrust-ui`: tokens and themes in TOML, IBM Plex Sans with Plex Mono for the log's lines, Fluent and ICU4X; British and American English, Ukrainian and Polish; AccessKit on (36); the slider's marker a setting, Triangle, Circle or Square, Square by default, whole at the track's ends (75); icon-only buttons with no plates, On their filled icon (81) | egui's default look; gettext; darktable's triangle alone, cut off at the ends; plates behind icon-only buttons |
 | One view | No separate views: the Photos tab chooses photos, the centre shows the Photo layout and later Map, the grid panel always shown (37) | darktable's views; a Grid layout |
 | Side panel tabs | Photos, Base, Colour, Correct, Effect and History: darktable's scene-referred groups between Apertrust's own two (38) | A quick access panel; an active-modules tab |
 | Window frame and menus | One top bar from the window's top edge; the Mac's native menu bar through muda; one menu button, ☰, on Windows and Linux (39) | The system's title bar above the top bar; muda's Win32 menu bar |
@@ -177,6 +177,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0069](0069-dialogs-on-windows-and-linux-framed-by-the-host.md) | Dialogs on Windows and Linux, framed by the host |
 | [0042](0042-numbers-shown-typed-and-stored.md) | Numbers shown, typed and stored |
 | [0075](0075-the-slider-marker-a-setting.md) | The slider's marker, a setting |
+| [0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md) | Icon-only buttons draw no plates; On is the filled icon |
 
 ## Settings, folders and diagnostics
 

@@ -19,8 +19,8 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `options` | Lucide's `ellipsis` |
 | `options-vertical` | Lucide's `ellipsis-vertical` |
 | `more` | Lucide's `chevrons-right`, from Feather |
-| `pick` | Lucide's `pipette` |
-| `line` | Drawn for Apertrust |
+| `pick`, `pick-filled` | Lucide's `pipette` |
+| `line`, `line-filled` | Drawn for Apertrust |
 | `undo` | Lucide's `undo-2` |
 | `redo` | Lucide's `redo-2` |
 | `copy`, `apply` | Drawn for Apertrust: an arrow out and an arrow in, Copy edit's and Apply edit's |
@@ -67,7 +67,7 @@ Every icon follows the same rules, so it takes the theme's colour and stays shar
 - **Sizes:** `Icon::size` is the size an icon is drawn at, in points: 14 for header and control icons, 16 for the top panel's and the central bar's and the start window's ways in, 22 for the side panel's tabs; 10 and 12 for chevrons, the check, the caption's lock, the grid's marks, the rating's stars and reject, and the scopes' clipping toggles.
 - **Stroke:** every line is drawn 1.25 points wide whatever the icon's size (`icons::STROKE`, Lucide's `absoluteStrokeWidth`). The files keep Lucide's 2-unit stroke, set once on the `<svg>` element and nowhere else, and the renderer sets it to 1.25 × 24 ÷ the size drawn in points: 3 units at 10 points, 2.14 at 14, 1.36 at 22. The caption buttons keep their 1-unit strokes on half-unit coordinates, thin and sharp at every whole scale, and the mark its own widths.
 - **Shapes:** `<path>`, `<circle>`, `<rect>` and `<line>`; no text, images, gradients, filters or masks, but the exceptions below.
-- **Filled forms**, `<name>-filled.svg`, only to show a state: the chosen side panel tab, a central bar or grid bar toggle that is on, and a rating's points (`Icon::filled`). Each is its outline's shapes, in its box and stroke, filled. Where a line crosses the filled shape, a mask cuts it out, so the icon stays one colour on any background: one `<mask id="cut">`, a white square with the lines in black, applied with `mask="url(#cut)"`.
+- **Filled forms**, `<name>-filled.svg`, only to show a state: the chosen side panel tab, an icon button that is on (a toggle, a quad's picker), and a rating's points (`Icon::filled`). Each is its outline's shapes, in its box and stroke, filled. Where a line crosses the filled shape, a mask cuts it out, so the icon stays one colour on any background: one `<mask id="cut">`, a white square with the lines in black, applied with `mask="url(#cut)"`.
 - **The mark**, `mark.svg`, the top panel's: the app's mono mark (`crates/app/assets/icons/svg/apertrust-mark-mono.svg`) redrawn in a 20-unit box, the one icon of filled shapes rather than lines. Its corners are rounded by its shapes' own strokes, in its own widths, and its cut is a mask as a filled form's is.
 
 A new icon starts from Lucide's where Lucide has one that reads as the thing: its shapes under Apertrust's name, the `<svg>` element as the others have it, adapted where needed, with the first line naming its source and licence (and the table above). Otherwise draw it in Lucide's style ([its design guide](https://lucide.dev/guide/design/icon-design-guide)). Either way it gets a variant in `Icon`, its line in `Icon::file` and a place in `Icon::ALL`. The tests read every file, check the rules above, render it, hold every line to 1.25 points, and check each derived file's notice against `LICENSE-Lucide`.
