@@ -684,6 +684,8 @@ menu-background = Tło
 menu-grid-position = Położenie panelu siatki
 menu-open-recent = Otwórz ostatnie
 menu-recent-in = { $name } — { $parent }
+menu-undo-step = Cofnij: { $step }
+menu-redo-step = Ponów: { $step }
 menu-services = Usługi
 menu-hide-app = Ukryj { app-name }
 menu-hide-others = Ukryj pozostałe
@@ -691,6 +693,18 @@ menu-show-all = Pokaż wszystko
 menu-minimise = Minimalizuj
 menu-zoom-window = Powiększ
 menu-bring-all-to-front = Umieść wszystko na wierzchu
+
+## Historia edycji: nazwa kroku
+
+history-reset = Resetowanie
+history-modules =
+    { $count ->
+        [one] { $count } moduł
+        [few] { $count } moduły
+        [many] { $count } modułów
+       *[other] { $count } modułu
+    }
+history-go-to-step = Przejście do kroku
 
 ## Krzywa
 

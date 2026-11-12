@@ -348,7 +348,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
   - [x] 9.1: the log in the session's memory, each completed change a step, `Reset` a step, `Undo` and `Redo` with the undo records, `Event::History` with its build time and size measured (its JSON over budget at 1,000 steps, so the remote protocol takes the planned fallback, [history.md](history.md#the-history-event)); the file still version 1;
   - [x] 9.2: `GoTo` and `Step`, and the app's changes of several commands, the tone equalizer's release and band reset, as one `Step`;
   - [x] 9.3: consecutive changes merged as darktable's undo merges them;
-  - 9.4: Edit › Undo and Redo and their keys, naming what they would do;
+  - [x] 9.4: Edit › Undo and Redo and their keys, naming what they would do;
   - 9.5, after 8.2: history saved in version 2, Undo back after reopening, a newer file taken in before a write;
   - 9.6: the History tab; 9.7: its eye, `Hide`; 9.8: Compress History and Truncate (Ctrl-click or Cmd-click on Compress);
   - 9.9: `apertrust-cli edit` adding a step, and `apertrust-cli history` with `--compress` and `--truncate`.

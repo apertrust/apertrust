@@ -195,7 +195,7 @@ The library is built in steps, folder mode first ([roadmap.md, The library's ste
 
 ### History and undo
 
-Each virtual copy's history is one log of steps, a step being one completed change with its source and note, and Undo and Redo take back the session's undo records, as darktable's, or move the log's end. Built (steps 9.1 to 9.3): the log in the session's memory, `Undo`, `Redo`, `GoTo`, `Reset` as a step, `Step` making several commands one step of a source and note, a control's quick repeats merged into one step as darktable's undo merges them, and one `History` fact every client of a session draws. Planned: the log saved in the sidecar, so Undo survives reopening the photo; `Compress` and `Truncate`; the CLI working on the sidecar through the same engine functions (decisions 47 and 78).
+Each virtual copy's history is one log of steps, a step being one completed change with its source and note, and Undo and Redo take back the session's undo records, as darktable's, or move the log's end. Built (steps 9.1 to 9.4): the log in the session's memory, `Undo`, `Redo`, `GoTo`, `Reset` as a step, `Step` making several commands one step of a source and note, a control's quick repeats merged into one step as darktable's undo merges them, one `History` fact every client of a session draws, and the app's Edit › Undo and Redo naming the step they would take back or put back. Planned: the log saved in the sidecar, so Undo survives reopening the photo; `Compress` and `Truncate`; the CLI working on the sidecar through the same engine functions (decisions 47 and 78).
 
 Details: [history.md](history.md).
 

@@ -255,6 +255,13 @@ pub struct State {
     pub view: View,
     pub photo: bool,
     pub edited: bool,
+    /// Whether the open photo's history has something for Undo, and for Redo, to do, and
+    /// takes them: live and not open for viewing only (decision 78).
+    pub undo: bool,
+    pub redo: bool,
+    /// Whether a text field of the main window has the focus: Undo and Redo act on it, as
+    /// the Mac's Edit menu does (decision 39), whatever the photo's history holds.
+    pub text: bool,
     pub photos: usize,
     /// Whether anything is open, a folder or a photo, opening, open or failed: File ›
     /// Close's to close.
@@ -315,15 +322,21 @@ pub enum Platforms {
     Mac,
     /// Windows and Linux.
     NotMac,
+    Windows,
+    /// Linux and every other platform but the Mac and Windows.
+    Linux,
 }
 
 impl Platforms {
     pub fn includes(self, os: OperatingSystem) -> bool {
         let mac = os == OperatingSystem::Mac;
+        let windows = os == OperatingSystem::Windows;
         match self {
             Platforms::All => true,
             Platforms::Mac => mac,
             Platforms::NotMac => !mac,
+            Platforms::Windows => windows,
+            Platforms::Linux => !mac && !windows,
         }
     }
 }
@@ -612,7 +625,11 @@ pub static ACTIONS: [Action; 70] = [
         available: |s| s.photo && no_modal_dialog(s),
         emits: Emit::Intent(Intent::ExportAgain),
     },
-    // No key until undo exists: a reset by accident could not be taken back.
+    // No key by default, as darktable's discard history has none: its button is registered
+    // with no key (`src/libs/copy_history.c:328-330`), and the history module's reset asks
+    // first, by default (`ask_before_discard`, `src/libs/history.c:1335-1354`), since it
+    // throws the whole edit away at once. Undo takes it back, and a person may give it a
+    // key.
     Action {
         id: ActionId::RESET,
         message: "action-reset",
@@ -622,26 +639,32 @@ pub static ACTIONS: [Action; 70] = [
         available: |s| s.photo && s.edited && on_main_window(s),
         emits: Emit::Command(Command::Reset),
     },
+    // darktable's Ctrl+Z and Ctrl+Y (`src/views/darkroom.c:3425-3428`), with the
+    // platforms' Shift for Redo: Redo shows Ctrl+Y first on Windows, Ctrl+Shift+Z first on
+    // Linux and Shift+Cmd+Z alone on the Mac (`docs/gui.md`, The menu bar). A text field
+    // with the focus keeps these keys for its own undo ([`Focus::keeps`]); run from a menu
+    // there, the Mac's by its key equivalent too, they are handed to it ([`field_keys`]).
     Action {
         id: ActionId::UNDO,
         message: "action-undo",
         keys: &[command(Key::Z)],
         scope: Scope::App,
         trigger: Trigger::Repeat,
-        available: never,
-        emits: Emit::Later,
+        available: |s| (s.undo || s.text) && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Undo),
     },
     Action {
         id: ActionId::REDO,
         message: "action-redo",
         keys: &[
+            command(Key::Y).only(Platforms::Windows),
             command_shift(Key::Z),
-            command(Key::Y).only(Platforms::NotMac),
+            command(Key::Y).only(Platforms::Linux),
         ],
         scope: Scope::App,
         trigger: Trigger::Repeat,
-        available: never,
-        emits: Emit::Later,
+        available: |s| (s.redo || s.text) && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Redo),
     },
     Action {
         id: ActionId::COPY_EDIT,
@@ -1739,6 +1762,27 @@ pub fn read(ctx: &egui::Context, keymap: &Keymap, state: &State) -> Keys {
     keys
 }
 
+/// The keys a focused text field undoes or redoes with, egui's own whatever keys the
+/// actions have, as a press and its release: what Undo and Redo hand the field when chosen
+/// from a menu while it has the focus (decision 39), added to the next frame's input. None
+/// for any other action.
+pub fn field_keys(id: ActionId, os: OperatingSystem) -> Option<[egui::Event; 2]> {
+    let shift = match id {
+        ActionId::UNDO => Modifiers::NONE,
+        ActionId::REDO => Modifiers::SHIFT,
+        _ => return None,
+    };
+    let modifiers = held(Modifiers::COMMAND.plus(shift), os == OperatingSystem::Mac);
+    let key = |pressed| egui::Event::Key {
+        key: Key::Z,
+        physical_key: Some(Key::Z),
+        pressed,
+        repeat: false,
+        modifiers,
+    };
+    Some([key(true), key(false)])
+}
+
 /// Takes out of the frame's input the first press of Alt with a letter, and the text it
 /// typed, if `menu` finds a menu for that letter, and returns what it found: on Linux, Alt
 /// with a top-level menu's access key opens the ☰'s menu at that menu, from anywhere
@@ -1832,6 +1876,9 @@ mod tests {
             view: View::Edit,
             photo: true,
             edited: true,
+            undo: true,
+            redo: true,
+            text: false,
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
@@ -2013,6 +2060,63 @@ mod tests {
     }
 
     #[test]
+    fn undo_and_redo_run_with_a_step_to_take_or_a_text_field_and_on_the_main_window() {
+        let undo = action(ActionId::UNDO).expect("declared");
+        let redo = action(ActionId::REDO).expect("declared");
+        let mut state = everything();
+        assert_eq!(undo.emits, Emit::Command(Command::Undo));
+        assert_eq!(redo.emits, Emit::Command(Command::Redo));
+        assert!(undo.enabled(&state) && redo.enabled(&state));
+        // Each from its own side of the history.
+        state.undo = false;
+        assert!(!undo.enabled(&state) && redo.enabled(&state));
+        state.redo = false;
+        assert!(!redo.enabled(&state));
+        // A focused text field's own, whatever the history holds.
+        state.text = true;
+        assert!(undo.enabled(&state) && redo.enabled(&state));
+        // Rest under a modal dialog, and while a dialog's own window has the focus, where
+        // the Mac's items hold no key for them (`menus::shown`).
+        for rest in [
+            State {
+                modal: true,
+                ..everything()
+            },
+            State {
+                dialog_window: true,
+                ..everything()
+            },
+        ] {
+            assert!(!undo.enabled(&rest) && !redo.enabled(&rest));
+        }
+    }
+
+    #[test]
+    fn a_text_field_is_handed_egui_s_own_undo_and_redo_keys() {
+        let press = |id, os| field_keys(id, os).map(|[press, _]| press);
+        let key = |modifiers| egui::Event::Key {
+            key: Key::Z,
+            physical_key: Some(Key::Z),
+            pressed: true,
+            repeat: false,
+            modifiers,
+        };
+        let mac = Modifiers::MAC_CMD.plus(Modifiers::COMMAND);
+        let ctrl = Modifiers::CTRL.plus(Modifiers::COMMAND);
+        let shift = Modifiers::SHIFT;
+        let os = OperatingSystem::Mac;
+        assert_eq!(press(ActionId::UNDO, os), Some(key(mac)));
+        assert_eq!(press(ActionId::REDO, os), Some(key(mac.plus(shift))));
+        let os = OperatingSystem::Windows;
+        assert_eq!(press(ActionId::UNDO, os), Some(key(ctrl)));
+        assert_eq!(press(ActionId::REDO, os), Some(key(ctrl.plus(shift))));
+        assert_eq!(field_keys(ActionId::RESET, os), None);
+        // Whatever keys the user gave them: the field's are egui's.
+        let [_, release] = field_keys(ActionId::UNDO, os).expect("Undo's");
+        assert!(matches!(release, egui::Event::Key { pressed: false, .. }));
+    }
+
+    #[test]
     fn a_view_s_action_rests_while_a_dialog_is_open() {
         let mut state = everything();
         state.view = View::Edit;
@@ -2188,8 +2292,10 @@ mod tests {
             Some("Ctrl+,")
         );
         assert_eq!(spell(ActionId::SETTINGS, mac).as_deref(), Some("Cmd+,"));
+        // Redo as each platform shows it first.
+        assert_eq!(spell(ActionId::REDO, windows).as_deref(), Some("Ctrl+Y"));
         assert_eq!(
-            spell(ActionId::REDO, windows).as_deref(),
+            spell(ActionId::REDO, OperatingSystem::Nix).as_deref(),
             Some("Ctrl+Shift+Z")
         );
         assert_eq!(spell(ActionId::REDO, mac).as_deref(), Some("Shift+Cmd+Z"));
@@ -2223,6 +2329,12 @@ mod tests {
         );
         // Ctrl+Y redoes only where Ctrl+Y is the custom.
         assert_eq!(Keymap::defaults(windows).keys(ActionId::REDO).len(), 2);
+        assert_eq!(
+            Keymap::defaults(OperatingSystem::Nix)
+                .keys(ActionId::REDO)
+                .len(),
+            2
+        );
         assert_eq!(Keymap::defaults(mac).keys(ActionId::REDO).len(), 1);
     }
 

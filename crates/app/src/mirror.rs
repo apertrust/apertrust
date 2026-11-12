@@ -24,9 +24,10 @@
 //! - **What it holds:** the photo ([`PhotoState`]), the modules' values as the session last
 //!   reported them with the changes sent since shown over them, what the side panel's
 //!   editing tabs draw of them ([`Shown`]), the latest frame, the scopes' reading, whether
-//!   the edit is on disk ([`Saving`]), the jobs ([`jobs::Mirror`]), the failure the central
-//!   panel shows, the open folder ([`folder::FolderState`]) and the Export dialog's floor
-//!   for previews. Panels read it each frame; nothing subscribes.
+//!   the edit is on disk ([`Saving`]), the photo's history, which names what Undo and Redo
+//!   would do ([`History`]), the jobs ([`jobs::Mirror`]), the failure the central panel
+//!   shows, the open folder ([`folder::FolderState`]) and the Export dialog's floor for
+//!   previews. Panels read it each frame; nothing subscribes.
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
 //! - **No photo:** before any, from the moment another is asked for until its values
@@ -47,8 +48,8 @@ use std::time::{Duration, Instant};
 
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
-    ControlState, CoordinateState, Event, ExportPreview, Frame, ModuleState, OpenPreview, Photo,
-    PresetState, PreviewSource, SessionError, Values,
+    ControlState, CoordinateState, Event, ExportPreview, Frame, History, ModuleState, OpenPreview,
+    Photo, PresetState, PreviewSource, SessionError, Values,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_modules::Module;
@@ -144,6 +145,10 @@ pub struct Mirror {
     pub scopes: Scopes,
     /// Whether the photo's edit is on disk as it is now, as the top panel says.
     pub saving: Saving,
+    /// The open photo's history as the session last reported it, the latest by its
+    /// `through` (decision 78): what Undo and Redo would do, which Edit's items name; none
+    /// with no photo, and while one opens until its own arrives.
+    pub history: Option<History>,
     /// The jobs the session has reported, which the spinner and the jobs window show
     /// (decision 57).
     pub jobs: jobs::Mirror,
@@ -182,6 +187,7 @@ impl Mirror {
             asked_at: None,
             scopes: Scopes::default(),
             saving: Saving::default(),
+            history: None,
             jobs,
             folder: FolderState::default(),
             cache: crate::storage::Mirror::default(),
@@ -299,11 +305,12 @@ impl Mirror {
         }
     }
 
-    /// No photo is open: every module untouched, and no scopes reading.
+    /// No photo is open: every module untouched, no history and no scopes reading.
     fn no_photo(&mut self) {
         self.shown = Shown::Nothing;
         self.values = self.untouched.clone();
         self.pending.clear();
+        self.history = None;
         self.scopes.forget();
     }
 
@@ -410,8 +417,18 @@ impl Mirror {
             Event::Library(_) => {}
             // Taken in above, for Settings › Storage.
             Event::Cache(_) => {}
-            // Nothing draws the history yet: Undo, Redo and the History tab are to come.
-            Event::History(_) => {}
+            // The open photo's history, the latest by its `through`, which Undo and Redo
+            // name; one numbered lower arrived late.
+            Event::History(history) => {
+                if matches!(self.photo, PhotoState::Open(_))
+                    && self
+                        .history
+                        .as_ref()
+                        .is_none_or(|h| history.through >= h.through)
+                {
+                    self.history = Some(history);
+                }
+            }
             // The session logs a failed save, a module left out and the scopes turned off as
             // they happen; the rest only reach the app.
             Event::Failed(SessionError::Save {
@@ -563,13 +580,14 @@ fn untouched(modules: &[&dyn Module]) -> Values {
 }
 
 /// Whether `event` is a photo's own, which only a photo open or opening sends: its
-/// picture, its opening or its failure, its values, frames and scopes readings.
+/// picture, its opening or its failure, its values, history, frames and scopes readings.
 fn of_a_photo(event: &Event) -> bool {
     matches!(
         event,
         Event::Opened(_)
             | Event::OpenPreview(_)
             | Event::Values(_)
+            | Event::History(_)
             | Event::Frame(_)
             | Event::Scopes(_)
             | Event::Failed(SessionError::Open { .. })
@@ -641,7 +659,7 @@ impl PhotoState {
 
     /// Whether `event` is left over from before the open under way, and so not the new
     /// photo's: while a photo opens, an earlier open's photo or failure, and every values
-    /// report, frame and scopes reading until its own `Opened`.
+    /// report, history, frame and scopes reading until its own `Opened`.
     fn stale(&self, event: &Event) -> bool {
         // Once open, an earlier open's failure, which may come after this one's `Opened`
         // (decision 77).
@@ -655,7 +673,7 @@ impl PhotoState {
         match event {
             Event::Opened(photo) => photo.open != *open,
             Event::Failed(SessionError::Open { open: failed, .. }) => failed != open,
-            Event::Values(_) | Event::Frame(_) | Event::Scopes(_) => true,
+            Event::Values(_) | Event::History(_) | Event::Frame(_) | Event::Scopes(_) => true,
             _ => false,
         }
     }
@@ -1634,6 +1652,67 @@ pub(crate) mod tests {
         assert_eq!(m.apply(Event::Opened(photo(2))), []);
         assert!(matches!(m.photo, PhotoState::Open(_)));
         assert!(!m.saving.writing());
+    }
+
+    /// The photo's history (decision 78): the latest by its `through`, an earlier one
+    /// arriving late dropped; none while another photo opens, until its own, an earlier
+    /// open's dropped; none once the photo closes or an open fails.
+    #[test]
+    fn the_mirror_keeps_the_photo_s_latest_history() {
+        use crate::history::tests::{history, step};
+        use apertrust_engine::session::{Move, StepId};
+
+        let one = |through, undo| {
+            let steps = vec![step(1, &["exposure"], None)];
+            Event::History(history(through, steps, undo, None))
+        };
+        let undo = |m: &Mirror| m.history.as_ref().map(|h| (h.through, h.undo));
+        let mut m = mirror();
+        // None before a photo opens.
+        m.apply(one(1, None));
+        assert_eq!(undo(&m), None);
+        m.opening(PathBuf::from("/photos/a.ARW"), 1, Instant::now());
+        m.apply(one(1, None));
+        assert_eq!(undo(&m), None);
+        m.apply(Event::Opened(photo(1)));
+        m.apply(Event::Values(report(0.0, 1)));
+        m.apply(one(1, None));
+        assert_eq!(undo(&m), Some((1, None)));
+        let back = Some(Move::Step(StepId(1)));
+        m.apply(one(4, back));
+        assert_eq!(undo(&m), Some((4, back)));
+        // An earlier one, late.
+        m.apply(one(3, None));
+        assert_eq!(undo(&m), Some((4, back)));
+        // One with the same `through`, as an open sends again once live where the decode
+        // describes the steps anew: the later replaces it (`docs/events.md`, the history).
+        m.apply(one(4, None));
+        assert_eq!(undo(&m), Some((4, None)));
+        m.apply(one(4, back));
+        // Another photo: none until its own, the photo left's dropped on its way.
+        m.opening(PathBuf::from("/photos/b.ARW"), 5, Instant::now());
+        assert_eq!(undo(&m), None);
+        m.apply(one(4, back));
+        assert_eq!(undo(&m), None);
+        m.apply(Event::Opened(photo(5)));
+        m.apply(Event::Values(report(0.0, 5)));
+        m.apply(one(5, None));
+        assert_eq!(undo(&m), Some((5, None)));
+        // Closed, and what the session still sends of it.
+        m.closing();
+        assert_eq!(undo(&m), None);
+        m.apply(one(6, back));
+        assert_eq!(undo(&m), None);
+        // An open that fails.
+        m.opening(PathBuf::from("/photos/c.ARW"), 7, Instant::now());
+        m.apply(Event::Opened(photo(7)));
+        m.apply(one(7, back));
+        assert_eq!(undo(&m), Some((7, back)));
+        m.apply(Event::Failed(SessionError::Open {
+            open: 7,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        assert_eq!(undo(&m), None);
     }
 
     use apertrust_engine::jobs::{JobEvent, Message, Queue, State};

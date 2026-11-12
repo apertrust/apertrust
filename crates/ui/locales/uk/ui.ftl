@@ -681,6 +681,8 @@ menu-background = Тло
 menu-grid-position = Розташування панелі сітки
 menu-open-recent = Відкрити недавні
 menu-recent-in = { $name } — { $parent }
+menu-undo-step = Скасувати: { $step }
+menu-redo-step = Повторити: { $step }
 menu-services = Служби
 menu-hide-app = Приховати { app-name }
 menu-hide-others = Приховати інші
@@ -688,6 +690,18 @@ menu-show-all = Показати всі
 menu-minimise = Згорнути
 menu-zoom-window = Масштабувати
 menu-bring-all-to-front = Усі вікна на передній план
+
+## Історія обробки: назва кроку
+
+history-reset = Скидання
+history-modules =
+    { $count ->
+        [one] { $count } модуль
+        [few] { $count } модулі
+        [many] { $count } модулів
+       *[other] { $count } модуля
+    }
+history-go-to-step = Перехід до кроку
 
 ## Крива
 
