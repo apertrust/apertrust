@@ -298,6 +298,13 @@ impl Folders {
         self.user_data.join("state.toml")
     }
 
+    /// The app's start marker, `starting.toml` in the user data folder: written before it
+    /// opens its graphics device and removed once its window has drawn, so one found there
+    /// says the last start did not finish (decision 81).
+    pub fn starting(&self) -> PathBuf {
+        self.user_data.join("starting.toml")
+    }
+
     /// The cache folder, which may not exist yet.
     pub fn cache(&self) -> &Path {
         &self.cache

@@ -561,6 +561,20 @@ start-copyright = © 2026
 start-tagline =
     A free, non-destructive
     raw photo editor
+# Over the window's top after a start that did not finish with a graphics card or API
+# (decision 81). $card is a graphics card's name, or CPU's word, and $api a graphics API's,
+# never translated; a message leaves out the one that was Automatic.
+start-failed = { app-name } did not start last time with { $card } on { $api }, so it started with Automatic
+start-failed-card = { app-name } did not start last time with { $card }, so it started with Automatic
+start-failed-api = { app-name } did not start last time on { $api }, so it started with Automatic
+# After a start with Automatic that did not finish.
+start-failed-automatic = { app-name } did not start last time with Automatic, so it started on the CPU, which is slower
+start-failed-automatic-again = { app-name } did not start last time with Automatic, and this graphics API has no CPU adapter, so it started with Automatic again
+# Its buttons: the settings set to what runs, or the app restarted with them.
+start-failed-keep-automatic = Keep Automatic
+start-failed-keep-cpu = Keep CPU
+start-failed-retry = Try again
+start-failed-close = Close
 
 ## Settings
 
@@ -633,13 +647,9 @@ setting-engine-backend-option-dx12 = Direct3D 12
 setting-engine-backend-option-vulkan = Vulkan
 setting-engine-memory-budget-label = Memory budget
 # Processing's Hardware acceleration group (decision 81). The graphics card's list:
-# Automatic, with what it picks in brackets once known. $card is an adapter's name and
-# $api a graphics API's, never translated.
+# Automatic first; the In use line says what it runs. $card is an adapter's name and $api
+# a graphics API's, never translated.
 settings-gpu-automatic = Automatic
-settings-gpu-automatic-card = Automatic ({ $card })
-settings-gpu-automatic-cpu = Automatic (CPU)
-# The graphics API's Automatic, with the API it picks.
-settings-gpu-automatic-api = Automatic ({ $api })
 # The software adapter, whatever the platform calls it: the processor renders.
 settings-gpu-cpu = CPU (no graphics card), slow
 # The software adapter where a sentence names it.
@@ -673,6 +683,14 @@ settings-gpu-api-gl = OpenGL
 settings-gpu-software = No graphics card in use: { app-name } renders on the processor, which is slower
 # After it, where Automatic fell to the processor rather than the person choosing it.
 settings-gpu-driver = Updating the graphics driver may help
+# Under the In use line while a setting that applies after a restart differs from the
+# value this run started with, then its button and the button's tooltip.
+settings-restart-waiting = Your choice applies when { app-name } restarts
+settings-restart-now = Restart now
+settings-restart-tip = Quits and opens { app-name } again, with this folder and photo
+# Under it, in the warning colour, where the app to start again could not be found; $error
+# is the system's, untranslated.
+settings-restart-failed = { app-name } can’t be started again: { $error }
 setting-cache-limited-label = Limit the cache's size
 setting-cache-limited-help = Off, the cache is unlimited: nothing is removed from it to keep it within a size.
 setting-cache-limit-label = Cache limit
@@ -840,6 +858,7 @@ action-open-recent-9 = Open recent 9
 action-open-recent-10 = Open recent 10
 action-clear-recent = Clear menu
 action-quit = Quit
+action-restart = Restart
 action-peek = See the photo without the section under the pointer
 action-next-photo = Next photo
 action-previous-photo = Previous photo

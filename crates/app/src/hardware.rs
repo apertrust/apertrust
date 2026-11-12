@@ -17,7 +17,7 @@
 //! Settings › Processing's Hardware acceleration group, beyond what its rows' kinds draw
 //! (decision 81; `docs/gui.md`, The Settings dialog):
 //!
-//! - **The graphics card's list** ([`Card`]): Automatic, saying in brackets what it picks,
+//! - **The graphics card's list** ([`Card`]): Automatic, plain, the In use line saying what runs,
 //!   then the hardware adapters the chosen API finds, by name, in the order Automatic ranks
 //!   them, each name once, then a separator and CPU, the software adapter, stored as the
 //!   reserved `cpu` and never shown by its own name (WARP, llvmpipe). CPU is disabled where
@@ -31,14 +31,15 @@
 //! - **A card the person's API change leaves out** goes back to Automatic, saying so on the
 //!   row until the card or the API changes again or another page shows.
 //! - **The In use line** ([`InUse`]): the adapter and the API the engine opened, with a
-//!   warning where that is the software adapter.
+//!   warning where that is the software adapter; under it the waiting line ([`waiting`])
+//!   while a value that applies after a restart is other than this run's ([`Started`]).
 
 use std::io::Read as _;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use apertrust_base::settings::Choice as _;
+use apertrust_base::settings::{Applies, Choice as _, Declared};
 use apertrust_engine::gpu::{self, Backend};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, Translator};
@@ -275,10 +276,11 @@ fn end(mut child: std::process::Child) {
         .spawn(move || child.wait());
 }
 
-/// The app's own executable, to run as the helper: on Linux through `/proc/self/exe`, the
-/// file this process runs, so a package upgrade that replaced it since the start never
-/// runs another build; elsewhere, or where that is missing, its path.
-fn own_executable() -> std::io::Result<std::path::PathBuf> {
+/// The app's own executable, to run as the helper or to start again (`restart`): on Linux
+/// through `/proc/self/exe`, the file this process runs, so a package upgrade that replaced
+/// it since the start never runs another build; elsewhere, or where that is missing, its
+/// path.
+pub(crate) fn own_executable() -> std::io::Result<std::path::PathBuf> {
     let running = std::path::Path::new("/proc/self/exe");
     if cfg!(target_os = "linux") && running.exists() {
         return Ok(running.to_owned());
@@ -352,11 +354,54 @@ impl InUse {
     }
 }
 
-/// What the app hands the dialog: the adapter in use, and how to list the others.
+/// What the app hands the dialog: the adapter in use, how to list the others, and the
+/// values this run started with.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Running {
     pub in_use: Option<InUse>,
     pub lister: Option<Lister>,
+    pub started: Started,
+    /// Why Restart now could not restart, said on the waiting line.
+    pub restart_failed: Option<String>,
+}
+
+/// The values of the settings that apply after a restart as this run started with them,
+/// the file and `--conf` read, by their ids: what the waiting line compares the rows with
+/// (decision 81), values and never a guess at what wgpu would open.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Started(Vec<(&'static str, Option<toml::Value>)>);
+
+impl Started {
+    /// Each of `settings` that applies after a restart, with its value as `value` gives it.
+    pub fn of<'a>(
+        settings: impl IntoIterator<Item = &'a dyn Declared>,
+        value: impl Fn(&dyn Declared) -> Option<toml::Value>,
+    ) -> Started {
+        let after = settings
+            .into_iter()
+            .filter(|setting| setting.applies() == Applies::AfterRestart);
+        Started(
+            after
+                .map(|setting| (setting.id(), value(setting)))
+                .collect(),
+        )
+    }
+
+    /// Whether `value`, the setting `id`'s now, is other than this run's: never for a setting
+    /// it does not hold.
+    pub fn differs(&self, id: &str, value: Option<&toml::Value>) -> bool {
+        self.0
+            .iter()
+            .any(|(held, started)| *held == id && started.as_ref() != value)
+    }
+
+    /// `id`'s value taken as this run's: after Keep Automatic, which sets the file to what
+    /// runs.
+    pub fn keep(&mut self, id: &str, value: Option<toml::Value>) {
+        if let Some((_, started)) = self.0.iter_mut().find(|(held, _)| *held == id) {
+            *started = value;
+        }
+    }
 }
 
 /// One API's listing while the dialog is open.
@@ -431,8 +476,6 @@ impl Note {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
     pub card: Card,
-    /// The API row's Automatic, with the API it picks in brackets, once known.
-    pub automatic: Option<String>,
     /// What is said under the API row: that the API finds no adapter.
     pub api_note: Option<Note>,
 }
@@ -449,6 +492,12 @@ impl Hardware {
     /// What the app handed it.
     pub fn running(&self) -> &Running {
         &self.running
+    }
+
+    /// What the app hands it again: the values this run started with, after Keep, and why
+    /// a restart failed. The listings stay.
+    pub fn set_running(&mut self, running: Running) {
+        self.running = running;
     }
 
     /// The group's rows' parts this frame, `stored` the card's value and `backend` the API
@@ -490,12 +539,7 @@ impl Hardware {
             }
             _ => None,
         };
-        let automatic = self.automatic_api(words, stored.text);
-        Frame {
-            card,
-            automatic,
-            api_note,
-        }
+        Frame { card, api_note }
     }
 
     /// The API Automatic stands for, as the notes name it: the one the platform has, Metal
@@ -555,24 +599,6 @@ impl Hardware {
         SOFTWARE_NAMES
             .iter()
             .any(|name| stored.contains(&name.to_lowercase()))
-    }
-
-    /// The API row's Automatic with what it picks in brackets: the backend of the adapter
-    /// `stored` opens under Automatic, else of Automatic's own. Known only once Automatic
-    /// was listed, as the row had it, since listing it otherwise would load a backend the
-    /// setting leaves out.
-    fn automatic_api(&self, words: &Translator, stored: &str) -> Option<String> {
-        let Some(Ok(adapters)) = self.done(Backend::Auto) else {
-            return None;
-        };
-        let opened = opened(adapters, stored);
-        let at = opened.or_else(|| {
-            let kinds: Vec<wgpu::DeviceType> = adapters.iter().map(|a| a.kind).collect();
-            gpu::automatic(&kinds, gpu::power_preference())
-        })?;
-        let mut args = Args::new();
-        args.set("api", in_use_api(words, adapters[at].backend));
-        Some(words.text_with("settings-gpu-automatic-api", Some(&args)))
     }
 
     /// The listing of `backend` as it stands, started where there is none, picked up where
@@ -820,7 +846,7 @@ fn with_api(words: &Translator, id: &str, api: Option<&str>, card: Option<&str>)
 }
 
 /// The graphics card's list for the card's value `stored`, as `shown` lists the API whose
-/// name is `api`, where known, on `os`, Automatic choosing for `preference`.
+/// name is `api`, where known, on `os`, the cards in Automatic's order for `preference`.
 pub fn card(
     words: &Translator,
     stored: Stored<'_>,
@@ -864,18 +890,6 @@ pub fn card(
         Shown::Listed(adapters) => adapters,
         Shown::Failed => &[],
     };
-    let kinds: Vec<wgpu::DeviceType> = adapters.iter().map(|a| a.kind).collect();
-    let first = match gpu::automatic(&kinds, preference).map(|at| &adapters[at]) {
-        Some(picked) if picked.kind == wgpu::DeviceType::Cpu => {
-            words.text("settings-gpu-automatic-cpu")
-        }
-        Some(picked) => {
-            let mut args = Args::new();
-            args.set("card", picked.name.as_str());
-            words.text_with("settings-gpu-automatic-card", Some(&args))
-        }
-        None => automatic,
-    };
     // The hardware adapters in Automatic's order, ties as listed, each name once.
     let mut hardware: Vec<&Adapter> = adapters
         .iter()
@@ -889,7 +903,7 @@ pub fn card(
         }
     }
     let mut card = Card {
-        words: vec![first],
+        words: vec![automatic],
         stores: vec![None],
         selected: None,
         separator: None,
@@ -1000,6 +1014,95 @@ pub fn in_use(ui: &mut Ui, t: &Theme, in_use: &InUse, widths: storage::Widths) {
         button: None,
     }
     .draw(ui, t, widths);
+}
+
+/// The waiting-change line, under the In use line while a setting that applies after a
+/// restart is other than this run's: "Your choice applies when Apertrust restarts", in the
+/// body size where the controls start, and Restart now 12 points after it, or at the next
+/// line's start where both do not fit, so a magnifier keeps them together. The words are a
+/// label, announced once as they appear (a polite live region); the button is named by
+/// its words and described by the line's. Where the last press could not restart, `failed`
+/// says why under them, in the warning colour. Returns whether it was pressed.
+pub fn waiting(ui: &mut Ui, t: &Theme, widths: storage::Widths, failed: Option<&str>) -> bool {
+    let words = apertrust_ui::translator(ui.ctx());
+    let said = words.text("settings-restart-waiting");
+    let restart = words.text("settings-restart-now");
+    let tip = words.text("settings-restart-tip");
+    let top = ui.cursor().min;
+    let start = top.x + widths.value;
+    let room = (widths.content - widths.value).max(0.0);
+    let line = t.sizes.panel_line.max(t.sizes.control);
+    let body = egui::FontId::proportional(t.text.body);
+    let painter = ui.painter().clone();
+    // The words, wrapped within the room, centred on the line.
+    let galley = painter.layout(said.clone(), body.clone(), t.colors.text, room);
+    let (one_line, words) = (galley.rows.len() == 1, galley.size());
+    let words_rect = egui::Rect::from_min_size(
+        egui::pos2(start, top.y),
+        egui::vec2(words.x, words.y.max(line)),
+    );
+    let at = egui::pos2(start, words_rect.center().y - words.y / 2.0);
+    painter.galley(at, galley, t.colors.text);
+    let id = egui::Id::unique("settings restart waiting");
+    let label = ui.interact(words_rect, id, egui::Sense::hover());
+    label.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &said));
+    let polite = egui::accesskit::Live::Polite;
+    ui.ctx()
+        .accesskit_node_builder(label.id, |node| node.set_live(polite));
+    // The button after them where both fit, else at the next line's start, as wide as the
+    // design system's button makes it.
+    let button_width = painter
+        .layout_no_wrap(restart.clone(), body, t.colors.text)
+        .size()
+        .x
+        + 2.0 * t.spacing.m;
+    let button_at = if one_line && words.x + t.spacing.l + button_width <= room {
+        egui::pos2(words_rect.right() + t.spacing.l, top.y)
+    } else {
+        egui::pos2(start, words_rect.bottom() + t.spacing.xs)
+    };
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(
+                button_at,
+                egui::vec2(button_width, line),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let button = apertrust_ui::components::Button::new(&restart)
+        .tip(&tip)
+        .show(&mut row);
+    button.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &restart));
+    ui.ctx()
+        .accesskit_node_builder(button.id, |node| node.set_description(said.clone()));
+    let mut bottom = words_rect.bottom().max(button_at.y + line);
+    // Why the last press could not restart, in the warning colour, under them, announced
+    // as it appears.
+    if let Some(failed) = failed {
+        let galley = painter.layout(
+            failed.to_owned(),
+            egui::FontId::proportional(t.text.caption),
+            t.colors.warning,
+            room,
+        );
+        let at = egui::pos2(start, bottom + t.spacing.xs);
+        let rect = egui::Rect::from_min_size(at, galley.size());
+        painter.galley(at, galley, t.colors.warning);
+        let note = ui.interact(
+            rect,
+            egui::Id::unique("settings restart failed"),
+            egui::Sense::hover(),
+        );
+        note.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, failed));
+        ui.ctx()
+            .accesskit_node_builder(note.id, |node| node.set_live(polite));
+        bottom = rect.bottom() + t.spacing.xs;
+    }
+    ui.allocate_rect(
+        egui::Rect::from_min_max(top, egui::pos2(top.x + widths.content, bottom)),
+        egui::Sense::hover(),
+    );
+    button.clicked()
 }
 
 #[cfg(test)]

@@ -849,6 +849,22 @@ impl Keeper {
         engine::Options::read(&self.store, &engine::Flags::default())
     }
 
+    /// The engine's settings as [`Keeper::engine`] gives them, but for the graphics card,
+    /// `adapter`, and the graphics API, Automatic, for this run, the file and `--conf`
+    /// keeping theirs: `--safe-mode`, or a start after one that did not finish, `by` saying
+    /// which (decision 81; `recovery`).
+    pub fn engine_instead(&self, adapter: &str, by: &'static str) -> engine::Options {
+        engine::Options::instead(&self.store, adapter, by)
+    }
+
+    /// The graphics card and graphics API settings as `--conf` and the file give them,
+    /// unchecked: what a start tries to open its device with (`recovery`).
+    pub fn graphics(&self) -> (String, apertrust_engine::gpu::Backend) {
+        let adapter = self.store.get(&engine::registry::ENGINE_ADAPTER);
+        let backend = self.store.get(&engine::registry::ENGINE_BACKEND);
+        (adapter, backend)
+    }
+
     /// The disk cache's limit as `cache.limited` and `cache.limit` give it now, which the
     /// session takes as it starts and again each time it changes (decision 76).
     pub fn cache_limit(&self) -> apertrust_base::cache::Limit {

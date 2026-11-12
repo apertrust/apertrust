@@ -436,6 +436,15 @@ start-copyright = © 2026
 start-tagline =
     Вільний, недеструктивний
     редактор raw-знімків
+start-failed = Минулого разу { app-name } не запустився з { $card } ({ $api }), тому використано автоматичний вибір
+start-failed-card = Минулого разу { app-name } не запустився з { $card }, тому використано автоматичний вибір
+start-failed-api = Минулого разу { app-name } не запустився з { $api }, тому використано автоматичний вибір
+start-failed-automatic = Минулого разу { app-name } не запустився з автоматичним вибором, тому його запущено на ЦП, а це повільніше
+start-failed-automatic-again = Минулого разу { app-name } не запустився з автоматичним вибором, а з цим графічним API немає адаптера ЦП, тому знову використано автоматичний вибір
+start-failed-keep-automatic = Залишити автоматичний вибір
+start-failed-keep-cpu = Залишити ЦП
+start-failed-retry = Спробувати знову
+start-failed-close = Закрити
 
 ## Налаштування
 
@@ -499,9 +508,6 @@ setting-engine-backend-option-dx12 = Direct3D 12
 setting-engine-backend-option-vulkan = Vulkan
 setting-engine-memory-budget-label = Бюджет пам'яті
 settings-gpu-automatic = Автоматично
-settings-gpu-automatic-card = Автоматично ({ $card })
-settings-gpu-automatic-cpu = Автоматично (ЦП)
-settings-gpu-automatic-api = Автоматично ({ $api })
 settings-gpu-cpu = ЦП (без відеокарти), повільно
 settings-gpu-cpu-short = ЦП
 settings-gpu-cpu-missing = Не знайдено з { $api }
@@ -520,6 +526,10 @@ settings-gpu-api-metal = Metal
 settings-gpu-api-gl = OpenGL
 settings-gpu-software = Відеокарта не використовується: { app-name } обробляє фото на процесорі, а це повільніше
 settings-gpu-driver = Може допомогти оновлення графічного драйвера
+settings-restart-waiting = Ваш вибір набуде чинності після перезапуску { app-name }
+settings-restart-now = Перезапустити зараз
+settings-restart-tip = Закриває { app-name } і відкриває знову, з цією текою та фото
+settings-restart-failed = Не вдається знову запустити { app-name }: { $error }
 setting-cache-limited-label = Обмежити розмір кешу
 setting-cache-limited-help = Якщо вимкнено, кеш не обмежений: з нього нічого не видаляється, щоб утримати його в межах розміру.
 setting-cache-limit-label = Обмеження кешу
@@ -660,6 +670,7 @@ action-open-recent-9 = Відкрити недавнє 9
 action-open-recent-10 = Відкрити недавнє 10
 action-clear-recent = Очистити меню
 action-quit = Вийти
+action-restart = Перезапустити
 action-peek = Показати знімок без розділу під вказівником
 action-next-photo = Наступний знімок
 action-previous-photo = Попередній знімок

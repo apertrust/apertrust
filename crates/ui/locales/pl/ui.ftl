@@ -438,6 +438,15 @@ start-copyright = © 2026
 start-tagline =
     Wolny, nieniszczący
     edytor zdjęć raw
+start-failed = Ostatnio { app-name } nie uruchomił się z { $card } ({ $api }), więc użyto wyboru automatycznego
+start-failed-card = Ostatnio { app-name } nie uruchomił się z { $card }, więc użyto wyboru automatycznego
+start-failed-api = Ostatnio { app-name } nie uruchomił się z { $api }, więc użyto wyboru automatycznego
+start-failed-automatic = Ostatnio { app-name } nie uruchomił się z wyborem automatycznym, więc uruchomiono go na CPU, co jest wolniejsze
+start-failed-automatic-again = Ostatnio { app-name } nie uruchomił się z wyborem automatycznym, a to API graficzne nie ma adaptera CPU, więc ponownie użyto wyboru automatycznego
+start-failed-keep-automatic = Zachowaj wybór automatyczny
+start-failed-keep-cpu = Zachowaj CPU
+start-failed-retry = Spróbuj ponownie
+start-failed-close = Zamknij
 
 ## Ustawienia
 
@@ -501,9 +510,6 @@ setting-engine-backend-option-dx12 = Direct3D 12
 setting-engine-backend-option-vulkan = Vulkan
 setting-engine-memory-budget-label = Budżet pamięci
 settings-gpu-automatic = Automatycznie
-settings-gpu-automatic-card = Automatycznie ({ $card })
-settings-gpu-automatic-cpu = Automatycznie (CPU)
-settings-gpu-automatic-api = Automatycznie ({ $api })
 settings-gpu-cpu = CPU (bez karty graficznej), powolne
 settings-gpu-cpu-short = CPU
 settings-gpu-cpu-missing = Nie znaleziono dla { $api }
@@ -522,6 +528,10 @@ settings-gpu-api-metal = Metal
 settings-gpu-api-gl = OpenGL
 settings-gpu-software = Karta graficzna nie jest używana: { app-name } przetwarza zdjęcia na procesorze, co jest wolniejsze
 settings-gpu-driver = Aktualizacja sterownika karty graficznej może pomóc
+settings-restart-waiting = Twój wybór zacznie działać po ponownym uruchomieniu { app-name }
+settings-restart-now = Uruchom ponownie teraz
+settings-restart-tip = Zamyka { app-name } i otwiera go ponownie, z tym folderem i zdjęciem
+settings-restart-failed = Nie można ponownie uruchomić { app-name }: { $error }
 setting-cache-limited-label = Ogranicz rozmiar pamięci podręcznej
 setting-cache-limited-help = Gdy wyłączone, pamięć podręczna jest nieograniczona: nic z niej nie jest usuwane, by zmieściła się w rozmiarze.
 setting-cache-limit-label = Limit pamięci podręcznej
@@ -662,6 +672,7 @@ action-open-recent-9 = Otwórz ostatnie 9
 action-open-recent-10 = Otwórz ostatnie 10
 action-clear-recent = Wyczyść menu
 action-quit = Zakończ
+action-restart = Uruchom ponownie
 action-peek = Pokaż zdjęcie bez sekcji pod wskaźnikiem
 action-next-photo = Następne zdjęcie
 action-previous-photo = Poprzednie zdjęcie

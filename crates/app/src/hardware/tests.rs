@@ -74,6 +74,8 @@ pub(crate) fn running(os: OperatingSystem) -> Running {
             chosen: false,
         }),
         lister: Some(Lister::new(move |api| Ok(listed(os, api)))),
+        started: Started::default(),
+        restart_failed: None,
     }
 }
 
@@ -245,16 +247,16 @@ fn a_helper_that_crashes_hangs_or_prints_no_list_is_a_failure() {
     ));
 }
 
-/// Automatic first, saying what it picks; the cards in Automatic's order, each name once
+/// Automatic first, plain; the cards in Automatic's order, each name once
 /// whichever API lists it; then a separator and CPU, never the software adapter's own name.
 #[test]
 fn the_list_is_automatic_then_the_cards_as_ranked_then_cpu() {
     let windows = OperatingSystem::Windows;
     let auto = listed(windows, Backend::Auto);
     let card = list(windows, "", Shown::Listed(&auto), "Automatic");
-    let automatic = format!("Automatic ({RTX})");
+    let automatic = "Automatic";
     let cpu = "CPU (no graphics card), slow";
-    assert_eq!(card.words, [automatic.as_str(), RTX, RADEON, cpu]);
+    assert_eq!(card.words, [automatic, RTX, RADEON, cpu]);
     assert_eq!(card.selected, Some(0));
     assert_eq!(card.separator, Some(3));
     assert_eq!((card.missing.clone(), card.unlisted.clone()), (None, None));
@@ -263,12 +265,9 @@ fn the_list_is_automatic_then_the_cards_as_ranked_then_cpu() {
     let stores: Vec<Option<&str>> = (0..4).map(|item| card.stores(item)).collect();
     assert_eq!(stores, [None, Some(RTX), Some(RADEON), Some("cpu")]);
     assert!(card.words.iter().all(|words| !words.contains(WARP)));
-    // For low power, the integrated GPU first, and Automatic's.
+    // For low power, the integrated GPU first.
     let low = card_for(&words(), "", Shown::Listed(&auto), windows, LowPower);
-    assert_eq!(
-        low.words[..3],
-        [format!("Automatic ({RADEON})"), RADEON.into(), RTX.into()]
-    );
+    assert_eq!(low.words[..3], ["Automatic", RADEON, RTX]);
     // Two identical GPUs are one item.
     let twins = [
         adapter(RTX, DiscreteGpu, wgpu::Backend::Vulkan),
@@ -276,10 +275,10 @@ fn the_list_is_automatic_then_the_cards_as_ranked_then_cpu() {
     ];
     let card = list(windows, "", Shown::Listed(&twins), "Vulkan");
     assert_eq!(card.words.iter().filter(|w| *w == RTX).count(), 1);
-    // With nothing but the software adapter, Automatic picks the processor.
+    // With nothing but the software adapter, Automatic, plain, then CPU.
     let alone = [adapter(WARP, Cpu, wgpu::Backend::Dx12)];
     let card = list(windows, "", Shown::Listed(&alone), "Direct3D 12");
-    assert_eq!(card.words, ["Automatic (CPU)", cpu]);
+    assert_eq!(card.words, ["Automatic", cpu]);
 }
 
 /// [`card`] for `preference`.
@@ -316,7 +315,7 @@ fn cpu_is_disabled_where_the_api_has_none_and_not_listed_on_the_mac() {
     let mac = OperatingSystem::Mac;
     let metal = listed(mac, Backend::Auto);
     let card = list(mac, "", Shown::Listed(&metal), "Metal");
-    assert_eq!(card.words, [format!("Automatic ({M4})"), M4.to_owned()]);
+    assert_eq!(card.words, ["Automatic", M4]);
     assert_eq!((card.separator, card.missing), (None, None));
 }
 
@@ -499,4 +498,28 @@ fn an_api_not_known_is_not_named() {
         said,
         "CPU isn’t available with this graphics API: set to Automatic"
     );
+}
+
+/// What a run started with: the settings that apply after a restart, the three of
+/// Hardware acceleration, with their values once the file and `--conf` are read. A value
+/// tells a change by itself, never by a guess at what would open; a setting it does not
+/// hold never waits; Keep takes a value as the run's.
+#[test]
+fn a_run_starts_with_the_values_of_the_settings_that_apply_after_a_restart() {
+    let (mut keeper, settings) = crate::settings::Keeper::nowhere();
+    keeper.apply(&settings, "engine.adapter", Some(&RADEON.into()));
+    let mut started = Started::of(crate::settings::shown(), |s| keeper.value(s));
+    let ids: Vec<&str> = started.0.iter().map(|(id, _)| *id).collect();
+    assert_eq!(
+        ids,
+        ["engine.adapter", "engine.backend", "engine.memory_budget"]
+    );
+    let radeon = toml::Value::from(RADEON);
+    let automatic = toml::Value::from("");
+    assert!(!started.differs("engine.adapter", Some(&radeon)));
+    assert!(started.differs("engine.adapter", Some(&automatic)));
+    assert!(started.differs("engine.memory_budget", Some(&4096.into())));
+    assert!(!started.differs("theme", Some(&"light".into())));
+    started.keep("engine.adapter", Some(automatic.clone()));
+    assert!(!started.differs("engine.adapter", Some(&automatic)));
 }
