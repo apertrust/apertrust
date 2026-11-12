@@ -123,6 +123,7 @@ Shared colour maths is in `apertrust-color`, with the numerical helpers ports sh
 
 1. **Built-in operations are compile-time plugins:** each is its own crate, and `apertrust-operations` lists them explicitly. The engine depends only on `apertrust-plugin`; the binaries hand it the list. Modular, type-safe, with no loading at run time.
 2. **Third-party plugins come later as declarative packages:** manifest, schema and WGSL kernels as data, with any CPU-side logic (lookup tables, statistics for Auto) as a sandboxed WebAssembly component, and a module definition that binds the package's parameters. Portable across platforms and safe to install.
+   Built-in kernels write their workgroup memory before reading it, kept by review and the tests, not by a check, and the engine does not zero it (decision 80). A third-party kernel is reviewed by no one here, so whether the engine zeroes its workgroup memory is decided with third-party loading.
 3. **No native shared-library plugins:** Rust has no stable ABI, packaging would be per platform, and a faulty plugin could crash the app.
 
 ## Rules the engine enforces for every plugin

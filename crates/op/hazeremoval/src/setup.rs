@@ -34,9 +34,8 @@ pub const GUIDE_RADIUS: u32 = 9;
 const QUANTILE: f32 = 0.95;
 
 /// The pixels a side each invocation of the counts and the ambient sums adds up, as the
-/// kernel's `BLOCK`, and the kernel's workgroups a side. WebGPU zero-initialises a
-/// workgroup's shared memory before it starts, which naga does from one invocation, so
-/// the counts, with 8 KB of bins, run fewer, larger workgroups.
+/// kernel's `BLOCK`, and the kernel's workgroups a side: the counts, with 8 KB of bins
+/// each workgroup clears and adds up, run fewer, larger workgroups.
 const BLOCK: u32 = 4;
 const WORKGROUP: u32 = 16;
 /// The selections' bins, as the kernel's `BINS`, and the words of its `state`.

@@ -202,6 +202,7 @@ These come from the architecture doc and are not up for local reinterpretation.
   - fp32 only: redesign fp64 maths rather than translating it.
   - Never rely on NaN or infinity checks (WGSL may assume they never occur); sanitize inputs at operation boundaries.
   - Never write a local vector component or array element at an index known only at run time: FXC, the Direct3D 12 compiler the engine pins, fails on the vector component, and the array element, like a vector component in workgroup memory, is refused until tested on Windows. Use `add_at` and `set_at` from `crates/plugin/slang/components.slang`; the engine's naga test checks every kernel (decision 10).
+  - Write every element of workgroup memory before any invocation reads it: the engine leaves wgpu's zeroing of it out, which made FXC take seconds over a reduction's shared arrays and WARP run it at every dispatch (decision 80). A reduction writes its own element before the first barrier; an atomic array is cleared with `store(0)`, then a barrier.
   - Keep kernels differentiable-friendly: continuous parameters, no unnecessary hard clamps, thresholds or branches.
   - Generated WGSL is committed and validated with naga.
 - **Modules and operations.**

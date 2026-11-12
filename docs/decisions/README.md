@@ -22,7 +22,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Packaging | cargo-packager from one config, `packaging/Packager.toml`: an app bundle and disk image, an NSIS installer and a zip, an AppImage and a tarball, each with the CLI and the licences; signing and notarisation planned (68) | A script per platform; WiX; cargo-dist |
 | GPU | wgpu over Vulkan, Metal, DX12 and WebGPU; a GPU-resident fp32 pipeline on storage buffers (8) | A hand-written Vulkan and Metal layer; host copies between operations |
 | Without a GPU | The same kernels on a software GPU, lavapipe or WARP; what cannot bind there is refused, naming the pass and the sizes; image-shaped scratch bound in windows before Phase 3's exit (7, 15) | A CPU version of every operation; Slang's CPU target |
-| Kernels | Slang compiled to WGSL, committed and validated with naga; every differentiable kernel exports derivative entry points (9) | Plain WGSL |
+| Kernels | Slang compiled to WGSL, committed and validated with naga; every differentiable kernel exports derivative entry points (9); workgroup memory written before it is read, wgpu's zeroing of it left out (80) | Plain WGSL |
 | Direct3D 12 | FXC pinned in the engine; no kernel writes a local at a run-time index (10) | DXC, a C++ library to ship |
 | Differentiable pipeline | Differentiable-ready from the start; a command-line test matching a reference photo is Phase 3's first engine work (11) | Forward-only, with per-module pickers |
 | Planning and caching | Regions propagated backwards; the raw stage and demosaic at full resolution, downscaled for the viewport; a few cache points; a rebuild keeps compiled kernels and matching cache points (12, 28) | Every operation over the whole image; caching every output |
@@ -110,6 +110,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0009](0009-slang-for-every-kernel-compiled-to-wgsl.md) | Slang for every kernel, compiled to WGSL |
 | [0010](0010-fxc-on-direct3d-12-and-no-writes-at-run-time-indices.md) | FXC on Direct3D 12, and no writes at run-time indices |
 | [0011](0011-a-differentiable-pipeline-and-matching-a-reference-photo.md) | A differentiable pipeline, and matching a reference photo |
+| [0080](0080-workgroup-memory-written-before-it-is-read-and-not-zeroed.md) | Workgroup memory written before it is read, and not zeroed |
 
 ## Engine
 
