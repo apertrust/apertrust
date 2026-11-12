@@ -28,6 +28,7 @@ pub mod export;
 pub mod export_job;
 pub mod export_preview;
 pub mod gpu;
+pub mod history;
 pub mod jobs;
 pub mod names;
 pub mod picker;

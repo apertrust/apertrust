@@ -410,6 +410,8 @@ impl Mirror {
             Event::Library(_) => {}
             // Taken in above, for Settings › Storage.
             Event::Cache(_) => {}
+            // Nothing draws the history yet: Undo, Redo and the History tab are to come.
+            Event::History(_) => {}
             // The session logs a failed save, a module left out and the scopes turned off as
             // they happen; the rest only reach the app.
             Event::Failed(SessionError::Save {

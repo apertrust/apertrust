@@ -27,6 +27,8 @@ apertrust-raw.workspace = true
 apertrust-library.workspace = true
 # The export's start, for darktable's variables (`names`).
 chrono.workspace = true
+# A history step's random id (decision 78).
+getrandom.workspace = true
 pollster.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

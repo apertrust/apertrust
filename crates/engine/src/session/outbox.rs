@@ -222,6 +222,7 @@ fn kind(event: &Event) -> &'static str {
             LibraryEvent::Walked { .. } => "Library Walked",
         },
         Event::Cache(_) => "Cache",
+        Event::History(_) => "History",
         Event::Failed(_) => "Failed",
     }
 }
@@ -246,6 +247,7 @@ impl fmt::Display for Line<'_> {
                 write!(f, ", through {}, not live", values.through)?
             }
             Event::Values(values) => write!(f, ", through {}", values.through)?,
+            Event::History(history) => write!(f, ", through {}", history.through)?,
             Event::Frame(frame) => write!(f, ", through {}", frame.through)?,
             Event::Scopes(reading) => write!(f, ", through {}", reading.through)?,
             Event::Picker(Some(reading)) => write!(f, ", through {}", reading.through)?,

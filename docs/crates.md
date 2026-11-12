@@ -108,6 +108,7 @@ The groundwork for orientation:
 - **`sidecar`**: `.apxmp` version 1 edits, and reading version 0 (decisions 28 and 48). It reads and writes an edit's module values and operation parameters, typed, with the module definitions: migrations, clamps, warnings, and `Newer` told by module. It works over the text layer of `apertrust-library`'s `sidecar`, whose `Newer`, `ViewOnly` and `path_for` it re-exports.
 - **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep` (`Edit::is_on`). `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none, and never binds one that is off. `.apxmp` writes `apertrust:enabled="true"` on an on module's entry: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only (`Newer::Enabled`).
 - The image context and the mosaic from a raw.
+- **`history`** (decision 78, step 9.1; [history.md](history.md)): the edit's `Log` of `Step`s and its end. A step holds a random `StepId`, a `Clock` (`apertrust_library::clock`), a `StepSource`, an optional `Note` and `BatchId`, and its `Entry`s, each touched module's whole state after it, or an operation's unowned parameters; an empty entry is the reset state. `Log::fold` is the edit, each module's last entry up to the end; `Entry::between` the entries a step from one edit to another holds; `Log::read` a version 1 file read as one step, its id hashed from the file's bytes. The event's types, `History`, `HistoryStep`, `ModuleChange`, `ControlChange` and `Move`, and `Described`, which describes each step once, before → after on the photo's defaults, kept while the steps before it stay.
 
 ### The editing session
 
@@ -128,7 +129,8 @@ The groundwork for orientation:
 
 - `SetControl`, `ResetControl`, `ResetModule` and `Keep`.
 - `ApplyPreset`, for a preset row's option: each control it writes is kept, with no follow writes, as in darktable's `_preset_tune_callback`.
-- `Reset`, and `Set` only for parameters no module owns.
+- `Reset`, one history step noted `history-reset`, and `Set` only for parameters no module owns.
+- `Undo` and `Redo` (decision 78, `session/history.rs`): the undo records, a step added leaving the log and the steps it dropped coming back, and with none the end moved one step, recorded for the other to reverse. Each completed change is a step of source You; a `Set` or a gesture joins the next, or is made one before Undo, Redo or the photo's close; a gesture another command ends is a step of its own. The file stays version 1, the edit at the end.
 - `RetrySave`, a client's Try again: the edit written again after a failed write, nothing otherwise.
 - `SetControl`, `ResetControl` and `Keep` also take a lossless view's coordinate. They write the view's controls, with the other coordinates held through a gesture (`edit::Held`); all coordinates back at their defaults reset the controls exactly.
 - `SetControl` and `ResetControl` carry the module's follow writes in the same change (`Edit::follow`). A wrong one refuses the change whole (`EditError::FollowFailed`, decision 27).
@@ -243,6 +245,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 
 - Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title, detail, destination and state are a fact each, by job, its `Added` and `Ended` notices; the Export dialog's preview and an opening photo's picture are facts.
 - A refused command names its number (`SessionError::Refused { command, error }`), its words the error's.
+- `Event::History`, a fact (decision 78): after `Values { live: false }` as a photo opens, and once in each batch that changed the log, its end or the undo records, after its `Values` and before its `Frame`, its steps shared behind `Arc`s. Building it takes about 0.01 ms in a batch at 200 and at 1,000 steps on the M4, and 0.08 and 0.4 ms with every step described anew; its JSON, estimated, is about 59 kB at 200 steps and 295 kB at 1,000, over its 256 kB budget, so the remote protocol takes the planned fallback ([history.md](history.md#the-history-event)).
 - Every thread of the session sends through one `Outbox` (`session/outbox.rs`): the engine thread, the edit writer, the jobs' observer, and the bodies of the export, the preview, the folder's reading, the thumbnails and an open.
 - The outbox calls `wake` once per burst, through a flag that `events()` clears as it drains with one loop of `try_recv`. Nothing is sent once the handle drops.
 - Each send and drain is logged under `-d event` (`signal` an alias), and a count per kind each second under `-d verbose`.
@@ -253,7 +256,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Readouts** (decision 19): what an operation measures of the photo for its module's panel, the tone equalizer's mask histogram first. Its readout pass is planned in the viewport alone and dispatched while a client asks (`Command::Readouts`, by module) and its key, a whole-image result's, has changed. Its counts are read back through the scopes' staging pair, decoded by the operation and sent as `Event::Readout`. A failure turns readouts off, never the frame.
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
-- **History and undo** (decision 78; [history.md](history.md)): `history`'s log of steps, each completed change a step with its source, note and batch, darktable's undo merging; the session's undo records; `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `Step` and `Hide`; `Event::History`, a fact; the log saved in the sidecar's version 2.
+- **The rest of history** (decision 78; [history.md](history.md#the-plan)): `GoTo`, `Step`, darktable's undo merging, `Hide`, `Compress` and `Truncate`; the log saved in the sidecar's version 2.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): module pickers, the reduction at an operation's input and output, `picker_mosaic`, denoise and the other spaces, sample-only renders, a pick applied through `Module::pick`, `Tools` and `Channel`; stored samples and `Event::Samples`.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
 - **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 27, `CacheCommand::Remove { library }`, a `cache-clear` job, and each library's cache in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
@@ -1447,7 +1450,7 @@ A conformant XMP layer on quick-xml with namespace resolution, with no dependenc
 
 ### clock
 
-Hybrid logical clocks and the machine id (decision 47), plain data the engine's history is to use; no file holds them yet (sidecar version 2, step 8.2).
+Hybrid logical clocks and the machine id (decision 47), plain data the engine's history uses (step 9.1); no file holds them yet (sidecar version 2, step 8.2).
 
 - `Clock { when, counter, machine }`: UTC milliseconds since 1970, at most `MAX_WHEN` (9999-12-31T23:59:59.999Z), the counter and the `MachineId`, ordered by time, then counter, then machine.
 - `Clock::now(last, machine)`, and `Clock::at` with the wall clock given: the wall clock with counter 0 where it is past `last`, else `last`'s time with its counter raised, so it never goes back when the wall clock does; a full counter moves the time on 1 ms. The time stops at `MAX_WHEN`, a wall clock past it counting as it, where the counter alone rises, saturating.

@@ -43,7 +43,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_base::jobs::{Context, Interrupted};
@@ -335,6 +335,8 @@ pub(crate) struct Read {
     pub metadata: Metadata,
     pub edit: Edit,
     pub hash: Option<[u8; 32]>,
+    /// When the edit's file was last modified, which the step it reads as carries.
+    pub modified: Option<SystemTime>,
     pub view_only: Option<ViewOnly>,
 }
 
@@ -485,10 +487,11 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let read = file.metadata().and_then(|metadata| {
         raw = (metadata.sensor.width, metadata.sensor.height);
         phase_one = library::RawFacts::phase_one(&metadata.camera);
-        let (edit, view_only, hash) = edit(run, context, &metadata.image)?;
+        let (edit, view_only, hash, modified) = edit(run, context, &metadata.image)?;
         Ok(Box::new(Read {
             metadata,
             hash,
+            modified,
             edit,
             view_only,
         }))
@@ -602,19 +605,19 @@ fn rendered(cache: &Upkeep, path: &Path) -> Option<(Vec<u8>, Thumbnail)> {
 
 /// The photo's edit, from its sidecar as the edit writer reads it once it has written what
 /// it was handed of it, clamped as an opened edit is, and whether a newer Apertrust wrote
-/// it: none for a photo never edited.
-type ReadEdit = (Edit, Option<ViewOnly>, Option<[u8; 32]>);
+/// it, its bytes' hash and when its file was last modified: none for a photo never edited.
+type ReadEdit = (Edit, Option<ViewOnly>, Option<[u8; 32]>, Option<SystemTime>);
 
 fn edit(run: &Run, context: &Context<'_>, image: &ImageContext) -> Result<ReadEdit, SessionError> {
     let sidecar = sidecar::path_for(&run.path);
     let snapshot = context
         .wait(&run.snapshot)
         .map_err(|_| SessionError::Stopped)?
-        .pop()
-        .map(Snapshot::xml);
-    let xml = match snapshot {
+        .pop();
+    let modified = snapshot.as_ref().and_then(Snapshot::changed);
+    let xml = match snapshot.map(Snapshot::xml) {
         Some(Ok(Some(xml))) => xml,
-        Some(Ok(None)) | None => return Ok((Edit::default(), None, None)),
+        Some(Ok(None)) | None => return Ok((Edit::default(), None, None, None)),
         Some(Err(error)) => {
             return Err(SessionError::Sidecar(sidecar::SidecarError::from(error)));
         }
@@ -645,6 +648,7 @@ fn edit(run: &Run, context: &Context<'_>, image: &ImageContext) -> Result<ReadEd
         edit,
         view_only,
         Some(apertrust_library::index::hash(xml.as_bytes())),
+        modified,
     ))
 }
 
