@@ -247,6 +247,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// Every parameter of `highlights`, the method and the threshold: the module is

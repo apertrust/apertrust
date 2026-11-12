@@ -769,6 +769,7 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
             | Row::When { .. }
             | Row::ToolSetting(_)
             | Row::Action { .. }
+            | Row::Pickers { .. }
             | Row::Guides
     );
     let top = ui.cursor().top();
@@ -814,6 +815,9 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         Row::Preset { preset, .. } => preset_row(ui, words, definition, preset, state, changes),
         Row::ToolSetting(setting) => tool_setting_row(ui, words, definition.id, setting),
         Row::Action { id } => action_row(ui, words, definition.id, id),
+        // Picker buttons, and a slider's picker quad, are drawn with their state once the
+        // session runs module pickers (decision 79).
+        Row::Pickers { .. } => {}
         Row::Buttons { control, buttons } => {
             buttons_row(ui, words, definition, control, buttons, state, changes);
         }
@@ -3432,6 +3436,7 @@ mod tests {
         after: &[Row::Toggle { control: "mask" }],
         presets: &[],
         views: &[],
+        pickers: &[],
     };
 
     impl Module for LocalContrast {

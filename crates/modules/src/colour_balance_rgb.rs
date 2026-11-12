@@ -44,7 +44,8 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Quad, Row, Slider, Tab, Track, Unit,
+    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, Slider, Space,
+    Tab, Track, Unit,
 };
 use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
@@ -229,19 +230,51 @@ const fn luminance_row(control: &'static str, (min, max): (f32, f32)) -> Row {
     Row::Slider(Slider::new(control).track(Track::Luminance).soft(min, max))
 }
 
-/// A wheel's hue, on darktable's track of the hues, unfilled, with darktable's picker.
-const fn hue_row(control: &'static str) -> Row {
+/// A wheel's hue, on darktable's track of the hues, unfilled, with darktable's picker
+/// `picker`.
+const fn hue_row(control: &'static str, picker: &'static str) -> Row {
     Row::Slider(
         Slider::new(control)
             .track(Track::Hue)
             .no_fill()
-            .quad(Quad::Picker),
+            .quad(Quad::Picker(picker)),
     )
 }
 
-/// A fulcrum, with darktable's picker, over its soft range.
+/// A fulcrum, with darktable's picker of its name, over its soft range.
 const fn fulcrum_row(control: &'static str, (min, max): (f32, f32)) -> Row {
-    Row::Slider(Slider::new(control).quad(Quad::Picker).soft(min, max))
+    Row::Slider(
+        Slider::new(control)
+            .quad(Quad::Picker(control))
+            .soft(min, max),
+    )
+}
+
+/// darktable's pickers (`DT_COLOR_PICKER_AREA`, each on a slider): a wheel's hue and
+/// chroma from the area, the opposite hue unless Ctrl is held, and the white fulcrum from
+/// its maximum's luminance and the contrast grey fulcrum from its mean's.
+static PICKERS: [Picker; 6] = [
+    picker("global_hue", &["global_h", "global_c"]),
+    picker("shadows_hue", &["shadows_h", "shadows_c"]),
+    picker("midtones_hue", &["midtones_h", "midtones_c"]),
+    picker("highlights_hue", &["highlights_h", "highlights_c"]),
+    picker("white_fulcrum", &["white_fulcrum"]),
+    picker("grey_fulcrum", &["grey_fulcrum"]),
+];
+
+/// An area picker of the module's input writing `writes`.
+const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
+    Picker {
+        id,
+        operation: COLOR_BALANCE,
+        kind: PickerKind::Area,
+        denoise: false,
+        output: false,
+        space: Space::Operation,
+        keep: false,
+        writes,
+        tools: &[],
+    }
 }
 
 /// A wheel's chroma, on darktable's track of its hue's chroma, over its soft range.
@@ -293,22 +326,22 @@ static DEFINITION: Definition = Definition {
                     id: "global_offset",
                 },
                 luminance_row("global_y", (-5.0, 5.0)),
-                hue_row("global_h"),
+                hue_row("global_h", "global_hue"),
                 chroma_row("global_c", (0.0, 1.0)),
                 Row::Label { id: "shadows_lift" },
                 // darktable sets the shadows' soft range to the whole range.
                 luminance_row("shadows_y", (-100.0, 100.0)),
-                hue_row("shadows_h"),
+                hue_row("shadows_h", "shadows_hue"),
                 chroma_row("shadows_c", (0.0, 50.0)),
                 Row::Label {
                     id: "highlights_gain",
                 },
                 luminance_row("highlights_y", (-50.0, 50.0)),
-                hue_row("highlights_h"),
+                hue_row("highlights_h", "highlights_hue"),
                 chroma_row("highlights_c", (0.0, 20.0)),
                 Row::Label { id: "power" },
                 luminance_row("midtones_y", (-25.0, 25.0)),
-                hue_row("midtones_h"),
+                hue_row("midtones_h", "midtones_hue"),
                 chroma_row("midtones_c", (0.0, 10.0)),
             ],
         },
@@ -336,6 +369,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &PICKERS,
 };
 
 /// Every parameter of `colorbalancergb`: the module is darktable's and owns them all.
@@ -401,7 +435,7 @@ mod tests {
 
     use super::*;
     use crate::check;
-    use crate::testing::DarktableSlider;
+    use crate::testing::{DarktablePicker, DarktableSlider};
     use crate::values::ControlValue;
 
     fn bind(set: &[(&str, ControlValue)]) -> Vec<Setting> {
@@ -539,6 +573,41 @@ mod tests {
             let darktable = DARKTABLE.iter().find(|s| s.id == p.control).unwrap();
             assert_eq!(darktable.factor, p.scale, "{}", p.control);
         }
+    }
+
+    /// darktable's pickers (`colorbalancergb.c:1886`, `:1907`, `:1928`, `:1949`, `:2019`,
+    /// `:2024`), each an area on its slider: a wheel's hue writing its hue and chroma, a
+    /// fulcrum its own value (`color_picker_apply`, `:1278-1338`).
+    #[test]
+    fn its_pickers_are_darktable_s() {
+        const fn area(
+            id: &'static str,
+            slider: &'static str,
+            writes: &'static [&'static str],
+        ) -> DarktablePicker {
+            DarktablePicker {
+                id,
+                slider,
+                kind: PickerKind::Area,
+                denoise: false,
+                output: false,
+                writes,
+                tools: &[],
+            }
+        }
+        let darktable = [
+            area("global_hue", "global_h", &["global_h", "global_c"]),
+            area("shadows_hue", "shadows_h", &["shadows_h", "shadows_c"]),
+            area("midtones_hue", "midtones_h", &["midtones_h", "midtones_c"]),
+            area(
+                "highlights_hue",
+                "highlights_h",
+                &["highlights_h", "highlights_c"],
+            ),
+            area("white_fulcrum", "white_fulcrum", &["white_fulcrum"]),
+            area("grey_fulcrum", "grey_fulcrum", &["grey_fulcrum"]),
+        ];
+        assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
     }
 
     #[test]

@@ -299,16 +299,19 @@ fn on_is_refused_before_the_photo_is_live_and_a_move_with_no_picker_on() {
     ]);
     assert_eq!(refused(&driven.run([on(false)])), "NotLive");
     driven.settle();
-    // A picker no module declares.
-    let module = picker(PickerCommand::On {
-        picker: PickerRef::Module {
-            module: "sample",
-            picker: "brightness",
-        },
-        area: true,
-        keys: PickKeys::default(),
-    });
-    assert_eq!(refused(&driven.run([module])), "UnknownPicker");
+    // A module's picker, one no module declares and one Sample declares: the session runs
+    // none until 79.3, which turns the second on.
+    for id in ["contrast", "brightness"] {
+        let module = picker(PickerCommand::On {
+            picker: PickerRef::Module {
+                module: "sample",
+                picker: id,
+            },
+            area: true,
+            keys: PickKeys::default(),
+        });
+        assert_eq!(refused(&driven.run([module])), "UnknownPicker", "{id}");
+    }
     // A move, a switch or a reset with no picker on; an `Off` changes nothing.
     for command in [
         point([0.5, 0.5]),

@@ -226,8 +226,9 @@ pub enum Command {
     /// area moved, switched between them, reset or turned off, the Colour picker module's
     /// alone so far. View state, never a command on the edit. Answered by
     /// [`Event::Picker`]; `On` refused before the photo is live
-    /// ([`SessionError::NotLive`]) and for a picker no module declares
-    /// ([`SessionError::UnknownPicker`]), a point, an area, a switch or a reset with no
+    /// ([`SessionError::NotLive`]) and for a module's picker until 79.3, the session
+    /// running no module's picker yet, declared or not ([`SessionError::UnknownPicker`]),
+    /// a point, an area, a switch or a reset with no
     /// picker on ([`SessionError::NoPicker`]).
     Picker(PickerCommand),
     /// Cancel a job, as its progress's cancel does (decision 57): a queued job never
@@ -754,7 +755,8 @@ pub enum SessionError {
     /// the rest of the session.
     #[error("the scopes are off: {0}")]
     Scopes(String),
-    /// [`PickerCommand::On`] named a picker no module declares.
+    /// [`PickerCommand::On`] named a module's picker: refused until 79.3, the session
+    /// running no module's picker yet, declared or not.
     #[error("no module has that colour picker")]
     UnknownPicker,
     /// A colour picker's point, area, switch or reset with no picker on.
@@ -4604,6 +4606,7 @@ mod tests {
         after: &[],
         presets: &[],
         views: &[],
+        pickers: &[],
     };
 
     static RIVAL_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
@@ -4992,6 +4995,7 @@ mod tests {
         after: &[],
         presets: &[],
         views: &[],
+        pickers: &[],
     };
 
     impl Module for Lists {
@@ -6097,6 +6101,7 @@ mod tests {
                 unit: None,
             }],
         }],
+        pickers: &[],
     };
 
     impl Module for Brittle {
@@ -6890,6 +6895,7 @@ mod tests {
             controls: &["level"],
         }],
         views: &[],
+        pickers: &[],
     };
 
     /// [`Touchy`]'s level for `image`: its width.

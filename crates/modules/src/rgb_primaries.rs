@@ -190,6 +190,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// Every parameter of `primaries`: the module is darktable's and owns them all.

@@ -123,6 +123,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// Every parameter of `colorout`: the module is darktable's and owns them both, the

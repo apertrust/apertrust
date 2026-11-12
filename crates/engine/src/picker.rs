@@ -76,8 +76,9 @@ pub const DEFAULT_AREA: Region = Region::Area([0.02, 0.02, 0.98, 0.98]);
 /// A picker, by its owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PickerRef {
-    /// A module's picker, by its module's id and the picker's id in its definition. No
-    /// module declares one yet, so `On` refuses it.
+    /// A module's picker, by its module's id and the picker's id in its definition. `On`
+    /// refuses it until 79.3, the session running no module's picker yet, declared or
+    /// not.
     Module {
         module: &'static str,
         picker: &'static str,
@@ -92,7 +93,8 @@ pub enum PickerRef {
 pub enum PickerCommand {
     /// Turns `picker` on, the one on before it off: an area with `area`, else a point,
     /// at the picker's last point or area this session, else darktable's default.
-    /// Refused before the photo is live, and for a picker no module declares.
+    /// Refused before the photo is live, and for a module's picker until 79.3, the
+    /// session running no module's picker yet, declared or not.
     On {
         picker: PickerRef,
         area: bool,

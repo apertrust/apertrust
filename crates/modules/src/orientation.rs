@@ -117,6 +117,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 static OWNS: [Owned; 1] = [Owned::new(FLIP, ORIENTATION)];

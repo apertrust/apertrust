@@ -31,6 +31,10 @@
 //! Two kinds of row store nothing (decision 2): a preset row, whose options each write
 //! several controls ([`PresetRow`]), and a lossless view's coordinate, a second view of
 //! some stored controls ([`View`]), shown by a [`Row::Slider`] that names it.
+//!
+//! A module's colour pickers (decision 79) are declared apart from the rows too
+//! ([`Picker`]), and each shown by one row: a slider's quad ([`Quad::Picker`]) or a row of
+//! picker buttons ([`Row::Pickers`]).
 
 use std::collections::BTreeSet;
 
@@ -70,6 +74,73 @@ pub struct Definition {
     /// balance shows its light as temperature and tint, and as hue and chroma. Nothing is
     /// stored under them.
     pub views: &'static [View],
+    /// Its colour pickers (decision 79), each darktable's `dt_color_picker_new` call, shown
+    /// by a slider's quad ([`Quad::Picker`]) or a row of picker buttons ([`Row::Pickers`]).
+    /// Nothing is stored under them: the session measures the photo and the module's
+    /// [`crate::Module::pick`] writes its controls.
+    pub pickers: &'static [Picker],
+}
+
+/// One of the module's colour pickers (decision 79; `docs/pickers.md`, Declaring
+/// pickers): darktable's `dt_color_picker_new` call, its flags and colour space, and what
+/// its pick may write and read.
+///
+/// Its words come with its button and the central bar (`docs/pickers.md`, The picker
+/// button, On the photo), in the controls' and actions' scheme:
+/// `module-<module>-picker-<id>-label`, its name; `-full`, what screen readers say;
+/// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence.
+/// [`crate::messages::of`] implies none of them until they are drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Picker {
+    /// snake_case ASCII and permanent, unique among the module's pickers: clients name it
+    /// with the module's id. Pickers are a namespace of their own, as a picker on a
+    /// slider's quad takes its control's id (Exposure's `exposure`).
+    pub id: &'static str,
+    /// The operation whose input, and with `output` output, it reads: one the module owns
+    /// a parameter of ([`crate::check::accept`]).
+    pub operation: &'static str,
+    /// darktable's `DT_COLOR_PICKER_POINT`, `_AREA` or `_POINT_AREA`.
+    pub kind: PickerKind,
+    /// darktable's `DT_COLOR_PICKER_DENOISE`: a B-spline blur before the statistics, never
+    /// on a mosaic.
+    pub denoise: bool,
+    /// darktable's `DT_COLOR_PICKER_IO`: the operation's output read as well as its input.
+    pub output: bool,
+    /// darktable's `picker_cst`: the space each pixel is read in.
+    pub space: Space,
+    /// darktable's "keep-active": it stays on when its module changes, as RGB curve's
+    /// show colour does.
+    pub keep: bool,
+    /// The controls its pick may write, each once; none for a picker that only shows.
+    pub writes: &'static [&'static str],
+    /// The tool settings its pick reads ([`Row::ToolSetting`]), each once.
+    pub tools: &'static [&'static str],
+}
+
+/// Whether a picker takes a point, an area or either: darktable's
+/// `DT_COLOR_PICKER_POINT`, `_AREA` and `_POINT_AREA`. One with both turns on as an area
+/// with a right-click or Ctrl-click, else as a point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerKind {
+    Point,
+    Area,
+    PointArea,
+}
+
+/// The space a picker reads each pixel in, darktable's `picker_cst`
+/// (`dt_color_picker_helper`). In a space with a hue the fourth channel is the third moved
+/// half a turn, so a hue round 0 has a minimum and a maximum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Space {
+    /// The stage's own values: the mosaic in the raw stage, per CFA colour, camera RGB,
+    /// the working space.
+    Operation,
+    /// LCh, for a Lab stage (`dt_Lab_2_LCH`).
+    Lch,
+    /// HSL, for an RGB stage (`dt_RGB_2_HSL`).
+    Hsl,
+    /// JzCzhz, through the working profile's matrix.
+    Jzczhz,
 }
 
 /// Options that each write several of the module's controls, as White balance's Mode
@@ -244,11 +315,12 @@ pub struct Tab {
 }
 
 /// How a tab shows one control, a label between them, rows darktable groups or shows only
-/// in some modes, a preset row, a lossless view's coordinate, or one of darktable's
-/// settings for a tool. Each control is in exactly one row, or in one row per mode where
-/// darktable labels it differently by mode ([`Slider::label`]) or shows it under conditions
-/// one [`Row::When`] cannot join, as highlight reconstruction's Noise level, or only in the
-/// rows of the views covering it; each coordinate is in one row at most.
+/// in some modes, a preset row, a lossless view's coordinate, one of darktable's settings
+/// for a tool, or a row of picker buttons. Each control is in exactly one row, or in one
+/// row per mode where darktable labels it differently by mode ([`Slider::label`]) or shows
+/// it under conditions one [`Row::When`] cannot join, as highlight reconstruction's Noise
+/// level, or only in the rows of the views covering it; each coordinate is in one row at
+/// most, and each picker in exactly one.
 #[derive(Debug, Clone)]
 pub enum Row {
     Slider(Slider),
@@ -317,6 +389,15 @@ pub enum Row {
     Action {
         id: &'static str,
     },
+    /// darktable's picker buttons packed in a box, one line: a label at its start, if any,
+    /// by its id, and the buttons of pickers of [`Definition::pickers`] at its end, as
+    /// AgX's Auto tune levels and RGB levels' black, grey and white. It is no control.
+    /// The label is a group label's: its words are [`crate::messages::group`]'s, and its
+    /// id is unique among the module's group labels.
+    Pickers {
+        label: Option<&'static str>,
+        pickers: &'static [&'static str],
+    },
     /// One control's row of darktable's buttons, its label the control's, double-clicked
     /// to reset it, as darktable's reset label, with the buttons inline after it: actions
     /// that write the control from its value ([`crate::Module::action`]), never stored
@@ -373,8 +454,21 @@ impl Row {
             | Row::ToolSetting(_)
             | Row::Preset { .. }
             | Row::Action { .. }
+            | Row::Pickers { .. }
             | Row::Guides => &[],
             Row::Custom { controls, .. } => controls,
+        }
+    }
+
+    /// The pickers the row shows: a slider's quad's, or a row of picker buttons'.
+    pub fn pickers(&self) -> &[&'static str] {
+        match self {
+            Row::Slider(Slider {
+                quad: Some(Quad::Picker(picker)),
+                ..
+            }) => std::slice::from_ref(picker),
+            Row::Pickers { pickers, .. } => pickers,
+            _ => &[],
         }
     }
 
@@ -574,8 +668,9 @@ pub enum Track {
 /// What a slider row's quad does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quad {
-    /// Picks the value from the photo.
-    Picker,
+    /// darktable's picker on a slider (`dt_color_picker_new` on a bauhaus widget): turns
+    /// the picker of [`Definition::pickers`] it names on and off.
+    Picker(&'static str),
     /// Draws a line on the photo, as a horizon is levelled.
     Line,
 }
@@ -722,6 +817,18 @@ pub enum DefinitionError {
         coordinate: &'static str,
         rows: usize,
     },
+    #[error("two pickers are called {0}")]
+    DuplicatePicker(&'static str),
+    #[error("the picker {0} writes a control the module lacks, or one twice")]
+    PickerWrites(&'static str),
+    #[error("the picker {0} reads a tool setting the module lacks, or one twice")]
+    PickerTools(&'static str),
+    #[error("a row shows the picker {0}, which the module lacks")]
+    UnknownPicker(&'static str),
+    #[error("a row of pickers holds none")]
+    NoPickers,
+    #[error("the picker {picker} is in {rows} rows; each is in exactly one")]
+    PickerRows { picker: &'static str, rows: usize },
 }
 
 /// snake_case ASCII: a lowercase letter, then lowercase letters, digits and single
@@ -748,6 +855,10 @@ impl Definition {
 
     pub fn view(&self, id: &str) -> Option<&'static View> {
         self.views.iter().find(|view| view.id == id)
+    }
+
+    pub fn picker(&self, id: &str) -> Option<&'static Picker> {
+        self.pickers.iter().find(|picker| picker.id == id)
     }
 
     /// The coordinate called `id`: its view, and its place among the view's coordinates.
@@ -823,7 +934,9 @@ impl Definition {
     /// each coordinate with its range in one slider row at most, each slider's soft range
     /// in order inside its control's or coordinate's range, each tool setting once, its
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
-    /// are unique together.
+    /// are unique together. Each picker has an id of its own, writes controls of the
+    /// module and reads its tool settings, each once, and is in exactly one row, a
+    /// slider's quad or a row of pickers, which holds at least one.
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
@@ -903,7 +1016,11 @@ impl Definition {
                 return Err(DefinitionError::Empty(control));
             }
             match row {
-                Row::Label { id } => {
+                // A row of pickers' label shares a group label's words, so its id is one.
+                Row::Label { id }
+                | Row::Pickers {
+                    label: Some(id), ..
+                } => {
                     if !is_id(id) {
                         return Err(DefinitionError::Id(id));
                     }
@@ -979,6 +1096,12 @@ impl Definition {
                     }
                 }
                 _ => {}
+            }
+            if let Row::Pickers { pickers: [], .. } = row {
+                return Err(DefinitionError::NoPickers);
+            }
+            if let Some(picker) = row.pickers().iter().find(|id| self.picker(id).is_none()) {
+                return Err(DefinitionError::UnknownPicker(picker));
             }
             for &id in row.controls() {
                 let Some(control) = self.control(id) else {
@@ -1103,6 +1226,50 @@ impl Definition {
                     rows,
                 });
             }
+        }
+        let mut pickers = BTreeSet::new();
+        for picker in self.pickers {
+            if !is_id(picker.id) {
+                return Err(DefinitionError::Id(picker.id));
+            }
+            if !pickers.insert(picker.id) {
+                return Err(DefinitionError::DuplicatePicker(picker.id));
+            }
+            self.check_picker(picker, &settings)?;
+            // Counted where they are named, so a row naming one twice shows it twice.
+            let rows = placed
+                .iter()
+                .flat_map(|placed| placed.row.pickers())
+                .filter(|&&id| id == picker.id)
+                .count();
+            if rows != 1 {
+                return Err(DefinitionError::PickerRows {
+                    picker: picker.id,
+                    rows,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether a picker's writes are controls of the module and its tools tool settings
+    /// of it, `settings` being their ids, each once.
+    fn check_picker(
+        &self,
+        picker: &Picker,
+        settings: &BTreeSet<&str>,
+    ) -> Result<(), DefinitionError> {
+        let writes: BTreeSet<_> = picker.writes.iter().collect();
+        let writes_hold = writes.len() == picker.writes.len()
+            && picker.writes.iter().all(|id| self.control(id).is_some());
+        if !writes_hold {
+            return Err(DefinitionError::PickerWrites(picker.id));
+        }
+        let tools: BTreeSet<_> = picker.tools.iter().collect();
+        let tools_hold = tools.len() == picker.tools.len()
+            && picker.tools.iter().all(|id| settings.contains(id));
+        if !tools_hold {
+            return Err(DefinitionError::PickerTools(picker.id));
         }
         Ok(())
     }
@@ -1567,6 +1734,7 @@ mod tests {
         after: &[],
         presets: &[],
         views: &[],
+        pickers: &[],
     };
 
     fn control(id: &str) -> &'static Control {
@@ -1691,6 +1859,7 @@ mod tests {
         after: &[Row::Toggle { control: "mask" }],
         presets: &[],
         views: &[],
+        pickers: &[],
     };
 
     /// [`PAGE`] with its first tab's rows in place of its own.
@@ -2199,6 +2368,120 @@ mod tests {
         );
     }
 
+    /// A picker writing `contrast` and `detail` and reading the chart, as Exposure's
+    /// writes its exposure and black and reads its area mode and target.
+    const LEVEL: Picker = Picker {
+        id: "level",
+        operation: "bilat",
+        kind: PickerKind::Area,
+        denoise: false,
+        output: false,
+        space: Space::Operation,
+        keep: false,
+        writes: &["contrast", "detail"],
+        tools: &["chart"],
+    };
+
+    /// [`PAGE`] with `pickers`, the chart's setting and `rows` on its first tab.
+    fn picking(pickers: &[Picker], rows: &[Row]) -> Result<(), DefinitionError> {
+        let mut all = vec![Row::ToolSetting(CHART)];
+        all.extend(rows.iter().cloned());
+        Definition {
+            pickers: Box::leak(pickers.into()),
+            ..page(with_mode(&all))
+        }
+        .check()
+    }
+
+    #[test]
+    fn a_picker_is_in_exactly_one_row_a_quad_or_a_row_of_pickers() {
+        const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
+        const QUAD: Row = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        assert_eq!(QUAD.pickers(), ["level"]);
+        assert_eq!(picking(&[LEVEL], &[QUAD]), Ok(()));
+        let buttons = |label, pickers: &[&'static str]| Row::Pickers {
+            label,
+            pickers: Box::leak(pickers.into()),
+        };
+        // A row of pickers shows no control, with a label or none.
+        let row = buttons(Some("auto_tune"), &["level"]);
+        assert!(row.controls().is_empty());
+        assert_eq!(row.pickers(), ["level"]);
+        assert_eq!(picking(&[LEVEL], &[CONTRAST, row.clone()]), Ok(()));
+        let unlabelled = buttons(None, &["level", "spot"]);
+        let spot = Picker {
+            id: "spot",
+            ..LEVEL
+        };
+        assert_eq!(picking(&[LEVEL, spot], &[CONTRAST, unlabelled]), Ok(()));
+        // Pickers are a namespace of their own: one takes its quad's control's id.
+        let contrast = Picker {
+            id: "contrast",
+            ..LEVEL
+        };
+        let own = Row::Slider(Slider::new("contrast").quad(Quad::Picker("contrast")));
+        assert_eq!(picking(&[contrast], &[own]), Ok(()));
+        let rows = |rows| {
+            Err(DefinitionError::PickerRows {
+                picker: "level",
+                rows,
+            })
+        };
+        assert_eq!(picking(&[LEVEL], &[CONTRAST]), rows(0));
+        assert_eq!(picking(&[LEVEL], &[QUAD, row.clone()]), rows(2));
+        let twice = buttons(None, &["level", "level"]);
+        assert_eq!(picking(&[LEVEL], &[CONTRAST, twice]), rows(2));
+        assert_eq!(
+            picking(&[], &[QUAD]),
+            Err(DefinitionError::UnknownPicker("level"))
+        );
+        assert_eq!(
+            picking(&[LEVEL], &[QUAD, buttons(None, &[])]),
+            Err(DefinitionError::NoPickers)
+        );
+        assert_eq!(
+            picking(&[LEVEL], &[CONTRAST, buttons(Some("Auto"), &["level"])]),
+            Err(DefinitionError::Id("Auto"))
+        );
+        // Its label is a group label, sharing its words, so never one's id twice.
+        let label = Row::Label { id: "auto_tune" };
+        assert_eq!(
+            picking(&[LEVEL], &[CONTRAST, label, row]),
+            Err(DefinitionError::DuplicateLabel("auto_tune"))
+        );
+    }
+
+    #[test]
+    fn a_picker_writes_the_module_s_controls_and_reads_its_tool_settings_each_once() {
+        let quad = |picker| Row::Slider(Slider::new("contrast").quad(Quad::Picker(picker)));
+        let one = |picker: Picker| picking(&[picker], &[quad(picker.id)]);
+        // One that only shows writes nothing and reads nothing.
+        let shows = Picker {
+            writes: &[],
+            tools: &[],
+            ..LEVEL
+        };
+        assert_eq!(one(shows), Ok(()));
+        let named = Picker {
+            id: "Level",
+            ..LEVEL
+        };
+        assert_eq!(one(named), Err(DefinitionError::Id("Level")));
+        assert_eq!(
+            picking(&[LEVEL, LEVEL], &[quad("level")]),
+            Err(DefinitionError::DuplicatePicker("level"))
+        );
+        let writes = |writes| one(Picker { writes, ..LEVEL });
+        let wrong = Err(DefinitionError::PickerWrites("level"));
+        assert_eq!(writes(&["gamma"]), wrong);
+        assert_eq!(writes(&["contrast", "contrast"]), wrong);
+        let tools = |tools| one(Picker { tools, ..LEVEL });
+        let wrong = Err(DefinitionError::PickerTools("level"));
+        // A tool setting is a row's, never a control.
+        assert_eq!(tools(&["mode"]), wrong);
+        assert_eq!(tools(&["chart", "chart"]), wrong);
+    }
+
     #[test]
     fn a_preset_row_writes_controls_the_module_has_and_is_in_one_row_at_most() {
         const AMOUNT: Row = Row::Slider(Slider::new("amount"));
@@ -2632,6 +2915,7 @@ mod tests {
             after: &[],
             presets: &[],
             views: &[],
+            pickers: &[],
         };
         assert_eq!(
             with(TWICE).check(),
@@ -2699,6 +2983,7 @@ mod tests {
             after: &[],
             presets: &[],
             views: &[],
+            pickers: &[],
         };
         assert_eq!(with(&CONTROLS[..1], VIEWED).check(), Ok(()));
         assert_eq!(with(&CONTROLS[..1], ALONE).check(), Ok(()));

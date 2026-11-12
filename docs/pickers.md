@@ -2,7 +2,7 @@
 
 A colour picker reads the colour of a point or an area of the photo. A module's picker turns what it reads into the module's controls: Exposure's sets the exposure that maps the area to a target lightness, White balance's the coefficients that make it neutral. The Colour picker module shows what the photo holds under a point or an area, the live sample, and keeps numbered stored samples to compare. This document describes them as one API: the session's commands and events, how the engine measures on the GPU, how a module declares its pickers and what it does with a reading, the picker button and the area on the photo, the Colour picker module, and how the work is built. The session's other commands and events are in [session-protocol.md](session-protocol.md) and [events.md](events.md); history's steps in [history.md](history.md).
 
-**Status.** [Decision 79](decisions/0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md) records the design, with the options considered. Built, 79.1 of [The plan](#the-plan): the Colour picker module's own picker through the session, `Command::Picker` with `On`, `Point`, `Area`, `Switch`, `Reset` and `Off`, and `Event::Picker` with its frame part; its region kept in the original image's coordinates through the geometry; the reduction's `picker_rgba` and `picker_combine` on the frame; the staging pair the scopes share, `readback.rs`; `Region`, `Stats` and `PickKeys` in the modules crate. The rest is planned in Phase 2, in the pull requests of The plan: module pickers, stored samples, the mosaic, denoise and the other spaces, and everything the app draws; the modules' definitions hold their picker quads (`Quad::Picker`), which the panel does not draw, and the rows darktable gives the pickers' settings are drawn disabled (`Row::ToolSetting`, `Row::Action`).
+**Status.** [Decision 79](decisions/0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md) records the design, with the options considered. Built, 79.1 of [The plan](#the-plan): the Colour picker module's own picker through the session, `Command::Picker` with `On`, `Point`, `Area`, `Switch`, `Reset` and `Off`, and `Event::Picker` with its frame part; its region kept in the original image's coordinates through the geometry; the reduction's `picker_rgba` and `picker_combine` on the frame; the staging pair the scopes share, `readback.rs`; `Region`, `Stats` and `PickKeys` in the modules crate. Built, 79.2: the modules crate's side, [Declaring pickers](#declaring-pickers), `Definition::pickers` with their checks, `Quad::Picker(id)`, `Row::Pickers` and `Module::pick`, `testing::Sample`'s three pickers, and Exposure's, Colour balance RGB's six and AgX's four slider pickers declared and named by their quads, none picking yet. The rest is planned in Phase 2, in the pull requests of The plan: module pickers in the session, each module's pick, White balance's and Colour calibration's pickers and AgX's Auto tune levels with their rows, stored samples, the mosaic, denoise and the other spaces, and everything the app draws; the panel draws no quad or picker row yet, and the rows darktable gives the pickers' settings are drawn disabled (`Row::ToolSetting`, `Row::Action`).
 
 ## What it serves
 
@@ -166,12 +166,12 @@ pub struct PickKeys {
 }
 
 pub enum PickerCommand {
-    On { picker: PickerRef, area: bool, keys: PickKeys, tools: Vec<(&'static str, Value)>, channel: Option<&'static str> },
+    On { picker: PickerRef, area: bool, keys: PickKeys, tools: Vec<(&'static str, ControlValue)>, channel: Option<&'static str> },
     Point { at: [f32; 2], done: bool, keys: PickKeys },
     Area { from: [f32; 2], to: [f32; 2], done: bool, keys: PickKeys },
     Switch,
     Reset,
-    Tools { module: &'static str, tools: Vec<(&'static str, Value)> },
+    Tools { module: &'static str, tools: Vec<(&'static str, ControlValue)> },
     Channel { channel: Option<&'static str> },
     Off,
 }
@@ -188,7 +188,7 @@ pub enum PickerCommand {
 | `Channel { channel }` | The channel tab the active picker's module shows changed, as the client sends `tools`; kept for its next pick, applying nothing, as darktable's tab switch applies nothing (`rgblevels.c:756-766`) |
 | `Off` | The active picker off; its point and area kept for its next `On` |
 
-- **Built so far:** `On` is refused for `PickerRef::Module` as `UnknownPicker` until module pickers come, as no module declares one; `Point` and `Area` set the active picker's point or area and make it measure that kind, its other place kept; `Off` with no picker on changes nothing and sends nothing; the keys are taken and read by no picker yet.
+- **Built so far:** `On` for `PickerRef::Module` is refused as `UnknownPicker` until 79.3, the session running no module's picker yet, declared or not; `Point` and `Area` set the active picker's point or area and make it measure that kind, its other place kept; `Off` with no picker on changes nothing and sends nothing; the keys are taken and read by no picker yet.
 - **Refused,** each as `SessionError::Refused` with the command's number: `On` before the photo is live (`NotLive`) or, for a module's picker, on a photo open for viewing only (`ViewOnly`), as commands on the edit are (decision 77); a picker no module declares, or whose operation the plan lacks after its module is turned on (`UnknownPicker`); a point or area command, `Switch` or `Reset` with no picker on (`NoPicker`); `Tools` naming settings the module's pickers do not read (`UnknownTool`).
 - **The region** is in the photo's coordinates, clamped to 0 to 1. A drag sends its steps with `done: false` and its release with `done: true`; the session makes the steps one gesture.
 - **Keys** ride with every command that can apply a reading, so a module reads them as darktable reads the modifiers when its reading arrives: Colour balance RGB's hue picker takes the colour itself with `command`, else its opposite (`colorbalancergb.c:1289-1290`); RGB curve's create-curve picker makes a positive curve with `command`, a negative one with `shift` (`rgbcurve.c:557-564`).
@@ -314,9 +314,11 @@ A module's definition lists its pickers, each darktable's `dt_color_picker_new` 
 
 ```rust
 pub struct Picker {
-    /// snake_case and unique among the module's controls, preset rows and pickers.
+    /// snake_case and unique among the module's pickers, a namespace of their own: one on
+    /// a slider's quad takes its control's id, as Exposure's `exposure`.
     pub id: &'static str,
-    /// The operation whose input, and with `output` output, it reads: one the module owns.
+    /// The operation whose input, and with `output` output, it reads: one the module owns
+    /// a parameter of.
     pub operation: &'static str,
     /// darktable's POINT, AREA or POINT_AREA.
     pub kind: PickerKind,
@@ -338,9 +340,9 @@ pub enum PickerKind { Point, Area, PointArea }
 pub enum Space { Operation, Lch, Hsl, Jzczhz }
 ```
 
-- **`Definition::pickers`** holds them. `Definition::check` holds each to its module: the operation one the module owns, `writes` among its controls, `tools` among its tool settings, a mosaic read only in `Space::Operation` with no denoise (darktable's denoise is 4-channel only), and each picker in exactly one row.
+- **`Definition::pickers`** holds them. `Definition::check` holds each to its module: `writes` among its controls and `tools` among its tool settings, each once, and each picker in exactly one row, a row of pickers holding at least one. `check::accept`, which knows the operations, holds the rest: the operation one the module owns a parameter of, and a mosaic, the raw stage's, read only in `Space::Operation` with no denoise (darktable's denoise is 4-channel only).
 - **Where its button sits,** by its row:
-  - **`Quad::Picker(id)`** on a slider row or a choice row: darktable's quad (`dt_color_picker_new` on a bauhaus widget, `color_picker_proxy.c:411-427`), its tooltip darktable's quad tooltip, "pick color from image" where the module sets none;
+  - **`Quad::Picker(id)`** on a slider row, and on a choice row once Filmic RGB brings one ([Later modules](#later-modules)): darktable's quad (`dt_color_picker_new` on a bauhaus widget, `color_picker_proxy.c:411-427`), its tooltip darktable's quad tooltip, "pick color from image" where the module sets none;
   - **`Row::Pickers { label, pickers }`**, one line: an optional label at the start and the picker buttons at the row's end, darktable's toggle buttons packed in a box (`:394-410`): AgX's Auto tune levels, RGB levels' black, grey and white, RGB curve's two, Colour calibration's readout row, with its CCT text and swatch when that row comes.
 - **`Module::pick`,** a provided method that gives nothing for a picker the module does not run:
 
@@ -351,11 +353,17 @@ fn pick(
     reading: &Reading,           // input and, with `output`, output Stats
     values: &Controls,           // every control, the edit's over the defaults
     image: &ImageContext,        // the camera's matrices and the pipe's profiles
-    tools: &[(&str, Value)],
+    tools: &[(&str, ControlValue)],
     channel: Option<&str>,       // the channel tab the module shows
     last: Option<&Reading>,      // the module's last reading applied
     keys: PickKeys,
 ) -> Option<Picked>;
+
+pub struct Reading {
+    pub input: Stats,
+    /// With the picker's `output` only.
+    pub output: Option<Stats>,
+}
 
 pub struct Picked {
     /// Each control it writes with its value, within `writes`.
@@ -365,12 +373,22 @@ pub struct Picked {
 }
 
 pub struct Shown {
-    /// The input patch: its colour for the screen, as sRGB, and its L, C and h.
+    /// The input patch.
     pub patch: Option<Patch>,
     /// Tool settings measure mode set.
-    pub tools: Vec<(&'static str, Value)>,
+    pub tools: Vec<(&'static str, ControlValue)>,
+}
+
+pub struct Patch {
+    /// Its colour for the screen: sRGB, encoded, 0 to 1.
+    pub srgb: [f32; 3],
+    /// Its L, C and h: CIE LCh of Lab D50, h in degrees.
+    pub lch: [f32; 3],
 }
 ```
+
+- **A reading** always holds the input: a region that misses the operation's image measures nothing ([Events](#events), `ModuleReading::input`), and nothing is picked from it.
+- **Tool settings' values** are `ControlValue`s, as a `Row::ToolSetting`'s kind is a control's.
 
 Pure, as `bind` and `follow` are, so the module's tests drive it with readings and no GPU. **The module's last reading** is darktable's per-module `picked_color`, and RGB levels' `last_picked_color` (`rgblevels.c:80`, `:788-796`), one per module as darktable keeps it, shared by its pickers: the session keeps each module's last reading applied, for the photo, cleared as a photo opens, passes it as `last`, and applies it again on `Tools`. The module's follow writes (decision 27) do not run after a pick: a pick writes what darktable's `color_picker_apply` writes, every control it keeps consistent included, as a preset row's option does.
 
@@ -565,7 +583,7 @@ Phase 2 ([roadmap.md](roadmap.md#pickers)), one pull request each, each reviewed
 | # | Delivers | Touches | Out of scope |
 | --- | --- | --- | --- |
 | 79.1 | Built: the reduction kernel, `picker_rgba` and `picker_combine`, on the frame; `Region`, `Stats` and `PickKeys` in the modules crate; `PickerCommand` for `PickerRef::ColourPicker` alone, with `On`, `Point`, `Area`, `Switch`, `Reset` and `Off`; regions mapped through orientation; `Event::Picker` with its frame part; the staging pair shared as `readback.rs`; the frame samples' cost measured at 2400×1600 on the M4 | modules, engine | module pickers, stored samples, the app |
-| 79.2 | The modules crate's side: `Picker`, `Definition::pickers`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` with its `channel` and `last`, `Picked` and `Shown`, `check`'s rules, `testing::Sample`'s pickers; the built definitions' quads naming their pickers | modules | the engine, every real module's pick |
+| 79.2 | Built: the modules crate's side: `Picker`, `Definition::pickers`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` with its `channel` and `last`, `Picked` and `Shown`, `check`'s rules, `testing::Sample`'s pickers; the built definitions' quads naming their pickers | modules | the engine, every real module's pick |
 | 79.3 | The engine's side: the reduction at an operation's input and output, `picker_mosaic`, denoise; `On`'s capture and the operation as the edited instance; sample-only renders through `Pipeline::writes`; applying a pick as a gesture, the module's last reading; turning off; `Tools` and `Channel`; the moved area's budgets measured on the M4 | engine | other spaces, the app |
 | 79.4 | Built: the design system's on-photo overlay primitives ([gui.md](gui.md#on-photo-overlays)): the line in its three weights, the square and circle handles, the sampled-colour centre and the focus ring on the photo, in points over a photo's rectangle, in the gallery with snapshots over light, dark and busy photos | ui | any tool's marks |
 | 79.5 | `PickerButton` with its states, keys and AccessKit, and the picker's marks drawn with 79.4's primitives, in the gallery with snapshots | ui | the app |

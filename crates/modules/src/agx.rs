@@ -57,7 +57,8 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Quad, Range, Row, Slider, Tab, Unit, slider_step,
+    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Range, Row, Slider,
+    Space, Tab, Unit, slider_step,
 };
 use crate::{Base, Controls, Module, ModuleValues, Owned, Setting};
 
@@ -358,9 +359,40 @@ const fn soft(control: &'static str, min: f32, max: f32) -> Row {
     Row::Slider(Slider::new(control).soft(min, max))
 }
 
-/// An exposure or the pivot, with darktable's picker, over its soft range.
-const fn picked(control: &'static str, (min, max): (f32, f32)) -> Row {
-    Row::Slider(Slider::new(control).quad(Quad::Picker).soft(min, max))
+/// An exposure or the pivot, with darktable's picker `picker`, over its soft range.
+const fn picked(control: &'static str, picker: &'static str, (min, max): (f32, f32)) -> Row {
+    Row::Slider(
+        Slider::new(control)
+            .quad(Quad::Picker(picker))
+            .soft(min, max),
+    )
+}
+
+/// darktable's pickers on sliders (`DT_COLOR_PICKER_AREA | DT_COLOR_PICKER_DENOISE`): white
+/// or black relative exposure from the area's largest maximum or smallest minimum, the
+/// pivot kept within the new range; the pivot from the mean's luminance, and with Pivot
+/// target output also the output that keeps its brightness. Auto tune levels, both
+/// exposures at once, is still an action ([`SETTINGS`]).
+static PICKERS: [Picker; 4] = [
+    picker("white", &[WHITE, PIVOT]),
+    picker("black", &[BLACK, PIVOT]),
+    picker("pivot", &[PIVOT]),
+    picker("pivot_output", &[PIVOT, "curve_pivot_y_linear_output"]),
+];
+
+/// A denoised area picker of the module's input writing `writes`.
+const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
+    Picker {
+        id,
+        operation: AGX,
+        kind: PickerKind::Area,
+        denoise: true,
+        output: false,
+        space: Space::Operation,
+        keep: false,
+        writes,
+        tools: &[],
+    }
 }
 
 /// A primary's attenuation or purity boost, unfilled, as darktable's `set_feedback(0)`
@@ -380,8 +412,8 @@ static SETTINGS: [Row; 15] = [
     Row::Label {
         id: "input_exposure_range",
     },
-    picked(WHITE, (1.0, 10.0)),
-    picked(BLACK, (-20.0, -1.0)),
+    picked(WHITE, "white", (1.0, 10.0)),
+    picked(BLACK, "black", (-20.0, -1.0)),
     // darktable sets only its soft maximum, 0.5; its soft minimum is its hard one.
     soft(SCALING, -50.0, 50.0),
     // darktable's picker setting both exposures, and its camera button on the same line.
@@ -395,8 +427,8 @@ static SETTINGS: [Row; 15] = [
         id: "basic_curve_parameters",
     },
     // The pivot's track spans the input range, here its default (`Agx::range`).
-    picked(PIVOT, (-10.0, 6.5)),
-    Row::Slider(Slider::new("curve_pivot_y_linear_output").quad(Quad::Picker)),
+    picked(PIVOT, "pivot", (-10.0, 6.5)),
+    Row::Slider(Slider::new("curve_pivot_y_linear_output").quad(Quad::Picker("pivot_output"))),
     soft("curve_contrast_around_pivot", 0.1, 5.0),
     soft("curve_shoulder_power", 1.0, 5.0),
     soft("curve_toe_power", 1.0, 5.0),
@@ -513,6 +545,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &PICKERS,
 };
 
 /// Every parameter of `agx`: the module is darktable's and owns them all, each with its
@@ -603,7 +636,7 @@ mod tests {
 
     use super::*;
     use crate::check;
-    use crate::testing::DarktableSlider;
+    use crate::testing::{DarktablePicker, DarktableSlider};
     use crate::values::ControlValue;
 
     fn bind(set: &[(&str, ControlValue)]) -> Vec<Setting> {
@@ -897,6 +930,37 @@ mod tests {
             let darktable = DARKTABLE.iter().find(|s| s.id == p.control).unwrap();
             assert_eq!(darktable.factor, p.factor, "{}", p.control);
         }
+    }
+
+    /// darktable's pickers on sliders (`agx.c:1823`, `:1832`, `:2043`, `:2052`), each a
+    /// denoised area: white and black relative exposure, the pivot kept within the new
+    /// range (`:1103-1133`, `:1021-1040`), and the pivot, with its target output too
+    /// (`:1171-1220`). Auto tune levels (`:2072`) is still an action.
+    #[test]
+    fn its_pickers_are_darktable_s() {
+        const fn area(
+            id: &'static str,
+            slider: &'static str,
+            writes: &'static [&'static str],
+        ) -> DarktablePicker {
+            DarktablePicker {
+                id,
+                slider,
+                kind: PickerKind::Area,
+                denoise: true,
+                output: false,
+                writes,
+                tools: &[],
+            }
+        }
+        const OUTPUT: &str = "curve_pivot_y_linear_output";
+        let darktable = [
+            area("white", WHITE, &[WHITE, PIVOT]),
+            area("black", BLACK, &[BLACK, PIVOT]),
+            area("pivot", PIVOT, &[PIVOT]),
+            area("pivot_output", OUTPUT, &[PIVOT, OUTPUT]),
+        ];
+        assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
     }
 
     /// The pivot's slider follows the input range as darktable's does (decision 30): it
