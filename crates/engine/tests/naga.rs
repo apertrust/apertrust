@@ -28,11 +28,19 @@ use naga::{AddressSpace, Block, Expression, Function, Handle, Module, Statement,
 fn every_engine_kernel_validates() {
     for kernel in engine_kernels() {
         let (module, _) = validate(kernel);
-        assert!(
-            module.entry_points.iter().any(|e| e.name == "main"),
-            "{}: no `main` entry point",
-            kernel.name
-        );
+        // `main`, but for the pickers' reduction, whose two passes are named for what
+        // they do (docs/pickers.md, The kernel).
+        let entry_points: &[&str] = match kernel.name {
+            "picker" => &["picker_rgba", "picker_combine"],
+            _ => &["main"],
+        };
+        for entry_point in entry_points {
+            assert!(
+                module.entry_points.iter().any(|e| e.name == *entry_point),
+                "{}: no `{entry_point}` entry point",
+                kernel.name
+            );
+        }
     }
 }
 

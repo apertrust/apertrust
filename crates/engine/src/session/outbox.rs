@@ -193,6 +193,7 @@ fn kind(event: &Event) -> &'static str {
         Event::Values(_) => "Values",
         Event::Frame(_) => "Frame",
         Event::Scopes(_) => "Scopes",
+        Event::Picker(_) => "Picker",
         Event::Saved { .. } => "Saved",
         Event::Job { event, .. } => match event {
             JobEvent::Added { .. } => "Job Added",
@@ -247,6 +248,8 @@ impl fmt::Display for Line<'_> {
             Event::Values(values) => write!(f, ", through {}", values.through)?,
             Event::Frame(frame) => write!(f, ", through {}", frame.through)?,
             Event::Scopes(reading) => write!(f, ", through {}", reading.through)?,
+            Event::Picker(Some(reading)) => write!(f, ", through {}", reading.through)?,
+            Event::Picker(None) => f.write_str(", off")?,
             Event::Saved { through, .. } | Event::ExportPreview { through, .. } => {
                 write!(f, ", through {through}")?
             }

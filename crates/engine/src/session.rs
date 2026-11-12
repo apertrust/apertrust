@@ -58,6 +58,12 @@
 //! histogram and the waveform when asked. A scopes failure never costs a frame: it is
 //! reported once, and the session goes on without them.
 //!
+//! While a colour picker is on ([`Command::Picker`], decision 79; [`crate::picker`]), the
+//! frame is measured under it in a submission of its own after the scopes' count, and on
+//! the frame shown when its point or area moves, read back the same way and sent as
+//! [`Event::Picker`] after the frame it measured. The pickers are view state, never in the
+//! edit; a failure turns them off for the session, never the frame.
+//!
 //! The session runs background jobs on darktable's control (decision 57,
 //! [`apertrust_base::jobs`]), one control per session: a command starts a job, whose
 //! body runs on a worker and hands its GPU work to the engine thread ([`crate::jobs`]).
@@ -80,6 +86,7 @@
 mod cache;
 pub(crate) mod open;
 mod outbox;
+mod pickers;
 mod thumbnail;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -115,6 +122,9 @@ use crate::gpu::{GpuContext, SubmitGate};
 use crate::jobs::{self, Background, Queue, Tasks, Waiting};
 pub use crate::jobs::{JobEvent, JobId};
 use crate::names::Shot;
+pub use crate::picker::{
+    FrameReading, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Stats,
+};
 use crate::pipeline::{self, Kernels, Limits, Pipe, Pipeline, PlanError};
 use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
@@ -212,6 +222,14 @@ pub enum Command {
     /// until a client first asks, count nothing. Asking for what the frame shown was not
     /// counted for counts that frame again, without rendering.
     Scopes(Option<Graphs>),
+    /// The active colour picker (decision 79; `docs/pickers.md`): turned on, its point or
+    /// area moved, switched between them, reset or turned off, the Colour picker module's
+    /// alone so far. View state, never a command on the edit. Answered by
+    /// [`Event::Picker`]; `On` refused before the photo is live
+    /// ([`SessionError::NotLive`]) and for a picker no module declares
+    /// ([`SessionError::UnknownPicker`]), a point, an area, a switch or a reset with no
+    /// picker on ([`SessionError::NoPicker`]).
+    Picker(PickerCommand),
     /// Cancel a job, as its progress's cancel does (decision 57): a queued job never
     /// runs, and a running one stops at its body's next check, its GPU task dropped
     /// before its next step. Refused for a job that cannot be cancelled
@@ -319,6 +337,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::Close
         | Command::Resize { .. }
         | Command::Scopes(_)
+        | Command::Picker(_)
         | Command::CancelJob { .. }
         | Command::RetryJob { .. }
         | Command::Export { .. }
@@ -375,6 +394,10 @@ pub enum Event {
     /// What a frame holds, counted for the scopes, about a frame after it; `through`
     /// names the frame by the commands it includes.
     Scopes(Reading),
+    /// The active colour picker's reading (decision 79), after the frame it measured, as
+    /// it turns on and whenever its region or the frame's colour under it changes; `None`
+    /// as it turns off.
+    Picker(Option<PickerReading>),
     /// The edit was written to `path`, as it stood after the first `through` commands
     /// ([`Session::send`] numbers them).
     Saved {
@@ -435,6 +458,8 @@ pub enum Fact {
     Frame,
     /// What the frame shown holds: [`Event::Scopes`].
     Scopes,
+    /// The active colour picker's reading: [`Event::Picker`].
+    Picker,
     /// The Export dialog's feedback: [`Event::ExportPreview`], the latest answer kept.
     ExportPreview,
     /// A job's progress, by job.
@@ -459,6 +484,7 @@ impl Event {
             Event::Values(_) => Fact::Values,
             Event::Frame(_) => Fact::Frame,
             Event::Scopes(_) => Fact::Scopes,
+            Event::Picker(_) => Fact::Picker,
             Event::ExportPreview { .. } => Fact::ExportPreview,
             Event::Cache(_) => Fact::Cache,
             // Each of a job's values is a topic of its own, since each event carries only
@@ -721,6 +747,16 @@ pub enum SessionError {
     /// the rest of the session.
     #[error("the scopes are off: {0}")]
     Scopes(String),
+    /// [`PickerCommand::On`] named a picker no module declares.
+    #[error("no module has that colour picker")]
+    UnknownPicker,
+    /// A colour picker's point, area, switch or reset with no picker on.
+    #[error("no colour picker is on")]
+    NoPicker,
+    /// The colour pickers could not be measured or read back; they are off for the rest
+    /// of the session, and the frames go on without them.
+    #[error("the colour pickers are off: {0}")]
+    Pickers(String),
     /// [`Command::CancelJob`] named a job that cannot be cancelled: it goes on.
     #[error("job {job} cannot be cancelled")]
     NotCancellable { job: JobId },
@@ -895,10 +931,12 @@ impl Session {
                 let mut past_open = false;
                 loop {
                     // Blocks for the next command, then takes every other that has
-                    // arrived; while a scopes reading or a GPU task's step is on its way,
-                    // or a task waits for one, looks at the GPU between them, as often as
-                    // `GpuContext::wait` does.
-                    let polling = engine.reading() || engine.jobs.background.waiting();
+                    // arrived; while a scopes or picker reading or a GPU task's step is on
+                    // its way, or a task waits for one, looks at the GPU between them, as
+                    // often as `GpuContext::wait` does.
+                    let polling = engine.reading()
+                        || engine.pickers.pending()
+                        || engine.jobs.background.waiting();
                     // Else until the thumbnail is due, or a task asleep wakes, whichever is
                     // first.
                     let wake = (engine.jobs.background.wakes_at())
@@ -971,6 +1009,7 @@ impl Session {
                         }
                         // What arrived meanwhile, during the batch's render included.
                         events.extend(engine.scopes());
+                        events.extend(engine.picked());
                         engine.thumbnail_tick(false);
                         events
                     };
@@ -978,10 +1017,16 @@ impl Session {
                         Ok(events) => events,
                         Err(panic) => {
                             // Whatever it was doing may be half done: start again empty,
-                            // without saving what may be half an edit.
+                            // without saving what may be half an edit, the colour picker
+                            // off.
+                            let picking = engine.pickers.on();
                             engine.close();
                             let message = panic_message(panic.as_ref());
-                            vec![Event::Failed(SessionError::Panicked(message))]
+                            let mut events = vec![Event::Failed(SessionError::Panicked(message))];
+                            if picking {
+                                events.push(Event::Picker(None));
+                            }
+                            events
                         }
                     };
                     // The batch's events are one burst, one wake.
@@ -1369,6 +1414,8 @@ struct Engine {
     meter: Option<Meter>,
     /// Whether the scopes failed, which turns them off for the session.
     scopes_failed: bool,
+    /// The colour pickers (decision 79): view state, never in the edit.
+    pickers: pickers::Pickers,
     /// The session's jobs and the GPU tasks they hand it (decision 57).
     jobs: Jobs,
     /// The disk cache the client handed the session, kept within its limit (decision 76).
@@ -1760,6 +1807,7 @@ impl Engine {
             writer,
             graphs: None,
             meter: None,
+            pickers: Default::default(),
             scopes_failed: false,
             jobs,
             cache: None,
@@ -1846,6 +1894,7 @@ impl Engine {
             if let Some(meter) = &mut self.meter {
                 meter.discard();
             }
+            self.pickers.discard();
             events.push(Event::Failed(SessionError::Gpu(error)));
         }
         events
@@ -1926,6 +1975,7 @@ impl Engine {
         if let Some(meter) = &mut self.meter {
             meter.discard();
         }
+        self.pickers.clear();
     }
 
     /// Tells the export jobs whether a live frame now shares the GPU with them
@@ -1981,6 +2031,8 @@ impl Engine {
         let (mut values, mut render, mut save, mut cancelled) = (false, false, false, false);
         // Whether the scopes now count a graph the published frame was not counted for.
         let mut recount = false;
+        // Whether the active colour picker's region changed, to be measured on the frame.
+        let mut resample = false;
         for (at, command) in batch {
             self.applied += 1;
             // Values follow every change asked for, failed or not, so a client's own
@@ -1989,15 +2041,21 @@ impl Engine {
             let result = match command {
                 Command::Open(path) => {
                     // Its number, which its `Opened` or its failure carries. What was
-                    // asked for the photo before it is gone with it.
+                    // asked for the photo before it is gone with it, its picker turned
+                    // off.
+                    self.picker_off(&mut events);
                     self.open(path, self.applied, at);
                     (values, render, save, cancelled) = (false, false, false, false);
+                    resample = false;
                     Ok(())
                 }
-                // Its edit is saved and the photo dropped: nothing more is said of it.
+                // Its edit is saved and the photo dropped: nothing more is said of it but
+                // its picker turning off.
                 Command::Close => {
+                    self.picker_off(&mut events);
                     self.close_saving();
                     (values, render, save, cancelled) = (false, false, false, false);
+                    resample = false;
                     Ok(())
                 }
                 Command::Resize { width, height } => {
@@ -2014,6 +2072,9 @@ impl Engine {
                     self.graphs = graphs;
                     Ok(())
                 }
+                Command::Picker(command) => self
+                    .picker(command, &mut events)
+                    .map(|moved| resample |= moved),
                 Command::CancelJob { job } => self.jobs.cancel(job),
                 Command::RetryJob { job } => self.retry(job),
                 Command::Export {
@@ -2112,9 +2173,14 @@ impl Engine {
             // saved without writing it, unless its last write has failed by then.
             self.save_held();
         }
+        // Whether the batch published a frame, which the colour picker measured as it did.
+        let mut published = false;
         if render {
             match self.render(since, &mut events) {
-                Ok(Some(frame)) => events.push(Event::Frame(frame)),
+                Ok(Some(frame)) => {
+                    published = true;
+                    events.push(Event::Frame(frame));
+                }
                 Ok(None) => {}
                 Err(error) => events.push(Event::Failed(error)),
             }
@@ -2123,6 +2189,16 @@ impl Engine {
             let buffer = display.buffers[display.published].clone();
             let (size, through) = ([display.size.0, display.size.1], display.through);
             self.count(&buffer, size, through, &mut events);
+        }
+        if resample
+            && !published
+            && let Some(display) = &self.display
+        {
+            // The frame shown, measured under the picker's new region, where no new frame
+            // was: none rendered, or the render failed or had nothing to show.
+            let buffer = display.buffers[display.published].clone();
+            let size = [display.size.0, display.size.1];
+            self.sample(&buffer, size, &mut events);
         }
         events
     }
@@ -2282,6 +2358,7 @@ impl Engine {
             | Command::Close
             | Command::Resize { .. }
             | Command::Scopes(_)
+            | Command::Picker(_)
             | Command::CancelJob { .. }
             | Command::RetryJob { .. }
             | Command::Export { .. }
@@ -3152,8 +3229,10 @@ impl Engine {
         display.published = next;
         display.through = self.applied;
         let buffer = display.buffers[next].clone();
-        // Counted after the copy, if a client asks; the reading comes later.
+        // Counted after the copy, if a client asks, then measured under the colour picker
+        // on; the readings come later.
         self.count(&buffer, [desc.width, desc.height], self.applied, events);
+        self.sample(&buffer, [desc.width, desc.height], events);
         Ok(Some(Frame {
             buffer,
             width: desc.width,
@@ -7701,6 +7780,9 @@ mod tests {
         remove(&path);
     }
 
+    /// The colour pickers through the session (decision 79).
+    mod pickers;
+
     /// The raw.pixls.us corpus's Canon EOS 5D Mark IV sample, where
     /// `tools/fetch-raw-corpus.sh` puts it or under `APERTRUST_RAW_CORPUS`.
     fn corpus_raw() -> PathBuf {
@@ -8872,6 +8954,7 @@ mod tests {
             Event::Values(_) => Topic::Fact(Fact::Values),
             Event::Frame(_) => Topic::Fact(Fact::Frame),
             Event::Scopes(_) => Topic::Fact(Fact::Scopes),
+            Event::Picker(_) => Topic::Fact(Fact::Picker),
             Event::Saved { .. } => Topic::Notice,
             Event::Job { event, .. } => match *event {
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => Topic::Notice,
@@ -8967,6 +9050,7 @@ mod tests {
                 }),
             },
             Event::Failed(SessionError::Stopped),
+            Event::Picker(None),
             Event::Cache(CacheEvent::NoCache),
             Event::Cache(CacheEvent::sizes(
                 Default::default(),
@@ -9036,7 +9120,7 @@ mod tests {
             assert!(line.ends_with(kind), "{line}");
         }
         // Every variant, the ones a session sent among them, and every job event.
-        assert_eq!(seen.len(), 12, "{events:?}");
+        assert_eq!(seen.len(), 13, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.

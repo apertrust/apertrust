@@ -21,18 +21,14 @@
 //! graphs asked for, the histogram, the waveform and the vectorscope (`slang/scopes.slang`
 //! says what each count holds). The vectorscope is darktable's default (`Plane`).
 //!
-//! A [`Meter`] submits the count of a frame, copies the counts into whichever of its two
-//! staging buffers is free, maps that buffer and returns. A mapping that has completed is
-//! picked up by [`Meter::poll`], which never waits. A staging buffer stays busy from its
-//! copy until its reading has been read and it is unmapped; taking it back sooner would
-//! abort its mapping and drop that reading, and during a drag, when each frame comes
-//! before the last one's mapping completes, could drop every reading. So two take turns,
-//! and while both are busy the counts stay in the counts buffer, each frame's replacing
-//! the last's, and the latest is copied as soon as one frees: the last frame's reading
-//! always arrives, and the scopes lag the photo by about a frame.
+//! A [`Meter`] submits the count of a frame and reads the counts back through the staging
+//! pair it shares with the colour pickers ([`crate::readback`]): two staging buffers in
+//! turn, mapped without waiting and picked up by [`Meter::poll`], the counts waiting in
+//! the counts buffer while both are busy, each frame's replacing the last's. The last
+//! frame's reading always arrives, and the scopes lag the photo by about a frame.
 
 use std::num::NonZeroU64;
-use std::sync::{Arc, OnceLock, mpsc};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use apertrust_color::illuminants::D50_XY;
@@ -41,6 +37,7 @@ use apertrust_plugin::{Kernel, PassHeader};
 
 use crate::compute::{ComputeError, GpuImage, GpuTimer, ImageKernel, POLL_INTERVAL};
 use crate::gpu::GpuContext;
+use crate::readback::Readback;
 
 /// Generated from `slang/scopes.slang`.
 pub const KERNEL: Kernel = Kernel {
@@ -241,43 +238,8 @@ struct Measured {
     height: u32,
     graphs: Graphs,
     submitted: Instant,
-    /// Counts in the order they were submitted, which readings keep: a frame counted again
-    /// shares its `through` with the count before it.
-    sequence: u64,
     /// Whether a pass ran and its ticks were resolved, so the reading has a GPU time.
     timed: bool,
-    /// The meter's generation when it was counted: one [`Meter::discard`] has passed is
-    /// dropped when it arrives.
-    generation: u64,
-}
-
-enum Staging {
-    Free,
-    Mapping {
-        measured: Measured,
-        done: mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
-        /// The mapping's result, once its callback has been seen.
-        result: Option<Result<(), wgpu::BufferAsyncError>>,
-    },
-}
-
-impl Staging {
-    /// Whether the mapping's callback has fired, looked at without waiting.
-    fn arrived(&mut self) -> bool {
-        let Staging::Mapping { done, result, .. } = self else {
-            return false;
-        };
-        if result.is_none() {
-            *result = match done.try_recv() {
-                Ok(mapped) => Some(mapped),
-                Err(mpsc::TryRecvError::Empty) => None,
-                // wgpu calls every callback, so this should not happen: count the mapping
-                // failed.
-                Err(mpsc::TryRecvError::Disconnected) => Some(Err(wgpu::BufferAsyncError)),
-            };
-        }
-        result.is_some()
-    }
 }
 
 /// Counts frames and reads the counts back through two staging buffers in turn, never
@@ -286,14 +248,8 @@ pub struct Meter {
     kernel: ImageKernel,
     uniform: wgpu::Buffer,
     counts: wgpu::Buffer,
-    staging: [(wgpu::Buffer, Staging); 2],
-    /// The latest frame counted while both staging buffers were mapping, whose counts are
-    /// still in the counts buffer.
-    waiting: Option<Measured>,
+    readback: Readback<Measured>,
     timer: Option<GpuTimer>,
-    /// The counts submitted so far.
-    sequence: u64,
-    generation: u64,
 }
 
 impl Meter {
@@ -315,24 +271,12 @@ impl Meter {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let staging = |label| {
-            let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: TICKS_BYTES + (ALL_WORDS * 4) as u64,
-                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            (buffer, Staging::Free)
-        };
         Ok(Self {
             kernel,
             uniform,
             counts,
-            staging: [staging("scopes staging 0"), staging("scopes staging 1")],
-            waiting: None,
+            readback: Readback::new(gpu, "scopes", TICKS_BYTES + (ALL_WORDS * 4) as u64),
             timer: GpuTimer::new(gpu, 1),
-            sequence: 0,
-            generation: 0,
         })
     }
 
@@ -359,16 +303,13 @@ impl Meter {
         through: u64,
     ) {
         let [width, height] = size;
-        self.sequence += 1;
         let mut measured = Measured {
             through,
             width,
             height,
             graphs,
             submitted: Instant::now(),
-            sequence: self.sequence,
             timed: false,
-            generation: self.generation,
         };
         let words = graphs.words();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -416,17 +357,11 @@ impl Meter {
                 measured.timed = true;
             }
         }
-        match self.free() {
-            Some(slot) => {
-                self.copy(&mut encoder, slot, words);
-                gpu.submit([encoder.finish()]);
-                self.map(slot, measured);
-            }
-            None => {
-                gpu.submit([encoder.finish()]);
-                self.waiting = Some(measured);
-            }
-        }
+        let (counts, timer) = (&self.counts, self.timer.as_ref());
+        let bytes = TICKS_BYTES + (words * 4) as u64;
+        (self.readback).submit(gpu, encoder, measured, bytes, |encoder, staging, bytes| {
+            copy(encoder, timer, counts, staging, bytes)
+        });
     }
 
     /// Adds the readings whose mappings have completed to `readings`, in the order they
@@ -439,67 +374,26 @@ impl Meter {
         gpu: &GpuContext,
         readings: &mut Vec<Reading>,
     ) -> Result<(), ComputeError> {
-        if !self.pending() {
-            return Ok(());
-        }
-        gpu.device.poll(wgpu::PollType::Poll)?;
-        let mut arrived: Vec<(u64, Reading)> = Vec::new();
-        let mut failed = None;
-        for (buffer, staging) in &mut self.staging {
-            if !staging.arrived() {
-                continue;
-            }
-            let Staging::Mapping {
-                measured,
-                result: Some(result),
-                ..
-            } = std::mem::replace(staging, Staging::Free)
-            else {
-                unreachable!("a mapping that arrived has its result");
-            };
-            if let Err(error) = result {
-                failed = Some(error);
-                continue;
-            }
-            let bytes = TICKS_BYTES + (measured.graphs.words() * 4) as u64;
-            let reading = match buffer.get_mapped_range(..bytes) {
-                Ok(view) => {
-                    let ticks: [u64; 2] =
-                        bytemuck::pod_read_unaligned(&view[..TICKS_BYTES as usize]);
-                    let words: Vec<u32> =
-                        bytemuck::pod_collect_to_vec(&view[TICKS_BYTES as usize..]);
-                    // Ticks the GPU did not give are no time: on the M4, a meter's first
-                    // count reads zero.
-                    let gpu_ms = match &self.timer {
-                        Some(timer) if measured.timed && ticks[1] > ticks[0] => {
-                            timer.milliseconds(ticks[0], ticks[1])
-                        }
-                        _ => f64::NAN,
-                    };
-                    Some(Reading::new(&measured, &words, gpu_ms))
-                }
-                // Mapped, as its callback said, so this should not happen.
-                Err(_) => {
-                    failed = Some(wgpu::BufferAsyncError);
-                    None
-                }
-            };
-            buffer.unmap();
-            if let Some(reading) = reading
-                && measured.generation == self.generation
-            {
-                arrived.push((measured.sequence, reading));
-            }
-        }
-        if let (Some(measured), Some(slot)) = (self.waiting, self.free()) {
-            let mut encoder = gpu.device.create_command_encoder(&Default::default());
-            self.copy(&mut encoder, slot, measured.graphs.words());
-            gpu.submit([encoder.finish()]);
-            self.map(slot, measured);
-            self.waiting = None;
-        }
-        arrived.sort_by_key(|&(sequence, _)| sequence);
-        for (_, reading) in arrived {
+        let (counts, timer) = (&self.counts, self.timer.as_ref());
+        let mut arrived = Vec::new();
+        let polled = self.readback.poll(
+            gpu,
+            |encoder, staging, bytes| copy(encoder, timer, counts, staging, bytes),
+            |measured, bytes| {
+                let ticks: [u64; 2] = bytemuck::pod_read_unaligned(&bytes[..TICKS_BYTES as usize]);
+                let words: Vec<u32> = bytemuck::pod_collect_to_vec(&bytes[TICKS_BYTES as usize..]);
+                // Ticks the GPU did not give are no time: on the M4, a meter's first count
+                // reads zero.
+                let gpu_ms = match timer {
+                    Some(timer) if measured.timed && ticks[1] > ticks[0] => {
+                        timer.milliseconds(ticks[0], ticks[1])
+                    }
+                    _ => f64::NAN,
+                };
+                arrived.push(Reading::new(&measured, &words, gpu_ms));
+            },
+        );
+        for reading in arrived {
             tracing::debug!(
                 target: "perf",
                 "counted scopes of {}×{}{}, read back after {:.1} ms",
@@ -514,27 +408,19 @@ impl Meter {
             );
             readings.push(reading);
         }
-        match failed {
-            Some(error) => Err(error.into()),
-            None => Ok(()),
-        }
+        polled
     }
 
     /// Whether a reading is still on its way: a staging buffer mapping, or counts waiting
     /// for one.
     pub fn pending(&self) -> bool {
-        self.waiting.is_some()
-            || self
-                .staging
-                .iter()
-                .any(|(_, staging)| matches!(staging, Staging::Mapping { .. }))
+        self.readback.pending()
     }
 
     /// Drops every reading on its way, as when the photo they measure closes: those
     /// mapping still arrive, and are dropped then.
     pub fn discard(&mut self) {
-        self.generation += 1;
-        self.waiting = None;
+        self.readback.discard();
     }
 
     /// Waits until every reading on its way has arrived, polling as
@@ -556,46 +442,23 @@ impl Meter {
     /// frame and returned without waiting for its mapping leaves it so.
     #[cfg(test)]
     pub(crate) fn awaits(&mut self, through: u64) -> bool {
-        self.waiting.is_some_and(|measured| measured.through == through)
-            || self.staging.iter_mut().any(|(_, staging)| {
-                let counts = matches!(staging, Staging::Mapping { measured, .. } if measured.through == through);
-                counts && !staging.arrived()
-            })
+        self.readback.awaits(|measured| measured.through == through)
     }
+}
 
-    /// A staging buffer that is neither mapping nor mapped.
-    fn free(&self) -> Option<usize> {
-        self.staging
-            .iter()
-            .position(|(_, staging)| matches!(staging, Staging::Free))
+/// Records copying the ticks of the count that wrote the counts, resolved after it, and
+/// the counts buffer's first words, `bytes` in all with the ticks, into `staging`.
+fn copy(
+    encoder: &mut wgpu::CommandEncoder,
+    timer: Option<&GpuTimer>,
+    counts: &wgpu::Buffer,
+    staging: &wgpu::Buffer,
+    bytes: u64,
+) {
+    if let Some(timer) = timer {
+        encoder.copy_buffer_to_buffer(timer.resolved(), 0, staging, 0, TICKS_BYTES);
     }
-
-    /// Records copying the ticks and the counts buffer's first `words` into staging buffer
-    /// `slot`.
-    fn copy(&self, encoder: &mut wgpu::CommandEncoder, slot: usize, words: usize) {
-        let staging = &self.staging[slot].0;
-        // The ticks of the count that wrote the counts, resolved after it.
-        if let Some(timer) = &self.timer {
-            encoder.copy_buffer_to_buffer(timer.resolved(), 0, staging, 0, TICKS_BYTES);
-        }
-        encoder.copy_buffer_to_buffer(&self.counts, 0, staging, TICKS_BYTES, (words * 4) as u64);
-    }
-
-    /// Maps staging buffer `slot`, which a submitted copy fills with `measured`'s counts.
-    fn map(&mut self, slot: usize, measured: Measured) {
-        let (sender, done) = mpsc::channel();
-        let bytes = TICKS_BYTES + (measured.graphs.words() * 4) as u64;
-        let (buffer, staging) = &mut self.staging[slot];
-        buffer.map_async(wgpu::MapMode::Read, ..bytes, move |result| {
-            // The receiver lives in the staging state until the callback has been seen.
-            let _ = sender.send(result);
-        });
-        *staging = Staging::Mapping {
-            measured,
-            done,
-            result: None,
-        };
-    }
+    encoder.copy_buffer_to_buffer(counts, 0, staging, TICKS_BYTES, bytes - TICKS_BYTES);
 }
 
 /// The kernel's `ScopesParams`: the graphs to count, then the vectorscope's plane.
@@ -739,9 +602,11 @@ fn background(ring: &[([f32; 2], [f32; 3])], towards: [f32; 2]) -> [f32; 3] {
     [0.0; 3]
 }
 
-/// sRGB as darktable's vectorscope reads it into XYZ D50 (`dt_ioppr_rgb_matrix_to_xyz`).
+/// sRGB as darktable's vectorscope reads it into XYZ D50 (`dt_ioppr_rgb_matrix_to_xyz`),
+/// and as its colour picker reads a sample into Lab (`_transform_rgb_to_lab_matrix`,
+/// [`crate::picker`]): darktable's default display and histogram profile.
 #[derive(Debug, Clone, Copy)]
-struct Profile {
+pub(crate) struct Profile {
     /// Linear RGB to XYZ D50, as lcms builds darktable's sRGB profile.
     to_xyz: Mat3,
     /// darktable's power law for a value at or above 1, `top × v^exponent`.
@@ -754,7 +619,7 @@ impl Profile {
     /// and for values at and above 1 `dt_iop_estimate_exp` on its curve's table at 0.7,
     /// 0.8, 0.9 and 1 (`_init_unbounded_coeffs`): `top` the curve at 1, `exponent` the mean
     /// of the other three's. The table samples the curve; this evaluates it.
-    fn srgb() -> Self {
+    pub(crate) fn srgb() -> Self {
         let x = [0.7f32, 0.8, 0.9, 1.0];
         let y = x.map(srgb_to_linear);
         let (x0, y0) = (x[3], y[3]);
@@ -788,7 +653,7 @@ impl Profile {
         }
     }
 
-    fn xyz(self, rgb: [f32; 3]) -> [f32; 3] {
+    pub(crate) fn xyz(self, rgb: [f32; 3]) -> [f32; 3] {
         apply(&self.to_xyz, rgb.map(|v| self.linear(v)))
     }
 }
