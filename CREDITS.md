@@ -268,6 +268,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - litrs 1.0.1: MIT OR Apache-2.0
 - lock_api 0.4.14: MIT OR Apache-2.0
 - log 0.4.34: MIT OR Apache-2.0
+- machine-uid 0.6.0: MIT
 - matchers 0.2.0: MIT
 - md5 0.8.1: Apache-2.0 OR MIT
 - memchr 2.8.3: Unlicense OR MIT
@@ -486,6 +487,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - windows-interface 0.59.3: MIT OR Apache-2.0
 - windows-link 0.2.1: MIT OR Apache-2.0
 - windows-numerics 0.3.1: MIT OR Apache-2.0
+- windows-registry 0.6.1: MIT OR Apache-2.0
 - windows-result 0.4.1: MIT OR Apache-2.0
 - windows-strings 0.5.1: MIT OR Apache-2.0
 - windows-sys 0.52.0: MIT OR Apache-2.0

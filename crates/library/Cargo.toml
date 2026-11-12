@@ -15,8 +15,15 @@ apertrust-raw.workspace = true
 # Its `fs` part alone: removes the temporaries of writes that never ended from a folder it
 # lists (decision 53).
 apertrust-base = { workspace = true, features = ["fs"] }
-# The hash of a sidecar's bytes, and later the photo's fingerprint (decision 53).
+# The hash of a sidecar's bytes and of the machine id, and later the photo's fingerprint
+# (decisions 47 and 53).
 blake3.workspace = true
+# A clock's time as an XMP Date (decision 47).
+chrono.workspace = true
+# The system's machine id, which the machine id hashes with the user (decision 47).
+machine-uid.workspace = true
+# The machine id drawn at random where the system's cannot be read.
+getrandom.workspace = true
 # The sidecar's XML (decision 54, layer 1).
 quick-xml.workspace = true
 thiserror.workspace = true

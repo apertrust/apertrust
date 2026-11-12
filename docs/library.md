@@ -192,7 +192,7 @@ Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid 
 
 ## The code
 
-Decision 54. The library's code is one crate, `apertrust-library`, with no GPU and no engine. It depends on quick-xml, thiserror, blake3, tracing, `apertrust-base`'s `fs` part and `apertrust-raw` (for its list of raw extensions alone), never on the engine, the modules, the plugin interface or wgpu.
+Decision 54. The library's code is one crate, `apertrust-library`, with no GPU and no engine. It depends on quick-xml, thiserror, blake3, chrono, machine-uid, getrandom, tracing, `apertrust-base`'s `fs` part and `apertrust-raw` (for its list of raw extensions alone), never on the engine, the modules, the plugin interface or wgpu.
 
 ### Four layers
 
@@ -552,11 +552,14 @@ Decision 47, planned (steps 8, 9 and 11 to 17). Version 2 holds the parts below,
 
 **Its snapshots,** per virtual copy, each with an id, a name, its clock and the edit it shows, whole, as one compressed step, so Compress cannot break one. Restore Snapshot is a step. The library's step 16 adds them to the history's API and its tab's Snapshots section ([history.md](history.md)). (darktable's are a point in the history, in memory, ten at most.)
 
-**Its clocks:** hybrid logical clocks, UTC milliseconds, a counter and the machine id (`2026-03-14T14:02:11.120Z 0 a1b2c3d4`), each written as three fields, the time an XMP Date (`apertrust:when`) beside `apertrust:counter` and `apertrust:machine`, so other tools read it as a date ([history.md](history.md#in-the-sidecar)).
+**Its clocks:** hybrid logical clocks, UTC milliseconds, a counter and the machine id (`2026-03-14T14:02:11.120Z 0 a1b2c3d4`), each written as three fields, the time an XMP Date (`apertrust:when`) beside `apertrust:counter` and `apertrust:machine`, so other tools read it as a date ([history.md](history.md#in-the-sidecar)). The clock and the machine id are built, `apertrust_library::clock` (the library's step 8.1); no file holds them yet.
 
-- A machine that reads a later clock moves its own past it.
+- **A new clock** (`Clock::now`) is the wall clock with counter 0 where the wall clock is past the last clock this machine made or read; else the last clock's time with its counter raised by one, so a wall clock set back never orders a new clock before an old one. The time stops at 9999-12-31T23:59:59.999Z, the latest an XMP Date holds, where only the counter rises. A machine that reads a later clock moves its own past it, passing the later of the two as the last.
+- **Clocks order** by time, then counter, then machine, so every machine orders any two alike.
+- **Their text** (`Clock::fields`, `Clock::from_fields`): the time written in UTC with milliseconds and `Z`, and read from any XMP Date with seconds and a time zone, or RFC 3339's other forms, from 1970 to 9999; the counter in decimal; the machine id in eight hex digits, lowercase.
 - Each step, snapshot, tombstone and library-file entry has one, and each virtual copy keeps its clock vector, the latest clock of each machine that changed it.
-- The machine id is eight hex digits, a hash of the system's machine id and the user, never stored in the user data folder. A machine's name goes only into a library's `.apertrust/machines/`.
+- **The machine id** (`MachineId::current`) is eight hex digits, the first 32 bits of a BLAKE3 hash, in its key derivation mode, of the system's machine id and the user's home folder, so two accounts on one computer are two machines and the system's id cannot be read back. It is worked out once a run, never stored in the user data folder. The system's id is read through `machine-uid`, with no `unsafe` of Apertrust's: `/var/lib/dbus/machine-id`, else `/etc/machine-id`, on Linux; the hardware UUID (`gethostuuid`) on macOS; the registry's `MachineGuid` on Windows. Where it cannot be read, is empty or is systemd's `uninitialized` (as in some containers, or early in a first boot), the id is drawn at random for the run, with a warning, never the home folder's alone, which two computers can share. `00000000` is no machine's: the unknown machine of version 1's step.
+- A machine's name goes only into a library's `.apertrust/machines/`.
 
 **Its photo groups,** by id, so they survive a rebuild.
 

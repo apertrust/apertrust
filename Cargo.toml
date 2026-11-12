@@ -96,6 +96,8 @@ icu_locale_core = "2.4.0"
 icu_provider = { version = "2.4.0", features = ["sync"] }
 flate2 = "1.1.10"
 fluent-bundle = "0.16.0"
+# The machine id drawn at random where the system's cannot be read (apertrust-library).
+getrandom = "0.4.3"
 fluent-syntax = "0.12.0"
 # A JPEG decoder for the export's tests: zune-jpeg, the image crate's, misreads a baseline
 # JPEG with a scan for each component and subsampled chroma (0.5.15), which jpeg-encoder
@@ -105,6 +107,10 @@ jpeg-decoder = { version = "0.3.2", default-features = false }
 # forward DCT the Independent JPEG Group's, whose licence is allowed for it
 # (decision 56); CREDITS.md acknowledges it, as the licence asks.
 jpeg-encoder = "0.7.1"
+# The system's machine id, which apertrust-library's machine id hashes with the user
+# (decision 47): /var/lib/dbus/machine-id, else /etc/machine-id, on Linux, gethostuuid
+# on macOS, the registry's MachineGuid on Windows, with no `unsafe` of Apertrust's.
+machine-uid = "0.6.0"
 # The Mac's native menu bar, the app's on macOS only; without GTK, its Linux backend
 # (docs/gui.md, The menus; decision 39).
 muda = { version = "0.21.2", default-features = false }
