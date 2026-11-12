@@ -200,6 +200,26 @@ fn on_a_quad_a_right_click_is_a_click_and_only_ctrl_picks_an_area() {
         .click_modifiers(Modifiers::MAC_CMD);
     assert_eq!(pressed(&mut harness), vec![PickerAction::On { area: true }]);
 
+    // Every mouse button alike, the middle one too, and Ctrl with it an area.
+    let mut harness = quad(OperatingSystem::Nix, false);
+    harness
+        .get_by_role_and_label(Role::Button, NAME)
+        .click_button_modifiers(egui::PointerButton::Middle, Modifiers::NONE);
+    assert_eq!(
+        pressed(&mut harness),
+        vec![PickerAction::On { area: false }]
+    );
+    harness
+        .get_by_role_and_label(Role::Button, NAME)
+        .click_button_modifiers(egui::PointerButton::Middle, Modifiers::NONE);
+    assert_eq!(pressed(&mut harness), vec![PickerAction::Off]);
+
+    let mut harness = quad(OperatingSystem::Nix, false);
+    harness
+        .get_by_role_and_label(Role::Button, NAME)
+        .click_button_modifiers(egui::PointerButton::Middle, Modifiers::COMMAND);
+    assert_eq!(pressed(&mut harness), vec![PickerAction::On { area: true }]);
+
     let mut harness = quad(OperatingSystem::Nix, false);
     harness.get_by_role_and_label(Role::Button, NAME).focus();
     harness.run();
