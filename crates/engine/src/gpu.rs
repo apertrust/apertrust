@@ -209,13 +209,16 @@ pub enum GpuError {
     RequestDevice(#[from] wgpu::RequestDeviceError),
 }
 
-/// The instance every Apertrust process creates, the app's included: every native
-/// backend, honouring wgpu's environment variables such as `WGPU_BACKEND`, with FXC as
-/// Direct3D 12's shader compiler (decision 10). wgpu's default would use DXC wherever it
-/// finds a `dxcompiler.dll`, a compiler CI never runs; `WGPU_DX12_COMPILER` still
-/// chooses another, for experiments.
+/// The instance every Apertrust process creates, the app's included: wgpu's primary
+/// backends, Direct3D 12 and Vulkan on Windows, Vulkan on Linux, Metal on macOS, never
+/// GL, which the engine never chooses and a broken OpenGL driver can crash in as
+/// adapters are listed; with FXC as Direct3D 12's shader compiler (decision 10). wgpu's
+/// default would use DXC wherever it finds a `dxcompiler.dll`, a compiler CI never runs.
+/// wgpu's environment variables still choose others, for experiments: `WGPU_BACKEND`
+/// (GL among them) and `WGPU_DX12_COMPILER`.
 pub fn instance_descriptor() -> wgpu::InstanceDescriptor {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+    descriptor.backends = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::PRIMARY);
     descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::Fxc.with_env();
     descriptor
 }
@@ -782,6 +785,18 @@ mod tests {
         let fallback = open(preferred).expect("wgpu's choice");
         let any = open(AdapterChoice::Any).expect("wgpu's choice");
         assert_eq!(fallback.adapter.get_info(), any.adapter.get_info());
+    }
+
+    #[test]
+    fn the_primary_backends_load_never_gl_unless_the_environment_says_otherwise() {
+        let backends = instance_descriptor().backends;
+        match wgpu::Backends::from_env() {
+            Some(asked) => assert_eq!(backends, asked),
+            None => {
+                assert_eq!(backends, wgpu::Backends::PRIMARY);
+                assert!(!backends.contains(wgpu::Backends::GL), "{backends:?}");
+            }
+        }
     }
 
     #[test]
