@@ -562,7 +562,7 @@ start-tagline =
     A free, non-destructive
     raw photo editor
 # Over the window's top after a start that did not finish with a graphics card or API
-# (decision 81). $card is a graphics card's name, or CPU's word, and $api a graphics API's,
+# (decision 82). $card is a graphics card's name, or CPU's word, and $api a graphics API's,
 # never translated; a message leaves out the one that was Automatic.
 start-failed = { app-name } did not start last time with { $card } on { $api }, so it started with Automatic
 start-failed-card = { app-name } did not start last time with { $card }, so it started with Automatic
@@ -646,7 +646,7 @@ setting-engine-backend-option-auto = Automatic
 setting-engine-backend-option-dx12 = Direct3D 12
 setting-engine-backend-option-vulkan = Vulkan
 setting-engine-memory-budget-label = Memory budget
-# Processing's Hardware acceleration group (decision 81). The graphics card's list:
+# Processing's Hardware acceleration group (decision 82). The graphics card's list:
 # Automatic first; the In use line says what it runs. $card is an adapter's name and $api
 # a graphics API's, never translated.
 settings-gpu-automatic = Automatic

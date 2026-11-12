@@ -300,7 +300,7 @@ impl Folders {
 
     /// The app's start marker, `starting.toml` in the user data folder: written before it
     /// opens its graphics device and removed once its window has drawn, so one found there
-    /// says the last start did not finish (decision 81).
+    /// says the last start did not finish (decision 82).
     pub fn starting(&self) -> PathBuf {
         self.user_data.join("starting.toml")
     }

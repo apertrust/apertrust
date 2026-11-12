@@ -148,7 +148,7 @@ struct Arguments {
     /// this run, in the order given, which `settings::overrides` reads (decision 43).
     conf: Vec<String>,
     /// `--safe-mode`: the graphics card and API at Automatic for this run, the settings
-    /// kept (decision 81, `recovery`).
+    /// kept (decision 82, `recovery`).
     safe_mode: bool,
     /// The hidden `--reopen-last` a restart passes, true: what was open last reopens,
     /// whatever `library.reopen_last` says; or `--no-reopen-last`, false: the start window
@@ -400,7 +400,7 @@ fn main() -> eframe::Result {
         print!("{USAGE}");
         return Ok(());
     }
-    // The helper Settings runs to list a graphics API's adapters (decision 81): it prints
+    // The helper Settings runs to list a graphics API's adapters (decision 82): it prints
     // them and ends, never opening a window, so a driver that crashes as it loads ends it
     // and not the app.
     if let Some(backend) = hardware::helper_asked(std::env::args_os().skip(1)) {
@@ -486,7 +486,7 @@ fn main() -> eframe::Result {
         settings.window
     };
     // A start that did not finish, or `--safe-mode`: Automatic, or the CPU, in place of the
-    // graphics settings for this run (decision 81). The marker, locked for this start, is
+    // graphics settings for this run (decision 82). The marker, locked for this start, is
     // written naming what it tries before anything loads a graphics driver, the engine's
     // settings included, then what they resolve to, and removed once the window has drawn
     // (`recovery`). One another start holds is that start's, under way at once.
@@ -512,7 +512,7 @@ fn main() -> eframe::Result {
     // The folders as Settings › Storage shows them.
     let storage_folders = storage::Folders::of(folders.as_ref(), export::places().home);
     // The window's device is the engine's, so it is created from the engine's instance,
-    // built from the same options, so the two load the same backends (decision 81), its
+    // built from the same options, so the two load the same backends (decision 82), its
     // Direct3D 12 shader compiler included, and with the engine's needs. A display handle
     // only matters for OpenGL on Wayland; the engine uses Vulkan. A backend `--conf` names
     // that this build lacks would find no adapter: it stops the start, as the CLI's does.
@@ -633,7 +633,7 @@ fn main() -> eframe::Result {
     }
     // Restart now's new start, the very last step: the app has ended, its window gone,
     // its settings and recents written and its session dropped, its edit saved, so the
-    // new one never races it for a file (decision 81).
+    // new one never races it for a file (decision 82).
     let relaunch = relaunch.lock().map(|mut slot| slot.take());
     if let Ok(Some(relaunch)) = relaunch {
         restart::start(relaunch);
@@ -660,7 +660,7 @@ fn carried(folders: Option<&Folders>) -> Vec<OsString> {
 
 /// What `main` hands the app of how it starts: whether it reopens what was open last, its
 /// restart, and what it opens its graphics device with, which decides what the window
-/// says (decision 81).
+/// says (decision 82).
 struct Launch {
     reopen_last: bool,
     restart: restart::Restart,
@@ -1324,7 +1324,7 @@ struct App {
     /// What Settings › Processing's Hardware acceleration group is handed: the adapter in
     /// use, how to list the others, and the values this run started with.
     hardware: hardware::Running,
-    /// Restart now, once asked: the app quits, and `main` starts it again (decision 81).
+    /// Restart now, once asked: the app quits, and `main` starts it again (decision 82).
     restart: restart::Restart,
     /// What the window says after a start that did not finish, until a button is pressed.
     notice: Option<recovery::Notice>,
@@ -2793,7 +2793,7 @@ impl App {
             gate,
         };
         // What Settings' In use line says: the adapter the window opened, the engine's
-        // (decision 81), whether the setting chose it, and how its list of graphics cards
+        // (decision 82), whether the setting chose it, and how its list of graphics cards
         // is made; and the values this run started with, for the waiting line.
         let info = state.adapter.get_info();
         let hardware = hardware::Running {
@@ -4137,7 +4137,7 @@ impl App {
         target: egui::Rect,
         gesture: Option<TitleBar>,
     ) {
-        // What a start that did not finish says, over the window's top (decision 81).
+        // What a start that did not finish says, over the window's top (decision 82).
         self.show_notice(ctx);
         let state = self.state(ctx);
         self.shell.open_menu(ctx, &state);
@@ -4225,7 +4225,7 @@ impl App {
     }
 
     /// Restart could not find the app to start: nothing quits, the error is logged and
-    /// Settings' waiting line says it, in the warning colour (decision 81).
+    /// Settings' waiting line says it, in the warning colour (decision 82).
     fn restart_failed(&mut self, error: &std::io::Error, ctx: &egui::Context) {
         tracing::error!(target: "control", "not restarted: {error}");
         let mut args = apertrust_ui::i18n::Args::new();
@@ -4559,7 +4559,7 @@ impl eframe::App for App {
     /// and alone while the window is minimised or hidden, when it runs no frame, so a choice
     /// such as Quit never waits for the window to show.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // The start marker goes once the first frame has been drawn (decision 81).
+        // The start marker goes once the first frame has been drawn (decision 82).
         self.marker.frame(ctx);
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);
@@ -5313,7 +5313,7 @@ struct Taken {
     actions: Vec<ActionId>,
 }
 
-/// The action that runs for `id`: for Restart (decision 81), Quit, the restart noted in
+/// The action that runs for `id`: for Restart (decision 82), Quit, the restart noted in
 /// `restart`, so it goes through the app's own quit path, the dialog open closed as its
 /// Cancel and the quit alert asked where a job runs, and Quit's own runs of itself later on
 /// that path, once the dialog has gone or the jobs have ended, keep it; `main` starts the

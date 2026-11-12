@@ -34,7 +34,7 @@
 //! - Processing's Hardware acceleration group draws the graphics card as a list of the
 //!   adapters the chosen API finds, says what is wrong with a card on its row, and ends in
 //!   the In use line, then, while a choice waits for a restart, the waiting line with
-//!   Restart now ([`hardware`], decision 81).
+//!   Restart now ([`hardware`], decision 82).
 //! - Every change applies at once and is kept, with no OK or Apply: it goes to the app as a
 //!   [`Change`], which keeps it through the settings' keeper and shows it in the main
 //!   window; the theme and the language are shown in this dialog's own window at once too.
@@ -619,7 +619,7 @@ impl Settings {
     }
 
     /// Whether a setting that applies after a restart has a value other than the one this
-    /// run started with, which the waiting line says (decision 81).
+    /// run started with, which the waiting line says (decision 82).
     fn waiting(&self) -> bool {
         let started = &self.hardware.running().started;
         self.rows.iter().any(|row| {
@@ -788,7 +788,7 @@ fn control_column(ui: &Ui, rows: &[Row], page: Page, gpu: Option<&hardware::Fram
 const HARDWARE_GROUP: &str = "hardware_acceleration";
 
 /// What a row of the Hardware acceleration group draws in place of its kind's (decision
-/// 81): the graphics card's list for its text, and what is said under it or the API's.
+/// 82): the graphics card's list for its text, and what is said under it or the API's.
 #[derive(Clone, Copy, Debug, Default)]
 struct Extra<'a> {
     card: Option<&'a hardware::Card>,
@@ -1162,7 +1162,7 @@ fn boxed(ui: &mut Ui, t: &Theme, choice: Choice<'_>, width: f32) -> Option<Choic
     choice.show(&mut boxed)
 }
 
-/// The graphics card's list (decision 81), `named` its row's full name and what is said
+/// The graphics card's list (decision 82), `named` its row's full name and what is said
 /// under it, which screen readers hear on the box: Automatic, the cards, a card not found,
 /// then CPU after a separator, as `card` has them; disabled while they are listed. Choosing
 /// Automatic resets the setting, so it leaves the file.
@@ -1695,7 +1695,7 @@ mod tests {
 
     /// Processing's Hardware acceleration group: Graphics card, Graphics API and Memory
     /// budget, the graphics API drawn on Windows alone, the only platform with a choice of
-    /// one (`platforms`; decision 81).
+    /// one (`platforms`; decision 82).
     #[test]
     fn the_graphics_api_is_drawn_on_windows_alone() {
         let keeper = Keeper::nowhere().0;
@@ -1826,7 +1826,7 @@ mod tests {
                     let rect = harness.get_by_role_and_label(Role::Label, &label).rect();
                     widths.push(rect.width());
                     let start = rect.left() + rect.width() + 34.0;
-                    // The graphics card's text is a list of the cards (decision 81).
+                    // The graphics card's text is a list of the cards (decision 82).
                     let kind = if row.id == ENGINE_ADAPTER.id {
                         Kind::Choice("")
                     } else {
@@ -1935,7 +1935,7 @@ mod tests {
     /// Automatic first, saying what it picks, the cards in Automatic's order, a separator
     /// and CPU; choosing a card stores its name, CPU `cpu`, and Automatic resets the
     /// setting. The box's value is its whole text, its description the row's note, and the
-    /// software adapter's own name is never shown (decision 81).
+    /// software adapter's own name is never shown (decision 82).
     #[test]
     fn the_graphics_card_is_a_list_of_the_cards_the_api_finds() {
         let mut harness = windows(&Keeper::nowhere().0);

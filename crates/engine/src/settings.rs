@@ -63,7 +63,7 @@ pub const ADAPTER_FLAG: &str = "--adapter";
 /// The flag a binary takes for `engine.backend`.
 pub const BACKEND_FLAG: &str = "--backend";
 
-/// wgpu's own variable, which chooses the backends before `engine.backend` (decision 81).
+/// wgpu's own variable, which chooses the backends before `engine.backend` (decision 82).
 pub const BACKEND_VARIABLE: &str = "WGPU_BACKEND";
 
 /// A binary's own flags over the engine's settings, for one run, each before `--conf` and
@@ -155,7 +155,7 @@ impl Options {
     /// The engine's settings in `store`, as [`Options::read`] gives them with no flags, but
     /// for the graphics card, which is `adapter` (empty for wgpu's choice, or [`gpu::CPU`]),
     /// and the graphics API, which is Automatic, for this run, whatever `--conf` and the
-    /// file say, which keep theirs (decision 81): the app's `--safe-mode`, or its start
+    /// file say, which keep theirs (decision 82): the app's `--safe-mode`, or its start
     /// after one that did not finish, `by` saying which in the log. The adapter is
     /// preferred, never required, as a setting's is; `WGPU_BACKEND` still comes first.
     pub fn instead(store: &Store, adapter: &str, by: &'static str) -> Options {
@@ -428,7 +428,7 @@ mod tests {
             [Source::Flag("--adapter"), Source::Conf]
         );
 
-        // `cpu`, the software adapter's reserved name, as any other (decision 81).
+        // `cpu`, the software adapter's reserved name, as any other (decision 82).
         let cpu = read_with(file, &["engine.adapter=cpu"], Flags::default());
         assert_eq!(cpu.gpu.adapter, AdapterChoice::Named(gpu::CPU.to_owned()));
         let cpu = read("version = 1\nengine.adapter = \"cpu\"\n", Flags::default());
@@ -444,7 +444,7 @@ mod tests {
     }
 
     /// `engine.backend`: `WGPU_BACKEND`, then `--backend`, then `--conf`, then the file,
-    /// then Automatic (decision 81). The file's naming one this build lacks, or one that
+    /// then Automatic (decision 82). The file's naming one this build lacks, or one that
     /// finds no adapter on this machine, is taken as Automatic; one typed for the run is
     /// kept, for opening the device to refuse.
     #[test]
@@ -529,7 +529,7 @@ mod tests {
         assert_eq!(ENGINE_BACKEND.platforms, windows);
     }
 
-    /// In place of the card and API settings for this run (decision 81): the adapter given,
+    /// In place of the card and API settings for this run (decision 82): the adapter given,
     /// preferred, and Automatic, over `--conf` and the file, which keep theirs, and the
     /// budget as read; `WGPU_BACKEND` still first. The file's backend is never looked for.
     #[test]

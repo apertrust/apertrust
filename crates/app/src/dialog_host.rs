@@ -726,7 +726,7 @@ pub trait Dialogs {
     fn storage(&mut self, view: crate::storage::View);
     /// Hands Settings open its Hardware acceleration group again, `running`, and the changes
     /// the app made to its settings meanwhile, as the start notice's Keep; any other dialog,
-    /// or none, takes nothing (decision 81).
+    /// or none, takes nothing (decision 82).
     fn hardware(
         &mut self,
         running: crate::hardware::Running,

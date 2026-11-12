@@ -1,4 +1,4 @@
-# 0081. Hardware acceleration: the backends, the graphics card and the API as settings
+# 0082. Hardware acceleration: the backends, the graphics card and the API as settings
 
 ## Context
 

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Settings › Processing's Hardware acceleration group, beyond what its rows' kinds draw
-//! (decision 81; `docs/gui.md`, The Settings dialog):
+//! (decision 82; `docs/gui.md`, The Settings dialog):
 //!
 //! - **The graphics card's list** ([`Card`]): Automatic, plain, the In use line saying what runs,
 //!   then the hardware adapters the chosen API finds, by name, in the order Automatic ranks
@@ -367,7 +367,7 @@ pub struct Running {
 
 /// The values of the settings that apply after a restart as this run started with them,
 /// the file and `--conf` read, by their ids: what the waiting line compares the rows with
-/// (decision 81), values and never a guess at what wgpu would open.
+/// (decision 82), values and never a guess at what wgpu would open.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Started(Vec<(&'static str, Option<toml::Value>)>);
 

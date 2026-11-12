@@ -460,7 +460,7 @@ applies = "at-once"
 
 # The GPU adapter the engine opens: the one of exactly this name, else the first whose
 # name holds this text, ignoring case; "cpu", reserved, the chosen API's software adapter
-# (WARP, lavapipe) whatever its name (decision 81). Empty takes wgpu's high-performance
+# (WARP, lavapipe) whatever its name (decision 82). Empty takes wgpu's high-performance
 # choice. One that names no adapter, as after a GPU is removed or the folder moves to
 # another machine, is warned of and wgpu's choice taken, where a binary's own --adapter
 # flag that names none is an error. Settings draws it as a list of the adapters the
@@ -475,7 +475,7 @@ page = "processing"
 group = "hardware_acceleration"
 
 # The graphics API the engine's wgpu instance loads, and the app's window with it
-# (decision 81): auto, wgpu's primary backends (Direct3D 12 and Vulkan on Windows, Vulkan
+# (decision 82): auto, wgpu's primary backends (Direct3D 12 and Vulkan on Windows, Vulkan
 # on Linux, Metal on macOS), or dx12 or vulkan alone. WGPU_BACKEND, where set, comes before
 # it. Only Windows has a choice, so the row is drawn there alone; a value is read on every
 # platform. One naming an API this build lacks (dx12 off Windows, vulkan on macOS), or one

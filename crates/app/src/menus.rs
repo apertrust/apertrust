@@ -1070,7 +1070,7 @@ mod tests {
     /// menu bar, Rules): the Edit view's, since the layouts' items join only once there are
     /// two layouts; F6's, which move the focus as Tab does; and H's peek, held, while a menu
     /// item is a press; the ☰'s menu's own, which opens the menu it would be in; and
-    /// Restart, Settings' Restart now's for now (decision 81).
+    /// Restart, Settings' Restart now's for now (decision 82).
     const LEFT_OUT: [ActionId; 6] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,

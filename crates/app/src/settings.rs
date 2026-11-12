@@ -852,7 +852,7 @@ impl Keeper {
     /// The engine's settings as [`Keeper::engine`] gives them, but for the graphics card,
     /// `adapter`, and the graphics API, Automatic, for this run, the file and `--conf`
     /// keeping theirs: `--safe-mode`, or a start after one that did not finish, `by` saying
-    /// which (decision 81; `recovery`).
+    /// which (decision 82; `recovery`).
     pub fn engine_instead(&self, adapter: &str, by: &'static str) -> engine::Options {
         engine::Options::instead(&self.store, adapter, by)
     }

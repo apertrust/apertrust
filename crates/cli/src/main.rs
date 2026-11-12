@@ -22,7 +22,7 @@
 //! writes them: it creates nothing in finding the folder (`Folders::find_to_read`) and its
 //! store is read-only (decision 43). Only the commands that run the engine read them, and
 //! `cache info` the cache's, `[cache]`. A flag of its own, `--adapter` or `--backend`,
-//! comes first (wgpu's `WGPU_BACKEND` before `--backend`, decision 81), then
+//! comes first (wgpu's `WGPU_BACKEND` before `--backend`, decision 82), then
 //! `--conf KEY=VALUE`, which sets one for the run and is never written, then the file.
 //! `export` takes from the export settings what darktable-cli takes from darktablerc, the
 //! format's options, and its own flags give the rest (decision 56).
@@ -2101,7 +2101,7 @@ fn api_name(backend: wgpu::Backend) -> &'static str {
 
 /// `gpu`'s line of the backends the engine's instance `loaded`, as this build has them,
 /// and why: `engine.backend`'s `chosen` value and where it came from, `from`, or
-/// `WGPU_BACKEND`'s text, `variable`, where it came first (decision 81).
+/// `WGPU_BACKEND`'s text, `variable`, where it came first (decision 82).
 fn backends_line(
     loaded: wgpu::Backends,
     chosen: gpu::Backend,
@@ -2176,7 +2176,7 @@ mod tests {
     const WITH_SAMPLE: &[&dyn Module] = &[&Sample];
 
     /// `gpu` says which backends were loaded and why, then lists the adapters, Automatic's
-    /// marked, and the software one as CPU, under its own name (decision 81).
+    /// marked, and the software one as CPU, under its own name (decision 82).
     #[test]
     fn gpu_says_what_was_loaded_and_marks_automatic_and_the_cpu() {
         let both = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A start that did not finish, and `--safe-mode` (decision 81): the way back from a
+//! A start that did not finish, and `--safe-mode` (decision 82): the way back from a
 //! graphics card or API that stops the app, since Settings, where they are chosen, is out
 //! of reach once it cannot start.
 //!

@@ -116,7 +116,7 @@ impl ActionId {
     /// File › Close Window, the Mac's alone: the key window, a dialog's or the main one.
     pub const CLOSE_WINDOW: ActionId = ActionId("close-window");
     pub const QUIT: ActionId = ActionId("quit");
-    /// Quits as Quit does and starts the app again with what is open (decision 81):
+    /// Quits as Quit does and starts the app again with what is open (decision 82):
     /// Settings' Restart now, in no menu yet.
     pub const RESTART: ActionId = ActionId("restart");
     pub const PEEK: ActionId = ActionId("peek");
@@ -866,7 +866,7 @@ pub static ACTIONS: [Action; 71] = [
         available: always,
         emits: Emit::Intent(Intent::Quit),
     },
-    // Settings' Restart now, and Try again after a start that did not finish (decision 81):
+    // Settings' Restart now, and Try again after a start that did not finish (decision 82):
     // Quit, then the app again with what is open. No key, and no menu yet.
     Action {
         id: ActionId::RESTART,

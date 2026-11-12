@@ -36,7 +36,7 @@ pub struct GpuOptions {
 }
 
 /// The graphics API the engine's instance loads, and a window's that shares its device
-/// (decision 81), as `engine.backend`, `--backend` or `--conf engine.backend` asks.
+/// (decision 82), as `engine.backend`, `--backend` or `--conf engine.backend` asks.
 /// `WGPU_BACKEND`, where set, comes before it ([`instance_descriptor`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Backend {
@@ -87,7 +87,7 @@ impl Backend {
 
 /// The reserved name of the chosen API's software adapter, whatever the platform calls it
 /// (WARP, lavapipe), as `engine.adapter`, `--adapter` and `--conf engine.adapter` take it
-/// (decision 81): stored so, a driver or Mesa update that renames it never breaks the
+/// (decision 82): stored so, a driver or Mesa update that renames it never breaks the
 /// choice.
 pub const CPU: &str = "cpu";
 
@@ -275,7 +275,7 @@ pub enum GpuError {
 /// `options` as its engine, so a window and the engine always load the same backends: the
 /// backend `options` chooses, by default wgpu's primary backends, Direct3D 12 and Vulkan on
 /// Windows, Vulkan on Linux, Metal on macOS, never GL, which the engine never chooses and a
-/// broken OpenGL driver can crash in as adapters are listed (decision 81); with FXC as
+/// broken OpenGL driver can crash in as adapters are listed (decision 82); with FXC as
 /// Direct3D 12's shader compiler (decision 10). wgpu's default would use DXC wherever it
 /// finds a `dxcompiler.dll`, a compiler CI never runs. wgpu's environment variables still
 /// choose others, before the options, for experiments: `WGPU_BACKEND` (GL among them) and
@@ -329,7 +329,7 @@ pub async fn adapters(instance: &wgpu::Instance) -> Vec<wgpu::Adapter> {
 
 /// Every adapter an instance that loads `backend` lists, software ones included, in
 /// wgpu's order, as Settings' list of graphics cards takes them from a helper process
-/// (decision 81). `WGPU_BACKEND`, where set, chooses the backends in its place, as for the
+/// (decision 82). `WGPU_BACKEND`, where set, chooses the backends in its place, as for the
 /// engine's own instance.
 pub fn listed(backend: Backend) -> Vec<wgpu::AdapterInfo> {
     let options = GpuOptions {
@@ -340,7 +340,7 @@ pub fn listed(backend: Backend) -> Vec<wgpu::AdapterInfo> {
     all.iter().map(wgpu::Adapter::get_info).collect()
 }
 
-/// Which of `adapters`, each by its name and kind, the text `name` opens (decision 81):
+/// Which of `adapters`, each by its name and kind, the text `name` opens (decision 82):
 /// [`CPU`], whatever its case, the first software one; else the one whose name is `name`,
 /// ignoring case, else, for a name typed by hand, the first whose name contains it, so
 /// that "RTX 4090" never opens an "RTX 4090 D" listed before it.
@@ -449,7 +449,7 @@ fn choose(
 /// `preference`, the lowest first: for high performance a discrete GPU, then an integrated
 /// one, then any other, a virtual one and a software one; for low power an integrated GPU
 /// before a discrete one; for none, every adapter as listed. Settings lists the graphics
-/// cards in this order (decision 81).
+/// cards in this order (decision 82).
 pub fn rank(device_type: wgpu::DeviceType, preference: wgpu::PowerPreference) -> u8 {
     use wgpu::DeviceType::{Cpu, DiscreteGpu, IntegratedGpu, Other, VirtualGpu};
     let low_power = preference == wgpu::PowerPreference::LowPower;
@@ -962,7 +962,7 @@ mod tests {
 
     /// A stored name opens the adapter of exactly that name first, then, for one typed by
     /// hand, the first whose name holds it, ignoring case; `cpu` the first software
-    /// adapter, whatever the platform calls it (decision 81).
+    /// adapter, whatever the platform calls it (decision 82).
     #[test]
     fn a_name_matches_exactly_first_then_by_what_it_holds_and_cpu_the_software_adapter() {
         use wgpu::DeviceType::{Cpu, DiscreteGpu, IntegratedGpu};
@@ -1014,7 +1014,7 @@ mod tests {
     }
 
     /// Each backend loads itself alone, Automatic wgpu's primary set; `WGPU_BACKEND`, where
-    /// set, comes before any of them (decision 81).
+    /// set, comes before any of them (decision 82).
     #[test]
     fn the_backend_chosen_loads_alone_unless_wgpu_backend_is_set() {
         use wgpu::Backends;

@@ -581,7 +581,7 @@ fn no_vulkan_driver(folder: &Folder) -> (&'static str, String) {
     ("VK_DRIVER_FILES", missing.display().to_string())
 }
 
-/// The graphics API, `engine.backend` (decision 81): `WGPU_BACKEND`, then `--backend`, then
+/// The graphics API, `engine.backend` (decision 82): `WGPU_BACKEND`, then `--backend`, then
 /// `--conf`, then the file, then Automatic, each logged with where it came from; a name
 /// `--backend` does not know is a usage error.
 #[test]

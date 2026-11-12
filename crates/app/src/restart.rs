@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Restart now (decision 81; `docs/gui.md`, The Settings dialog): the `restart` action quits
+//! Restart now (decision 82; `docs/gui.md`, The Settings dialog): the `restart` action quits
 //! as Quit does, through the app's own quit path (edits and settings saved, the dialog
 //! open closed as its Cancel, the quit alert asked where a job runs), and once the app has
 //! ended, its window gone and its session dropped, starts it again:
@@ -50,7 +50,7 @@ use eframe::egui::os::OperatingSystem;
 
 /// `--safe-mode`: the app starts with the graphics card and API at Automatic for this run,
 /// the settings kept in the file, as darktable's `--disable-opencl` does for OpenCL
-/// (decision 81).
+/// (decision 82).
 pub const SAFE_MODE_FLAG: &str = "--safe-mode";
 
 /// The hidden `--reopen-last`, which a restart passes in place of the folder open: what was
