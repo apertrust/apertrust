@@ -70,6 +70,8 @@ clip_shadows = "#2F6BFF"
 clip_highlights = "#FF3B30"
 mask_overlay = "#FF3B3080"
 guides = "#FFFFFF66"
+overlay_line = "#FFFFFFCC"
+overlay_halo = "#00000066"
 frame_ring = "#CECECE"
 thumb_scrim = "#00000099"
 text_on_thumb_scrim = "#FFFFFF"
@@ -121,9 +123,17 @@ menu_radius = 8.0
 popup_radius = 6.0
 hairline = 1.0
 focus_gap = 1.0
+focus_width = 1.5
 popup_hairline = 0.5
 separator_width = 2.0
 track = 4.0
+
+[overlay]
+line = 1.0
+halo = 3.0
+dash = 4.0
+handle = 10.0
+half_pixel = 4.0
 
 [elevation]
 shadow_offset = [0, 2]

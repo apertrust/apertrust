@@ -21,7 +21,8 @@
 
 use std::ops::RangeInclusive;
 
-use egui::{Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, vec2};
+use egui::emath::GuiRounding as _;
+use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::components::{
     ActionRow, Available, Axis, Button, ButtonState, CellPicture, CellRating, CellStatus,
@@ -84,6 +85,12 @@ impl Gallery {
     /// Exposure at its minimum, its default and its maximum, and a row they drag.
     pub fn show_markers(&mut self, ui: &mut Ui) {
         slider_markers(ui, &mut self.demo);
+    }
+
+    /// Draws the On-photo overlays section alone, as the snapshot tests photograph it.
+    pub fn show_overlays(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        overlays(ui, &t);
     }
 
     /// Draws the gallery on the panel's colour, as a page of its own.
@@ -151,6 +158,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Grid cells");
         grid_cells(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "On-photo overlays");
+        overlays(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Jobs");
         jobs_section(ui, &t, &mut self.demo);
@@ -391,6 +401,226 @@ fn sample_picture(ctx: &egui::Context, landscape: bool) -> CellPicture {
         texture: handle.id(),
         size: handle.size_vec2(),
     }
+}
+
+/// The on-photo overlay's primitives (`docs/gui.md`, On-photo overlays), each row over a
+/// light, a dark and a busy photo made here: the line's three weights, the handles, the
+/// point marks, a point's centre once a frame pixel spans 10 points, the secondary weight
+/// with labels, and the focus ring.
+fn overlays(ui: &mut Ui, t: &Theme) {
+    use crate::overlay::{Mark, Overlay, Point, Weight};
+
+    type Draw = fn(&Overlay, &OverlayPhoto, &Theme);
+    let rows: [(&str, bool, Draw); 6] = [
+        ("The line: normal, selected, secondary", false, |o, _, _| {
+            for (weight, y) in Weight::ALL.into_iter().zip([0.25, 0.5, 0.75]) {
+                o.stroke(&Mark::new(weight).line([pos2(0.08, y), pos2(0.92, y)]));
+            }
+        }),
+        (
+            "Handles: an area's squares, circles; normal and selected",
+            false,
+            |o, _, t| {
+                let area = egui::Rect::from_min_max(pos2(0.1, 0.2), pos2(0.55, 0.8));
+                o.stroke(&Mark::new(Weight::Normal).rect(area).corners(area));
+                let radius = t.overlay.handle / 2.0;
+                for (weight, x) in [(Weight::Normal, 0.72), (Weight::Selected, 0.88)] {
+                    o.stroke(&Mark::new(weight).circle(pos2(x, 0.3), radius));
+                    o.stroke(&Mark::new(weight).square(pos2(x, 0.72)));
+                }
+            },
+        ),
+        (
+            "Points: the active picker, a stored sample, the one selected",
+            false,
+            |o, photo, _| {
+                let marks = [
+                    (0.12, Point::Active, Weight::Normal),
+                    (0.34, Point::Stored, Weight::Normal),
+                    (0.76, Point::Stored, Weight::Selected),
+                ];
+                for (x, point, weight) in marks {
+                    let at = pos2(x, 0.5);
+                    o.point(at, point, photo.sample(at), weight);
+                }
+            },
+        ),
+        (
+            "Zoomed in, a frame pixel 10 points across: the pixel sampled",
+            true,
+            |o, photo, _| {
+                let at = pos2(6.5 / 18.0, 5.5 / 11.0);
+                o.point(at, Point::Active, photo.sample(at), Weight::Normal);
+                let area = egui::Rect::from_min_max(
+                    pos2(11.0 / 18.0, 2.0 / 11.0),
+                    pos2(16.0 / 18.0, 8.0 / 11.0),
+                );
+                o.stroke(&Mark::new(Weight::Secondary).rect(area));
+            },
+        ),
+        ("Labels over secondary marks", false, |o, photo, t| {
+            let area = egui::Rect::from_min_max(pos2(0.08, 0.3), pos2(0.42, 0.78));
+            o.stroke(&Mark::new(Weight::Secondary).rect(area));
+            let above = vec2(0.0, -t.spacing.xs);
+            o.label(area.left_top(), above, Align2::LEFT_BOTTOM, "1");
+            let at = pos2(0.7, 0.5);
+            o.point(at, Point::Stored, photo.sample(at), Weight::Secondary);
+            let beside = vec2(
+                o.reach(Point::Stored, Weight::Secondary) + t.spacing.xs,
+                0.0,
+            );
+            o.label(at, beside, Align2::LEFT_BOTTOM, "2");
+        }),
+        (
+            "The focus ring: round a focused area, round a focused point",
+            false,
+            |o, photo, _| {
+                let area = egui::Rect::from_min_max(pos2(0.1, 0.25), pos2(0.5, 0.75));
+                o.stroke(&Mark::new(Weight::Normal).rect(area).corners(area));
+                o.focus_rect(area, Weight::Normal);
+                let at = pos2(0.76, 0.5);
+                o.point(at, Point::Active, photo.sample(at), Weight::Normal);
+                o.focus_circle(at, o.reach(Point::Active, Weight::Normal), Weight::Normal);
+            },
+        ),
+    ];
+    let ctx = ui.ctx().clone();
+    ui.horizontal(|ui| {
+        for ground in ["Light", "Dark", "Busy"] {
+            let size = vec2(OVERLAY_PHOTO.x, t.sizes.row);
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            ui.painter().text(
+                rect.left_center(),
+                Align2::LEFT_CENTER,
+                ground,
+                FontId::proportional(t.text.body),
+                t.colors.text_secondary,
+            );
+        }
+    });
+    for (title, zoomed, draw) in rows {
+        ui.label(title);
+        ui.horizontal(|ui| {
+            for ground in Ground::ALL {
+                let photo = overlay_photo(&ctx, ground, zoomed);
+                let (rect, _) = ui.allocate_exact_size(OVERLAY_PHOTO, Sense::hover());
+                let rect = rect.round_to_pixels(ui.pixels_per_point());
+                let uv = egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                ui.painter()
+                    .image(photo.texture.id(), rect, uv, Color32::WHITE);
+                let zoom = OVERLAY_PHOTO.x / photo.size[0] as f32;
+                draw(&Overlay::new(ui.painter(), rect, zoom), &photo, t);
+            }
+        });
+        ui.add_space(t.spacing.xs);
+    }
+}
+
+/// The overlay section's photos, in points.
+const OVERLAY_PHOTO: egui::Vec2 = vec2(180.0, 110.0);
+
+/// What a synthetic photo under the overlays shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Ground {
+    /// Bright and smooth: a pale sky to a sunlit wall.
+    Light,
+    /// Deep shadow, near black.
+    Dark,
+    /// Noise over stripes of light and dark, with some colour: no part of it plain.
+    Busy,
+}
+
+impl Ground {
+    const ALL: [Ground; 3] = [Ground::Light, Ground::Dark, Ground::Busy];
+}
+
+/// A synthetic photo for the overlay section, made in code and kept in the context.
+#[derive(Clone)]
+struct OverlayPhoto {
+    texture: egui::TextureHandle,
+    size: [usize; 2],
+    pixels: std::sync::Arc<Vec<Color32>>,
+}
+
+impl OverlayPhoto {
+    /// The colour of the pixel at `at`, in the photo's coordinates: what a picker there
+    /// would sample.
+    fn sample(&self, at: egui::Pos2) -> Color32 {
+        let [w, h] = self.size;
+        let x = ((at.x * w as f32) as usize).min(w - 1);
+        let y = ((at.y * h as f32) as usize).min(h - 1);
+        self.pixels[y * w + x]
+    }
+}
+
+/// `ground` as a photo of a pixel a point at the section's size, or `zoomed`, of a pixel
+/// 10 points across. The same every run: the busy one's noise has a fixed seed.
+fn overlay_photo(ctx: &egui::Context, ground: Ground, zoomed: bool) -> OverlayPhoto {
+    let id = egui::Id::unique(("gallery overlay photo", ground, zoomed));
+    if let Some(photo) = ctx.data(|d| d.get_temp::<OverlayPhoto>(id)) {
+        return photo;
+    }
+    let scale = if zoomed { 10.0 } else { 1.0 };
+    let [w, h] = [
+        (OVERLAY_PHOTO.x / scale) as usize,
+        (OVERLAY_PHOTO.y / scale) as usize,
+    ];
+    // Grain two points across at the section's size, in four steps of ±42: busy, the same
+    // on every machine, and small in the snapshots.
+    let block = if zoomed { 1 } else { 2 };
+    let grain = |x: usize, y: usize| {
+        let mut h = ((x / block) as u32).wrapping_mul(0x9E37_79B9)
+            ^ ((y / block) as u32).wrapping_mul(0x85EB_CA6B);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2C1B_3C6D);
+        h ^= h >> 12;
+        ((h >> 30) as f32 - 1.5) * 28.0
+    };
+    let mut pixels = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            // Where the pixel is, 0 to 1 across and down, the same at either scale.
+            let (u, v) = ((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
+            let mix = |a: [f32; 3], b: [f32; 3], t: f32| {
+                Color32::from_rgb(
+                    (a[0] + (b[0] - a[0]) * t) as u8,
+                    (a[1] + (b[1] - a[1]) * t) as u8,
+                    (a[2] + (b[2] - a[2]) * t) as u8,
+                )
+            };
+            let pixel = match ground {
+                Ground::Light => mix([214.0, 228.0, 240.0], [248.0, 242.0, 230.0], v),
+                Ground::Dark => mix([10.0, 12.0, 16.0], [42.0, 34.0, 28.0], u * 0.6 + v * 0.4),
+                Ground::Busy => {
+                    // Diagonal stripes 14 points wide, light and dark, a warm and a cool.
+                    let stripe = ((u * OVERLAY_PHOTO.x + v * OVERLAY_PHOTO.y) / 14.0) as u32 % 4;
+                    let base: [f32; 3] = match stripe {
+                        0 => [236.0, 232.0, 220.0],
+                        1 => [40.0, 44.0, 52.0],
+                        2 => [196.0, 120.0, 64.0],
+                        _ => [70.0, 110.0, 150.0],
+                    };
+                    let n = grain(x, y);
+                    let at = |c: f32| (c + n).clamp(0.0, 255.0);
+                    Color32::from_rgb(at(base[0]) as u8, at(base[1]) as u8, at(base[2]) as u8)
+                }
+            };
+            pixels.push(pixel);
+        }
+    }
+    let image = egui::ColorImage::new([w, h], pixels.clone());
+    let texture = ctx.load_texture(
+        "gallery overlay photo",
+        image,
+        egui::TextureOptions::NEAREST,
+    );
+    let photo = OverlayPhoto {
+        texture,
+        size: [w, h],
+        pixels: std::sync::Arc::new(pixels),
+    };
+    ctx.data_mut(|d| d.insert_temp(id, photo.clone()));
+    photo
 }
 
 fn heading(ui: &mut Ui, text: &str) {

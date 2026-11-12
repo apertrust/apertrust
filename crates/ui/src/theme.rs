@@ -152,6 +152,7 @@ pub struct Theme {
     pub spacing: Spacing,
     pub sizes: Sizes,
     pub shape: Shape,
+    pub overlay: OverlaySizes,
     pub elevation: Elevation,
     pub motion: Motion,
     /// The built-in theme this one is or extends, whatever it is named; none for a theme
@@ -367,6 +368,15 @@ pub struct Colors {
     /// the photo whatever the theme.
     #[serde(with = "hex")]
     pub guides: Color32,
+    /// The on-photo overlay's line (`docs/gui.md`, On-photo overlays): white at 80%, drawn
+    /// over `overlay_halo`, so a mark reads on any photo with no colour of the interface's;
+    /// a label's text too. darktable's picker line (`src/views/darkroom.c:447`).
+    #[serde(with = "hex")]
+    pub overlay_line: Color32,
+    /// The black at 40% under the overlay's line, three times its width, and round a
+    /// label's text (`darkroom.c:437-438`).
+    #[serde(with = "hex")]
+    pub overlay_halo: Color32,
     /// The ring round a selected photo's cell in the grid panel, and round the active one
     /// in a thicker line: the icons' grey (`text_secondary`), never the accent, so the cell's
     /// own colours are not judged against it; the high-contrast theme's brighter.
@@ -477,6 +487,9 @@ pub struct Shape {
     /// The ground left between a checkbox, a text button or an icon button and its focus
     /// ring, so the ring never touches the control, nor an amber one.
     pub focus_gap: f32,
+    /// The focus ring's width: 1.5 points of `focus_ring`. The components' shared ring and
+    /// the overlay's ring on the photo read it.
+    pub focus_width: f32,
     /// The faint edge of a menu, drawn popup or tooltip: a half point, a full one in the
     /// high-contrast theme.
     pub popup_hairline: f32,
@@ -486,6 +499,25 @@ pub struct Shape {
     pub separator_width: f32,
     /// A slider's track, and the moved part drawn on it.
     pub track: f32,
+}
+
+/// The on-photo overlay's sizes, in points, the same at every zoom (`docs/gui.md`, On-photo
+/// overlays): darktable's picker drawing (`src/views/darkroom.c:331-470`), whose logical
+/// pixels are points. The selected weight doubles the line and its halo.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverlaySizes {
+    /// The line's white, 1 point (`darkroom.c:344`, `:441`).
+    pub line: f32,
+    /// The black under it, 3 points (`:437`), so a point of it shows on each side.
+    pub halo: f32,
+    /// The secondary weight's dash and the gap after it, 4 points each (`:345`).
+    pub dash: f32,
+    /// A square handle's side, 10 points (`:392`).
+    pub handle: f32,
+    /// The least half-pixel, 4 points (`:365`): the point marks' unit, a crosshair reaching
+    /// 4 or 5 of them and a centre's radius one. Half a frame pixel, rounded, when larger.
+    pub half_pixel: f32,
 }
 
 /// The shadow beneath menus, drawn popups and tooltips, in points.
@@ -934,6 +966,8 @@ impl Theme {
             ("clip_highlights", c.clip_highlights),
             ("mask_overlay", c.mask_overlay),
             ("guides", c.guides),
+            ("overlay_line", c.overlay_line),
+            ("overlay_halo", c.overlay_halo),
             ("frame_ring", c.frame_ring),
             ("thumb_scrim", c.thumb_scrim),
             ("text_on_thumb_scrim", c.text_on_thumb_scrim),

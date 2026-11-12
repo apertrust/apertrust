@@ -32,6 +32,7 @@ pub mod fonts;
 pub mod gallery;
 pub mod i18n;
 pub mod icons;
+pub mod overlay;
 pub mod popup;
 pub mod theme;
 
