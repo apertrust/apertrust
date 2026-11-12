@@ -856,6 +856,10 @@ menu-grid-position = Grid Panel Position
 # name of the folder it is in.
 menu-open-recent = Open Recent
 menu-recent-in = { $name } — { $parent }
+# Edit › Undo and Redo, naming what they would do as History names the step: "Undo
+# Exposure", "Undo Go to Step". With nothing to name they read action-undo and action-redo.
+menu-undo-step = Undo { $step }
+menu-redo-step = Redo { $step }
 # The Mac's own items in the app menu and the Window menu, which macOS performs.
 menu-services = Services
 menu-hide-app = Hide { app-name }
@@ -864,6 +868,19 @@ menu-show-all = Show All
 menu-minimise = Minimise
 menu-zoom-window = Zoom
 menu-bring-all-to-front = Bring All to Front
+
+## The edit's history: a step's name, as History lists it and Undo and Redo name it
+
+# A step that put the whole edit back to nothing: Reset Edit.
+history-reset = Reset
+# A step that changed several modules; $count is how many.
+history-modules =
+    { $count ->
+        [one] { $count } module
+       *[other] { $count } modules
+    }
+# Going to a step in History, which Undo takes back and Redo puts back.
+history-go-to-step = Go to Step
 
 ## The curve; $control is its full name
 

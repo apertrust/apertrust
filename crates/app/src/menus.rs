@@ -20,8 +20,9 @@
 //! registry by id, a submenu, one of the Mac's own items, or Open Recent's list, whose
 //! items are the recents the app hands in ([`Recent`]). It names actions as the top
 //! panel's `TOP_PANEL` does, so the registry still declares each action once: an item's
-//! words are its action's message, its key the keymap's first for the platform, and it is
-//! enabled exactly when its action can run where it is ([`shown`]). Only actions the
+//! words are its action's message, Undo's and Redo's naming the step they would take back
+//! or put back ([`words`]), its key the keymap's first for the platform, and it is enabled
+//! exactly when its action can run where it is ([`shown`]). Only actions the
 //! registry declares are placed, drawn disabled until they are built; a later one joins the
 //! tree when the registry declares it, and a menu with nothing to hold is left out, but for
 //! the Mac's Window and Help menus, which AppKit fills (`docs/gui.md`, The menu bar).
@@ -43,10 +44,11 @@
     )
 )]
 
+use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
 use eframe::egui::{self, Pos2, Rect, os::OperatingSystem};
 
-use crate::actions::{self, ActionId, Focus, Keymap, Platforms, Shortcut, State, Trigger};
+use crate::actions::{self, Action, ActionId, Focus, Keymap, Platforms, Shortcut, State, Trigger};
 
 /// What the system does with a menu on the Mac.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,6 +97,42 @@ pub struct Recent {
     pub words: String,
     pub tip: String,
     pub path: std::path::PathBuf,
+}
+
+/// What Undo and Redo would do, as History names the step, in the interface's language:
+/// "Exposure", "Go to Step"; none where there is nothing to do or to name
+/// (`history::steps`, from the session's `History`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Steps {
+    pub undo: Option<String>,
+    pub redo: Option<String>,
+}
+
+/// `action`'s words as its item shows them: its message, but Undo and Redo name what they
+/// would do, `steps` ("Undo Exposure", `menu-undo-step`; "Redo Go to Step",
+/// `menu-redo-step`). With nothing to name, and while a text field has the focus, whose own
+/// undo they then are, they read Undo and Redo alone (`docs/gui.md`, The editing items
+/// follow focus).
+pub fn words(action: &Action, steps: &Steps, state: &State, tr: &Translator) -> String {
+    let (step, message) = match action.id {
+        ActionId::UNDO => (&steps.undo, "menu-undo-step"),
+        ActionId::REDO => (&steps.redo, "menu-redo-step"),
+        _ => return tr.text(action.message),
+    };
+    match step {
+        Some(step) if !state.text => {
+            let mut args = Args::new();
+            args.set("step", step.as_str());
+            tr.text_with(message, Some(&args))
+        }
+        _ => tr.text(action.message),
+    }
+}
+
+/// Whether `id`'s words follow the photo's history, so the Mac's menus word its item again
+/// each frame rather than only when the language changes.
+fn names_a_step(id: ActionId) -> bool {
+    id == ActionId::UNDO || id == ActionId::REDO
 }
 
 /// The Mac's own items, which muda predefines: macOS performs them, so they are not the
@@ -456,19 +494,31 @@ pub struct Shown {
     pub enabled: bool,
     /// Its key: the first the keymap gives its action on the platform, unless the focused
     /// widget keeps it, so a native menu never takes what is typed into a field
-    /// (`docs/gui.md`, Who owns the keys).
+    /// (`docs/gui.md`, Who owns the keys). The editing items keep theirs whatever has the
+    /// focus, and act on a focused text field ([`edits_the_field`]), but hold none while a
+    /// dialog's own window has the focus, so its own field takes them.
     pub key: Option<Shortcut>,
+}
+
+/// Whether `id`'s item is one of the editing items (decision 39), which keep their keys
+/// while a text field has the focus and act on the field: Undo and Redo, which Cut, Copy,
+/// Paste and Select All are to join.
+pub fn edits_the_field(id: ActionId) -> bool {
+    id == ActionId::UNDO || id == ActionId::REDO
 }
 
 /// What `id`'s item shows with `keymap`, in `state`, while `focus` has the focus.
 pub fn shown(id: ActionId, keymap: &Keymap, state: &State, focus: Focus) -> Shown {
+    let edits = edits_the_field(id);
     Shown {
         enabled: actions::action(id).is_some_and(|a| a.enabled(state)),
-        key: keymap
-            .keys(id)
-            .first()
-            .copied()
-            .filter(|k| !focus.keeps(k.key, k.modifiers)),
+        key: keymap.keys(id).first().copied().filter(|k| {
+            if edits {
+                !state.dialog_window
+            } else {
+                !focus.keeps(k.key, k.modifiers)
+            }
+        }),
     }
 }
 
@@ -485,18 +535,20 @@ pub fn runs(id: ActionId, repeat: bool) -> bool {
 /// where it is, and the keymap's first key as the platform spells it, whatever has the
 /// focus, since the registry reads every key there and the menu only shows them; and a
 /// check mark where the action turns something on or chooses one of a set. An item's id is
-/// its action's ([`chosen`]). Open Recent lists `recents`, each with its path in its tip.
+/// its action's ([`chosen`]). Open Recent lists `recents`, each with its path in its tip;
+/// Undo and Redo name `steps` ([`words`]).
 pub fn request(
     ctx: &egui::Context,
     keymap: &Keymap,
     state: &State,
     recents: &[Recent],
+    steps: &Steps,
     anchor: Rect,
 ) -> popup::Request {
     let tr = translator(ctx);
     let os = ctx.os();
     let entries = menus(os)
-        .map(|menu| drawn(menu, os, keymap, state, recents, &tr).into())
+        .map(|menu| drawn(menu, os, keymap, state, recents, steps, &tr).into())
         .collect();
     popup::Request::pull_down(anchor, tr.text("top-panel-menu"), entries)
 }
@@ -511,19 +563,21 @@ pub fn context(
     at: Pos2,
 ) -> popup::Request {
     let tr = translator(ctx);
-    let entries = drawn(menu, ctx.os(), keymap, state, &[], &tr).entries;
+    let steps = Steps::default();
+    let entries = drawn(menu, ctx.os(), keymap, state, &[], &steps, &tr).entries;
     let anchor = Rect::from_min_size(at, egui::Vec2::ZERO);
     popup::Request::pull_down(anchor, tr.text(menu.title), entries)
 }
 
 /// `menu` as a submenu of the ☰'s menu, its id its title's message id; one that lists the
-/// recents holds `recents` ([`listed`]).
+/// recents holds `recents` ([`listed`]), and Undo and Redo name `steps`.
 fn drawn(
     menu: &'static Menu,
     os: OperatingSystem,
     keymap: &Keymap,
     state: &State,
     recents: &[Recent],
+    steps: &Steps,
     tr: &Translator,
 ) -> popup::Submenu {
     if lists_recents(menu) {
@@ -560,8 +614,8 @@ fn drawn(
                         continue;
                     };
                     let shown = shown(*id, keymap, state, Focus::None);
-                    let mut item =
-                        popup::Item::new(id.0, tr.text(action.message)).enabled(shown.enabled);
+                    let words = words(action, steps, state, tr);
+                    let mut item = popup::Item::new(id.0, words).enabled(shown.enabled);
                     if let Some(key) = shown.key {
                         item = item.shortcut(key.spell(os, tr));
                     }
@@ -571,7 +625,7 @@ fn drawn(
                     entries.push(item.into());
                 }
                 Entry::Submenu(inner) => {
-                    entries.push(drawn(inner, os, keymap, state, recents, tr).into());
+                    entries.push(drawn(inner, os, keymap, state, recents, steps, tr).into());
                 }
                 // The Mac's alone, which `groups` leaves out elsewhere; the recents are in a
                 // menu of their own ([`listed`]).
@@ -604,7 +658,14 @@ impl NativeMenus {
         match *self {}
     }
 
-    pub fn update(&mut self, _: &eframe::egui::Context, _: &Keymap, _: &State, _: &[Recent]) {
+    pub fn update(
+        &mut self,
+        _: &eframe::egui::Context,
+        _: &Keymap,
+        _: &State,
+        _: &[Recent],
+        _: &Steps,
+    ) {
         match *self {}
     }
 }
@@ -620,8 +681,8 @@ mod mac {
     use muda::{MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
     use super::{
-        Entry, Listed, Recent, Role, Shown, System, groups, listed, lists_recents, menus, runs,
-        shown,
+        Entry, Listed, Recent, Role, Shown, Steps, System, groups, listed, lists_recents, menus,
+        names_a_step, runs, shown, words,
     };
     use crate::actions::{self, ACTIONS, ActionId, Focus, Keymap, Shortcut, State};
 
@@ -653,6 +714,7 @@ mod mac {
         menu: Submenu,
         position: usize,
         shown: Shown,
+        words: String,
     }
 
     enum Titled {
@@ -771,7 +833,7 @@ mod mac {
                         Entry::Action(id, _) => {
                             let words =
                                 actions::action(*id).map_or(String::new(), |a| tr.text(a.message));
-                            let item = MenuItem::with_id(id.0, words, false, None);
+                            let item = MenuItem::with_id(id.0, &words, false, None);
                             let position = submenu.items().len();
                             submenu.append(&item)?;
                             self.items.push(Placed {
@@ -783,6 +845,7 @@ mod mac {
                                     enabled: false,
                                     key: None,
                                 },
+                                words,
                             });
                         }
                         Entry::Submenu(inner) => {
@@ -820,22 +883,33 @@ mod mac {
         /// Brings every item up to date with `keymap`, `state`, the focus and the
         /// language, calling muda only for what changed: a language chosen in Settings
         /// renames every menu, and while a widget has focus no item holds a key it keeps.
-        /// Open Recent lists `recents`, built afresh only when what it shows changes.
+        /// Open Recent lists `recents`, built afresh only when what it shows changes; Undo
+        /// and Redo name `steps`.
         pub fn update(
             &mut self,
             ctx: &egui::Context,
             keymap: &Keymap,
             state: &State,
             recents: &[Recent],
+            steps: &Steps,
         ) {
             let tr = translator(ctx);
-            if tr.locale() != self.locale {
-                self.locale = tr.locale();
-                for placed in &self.items {
-                    if let Some(action) = actions::action(placed.id) {
-                        placed.item.set_text(tr.text(action.message));
-                    }
+            let renamed = tr.locale() != self.locale;
+            for placed in &mut self.items {
+                if !(renamed || names_a_step(placed.id)) {
+                    continue;
                 }
+                let Some(action) = actions::action(placed.id) else {
+                    continue;
+                };
+                let now = words(action, steps, state, &tr);
+                if now != placed.words {
+                    placed.item.set_text(&now);
+                    placed.words = now;
+                }
+            }
+            if renamed {
+                self.locale = tr.locale();
                 for (message, titled) in &self.titles {
                     match titled {
                         Titled::Menu(menu) => menu.set_text(tr.text(message)),
@@ -1052,6 +1126,9 @@ mod tests {
             view: View::Edit,
             photo: true,
             edited: true,
+            undo: true,
+            redo: true,
+            text: false,
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
@@ -1369,7 +1446,8 @@ mod tests {
         ctx.set_os(OperatingSystem::Nix);
         apertrust_ui::set_locale(&ctx, Locale::EnGb);
         let keymap = Keymap::defaults(OperatingSystem::Nix);
-        let menu = request(&ctx, &keymap, &state, &recents, Rect::NOTHING);
+        let steps = Steps::default();
+        let menu = request(&ctx, &keymap, &state, &recents, &steps, Rect::NOTHING);
         let file = tops(&menu)[0];
         let submenu = file
             .entries
@@ -1478,9 +1556,15 @@ mod tests {
             modifiers: Modifiers::COMMAND,
             key: k,
         };
-        // A value field keeps Cmd+Z and every plain key, but not Cmd+, nor Cmd+Q.
+        // A value field keeps every plain key, but not Cmd+, nor Cmd+Q; Undo and Redo keep
+        // Cmd+Z and Shift+Cmd+Z, which act on the field (decision 39).
         assert_eq!(key(ActionId::UNDO, Focus::None), Some(command(Key::Z)));
-        assert_eq!(key(ActionId::UNDO, Focus::Text), None);
+        assert_eq!(key(ActionId::UNDO, Focus::Text), Some(command(Key::Z)));
+        let shift = Shortcut {
+            modifiers: Modifiers::COMMAND.plus(Modifiers::SHIFT),
+            key: Key::Z,
+        };
+        assert_eq!(key(ActionId::REDO, Focus::Text), Some(shift));
         assert_eq!(key(ActionId::SHOW_BROWSE, Focus::Text), None);
         assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Text), None);
         assert_eq!(
@@ -1491,14 +1575,36 @@ mod tests {
         // A slider keeps Space, the next photo's, but not Cmd+Z.
         assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Control), None);
         assert_eq!(key(ActionId::UNDO, Focus::Control), Some(command(Key::Z)));
+        // A dialog's own window with the focus: Undo and Redo hold none, so its own field
+        // takes Cmd+Z, and the rest are as they were.
+        let in_dialog = State {
+            dialog_window: true,
+            ..everything()
+        };
+        assert_eq!(
+            shown(ActionId::UNDO, &keymap, &in_dialog, Focus::Text).key,
+            None
+        );
+        assert_eq!(
+            shown(ActionId::REDO, &keymap, &in_dialog, Focus::None).key,
+            None
+        );
+        assert_eq!(
+            shown(ActionId::QUIT, &keymap, &in_dialog, Focus::None).key,
+            Some(command(Key::Q))
+        );
         // Whatever the focus, an item holds exactly the action's first key that it does
-        // not keep.
+        // not keep, but the editing items, which keep theirs.
         for os in PLATFORMS {
             let keymap = Keymap::defaults(os);
             for id in placed(os) {
                 for focus in [Focus::None, Focus::Control, Focus::Text] {
                     let first = keymap.keys(id).first().copied();
-                    let expected = first.filter(|k| !focus.keeps(k.key, k.modifiers));
+                    let expected = if edits_the_field(id) {
+                        first
+                    } else {
+                        first.filter(|k| !focus.keeps(k.key, k.modifiers))
+                    };
                     assert_eq!(shown(id, &keymap, &state, focus).key, expected, "{}", id.0);
                 }
             }
@@ -1513,16 +1619,82 @@ mod tests {
         assert!(enabled(ActionId::RESET, &state));
         assert!(enabled(ActionId::SETTINGS, &state));
         // Declared, not built: drawn disabled.
-        assert!(!enabled(ActionId::UNDO, &state));
+        assert!(!enabled(ActionId::COPY_EDIT, &state));
         assert!(!enabled(ActionId::NEXT_PHOTO, &state));
         state.edited = false;
         assert!(!enabled(ActionId::RESET, &state));
+        // Undo and Redo, from the photo's history.
+        assert!(enabled(ActionId::UNDO, &state) && enabled(ActionId::REDO, &state));
+        state.undo = false;
+        assert!(!enabled(ActionId::UNDO, &state) && enabled(ActionId::REDO, &state));
         for os in PLATFORMS {
             for id in placed(os) {
                 let action = actions::action(id).expect("declared");
                 assert_eq!(enabled(id, &state), action.enabled(&state), "{}", id.0);
             }
         }
+    }
+
+    /// The words of `id`'s item in `menu`'s Edit.
+    fn edit_item(menu: &popup::Request, id: ActionId) -> (String, bool) {
+        let edit = tops(menu)[1];
+        assert_eq!(edit.id, "menu-edit");
+        edit.entries
+            .iter()
+            .find_map(|e| match e {
+                popup::Entry::Item(item) if item.id == id.0 => {
+                    Some((item.text.clone(), item.enabled))
+                }
+                _ => None,
+            })
+            .expect("in Edit")
+    }
+
+    #[test]
+    fn undo_and_redo_name_the_step_unless_a_text_field_has_the_focus() {
+        let mut state = everything();
+        let steps = Steps {
+            undo: Some("Exposure".to_owned()),
+            redo: Some("Go to Step".to_owned()),
+        };
+        let item = |locale, state: &State, steps: &Steps, id| {
+            edit_item(&drawn_menu_naming(locale, state, steps), id)
+        };
+        let named = |locale, state: &State, id| item(locale, state, &steps, id).0;
+        assert_eq!(named(Locale::EnGb, &state, ActionId::UNDO), "Undo Exposure");
+        assert_eq!(
+            named(Locale::EnGb, &state, ActionId::REDO),
+            "Redo Go to Step"
+        );
+        assert_eq!(
+            named(Locale::Uk, &state, ActionId::UNDO),
+            "Скасувати: Exposure"
+        );
+        assert_eq!(
+            named(Locale::Pl, &state, ActionId::REDO),
+            "Ponów: Go to Step"
+        );
+        // Nothing to name: Undo alone, and disabled with nothing to undo.
+        state.undo = false;
+        let nothing = Steps::default();
+        let undo = item(Locale::EnGb, &state, &nothing, ActionId::UNDO);
+        assert_eq!(undo, ("Undo".to_owned(), false));
+        // A text field with the focus: its own undo, whatever the photo's history holds.
+        state.text = true;
+        assert_eq!(
+            item(Locale::EnGb, &state, &steps, ActionId::UNDO),
+            ("Undo".to_owned(), true)
+        );
+        assert_eq!(named(Locale::EnGb, &state, ActionId::REDO), "Redo");
+        // The Mac's items take the same words.
+        let tr = Translator::new(Locale::EnGb);
+        let undo = actions::action(ActionId::UNDO).expect("declared");
+        assert_eq!(words(undo, &steps, &state, &tr), "Undo");
+        state.text = false;
+        assert_eq!(words(undo, &steps, &state, &tr), "Undo Exposure");
+        let reset = actions::action(ActionId::RESET).expect("declared");
+        assert_eq!(words(reset, &steps, &state, &tr), "Reset");
+        assert!(names_a_step(ActionId::REDO) && !names_a_step(ActionId::RESET));
     }
 
     #[test]
@@ -1593,6 +1765,12 @@ mod tests {
 
     /// The ☰'s menu as Linux draws it, in `locale`, with `state`.
     fn drawn_menu(locale: Locale, state: &State) -> popup::Request {
+        drawn_menu_naming(locale, state, &Steps::default())
+    }
+
+    /// The ☰'s menu as Linux draws it, in `locale`, with `state`, Undo and Redo naming
+    /// `steps`.
+    fn drawn_menu_naming(locale: Locale, state: &State, steps: &Steps) -> popup::Request {
         let ctx = egui::Context::default();
         ctx.set_os(OperatingSystem::Nix);
         apertrust_ui::set_locale(&ctx, locale);
@@ -1601,6 +1779,7 @@ mod tests {
             &Keymap::defaults(OperatingSystem::Nix),
             state,
             &[],
+            steps,
             Rect::NOTHING,
         )
     }

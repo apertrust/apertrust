@@ -56,6 +56,7 @@ mod export_again;
 mod exposure;
 mod fade;
 mod folder;
+mod history;
 mod jobs;
 mod library;
 mod log_window;
@@ -81,7 +82,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use actions::{ActionId, Emit, Intent, Keymap, State, View};
+use actions::{ActionId, Emit, Focus, Intent, Keymap, State, View};
 use apertrust_base::cache::{Cache, Limit};
 use apertrust_base::folders::{self, Folders, Given};
 use apertrust_base::settings::CONF_FLAG;
@@ -1574,6 +1575,12 @@ struct Shell {
     /// Whether a key ran an action while the menu was open, so it closes after the frame
     /// ([`Shell::close_menu`]).
     close_menu: bool,
+    /// What Undo and Redo would do, as the menus name it, from the session's history
+    /// (`history::steps`), kept up to date by the app before each frame.
+    steps: menus::Steps,
+    /// The keys Undo or Redo hand a focused text field when chosen from a menu, for the
+    /// next frame's input ([`actions::field_keys`], the app's `raw_input_hook`).
+    field_keys: Vec<egui::Event>,
     theme: Builtin,
     /// The marker on the sliders' tracks and the curve's handles (decision 75).
     marker: Marker,
@@ -1662,6 +1669,8 @@ impl Shell {
             drawn_menus: os != OperatingSystem::Mac,
             menu: false,
             close_menu: false,
+            steps: menus::Steps::default(),
+            field_keys: Vec::new(),
             theme: settings.theme,
             marker: settings.marker,
             locale,
@@ -2045,6 +2054,10 @@ impl Shell {
             view: self.view,
             photo,
             edited,
+            // The app's, from the photo's history ([`App::shell_state`]).
+            undo: false,
+            redo: false,
+            text: Focus::of(ctx) == Focus::Text,
             // One photo until the catalogue.
             photos: usize::from(photo),
             // The app's, from the folder and the photo it holds ([`App::shell_state`]).
@@ -2087,7 +2100,7 @@ impl Shell {
                     ..*state
                 };
                 shown = Some(paths);
-                menus::request(ctx, &self.keymap, &state, &recents, anchor)
+                menus::request(ctx, &self.keymap, &state, &recents, &self.steps, anchor)
             });
             let menu = request.access_key(letter)?.to_owned();
             Some(request.clone().expanded(menu))
@@ -2153,7 +2166,8 @@ impl Shell {
                 recents: self.recent_states(),
                 ..*state
             };
-            let request = menus::request(ctx, &self.keymap, &state, &recents, anchor);
+            let steps = &self.steps;
+            let request = menus::request(ctx, &self.keymap, &state, &recents, steps, anchor);
             popup::open(ctx, id, request);
         }
     }
@@ -2179,8 +2193,9 @@ impl Shell {
             import: can(ActionId::IMPORT),
             export: can(ActionId::EXPORT),
             reset: can(ActionId::RESET),
-            undo: can(ActionId::UNDO),
-            redo: can(ActionId::REDO),
+            // The photo's history alone: a click takes the focus from a text field first.
+            undo: state.undo && can(ActionId::UNDO),
+            redo: state.redo && can(ActionId::REDO),
             copy: can(ActionId::COPY_EDIT),
             apply: can(ActionId::APPLY_EDIT),
         };
@@ -2256,7 +2271,9 @@ impl Shell {
     /// Runs `id` if it can run where it is in `state`: applies its intent, or returns its
     /// command for the session. Keys, clicks and the ☰'s menu's choices arrive here after
     /// the frame, the Mac's menus' choices before it (`App::logic`); `regions` are the
-    /// frame's top panel, central bar, side panel and grid panel, for F6.
+    /// frame's top panel, central bar, side panel and grid panel, for F6. Undo and Redo
+    /// act on a text field with the focus, handing it its own keys for the next frame
+    /// (decision 39).
     fn run(
         &mut self,
         id: ActionId,
@@ -2265,6 +2282,13 @@ impl Shell {
         regions: &[egui::Rect],
     ) -> Option<Command> {
         let action = actions::action(id).filter(|a| a.enabled(state))?;
+        if state.text
+            && let Some(keys) = actions::field_keys(id, ctx.os())
+        {
+            self.field_keys.extend(keys);
+            ctx.request_repaint();
+            return None;
+        }
         match &action.emits {
             Emit::Command(command) => Some(command.clone()),
             Emit::Intent(intent) => {
@@ -3227,12 +3251,17 @@ impl App {
     fn shell_state(&self, ctx: &egui::Context) -> State {
         let open = matches!(self.mirror.photo, PhotoState::Open(_));
         // A photo open for viewing only has nothing Reset could take back, nor one still
-        // opening, read-only until it is live (decision 77).
-        let resettable = self.mirror.values.edited && self.mirror.takes_edits();
+        // opening, read-only until it is live (decision 77); nor anything Undo and Redo
+        // could, which the session refuses there.
+        let takes = self.mirror.takes_edits();
+        let resettable = self.mirror.values.edited && takes;
         let state = self.shell.state(ctx, open, resettable);
+        let history = self.mirror.history.as_ref().filter(|_| takes);
         State {
             shown: !self.mirror.folder.order().is_empty(),
             opened: opened(&self.mirror),
+            undo: history.is_some_and(|h| h.undo.is_some()),
+            redo: history.is_some_and(|h| h.redo.is_some()),
             ..state
         }
     }
@@ -3977,7 +4006,7 @@ impl App {
         let recents = self.menus.is_some().then(|| self.shell.show_recents(ctx));
         let state = self.state(ctx);
         if let (Some(menus), Some(recents)) = (&mut self.menus, recents) {
-            menus.update(ctx, &self.shell.keymap, &state, &recents);
+            menus.update(ctx, &self.shell.keymap, &state, &recents, &self.shell.steps);
         }
         // The Mac's popup menus the frame asked for, shown from the run loop.
         popups::show(ctx, frame);
@@ -4366,6 +4395,13 @@ impl eframe::App for App {
         if taken.quit || jobs_hold || std::mem::take(&mut self.quit_again) || finished || written {
             self.run_actions([ActionId::QUIT], ctx, &[]);
         }
+        // What Undo and Redo would do, in the language Settings may just have changed, for
+        // the menus this frame builds or brings up to date.
+        // Named only while the photo takes edits, as Undo and Redo run only then.
+        let history = (self.mirror.history.as_ref()).filter(|_| self.mirror.takes_edits());
+        let modules = self.mirror.modules();
+        let steps = history::steps(history, modules, &translator(ctx));
+        self.shell.steps = steps;
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
@@ -4386,6 +4422,8 @@ impl eframe::App for App {
         if std::mem::take(&mut self.handed_off) {
             release_after_drag(ctx, raw_input);
         }
+        // What Undo or Redo, chosen from a menu, hand the focused text field.
+        raw_input.events.append(&mut self.shell.field_keys);
         // The start window is never resized.
         if CAPTION_BUTTONS && !self.start.shown {
             self.resize = resize_press(ctx, raw_input, RESIZE_BAND);
@@ -9864,6 +9902,8 @@ mod tests {
         edited: bool,
         /// Whether a folder or a photo is open, as the app's mirror says: File › Close's.
         anything_open: bool,
+        /// The photo's history, as the app's mirror holds it: what Undo and Redo would do.
+        history: Option<apertrust_engine::session::History>,
         /// Every action the keys asked for that could run.
         pressed: Vec<ActionId>,
         /// The hold actions held in the last frame.
@@ -9984,6 +10024,10 @@ mod tests {
             .build_ui_state(
                 |ui, bench: &mut Bench| {
                     let ctx = ui.ctx().clone();
+                    // As `App::logic` words them before each frame.
+                    let modules = apertrust_modules::MODULES;
+                    let words = translator(&ctx);
+                    bench.shell.steps = history::steps(bench.history.as_ref(), modules, &words);
                     let state = bench.state(&ctx);
                     bench.shell.access_key(&ctx, &state);
                     let keys = actions::read(&ctx, &bench.shell.keymap, &state);
@@ -10092,6 +10136,7 @@ mod tests {
                     photo: true,
                     edited: false,
                     anything_open: false,
+                    history: None,
                     pressed: Vec::new(),
                     held: Vec::new(),
                     chosen: Vec::new(),
@@ -10122,8 +10167,11 @@ mod tests {
     impl Bench {
         /// The actions' availability, the shell's with the host's dialog, as the app has it.
         fn state(&self, ctx: &egui::Context) -> State {
+            let history = self.history.as_ref();
             let shell = State {
                 opened: self.anything_open,
+                undo: history.is_some_and(|h| h.undo.is_some()),
+                redo: history.is_some_and(|h| h.redo.is_some()),
                 ..self.shell.state(ctx, self.photo, self.edited)
             };
             // The open dialog asking and an alert up, as `App::asking_modal`.
@@ -12896,7 +12944,8 @@ mod tests {
         photos.hover();
         harness.run();
         assert!(harness.query_by_label("Photos (Cmd+1)").is_some());
-        // Reset has no key until undo exists, so its tooltip is its name alone.
+        // Reset has no key by default, as darktable's discard history, so its tooltip is
+        // its name alone.
         let reset = harness.get_by_role_and_label(Role::Button, "Reset");
         assert_eq!(reset.accesskit_node().data().keyboard_shortcut(), None);
     }
@@ -13005,7 +13054,7 @@ mod tests {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         for (modifiers, key) in [
-            // Not built yet: Undo, Redo, Copy edit, the next photo.
+            // Nothing to undo or redo yet; not built yet: Copy edit, the next photo.
             (Modifiers::COMMAND, Key::Z),
             (Modifiers::COMMAND, Key::Y),
             (Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C),
@@ -13039,6 +13088,281 @@ mod tests {
         harness.get_by_role_and_label(Role::Button, "Reset").click();
         harness.run();
         assert_eq!(harness.state().commands, vec![Command::Reset]);
+    }
+
+    /// A history of one step, Exposure, with `undo` and `redo` as given.
+    fn one_step(
+        undo: Option<apertrust_engine::session::Move>,
+        redo: Option<apertrust_engine::session::Move>,
+    ) -> apertrust_engine::session::History {
+        let step = history::tests::step(7, &["exposure"], None);
+        history::tests::history(3, vec![step], undo, redo)
+    }
+
+    #[test]
+    fn undo_and_redo_send_their_commands_from_their_keys_once_there_is_a_step() {
+        use apertrust_engine::session::{Move, StepId};
+        for (os, command) in [
+            (
+                OperatingSystem::Windows,
+                Modifiers::CTRL.plus(Modifiers::COMMAND),
+            ),
+            (
+                OperatingSystem::Mac,
+                Modifiers::MAC_CMD.plus(Modifiers::COMMAND),
+            ),
+        ] {
+            let shift = command.plus(Modifiers::SHIFT);
+            let mut harness = bench(os);
+            harness.run();
+            harness.key_press_modifiers(command, Key::Z);
+            harness.run();
+            assert!(harness.state().commands.is_empty(), "{os:?}");
+            // A step to take back: Ctrl+Z (Cmd+Z), and its button, undo it.
+            harness.state_mut().history = Some(one_step(Some(Move::Step(StepId(7))), None));
+            harness.run();
+            harness.key_press_modifiers(command, Key::Z);
+            harness.run();
+            harness.get_by_role_and_label(Role::Button, "Undo").click();
+            harness.run();
+            harness.key_press_modifiers(shift, Key::Z);
+            harness.run();
+            assert_eq!(harness.state().commands, [Command::Undo, Command::Undo]);
+            // Then one to put back: Shift+Ctrl+Z, and Ctrl+Y off the Mac.
+            harness.state_mut().history = Some(one_step(None, Some(Move::Step(StepId(7)))));
+            harness.state_mut().commands.clear();
+            harness.run();
+            harness.key_press_modifiers(command, Key::Z);
+            harness.run();
+            harness.key_press_modifiers(shift, Key::Z);
+            harness.run();
+            harness.key_press_modifiers(command, Key::Y);
+            harness.run();
+            let redone = if os == OperatingSystem::Mac { 1 } else { 2 };
+            assert_eq!(harness.state().commands, vec![Command::Redo; redone]);
+            // Held, each repeat is one more.
+            harness.state_mut().commands.clear();
+            harness.event_modifiers(
+                egui::Event::Key {
+                    key: Key::Z,
+                    physical_key: Some(Key::Z),
+                    pressed: true,
+                    repeat: true,
+                    modifiers: shift,
+                },
+                shift,
+            );
+            harness.run();
+            assert_eq!(harness.state().commands, [Command::Redo]);
+            // A photo with nothing to take back or put back: nothing.
+            harness.state_mut().history = Some(one_step(None, None));
+            harness.state_mut().commands.clear();
+            harness.run();
+            harness.key_press_modifiers(command, Key::Z);
+            harness.key_press_modifiers(shift, Key::Z);
+            harness.run();
+            assert!(harness.state().commands.is_empty());
+            for name in ["Undo", "Redo"] {
+                let node = harness.get_by_role_and_label(Role::Button, name);
+                assert!(node.accesskit_node().is_disabled(), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn edit_s_undo_and_redo_name_their_steps_and_send_their_commands() {
+        use apertrust_engine::session::{Move, StepId};
+        // Redo shows Ctrl+Y first on Windows, Ctrl+Shift+Z first on Linux.
+        for (os, redo_key) in [
+            (OperatingSystem::Windows, "Ctrl+Y"),
+            (OperatingSystem::Nix, "Ctrl+Shift+Z"),
+        ] {
+            let mut harness = bench(os);
+            let history = one_step(Some(Move::Step(StepId(7))), Some(Move::GoTo));
+            harness.state_mut().history = Some(history);
+            harness.run();
+            alt(&mut harness, Key::E, Some("e"));
+            let undo = harness.get_by_role_and_label(Role::MenuItem, "Undo Exposure");
+            assert!(!undo.accesskit_node().is_disabled(), "{os:?}");
+            assert_eq!(
+                undo.accesskit_node().data().keyboard_shortcut(),
+                Some("Ctrl+Z")
+            );
+            let redo = harness.get_by_role_and_label(Role::MenuItem, "Redo Go to Step");
+            assert_eq!(
+                redo.accesskit_node().data().keyboard_shortcut(),
+                Some(redo_key)
+            );
+            undo.click();
+            harness.run();
+            assert_eq!(harness.state().commands, [Command::Undo]);
+            alt(&mut harness, Key::E, Some("e"));
+            harness
+                .get_by_role_and_label(Role::MenuItem, "Redo Go to Step")
+                .click();
+            harness.run();
+            assert_eq!(harness.state().commands, [Command::Undo, Command::Redo]);
+            // Nothing to take back: Undo alone, disabled.
+            harness.state_mut().history = Some(one_step(None, None));
+            harness.run();
+            alt(&mut harness, Key::E, Some("e"));
+            let undo = harness.get_by_role_and_label(Role::MenuItem, "Undo");
+            assert!(undo.accesskit_node().is_disabled());
+        }
+    }
+
+    /// The shell beside a text field, as a value field or a dialog's name field has one:
+    /// the keys read first, the top panel and the field, then what the keys and the menus
+    /// ran, and the ☰'s menu opened where it is drawn.
+    struct Field {
+        shell: Shell,
+        text: String,
+        /// Whether the field is to take the focus this frame.
+        focus: bool,
+        /// What the menus chose, as the Mac's come before the frame.
+        chosen: Vec<ActionId>,
+        commands: Vec<Command>,
+    }
+
+    fn field(os: OperatingSystem) -> Harness<'static, Field> {
+        Harness::builder()
+            .with_os(os)
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, field: &mut Field| {
+                    let ctx = ui.ctx().clone();
+                    // A step on each side, so Undo and Redo can run.
+                    let state = |ctx: &egui::Context, shell: &Shell| State {
+                        undo: true,
+                        redo: true,
+                        ..shell.state(ctx, true, true)
+                    };
+                    let now = state(&ctx, &field.shell);
+                    let keys = actions::read(&ctx, &field.shell.keymap, &now);
+                    field.shell.close_menu(&keys.pressed);
+                    let top = field
+                        .shell
+                        .top_panel(ui, &now, SaveState::None, None, None, &[]);
+                    let name = ui.label("Name");
+                    let response = ui.text_edit_singleline(&mut field.text);
+                    let response = response.labelled_by(name.id);
+                    if std::mem::take(&mut field.focus) {
+                        response.request_focus();
+                    }
+                    let mut run = keys.pressed;
+                    run.append(&mut field.chosen);
+                    if let Some(FromTopPanel::Action(id)) = top {
+                        run.push(id);
+                    }
+                    run.extend(field.shell.popups(&ctx));
+                    for id in run {
+                        let state = state(&ctx, &field.shell);
+                        let command = field.shell.run(id, &state, &ctx, &[]);
+                        field.commands.extend(command);
+                    }
+                    let now = state(&ctx, &field.shell);
+                    field.shell.open_menu(&ctx, &now);
+                },
+                Field {
+                    shell: Shell::new(&Settings::default(), Locale::EnGb, os),
+                    text: "photo".to_owned(),
+                    focus: true,
+                    chosen: Vec::new(),
+                    commands: Vec::new(),
+                },
+            )
+    }
+
+    /// Runs `id` as a menu's choice, then a frame with what it handed the field, as the
+    /// app's `raw_input_hook` adds it.
+    fn choose(harness: &mut Harness<'_, Field>, id: ActionId) {
+        harness.state_mut().chosen.push(id);
+        harness.run();
+        let keys = std::mem::take(&mut harness.state_mut().shell.field_keys);
+        harness.input_mut().events.extend(keys);
+        harness.run();
+    }
+
+    #[test]
+    fn a_text_field_keeps_its_own_undo_and_the_menus_hand_it_theirs() {
+        for (os, command) in [
+            (
+                OperatingSystem::Mac,
+                Modifiers::MAC_CMD.plus(Modifiers::COMMAND),
+            ),
+            (
+                OperatingSystem::Windows,
+                Modifiers::CTRL.plus(Modifiers::COMMAND),
+            ),
+        ] {
+            let mut harness = field(os);
+            harness.run();
+            harness.run();
+            harness
+                .input_mut()
+                .events
+                .push(egui::Event::Text("x".to_owned()));
+            harness.run();
+            assert_eq!(harness.state().text, "photox", "{os:?}");
+            // The keys are the field's: its text goes back, and the photo's history is
+            // never sent a command.
+            harness.key_press_modifiers(command, Key::Z);
+            harness.run();
+            assert_eq!(harness.state().text, "photo");
+            harness.key_press_modifiers(command.plus(Modifiers::SHIFT), Key::Z);
+            harness.run();
+            assert_eq!(harness.state().text, "photox");
+            // Edit › Undo and Redo chosen from a menu act on the field too.
+            choose(&mut harness, ActionId::UNDO);
+            assert_eq!(harness.state().text, "photo");
+            choose(&mut harness, ActionId::REDO);
+            assert_eq!(harness.state().text, "photox");
+            assert!(harness.state().commands.is_empty());
+            // Without the focus, they are the photo's.
+            harness.ctx.memory_mut(|m| m.stop_text_input());
+            harness.run();
+            choose(&mut harness, ActionId::UNDO);
+            assert_eq!(harness.state().text, "photox");
+            assert_eq!(harness.state().commands, [Command::Undo]);
+        }
+    }
+
+    /// The ☰'s menu opened by F10 gives the focus back to the field before Edit › Undo
+    /// runs, which hands the field its own key.
+    #[test]
+    fn edit_s_undo_from_the_menu_f10_opened_acts_on_the_focused_field() {
+        let mut harness = field(OperatingSystem::Nix);
+        harness.run();
+        harness.run();
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::Text("x".to_owned()));
+        harness.run();
+        assert_eq!(harness.state().text, "photox");
+        harness.key_press(Key::F10);
+        harness.run();
+        harness.key_press(Key::ArrowDown);
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+        // The field's own undo: Undo alone, enabled, with its key.
+        let undo = harness.get_by_role_and_label(Role::MenuItem, "Undo");
+        assert!(!undo.accesskit_node().is_disabled());
+        assert_eq!(
+            undo.accesskit_node().data().keyboard_shortcut(),
+            Some("Ctrl+Z")
+        );
+        undo.click();
+        harness.run();
+        let keys = std::mem::take(&mut harness.state_mut().shell.field_keys);
+        assert_eq!(keys.len(), 2);
+        harness.input_mut().events.extend(keys);
+        harness.run();
+        assert_eq!(harness.state().text, "photo");
+        assert!(harness.state().commands.is_empty());
     }
 
     #[test]

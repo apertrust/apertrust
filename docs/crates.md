@@ -569,7 +569,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 **The Mac's menu bar** (`src/menus.rs`, decision 39):
 
 - One model, `MENUS`, holds the actions the registry declares and the system's own items. It is built with muda (a macOS-only dependency) in place of winit's default menu once the window exists.
-- Each frame gives it what changed: words in the language, enabled when the action can run in its scope, and the keymap's first key unless the focused widget keeps it.
+- Each frame gives it what changed: words in the language, Undo's and Redo's naming their step, enabled when the action can run in its scope, and the keymap's first key unless the focused widget keeps it.
 - Its choices go down a channel and run through `Shell::run` in `App::logic`, so they run while the window is minimised too. A press action's choice by a held key's repeat is dropped.
 - AppKit's own full-screen item is kept out.
 - The app menu is titled Apertrust by an Info.plist the build embeds in the binary (`build.rs`).
@@ -629,7 +629,7 @@ File › Open… (`open`, Ctrl+O, first in File, and Browse's ＋; `src/dialogs.
 **Focus and modality:**
 
 - `State::modal` counts a sheet or a modal window of the host's, About and the open dialog asking. It rests every action that opens a dialog, and Close Window unless a dialog's own window has the focus.
-- `State::dialog_window`, while a modeless dialog's window has the focus, rests the view's keys, the side panel's tabs, Full Screen and Reset Edit; Close Window then closes that window.
+- `State::dialog_window`, while a modeless dialog's window has the focus, rests the view's keys, the side panel's tabs, Full Screen, Reset Edit, Undo and Redo; Close Window then closes that window.
 - The focus goes back to the control that had it; after a modeless window, only where it has not moved.
 - The main window's own controls are drawn as with it focused, and the menus follow the key window.
 - Quit, Close Window on the main window and its close button close the dialog first and leave once it has gone. Quit waits for the open dialog's answer.
@@ -661,6 +661,14 @@ The actions registry and the default keyboard map:
 - keys matched exactly, digits by their physical key;
 - shortcuts shown in tooltips and given to AccessKit;
 - F6 moves between regions; the interface has a scale.
+
+**Undo and Redo** (step 9.4, decision 78; [history.md](history.md#in-the-app)):
+
+- Edit › Undo (`undo`, Cmd+Z, Ctrl+Z) and Redo (`redo`, Shift+Cmd+Z; Ctrl+Y then Ctrl+Shift+Z on Windows, the other way round on Linux, each platform's first the one its menu shows, `Platforms::Windows` and `Linux`) send `Command::Undo` and `Command::Redo`, as do the top panel's buttons, which take the history alone. A held key repeats them.
+- They are enabled from the mirror's history, `State::undo` and `State::redo` from `History::undo` and `redo`, while the photo is live and not open for viewing only; on the main window, with no modal dialog over it.
+- Their items name what they would do, `menu-undo-step` and `menu-redo-step` with `$step` ("Undo Exposure", "Redo Go to Step"), on the Mac's bar and in the ☰ alike (`menus::words`). `history::steps`, before each frame in `App::logic`, words the step as History names it: its note, its one module's title, or how many modules (`history-modules`); `GoTo` is `history-go-to-step` and `Reset`'s note `history-reset`. With nothing to name they read Undo and Redo.
+- A focused text field keeps their keys for its own undo (`Focus::keeps`), but the Mac's items keep them too (`menus::edits_the_field`, decision 39), and hold none while a dialog's own window has the focus, so its field takes them. While a field has the focus they are enabled and read Undo and Redo, and performed or chosen from a menu they hand the field egui's own keys, Cmd+Z or Shift+Cmd+Z, for the next frame (`actions::field_keys`, `Shell::field_keys`, added in `raw_input_hook`).
+- Reset Edit keeps no default key, as darktable's discard history has none.
 
 ### The settings file
 
@@ -717,8 +725,9 @@ The actions registry and the default keyboard map:
 The session's events enter the app in one place (decision 59, `src/mirror.rs`): the mirror's `apply(event) -> Vec<Reaction>`, with no egui type.
 
 - It is drained first in `App::logic`, so while the window is minimised too.
-- It holds what the app knows of the session: the photo, the values (with the changes sent since shown over them), the frame, the scopes' reading, whether the edit is saved, the jobs, the failure the central panel shows, the open folder with its thumbnails, and the Export dialog's floor for previews.
+- It holds what the app knows of the session: the photo, the values (with the changes sent since shown over them), the frame, the scopes' reading, whether the edit is saved, the photo's history, the jobs, the failure the central panel shows, the open folder with its thumbnails, and the Export dialog's floor for previews.
 - It drops what an earlier open left on its way.
+- **The photo's history** (decision 78): `Mirror::history`, the latest `Event::History` by its `through`, one numbered lower dropped; none with no photo, while another opens until its own arrives, an earlier open's dropped as its values are, and once the photo closes or an open fails.
 - It returns the reactions the app owes: `Reaction::Jobs`, the jobs window to open or update, and `Reaction::Preview`, a preview for the Export dialog.
 - A refused command's number (`SessionError::Refused`) drops its pending change and the save it would have waited for.
 - It is tested by feeding it event sequences. There is no bus and no subscriptions: panels draw from the mirror each frame.

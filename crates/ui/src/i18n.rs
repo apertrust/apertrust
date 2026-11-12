@@ -861,6 +861,8 @@ mod tests {
                 args.set("command", "Ctrl");
                 // Open Recent's item for a name two recents share: the folder it is in.
                 args.set("parent", "Lisbon");
+                // Edit › Undo and Redo: the step they would take back or put back.
+                args.set("step", "Exposure");
                 // Browse's missing recent: its label, its open kind and its name.
                 args.set("label", "Folder: 2026-10 Lisbon");
                 // The start window's recent, to screen readers: its path.

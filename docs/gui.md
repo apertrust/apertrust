@@ -492,7 +492,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
   muda 0.21 leaves a key equivalent in place when given none, so an item losing its key is taken out and put back at its place, which builds it afresh. That relies on AppKit only appending its own items to a menu, so muda's index of the item among its children stays its index in the `NSMenu`.
 - **A held key.** A choice's id comes down a channel with whether a key's repeat chose it, read from AppKit's current event in the handler (`apertrust_display::handling_key_repeat`). AppKit performs a key equivalent on every repeat of a held key, so a press action's choice by a repeat is dropped and only a repeat action (`Trigger::Repeat`) runs again (`menus::runs`).
 - **The choices run in `App::logic`,** through `Shell::run`, which runs an action only while it is enabled. eframe calls `logic` before each frame, and alone while the window is minimised or hidden, so a choice such as Quit never waits for the window to show.
-- **While a text field has focus,** until the editing actions route to it ([who owns the keys](#who-owns-the-keys)), Undo and Redo lose their keys, as every key `Focus::keeps` gives the field, rather than acting on the field.
+- **While a text field has focus,** the items hold none of the keys `Focus::keeps` gives the field, but Undo and Redo keep Cmd+Z and Shift+Cmd+Z: AppKit performs them, they read Undo and Redo, and they hand the field those keys again, through `raw_input_hook` ([who owns the keys](#who-owns-the-keys)).
 - **Still to do:** `Keymap::load` and Settings refusing the Mac's own keys, Cmd+H, Option+Cmd+H and Cmd+M, which no default takes.
 - **What it holds now,** the actions the registry declares ([what arrives when](#what-arrives-when) lists what is still to come):
   - the app menu, titled Apertrust, with About, Settings, Services, Hide, Hide Others, Show All and Quit;
@@ -502,7 +502,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
   - View with Browse, Side Panel Tab (tabs 1 to 5), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
   - Window; Help, with AppKit's search.
 
-  Disabled until built: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo, Previous Photo and Browse. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions and H's peek. An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Side-panel tab 1"; the `.menu` and `.mac` attributes, title case and the tabs' own names, check marks and Undo naming its step come later.
+  Disabled until built: Import, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo, Previous Photo and Browse. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions and H's peek. An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Side-panel tab 1", but for Undo and Redo, which name their step ("Undo Exposure"); the `.menu` and `.mac` attributes, title case and the tabs' own names, and check marks come later.
 - **The app menu's title.** Run without a bundle, macOS titles it with the binary's name, "apertrust". The build embeds `crates/app/assets/macos/Info.plist`, whose `CFBundleName` is Apertrust, in the binary's `__TEXT,__info_plist` section (`crates/app/build.rs`), so the menu bar reads Apertrust.
   - The Dock and the app switcher keep "apertrust" until the app runs from a bundle, and no public API renames it: LaunchServices names an unbundled app after its executable's file and reads nothing of the embedded plist. `CFBundleDisplayName` or `CFBundleIdentifier` there, `NSProcessInfo.setProcessName`, `setprogname` and argv[0] change nothing, before the app starts or once its window is open; a symlink named Apertrust renames LaunchServices' entry but not the Dock's, which follows the link to the file.
   - Run from inside a minimal `Apertrust.app`, its Info.plist naming Apertrust and its `Contents/MacOS/apertrust` a symlink to the built binary, the same binary reads Apertrust in LaunchServices, the Dock and the menu bar, its stderr still the terminal's. The packaged Apertrust.app names it for users; in development only such a bundle would.
@@ -525,7 +525,7 @@ One menu button, ☰, at the very start of the top panel, before the mark (decis
   - The id chosen names its action (`menus::chosen`) and runs after the frame through `Shell::run`, as clicks do.
   - The `menu` action, F10 on Windows and Linux (`Platforms::NotMac`), opens the menu at its top, or closes it where it is open, and is in no menu itself.
   - Alt with a letter opens it at the top-level menu with that access key (`actions::access_key`), before any widget sees the press, from anywhere but a dialog. The letter the press typed on the current layout is tried first, ф on a Ukrainian keyboard, then the key's own Latin letter. The press and its text are taken out of the frame; AltGr, which egui never sees as Alt, and a key's repeat open nothing.
-  - The menu closes when a key runs an action while it is open, or a dialog opens. Every item's words are the action's message for now, as on the Mac.
+  - The menu closes when a key runs an action while it is open, or a dialog opens. Every item's words are the action's message for now, as on the Mac, but Undo's and Redo's, which name their step.
   - Checked by hand on GNOME on Wayland.
 - **muda is not used on Windows.** Its Win32 menu bar lives in the window's non-client area, which the integrated frame removes, and cannot be placed inside the top panel. That also drops its `unsafe` setup, the `TranslateAcceleratorW` hook its accelerators need in winit's message loop, and its dark painting through undocumented messages; the drawn menus follow the theme and the interface's scale, which a Win32 menu bar does not. muda is a dependency of the app on macOS only.
 
@@ -536,11 +536,12 @@ One menu button, ☰, at the very start of the top panel, before the mark (decis
   - Windows and Linux have no native accelerators: the registry reads every key, and the drawn menus only show them.
   - While a drawn popup is open it takes the plain keys and typed text first, before the registry reads them (decision 40): every press without Ctrl, Cmd or Alt but the F-keys, so a letter typed to find an item never runs an action. F-keys and keys with a modifier stay the registry's.
   - The slider popup takes Alt with the arrows, Page Up, Page Down, Home and End, and the clipboard's Paste, too. Any other key with Ctrl, Cmd or Alt, or an F-key, closes it, putting the value back, and then runs (decision 42).
-- **The focused widget keeps its keys, menus or not.** While a widget has focus, the native menu holds no key equivalent that `Focus::keeps` gives that widget: a text field every plain key, and Cmd with A, C, V, X, Z, Y, the arrows, Home, End, Backspace and Delete; a slider or a button its arrows, Space, Enter and the rest. This holds whichever comes first in AppKit, the menu or the view.
+- **The focused widget keeps its keys, menus or not.** While a widget has focus, the native menu holds no key equivalent that `Focus::keeps` gives that widget: a text field every plain key, and Cmd with A, C, V, X, Z, Y, the arrows, Home, End, Backspace and Delete; a slider or a button its arrows, Space, Enter and the rest. This holds whichever comes first in AppKit, the menu or the view. The editing actions are the exception, below.
 - **The editing actions act on what has focus,** as the Mac's Edit menu does.
   - Undo, Redo, Cut, Copy, Paste and Select All keep their keys while a text field has focus and act on the field: egui's `RequestCut`, `RequestCopy` and `RequestPaste`, and Cmd+Z, Shift+Cmd+Z and Cmd+A added to the next frame's input through `raw_input_hook`.
   - Without a focused field, Undo and Redo act on the photo's history and Select All on the photos once they can be selected, while Cut, Copy and Paste are disabled. Copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
   - The drawn menus do the same when an editing item is chosen with a field focused. The app remembers the field when a menu opens, since opening it moves egui's focus, and gives focus back when it closes.
+  - Built for Undo and Redo (step 9.4): while a text field has the focus they keep their keys on the Mac's items (`menus::edits_the_field`) and read Undo and Redo; performed by AppKit or chosen from a menu, they add egui's own Cmd+Z or Shift+Cmd+Z to the next frame's input through `raw_input_hook` (`actions::field_keys`). On Windows and Linux the registry leaves the field its keys. The ☰'s menu opened by F10 gives the field the focus back before its choice runs. Still to do, with Cut, Copy and Paste in step 7: the ☰ opened by a click remembering the field, since the press takes the focus from it first.
 - **Rebinding** changes the keymap, and the native menu follows on the next frame. A key muda cannot express stays with the registry, and its item shows none.
 - **Keys kept from actions,** as [the menu bar's rules](#rules) list them. `Keymap::load` and the Settings dialog refuse them, as they refuse the clipboard's keys.
   - On the Mac: Cmd+H, Option+Cmd+H and Cmd+M, which the system's menu items hold, and Shift+Cmd+/, Ctrl+Cmd+Space and Cmd+\`, which macOS acts on.
@@ -668,8 +669,8 @@ macOS only: the app menu, which macOS titles with the app's name.
 
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
-| Undo, naming the step: Undo Exposure | `undo` | Ctrl+Z | Declared; Phase 2, with history |
-| Redo, naming the step | `redo` | Ctrl+Shift+Z; Ctrl+Y on Windows and Linux | Declared; Phase 2 |
+| Undo, naming the step: Undo Exposure | `undo` | Ctrl+Z | Built (step 9.4) |
+| Redo, naming the step | `redo` | Ctrl+Shift+Z; Ctrl+Y on Windows and Linux | Built (step 9.4) |
 | — | | | |
 | Cut | `cut` | Ctrl+X | New, with the menu bar (decision 39) |
 | Copy | `copy` | Ctrl+C | New, with the menu bar |
@@ -953,11 +954,12 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, their folder opened with the first active); Open Folder…; Export… and Export Again; Reset Edit; Browse; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Undo, Redo, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo, and View's zoom items |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, their folder opened with the first active); Open Folder…; Export… and Export Again; Reset Edit; Browse; Side Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the side panel's tabs; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; Auto › Exposure, drawn disabled; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
-| Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Undo and Redo naming the step, with history; Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
+| Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
+| Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each module's runs |
 | Phase 3 | Workspace; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Side Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode (decision 46) |
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
@@ -1163,10 +1165,10 @@ Where winit cannot:
 - **Close Window** rests then too, as AppKit's does under a sheet, unless a dialog's own window has the focus: it acts on the key window.
 - **A modeless Settings window** leaves them all to run, as Apple's apps do: Open… and About open over the main window beside it.
 - **Quit while the open dialog asks** waits for its answer: AppKit's panel hangs on the main window as a sheet, and a Quit under it would take the panel away and leave the window open, the app running on.
-- **While a modeless dialog's own window is the key window,** Settings' on the Mac (`State::dialog_window`), the items that act on the main window or its photo rest as well, since AppKit rests an item whose target is not in the key window's responder chain: the side panel's tabs, Full Screen, which the Settings window cannot take, and Reset Edit; later Undo, Redo, Export and the edit's items with them.
+- **While a modeless dialog's own window is the key window,** Settings' on the Mac (`State::dialog_window`), the items that act on the main window or its photo rest as well, since AppKit rests an item whose target is not in the key window's responder chain: the side panel's tabs, Full Screen, which the Settings window cannot take, Reset Edit, and Undo and Redo on the photo; later Export and the edit's items with them.
   - The Interface Size items stay, since they scale every window, and so do the app's own: About, Settings, Open…, Close Window, which then closes the Settings window, and Quit.
   - The menus only: the main window's own controls, its top panel's Reset among them, are drawn as they are with the main window focused, since a window's controls act on that window whichever has the focus, as AppKit checks a toolbar's items against their own window.
-- **The editing items,** Undo, Redo, Cut, Copy, Paste and Select All, act on a text field focused in the dialog.
+- **The editing items,** Undo, Redo, Cut, Copy, Paste and Select All, act on a text field focused in the dialog. Built for Undo and Redo: while a dialog's own window has the focus their items hold no key, so AppKit hands Cmd+Z and Shift+Cmd+Z to the dialog's field; choosing them from the menu for that field is still to do.
 - **Quit** closes the dialog as its Cancel and leaves through the exit path, and a close of the main window that ends the app does the same: its close button on Windows and Linux, whose close is held until the dialog has gone (`ViewportCommand::CancelClose`, then Quit), and on the Mac Close Window with the main window the key window, or its close button, with nothing open there. On the Mac with something open they do what Close does, and under a modal dialog the close button rests, as Close Window does.
 - AppKit disables menu items while an app-modal window is up unless their target works when modal; no app-modal window is used, so muda's are not measured under one.
 
@@ -3039,7 +3041,7 @@ Ctrl means Cmd on macOS.
 | App | Open Folder… | Ctrl+Shift+O | Opens the platform's folder dialog |
 | App | Import, Export | Ctrl+I, Ctrl+E | Import not built: listed and disabled. Export built on the Mac; it acts on every selected photo |
 | App | Export Again | None, so anyone used to darktable can bind Ctrl+E to it | Built on the Mac |
-| App | Undo, Redo | Ctrl+Z; Ctrl+Shift+Z, and Ctrl+Y on Windows and Linux | Not built |
+| App | Undo, Redo | Ctrl+Z; Ctrl+Shift+Z, and Ctrl+Y on Windows and Linux | Built: the photo's history, a focused text field keeping them for its own |
 | App | Copy edit, Apply edit | Ctrl+Shift+C, Ctrl+Shift+V | Not built; Copy or apply parts has no key. Apply edit acts on every selected photo |
 | App | Reset | None, as darktable's discard history has no default key | Its button; the active photo only |
 | App | Side-panel tabs 1 to 5 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold. With the Photos tab first, the sixth has no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types − |
