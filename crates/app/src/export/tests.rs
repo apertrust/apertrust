@@ -1452,7 +1452,7 @@ fn its_title_is_its_window_s_frame_s_and_its_own_header_the_mac_sheet_s_alone() 
         let window = harness.get_by_role_and_label(Role::Dialog, title).rect();
         let button = harness.get_by_role_and_label(Role::Button, title).rect();
         // The title painted above the body: the sheet's header on the Mac, the host's
-        // strip on Linux, nothing on Windows, whose system title bar shows it.
+        // strip on Windows and Linux.
         let above: Vec<egui::Rect> = dialog_host::painted(harness.output())
             .into_iter()
             .filter(|(text, at)| text == title && !button.contains_rect(*at))
@@ -1460,14 +1460,9 @@ fn its_title_is_its_window_s_frame_s_and_its_own_header_the_mac_sheet_s_alone() 
             .collect();
         let (header, frame) = match os {
             OperatingSystem::Mac => (HEADER, 0.0),
-            OperatingSystem::Windows => (0.0, 0.0),
             _ => (0.0, dialog_host::FRAME),
         };
-        assert_eq!(
-            above.len(),
-            usize::from(os != OperatingSystem::Windows),
-            "{os:?}"
-        );
+        assert_eq!(above.len(), 1, "{os:?}");
         if let Some(at) = above.first() {
             assert!(
                 at.bottom() <= window.top() + header.max(frame),

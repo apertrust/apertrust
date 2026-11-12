@@ -1871,8 +1871,10 @@ impl Open {
             },
             Some(Gesture::Menu(at)) => {
                 let at = at * pixels_per_point;
-                self.window
-                    .show_window_menu(PhysicalPosition::new(f64::from(at.x), f64::from(at.y)));
+                platform::window_menu(
+                    &self.window,
+                    PhysicalPosition::new(f64::from(at.x), f64::from(at.y)),
+                );
             }
             None => {}
         }
@@ -2338,9 +2340,10 @@ mod tests {
     fn a_window_s_content_s_least_and_kept_sizes_leave_out_its_frame_and_margins() {
         let on = |os, wayland| hosted(os, wayland);
         assert_eq!(chrome(&on(OperatingSystem::Mac, false)), egui::Vec2::ZERO);
+        // Windows: the strip above alone.
         assert_eq!(
             chrome(&on(OperatingSystem::Windows, false)),
-            egui::Vec2::ZERO
+            egui::vec2(0.0, FRAME)
         );
         // X11: the strip above alone.
         let x11 = chrome(&on(OperatingSystem::Nix, false));
@@ -2605,7 +2608,7 @@ mod tests {
     }
 
     #[test]
-    fn the_host_draws_a_close_and_a_strip_to_move_by_on_linux_alone() {
+    fn the_host_draws_a_close_and_a_strip_to_move_by_on_windows_and_linux() {
         for os in [
             OperatingSystem::Mac,
             OperatingSystem::Windows,
@@ -2615,14 +2618,10 @@ mod tests {
             let closes = harness
                 .query_all_by_role_and_label(Role::Button, "Close")
                 .count();
-            // Settings' own Close on Windows and Linux, and on Linux the frame's after it.
-            let expected = match os {
-                OperatingSystem::Mac => 0,
-                OperatingSystem::Windows => 1,
-                _ => 2,
-            };
+            // Settings' own Close on Windows and Linux, and the frame's after it.
+            let expected = if os == OperatingSystem::Mac { 0 } else { 2 };
             assert_eq!(closes, expected, "{os:?}");
-            if os != OperatingSystem::Nix {
+            if os == OperatingSystem::Mac {
                 continue;
             }
             // The frame's close closes it as its Cancel.
@@ -2705,11 +2704,11 @@ mod tests {
     }
 
     #[test]
-    fn on_linux_the_strip_shows_the_window_s_title_centred_and_clear_of_close() {
+    fn on_windows_and_linux_the_strip_shows_the_window_s_title_centred_and_clear_of_close() {
         let mut harness = settings_on(OperatingSystem::Nix, &[]);
-        let (strip, titles) = strip(&harness);
-        let [(title, at)] = &titles[..] else {
-            panic!("one title: {titles:?}");
+        let (strip, titles_in_strip) = strip(&harness);
+        let [(title, at)] = &titles_in_strip[..] else {
+            panic!("one title: {titles_in_strip:?}");
         };
         assert_eq!(title, "Settings");
         // Centred on the strip, both ways, and clear of the close by a gap.
@@ -2729,15 +2728,15 @@ mod tests {
         let gap = Theme::default().spacing.l;
         assert!(at.right() + gap <= close.left(), "{at:?} {close:?}");
         // No node of its own: the window is named by its title once, the nodes so named
-        // those Windows has, and the close is still the last button.
+        // those the Mac's system frame has, and the close is still the last button.
         let named = |harness: &Harness<'_, Bench>| -> Vec<Role> {
             harness
                 .query_all_by_label("Settings")
                 .map(|node| node.accesskit_node().role())
                 .collect()
         };
-        let windows = settings_on(OperatingSystem::Windows, &[]);
-        assert_eq!(named(&harness), named(&windows));
+        let mac = settings_on(OperatingSystem::Mac, &[]);
+        assert_eq!(named(&harness), named(&mac));
         assert_eq!(named(&harness)[0], Role::Dialog);
         let last = harness
             .query_all_by_role(Role::Button)
@@ -2754,21 +2753,18 @@ mod tests {
         let asked = &harness.state().asked;
         assert!(asked.iter().any(|d| d.gesture == Some(Gesture::Move)));
         assert!(!harness.state().closed());
-        // The Mac's and Windows' frames are the system's: the host draws no title, and the
-        // content none of its own.
+        // The Mac's frame is the system's: the host draws no title, and the content none of
+        // its own. Windows' strip is Linux's.
         let titles = |harness: &Harness<'_, Bench>| {
             painted(harness.output())
                 .into_iter()
                 .filter(|(text, _)| text == "Settings")
                 .count()
         };
-        for os in [OperatingSystem::Mac, OperatingSystem::Windows] {
-            assert_eq!(
-                titles(&settings_on(os, &[])) + 1,
-                titles(&harness),
-                "{os:?}"
-            );
-        }
+        assert_eq!(titles(&mac) + 1, titles(&harness));
+        let windows = settings_on(OperatingSystem::Windows, &[]);
+        assert_eq!(titles(&windows), titles(&harness));
+        assert_eq!(self::strip(&windows).1, titles_in_strip);
     }
 
     #[test]
