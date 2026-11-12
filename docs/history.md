@@ -2,7 +2,7 @@
 
 Every change to a photo's edit is a step of its history: a slider's drag, a preset, a reset, an assistant's request. Undo and Redo move through those steps, the History tab lists them, and the sidecar keeps them, so reopening a photo brings Undo back. This document describes the history: what a step is, how the session serves undo and history to its clients, how the sidecar stores them, and how the work is built. Where edits live and the sidecar's other parts are in [library.md](library.md#sidecars); the session's other commands and events in [session-protocol.md](session-protocol.md) and [events.md](events.md).
 
-**Status.** [Decision 78](decisions/0078-undo-redo-and-the-edits-history.md) records the design, with the options considered, on [decision 47](decisions/0047-where-edits-live-and-what-the-sidecar-holds.md)'s log of steps. Nothing of it is built: the session keeps the edit alone, the app declares Undo and Redo and draws the History tab disabled, and `apertrust-cli edit` writes version 1. It is planned as the library's step 9, after switched modules (decision 32), with step 8's clock first and its version 2 before history is saved ([The plan](#the-plan)).
+**Status.** [Decision 78](decisions/0078-undo-redo-and-the-edits-history.md) records the design, with the options considered, on [decision 47](decisions/0047-where-edits-live-and-what-the-sidecar-holds.md)'s log of steps. Nothing of it is built: the session keeps the edit alone, the app declares Undo and Redo and draws the History tab disabled, and `apertrust-cli edit` writes version 1. It is planned as the library's step 9, after switched modules (decision 32), with step 8's clock first, now built, and its version 2 before history is saved ([The plan](#the-plan)).
 
 ## What it serves
 
@@ -48,7 +48,7 @@ The log is the engine's (`apertrust_engine::history`, planned): `Log`, `Step` an
 | Field | Type | What it holds |
 | --- | --- | --- |
 | `id` | `StepId`, 16 hex digits | Random, 64 bits, so two logs joined step by step (step 14) do not collide; drawn again on a clash within its log |
-| `clock` | `Clock` | The hybrid logical clock of its last change: UTC milliseconds, a counter and the machine id (decision 47; step 8's first part, built before the log). The tooltip's when, and from step 12 its machine's name, from a library's `.apertrust/machines/` or, in folder mode, "another computer" |
+| `clock` | `Clock` | The hybrid logical clock of its last change: UTC milliseconds, a counter and the machine id (decision 47; `apertrust_library::clock`, built with step 8's first part). The tooltip's when, and from step 12 its machine's name, from a library's `.apertrust/machines/` or, in folder mode, "another computer" |
 | `source` | `StepSource` | `You`, `Auto`, `Style`, `Assistant` or `Default`: the tooltip's who and the line's tag |
 | `note` | `Option<Note>` | `Note::Message`, Apertrust's own words as a message id with its arguments, worded by the client with Fluent ("Applied from IMG_2041", `history-reset`); or `Note::Text`, an assistant's or script's own words, stored as written and never translated |
 | `batch` | `Option<BatchId>`, 16 hex digits | The session's, shared by the steps one command made on several photos |
@@ -231,7 +231,7 @@ pub enum Move {
 }
 ```
 
-- **The types** live in `apertrust_engine::history`, re-exported by the session, plain data that moves into `apertrust-protocol` unchanged when it is made. `Clock` and the machine id come with step 8's first part. `StepSource`, `StepId`, `BatchId` and `Note` are written by name or as text on the wire, a client ignoring a source it does not know.
+- **The types** live in `apertrust_engine::history`, re-exported by the session, plain data that moves into `apertrust-protocol` unchanged when it is made. `Clock` and `MachineId` are `apertrust_library::clock`'s, built with step 8's first part. `StepSource`, `StepId`, `BatchId` and `Note` are written by name or as text on the wire, a client ignoring a source it does not know.
 - **When it is sent:** at a photo's open, right after its `Values { live: false }` (decision 77's stage 2); in each batch whose commands changed the log, its end or the undo records, once, after the batch's `Values` and before its `Frame`; and when the session takes a newer file from disk. A gesture's `done: false` changes change no step and send none.
 - **Whole, not a delta.** A fact is always its whole topic (decision 59), a remote client is sent the latest and a client joining late needs nothing more. It is sent once per completed change, never per frame of a drag, and in process the steps it shares with the last are not copied. A step with one control changed is about 200 bytes in memory and 160 as JSON, so 200 steps make about 40 kB and 1,000 about 200 kB, estimated, a curve's points more. Deltas would need ordered notices, `Sync` replaying them and a merge in every client, for a topic smaller than one frame.
 - **Its budgets, measured in 9.1:** at 200 and at 1,000 steps on the M4, building the fact takes under 1 ms, and its JSON, as the remote protocol will encode it, is under 256 kB. A measurement that misses its budget brings the planned fallback: the fact holds the step range the client shows, which it names with a command, the count and the end always whole, so a client still knows where the end is and what Undo would do.
@@ -333,7 +333,7 @@ Part 8.2 fixes the exact layout, holding this outline; a whole file with one ste
 
 History needs two parts of the library's step 8, and they come first:
 
-- **8.1, the clock and the machine id,** in `apertrust-library`, before the log is built, so every step carries its real clock from its first build. Reading the system's machine id may need platform calls; any `unsafe` stays in an FFI crate (a safe crate, `apertrust-display`, or base's platform code), never in the library.
+- **8.1, the clock and the machine id,** built in `apertrust-library`'s `clock`, before the log, so every step carries its real clock from its first build. The system's machine id is read through the safe crate `machine-uid`, with no `unsafe` of Apertrust's ([library.md](library.md#version-2)).
 - **8.2, version 2's text layer,** before history is saved: the photo's identity (`apertrust:photo` and `apertrust:fingerprint`), and `apertrust:copies` with one virtual copy, its id, number, name, clock vector, log and end, each time an XMP Date; version 1 read as one step; the history fixture ExifTool and exiv2 read.
 
 **Why history does not land in a version 2 of its own first:** history belongs inside `apertrust:copies`, one log per virtual copy. Holding it elsewhere first and moving it into `apertrust:copies` with step 8 would change how existing version 2 files read, against decision 48's one fixed layout per version: a third version, and builds between the two layouts, nightly ones among them, opening each other's edits view-only.
@@ -378,7 +378,7 @@ History needs two parts of the library's step 8, and they come first:
 | Commands, `Event::History`, the undo records, the gesture and merge clocks, the newer file taken in | the engine's `session` |
 | Version 2's copies and steps as strings | `apertrust-library`'s `sidecar` |
 | Reading and writing steps with the module definitions | the engine's `sidecar` |
-| The clock and the machine id | `apertrust-library`, from step 8.1; the system's machine id read through a safe crate, or through `apertrust-display` or base's platform code where it needs `unsafe` |
+| The clock and the machine id | `apertrust-library`'s `clock`, built with step 8.1; the system's machine id read through `machine-uid` |
 | Undo and Redo, the History tab, the eye, changes of several commands as one `Step` | the app's `actions`, `menus`, mirror, modules and a History section |
 | `edit` and `history` | `apertrust-cli` |
 
@@ -398,7 +398,7 @@ The library's step 9 ([roadmap.md](roadmap.md#the-librarys-steps)), one pull req
 
 | # | Delivers | Touches | Out of scope |
 | --- | --- | --- | --- |
-| 8.1 | The hybrid logical clock and the machine id in `apertrust-library`; reading the system's machine id may need platform calls, so any `unsafe` stays in an FFI crate: a safe crate, `apertrust-display` or base's platform code | library | version 2 |
+| 8.1 | Built: the hybrid logical clock and the machine id in `apertrust-library`'s `clock`, the system's machine id read through `machine-uid` with no `unsafe` of Apertrust's | library | version 2 |
 | 9.1 | The log in the session's memory: `history`'s `Log` and `Step`, each completed change a step, `Reset` a step with its note, a pending `Set` made a step, `Undo` and `Redo` with the undo records, `Event::History`, its build time and JSON size measured at 200 and 1,000 steps on the M4 against their budgets; the file still version 1, the edit at the end | engine | `GoTo`, `Step`, merging, the app, the file |
 | 9.2 | `GoTo` and `Step`, with `InStep`, the scratch edit and the gesture taken in; the app sending the tone equalizer's release and nine-band reset as one `Step { source: You }` | engine, app's tone equalizer | other app work |
 | 9.3 | Merging consecutive changes, darktable's 10 s and 2 s, on an injected clock and frame publication | engine | anything else |
