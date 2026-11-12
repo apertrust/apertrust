@@ -108,11 +108,37 @@ impl State {
         control: &apertrust_base::jobs::Control,
         pipeline: &Pipeline,
     ) {
+        self.before(path, control, |sources| pipeline.writes(sources));
+    }
+
+    /// [`Self::before_frame`] for a sample-only render a module's colour picker runs at
+    /// operation `op` of the live pipeline, reading its output too with `output`
+    /// (decision 79).
+    pub(in crate::session) fn before_sample(
+        &mut self,
+        path: &Path,
+        control: &apertrust_base::jobs::Control,
+        pipeline: &Pipeline,
+        (op, output): (usize, bool),
+    ) {
+        self.before(path, control, |sources| {
+            pipeline.sample_writes(sources, op, output)
+        });
+    }
+
+    /// Cancels the still of the photo at `path` where the live render about to be
+    /// submitted `writes` what it reads.
+    fn before(
+        &mut self,
+        path: &Path,
+        control: &apertrust_base::jobs::Control,
+        writes: impl Fn(&Sources) -> bool,
+    ) {
         self.forget_ended(control);
         let Some(running) = self.running.get(path) else {
             return;
         };
-        if !pipeline.writes(&running.sources) {
+        if !writes(&running.sources) {
             return;
         }
         control.cancel(running.job);

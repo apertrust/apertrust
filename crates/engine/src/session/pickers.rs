@@ -15,24 +15,40 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The session's colour pickers (decision 79; `docs/pickers.md`, Through the session):
-//! view state, never in the edit. One active picker, the Colour picker module's for now,
-//! and each picker's last point and area, kept in the original image's coordinates for the
-//! session's life ([`crate::picker::Place`]).
+//! view state, never in the edit. One active picker, a module's or the Colour picker
+//! module's, and each picker's last point and area, kept in the original image's
+//! coordinates for the session's life ([`crate::picker::Place`]).
 //!
 //! The active picker is measured on the frame, in a submission of its own after each
 //! frame's copy and the scopes' count, and on the frame shown when its region changes
-//! with no render. Its reading comes back without the thread waiting, as the scopes'
-//! does, and goes out as [`Event::Picker`] when it changes what a client shows: after the
-//! frame it measured. A failure turns the pickers off for the session, never the frame.
+//! with no render. A module's picker is measured at its operation in the live viewport
+//! pipe too: right after the operation's last pass in a render's encoder while what it
+//! reads changes, or, where its area moves with no edit, by a sample-only render from the
+//! newest cache point at or before the operation, its operation the edited instance.
+//! Readings come back without the thread waiting, as the scopes' do, and go out as
+//! [`Event::Picker`] when they change what a client shows: after the frame they measured.
+//!
+//! The session applies a module's reading itself, through the module's pure
+//! [`apertrust_modules::Module::pick`]: the first after the picker turns on and each after
+//! its region moves, never one an edit upstream caused, a drag's readings one gesture. A
+//! failure turns the pickers off for the session, never the frame.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
+use apertrust_modules::pick::Picked;
+use apertrust_modules::{ControlValue, Picker, PickerKind};
+use apertrust_plugin::{Format, ImageContext, ImageDesc};
 
 use crate::compute::ComputeError;
-use crate::edit;
+use crate::edit::{self, EditError, panic_message};
 use crate::picker::{
-    self, DEFAULT_AREA, DEFAULT_POINT, FrameReading, Geometries, PickerCommand, PickerReading,
-    PickerRef, Place, Reducer, Region,
+    self, Cfa, DEFAULT_AREA, DEFAULT_POINT, FrameReading, Geometries, Group, Layout, ModuleReading,
+    PickKeys, PickerCommand, PickerReading, PickerRef, Place, Reading, Recorded, Reducer, Region,
+    Stats,
 };
+use crate::pipeline::{Instance, Plan, Probe};
 
 use super::{Engine, Event, SessionError};
 
@@ -44,15 +60,37 @@ pub(super) struct Pickers {
     /// Each picker's last point and area this session, kept as it turns off for its next
     /// `On`.
     places: BTreeMap<PickerRef, Places>,
-    /// The reduction and its readback, made with the first measurement.
+    /// The frame's reduction and its readback, made with the first measurement.
     pub(super) reducer: Option<Reducer<Sampled>>,
+    /// The reduction at a module picker's operation, made as the first turns on.
+    probe: Option<Reducer<Probed>>,
     /// Why the pickers failed, which turns them off for the session.
     failed: Option<String>,
-    /// A reading that needed no GPU, of a region that misses the frame, sent with the
-    /// readings picked up next.
-    ready: Option<PickerReading>,
+    /// Readings to hand over, in the order of the commands they measured: those that
+    /// needed no GPU, of a region that misses what it reads, and those arrived while one
+    /// measured before them is still on its way.
+    ready: Vec<Arrived>,
     /// The reading last sent while the active picker is on.
     sent: Option<PickerReading>,
+    /// The active picker's latest module part and frame part.
+    module: Option<ModuleReading>,
+    frame: Option<FrameReading>,
+    /// The tool settings each module's pickers read, as the client last sent them.
+    tools: BTreeMap<&'static str, Vec<(&'static str, ControlValue)>>,
+    /// Each module's last reading applied, for the photo, as RGB levels' `last_picked_color`:
+    /// what its pick takes as `last`.
+    last: BTreeMap<&'static str, Last>,
+    /// Each module's latest reading measured while its picker was on, applied or not, for
+    /// the photo: darktable's `picked_color`, which every run of the pipe overwrites and
+    /// a tool setting's change applies again.
+    latest: BTreeMap<&'static str, Last>,
+    /// The drag a module picker's moves belong to: `On` begins one, and so does a move
+    /// after the last one's release. Each drag's picks are one change, saved once.
+    drag: u64,
+    /// The newest drag released, which completes it and every one before it.
+    released: u64,
+    /// The drag whose picks wrote changes the writer has yet to be handed.
+    gesture: Option<u64>,
 }
 
 /// The picker on, and whether it measures its area rather than its point.
@@ -60,6 +98,38 @@ pub(super) struct Pickers {
 struct Active {
     picker: PickerRef,
     area: bool,
+    /// A module's picker's state; `None` for the Colour picker's.
+    module: Option<OnModule>,
+}
+
+/// A module's picker on.
+#[derive(Debug, Clone, Copy)]
+struct OnModule {
+    module: &'static str,
+    picker: &'static Picker,
+    /// The channel tab the module shows.
+    channel: Option<&'static str>,
+    /// What its last measurement at the operation read: [`Probing::key`].
+    measured: Option<u64>,
+    /// The next reading to apply, with the command that asked for it.
+    due: Option<Due>,
+}
+
+/// A reading to apply: the command that asked for it, the drag it belongs to, and the
+/// keys held.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Due {
+    command: u64,
+    drag: u64,
+    keys: PickKeys,
+}
+
+/// A module's last reading applied, with its picker and the keys held.
+#[derive(Debug, Clone, Copy)]
+struct Last {
+    picker: &'static Picker,
+    reading: Reading,
+    keys: PickKeys,
 }
 
 /// A picker's last point and area, in the original image's coordinates.
@@ -90,14 +160,125 @@ pub(super) struct Sampled {
     region: Region,
 }
 
+/// What the session keeps of a module picker's measurement at its operation until its
+/// reading arrives.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Probed {
+    pub(super) through: u64,
+    picker: PickerRef,
+    region: Region,
+    /// The reading's application, where it is due.
+    due: Option<Due>,
+}
+
+/// A reading arrived: the frame's statistics under its region, or the operation's input's
+/// and output's, `None` where the region misses what it reads.
+enum Arrived {
+    Frame(Sampled, Option<Stats>),
+    Module(Probed, Option<Vec<Stats>>),
+    /// No reading at the operation, which lies in the viewport's tiles.
+    Unavailable(Probed),
+}
+
+impl Arrived {
+    /// The commands it measured the result of.
+    fn through(&self) -> u64 {
+        match self {
+            Arrived::Frame(sampled, _) => sampled.through,
+            Arrived::Module(probed, _) | Arrived::Unavailable(probed) => probed.through,
+        }
+    }
+
+    /// The application it carries, where due.
+    fn due(&self) -> Option<Due> {
+        match self {
+            Arrived::Frame(..) => None,
+            Arrived::Module(probed, _) | Arrived::Unavailable(probed) => probed.due,
+        }
+    }
+}
+
+/// What a module's picker measures at its operation in a plan.
+pub(super) struct Probing {
+    /// The operation, as an index into the plan's operations.
+    pub(super) op: usize,
+    /// What it reads: the input's and output's keys, the boxes, the denoise.
+    key: u64,
+    /// Its input's box, and its output's with the picker's `output`; `None` where the
+    /// region misses the input, or where nothing is read.
+    targets: Option<Vec<Target>>,
+    /// The operation lies in the viewport's tiles, each holding one tile's part of its
+    /// image at a time: no reading there.
+    unavailable: bool,
+    tag: Probed,
+}
+
+/// A buffer a module picker reads and its box.
+struct Target {
+    size: [u32; 2],
+    /// The mosaic's pattern, for a mosaic.
+    cfa: Option<Cfa>,
+    denoise: bool,
+    bounds: [u32; 4],
+}
+
+impl Probing {
+    /// Whether the region misses the operation's input, so it reads nothing on the GPU.
+    pub(super) fn missed(&self) -> bool {
+        self.targets.is_none()
+    }
+
+    /// The reduction's buffers: the input, and the output where it reads it.
+    fn groups<'a>(
+        &'a self,
+        targets: &'a [Target],
+        buffers: [&'a wgpu::Buffer; 2],
+    ) -> Vec<Group<'a>> {
+        targets
+            .iter()
+            .zip(buffers)
+            .map(|(target, buffer)| Group {
+                buffer,
+                size: target.size,
+                layout: match &target.cfa {
+                    Some(cfa) => Layout::Mosaic(cfa),
+                    None => Layout::Rgba {
+                        denoise: target.denoise,
+                    },
+                },
+                boxes: std::slice::from_ref(&target.bounds),
+            })
+            .collect()
+    }
+}
+
+/// What a picker command does beyond the pickers' own state.
+#[derive(Debug, Default)]
+pub(super) struct PickerEffect {
+    /// The active picker's region changed: the frame shown is to be measured again.
+    pub(super) moved: bool,
+    /// The edit changed: the values are reported.
+    pub(super) values: bool,
+    /// The image may have changed.
+    pub(super) render: bool,
+    /// The change is complete: the edit is saved.
+    pub(super) save: bool,
+}
+
 impl Pickers {
     /// The active picker off, with what is on its way of it: nothing sent.
     pub(super) fn clear(&mut self) {
         self.active = None;
         self.sent = None;
-        self.ready = None;
+        self.module = None;
+        self.frame = None;
+        self.ready.clear();
+        self.gesture = None;
         if let Some(reducer) = &mut self.reducer {
             reducer.discard();
+        }
+        if let Some(probe) = &mut self.probe {
+            probe.discard();
         }
     }
 
@@ -106,66 +287,296 @@ impl Pickers {
         self.active.is_some()
     }
 
-    /// Whether a reading is on its way, so the thread looks at the GPU between commands.
-    pub(super) fn pending(&self) -> bool {
-        self.ready.is_some() || self.reducer.as_ref().is_some_and(Reducer::pending)
+    /// Whether a module's picker is on, measured at its operation in each render.
+    pub(super) fn probing(&self) -> bool {
+        self.active.is_some_and(|active| active.module.is_some())
     }
 
-    /// Drops the readings on their way, of a frame a GPU error dropped.
+    /// The reduction at a module picker's operation, once one has turned on.
+    pub(super) fn probe_mut(&mut self) -> Option<&mut Reducer<Probed>> {
+        self.probe.as_mut()
+    }
+
+    /// Whether a reading is on its way, so the thread looks at the GPU between commands.
+    pub(super) fn pending(&self) -> bool {
+        !self.ready.is_empty()
+            || self.reducer.as_ref().is_some_and(Reducer::pending)
+            || self.probe.as_ref().is_some_and(Reducer::pending)
+    }
+
+    /// Drops the readings on their way, of a frame a GPU error dropped: the next render
+    /// measures again at the operation.
     pub(super) fn discard(&mut self) {
-        self.ready = None;
+        // The newest reading to apply, the one due or on its way, is asked for again, by
+        // the next measurement, which stands for all of them: whether its drag is
+        // complete is the drag's, kept apart from any reading.
+        let held = (self.ready.iter().filter_map(Arrived::due))
+            .chain((self.probe.iter()).flat_map(|probe| probe.on_its_way().filter_map(|p| p.due)))
+            .chain(self.module_on().and_then(|on| on.due))
+            .max_by_key(|due| (due.drag, due.command));
+        self.ready.clear();
         if let Some(reducer) = &mut self.reducer {
             reducer.discard();
+        }
+        if let Some(probe) = &mut self.probe {
+            probe.discard();
+        }
+        if let Some(on) = self
+            .active
+            .as_mut()
+            .and_then(|active| active.module.as_mut())
+        {
+            on.measured = None;
+            on.due = held;
+        }
+    }
+
+    /// The module's picker on, if one is.
+    fn module_on(&self) -> Option<OnModule> {
+        self.active.and_then(|active| active.module)
+    }
+
+    /// Whether a reading to apply of `drag` is still to come: due, on its way from the
+    /// operation, or yet to be handed over.
+    fn of_drag_to_come(&self, drag: u64) -> bool {
+        let of = |due: Option<Due>| due.is_some_and(|due| due.drag == drag);
+        of(self.module_on().and_then(|on| on.due))
+            || self.ready.iter().any(|arrived| of(arrived.due()))
+            || (self.probe.iter()).any(|probe| probe.on_its_way().any(|p| of(p.due)))
+    }
+
+    /// Whether the drag whose picks the writer has yet to be handed is complete, released
+    /// with no reading of it still to come: then it is handed over, once.
+    fn settled(&mut self) -> bool {
+        let settled = self
+            .gesture
+            .is_some_and(|drag| drag <= self.released && !self.of_drag_to_come(drag));
+        if settled {
+            self.gesture = None;
+        }
+        settled
+    }
+
+    /// The commands the oldest reading still on its way measured: a reading measured
+    /// after them waits for it, so each is handed over in order.
+    fn horizon(&self) -> Option<u64> {
+        let frame =
+            (self.reducer.iter()).flat_map(|reducer| reducer.on_its_way().map(|s| s.through));
+        let module = (self.probe.iter()).flat_map(|probe| probe.on_its_way().map(|p| p.through));
+        frame.chain(module).min()
+    }
+
+    /// The module's last reading applied and its latest measured, for a test.
+    #[cfg(test)]
+    pub(super) fn readings_of(&self, module: &str) -> (Option<Reading>, Option<Reading>) {
+        (
+            self.last.get(module).map(|last| last.reading),
+            self.latest.get(module).map(|latest| latest.reading),
+        )
+    }
+
+    /// The tag of the reading at the operation waiting for a staging buffer, for a test.
+    #[cfg(test)]
+    pub(super) fn waiting_due(&self) -> Option<Option<(u64, u64)>> {
+        let probed = self.probe.as_ref()?.waiting()?;
+        Some(probed.due.map(|due| (due.command, due.drag)))
+    }
+
+    /// The drag the module picker's moves belong to, and the newest released, for a test.
+    #[cfg(test)]
+    pub(super) fn drags(&self) -> (u64, u64) {
+        (self.drag, self.released)
+    }
+
+    /// Forgets what the photo gave: each module's last reading, as another photo opens or
+    /// the photo closes.
+    pub(super) fn forget_photo(&mut self) {
+        self.last.clear();
+        self.latest.clear();
+    }
+
+    /// The module picker's measurement that `recorded` made, now submitted: what it read
+    /// becomes the last measured, and its reading arrives later. A reduction that could
+    /// not be recorded is why the pickers fail.
+    fn submitted(
+        &mut self,
+        probing: Probing,
+        recorded: Option<Result<Recorded, ComputeError>>,
+    ) -> Option<String> {
+        let recorded = match recorded? {
+            Ok(recorded) => recorded,
+            Err(error) => return Some(error.to_string()),
+        };
+        if let Some(probe) = &mut self.probe {
+            probe.submitted(recorded, probing.tag);
+        }
+        self.measured(probing.key);
+        None
+    }
+
+    /// What the module picker on reads now is `key`: its due reading is on its way.
+    fn measured(&mut self, key: u64) {
+        if let Some(on) = self
+            .active
+            .as_mut()
+            .and_then(|active| active.module.as_mut())
+        {
+            on.measured = Some(key);
+            on.due = None;
         }
     }
 }
 
+/// The measurement the module picker on makes at its operation in `plan`, where what it
+/// reads differs from what it read last; `instances` bind the edit, which `plan` plans,
+/// for the photo `image`. `None` with no module picker on, nothing new to read, or its
+/// operation not in the plan.
+pub(super) fn probing(
+    pickers: &mut Pickers,
+    plan: &Plan,
+    instances: &[Instance],
+    image: &ImageContext,
+    through: u64,
+) -> Option<Probing> {
+    let active = pickers.active?;
+    let on = active.module?;
+    let operation = on.picker.operation;
+    let op = plan
+        .operations
+        .iter()
+        .position(|planned| planned.id == operation)?;
+    let before = instances
+        .iter()
+        .position(|instance| instance.operation.manifest().id == operation)?;
+    let all = Geometries::of(instances, image).ok()?;
+    let upstream = Geometries::of(&instances[..before], image).ok()?;
+    let place = pickers
+        .places
+        .entry(active.picker)
+        .or_default()
+        .of_kind(active.area, &all);
+    let at = place.region(&upstream);
+    let tag = Probed {
+        through,
+        picker: active.picker,
+        region: place.region(&all),
+        due: on.due,
+    };
+    // In a tiled viewport the raw stage's operations from its split on run once a tile,
+    // each over its tile's part of the image: none holds the whole of what the picker
+    // reads, so it reads nothing there.
+    if plan.tiled.as_ref().is_some_and(|tiles| tiles.contains(&op)) {
+        let mut hasher = DefaultHasher::new();
+        (op, "tiled").hash(&mut hasher);
+        let key = hasher.finish();
+        if on.measured == Some(key) {
+            return None;
+        }
+        tracing::debug!(
+            target: "pipe",
+            "the picker {} reads nothing: {operation} runs in the viewport's tiles",
+            on.picker.id
+        );
+        return Some(Probing {
+            op,
+            key,
+            targets: None,
+            unavailable: true,
+            tag,
+        });
+    }
+    let planned = &plan.operations[op];
+    let input = match op.checked_sub(1) {
+        Some(before) => (
+            plan.operations[before].output_desc,
+            plan.operations[before].key,
+        ),
+        None => (plan.input, 0),
+    };
+    let mut sides = vec![input];
+    if on.picker.output {
+        sides.push((planned.output_desc, planned.key));
+    }
+    let target = |desc: &ImageDesc| -> Option<Target> {
+        let cfa = match desc.format {
+            Format::Rgba => None,
+            Format::Mosaic => Some(Cfa::of(image, desc)?),
+            Format::Mosaic16 => return None,
+        };
+        Some(Target {
+            size: [desc.width, desc.height],
+            cfa,
+            denoise: on.picker.denoise,
+            bounds: picker::boxed(at, desc, image)?,
+        })
+    };
+    let targets: Option<Vec<Target>> = sides.iter().map(|(desc, _)| target(desc)).collect();
+    let mut hasher = DefaultHasher::new();
+    (op, on.picker.denoise, on.picker.output).hash(&mut hasher);
+    for ((_, key), target) in sides.iter().zip(targets.iter().flatten()) {
+        (key, target.bounds).hash(&mut hasher);
+    }
+    targets.is_some().hash(&mut hasher);
+    let key = hasher.finish();
+    if on.measured == Some(key) {
+        return None;
+    }
+    Some(Probing {
+        op,
+        key,
+        targets,
+        unavailable: false,
+        tag,
+    })
+}
+
 impl Engine {
-    /// [`super::Command::Picker`]; whether the frame shown is to be measured again, the
-    /// active picker's region having changed. `Picker(None)` goes into `events` as a
-    /// picker turns off.
+    /// [`super::Command::Picker`]: what it changes beyond the pickers' state.
+    /// `Picker(None)` goes into `events` as a picker turns off.
     pub(super) fn picker(
         &mut self,
         command: PickerCommand,
         events: &mut Vec<Event>,
-    ) -> Result<bool, SessionError> {
-        let mut active = match command {
+    ) -> Result<PickerEffect, SessionError> {
+        let command = match command {
             PickerCommand::Off => {
                 self.picker_off(events);
-                return Ok(false);
+                return Ok(PickerEffect::default());
             }
-            PickerCommand::On { picker, area, .. } => {
-                if !self.live() {
-                    return Err(SessionError::NotLive);
+            PickerCommand::Channel { channel } => {
+                if let Some(on) = (self.pickers.active.as_mut()).and_then(|a| a.module.as_mut()) {
+                    on.channel = channel;
                 }
-                if let Some(failed) = &self.pickers.failed {
-                    return Err(SessionError::Pickers(failed.clone()));
-                }
-                // Refused until 79.3, the session running no module's picker yet,
-                // declared or not (`docs/pickers.md`, The plan).
-                if picker != PickerRef::ColourPicker {
-                    return Err(SessionError::UnknownPicker);
-                }
-                if self
-                    .pickers
-                    .active
-                    .is_some_and(|active| active.picker != picker)
-                {
-                    self.picker_off(events);
-                }
-                Active { picker, area }
+                return Ok(PickerEffect::default());
             }
-            _ => self.pickers.active.ok_or(SessionError::NoPicker)?,
+            PickerCommand::Tools { module, tools } => {
+                return self.picker_tools(module, tools, events);
+            }
+            PickerCommand::On {
+                picker,
+                area,
+                keys,
+                tools,
+                channel,
+            } => return self.picker_on(picker, area, keys, tools, channel, events),
+            command => command,
         };
+        let mut active = self.pickers.active.ok_or(SessionError::NoPicker)?;
         let geometries = self.geometries()?;
         let places = self.pickers.places.entry(active.picker).or_default();
-        match command {
-            PickerCommand::On { .. } | PickerCommand::Off => {}
-            PickerCommand::Point { at, .. } => {
+        let before = (active.area, places.of_kind(active.area, &geometries));
+        let (done, keys) = match command {
+            PickerCommand::Point { at, done, keys } => {
                 places.point = Some(Place::of(Region::Point(at), &geometries));
                 active.area = false;
+                (done, keys)
             }
-            PickerCommand::Area { from, to, .. } => {
+            PickerCommand::Area {
+                from,
+                to,
+                done,
+                keys,
+            } => {
                 let [from, to] = [from, to].map(picker::clamped);
                 let area = [
                     from[0].min(to[0]),
@@ -175,24 +586,275 @@ impl Engine {
                 ];
                 places.area = Some(Place::of(Region::Area(area), &geometries));
                 active.area = true;
+                (done, keys)
             }
-            PickerCommand::Switch => active.area = !active.area,
+            PickerCommand::Switch => {
+                active.area = !active.area;
+                (true, PickKeys::default())
+            }
             PickerCommand::Reset if active.area => {
                 places.area = Some(Place::of(DEFAULT_AREA, &geometries));
+                (true, PickKeys::default())
             }
-            PickerCommand::Reset => places.point = Some(Place::of(DEFAULT_POINT, &geometries)),
+            PickerCommand::Reset => {
+                places.point = Some(Place::of(DEFAULT_POINT, &geometries));
+                (true, PickKeys::default())
+            }
+            PickerCommand::On { .. }
+            | PickerCommand::Off
+            | PickerCommand::Tools { .. }
+            | PickerCommand::Channel { .. } => unreachable!("handled above"),
+        };
+        let after = (active.area, places.of_kind(active.area, &geometries));
+        let mut effect = PickerEffect {
+            moved: true,
+            ..Default::default()
+        };
+        if let Some(on) = &mut active.module {
+            let pickers = &mut self.pickers;
+            if after != before {
+                // A move after the last drag's release begins the next.
+                if pickers.released == pickers.drag {
+                    pickers.drag += 1;
+                }
+                // darktable's `_record_point_area`: a reading after a move is applied.
+                on.due = Some(Due {
+                    command: self.applied,
+                    drag: pickers.drag,
+                    keys,
+                });
+            }
+            if done {
+                pickers.released = pickers.drag;
+            }
         }
-        places.of_kind(active.area, &geometries);
         self.pickers.active = Some(active);
-        Ok(true)
+        // A release with no reading of its drag still to come completes the drag with the
+        // values already written; otherwise the drag's newest reading does, as it arrives.
+        effect.save = self.pickers.settled();
+        Ok(effect)
+    }
+
+    /// [`PickerCommand::On`].
+    fn picker_on(
+        &mut self,
+        picker: PickerRef,
+        area: bool,
+        keys: PickKeys,
+        tools: Vec<(&'static str, ControlValue)>,
+        channel: Option<&'static str>,
+        events: &mut Vec<Event>,
+    ) -> Result<PickerEffect, SessionError> {
+        if !self.live() {
+            return Err(SessionError::NotLive);
+        }
+        if let Some(failed) = &self.pickers.failed {
+            return Err(SessionError::Pickers(failed.clone()));
+        }
+        let mut effect = PickerEffect {
+            moved: true,
+            ..Default::default()
+        };
+        let mut module = None;
+        if let PickerRef::Module {
+            module: id,
+            picker: name,
+        } = picker
+        {
+            let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
+            if let Some(view_only) = &open.view_only {
+                return Err(SessionError::ViewOnly(view_only.clone()));
+            }
+            let found = edit::module(&self.modules, id).map_err(|_| SessionError::UnknownPicker)?;
+            let declared = found
+                .definition()
+                .picker(name)
+                .ok_or(SessionError::UnknownPicker)?;
+            check_tools(found.definition().pickers, &tools)?;
+            // Its module on, as darktable turns it on with its picker: its operation must
+            // then be in the plan.
+            let mut edit = open.edit.clone();
+            edit.turn_on(found);
+            let bound = edit::instances(&edit, self.operations, &self.modules, &open.image);
+            let planned = bound
+                .instances
+                .iter()
+                .any(|instance| instance.operation.manifest().id == declared.operation);
+            if !planned {
+                return Err(SessionError::UnknownPicker);
+            }
+            if self.pickers.probe.is_none() {
+                match pollster::block_on(Reducer::new(&self.gpu)) {
+                    Ok(mut reducer) => {
+                        reducer.keeping(keep_due);
+                        self.pickers.probe = Some(reducer);
+                    }
+                    Err(error) => {
+                        let error = error.to_string();
+                        self.pickers_fail(error.clone(), events);
+                        return Err(SessionError::Pickers(error));
+                    }
+                }
+            }
+            // A drag under way is saved before the module turns on, never with it.
+            if self.pickers.gesture.take().is_some() && self.needs_save() {
+                self.save();
+            }
+            let changed = self.change(|edit, _, _, _| {
+                edit.turn_on(found);
+                Ok(())
+            })?;
+            if changed {
+                if let Some(open) = &mut self.open {
+                    open.gesture = None;
+                }
+                (effect.values, effect.render, effect.save) = (true, true, true);
+            }
+            self.pickers.tools.insert(found.definition().id, tools);
+            // A drag of its own, complete as it begins.
+            self.pickers.drag += 1;
+            self.pickers.released = self.pickers.drag;
+            let area = match declared.kind {
+                PickerKind::Point => false,
+                PickerKind::Area => true,
+                PickerKind::PointArea => area,
+            };
+            module = Some((
+                area,
+                OnModule {
+                    module: found.definition().id,
+                    picker: declared,
+                    channel,
+                    measured: None,
+                    // Its first reading is applied, darktable's forced `changed`.
+                    due: Some(Due {
+                        command: self.applied,
+                        drag: self.pickers.drag,
+                        keys,
+                    }),
+                },
+            ));
+        }
+        if self.pickers.active.is_some() {
+            self.picker_off(events);
+        }
+        let (area, module) = match module {
+            Some((area, on)) => (area, Some(on)),
+            None => (area, None),
+        };
+        let geometries = self.geometries()?;
+        let places = self.pickers.places.entry(picker).or_default();
+        places.of_kind(area, &geometries);
+        self.pickers.active = Some(Active {
+            picker,
+            area,
+            module,
+        });
+        Ok(effect)
+    }
+
+    /// [`PickerCommand::Tools`]: the settings kept, and the module's latest reading measured
+    /// applied again where the picker that read it reads one of them, as one completed
+    /// change, as darktable's settings callbacks apply `picked_color` again
+    /// (`exposure.c:1171-1175`). A pick refused turns the module's picker off where it is
+    /// on, as a reading's refused pick does.
+    fn picker_tools(
+        &mut self,
+        id: &'static str,
+        tools: Vec<(&'static str, ControlValue)>,
+        events: &mut Vec<Event>,
+    ) -> Result<PickerEffect, SessionError> {
+        let module = edit::module(&self.modules, id)?;
+        check_tools(module.definition().pickers, &tools)?;
+        let id = module.definition().id;
+        let changed: BTreeSet<&str> = tools.iter().map(|(tool, _)| *tool).collect();
+        self.pickers.tools.insert(id, tools);
+        let Some(latest) = self.pickers.latest.get(id).copied() else {
+            return Ok(PickerEffect::default());
+        };
+        let editable = self
+            .open
+            .as_ref()
+            .is_some_and(|open| open.view_only.is_none());
+        if !self.live() || !editable || !latest.picker.tools.iter().any(|t| changed.contains(t)) {
+            return Ok(PickerEffect::default());
+        }
+        let due = Due {
+            command: self.applied,
+            drag: self.pickers.drag,
+            keys: latest.keys,
+        };
+        let on = |pickers: &Pickers| {
+            pickers.active.and_then(|active| {
+                let on = active.module?;
+                (on.module == id && on.picker.id == latest.picker.id).then_some((active.picker, on))
+            })
+        };
+        // A drag under way is saved before the pick, never with it.
+        if self.pickers.gesture.take().is_some() && self.needs_save() {
+            self.save();
+        }
+        let picked = self
+            .pick(id, latest.picker, &latest.reading, due)
+            .and_then(|picked| {
+                let Some(picked) = picked else {
+                    return Ok(None);
+                };
+                let shown = picked.shown.clone();
+                Ok(Some((self.write_pick(id, latest.picker, picked)?, shown)))
+            });
+        let (changed, shown) = match picked {
+            Ok(Some(written)) => written,
+            Ok(None) => return Ok(PickerEffect::default()),
+            Err(error) => {
+                if on(&self.pickers).is_some() {
+                    self.picker_off(events);
+                }
+                return Err(error);
+            }
+        };
+        self.pickers.last.insert(id, latest);
+        if let Some((picker, _)) = on(&self.pickers)
+            && let Some(part) = &mut self.pickers.module
+        {
+            part.picked = Some(shown);
+            let region = self.pickers.sent.as_ref().map(|sent| sent.region);
+            if let Some(region) = region {
+                self.send(self.applied, picker, region, events);
+            }
+        }
+        Ok(PickerEffect {
+            moved: false,
+            values: true,
+            render: changed,
+            save: true,
+        })
     }
 
     /// Turns the active picker off, as [`PickerCommand::Off`] does, as another photo opens
-    /// and as the photo closes: `Picker(None)` where one was on.
+    /// and as the photo closes: `Picker(None)` where one was on, and a pick's gesture
+    /// under way closed, its edit handed to the writer.
     pub(super) fn picker_off(&mut self, events: &mut Vec<Event>) {
         if self.pickers.active.is_some() {
+            let gesture = self.pickers.gesture.is_some();
             self.pickers.clear();
             events.push(Event::Picker(None));
+            if gesture && self.needs_save() {
+                self.save();
+            }
+        }
+    }
+
+    /// Turns a module's picker off as a command on the edit changes its module, as
+    /// darktable's `dt_iop_gui_changed` and `gui_update` do: `module` names the module the
+    /// command changed, `None` the whole edit. A picker that is darktable's "keep-active"
+    /// stays on.
+    pub(super) fn picker_module_changed(&mut self, module: Option<&str>, events: &mut Vec<Event>) {
+        let Some(on) = self.pickers.active.and_then(|active| active.module) else {
+            return;
+        };
+        if !on.picker.keep && module.is_none_or(|module| module == on.module) {
+            self.picker_off(events);
         }
     }
 
@@ -225,11 +887,19 @@ impl Engine {
             region,
         };
         let Some(bounds) = picker::pixels(region, size) else {
-            // Nothing to measure, and what is on its way is older.
-            pickers.discard();
-            pickers.ready = Some(reading(sampled, None));
+            // Nothing to measure, and the frame readings on their way are older.
+            if let Some(reducer) = &mut pickers.reducer {
+                reducer.discard();
+            }
+            pickers
+                .ready
+                .retain(|arrived| !matches!(arrived, Arrived::Frame(..)));
+            pickers.ready.push(Arrived::Frame(sampled, None));
             return;
         };
+        // Frame readings yet to be handed over are of older frames: the frame part never
+        // describes one.
+        (pickers.ready).retain(|arrived| !matches!(arrived, Arrived::Frame(..)));
         let (measured, error) = self.caught(|engine| -> Result<(), ComputeError> {
             let gpu = &engine.gpu;
             if engine.pickers.reducer.is_none() {
@@ -245,38 +915,195 @@ impl Engine {
         }
     }
 
-    /// The active picker's readings that have arrived, never waiting, each sent where it
-    /// changes the region or the frame's reading the client was sent last.
+    /// The probe a render records at the module picker's operation for `probing`, with
+    /// where its reduction goes once recorded; `None` with nothing to measure.
+    pub(super) fn probe<'a>(
+        reducer: Option<&'a mut Reducer<Probed>>,
+        gpu: &'a crate::gpu::GpuContext,
+        probing: Option<&'a Probing>,
+        recorded: &'a mut Option<Result<Recorded, ComputeError>>,
+    ) -> Option<Probe<'a>> {
+        let (reducer, probing) = (reducer?, probing?);
+        let targets = probing.targets.as_ref()?;
+        Some(Probe {
+            op: probing.op,
+            record: Box::new(move |encoder, input, output| {
+                let groups = probing.groups(targets, [input, output]);
+                *recorded = Some(reducer.record(gpu, encoder, &groups));
+            }),
+        })
+    }
+
+    /// After a render that may have measured the module picker's operation, `recorded`
+    /// what it recorded there: the reading on its way, or, where the region misses the
+    /// operation's image, one that needs no GPU. A reduction that could not be recorded
+    /// turns the pickers off.
+    pub(super) fn probed(
+        &mut self,
+        probing: Option<Probing>,
+        recorded: Option<Result<Recorded, ComputeError>>,
+        events: &mut Vec<Event>,
+    ) {
+        let Some(probing) = probing else {
+            return;
+        };
+        if probing.targets.is_none() {
+            self.pickers.measured(probing.key);
+            let arrived = if probing.unavailable {
+                Arrived::Unavailable(probing.tag)
+            } else {
+                Arrived::Module(probing.tag, None)
+            };
+            self.pickers.ready.push(arrived);
+            return;
+        }
+        if let Some(error) = self.pickers.submitted(probing, recorded) {
+            self.pickers_fail(error, events);
+        }
+    }
+
+    /// The module picker's reading at its operation where no render measured it: a
+    /// sample-only render, from the newest cache point at or before the operation, as its
+    /// region moved or it turned on with no edit, its operation then the edited instance.
+    /// Where it reads what it read last, a reading due is not, and a release completes
+    /// the gesture with the values already written.
+    pub(super) fn probe_alone(&mut self, events: &mut Vec<Event>) {
+        if !self.pickers.probing() {
+            return;
+        }
+        let through = self.applied;
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        let Some(pipeline) = &open.pipeline else {
+            // Nothing rendered yet: the first frame measures it.
+            return;
+        };
+        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        let probing = probing(
+            &mut self.pickers,
+            pipeline.plan(),
+            &bound.instances,
+            &open.image,
+            through,
+        );
+        let Some(probing) = probing else {
+            // Nothing new to read: no reading is due, and a drag released is complete.
+            if let Some(on) = (self.pickers.active.as_mut()).and_then(|a| a.module.as_mut()) {
+                on.due = None;
+            }
+            self.settle();
+            return;
+        };
+        let Some(targets) = &probing.targets else {
+            self.probed(Some(probing), None, events);
+            return;
+        };
+        let output = targets.len() > 1;
+        let path = open.sidecar.with_extension("");
+        (self.rendered_thumbnails).before_sample(
+            &path,
+            &self.jobs.control,
+            pipeline,
+            (probing.op, output),
+        );
+        let mut recorded = None;
+        let (sampled, error) = self.caught(|engine| {
+            let Some(pipeline) = engine.open.as_mut().and_then(|open| open.pipeline.as_mut())
+            else {
+                return false;
+            };
+            let (gpu, reducer) = (&engine.gpu, engine.pickers.probe.as_mut());
+            let Some(reducer) = reducer else {
+                return false;
+            };
+            pipeline.sample(gpu, probing.op, output, |encoder, input, written| {
+                let buffers = [input, written.unwrap_or(input)];
+                let groups = probing.groups(targets, buffers);
+                recorded = Some(reducer.record(gpu, encoder, &groups));
+            })
+        });
+        if let Some(error) = error {
+            // A sample-only render the GPU refused: the pickers off, the next frame
+            // rendered from scratch.
+            self.pickers_fail(error, events);
+            if let Some(open) = &mut self.open {
+                open.pipeline = None;
+            }
+            return;
+        }
+        if sampled {
+            self.probed(Some(probing), recorded, events);
+        }
+    }
+
+    /// The active picker's readings that have arrived, never waiting, handed over in the
+    /// order of the commands they measured, one waiting for any measured before it still
+    /// on its way. Each is sent where it changes the region, the module's part or the
+    /// frame's part the client was sent last; a module's reading due is applied through
+    /// its pick after it is sent, its change's values and frame after it, and a drag
+    /// released is saved once no reading of it is still to come.
     pub(super) fn picked(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
-        let mut readings: Vec<PickerReading> = self.pickers.ready.take().into_iter().collect();
         let mut failed = None;
-        if self.pickers.reducer.as_ref().is_some_and(Reducer::pending) {
+        if self.pickers.probe.as_ref().is_some_and(Reducer::pending) {
+            let mut reduced = Vec::new();
+            let (polled, error) = self.caught(|engine| match &mut engine.pickers.probe {
+                Some(probe) => probe.poll(&engine.gpu, &mut reduced),
+                None => Ok(()),
+            });
+            failed = polled.err().map(|e| e.to_string()).or(error);
+            self.pickers.ready.extend(
+                (reduced.into_iter())
+                    .map(|reduced| Arrived::Module(reduced.tag, Some(reduced.stats))),
+            );
+        }
+        if failed.is_none() && self.pickers.reducer.as_ref().is_some_and(Reducer::pending) {
             let mut reduced = Vec::new();
             let (polled, error) = self.caught(|engine| match &mut engine.pickers.reducer {
                 Some(reducer) => reducer.poll(&engine.gpu, &mut reduced),
                 None => Ok(()),
             });
             failed = polled.err().map(|e| e.to_string()).or(error);
-            readings.extend(
+            self.pickers.ready.extend(
                 reduced
                     .into_iter()
-                    .map(|reduced| reading(reduced.tag, reduced.stats.first())),
+                    .map(|reduced| Arrived::Frame(reduced.tag, reduced.stats.first().copied())),
             );
         }
-        let pickers = &mut self.pickers;
-        for reading in readings {
-            let on = pickers
-                .active
-                .is_some_and(|active| active.picker == reading.picker);
-            let changed = pickers.sent.as_ref().is_none_or(|sent| {
-                (sent.picker, sent.region, sent.frame)
-                    != (reading.picker, reading.region, reading.frame)
-            });
-            if on && changed {
-                pickers.sent = Some(reading.clone());
-                events.push(Event::Picker(Some(reading)));
+        // Stable, by `through`.
+        self.pickers.ready.sort_by_key(Arrived::through);
+        // Those a pick's render adds as these are handed over wait for the next call.
+        for _ in 0..self.pickers.ready.len() {
+            let Some(first) = self.pickers.ready.first() else {
+                break;
+            };
+            if (self.pickers.horizon()).is_some_and(|horizon| horizon < first.through()) {
+                break;
             }
+            let arrival = self.pickers.ready.remove(0);
+            match arrival {
+                Arrived::Frame(sampled, stats) => {
+                    if self.on(sampled.picker) {
+                        self.pickers.frame = stats.as_ref().map(FrameReading::of);
+                        self.send(sampled.through, sampled.picker, sampled.region, &mut events);
+                    }
+                }
+                Arrived::Module(probed, stats) => {
+                    if self.on(probed.picker) {
+                        self.arrived(probed, stats, &mut events);
+                    }
+                }
+                // No reading at the operation, and none applied: the module part goes.
+                Arrived::Unavailable(probed) => {
+                    if self.on(probed.picker) {
+                        self.pickers.module = None;
+                        self.send(probed.through, probed.picker, probed.region, &mut events);
+                    }
+                }
+            }
+            // A reading of a drag released, applied or not, may be its last.
+            self.settle();
         }
         if let Some(error) = failed {
             self.pickers_fail(error, &mut events);
@@ -284,17 +1111,258 @@ impl Engine {
         events
     }
 
+    /// Hands the writer the picks of a drag complete: released, with no reading of it
+    /// still to come.
+    fn settle(&mut self) {
+        if self.pickers.settled() && self.needs_save() {
+            self.save();
+        }
+    }
+
+    /// A module picker's reading at its operation, `stats` its input's and output's:
+    /// sent, then, where due, applied through the module's pick.
+    fn arrived(&mut self, probed: Probed, stats: Option<Vec<Stats>>, events: &mut Vec<Event>) {
+        let Some(on) = self.pickers.active.and_then(|active| active.module) else {
+            return;
+        };
+        let reading = stats.as_ref().and_then(|stats| {
+            Some(Reading {
+                input: *stats.first()?,
+                output: stats.get(1).copied(),
+            })
+        });
+        let previous = self
+            .pickers
+            .module
+            .as_ref()
+            .and_then(|part| part.picked.clone());
+        // darktable's `picked_color`, which every reading overwrites.
+        if let Some(reading) = reading {
+            let keys = (probed.due.map(|due| due.keys))
+                .or_else(|| self.pickers.latest.get(on.module).map(|latest| latest.keys))
+                .unwrap_or_default();
+            let latest = Last {
+                picker: on.picker,
+                reading,
+                keys,
+            };
+            self.pickers.latest.insert(on.module, latest);
+        }
+        let mut picked = None;
+        if let Some(due) = probed.due {
+            let made = match &reading {
+                Some(reading) => self.pick(on.module, on.picker, reading, due),
+                None => Ok(None),
+            };
+            match made {
+                Ok(Some(made)) => picked = Some((made, due)),
+                // Nothing to apply, the reading missing or the pick dropped: a drag
+                // released is complete with the values its earlier picks wrote, as
+                // `picked` settles it.
+                Ok(None) => {}
+                Err(error) => {
+                    self.picker_refused(due.command, error, events);
+                    return;
+                }
+            }
+        }
+        self.pickers.module = Some(ModuleReading {
+            input: reading.map(|reading| reading.input),
+            output: reading.and_then(|reading| reading.output),
+            picked: match &picked {
+                Some((made, _)) => Some(made.shown.clone()),
+                None => previous,
+            },
+        });
+        self.send(probed.through, probed.picker, probed.region, events);
+        let (Some((made, due)), Some(reading)) = (picked, reading) else {
+            return;
+        };
+        let applied = self.guarded(|engine| {
+            let mut events = Vec::new();
+            if let Err(error) = engine.apply_pick(on, made, due, reading, &mut events) {
+                engine.picker_refused(due.command, error, &mut events);
+            }
+            events
+        });
+        events.extend(applied);
+    }
+
+    /// The module's pick of `reading` by its picker `picker`, for the reading `due` asked
+    /// for: darktable's `color_picker_apply`, which the module's last reading becomes. A
+    /// pick that panicked is the module's failure; one that gives a number that is not
+    /// finite is dropped.
+    fn pick(
+        &mut self,
+        id: &'static str,
+        picker: &'static Picker,
+        reading: &Reading,
+        due: Due,
+    ) -> Result<Option<Picked>, SessionError> {
+        let module = edit::module(&self.modules, id)?;
+        let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
+        let values = open.edit.every(module, &open.image);
+        let tools = self.pickers.tools.get(id).cloned().unwrap_or_default();
+        let channel = (self.pickers.active)
+            .and_then(|active| active.module)
+            .filter(|on| on.module == id)
+            .and_then(|on| on.channel);
+        let last = self.pickers.last.get(id).map(|last| last.reading);
+        let picked = catch_unwind(AssertUnwindSafe(|| {
+            module.pick(
+                picker.id,
+                reading,
+                &values,
+                &open.image,
+                &tools,
+                channel,
+                last.as_ref(),
+                due.keys,
+            )
+        }));
+        let picked = picked.map_err(|panic| {
+            SessionError::Edit(EditError::PickFailed {
+                module: id,
+                picker: picker.id,
+                message: panic_message(panic.as_ref()),
+            })
+        })?;
+        // darktable's rule may leave no value, as `log2` of nothing: the pick is dropped.
+        let finite = |picked: &Picked| {
+            (picked.writes.iter()).all(|(_, value)| match value {
+                ControlValue::Number(number) => number.is_finite(),
+                _ => true,
+            })
+        };
+        Ok(picked.filter(finite))
+    }
+
+    /// Writes what the module's picker picked as one change, and says whether the edit
+    /// changed: a change on the edit, so a slider's gesture under way ends.
+    fn write_pick(
+        &mut self,
+        id: &'static str,
+        picker: &'static Picker,
+        picked: Picked,
+    ) -> Result<bool, SessionError> {
+        let changed = self.change(|edit, modules, _, image| {
+            edit.pick(edit::module(modules, id)?, picker, &picked.writes, image)
+        })?;
+        if changed && let Some(open) = &mut self.open {
+            open.gesture = None;
+        }
+        Ok(changed)
+    }
+
+    /// Applies a reading's pick, `made` of `reading` for the reading `due` asked for, as
+    /// one change: one of its drag's, saved once the drag is released and no reading of
+    /// it is still to come, never with the next drag's; then the values, and the frame.
+    /// Written, `reading` is the module's last applied, as RGB levels' `last_picked_color`.
+    fn apply_pick(
+        &mut self,
+        on: OnModule,
+        made: Picked,
+        due: Due,
+        reading: Reading,
+        events: &mut Vec<Event>,
+    ) -> Result<(), SessionError> {
+        let started = std::time::Instant::now();
+        // An earlier drag's picks are saved before a later one's, never merged with them.
+        if self.pickers.gesture.is_some_and(|drag| drag < due.drag) {
+            self.pickers.gesture = None;
+            if self.needs_save() {
+                self.save();
+            }
+        }
+        let changed = self.write_pick(on.module, on.picker, made)?;
+        let last = Last {
+            picker: on.picker,
+            reading,
+            keys: due.keys,
+        };
+        self.pickers.last.insert(on.module, last);
+        if changed {
+            self.pickers.gesture = Some(due.drag);
+        }
+        self.settle();
+        if let Some(open) = &mut self.open {
+            events.push(Event::Values(open.values(
+                self.operations,
+                &self.modules,
+                self.applied,
+            )));
+        }
+        if changed {
+            match self.render(started, events) {
+                Ok(Some(frame)) => events.push(Event::Frame(frame)),
+                Ok(None) => {}
+                Err(error) => events.push(Event::Failed(error)),
+            }
+            self.probe_alone(events);
+        }
+        Ok(())
+    }
+
+    /// A pick refused, writing nothing: the picker off, reported as refusing the command
+    /// that asked for the reading.
+    fn picker_refused(&mut self, command: u64, error: SessionError, events: &mut Vec<Event>) {
+        tracing::error!(target: "pipe", "a pick refused: {error}");
+        events.push(Event::Failed(SessionError::Refused {
+            command,
+            error: Box::new(error),
+        }));
+        self.picker_off(events);
+    }
+
+    /// Sends the active picker's reading, its parts the latest, where it changes what the
+    /// client was sent last.
+    fn send(&mut self, through: u64, picker: PickerRef, region: Region, events: &mut Vec<Event>) {
+        let pickers = &mut self.pickers;
+        let reading = PickerReading {
+            through,
+            picker,
+            region,
+            module: pickers.module.clone(),
+            frame: pickers.frame,
+        };
+        let changed = pickers.sent.as_ref().is_none_or(|sent| {
+            (sent.picker, sent.region, &sent.module, sent.frame)
+                != (
+                    reading.picker,
+                    reading.region,
+                    &reading.module,
+                    reading.frame,
+                )
+        });
+        if changed {
+            pickers.sent = Some(reading.clone());
+            events.push(Event::Picker(Some(reading)));
+        }
+    }
+
+    /// Whether `picker` is the one on.
+    fn on(&self, picker: PickerRef) -> bool {
+        self.pickers
+            .active
+            .is_some_and(|active| active.picker == picker)
+    }
+
     /// Turns the pickers off for the rest of the session, reporting why once, and
     /// `Picker(None)` where one was on: the frames go on without them.
-    fn pickers_fail(&mut self, error: String, events: &mut Vec<Event>) {
+    pub(super) fn pickers_fail(&mut self, error: String, events: &mut Vec<Event>) {
         tracing::error!(target: "pipe", "pickers off: {error}");
         let on = self.pickers.active.is_some();
+        let gesture = self.pickers.gesture.is_some();
         self.pickers.clear();
         self.pickers.reducer = None;
+        self.pickers.probe = None;
         self.pickers.failed = Some(error.clone());
         events.push(Event::Failed(SessionError::Pickers(error)));
         if on {
             events.push(Event::Picker(None));
+        }
+        if gesture && self.needs_save() {
+            self.save();
         }
     }
 
@@ -312,12 +1380,28 @@ impl Engine {
     }
 }
 
-/// The reading of `sampled`, given the frame's statistics under it, if measured.
-fn reading(sampled: Sampled, stats: Option<&picker::Stats>) -> PickerReading {
-    PickerReading {
-        through: sampled.through,
-        picker: sampled.picker,
-        region: sampled.region,
-        frame: stats.map(FrameReading::of),
+/// What a reading at the operation waiting for a staging buffer passes on to the newer one
+/// replacing it: its due application, with its drag, where the newer has none. Where both
+/// have one, the newer's applies; one of an earlier drag leaves that drag with no reading
+/// still to come, so it is saved before the newer drag's applies.
+fn keep_due(old: &Probed, new: &mut Probed) {
+    if new.due.is_none() {
+        new.due = old.due;
+    }
+}
+
+/// Refuses tool settings that none of `pickers` reads.
+fn check_tools(
+    pickers: &[Picker],
+    tools: &[(&'static str, ControlValue)],
+) -> Result<(), SessionError> {
+    let read: BTreeSet<&str> = pickers
+        .iter()
+        .flat_map(|picker| picker.tools)
+        .copied()
+        .collect();
+    match tools.iter().find(|(tool, _)| !read.contains(tool)) {
+        Some(&(tool, _)) => Err(SessionError::UnknownTool(tool)),
+        None => Ok(()),
     }
 }

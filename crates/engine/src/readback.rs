@@ -26,7 +26,8 @@
 //! and during a drag, when each frame comes before the last one's mapping completes,
 //! could drop every result. So two take turns, and while both are busy the result stays
 //! in its owner's buffer, each submission's replacing the last's, and the latest is
-//! copied as soon as one frees: the last result always arrives.
+//! copied as soon as one frees: the last result always arrives. An owner whose results
+//! carry what must not be lost has the replaced one pass it on ([`Readback::keeping`]).
 
 use std::sync::mpsc;
 
@@ -84,7 +85,13 @@ pub(crate) struct Readback<T> {
     /// The submissions so far.
     sequence: u64,
     generation: u64,
+    /// What a waiting result passes on to the one that replaces it, as a picker's due
+    /// application does ([`Self::keeping`]); none by default.
+    keep: Option<Keep<T>>,
 }
+
+/// What a replaced waiting result, the first, passes on to the result replacing it.
+type Keep<T> = Box<dyn Fn(&T, &mut T) + Send>;
 
 impl<T> Readback<T> {
     /// Two staging buffers of `size` bytes, named after `label`.
@@ -103,7 +110,39 @@ impl<T> Readback<T> {
             waiting: None,
             sequence: 0,
             generation: 0,
+            keep: None,
         }
+    }
+
+    /// Has a waiting result that another replaces pass on to it what `keep` takes, so
+    /// what only the replaced one carried is not lost.
+    pub(crate) fn keeping(&mut self, keep: Keep<T>) {
+        self.keep = Some(keep);
+    }
+
+    /// The results still on their way of the current generation, as one
+    /// [`Self::discard`] has passed never arrives: the one waiting for a staging buffer,
+    /// and those mapping.
+    pub(crate) fn on_its_way(&self) -> impl Iterator<Item = &T> {
+        let generation = self.generation;
+        let mapping = self
+            .staging
+            .iter()
+            .filter_map(|(_, staging)| match staging {
+                Staging::Mapping { sent, .. } => Some(sent),
+                Staging::Free => None,
+            });
+        (self.waiting.iter().chain(mapping))
+            .filter(move |sent| sent.generation == generation)
+            .map(|sent| &sent.measured)
+    }
+
+    /// What waits for a staging buffer, of the current generation.
+    #[cfg(test)]
+    pub(crate) fn waiting(&self) -> Option<&T> {
+        (self.waiting.as_ref())
+            .filter(|sent| sent.generation == self.generation)
+            .map(|sent| &sent.measured)
     }
 
     /// Submits `encoder`, whose work leaves a result in its owner's buffers, with `copy`
@@ -118,6 +157,36 @@ impl<T> Readback<T> {
         bytes: u64,
         copy: impl Fn(&mut wgpu::CommandEncoder, &wgpu::Buffer, u64),
     ) {
+        let slot = self.record(&mut encoder, bytes, copy);
+        gpu.submit([encoder.finish()]);
+        self.sent(slot, measured, bytes);
+    }
+
+    /// [`Self::submit`]'s first half, for an encoder its owner submits with other work,
+    /// as a render's: records `copy` of the result's first `bytes` into a free staging
+    /// buffer, and returns which, or none while both are busy. Once the encoder is
+    /// submitted, [`Self::sent`] maps it, or keeps the result waiting.
+    pub(crate) fn record(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        bytes: u64,
+        copy: impl Fn(&mut wgpu::CommandEncoder, &wgpu::Buffer, u64),
+    ) -> Option<usize> {
+        let slot = self.free()?;
+        copy(encoder, &self.staging[slot].0, bytes);
+        Some(slot)
+    }
+
+    /// [`Self::submit`]'s second half, once the encoder [`Self::record`] recorded in is
+    /// submitted: maps the staging buffer `slot` it filled, or, with none, keeps
+    /// `measured` waiting for one, in place of any result waiting before it.
+    pub(crate) fn sent(&mut self, slot: Option<usize>, mut measured: T, bytes: u64) {
+        if slot.is_none()
+            && let (Some(keep), Some(waiting)) = (&self.keep, &self.waiting)
+            && waiting.generation == self.generation
+        {
+            keep(&waiting.measured, &mut measured);
+        }
         self.sequence += 1;
         let sent = Sent {
             measured,
@@ -125,16 +194,9 @@ impl<T> Readback<T> {
             sequence: self.sequence,
             generation: self.generation,
         };
-        match self.free() {
-            Some(slot) => {
-                copy(&mut encoder, &self.staging[slot].0, bytes);
-                gpu.submit([encoder.finish()]);
-                self.map(slot, sent);
-            }
-            None => {
-                gpu.submit([encoder.finish()]);
-                self.waiting = Some(sent);
-            }
+        match slot {
+            Some(slot) => self.map(slot, sent),
+            None => self.waiting = Some(sent),
         }
     }
 

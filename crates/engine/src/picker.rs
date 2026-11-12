@@ -25,21 +25,27 @@
 //!   mapped forward where they are measured and drawn, by darktable's sorted, averaged
 //!   corners.
 //! - **The reduction** ([`Reducer`], `slang/picker.slang`) gives each box's mean, minimum
-//!   and maximum of four channels, its sums a fixed tree, and reads the results back
-//!   through the staging pair the scopes share (`readback.rs`), never waiting: 48
-//!   bytes a box.
+//!   and maximum of four channels, of an RGBA buffer, denoised by darktable's B-spline
+//!   where asked, or of a mosaic per CFA colour, its sums a fixed tree, and reads the
+//!   results back through the staging pair the scopes share (`readback.rs`), never
+//!   waiting: 48 bytes a box. A buffer larger than one binding is read in row windows
+//!   (decision 14).
 //! - **The frame's reading** ([`FrameReading`]) is the frame's RGB, as the window shows
 //!   it, and each statistic in Lab D50, as darktable's color picker utility reads its
 //!   samples on the display-referred frame.
+//! - **A module's reading** ([`ModuleReading`]) is its operation's input and output
+//!   statistics in the live viewport pipe, and what the module's pick showed of them.
 //!
-//! Built: the Colour picker module's own picker, measured on the frame. Module pickers,
-//! measured at their operation, and stored samples are to come.
+//! Built: the Colour picker module's picker, measured on the frame, and module pickers,
+//! measured at their operation and applied by the session. Stored samples and the spaces
+//! other than the operation's own are to come.
 
 use std::num::NonZeroU64;
 use std::time::Instant;
 
-pub use apertrust_modules::pick::{PickKeys, Region, Stats};
-use apertrust_plugin::{ImageContext, Kernel, PassHeader};
+use apertrust_modules::ControlValue;
+pub use apertrust_modules::pick::{PickKeys, Reading, Region, Shown, Stats};
+use apertrust_plugin::{Format, ImageContext, ImageDesc, Kernel, PassHeader};
 
 use crate::compute::{ComputeError, GpuImage, GpuTimer, ImageKernel, POLL_INTERVAL};
 use crate::gpu::GpuContext;
@@ -54,18 +60,26 @@ pub const KERNEL: Kernel = Kernel {
     derivatives: false,
 };
 
-/// The boxes one reduction takes.
+/// The boxes one reduction takes, across its buffers.
 pub const MAX_BOXES: usize = 64;
+/// The buffers one reduction reads: a module picker's operation's input and output.
+const MAX_GROUPS: usize = 2;
 /// The pixels a workgroup reduces across and down: 16 invocations each adding 4, 16 apart.
 const TILE: u32 = 64;
 /// A partial and a result in the kernel: a sum or a mean, a minimum and a maximum, each of
 /// four channels.
 const PARTIAL_BYTES: u64 = 48;
-/// `PickerParams` in the kernel: the count, the dispatch's workgroups across, every box's
-/// workgroups together and a word unused, then the boxes, 32 bytes each.
-const PARAMS_BYTES: usize = 16 + MAX_BOXES * 32;
-/// The two passes' start and end ticks, before the results in a staging buffer.
-const TICKS_BYTES: u64 = 32;
+/// `PickerParams` in the kernel: the count, the dispatch's workgroups across, where they
+/// end and begin, the first box's place in the results and three words unused; the
+/// boxes, 32 bytes each; then a mosaic's pattern and its colours, 16 and 144 bytes.
+const PARAMS_BYTES: usize = 32 + MAX_BOXES * 32 + 16 + 144;
+/// The positions of the largest colour pattern the kernel holds: X-Trans's 6×6.
+const MAX_PATTERN: usize = 36;
+/// Each pass's start and end ticks, before the results in a staging buffer: a reduction
+/// or a mosaic's and a combination, for each buffer.
+const TICKS_BYTES: u64 = 2 * MAX_GROUPS as u64 * 16;
+/// The rows of halo a denoised box reads above and below it: the B-spline's reach.
+const DENOISE_HALO: u32 = 2;
 
 /// darktable's default point, the photo's centre (`dt_lib_colorpicker_reset_point`).
 pub const DEFAULT_POINT: Region = Region::Point([0.5, 0.5]);
@@ -76,9 +90,8 @@ pub const DEFAULT_AREA: Region = Region::Area([0.02, 0.02, 0.98, 0.98]);
 /// A picker, by its owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PickerRef {
-    /// A module's picker, by its module's id and the picker's id in its definition. `On`
-    /// refuses it until 79.3, the session running no module's picker yet, declared or
-    /// not.
+    /// A module's picker, by its module's id and the picker's id in its definition
+    /// (`Definition::pickers`).
     Module {
         module: &'static str,
         picker: &'static str,
@@ -91,14 +104,20 @@ pub enum PickerRef {
 /// command on the edit. Points are in the photo's coordinates, each clamped to 0 to 1.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PickerCommand {
-    /// Turns `picker` on, the one on before it off: an area with `area`, else a point,
-    /// at the picker's last point or area this session, else darktable's default.
-    /// Refused before the photo is live, and for a module's picker until 79.3, the
-    /// session running no module's picker yet, declared or not.
+    /// Turns `picker` on, the one on before it off: an area with `area` where the picker
+    /// takes both, else a point; a picker of one kind, that kind. It starts at the
+    /// picker's last point or area this session, else darktable's default. A module's
+    /// picker turns its module on, makes its operation the edited instance, and has its
+    /// first reading applied as one completed change; `tools` are the tool settings the
+    /// module's pickers read, as the client keeps them, and `channel` the channel tab the
+    /// module shows. Refused before the photo is live, and for a module's picker on a
+    /// photo open for viewing only.
     On {
         picker: PickerRef,
         area: bool,
         keys: PickKeys,
+        tools: Vec<(&'static str, ControlValue)>,
+        channel: Option<&'static str>,
     },
     /// The active picker's point moved, a click or a drag's step, `done` on the release;
     /// a picker measuring an area measures this point from then on.
@@ -121,6 +140,18 @@ pub enum PickerCommand {
     Switch,
     /// The active picker back to its default for its kind.
     Reset,
+    /// The tool settings of `module`'s pickers changed, as the client keeps them: kept,
+    /// and the module's last reading applied again where the picker that read it reads
+    /// one of them, as one completed change. Refused for a setting none of its pickers
+    /// reads.
+    Tools {
+        module: &'static str,
+        tools: Vec<(&'static str, ControlValue)>,
+    },
+    /// The channel tab the active picker's module shows changed: kept for its next pick,
+    /// applying nothing, as darktable's tab switch applies nothing; with no picker on,
+    /// nothing.
+    Channel { channel: Option<&'static str> },
     /// The active picker off, its point and area kept for its next `On`; with none on,
     /// nothing.
     Off,
@@ -138,8 +169,26 @@ pub struct PickerReading {
     /// As drawn, in the photo's coordinates: an area the average of its sorted corners,
     /// as darktable's `dt_color_picker_transform_box` draws it.
     pub region: Region,
-    /// The frame's colour under the region; `None` where the region misses the frame.
+    /// A module picker's statistics at its operation; `None` for the Colour picker's, and
+    /// until the first arrives.
+    pub module: Option<ModuleReading>,
+    /// The frame's colour under the region; `None` until measured, or where the region
+    /// misses the frame.
     pub frame: Option<FrameReading>,
+}
+
+/// What a module's picker measured at its operation, darktable's `picked_color`,
+/// `picked_color_min` and `picked_color_max` of its input and output, each in the
+/// picker's space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleReading {
+    /// `None` where the region misses the operation's image, as darktable's empty box.
+    pub input: Option<Stats>,
+    /// With the picker's `output` only.
+    pub output: Option<Stats>,
+    /// What the module's pick made of the last reading it applied, for its panel; `None`
+    /// where it made nothing.
+    pub picked: Option<Shown>,
 }
 
 /// darktable's `display` and `lab` of a sample (`_pixelpipe_pick_samples`): mean, min
@@ -307,14 +356,185 @@ pub fn pixels(region: Region, [width, height]: [u32; 2]) -> Option<[u32; 4]> {
     Some(bounds.map(|v| v as u32))
 }
 
+/// The box `region`, in its stage's coordinates (0 to 1 across that stage's image at full
+/// resolution), covers in the buffer `desc` describes: an RGBA image at the pipe's scale,
+/// its stage's whole image or a region of it at its origin; or a mosaic, the developed
+/// image's photosites on the sensor, as `image`'s camera places its declared area, read
+/// from the mosaic's own corner. darktable's box, as [`pixels`] makes it, then held to
+/// the buffer; `None` where it misses the buffer.
+pub(crate) fn boxed(region: Region, desc: &ImageDesc, image: &ImageContext) -> Option<[u32; 4]> {
+    let ([left, top, right, bottom], corner) = match desc.format {
+        Format::Rgba => {
+            let bounds = pixels(region, desc.scaled_extent)?;
+            (bounds, desc.origin.map(i64::from))
+        }
+        Format::Mosaic | Format::Mosaic16 => {
+            let bounds = pixels(region, [image.width, image.height])?;
+            let declared = image
+                .camera
+                .as_ref()
+                .map_or([0, 0], |camera| [camera.declared[0], camera.declared[1]]);
+            let corner = [0, 1].map(|a| i64::from(desc.sensor_origin[a]) - i64::from(declared[a]));
+            (bounds, corner)
+        }
+    };
+    let held = |v: u32, a: usize, side: u32| (i64::from(v) - corner[a]).clamp(0, i64::from(side));
+    let bounds = [
+        held(left, 0, desc.width),
+        held(top, 1, desc.height),
+        held(right, 0, desc.width),
+        held(bottom, 1, desc.height),
+    ];
+    (bounds[0] < bounds[2] && bounds[1] < bounds[3]).then(|| bounds.map(|v| v as u32))
+}
+
+/// A mosaic's colour filter array as the reduction reads it: darktable's `filters` or
+/// X-Trans pattern, at the mosaic's place on the sensor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cfa {
+    /// The pattern's width and height: 2 × 2 for Bayer, 6 × 6 for X-Trans.
+    pub size: [u32; 2],
+    /// Each position's colour, row by row: 0 red, 1 green, 2 blue.
+    pub colours: Vec<u32>,
+    /// The mosaic's top-left photosite on the sensor.
+    pub origin: [u32; 2],
+}
+
+impl Cfa {
+    /// The pattern of `image`'s camera, for the mosaic `desc` describes; `None` for an
+    /// image with no colour filter array or a pattern larger than X-Trans's.
+    pub fn of(image: &ImageContext, desc: &ImageDesc) -> Option<Self> {
+        let cfa = image.camera.as_ref()?.cfa.as_ref()?;
+        let positions = (cfa.width * cfa.height) as usize;
+        (positions > 0 && positions <= MAX_PATTERN && cfa.values.len() == positions).then(|| Self {
+            size: [cfa.width, cfa.height],
+            colours: cfa.values.clone(),
+            origin: desc.sensor_origin,
+        })
+    }
+
+    /// How many photosites of each colour the box `bounds` holds, darktable's `weights`.
+    pub fn counts(&self, [left, top, right, bottom]: [u32; 4]) -> [u32; 4] {
+        // Of the columns or rows from `from` to `to`, those at each position of the
+        // pattern along an axis.
+        let along = |from: u32, to: u32, axis: usize| {
+            let side = self.size[axis];
+            let mut at = vec![0u32; side as usize];
+            let first = (self.origin[axis] + from) % side;
+            for (i, count) in at.iter_mut().enumerate() {
+                let offset = (i as u32 + side - first) % side;
+                *count = (to - from).saturating_sub(offset).div_ceil(side);
+            }
+            at
+        };
+        let (columns, rows) = (along(left, right, 0), along(top, bottom, 1));
+        let mut counts = [0u32; 4];
+        for (y, &down) in rows.iter().enumerate() {
+            for (x, &across) in columns.iter().enumerate() {
+                let colour = self.colours[y * self.size[0] as usize + x] as usize;
+                if let Some(count) = counts.get_mut(colour) {
+                    *count += down * across;
+                }
+            }
+        }
+        counts
+    }
+}
+
+/// How a reduction reads its buffer.
+#[derive(Debug, Clone, Copy)]
+pub enum Layout<'a> {
+    /// `f32` RGBA, four channels a pixel, each pixel first blurred by darktable's
+    /// B-spline with `denoise` (`DT_COLOR_PICKER_DENOISE`).
+    Rgba { denoise: bool },
+    /// A mosaic, one `f32` a photosite, read per CFA colour.
+    Mosaic(&'a Cfa),
+}
+
+/// A buffer a reduction reads, and its boxes.
+#[derive(Debug, Clone, Copy)]
+pub struct Group<'a> {
+    pub buffer: &'a wgpu::Buffer,
+    /// Its image's width and height in pixels, or photosites.
+    pub size: [u32; 2],
+    pub layout: Layout<'a>,
+    /// Left, top, right and bottom, right and bottom exclusive, never empty and within the
+    /// image, as [`pixels`] gives them.
+    pub boxes: &'a [[u32; 4]],
+}
+
+impl Group<'_> {
+    /// Its image's bytes a row.
+    fn row_bytes(&self) -> u64 {
+        let channels = match self.layout {
+            Layout::Rgba { .. } => 4,
+            Layout::Mosaic(_) => 1,
+        };
+        u64::from(self.size[0]) * channels * 4
+    }
+
+    /// The rows its boxes read beyond their own: the B-spline's reach where denoised.
+    fn halo(&self) -> u32 {
+        match self.layout {
+            Layout::Rgba { denoise: true } => DENOISE_HALO,
+            _ => 0,
+        }
+    }
+
+    /// What each box's sum is divided by, per channel: its pixels, or each colour's
+    /// photosites in it.
+    fn divisors(&self) -> impl Iterator<Item = [u32; 4]> + '_ {
+        self.boxes.iter().map(
+            move |&bounds @ [left, top, right, bottom]| match self.layout {
+                Layout::Rgba { .. } => [(right - left) * (bottom - top); 4],
+                Layout::Mosaic(cfa) => cfa.counts(bounds),
+            },
+        )
+    }
+}
+
+/// The bytes the session's two reducers hold at most for a viewport whose frame is at
+/// most `viewport` and whose pickers may read a mosaic of `mosaic` photosites: their
+/// uniforms, results and staging pairs, the frame's partials for [`MAX_BOXES`] boxes over
+/// the whole frame, and a module picker's for one box over the larger of its
+/// operation's images, which the reductions of its input and output share; and the
+/// uniform blocks, one a dispatch: the frame's one, and for the operation's input and
+/// output, read in row windows at worst a window a row of workgroups. The plan's memory
+/// counts them (`docs/pickers.md`, Memory, strips and failures).
+pub fn reserved(viewport: [u32; 2], mosaic: [u32; 2]) -> u64 {
+    let workgroups = |[width, height]: [u32; 2]| {
+        u64::from(width.div_ceil(TILE)) * u64::from(height.div_ceil(TILE))
+    };
+    let frame = MAX_BOXES as u64 * workgroups(viewport);
+    let operation = workgroups(viewport).max(workgroups(mosaic));
+    let partials = (frame + operation) * PARTIAL_BYTES;
+    let results = MAX_BOXES as u64 * PARTIAL_BYTES;
+    let rows = u64::from(viewport[1].max(mosaic[1]).div_ceil(TILE));
+    let blocks = 1 + MAX_GROUPS as u64 * rows;
+    let uniforms = blocks * (PassHeader::SIZE + PARAMS_BYTES) as u64;
+    partials + uniforms + 2 * (results + 2 * (TICKS_BYTES + results))
+}
+
 /// A reduction on its way, with what its owner keeps of it.
 struct Measured<T> {
     tag: T,
-    /// Each box's pixels, which its sum is divided by.
-    pixels: Vec<u32>,
+    /// What each box's sums are divided by, per channel.
+    divisors: Vec<[u32; 4]>,
     submitted: Instant,
-    /// Whether the passes' ticks were resolved, so the reading has a GPU time.
-    timed: bool,
+    /// The passes whose ticks were resolved, so the reading has a GPU time; 0 where the
+    /// device has no timestamp queries.
+    timed: u32,
+}
+
+/// A reduction recorded in an encoder whose owner submits it ([`Reducer::record`]),
+/// waiting for [`Reducer::submitted`].
+#[must_use = "a reduction recorded is read back only once its submission is told"]
+pub(crate) struct Recorded {
+    divisors: Vec<[u32; 4]>,
+    bytes: u64,
+    timed: u32,
+    /// The staging buffer its copy fills, or none while both are busy.
+    slot: Option<usize>,
 }
 
 /// What a reduction gave: each box's statistics, in the order given.
@@ -323,39 +543,43 @@ pub struct Reduced<T> {
     /// What its owner gave with it.
     pub tag: T,
     pub stats: Vec<Stats>,
-    /// Both passes' GPU time; NaN where the device has no timestamp queries, or gave none.
+    /// Every pass's GPU time; NaN where the device has no timestamp queries, or gave none.
     pub gpu_ms: f64,
     /// From the reduction's submission to its result being picked up.
     pub latency_ms: f64,
 }
 
-/// Reduces boxes of an RGBA buffer on the GPU and reads the results back through two
-/// staging buffers in turn, never waiting: the pickers' GPU side, which the session keeps
-/// for its life. `T` is what its owner keeps of each reduction until it arrives.
+/// Reduces boxes of RGBA buffers and mosaics on the GPU and reads the results back
+/// through two staging buffers in turn, never waiting: the pickers' GPU side, which the
+/// session keeps for its life, one for the frame and one at a module picker's
+/// operation. `T` is what its owner keeps of each reduction until it arrives.
 pub struct Reducer<T> {
     rgba: ImageKernel,
+    mosaic: ImageKernel,
     combine: ImageKernel,
-    uniform: wgpu::Buffer,
+    /// One uniform block a dispatch, grown as a reduction needs them.
+    uniforms: Vec<wgpu::Buffer>,
     /// Each workgroup's partial, grown to what a reduction needs.
     partials: wgpu::Buffer,
     results: wgpu::Buffer,
     readback: Readback<Measured<T>>,
     timer: Option<GpuTimer>,
+    /// The most workgroups a dispatch takes across: the device's, or fewer, for a test
+    /// of the dispatch across and down.
+    across: u32,
 }
 
 impl<T> Reducer<T> {
-    /// Compiles the two entry points and makes the buffers: the uniforms, the results and
-    /// their staging pair, 3 KiB each, and the partials, grown as a reduction needs them.
+    /// Compiles the three entry points and makes the buffers: the results and their
+    /// staging pair, 3 KiB each, and the uniforms and partials, grown as a reduction needs
+    /// them.
     pub async fn new(gpu: &GpuContext) -> Result<Self, ComputeError> {
-        let rgba = ImageKernel::with_entry_point(gpu, KERNEL.name, KERNEL.wgsl, "picker_rgba");
-        let combine =
-            ImageKernel::with_entry_point(gpu, KERNEL.name, KERNEL.wgsl, "picker_combine");
-        let uniform = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("picker uniforms"),
-            size: (PassHeader::SIZE + PARAMS_BYTES) as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let kernel = |entry| ImageKernel::with_entry_point(gpu, KERNEL.name, KERNEL.wgsl, entry);
+        let (rgba, mosaic, combine) = (
+            kernel("picker_rgba"),
+            kernel("picker_mosaic"),
+            kernel("picker_combine"),
+        );
         let results_bytes = MAX_BOXES as u64 * PARTIAL_BYTES;
         let results = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("picker results"),
@@ -365,122 +589,203 @@ impl<T> Reducer<T> {
         });
         Ok(Self {
             rgba: rgba.await?,
+            mosaic: mosaic.await?,
             combine: combine.await?,
-            uniform,
+            uniforms: Vec::new(),
             partials: partials(gpu, PARTIAL_BYTES),
             results,
             readback: Readback::new(gpu, "picker", TICKS_BYTES + results_bytes),
-            timer: GpuTimer::new(gpu, 2),
+            timer: GpuTimer::new(gpu, 2 * MAX_GROUPS as u32),
+            across: gpu.device.limits().max_compute_workgroups_per_dimension,
         })
     }
 
-    /// Reduces `boxes` of `frame`, an RGBA image, as `measure_buffer` does.
+    /// Reduces `boxes` of `frame`, an RGBA image, as [`Self::measure_groups`] does.
     pub fn measure(&mut self, gpu: &GpuContext, frame: &GpuImage, boxes: &[[u32; 4]], tag: T) {
         let size = [frame.width(), frame.height()];
         self.measure_buffer(gpu, frame.buffer(), size, boxes, tag);
     }
 
-    /// Reduces `boxes` of the RGBA image in `buffer`, of `size` pixels, in a submission of
-    /// its own after everything submitted before it, and returns without waiting; the
-    /// result arrives through [`Self::poll`] with `tag`. Each box is left, top, right and
-    /// bottom, right and bottom exclusive, never empty and within the image, as
-    /// [`pixels`] gives it; at most [`MAX_BOXES`] of them.
+    /// Reduces `boxes` of the RGBA image in `buffer`, of `size` pixels, with no denoise,
+    /// as [`Self::measure_groups`] does.
     pub(crate) fn measure_buffer(
         &mut self,
         gpu: &GpuContext,
         buffer: &wgpu::Buffer,
-        [width, height]: [u32; 2],
+        size: [u32; 2],
         boxes: &[[u32; 4]],
         tag: T,
     ) {
+        let group = Group {
+            buffer,
+            size,
+            layout: Layout::Rgba { denoise: false },
+            boxes,
+        };
+        // The frame always fits one binding: the viewport's plan holds it whole.
+        if let Err(error) = self.measure_groups(gpu, &[group], tag) {
+            unreachable!("the frame binds whole: {error}");
+        }
+    }
+
+    /// Reduces each group's boxes, in a submission of its own after everything submitted
+    /// before it, and returns without waiting; the result arrives through [`Self::poll`]
+    /// with `tag`, every box's statistics in the order given. Refused, with nothing
+    /// submitted, where a buffer larger than one binding cannot be read in windows.
+    pub fn measure_groups(
+        &mut self,
+        gpu: &GpuContext,
+        groups: &[Group],
+        tag: T,
+    ) -> Result<(), ComputeError> {
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let recorded = self.record(gpu, &mut encoder, groups)?;
+        gpu.submit([encoder.finish()]);
+        self.submitted(recorded, tag);
+        Ok(())
+    }
+
+    /// Records reducing each group's boxes into `encoder`, every pass after what it holds
+    /// so far, then the results' copy into a free staging buffer: for a reduction at an
+    /// operation's place in a render's encoder, which its owner submits, then tells
+    /// [`Self::submitted`]. At most [`MAX_GROUPS`] groups and [`MAX_BOXES`] boxes in all.
+    /// A buffer larger than one binding is bound in row windows, each window's workgroups
+    /// writing their partials at their index in the whole box (decision 14); refused,
+    /// with nothing recorded, where a window of one workgroup's rows would not bind.
+    pub(crate) fn record(
+        &mut self,
+        gpu: &GpuContext,
+        encoder: &mut wgpu::CommandEncoder,
+        groups: &[Group],
+    ) -> Result<Recorded, ComputeError> {
+        let boxes: usize = groups.iter().map(|group| group.boxes.len()).sum();
         assert!(
-            (1..=MAX_BOXES).contains(&boxes.len()),
-            "{} boxes, where a reduction takes 1 to {MAX_BOXES}",
-            boxes.len()
+            (1..=MAX_GROUPS).contains(&groups.len()) && (1..=MAX_BOXES).contains(&boxes),
+            "{} buffers and {boxes} boxes, where a reduction takes 1 to {MAX_GROUPS} and 1 \
+             to {MAX_BOXES}",
+            groups.len()
         );
-        // Each box's workgroups, one after another in the dispatch.
-        let mut workgroups = 0u32;
-        let mut params = vec![0u8; 16];
-        for &[left, top, right, bottom] in boxes {
-            debug_assert!(left < right && top < bottom && right <= width && bottom <= height);
-            let across = (right - left).div_ceil(TILE);
-            let count = across * (bottom - top).div_ceil(TILE);
-            for word in [left, top, right, bottom, workgroups, across, count, 0] {
-                params.extend_from_slice(&word.to_le_bytes());
-            }
-            workgroups += count;
+        let limits = gpu.device.limits();
+        let (binding, alignment) = (
+            limits.max_storage_buffer_binding_size,
+            u64::from(limits.min_storage_buffer_offset_alignment),
+        );
+        // Each group's dispatches, with their uniforms, laid out before any is recorded,
+        // so a refusal records nothing.
+        let mut planned = Vec::with_capacity(groups.len());
+        let mut needed = 0u64;
+        let mut results = 0u32;
+        for group in groups {
+            let dispatches = dispatches(group, binding, alignment, self.across)?;
+            let workgroups = dispatches.iter().map(|d| d.end).max().unwrap_or(0);
+            needed = needed.max(u64::from(workgroups) * PARTIAL_BYTES);
+            planned.push((group, dispatches, results));
+            results += group.boxes.len() as u32;
         }
-        params.resize(PARAMS_BYTES, 0);
-        let limit = gpu.device.limits().max_compute_workgroups_per_dimension;
-        let across = workgroups.min(limit);
-        for (at, word) in [boxes.len() as u32, across, workgroups].iter().enumerate() {
-            params[at * 4..at * 4 + 4].copy_from_slice(&word.to_le_bytes());
-        }
-        let block = PassHeader::whole(width, height).uniform_block(&params);
-        gpu.queue.write_buffer(&self.uniform, 0, &block);
-        let needed = u64::from(workgroups) * PARTIAL_BYTES;
         if self.partials.size() < needed {
             self.partials = partials(gpu, needed);
         }
+        let blocks: usize = planned.iter().map(|(_, d, _)| d.len()).sum();
+        while self.uniforms.len() < blocks {
+            self.uniforms
+                .push(gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("picker uniforms"),
+                    size: (PassHeader::SIZE + PARAMS_BYTES) as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+        }
 
-        let bytes = NonZeroU64::new(u64::from(width) * u64::from(height) * 16);
-        let image = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-            buffer,
-            offset: 0,
-            size: bytes,
-        });
         let entry = |binding, resource| wgpu::BindGroupEntry { binding, resource };
-        let rgba = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("picker_rgba"),
-            layout: &self.rgba.pipeline().get_bind_group_layout(0),
-            entries: &[
-                entry(0, image),
-                entry(1, self.partials.as_entire_binding()),
-                entry(2, self.uniform.as_entire_binding()),
-            ],
-        });
-        let combine = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("picker_combine"),
-            layout: &self.combine.pipeline().get_bind_group_layout(0),
-            entries: &[
-                entry(1, self.partials.as_entire_binding()),
-                entry(2, self.uniform.as_entire_binding()),
-                entry(3, self.results.as_entire_binding()),
-            ],
-        });
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        for (slot, (kernel, bind_group, groups)) in [
-            (&self.rgba, &rgba, [across, workgroups.div_ceil(across)]),
-            (&self.combine, &combine, [boxes.len() as u32, 1]),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        let mut uniform = 0;
+        let mut slot = 0u32;
+        let timer = self.timer.as_ref();
+        for (group, dispatches, results) in planned {
+            let (kernel, binding) = match group.layout {
+                Layout::Rgba { .. } => (&self.rgba, 0),
+                Layout::Mosaic(_) => (&self.mosaic, 4),
+            };
+            let first_block = uniform;
+            let mut bind_groups = Vec::with_capacity(dispatches.len());
+            for dispatch in &dispatches {
+                let block = params(group, dispatch, results);
+                let buffer = &self.uniforms[uniform];
+                gpu.queue.write_buffer(buffer, 0, &block);
+                uniform += 1;
+                let image = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: group.buffer,
+                    offset: dispatch.window[0],
+                    size: NonZeroU64::new(dispatch.window[1]),
+                });
+                bind_groups.push(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(kernel_label(group)),
+                    layout: &kernel.pipeline().get_bind_group_layout(0),
+                    entries: &[
+                        entry(binding, image),
+                        entry(1, self.partials.as_entire_binding()),
+                        entry(2, buffer.as_entire_binding()),
+                    ],
+                }));
+            }
+            let combine = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("picker_combine"),
+                layout: &self.combine.pipeline().get_bind_group_layout(0),
+                entries: &[
+                    entry(1, self.partials.as_entire_binding()),
+                    entry(2, self.uniforms[first_block].as_entire_binding()),
+                    entry(3, self.results.as_entire_binding()),
+                ],
+            });
+            // The reduction, its windows' dispatches in one compute pass, then the
+            // combination.
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some(KERNEL.name),
-                timestamp_writes: self.timer.as_ref().map(|timer| timer.writes(slot as u32)),
+                label: Some(kernel_label(group)),
+                timestamp_writes: timer.map(|timer| timer.writes(slot)),
             });
             pass.set_pipeline(kernel.pipeline());
-            pass.set_bind_group(0, bind_group, &[]);
-            pass.dispatch_workgroups(groups[0], groups[1], 1);
+            for (dispatch, bind_group) in dispatches.iter().zip(&bind_groups) {
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.dispatch_workgroups(dispatch.groups[0], dispatch.groups[1], 1);
+            }
+            drop(pass);
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("picker_combine"),
+                timestamp_writes: timer.map(|timer| timer.writes(slot + 1)),
+            });
+            pass.set_pipeline(self.combine.pipeline());
+            pass.set_bind_group(0, &combine, &[]);
+            pass.dispatch_workgroups(group.boxes.len() as u32, 1, 1);
+            drop(pass);
+            slot += 2;
         }
-        if let Some(timer) = &self.timer {
-            timer.resolve(&mut encoder, 2);
+        if let Some(timer) = timer {
+            timer.resolve(encoder, slot);
         }
+        let bytes = TICKS_BYTES + boxes as u64 * PARTIAL_BYTES;
+        let (results, timer) = (&self.results, self.timer.as_ref());
+        let slot_used = self
+            .readback
+            .record(encoder, bytes, |encoder, staging, bytes| {
+                copy(encoder, timer, results, staging, bytes)
+            });
+        Ok(Recorded {
+            divisors: groups.iter().flat_map(Group::divisors).collect(),
+            bytes,
+            timed: if timer.is_some() { slot } else { 0 },
+            slot: slot_used,
+        })
+    }
+
+    /// Tells the reducer that the submission `recorded` was recorded in has been
+    /// submitted: its result arrives through [`Self::poll`] with `tag`.
+    pub(crate) fn submitted(&mut self, recorded: Recorded, tag: T) {
         let measured = Measured {
             tag,
-            pixels: boxes
-                .iter()
-                .map(|&[left, top, right, bottom]| (right - left) * (bottom - top))
-                .collect(),
+            divisors: recorded.divisors,
             submitted: Instant::now(),
-            timed: self.timer.is_some(),
+            timed: recorded.timed,
         };
-        let (results, timer) = (&self.results, self.timer.as_ref());
-        let bytes = TICKS_BYTES + boxes.len() as u64 * PARTIAL_BYTES;
-        (self.readback).submit(gpu, encoder, measured, bytes, |encoder, staging, bytes| {
-            copy(encoder, timer, results, staging, bytes)
-        });
+        self.readback.sent(recorded.slot, measured, recorded.bytes);
     }
 
     /// Adds the reductions whose mappings have completed to `reduced`, in the order they
@@ -497,27 +802,36 @@ impl<T> Reducer<T> {
             gpu,
             |encoder, staging, bytes| copy(encoder, timer, results, staging, bytes),
             |measured, bytes| {
-                let ticks: [u64; 4] = bytemuck::pod_read_unaligned(&bytes[..TICKS_BYTES as usize]);
+                let ticks: Vec<u64> = bytemuck::pod_collect_to_vec(&bytes[..TICKS_BYTES as usize]);
                 let floats: Vec<f32> = bytemuck::pod_collect_to_vec(&bytes[TICKS_BYTES as usize..]);
                 let stats = floats
                     .as_chunks::<12>()
                     .0
                     .iter()
-                    .zip(&measured.pixels)
-                    // darktable's mean, `acc / (float)size`, divided here so that it is
-                    // the same bits on every GPU, whose division need only be within 2.5
-                    // ulp.
-                    .map(|(v, &pixels)| Stats {
-                        mean: [v[0], v[1], v[2], v[3]].map(|sum| sum / pixels as f32),
+                    .zip(&measured.divisors)
+                    .map(|(v, divisors)| Stats {
+                        // darktable's mean, `acc / (float)size`, or for a colour no
+                        // photosite of the box has, 0; divided here so that it is the
+                        // same bits on every GPU, whose division need only be within
+                        // 2.5 ulp.
+                        mean: std::array::from_fn(|c| match divisors[c] {
+                            0 => 0.0,
+                            count => v[c] / count as f32,
+                        }),
                         min: [v[4], v[5], v[6], v[7]],
                         max: [v[8], v[9], v[10], v[11]],
                     })
                     .collect();
                 // Ticks the GPU did not give are no time.
+                let passes = &ticks.as_chunks::<2>().0[..measured.timed as usize];
                 let gpu_ms = match timer {
-                    Some(timer) if measured.timed && ticks[1] > ticks[0] && ticks[3] > ticks[2] => {
-                        timer.milliseconds(ticks[0], ticks[1])
-                            + timer.milliseconds(ticks[2], ticks[3])
+                    Some(timer)
+                        if measured.timed > 0 && passes.iter().all(|[from, to]| to > from) =>
+                    {
+                        passes
+                            .iter()
+                            .map(|&[from, to]| timer.milliseconds(from, to))
+                            .sum()
                     }
                     _ => f64::NAN,
                 };
@@ -525,7 +839,7 @@ impl<T> Reducer<T> {
                 tracing::debug!(
                     target: "perf",
                     "picked {} box(es), read back after {latency_ms:.1} ms{}",
-                    measured.pixels.len(),
+                    measured.divisors.len(),
                     if gpu_ms.is_nan() {
                         String::new()
                     } else {
@@ -545,6 +859,27 @@ impl<T> Reducer<T> {
     /// Whether a result is still on its way.
     pub fn pending(&self) -> bool {
         self.readback.pending()
+    }
+
+    /// The tags of the results still on their way, never those [`Self::discard`] dropped.
+    pub(crate) fn on_its_way(&self) -> impl Iterator<Item = &T> {
+        self.readback.on_its_way().map(|measured| &measured.tag)
+    }
+
+    /// The tag of the result waiting for a staging buffer, if any.
+    #[cfg(test)]
+    pub(crate) fn waiting(&self) -> Option<&T> {
+        self.readback.waiting().map(|measured| &measured.tag)
+    }
+
+    /// Has a result waiting for a staging buffer pass on to the one replacing it what
+    /// `keep` takes of its tag, as a picker's due application, so it is not lost.
+    pub(crate) fn keeping(&mut self, keep: fn(&T, &mut T))
+    where
+        T: 'static,
+    {
+        let keep = move |old: &Measured<T>, new: &mut Measured<T>| keep(&old.tag, &mut new.tag);
+        self.readback.keeping(Box::new(keep));
     }
 
     /// Drops every result on its way, as when the picker turns off: those mapping still
@@ -572,6 +907,155 @@ impl<T> Reducer<T> {
     pub(crate) fn awaits(&mut self, which: impl Fn(&T) -> bool) -> bool {
         self.readback.awaits(|measured| which(&measured.tag))
     }
+
+    /// At most `across` workgroups across a dispatch, as a device that allows fewer
+    /// dispatches them, so a test reaches the dispatch across and down.
+    #[cfg(test)]
+    pub(crate) fn cap_across(&mut self, across: u32) {
+        self.across = across;
+    }
+}
+
+/// One dispatch of a reduction: its workgroups, the window of the buffer it binds and
+/// where that window starts in 32-bit words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Dispatch {
+    /// Its first workgroup among every box's, and where they end.
+    first: u32,
+    end: u32,
+    /// Its workgroups across and down.
+    groups: [u32; 2],
+    /// The window's offset and size in bytes.
+    window: [u64; 2],
+}
+
+/// The dispatches that reduce `group`'s boxes, each workgroup at its index among every
+/// box's, at most `limit` across: one over the whole buffer where it binds whole, else,
+/// box by box, row strips of whole workgroups, each over the window of the rows it reads,
+/// its offset aligned to `alignment`.
+fn dispatches(
+    group: &Group,
+    binding: u64,
+    alignment: u64,
+    limit: u32,
+) -> Result<Vec<Dispatch>, ComputeError> {
+    let shape = |first: u32, end: u32, window: [u64; 2]| {
+        let count = end - first;
+        let across = count.clamp(1, limit);
+        Dispatch {
+            first,
+            end,
+            groups: [across, count.div_ceil(across)],
+            window,
+        }
+    };
+    let row = group.row_bytes();
+    let whole = row * u64::from(group.size[1]);
+    let mut first = 0;
+    let tiles: Vec<[u32; 2]> = group
+        .boxes
+        .iter()
+        .map(|&[left, top, right, bottom]| {
+            [(right - left).div_ceil(TILE), (bottom - top).div_ceil(TILE)]
+        })
+        .collect();
+    if whole <= binding {
+        let workgroups = tiles.iter().map(|[across, down]| across * down).sum();
+        return Ok(vec![shape(0, workgroups, [0, whole])]);
+    }
+    // The rows a window may hold, less what aligning its offset down may add.
+    let halo = group.halo();
+    let rows = (binding.saturating_sub(alignment) / row) as u32;
+    let strip = rows.saturating_sub(2 * halo) / TILE;
+    if strip == 0 {
+        return Err(ComputeError::Binding {
+            operation: "picker",
+            pass: kernel_label(group),
+            bytes: row * u64::from(TILE + 2 * halo) + alignment,
+            limit: binding,
+        });
+    }
+    let mut dispatches = Vec::new();
+    for (&[_, top, _, bottom], &[across, down]) in group.boxes.iter().zip(&tiles) {
+        for from in (0..down).step_by(strip as usize) {
+            let to = (from + strip).min(down);
+            let read_top = (top + from * TILE).saturating_sub(halo);
+            let read_bottom = (top + to * TILE + halo)
+                .min(bottom + halo)
+                .min(group.size[1]);
+            let start = u64::from(read_top) * row / alignment * alignment;
+            let end = u64::from(read_bottom) * row;
+            dispatches.push(shape(
+                first + from * across,
+                first + to * across,
+                [start, end - start],
+            ));
+        }
+        first += across * down;
+    }
+    Ok(dispatches)
+}
+
+/// The uniform block of `dispatch` of `group`, whose first box's result goes at
+/// `results`.
+fn params(group: &Group, dispatch: &Dispatch, results: u32) -> Vec<u8> {
+    let mut params = Vec::with_capacity(PARAMS_BYTES);
+    let words = [
+        group.boxes.len() as u32,
+        dispatch.groups[0],
+        dispatch.end,
+        dispatch.first,
+        results,
+        0,
+        0,
+        0,
+    ];
+    let mut push = |word: u32| params.extend_from_slice(&word.to_le_bytes());
+    words.into_iter().for_each(&mut push);
+    let denoise = matches!(group.layout, Layout::Rgba { denoise: true });
+    let mut first = 0u32;
+    for &[left, top, right, bottom] in group.boxes {
+        let across = (right - left).div_ceil(TILE);
+        let count = across * (bottom - top).div_ceil(TILE);
+        for word in [
+            left,
+            top,
+            right,
+            bottom,
+            first,
+            across,
+            count,
+            u32::from(denoise),
+        ] {
+            push(word);
+        }
+        first += count;
+    }
+    params.resize(32 + MAX_BOXES * 32, 0);
+    if let Layout::Mosaic(cfa) = group.layout {
+        let mut push = |word: u32| params.extend_from_slice(&word.to_le_bytes());
+        [cfa.size[0], cfa.size[1], cfa.origin[0], cfa.origin[1]]
+            .into_iter()
+            .for_each(&mut push);
+        for position in 0..MAX_PATTERN {
+            push(cfa.colours.get(position).copied().unwrap_or(0));
+        }
+    }
+    params.resize(PARAMS_BYTES, 0);
+    let header = PassHeader {
+        // The window's start, in 32-bit words of the whole buffer.
+        input_base: (dispatch.window[0] / 4) as u32,
+        ..PassHeader::whole(group.size[0], group.size[1])
+    };
+    header.uniform_block(&params)
+}
+
+/// The entry point that reduces `group`.
+fn kernel_label(group: &Group) -> &'static str {
+    match group.layout {
+        Layout::Rgba { .. } => "picker_rgba",
+        Layout::Mosaic(_) => "picker_mosaic",
+    }
 }
 
 /// A partials buffer of `bytes`.
@@ -584,7 +1068,7 @@ fn partials(gpu: &GpuContext, bytes: u64) -> wgpu::Buffer {
     })
 }
 
-/// Records copying both passes' ticks, resolved after them, and the results, `bytes` in
+/// Records copying every pass's ticks, resolved after them, and the results, `bytes` in
 /// all with the ticks, into `staging`.
 fn copy(
     encoder: &mut wgpu::CommandEncoder,
@@ -597,4 +1081,113 @@ fn copy(
         encoder.copy_buffer_to_buffer(timer.resolved(), 0, staging, 0, TICKS_BYTES);
     }
     encoder.copy_buffer_to_buffer(results, 0, staging, TICKS_BYTES, bytes - TICKS_BYTES);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gpu::GpuOptions;
+
+    fn gpu() -> GpuContext {
+        pollster::block_on(GpuContext::new(&GpuOptions::default()))
+            .expect("a GPU adapter, hardware or software")
+    }
+
+    /// An RGBA buffer of `width` × `height` with values that differ in every pixel.
+    fn frame(gpu: &GpuContext, width: u32, height: u32) -> GpuImage {
+        let pixels: Vec<[f32; 4]> = (0..width * height)
+            .map(|i| {
+                let v = (i.wrapping_mul(2_654_435_761) >> 8) as f32 / (1 << 24) as f32;
+                [v, 1.0 - v, v * 3.0 - 1.0, v * v]
+            })
+            .collect();
+        GpuImage::upload(gpu, width, height, &pixels).expect("the frame uploads")
+    }
+
+    fn stats(
+        gpu: &GpuContext,
+        reducer: &mut Reducer<()>,
+        image: &GpuImage,
+        boxes: &[[u32; 4]],
+    ) -> Vec<Stats> {
+        reducer.measure(gpu, image, boxes, ());
+        let mut reduced = reducer.wait(gpu).expect("it reads back");
+        reduced.pop().expect("a reading").stats
+    }
+
+    #[test]
+    fn workgroups_dispatched_across_and_down_reduce_as_in_one_row() {
+        let gpu = gpu();
+        let image = frame(&gpu, 700, 300);
+        // 11 × 5 workgroups for the whole buffer, and two more boxes after it.
+        let boxes = [[0, 0, 700, 300], [3, 5, 650, 290], [100, 100, 101, 101]];
+        let mut reducer = pollster::block_on(Reducer::new(&gpu)).expect("it compiles");
+        let one_row = stats(&gpu, &mut reducer, &image, &boxes);
+        // At most 7 across: 112 workgroups in 16 rows, the last part idle.
+        reducer.cap_across(7);
+        let across_and_down = stats(&gpu, &mut reducer, &image, &boxes);
+        let bits = |stats: &[Stats]| -> Vec<[[u32; 4]; 3]> {
+            stats
+                .iter()
+                .map(|s| [s.mean, s.min, s.max].map(|v| v.map(f32::to_bits)))
+                .collect()
+        };
+        assert_eq!(bits(&across_and_down), bits(&one_row));
+    }
+
+    #[test]
+    fn a_colours_photosites_are_counted_wherever_the_box_and_mosaic_lie() {
+        // RGGB, the mosaic's corner on an odd column and an even row.
+        let bayer = Cfa {
+            size: [2, 2],
+            colours: vec![0, 1, 1, 2],
+            origin: [1, 0],
+        };
+        let count = |cfa: &Cfa, [left, top, right, bottom]: [u32; 4]| {
+            let mut counts = [0u32; 4];
+            for y in top..bottom {
+                for x in left..right {
+                    let [px, py] = [0, 1].map(|a| (cfa.origin[a] + [x, y][a]) % cfa.size[a]);
+                    counts[cfa.colours[(py * cfa.size[0] + px) as usize] as usize] += 1;
+                }
+            }
+            counts
+        };
+        let xtrans = Cfa {
+            size: [6, 6],
+            colours: (0..36)
+                .map(|i| [1, 1, 0, 1, 1, 2][(i * 7 % 36) % 6])
+                .collect(),
+            origin: [5, 3],
+        };
+        for cfa in [&bayer, &xtrans] {
+            for bounds in [[0, 0, 1, 1], [3, 2, 4, 9], [1, 1, 14, 12], [7, 5, 31, 6]] {
+                assert_eq!(cfa.counts(bounds), count(cfa, bounds), "{cfa:?} {bounds:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_region_maps_to_its_box_in_a_viewport_buffer_and_in_the_mosaic() {
+        let mut image = apertrust_modules::testing::image();
+        let camera = image.camera.as_mut().unwrap();
+        camera.declared = [6, 4, 84, 62];
+        let (width, height) = (image.width, image.height);
+        // A region of a 40 × 30 buffer at the viewport's scale: its stage's whole image.
+        let rgba = ImageDesc {
+            scaled_extent: [40, 30],
+            ..ImageDesc::rgba(40, 30)
+        };
+        let area = Region::Area([0.25, 0.5, 0.75, 1.0]);
+        assert_eq!(boxed(area, &rgba, &image), Some([10, 15, 30, 30]));
+        // The mosaic after rawprepare, its corner at (2, 2) of the sensor: the developed
+        // image's photosites lie 4 across and 2 down from it.
+        let mosaic = ImageDesc {
+            sensor_origin: [2, 2],
+            ..ImageDesc::new(92, 68, Format::Mosaic)
+        };
+        assert_eq!((width, height), (84, 62));
+        assert_eq!(boxed(area, &mosaic, &image), Some([25, 33, 67, 64]));
+        assert_eq!(boxed(Region::Point([1.0, 0.5]), &mosaic, &image), None);
+    }
 }
