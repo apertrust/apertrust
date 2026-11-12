@@ -832,6 +832,16 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - `PhotoFrame`, the central panel's slot rule: the margin, Proof margin's larger margin with no white, the room the engine renders the photo for, the caption as wide as the photo, the block centred;
 - `PhotoCaption`, one line never wrapped that drops its parts as the photo narrows: the exposure values from the last, the view-only word for its lock, the name cut in its middle, then gone (`CaptionFit`).
 
+### On-photo overlays
+
+`overlay` ([docs/gui.md](gui.md#on-photo-overlays)), darktable's picker line for every mark on the photo, painting only:
+
+- `Overlay`, made from the photo's rectangle on screen and the zoom, the points one frame pixel spans, marks in the photo's coordinates, 0 to 1, their sizes in points from the theme's `overlay` tokens and `overlay_line` and `overlay_halo`;
+- `Mark`'s lines, areas, square and circle handles and crosshairs at a `Weight` (normal, selected, secondary), stroked black first, then white;
+- the point picker's mark (`Overlay::point`, `Point::Active` or `Point::Stored`) with its sampled colour at the centre, by darktable's half-pixel;
+- a label in the line's white over its black, and the focus ring round a focused area or point, shown only after a key;
+- in the gallery over a light, a dark and a busy photo made in code, photographed in every theme and at twice the size in the dark theme.
+
 ### Painted widgets
 
 **`Curve`:** points on a square plot through a curve the caller samples, black and white handles as `levels` or as the curve's `ends`, a histogram, display axes.

@@ -288,7 +288,7 @@ fn icon_lit(ctx: &egui::Context, response: &Response) -> bool {
 }
 
 /// Whether focus rings show now ([`FocusVisible`]).
-fn focus_shows(ctx: &egui::Context) -> bool {
+pub(crate) fn focus_shows(ctx: &egui::Context) -> bool {
     ctx.with_plugin(|focus: &mut FocusVisible| focus.keyboard)
         .unwrap_or(true)
 }
@@ -311,7 +311,7 @@ fn ring(painter: &Painter, rect: Rect, t: &Theme, kind: StrokeKind) {
     painter.rect_stroke(
         rect,
         t.shape.radius,
-        Stroke::new(1.5, t.colors.focus_ring),
+        Stroke::new(t.shape.focus_width, t.colors.focus_ring),
         kind,
     );
 }
