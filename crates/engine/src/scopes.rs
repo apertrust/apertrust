@@ -22,7 +22,7 @@
 //! says what each count holds). The vectorscope is darktable's default (`Plane`).
 //!
 //! A [`Meter`] submits the count of a frame and reads the counts back through the staging
-//! pair it shares with the colour pickers ([`crate::readback`]): two staging buffers in
+//! pair it shares with the colour pickers (`readback.rs`): two staging buffers in
 //! turn, mapped without waiting and picked up by [`Meter::poll`], the counts waiting in
 //! the counts buffer while both are busy, each frame's replacing the last's. The last
 //! frame's reading always arrives, and the scopes lag the photo by about a frame.

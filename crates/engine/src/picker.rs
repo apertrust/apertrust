@@ -26,7 +26,7 @@
 //!   corners.
 //! - **The reduction** ([`Reducer`], `slang/picker.slang`) gives each box's mean, minimum
 //!   and maximum of four channels, its sums a fixed tree, and reads the results back
-//!   through the staging pair the scopes share ([`crate::readback`]), never waiting: 48
+//!   through the staging pair the scopes share (`readback.rs`), never waiting: 48
 //!   bytes a box.
 //! - **The frame's reading** ([`FrameReading`]) is the frame's RGB, as the window shows
 //!   it, and each statistic in Lab D50, as darktable's color picker utility reads its
@@ -372,7 +372,7 @@ impl<T> Reducer<T> {
         })
     }
 
-    /// Reduces `boxes` of `frame`, an RGBA image, as [`Self::measure_buffer`] does.
+    /// Reduces `boxes` of `frame`, an RGBA image, as `measure_buffer` does.
     pub fn measure(&mut self, gpu: &GpuContext, frame: &GpuImage, boxes: &[[u32; 4]], tag: T) {
         let size = [frame.width(), frame.height()];
         self.measure_buffer(gpu, frame.buffer(), size, boxes, tag);
