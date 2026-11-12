@@ -80,8 +80,12 @@ impl Backend {
     /// Whether this build of wgpu has it, so an instance can find an adapter on it:
     /// [`Backend::Auto`] always.
     pub fn built(self) -> bool {
-        let built = wgpu::Instance::enabled_backend_features();
-        self == Backend::Auto || built.contains(self.backends())
+        self.built_in(wgpu::Instance::enabled_backend_features())
+    }
+
+    /// Whether a build of wgpu with `backends` has it: [`Backend::Auto`] always.
+    pub fn built_in(self, backends: wgpu::Backends) -> bool {
+        self == Backend::Auto || backends.contains(self.backends())
     }
 }
 

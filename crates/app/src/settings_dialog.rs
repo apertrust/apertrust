@@ -367,7 +367,7 @@ impl Settings {
     fn backend(&self) -> Backend {
         let backend = Backend::from_id(self.text(ENGINE_BACKEND.id));
         backend
-            .filter(|backend| backend.built())
+            .filter(|backend| self.hardware.built(*backend))
             .unwrap_or_default()
     }
 

@@ -2793,11 +2793,13 @@ impl App {
             gate,
         };
         // What Settings' In use line says: the adapter the window opened, the engine's
-        // (decision 82), whether the setting chose it, and how its list of graphics cards
-        // is made; and the values this run started with, for the waiting line.
+        // (decision 82), whether the setting chose it, the graphics APIs this build has,
+        // and how its list of graphics cards is made; and the values this run started
+        // with, for the waiting line.
         let info = state.adapter.get_info();
         let hardware = hardware::Running {
             in_use: Some(hardware::InUse::of(&info, &engine.gpu.adapter)),
+            built: egui_wgpu::wgpu::Instance::enabled_backend_features(),
             lister: Some(hardware::Lister::helper()),
             started: hardware::Started::of(settings::shown(), |s| keeper.value(s)),
             restart_failed: None,

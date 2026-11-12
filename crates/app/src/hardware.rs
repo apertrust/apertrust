@@ -354,11 +354,14 @@ impl InUse {
     }
 }
 
-/// What the app hands the dialog: the adapter in use, how to list the others, and the
-/// values this run started with.
+/// What the app hands the dialog: the adapter in use, the graphics APIs this build has,
+/// how to list the adapters, and the values this run started with.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Running {
     pub in_use: Option<InUse>,
+    /// The graphics APIs this build of wgpu has: a stored API it lacks is read as
+    /// Automatic. None by default, as for a test that names none.
+    pub built: wgpu::Backends,
     pub lister: Option<Lister>,
     pub started: Started,
     /// Why Restart now could not restart, said on the waiting line.
@@ -498,6 +501,11 @@ impl Hardware {
     /// a restart failed. The listings stay.
     pub fn set_running(&mut self, running: Running) {
         self.running = running;
+    }
+
+    /// Whether the build the app runs has `backend`, as [`Running::built`] says.
+    pub fn built(&self, backend: Backend) -> bool {
+        backend.built_in(self.running.built)
     }
 
     /// The group's rows' parts this frame, `stored` the card's value and `backend` the API

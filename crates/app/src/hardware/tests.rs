@@ -58,7 +58,7 @@ pub(crate) fn listed(os: OperatingSystem, backend: Backend) -> Vec<Adapter> {
 }
 
 /// What the app hands Settings on such a computer, the RTX in use with Vulkan, listing
-/// as [`listed`] does.
+/// as [`listed`] does, built as for `os`, whatever this machine's build has.
 pub(crate) fn running(os: OperatingSystem) -> Running {
     let backend = if os == OperatingSystem::Mac {
         wgpu::Backend::Metal
@@ -66,6 +66,11 @@ pub(crate) fn running(os: OperatingSystem) -> Running {
         wgpu::Backend::Vulkan
     };
     let name = if os == OperatingSystem::Mac { M4 } else { RTX };
+    let built = match os {
+        OperatingSystem::Windows => wgpu::Backends::DX12 | wgpu::Backends::VULKAN,
+        OperatingSystem::Mac => wgpu::Backends::METAL,
+        _ => wgpu::Backends::VULKAN,
+    };
     Running {
         in_use: Some(InUse {
             name: name.to_owned(),
@@ -73,6 +78,7 @@ pub(crate) fn running(os: OperatingSystem) -> Running {
             software: false,
             chosen: false,
         }),
+        built,
         lister: Some(Lister::new(move |api| Ok(listed(os, api)))),
         started: Started::default(),
         restart_failed: None,
