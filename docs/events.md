@@ -42,6 +42,7 @@ The topics, `Fact`, as built:
 | `Values` | `Event::Values` |
 | `Frame` | `Event::Frame` |
 | `Scopes` | `Event::Scopes` |
+| `Picker` | `Event::Picker`, the active colour picker's reading (decision 79) |
 | `ExportPreview` | `Event::ExportPreview`, the latest answer kept |
 | `Progress(job)` | a job's `JobEvent::Progress`, by job |
 | `Title(job)` | a job's `JobEvent::Title`, by job |
@@ -52,7 +53,7 @@ The topics, `Fact`, as built:
 
 Each of a job's values is a topic of its own, since each event carries only its own ([A job's events](#a-jobs-events)).
 
-Planned facts: the active photo's history, `Fact::History`, whole each time (decision 78; [history.md](history.md#the-history-event)); a readout, by module (decision 19); the active colour picker's reading, `Fact::Picker`, and the stored samples, `Fact::Samples` (decision 79; [pickers.md](pickers.md#events)); the selection and the active photo (decision 37); and a page of the collection shown, by page.
+Planned facts: the active photo's history, `Fact::History`, whole each time (decision 78; [history.md](history.md#the-history-event)); a readout, by module (decision 19); the stored samples, `Fact::Samples` (decision 79; [pickers.md](pickers.md#events)); the selection and the active photo (decision 37); and a page of the collection shown, by page.
 
 ## The events the session sends
 
@@ -65,6 +66,7 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 | `Values(Values)` | fact | `through` | engine thread | every module's state, the unowned parameters and whether anything is edited (below) |
 | `Frame(Frame)` | fact | `through` | engine thread | the display buffer to show (decision 17), its size, the GPU timings and the latency from the first command it answers |
 | `Scopes(Reading)` | fact | `through`, the frame's | engine thread | what the frame holds, counted for the scopes, about a frame after it (decision 19; [engine.md](engine.md#scopes)) |
+| `Picker(Option<PickerReading>)` | fact | `through`, every command the session had applied when it measured: the frame's, and any after it that rendered nothing | engine thread | the active colour picker's region as drawn, in the photo's coordinates, and the frame's RGB and Lab D50 under it, mean, minimum and maximum, `None` where the region misses the frame; sent after the frame it measured, as the picker turns on and when its region or the frame's reading changes; `None` as it turns off. A command that changes nothing brings no reading with a newer `through`, so a client must not wait for one. (decision 79; [pickers.md](pickers.md#events)) |
 | `Saved { path, through }` | notice | `through` | edit writer | the file written, as the edit stood after `through` commands |
 | `Job { event, command }` | fact or notice by `event` | `command` on `Added` | job control's observer | a job with a progress (decision 57; [engine.md](engine.md#jobs)): `Added` (notice), its values as facts by job, `Ended` (notice), everything its row in the jobs window shows ([A job's events](#a-jobs-events)) |
 | `Export { job, status }` | notice | `job` | the export job's body | the export's record for scripts and the CLI: each photo's `Started` and `Done` with its result, then `Finished` with the counts ([engine.md](engine.md#export-jobs)); no client draws a row from it (decision 72) |
@@ -87,7 +89,7 @@ Last, `live` (decision 77): whether the photo is live and commands on the edit a
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `Picker` and `Samples`, the active colour picker's reading and the stored samples', after the frame or render they measured (decision 79; [pickers.md](pickers.md#events)); `History`, the active photo's steps, end and what Undo and Redo would do, at an open and after each batch that changed them (decision 78; [history.md](history.md#the-history-event)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `Samples`, the stored samples' readings, after the frame they measured, and `Picker`'s module part, a module picker's reading at its operation (decision 79; [pickers.md](pickers.md#events)); `History`, the active photo's steps, end and what Undo and Redo would do, at an open and after each batch that changed them (decision 78; [history.md](history.md#the-history-event)); `Readout`, what an operation measured for its module's panel, after a render whose readout key changed, `None` while the module's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 
@@ -146,7 +148,7 @@ Decision 77 ([engine.md](engine.md#opening-a-photo)). A photo opens in three sta
 
 Every command has a number, which `Session::send` returns: 1 for the first, then up by one each. An event that includes or answers commands names them, so a client knows which of its commands an event reflects and never compares arrival times:
 
-- `through` on `Values`, `Frame`, `Scopes`, `Saved` and `ExportPreview`: how many commands it includes. It never decreases on each of `Values`, `Frame` and `Scopes`, nor on `Saved` for one file. A client shows a value it has just sent until a `Values` includes that command, so a slider never jumps back (decision 17).
+- `through` on `Values`, `Frame`, `Scopes`, `Picker`, `Saved` and `ExportPreview`: how many commands it includes. It never decreases on each of `Values`, `Frame`, `Scopes` and `Picker`, nor on `Saved` for one file. A client shows a value it has just sent until a `Values` includes that command, so a slider never jumps back (decision 17).
 - `open` on `Opened`, on `OpenPreview` and on `SessionError::Open`, the `Open` command's number, so a client drops what an earlier open sent. After a `Close` numbered n, a client drops the photo's events whose `open` is below n: its `OpenPreview`, `Opened` and `SessionError::Open`, and the values, frames and scopes readings that follow them until another `Open`. On every `LibraryEvent`, the number of the `Command::Library` it answers: an open's for what that open found, a close's on its `Closed`, so a client keeps the number of its latest library open or close and drops the rest.
 - `command` on a job's `Added`: the number of the command that started the job, so a client knows its own job; for a job a `RetryJob` started, that command's, with `retries` naming the job it tries again (decision 72). The rest of a job's events name the job.
 - A refused command names itself: `SessionError::Refused { command, error }`. It changed nothing. An edit refused, a change on a photo open for viewing only or not yet live, a job that cannot be cancelled and a job with no retry kept are refusals.
@@ -170,14 +172,14 @@ No code in the session keeps a channel or a `wake` of its own.
 
 ## No send blocks
 
-The channel is unbounded, and no producer waits on a client. Its volume is bounded by the work: one `Values` and one `Frame` a batch, a scopes reading a frame while asked, and a job's progress at most every 0.5 s (decision 57).
+The channel is unbounded, and no producer waits on a client. Its volume is bounded by the work: one `Values` and one `Frame` a batch, a scopes reading a frame while asked, a colour picker's reading a frame while one is on, and a job's progress at most every 0.5 s (decision 57).
 
 A job that needs the person's answer is to send a notice naming its question, and wait for the answering command through `Context::wait`, which a cancel ends. None does yet.
 
 ## Order and delivery
 
 - **The channel orders every send.** One producer's events arrive in the order it sent them.
-- **Within a batch** (the commands the engine thread took together, [session-protocol.md](session-protocol.md#numbers-and-batches)): an `Opened` or a command's `Failed` comes in the commands' order; then the `Values` after them; then the batch's `Frame`, or the render's failure; then any scopes readings that arrived, a frame's reading always after its frame. A GPU error during the batch drops its frame, and its `Failed` comes after the batch's other events, before the scopes readings. An `Opened` comes in the turn its open's metadata reaches the engine thread, after the commands sent before that turn, followed by its `Values { live: false }`; the turn its raw arrives sends `Values { live: true }`, then the `Frame` (decision 77, [A photo opening](#a-photo-opening)).
+- **Within a batch** (the commands the engine thread took together, [session-protocol.md](session-protocol.md#numbers-and-batches)): an `Opened` or a command's `Failed` comes in the commands' order; then the `Values` after them; then the batch's `Frame`, or the render's failure; then any scopes readings that arrived, then the colour picker's, a frame's reading always after its frame. A `Picker(None)` comes in the commands' order, before the events of an `Open` that turned the picker off. A GPU error during the batch drops its frame, and its `Failed` comes after the batch's other events, before the scopes readings. An `Opened` comes in the turn its open's metadata reaches the engine thread, after the commands sent before that turn, followed by its `Values { live: false }`; the turn its raw arrives sends `Values { live: true }`, then the `Frame` (decision 77, [A photo opening](#a-photo-opening)).
 - **Planned (decision 78):** a batch whose commands changed the history sends its `History` once, after its `Values` and before its `Frame`; at an open, `History` follows `Values { live: false }` ([history.md](history.md#the-history-event)).
 - **A job's events come in order**, since the observer runs under the control's lock. Its `Added` is sent as it is added, before a worker can take it, so its body's own events, such as an export's, come after it.
 - **Across producers only the numbers order events.** The writer's `Saved` may arrive before the `Values` it includes.
@@ -194,7 +196,7 @@ An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes i
 `Failed(SessionError)` carries errors in plain words, which the app shows and the CLI logs. Those that answer a command are wrapped with its number:
 
 - `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open. It comes after the open's `Opened` when the decode or the upload fails (decision 77).
-- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, `NotLive`, a command on the edit from an `Open` until the photo is live (decision 77), or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76).
+- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, `NotLive`, a command on the edit or a picker's `On` from an `Open` until the photo is live (decision 77), a picker no module declares, `UnknownPicker`, a picker's move with none on, `NoPicker`, or `On` after the pickers failed, `Pickers` (decision 79), or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76).
 - `CacheWalk { command, source }`: the walk for a `CacheCommand::Sizes` failed, its folder or a kind's not listed, one for each `Sizes` that walk's pass answers.
 
 The others stand alone:
@@ -205,6 +207,7 @@ The others stand alone:
 | `Save { path, through }` | A write that failed; the edit stays in memory and is written again |
 | `Plan`, `Compute`, `Gpu` | A render that failed; the frame is not shown |
 | `Scopes` | The scopes off for the rest of the session, never the frame |
+| `Pickers` | The colour pickers off for the rest of the session, never the frame; `Picker(None)` follows where one was on |
 | `Panicked` | A bug; the photo is dropped unsaved |
 | `Stopped` | The engine thread has ended |
 
@@ -212,7 +215,7 @@ The others stand alone:
 
 | Thread | Sends | Receives |
 | --- | --- | --- |
-| Engine | its batch's events and scopes readings, readouts later, through the outbox | commands, its jobs' GPU tasks and what an open's job read (the inbox) |
+| Engine | its batch's events, scopes readings and colour picker readings, readouts later, through the outbox | commands, its jobs' GPU tasks and what an open's job read (the inbox) |
 | Edit writer | `Saved`, a failed save | the edits handed to it |
 | Job workers | `Job` events through the control's observer; their bodies' own (an export's `Export`, a preview's `ExportPreview`, a folder's reading's `Library` events, the cache's walk's and Clear's `Cache`, an open's `OpenPreview`) through the outbox | `Context::wait`'s answers, later |
 | Library's threads, a root's queue (decision 53; planned) | `Library` events through its observer | its calls |
@@ -311,7 +314,7 @@ Kept from darktable:
 
 ## Tests
 
-- **The session, built.** In `session.rs`: `every_event_states_whether_it_is_a_fact_or_a_notice`, every variant's kind through an exhaustive match, so a new variant must state its kind, every `JobEvent` among them, sent by jobs that report their whole row, each job's five values facts of its own, and `-d event`'s line naming each kind; `a_batch_s_refusal_comes_before_its_values_and_its_values_before_its_frame`; `through_never_decreases_over_a_drag`, over the values, frames, scopes readings and saves; `a_job_s_events_reach_the_client_in_order_its_added_naming_its_command`, one job reporting its whole row and one its title and progress alone; `the_observer_keeps_each_job_shown_from_its_added_to_its_end`, with whether it can be cancelled, its other events leaving the map as it was; and the refused cancel numbered in `a_session_ends_with_a_gpu_job_that_cannot_be_cancelled_in_flight`. In `outbox.rs`: `no_event_is_lost_while_three_threads_send_and_a_fourth_drains`, `a_burst_wakes_the_client_once_and_a_send_after_a_drain_again`, `nothing_is_sent_once_the_client_drops_its_handle` and `a_drain_s_kinds_count_runs`.
+- **The session, built.** In `session.rs`: `every_event_states_whether_it_is_a_fact_or_a_notice`, every variant's kind through an exhaustive match, so a new variant must state its kind, every `JobEvent` among them, sent by jobs that report their whole row, each job's five values facts of its own, and `-d event`'s line naming each kind; `a_batch_s_refusal_comes_before_its_values_and_its_values_before_its_frame`; `through_never_decreases_over_a_drag`, over the values, frames, scopes readings and saves; `a_job_s_events_reach_the_client_in_order_its_added_naming_its_command`, one job reporting its whole row and one its title and progress alone; `the_observer_keeps_each_job_shown_from_its_added_to_its_end`, with whether it can be cancelled, its other events leaving the map as it was; and the refused cancel numbered in `a_session_ends_with_a_gpu_job_that_cannot_be_cancelled_in_flight`. In `session/tests/pickers.rs`: `a_reading_follows_the_frame_it_measured`, and `Picker(None)` before another photo's events in `the_picker_turns_off_as_another_photo_opens_and_its_readings_never_arrive`. In `outbox.rs`: `no_event_is_lost_while_three_threads_send_and_a_fourth_drains`, `a_burst_wakes_the_client_once_and_a_send_after_a_drain_again`, `nothing_is_sent_once_the_client_drops_its_handle` and `a_drain_s_kinds_count_runs`.
 - **A photo opening, built (decision 77).** In `session.rs`: `an_open_s_events_come_in_order_named_by_its_number`, `a_command_on_the_edit_before_the_photo_is_live_is_refused_and_writes_nothing`, `a_newer_open_cancels_the_older_whose_decode_runs_alone_and_is_never_uploaded` (the decode held by `Command::HoldDecode`), `a_decode_failing_after_opened_fails_the_open` and `an_open_s_picture_is_the_cache_s_rendered_thumbnail_else_the_embedded_one`; `OpenPreview`'s kind in `every_event_states_whether_it_is_a_fact_or_a_notice`. In the app: `mirror.rs`'s `a_photo_opens_in_stages_read_only_until_it_is_live`, `a_stale_open_preview_is_dropped`, `rendering_shows_only_a_second_after_the_click_while_not_live` and `a_not_live_refusal_shows_nothing_and_a_late_failure_ends_the_open`; `main.rs`'s `a_photo_opening_shows_its_values_disabled_until_it_is_live`, with the tooltip, and `a_photo_opening_shows_its_picture_unmarked_then_rendering`, with the snapshots `opening-picture` and `opening-rendering`. Through a real session on synthetic raws (`session::testing`, the engine's `testing` feature): `a_real_session_opens_a_photo_in_stages`, `a_real_session_s_view_only_photo_ends_not_editable` and `a_real_session_switched_quickly_shows_only_the_last_photo`.
 - **The app's reducer, built:** event sequences in, the mirror and its reactions out, with no egui (`crates/app/src/mirror.rs`'s tests: a drag, a frame replacing the last and clearing a failure, refusals with and without an earlier unsaved change, a failed save, a failed open with stale events dropped, a scopes failure, a job from added to ended, the engine stopping, the preview floor, opening another photo).
 - **The library, built.** In `crates/library/src/ops.rs`: `an_open_reports_the_folder_its_subfolders_and_every_photo_with_its_edit` (every edit state, subfolders sorted with the hidden one left out, chunks in order, done once), `an_empty_folder_sends_one_empty_chunk_done`, `a_missing_folder_or_a_file_fails_without_opening`, `a_cancel_between_chunks_ends_the_open_with_no_chunk_done`, `a_cancel_while_the_folder_is_read_sends_nothing` and `a_cancel_returns_at_once_while_a_call_into_the_folder_is_stuck` (a listing held by `listing::stall`, a test hook); `listing::tests::names_sort_as_a_file_browser_lists_them`. In `session.rs`: `a_folder_opens_as_a_job_whose_events_name_the_open` and `a_second_open_cancels_the_first_and_a_close_the_second`, and each `LibraryEvent`'s kind in `every_event_states_whether_it_is_a_fact_or_a_notice`. In `crates/app/src/folder.rs`: the reducer's side, among them `a_second_open_drops_the_first_one_s_late_events`, `a_close_empties_the_folder_and_drops_what_the_reading_still_sends` and `a_reading_cancelled_through_its_job_ends_the_open_with_no_reason`. Planned: one `CollectionChanged` per change.

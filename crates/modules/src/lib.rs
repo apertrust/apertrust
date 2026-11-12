@@ -49,6 +49,7 @@ pub mod highlight_reconstruction;
 pub mod messages;
 pub mod orientation;
 pub mod output_colour_profile;
+pub mod pick;
 pub mod raw_black_white_point;
 pub mod rgb_primaries;
 pub mod soften;

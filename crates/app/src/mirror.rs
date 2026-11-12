@@ -388,6 +388,8 @@ impl Mirror {
                 }
             }
             Event::Scopes(reading) => self.scopes.receive(&reading),
+            // The app turns no colour picker on yet (`docs/pickers.md`, The plan).
+            Event::Picker(_) => {}
             // The Export dialog shows the preview, the newest it holds.
             Event::ExportPreview { through, preview } => {
                 if through >= self.export_floor {

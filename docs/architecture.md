@@ -201,7 +201,7 @@ Details: [history.md](history.md).
 
 ### Colour pickers
 
-Planned: one active picker per session, a module's or the Colour picker module's, and stored samples beside it. The engine reduces the area on the GPU at the module's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the module's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
+One active picker per session, a module's or the Colour picker module's, and stored samples beside it. Built: 79.1, the Colour picker module's own picker through the session, its region kept through the geometry and measured on the frame; the rest planned. The engine reduces the area on the GPU at the module's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the module's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
 
 Details: [pickers.md](pickers.md).
 

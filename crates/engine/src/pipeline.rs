@@ -75,9 +75,16 @@ pub const RESAMPLE: Kernel = Kernel {
     derivatives: false,
 };
 
-/// The engine's own kernels, besides the operations': the pipeline's, and the scopes',
-/// which count each viewport frame after it ([`crate::scopes`]).
-pub const KERNELS: &[Kernel] = &[DOWNSCALE, REGION, RESAMPLE, crate::scopes::KERNEL];
+/// The engine's own kernels, besides the operations': the pipeline's, the scopes', which
+/// count each viewport frame after it ([`crate::scopes`]), and the colour pickers'
+/// reduction ([`crate::picker`]).
+pub const KERNELS: &[Kernel] = &[
+    DOWNSCALE,
+    REGION,
+    RESAMPLE,
+    crate::scopes::KERNEL,
+    crate::picker::KERNEL,
+];
 
 /// darktable's finalscale place, display 69.4 between vignette and colorout, where an
 /// export at a size resamples with high quality resampling or above a scale of 1
@@ -921,17 +928,40 @@ fn output_profile(
 /// developed image through each geometry's extent, as [`Plan::extent`] finds it once
 /// planned (decision 16), with no plan.
 pub fn extent(instances: &[Instance], image: &ImageContext) -> Result<[u32; 2], PlanError> {
+    let maps = geometries(instances, image)?;
+    Ok(maps
+        .last()
+        .map_or([image.width, image.height], |(input, geometry)| {
+            geometry.extent(*input)
+        }))
+}
+
+/// An operation's map of the pixels it moves, with its input's extent at full
+/// resolution (decision 16).
+pub type Map = ([u32; 2], Box<dyn apertrust_plugin::Geometry>);
+
+/// The maps of the operations among `instances` that move pixels, in their order, each
+/// with its input's extent at full resolution, from the developed image on (decision
+/// 16): what [`extent`] sizes the photo with, and what a colour picker's region goes
+/// through ([`crate::picker::Geometries`]).
+pub(crate) fn geometries(
+    instances: &[Instance],
+    image: &ImageContext,
+) -> Result<Vec<Map>, PlanError> {
     let mut extent = [image.width, image.height];
+    let mut maps = Vec::new();
     for instance in instances {
         if instance.operation.manifest().slot.stage == Stage::Raw {
             continue;
         }
         let params = resolve(instance, image)?;
         if let Some(geometry) = instance.operation.geometry(&params, image) {
-            extent = geometry.extent(extent);
+            let input = extent;
+            extent = geometry.extent(input);
+            maps.push((input, geometry));
         }
     }
-    Ok(extent)
+    Ok(maps)
 }
 
 /// An instance's parameters over its defaults for the image. The defaults never see the
