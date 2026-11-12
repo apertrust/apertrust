@@ -83,7 +83,7 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 - each preset row's matching option (`PresetState`) and each view's coordinates (`CoordinateState`, [engine.md](engine.md#preset-rows-and-lossless-views));
 - whether the module is edited.
 
-Then come `settings`, the parameters no module owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Planned (decision 32): whether each module is on, `ModuleState::enabled`, and a switched module counting as edited while on. Planned (decision 78): whether the History tab's eye hides each module from the view, `ModuleState::hidden`.
+Then come `settings`, the parameters no module owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Whether each module is on, `ModuleState::enabled`, a switched module counting as edited while on (decision 32). Planned (decision 78): whether the History tab's eye hides each module from the view, `ModuleState::hidden`.
 
 Last, `live` (decision 77): whether the photo is live and commands on the edit are taken, false from `Opened` until its raw is decoded and uploaded, true from the batch of its first live frame ([A photo opening](#a-photo-opening)).
 

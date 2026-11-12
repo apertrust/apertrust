@@ -106,6 +106,7 @@ The groundwork for orientation:
 - **`edit`**: an edit's module values and the parameters no module owns. `edit::instances` is the one function every builder of instances uses: a module at its defaults adds nothing, and a misbehaving one is left out (decision 28).
 - **Ranges that follow other controls** (decision 30): `Edit::set_control` refuses a number outside the range its module's values give. `Edit::clamp` runs after every change: a number a moved range leaves outside is written at its nearer end in the same change, and kept. A clamp of a control the change wrote itself is refused (`EditError::ClampFailed`). `Edit::clamp_read` runs as a photo's edit is read.
 - **`sidecar`**: `.apxmp` version 1 edits, and reading version 0 (decisions 28 and 48). It reads and writes an edit's module values and operation parameters, typed, with the module definitions: migrations, clamps, warnings, and `Newer` told by module. It works over the text layer of `apertrust-library`'s `sidecar`, whose `Newer`, `ViewOnly` and `path_for` it re-exports.
+- **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep` (`Edit::is_on`). `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none, and never binds one that is off. `.apxmp` writes `apertrust:enabled="true"` on an on module's entry: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only (`Newer::Enabled`).
 - The image context and the mosaic from a raw.
 
 ### The editing session
@@ -121,6 +122,7 @@ The groundwork for orientation:
 - Each number's range is reported as `ControlState::range`.
 - Each preset row's matching option and the options the photo can have are reported (`PresetState`).
 - Each view's coordinates are reported with whether each can change the photo (`CoordinateState`).
+- Each module is reported on or off (`ModuleState::enabled`, decision 32), and edited while its reset would change the render: a control off its default, or a switched module on (`ModuleState::edited`, `Values::edited`).
 
 **Module commands:**
 
@@ -130,7 +132,7 @@ The groundwork for orientation:
 - `RetrySave`, a client's Try again: the edit written again after a failed write, nothing otherwise.
 - `SetControl`, `ResetControl` and `Keep` also take a lossless view's coordinate. They write the view's controls, with the other coordinates held through a gesture (`edit::Held`); all coordinates back at their defaults reset the controls exactly.
 - `SetControl` and `ResetControl` carry the module's follow writes in the same change (`Edit::follow`). A wrong one refuses the change whole (`EditError::FollowFailed`, decision 27).
-- `CancelGesture { module }`, a slider popup's cancel (decision 42). It puts the module back as it was before the gesture's first `done: false` change: values, marks, follow writes, clamps and the held coordinates (and `enabled`, once switched modules are built). It adds no history step and writes nothing while the file holds that edit, and `Saved` is reported with the cancel's number. Any other command on the edit, refused or not, ends a gesture; a resize, the scopes and a cancel naming another module do not.
+- `CancelGesture { module }`, a slider popup's cancel (decision 42). It puts the module back as it was before the gesture's first `done: false` change: values, marks, follow writes, clamps, the held coordinates and a switched module's `enabled`. It adds no history step and writes nothing while the file holds that edit, and `Saved` is reported with the cancel's number. Any other command on the edit, refused or not, ends a gesture; a resize, the scopes and a cancel naming another module do not.
 
 **Frames and saving.**
 
@@ -251,7 +253,6 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Readouts** (decision 19): what an operation measures of the photo for its module's panel, the tone equalizer's mask histogram first. Its readout pass is planned in the viewport alone and dispatched while a client asks (`Command::Readouts`, by module) and its key, a whole-image result's, has changed. Its counts are read back through the scopes' staging pair, decoded by the operation and sent as `Event::Readout`. A failure turns readouts off, never the frame.
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
-- **Switched modules' on state** (decision 32): `ModuleValues::enabled` in the `Edit`, set by any write of a switched module's control (`set_control`, a coordinate, `apply_preset`) and cleared by `reset_module`, never by `reset_control` or `keep`. `edit::instances` plans an optional operation while its switched module is on, binding its values off their defaults, possibly none. `.apxmp` gets `apertrust:enabled="true"`: a switched module's value off its defaults without it is read as on, with a warning, and the flag on a module this build does not switch makes the photo view-only. `ModuleState::enabled`, and `edited` and `Values::edited` counting an on switched module.
 - **History and undo** (decision 78; [history.md](history.md)): `history`'s log of steps, each completed change a step with its source, note and batch, darktable's undo merging; the session's undo records; `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `Step` and `Hide`; `Event::History`, a fact; the log saved in the sidecar's version 2.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): module pickers, the reduction at an operation's input and output, `picker_mosaic`, denoise and the other spaces, sample-only renders, a pick applied through `Module::pick`, `Tools` and `Channel`; stored samples and `Event::Samples`.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
@@ -291,7 +292,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 - `--param OP.PARAM=VALUE` and `--reset-param OP.PARAM` only for a parameter no module owns yet, of an operation an unedited photo runs (decision 28). `--clear` starts from no settings at all; the saved edit is still read first.
 - A number a moved range leaves outside is clamped after each `--set` and `--reset`, and as the edit is read (decision 30).
 - An edit a newer Apertrust wrote is refused and left as it is (decision 43).
-- Planned (decision 32): `edit --reset MODULE`, the module's reset, turning a switched module off, and `edit` showing a switched module that is on.
+- `edit` shows a switched module that is on with no control set as `<module>: on` (decision 32). Planned: `edit --reset MODULE`, the module's reset, turning a switched module off.
 - Planned (decision 78; [history.md](history.md#the-cli)): `edit` adding one step for all its flags, with `--note TEXT`, `--clear` resetting within that step; and `history FILE`, listing the steps with `--undo [N]`, `--redo [N]`, `--to STEP|original`, `--compress` and `--truncate`.
 
 ### export
@@ -721,7 +722,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 
 - **Dialogs** (decision 41): every dialog a native modal window of its own, hosted beside eframe's window in `Gated`, each with its own egui context, AccessKit adapter and surface on the engine's device, Settings first; every confirmation the system's alert. About stays the modal over the scrim, and a future splash screen will be drawn so too.
 - **Layouts** (decision 37): the app is one view. The old views' enum, holding only `View::Edit` with E, and `Scope::View` are to become the central panel's layouts, Photo and Map (Map later, switched by the central bar's Map toggle after Guides).
-- **Switched modules** (decision 32): a module's reset available only while the session reports it edited, a switched module while it is on, or while a change is pending; a switched module that is off told to screen readers as "Not applied", with no other sign of it.
+- **Switched modules** (decision 32): a switched module's reset available only while the session reports it edited, which it is while it is on, or while a change is pending; every other module's always, until kept marks count as edited. A switched module that is off is described to screen readers as "Not applied" (`Section::not_applied`), with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): the quads and picker rows drawn, the marks over the photo with their pointer and keys, the central bar's words, and the Colour picker section in the History tab.
@@ -1141,16 +1142,17 @@ Modules (decision 28): what the user edits with, bound to operation parameters. 
 - A titled tab or a collapsible group without rows is drawn disabled, its rows to come.
 - Values with kept and Auto marks; `Base`; message ids (`messages`); transfer functions with derivatives.
 - **What a colour picker reads** (`pick`, decision 79): `Region`, a point or an area in the photo's coordinates; `Stats`, a reading's mean, minimum and maximum of four channels; `PickKeys`, the keys held. The engine's session takes and gives them; `Module::pick` is to.
+- **Switched modules** (decision 32): `Definition::switched`, true for a module darktable leaves off on a new photo, and `ModuleValues::enabled`, whether one is on. Off, it holds no value, only marks, and renders nothing; any write of a control turns it on with darktable's defaults for the rest, until its reset turns it off. `switched_from` is the migration a module that becomes switched gives its older version's edits: on with their values where they rendered, else off, their values dropped.
 
 ### Checks and test helpers
 
-- `check::accept`, `owner` and `sweep`, which the session and the tests run. `check::range` holds a module's ranges to its definition's; `check::clamp` is the one clamp the edit and the app share; the sweep holds every range to decision 30's rules.
+- `check::accept`, `owner` and `sweep`, which the session and the tests run. `check::accept` refuses a switched module over an operation every photo runs, and `check::switched_defaults` holds a switched module's defaults, made explicit, to bind its operations' own exactly, Colour balance RGB's two grey fulcrums within one f32 step (`check::ONE_STEP_FROM_DEFAULT`). `check::range` holds a module's ranges to its definition's; `check::clamp` is the one clamp the edit and the app share; the sweep holds every range to decision 30's rules.
 - `slider_step`, `dt_bauhaus_slider_get_step` restated.
 - `testing::slider_differences` holds each built module's sliders to darktable's (hard and soft ranges, factor, digits, step), comparing at the values it is given; the table is in each module's `docs/modules` file. None differs (decision 30). AgX's pivot is compared at its defaults and at other input ranges.
 - Behind the `testing` feature, for the other crates' tests:
   - `testing::Sample`: its method lists camera only on a photo that records a bias; its coarseness is unavailable unless its size is coarse and its grain on (decision 30), and reaches up to 100 % plus the bias, the worked example of a range that follows other controls;
   - `testing::Faulty`; `testing::Twin`, two lossless views of two controls; `testing::Pushing`, a follow write its change's clamp would rewrite; and `testing::Defaultless`, whose defaults panic.
-- `tests/corpus/mod.rs` gives Exposure's and Colour balance RGB's tests the corpus.
+- `tests/corpus/mod.rs` gives Exposure's and Colour balance RGB's tests the corpus, and `tests/switched/mod.rs` gives the switched modules' tests their rows' edits: off, on at darktable's defaults, and an edit version 1 saved, read through the sidecar.
 - `RETIRED`: the ids of the modules Apertrust has retired, whose values an edit loses with a warning without opening the photo for viewing only, as a module neither built in nor retired does (decision 43). It is empty until RGB curve replaces the Tone curve.
 
 ### The built modules
@@ -1266,18 +1268,18 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 - Curve smoothing is its σ as `s`, with σ = √2^(1 + s).
 - Preserve details lists the two guided filters, drawn disabled; the filter's rows follow it (`Row::When`). Mask contrast compensation, on the Advanced tab, follows it too, shown only with EIGF or the guided filters.
 - Display exposure mask, under every tab, is a `Row::ToolSetting` drawn disabled.
-- It plans `toneequal` only while a control is off its default (decision 22).
+- Switched (decision 32), version 2, at the defaults it had: it plans `toneequal` while it is on.
 - The Advanced tab opens with darktable's graph of the bands, a custom row over them (`Widget::Equalizer`): its curve the operation's, through `Module::curve`, its drag's reach `Module::curve_width`, its mask histogram waiting for the readouts (decision 19).
 - The wands and the showmask button wait for the renderer and their tools.
-- Q1, the first step, is darktable's ripple. Q4 holds the module's values to the seven toneequal golden cases' parameters.
+- Q1, the first step, is darktable's ripple. Q4 holds the module's values to the seven toneequal golden cases' parameters; Q6 and Q7 hold it on at darktable's defaults and version 1's edits.
 
 #### Colour balance RGB
 
 - Its Master, 4 ways and Masks tabs, with every `gui_init` control in darktable's order under its labels and group labels.
 - Each control is one `colorbalancergb` parameter; a percentage is the parameter times 100, `contrast` and `grey_fulcrum` at 18.45 % among them. darktable UCS is the default formula (decision 22).
-- It plans `colorbalancergb` only while a control is off its default, as in darktable (decision 32).
+- Switched (decision 32), version 2, at the defaults it had: it plans `colorbalancergb` while it is on, as in darktable.
 - The luminance ranges graph and the mask display wait for the renderer, and the pickers, in the definition, for their tool ([pickers.md](pickers.md), decision 79).
-- B4 holds the module's values to darktable's golden cases' parameters.
+- B4 holds the module's values to darktable's golden cases' parameters; B6 and B7 hold it on at darktable's defaults and version 1's edits.
 
 #### Tone curve
 
@@ -1291,46 +1293,40 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 #### Haze removal
 
 - Strength and Distance in `gui_init`'s order, each one `hazeremoval` parameter as it is, with two and three decimals.
-- Untouched at a strength of 0; darktable's 0.2 becomes its "darktable's default" preset once the presets menu comes.
-- It plans `hazeremoval` only while Strength is off 0, whatever Distance holds, and then always writes the strength, since the operation's default is darktable's 0.2.
-- Z4 holds the module's values to the two hazeremoval golden cases' parameters bit for bit.
+- Switched (decision 32), version 2, at darktable's strength and distance of 0.2: it plans `hazeremoval` while it is on, each control bound while off its default.
+- Z4 holds the module's values to the two hazeremoval golden cases' parameters bit for bit; Z7 and Z8 hold it on at darktable's defaults and version 1's edits.
 
 #### RGB primaries
 
 - Its eight sliders in `gui_init`'s order, each one `primaries` parameter shown with darktable's slider factor and offset: a hue in degrees, a primary's purity a percentage less 100.
-- It plans `primaries` only while a control is off its default.
+- Switched (decision 32), version 2, at the defaults it had: it plans `primaries` while it is on.
 - darktable's painted tracks wait for the renderer.
-- P4 holds the module's values to darktable's golden case's parameters.
+- P4 holds the module's values to darktable's golden case's parameters; P7 and P8 hold it on at darktable's defaults and version 1's edits.
 
 #### Grain
 
 - Coarseness in ISO (`Unit::Iso`) with no decimals, and Strength and Mid-tones bias in percent with two, each one `grain` parameter. The coarseness is converted with darktable's f32 factor of 213.2.
-- It plans `grain` only while Strength is off 0, whatever the others hold; darktable's 25 % waits for the header's presets menu.
-- G4 binds the five golden grain cases' parameters bit for bit. G5 holds Coarseness and Mid-tones bias to no edit while Strength is 0.
+- Switched (decision 32), version 2, at darktable's 25 %: it plans `grain` while it is on, each control bound while off its default.
+- G4 binds the five golden grain cases' parameters bit for bit; G6 and G7 hold it on at darktable's defaults and version 1's edits.
 
 #### Soften
 
 - Size, Saturation and Mix in percent and Brightness in EV, two decimals each, each one `soften` parameter as it is; the mix's id is `amount`.
-- It plans `soften` only while Mix is off 0, whatever the others hold; darktable's 50 % waits for the header's presets menu.
-- S4 binds the golden soften case's parameters bit for bit. S6 holds the other three to no edit while Mix is 0.
+- Switched (decision 32), version 2, at darktable's mix of 50 %: it plans `soften` while it is on, each control bound while off its default.
+- S4 binds the golden soften case's parameters bit for bit; S7 and S8 hold it on at darktable's defaults and version 1's edits.
 
 #### Vignetting
 
 - Fall-off start, Fall-off radius, Brightness and Saturation; then, under the Position / form label, the centres, Shape, Automatic ratio and Width/height ratio; then Dithering, its two noises not ported.
-- Each is one `vignette` parameter as it is; `unbound` is owned and fixed on.
-- Untouched at brightness and saturation 0 (darktable's −0.5 each), so it plans `vignette` only while Brightness or Saturation is off 0, whatever the others hold, and then sets both.
+- Each is one `vignette` parameter as it is; `unbound` is owned, with no control, at the operation's default, on.
+- Switched (decision 32), version 2, at darktable's brightness and saturation of −0.5: it plans `vignette` while it is on, each control bound while off its default.
 - The width/height ratio is unavailable while automatic ratio is on, as darktable's `gui_changed` has it (decision 30).
-- V4 binds five golden vignette cases' parameters bit for bit, `vignette-clip`'s clipping out of its reach.
+- V4 binds five golden vignette cases' parameters bit for bit, `vignette-clip`'s clipping out of its reach; V7 and V8 hold it on at darktable's defaults and version 1's edits.
 
 ### Planned
 
 - **Camera presets and tuning** (decision 27): preset rows listing a photo's options after their own under a heading (`PresetRow::camera`, `Module::listed`) and taking a tuning addressed like a control (`PresetRow::tuning`, `Module::tuning`), `Module::preset` given the tuning and the module's values. Then White balance's camera presets, stored in `preset` by darktable's name, and Finetune ([docs/modules/white-balance.md](modules/white-balance.md), Build).
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): `Picker`, `Definition::pickers`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` with `Picked` and `Shown`, and each built module's pickers.
-- **Switched modules** (decision 32): `Definition::switched` for every module darktable leaves off on a new photo: off until a control is written, then on with darktable's defaults, its reset turning it off.
-  - `check::accept` refusing a switched module over an operation every photo runs, and `check::switched_defaults` holding its defaults to its operation's.
-  - Grain at darktable's 25 %, Soften's 50 %, Vignetting's −0.5 and Haze removal's 0.2, each module version 2 with its migration.
-  - Colour balance RGB, RGB primaries and the Tone equalizer switched at their defaults.
-  - G5, S6, Z6 and V0's clause for the others at 0 withdrawn.
 
 ## apertrust-export
 
@@ -1431,6 +1427,7 @@ The `.apxmp` format's text layer (decision 54's first layer):
 
 - `Document`, a file as text: its `apertrust:version`, the build in `x:xmptk`, and its entries, a module's or an operation's attributes as strings in the file's order (`Document::parse`, `Document::to_xml`, `read`). The layout never varies, so a file read and written back is the same bytes.
 - `Document::newer`, a file version above `VERSION`, with `Newer` and `ViewOnly` (decision 43).
+- A module entry's `apertrust:enabled="true"`, a switched module that is on (decision 32), as `Entry::Module`'s `enabled`.
 - `path_for`, with `SUFFIX`.
 - `write_xml`, the safe write of `apertrust-base`'s `fs`: a hidden temporary flushed and renamed into place, Windows' refused renames retried, nothing written when the file already holds the bytes.
 - The namespaces: `https://apertrust.org/ns/xmp/`, with `control/` and `param/` (decision 48).

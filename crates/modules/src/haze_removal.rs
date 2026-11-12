@@ -17,22 +17,24 @@
 //! Haze removal (`docs/modules/haze-removal.md`): darktable's haze removal as the
 //! user edits with it, in the first pass (decision 2): darktable's page, its two sliders
 //! in `gui_init`'s order under its labels, Strength and Distance. It has no tabs, groups
-//! or presets of its own; darktable's default for a new instance is to be its "darktable's
-//! default" preset once the header's presets menu comes.
+//! or presets of its own.
 //!
 //! Each control is one `hazeremoval` parameter as it is, as darktable's slider shows it.
-//! The module drives `hazeremoval`, which an unedited photo does not run, planned only
-//! while Strength is off 0, whatever Distance holds. Strength starts at 0, where the
-//! operation removes nothing, not at darktable's 0.2, which removes haze from nearly
-//! every pixel (rule 4 of `docs/modules/README.md`); Distance at darktable's 0.2, which
-//! changes nothing while Strength is 0. darktable's two flags,
+//! The module is switched (decision 32), as darktable leaves haze removal off on a new
+//! photo: off, it renders nothing; any write of a control turns it on, with darktable's
+//! defaults for the other, a strength and a distance of 0.2, the operation's own, until
+//! its reset turns it off. So the binding sets each control only while it is off its
+//! default, and on at its defaults the session plans `hazeremoval` at the operation's
+//! defaults, darktable's new instance. Version 1 started the strength at 0 and planned the
+//! operation only while it was off 0; its edits migrate on where the strength was off 0,
+//! and off, their values dropped, where it was not. darktable's two flags,
 //! `compatibility_mode` and `adaptive`, have no widget and are the port's fixed values, a
 //! new instance's: off and on (`docs/ports/hazeremoval.md`, Parameters).
 
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab};
-use crate::{Base, Module, ModuleValues, Owned, Setting};
+use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct HazeRemoval;
 
@@ -43,10 +45,8 @@ const HAZEREMOVAL: &str = "hazeremoval";
 pub const STRENGTH: &str = "strength";
 pub const DISTANCE: &str = "distance";
 
-/// The untouched strength: no haze removed, and no operation planned. The operation's
-/// own default is darktable's 0.2, so the binding writes the strength whenever it plans
-/// it.
-const UNTOUCHED: f32 = 0.0;
+/// darktable's strength for a new instance, the operation's default too.
+const STRENGTH_DEFAULT: f32 = 0.2;
 
 /// darktable's distance for a new instance, the operation's default too.
 const DISTANCE_DEFAULT: f32 = 0.2;
@@ -61,7 +61,7 @@ static CONTROLS: [Control; 2] = [
             min: -1.0,
             max: 1.0,
             step: 0.01,
-            default: UNTOUCHED,
+            default: STRENGTH_DEFAULT,
         },
         unit: None,
         unported: false,
@@ -81,9 +81,10 @@ static CONTROLS: [Control; 2] = [
 
 static DEFINITION: Definition = Definition {
     id: HAZEREMOVAL,
-    version: 1,
+    version: 2,
     layers: true,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,
@@ -115,19 +116,28 @@ impl Module for HazeRemoval {
         &OWNS
     }
 
-    /// The strength off 0 plans the operation, whatever the distance holds: at a strength
-    /// of 0 the operation removes nothing, so it stays out of the plan, as grain's does at
-    /// an amount of 0 (`tool-bindings`, Which operations run). The strength is then always
-    /// written, and the distance while it is off its default, which is the operation's.
+    /// Each control off its default sets its parameter, as it is; a control at its
+    /// default leaves its parameter at the operation's default, which is the same value.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
-        let Some(strength) = values.number(STRENGTH) else {
-            return Vec::new();
-        };
-        let mut settings = vec![Setting::new(HAZEREMOVAL, STRENGTH, Value::Float(strength))];
-        if let Some(distance) = values.number(DISTANCE) {
-            settings.push(Setting::new(HAZEREMOVAL, DISTANCE, Value::Float(distance)));
+        CONTROLS
+            .iter()
+            .filter_map(|control| {
+                let value = values.number(control.id)?;
+                Some(Setting::new(HAZEREMOVAL, control.id, Value::Float(value)))
+            })
+            .collect()
+    }
+
+    /// Version 1 planned `hazeremoval` only while the strength was off 0, its default
+    /// then, and wrote it whenever it did: such an edit is on, its values as they were,
+    /// the strength among them; any other rendered nothing, so it is off, its values
+    /// dropped.
+    fn migrate(&self, from: u32, values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
         }
-        settings
+        let rendered = values.number(STRENGTH).is_some_and(|s| s != 0.0);
+        switched_from(values, rendered)
     }
 }
 
@@ -182,8 +192,8 @@ mod tests {
         assert_eq!(controls, shown);
     }
 
-    /// It owns both parameters, each control's range the parameter's; the distance's
-    /// default is the operation's, and the strength's is 0, not darktable's 0.2.
+    /// It owns both parameters, each control's range and default the parameter's,
+    /// darktable's, and its defaults bind the operation's.
     #[test]
     fn it_owns_every_parameter_of_the_operation_each_with_one_control() {
         let schema = HazeOperation.schema();
@@ -206,13 +216,10 @@ mod tests {
                 panic!("{} is a float", control.id);
             };
             assert_eq!((min, max), (low, high), "{}", control.id);
-            let expected = if control.id == STRENGTH {
-                UNTOUCHED
-            } else {
-                darktable
-            };
-            assert_eq!(default, expected, "{}", control.id);
+            assert_eq!(default.to_bits(), darktable.to_bits(), "{}", control.id);
         }
+        let image = crate::testing::image();
+        assert!(check::switched_defaults(&HazeRemoval, OPERATIONS, &image).is_empty());
     }
 
     /// darktable's haze removal sliders (`src/iop/hazeremoval.c`, the params and
@@ -239,7 +246,7 @@ mod tests {
                 .bind(&ModuleValues::new(), &image, &base)
                 .is_empty()
         );
-        assert!(bind(&[(STRENGTH, 0.0), (DISTANCE, 0.2)]).is_empty());
+        assert!(bind(&[(STRENGTH, 0.2), (DISTANCE, 0.2)]).is_empty());
     }
 
     #[test]
@@ -255,16 +262,40 @@ mod tests {
         assert_eq!(settings.len(), 1);
     }
 
-    /// The distance alone, the strength at 0, binds nothing, so it plans no operation,
-    /// at either end of its range.
+    /// The distance alone binds itself, whatever the strength holds: haze removal is
+    /// switched, so the session plans it while the module is on, not while the strength
+    /// is off 0.
     #[test]
-    fn the_distance_alone_binds_nothing() {
+    fn the_distance_alone_binds_itself() {
         for distance in [0.0, 0.65, 1.0] {
-            assert!(bind(&[(DISTANCE, distance)]).is_empty(), "{distance}");
-            assert!(
-                bind(&[(STRENGTH, 0.0), (DISTANCE, distance)]).is_empty(),
-                "{distance}"
+            assert_eq!(
+                bind(&[(DISTANCE, distance)]),
+                [Setting::new(HAZEREMOVAL, DISTANCE, Value::Float(distance))]
             );
+        }
+    }
+
+    /// Version 1's edits: on where the strength was off 0, with their values; else off,
+    /// their values dropped and their marks kept.
+    #[test]
+    fn version_1_s_edits_migrate_on_where_they_rendered() {
+        let v1 = |set: &[(&str, f32)]| {
+            let mut values = ModuleValues::new();
+            for &(control, value) in set {
+                values.set(control, ControlValue::Number(value));
+                values.set_mark(control, Some(crate::Mark::Kept));
+            }
+            HazeRemoval.migrate(1, values)
+        };
+        let on = v1(&[(STRENGTH, 0.2), (DISTANCE, 0.5)]);
+        assert!(on.enabled());
+        assert_eq!(on.number(STRENGTH), Some(0.2));
+        assert_eq!(on.number(DISTANCE), Some(0.5));
+        for set in [&[(DISTANCE, 0.8)][..], &[(STRENGTH, 0.0)], &[]] {
+            let off = v1(set);
+            assert!(!off.enabled(), "{set:?}");
+            assert_eq!(off.values().count(), 0, "{set:?}");
+            assert_eq!(off.marks().count(), set.len(), "{set:?}");
         }
     }
 }

@@ -144,6 +144,44 @@ fn a_module_has_no_options_button_and_a_utility_has_one() {
     assert_eq!(*harness.state(), vec![SectionAction::Options]);
 }
 
+/// A module that is off and renders nothing (decision 32) shows nothing more, but its
+/// toggle's description starts with "Not applied" for screen readers; one that is on says
+/// nothing of it.
+#[test]
+fn a_module_not_applied_says_so_to_screen_readers_alone() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 120.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            Section::new("Grain", false)
+                .module()
+                .not_applied(true)
+                .show(ui, |_| {});
+            Section::new("Exposure", false)
+                .module()
+                .not_applied(false)
+                .show(ui, |_| {});
+        });
+    harness.run();
+    let said = |name: &str| {
+        harness
+            .get_by_role_and_label(Role::Button, name)
+            .accesskit_node()
+            .description()
+            .unwrap_or_default()
+    };
+    assert!(
+        said("Grain").starts_with("Not applied"),
+        "{}",
+        said("Grain")
+    );
+    assert!(
+        !said("Exposure").contains("Not applied"),
+        "{}",
+        said("Exposure")
+    );
+}
+
 #[test]
 fn a_module_header_has_no_auto_button() {
     let mut harness = module(true);

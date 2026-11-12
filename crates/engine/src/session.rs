@@ -572,7 +572,8 @@ pub struct Values {
     /// Every parameter no module owns, of the operations an unedited photo runs: the
     /// edit's values over the photo's defaults.
     pub settings: Vec<Setting>,
-    /// Whether anything differs from its default for the photo.
+    /// Whether anything differs from its default for the photo, a switched module that is
+    /// on included (decision 32).
     pub edited: bool,
     /// How many commands had been applied: every one [`Session::send`] numbered up to
     /// this, so a client knows which of its changes the values include.
@@ -600,7 +601,13 @@ impl Values {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleState {
     pub module: &'static str,
-    /// Whether any control differs from its default for the photo.
+    /// Whether the module renders (decision 32): true for a module that is not switched,
+    /// and for a switched one while it is on; a switched module off renders nothing, its
+    /// controls at darktable's defaults. A panel shows nothing more for it than its reset
+    /// unavailable, and screen readers hear "Not applied".
+    pub enabled: bool,
+    /// Whether its reset would change the render: a control differs from its default for
+    /// the photo, or a switched module is on.
     pub edited: bool,
     /// Every control, in the definition's order.
     pub controls: Vec<ControlState>,
@@ -1730,8 +1737,7 @@ struct Open {
 /// A gesture under way (decision 42): the run of `SetControl { done: false }` on one
 /// module, and what its cancel puts back, the photo's edit as it stood before its first
 /// change. The whole edit, so whatever a change writes beside its own control, follow
-/// writes and clamps, and a switched module's state once decision 32 gives the edit one,
-/// comes back with it.
+/// writes and clamps, and a switched module's on or off (decision 32), comes back with it.
 struct Gesture {
     module: String,
     edit: Edit,
@@ -3381,12 +3387,15 @@ impl Open {
                         }
                     })
                     .collect();
-                let module_edited = controls.iter().any(|c| c.value != c.default);
+                let enabled = self.edit.is_on(*module);
+                let module_edited = (definition.switched && enabled)
+                    || controls.iter().any(|c| c.value != c.default);
                 edited |= module_edited;
                 let presets = self.presets(*module, &controls);
                 let views = self.views(*module, &controls, &values);
                 ModuleState {
                     module: definition.id,
+                    enabled,
                     edited: module_edited,
                     controls,
                     presets,
@@ -4575,6 +4584,7 @@ mod tests {
         version: 1,
         layers: true,
         auto: false,
+        switched: false,
         controls: &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -4942,6 +4952,7 @@ mod tests {
         version: 1,
         layers: false,
         auto: false,
+        switched: false,
         controls: &[
             Control {
                 id: "mode",
@@ -5448,6 +5459,51 @@ mod tests {
                 .any(|s| (s.operation, s.param) == ("exposure", "exposure")
                     || s.operation == "grain")
         );
+        remove(&path);
+    }
+
+    /// A switched module (decision 32): off and unedited on a new photo; a write at its
+    /// default turns it on and edited, rendering darktable's new instance; a cancelled
+    /// gesture and its reset each put it back off, the second rendering the untouched
+    /// frame.
+    #[test]
+    fn a_switched_module_reports_on_from_a_write_until_its_reset() {
+        use apertrust_modules::grain::Grain;
+        let path = scratch("switched");
+        let mut driven = Driven::new(&[&Grain]);
+        let opened = driven.open(&path);
+        let untouched = frame(&driven.gpu, &opened);
+        let state = |events: &[Event]| values(events).modules[0].clone();
+        let grain = state(&opened);
+        assert!(!grain.enabled && !grain.edited && !values(&opened).edited);
+        let strength = |done| Command::SetControl {
+            module: "grain".to_owned(),
+            control: "strength".to_owned(),
+            value: ControlValue::Number(25.0),
+            done,
+        };
+        let events = driven.run([strength(false)]);
+        let grain = state(&events);
+        assert!(grain.enabled && grain.edited && values(&events).edited);
+        assert!(grain.controls.iter().all(|c| c.value == c.default));
+        assert!(frame(&driven.gpu, &events) != untouched);
+        let events = driven.run([Command::CancelGesture {
+            module: "grain".to_owned(),
+        }]);
+        assert!(!state(&events).enabled);
+
+        driven.run([strength(true)]);
+        let events = driven.run([Command::ResetControl {
+            module: "grain".to_owned(),
+            control: "strength".to_owned(),
+        }]);
+        assert!(state(&events).enabled, "a control's reset leaves it on");
+        let events = driven.run([Command::ResetModule {
+            module: "grain".to_owned(),
+        }]);
+        let grain = state(&events);
+        assert!(!grain.enabled && !grain.edited && !values(&events).edited);
+        assert!(frame(&driven.gpu, &events) == untouched);
         remove(&path);
     }
 
@@ -6000,6 +6056,7 @@ mod tests {
         version: 1,
         layers: false,
         auto: false,
+        switched: false,
         controls: &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -6787,6 +6844,7 @@ mod tests {
         version: 1,
         layers: false,
         auto: false,
+        switched: false,
         controls: &[
             Control {
                 id: "level",

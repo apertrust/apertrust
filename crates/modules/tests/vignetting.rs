@@ -15,10 +15,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Vignetting's invariants (`docs/modules/vignetting.md`, Invariants), one test per row,
-//! each named after its row: V0 to V4, the rows a first-pass table has (decision 22), and
-//! V6, the width/height ratio while automatic ratio is on (decision 30). The synthetic
-//! ramp and sweep and the small raw run on CI's software GPUs, V4 on the CPU. The
-//! raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it:
+//! each named after its row: a switched module's (decision 32), V0 off, V1 the first
+//! step, on at darktable's defaults, V2 moved and reset, V3 the order, V4 the darktable
+//! match, V7 on at darktable's defaults on the CPU and V8 version 1's edits; V5, on a
+//! layer, waits for Phase 4; and V6, the width/height ratio while automatic ratio is on
+//! (decision 30). The synthetic ramp and sweep and the small raw run on CI's software
+//! GPUs, V4, V7 and V8 on the CPU. The raw.pixls.us corpus runs locally, with
+//! `APERTRUST_RAW_CORPUS` naming it:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-modules --test vignetting -- --ignored --nocapture
@@ -30,20 +33,23 @@
 
 #[expect(
     dead_code,
-    reason = "Vignetting's rows read neither the extended ramp, a luminance nor a jump"
+    reason = "Vignetting's rows read neither the extended ramp nor a luminance"
 )]
 mod common;
 mod corpus;
+mod switched;
 
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_modules::vignetting::Vignetting;
-use apertrust_modules::{Base, ControlValue, Controls, MODULES, Module};
+use apertrust_modules::{ControlValue, Controls, MODULES, Module};
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::vignette::{self, PARAMS_SIZE, Vignette};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues, Value};
 
-use common::{BEFORE_THE_WORKING_SPACE, Bench, Picture, Rendered, exact, id, small_raw, sweep};
+use common::{
+    BEFORE_THE_WORKING_SPACE, Bench, Picture, Rendered, exact, id, jump, small_raw, sweep,
+};
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_bench};
 
 const VIGNETTE: &str = "vignette";
@@ -84,22 +90,11 @@ fn edit_of(set: &[(&str, ControlValue)]) -> Edit {
 }
 
 impl Bench {
-    /// The first step (row V1): the vignette planned at the module's own defaults, each
-    /// made explicit, brightness and saturation 0 and clipping off, over an unedited
-    /// photo, as any control's first move off its default adds it.
-    fn first_step(&self) -> Vec<Instance<'static>> {
-        let mut instances = edit::instances(&Edit::default(), OPERATIONS, MODULES, &self.image)
-            .all()
-            .unwrap();
-        let mut params = ParamValues::new();
-        params.set("brightness", Value::Float(0.0));
-        params.set("saturation", Value::Float(0.0));
-        params.set("unbound", Value::Bool(true));
-        instances.push(Instance {
-            operation: apertrust_operations::operation(VIGNETTE).unwrap(),
-            params,
-        });
-        self.keep(instances, Frame)
+    /// The module on at darktable's defaults, brightness and saturation −0.5 among them:
+    /// the vignette planned at the operation's defaults, darktable's new instance (rows
+    /// V1 and V2).
+    fn on_at_defaults(&self) -> Vec<Instance<'static>> {
+        self.instances(&switched::on_at_defaults(&Vignetting, &self.image), Frame)
     }
 
     fn set(&mut self, set: &[(&str, ControlValue)]) -> Rendered {
@@ -108,8 +103,7 @@ impl Bench {
 }
 
 /// Whether two frames' pixels hold the same values, a zero of either sign equal to the
-/// other, whatever their plans' keys: at brightness 0 the kernel's `col · (1 + w · 0)`
-/// gives back every value but a −0.0, which its sum turns to +0.0.
+/// other, whatever their plans' keys.
 fn same_values(a: &Rendered, b: &Rendered) -> bool {
     a.pixels.len() == b.pixels.len() && a.pixels.iter().zip(&b.pixels).all(|(x, y)| x == y)
 }
@@ -123,47 +117,16 @@ const PIPES: [Pipe; 2] = [
     },
 ];
 
-// V0: every control at its default, or brightness and saturation at 0.
+// V0: off.
 
-/// Edits that leave the image untouched: every control written at its default, and each
-/// kept there; and brightness and saturation at 0 with every other control moved, which
-/// plans nothing, since at both 0 the vignette would give every pixel back.
-fn untouched() -> Vec<Edit> {
-    let mut written = Edit::default();
-    let mut kept = Edit::default();
-    for control in Vignetting.definition().controls {
-        written
-            .set_control(&Vignetting, control.id, control.default(), &common::photo())
-            .unwrap();
-        kept.keep(&Vignetting, control.id, true).unwrap();
-    }
-    let moved = edit_of(&[
-        ("scale", number(40.0)),
-        ("falloff_scale", number(100.0)),
-        ("center_x", number(-0.3)),
-        ("center_y", number(0.2)),
-        ("shape", number(3.7)),
-        ("autoratio", ON),
-        ("whratio", number(1.6)),
-    ]);
-    vec![written, kept, moved]
-}
-
-/// V0 on one pipeline, as the session renders: no edit, then the vignette joining and
-/// leaving the plan, then each untouched edit, every frame as the first.
+/// V0 on one pipeline, as the session renders: no edit, then the vignette joining the
+/// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
+/// module off, every frame as the first.
 fn v0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.first_step();
+    let joined = bench.on_at_defaults();
     bench.render(&joined);
-    for edit in untouched() {
-        let values = edit.module(VIGNETTE).unwrap();
-        let defaults = Vignetting.defaults(&bench.image);
-        let base = Base::new(OPERATIONS, &bench.image);
-        assert!(
-            Vignetting
-                .bind(&values.off_defaults(&defaults), &bench.image, &base)
-                .is_empty()
-        );
+    for edit in switched::off(&Vignetting) {
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "V0 on {:?}",
@@ -173,7 +136,7 @@ fn v0_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn v0_every_control_at_its_default_renders_as_no_edit() {
+fn v0_off_renders_as_no_edit() {
     for pipe in PIPES {
         let (mosaic, image) = small_raw(-0.67);
         v0_holds(&mut Bench::mosaic(&mosaic, image, pipe));
@@ -183,8 +146,8 @@ fn v0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// V0 on every corpus raw: the module at its defaults, written or kept, plans the very
-/// instances and cache keys no edit does, so the same frame.
+/// V0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn v0_on_the_corpus() {
@@ -200,7 +163,7 @@ fn v0_on_the_corpus() {
                 .collect()
         };
         let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in untouched() {
+        for edit in switched::off(&Vignetting) {
             assert_eq!(keys(&bench.instances(&edit, Frame)), none, "V0 on {name}");
         }
         raws += 1;
@@ -208,55 +171,60 @@ fn v0_on_the_corpus() {
     println!("V0 holds on {raws} raws");
 }
 
-// V1: the first step, exact: brightness and saturation 0 give every pixel back.
+// V1: the first step, on at darktable's defaults, measured and reported without a bound
+// (decision 22).
 
-/// V1 on one pipeline: the vignette planned at the module's defaults, as the binding's
-/// output would plan it with each default made explicit, renders the untouched frame's
-/// values. The binding itself plans nothing there, nor while only the fall-off, centre,
-/// shape or ratio moves, which V0 holds; this row measures what leaving it out hides.
-fn v1_holds(bench: &mut Bench) {
+/// V1 on one pipeline: the module on at darktable's defaults, darktable's new instance
+/// darkening and desaturating towards the corners, against no edit; its jump.
+fn v1_jump(bench: &mut Bench) -> common::Jump {
     let none = bench.edit(&Edit::default(), Frame);
-    let first = bench.first_step();
+    let first = bench.on_at_defaults();
     assert!(first.iter().any(|i| id(i) == VIGNETTE));
     let first = bench.render(&first);
-    assert!(same_values(&none, &first), "V1 on {:?}", bench.pipe);
+    jump(&none.pixels, &first.pixels, |_| true)
 }
 
 #[test]
-fn v1_the_first_step_gives_every_pixel_back() {
-    for pipe in PIPES {
-        let (mosaic, image) = small_raw(-0.67);
-        v1_holds(&mut Bench::mosaic(&mosaic, image, pipe));
+fn v1_the_first_step_is_measured() {
+    for (what, (picture, image)) in [("on the ramp", ramp()), ("on the sweep", sweep(-0.67))] {
+        let step = v1_jump(&mut Bench::picture(&picture, image, Pipe::Export));
+        println!("V1 {what}: {step}");
+        assert!(step.mean.is_finite() && step.max.is_finite(), "{step}");
     }
-    for (picture, image) in [ramp(), sweep(-0.67)] {
-        v1_holds(&mut Bench::picture(&picture, image, Pipe::Export));
-    }
+    let (mosaic, image) = small_raw(-0.67);
+    let step = v1_jump(&mut Bench::mosaic(&mosaic, image, Pipe::Export));
+    println!("V1 on the small raw: {step}");
+    assert!(step.pixels > 0 && step.mean > 0.0, "{step}");
 }
 
 /// V1 on every corpus raw the pipeline takes, through the export.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn v1_on_the_corpus() {
-    let mut raws = 0;
+    let mut jumps = Vec::new();
     each_corpus_raw(|name, image, input| {
-        let mut bench = export_bench(image, input);
-        let none = bench.edit(&Edit::default(), Frame);
-        let first = bench.first_step();
-        let first = bench.render(&first);
-        assert!(same_values(&none, &first), "V1 on {name}");
-        raws += 1;
+        let step = v1_jump(&mut export_bench(image, input));
+        println!("{name}: {step}");
+        assert!(step.mean.is_finite() && step.max.is_finite(), "{name}");
+        jumps.push(step);
     });
-    println!("V1 holds on {raws} raws");
+    let worst_mean = jumps.iter().map(|j| j.mean).fold(0.0, f64::max);
+    let worst_max = jumps.iter().map(|j| j.max).fold(0.0, f64::max);
+    println!(
+        "V1 on {} raws: mean at most {worst_mean:.4}, max at most {worst_max:.3}",
+        jumps.len()
+    );
 }
 
 // V2: each control moved, then reset.
 
-/// Moves of every control, each with a strength off 0 so it changes the frame: the
-/// strengths alone, the radii, the centre and shape, automatic ratio, and every control
-/// at test 0045's values, the `vignette` golden case's.
-fn moves() -> [Vec<(&'static str, ControlValue)>; 6] {
+/// Moves of every control: a write of the brightness at darktable's −0.5, which turns the
+/// module on; the strengths, the radii, the centre and shape, automatic ratio, and every
+/// control at test 0045's values, the `vignette` golden case's. Each changes the frame.
+fn moves() -> [Vec<(&'static str, ControlValue)>; 7] {
     [
         vec![("brightness", number(-0.5))],
+        vec![("scale", number(40.0))],
         vec![("saturation", number(0.3)), ("scale", number(40.0))],
         vec![
             ("falloff_scale", number(100.0)),
@@ -282,11 +250,14 @@ fn moves() -> [Vec<(&'static str, ControlValue)>; 6] {
     ]
 }
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete) and by
-/// `ResetModule` (the header's reset), on the bench's one pipeline, which the vignette
-/// joins with each move and leaves with each reset.
+/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
+/// control, which leaves the module on at darktable's defaults, and by `ResetModule` (the
+/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
+/// the vignette joins with each move and leaves with each module's reset.
 fn v2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
+    let on = bench.on_at_defaults();
+    let on = bench.render(&on);
     for set in moves() {
         let mut edit = edit_of(&set);
         let moved = bench.edit(&edit, Frame);
@@ -294,14 +265,15 @@ fn v2_holds(bench: &mut Bench) {
         for (control, _) in &set {
             edit.reset_control(&Vignetting, control).unwrap();
         }
-        assert_eq!(edit, Edit::default());
+        assert!(edit.is_on(&Vignetting), "{set:?}, reset control by control");
         assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
+            exact(&on, &bench.edit(&edit, Frame)),
             "{set:?}, reset control by control"
         );
         let mut edit = edit_of(&set);
         bench.edit(&edit, Frame);
         edit.reset_module(&Vignetting);
+        assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "{set:?}, the module reset"
@@ -310,7 +282,7 @@ fn v2_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn v2_a_control_moved_and_reset_renders_as_no_edit() {
+fn v2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     v2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -502,4 +474,78 @@ fn v6_the_ratio_is_unavailable_and_changes_nothing_while_automatic_ratio_is_on()
         !same_values(&wide, &tall),
         "the ratio while automatic ratio is off"
     );
+}
+
+// V7: on at darktable's defaults, on the CPU.
+
+/// The module's defaults, each made explicit, bind the vignette's own, `unbound` on among
+/// them, and the module on at its defaults plans it with no parameter set, darktable's new
+/// instance; off, it plans none.
+#[test]
+fn v7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
+    switched::on_at_defaults_holds(&Vignetting, VIGNETTE);
+}
+
+// V8: version 1's edits.
+
+/// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
+/// bound, resolved over the schema: the vignette planned where brightness or saturation
+/// was off 0, version 1's untouched value, both bound, the other at 0, and `unbound` on;
+/// not planned, the module off, where neither was.
+#[test]
+fn v8_version_1_s_edits_bind_what_they_bound() {
+    let image = common::photo();
+    let schema = Vignette.schema();
+    let resolved = |set: &[(&str, f32)]| {
+        let mut params = ParamValues::new();
+        for &(param, value) in set {
+            params.set(param, Value::Float(value));
+        }
+        params.set("unbound", Value::Bool(true));
+        schema.resolve(&params).unwrap()
+    };
+    for (saved, bound) in [
+        (
+            &[("saturation", "0.3"), ("scale", "40")][..],
+            &[("brightness", 0.0), ("saturation", 0.3), ("scale", 40.0)][..],
+        ),
+        (
+            &[("brightness", "-0.5")],
+            &[("brightness", -0.5), ("saturation", 0.0)],
+        ),
+        (
+            &[
+                ("brightness", "-0.968"),
+                ("saturation", "-0.82"),
+                ("shape", "1.49"),
+            ],
+            &[
+                ("brightness", -0.968),
+                ("saturation", -0.82),
+                ("shape", 1.49),
+            ],
+        ),
+    ] {
+        let edit = switched::version_1(VIGNETTE, saved);
+        assert!(edit.is_on(&Vignetting), "{saved:?}");
+        let params = switched::bound(&edit, VIGNETTE, &image).expect("planned");
+        assert_eq!(
+            schema.resolve(&params).unwrap(),
+            resolved(bound),
+            "{saved:?}"
+        );
+    }
+    for saved in [
+        &[("scale", "40"), ("autoratio", "true")][..],
+        &[("brightness", "0"), ("saturation", "0")],
+        &[],
+    ] {
+        let edit = switched::version_1(VIGNETTE, saved);
+        assert!(!edit.is_on(&Vignetting), "{saved:?}");
+        assert!(edit.is_empty(), "{saved:?}");
+        assert!(
+            switched::bound(&edit, VIGNETTE, &image).is_none(),
+            "{saved:?}"
+        );
+    }
 }

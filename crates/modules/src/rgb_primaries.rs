@@ -22,10 +22,11 @@
 //! Each control is one `primaries` parameter, shown as darktable's slider shows it: a
 //! hue in degrees, a primary's purity as a percentage less 100, so 1, on the gamut's
 //! edge, is 0 %, and the tint's purity as a percentage. The binding goes back as
-//! darktable's slider does, in f32. It drives `primaries`, which an unedited photo does
-//! not run, planned only while a control is off its default: at its defaults it sets
-//! nothing, so it adds no operation and leaves the frame as it was. Its first step brings
-//! the operation's small leak of red into green and blue, as darktable's does
+//! darktable's slider does, in f32. It is switched (decision 32), as
+//! darktable leaves rgb primaries off on a new photo: off, it renders nothing; any write
+//! of a control turns it on, with darktable's defaults for the others, until its reset
+//! turns it off, `primaries` planned while it is on. Its first step, on at its defaults,
+//! brings the operation's small leak of red into green and blue, as darktable's does
 //! (`docs/ports/primaries.md`, Per pixel).
 //!
 //! Each slider's track spans darktable's soft range, ±20° for a primary's hue, −50 % to
@@ -36,7 +37,7 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, Module, ModuleValues, Owned, Setting};
+use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct RgbPrimaries;
 
@@ -79,7 +80,7 @@ const fn degrees(control: &'static str) -> Parameter {
     }
 }
 
-/// A primary's purity, shown as a percentage less 100: 1, untouched, is 0 %.
+/// A primary's purity, shown as a percentage less 100: 1, darktable's default, is 0 %.
 const fn purity(control: &'static str) -> Parameter {
     Parameter {
         control,
@@ -107,7 +108,7 @@ pub static PARAMETERS: [Parameter; 8] = [
     },
 ];
 
-/// A number control, untouched at 0. `step` is what darktable's slider steps by,
+/// A number control, darktable's default 0. `step` is what darktable's slider steps by,
 /// `dt_bauhaus_slider_get_step` over its soft range, which a key steps by here.
 const fn number(id: &'static str, (min, max): (f32, f32), step: f32, unit: Unit) -> Control {
     Control {
@@ -166,9 +167,10 @@ const fn purity_row(control: &'static str) -> Row {
 
 static DEFINITION: Definition = Definition {
     id: "primaries",
-    version: 1,
+    version: 2,
     layers: true,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,
@@ -213,8 +215,7 @@ impl Module for RgbPrimaries {
     }
 
     /// Each control off its default sets its parameter, as darktable's slider converts
-    /// what it shows. Any of them plans the operation; none, at the defaults, plans
-    /// nothing.
+    /// what it shows.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
         PARAMETERS
             .iter()
@@ -227,6 +228,18 @@ impl Module for RgbPrimaries {
                 ))
             })
             .collect()
+    }
+
+    /// Version 1 planned `primaries` while a control was off its default, darktable's then
+    /// as now, and bound every one that was: such an edit is on, its values as they were;
+    /// any other rendered nothing, so it is off, its values dropped (decision 32).
+    fn migrate(&self, from: u32, values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
+        }
+        let off = values.off_defaults(&DEFINITION.defaults());
+        let rendered = off.values().next().is_some();
+        switched_from(values, rendered)
     }
 }
 

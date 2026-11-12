@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Module values, what an edit stores (decision 28): per control a value where one is
-//! set, and a mark.
+//! set, and a mark; and, for a switched module (decision 32), whether it is on.
 
 use std::collections::BTreeMap;
 
@@ -43,10 +43,16 @@ pub enum Mark {
 /// photo otherwise, and a mark. A control can be kept without a value, held at its
 /// default. Controls are named by id; values read from an older edit may name controls
 /// the module no longer has, until [`crate::Module::migrate`] maps them.
+///
+/// A switched module (decision 32, [`crate::Definition::switched`]) is on while
+/// [`Self::enabled`] holds: off, it holds no value, only marks, and renders nothing; on,
+/// it renders with darktable's defaults for the controls it holds no value for. A module
+/// that is not switched never sets it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ModuleValues {
     values: BTreeMap<String, ControlValue>,
     marks: BTreeMap<String, Mark>,
+    enabled: bool,
 }
 
 impl ModuleValues {
@@ -54,9 +60,20 @@ impl ModuleValues {
         Self::default()
     }
 
-    /// Neither a value nor a mark: the module is untouched.
+    /// Neither a value nor a mark, and not on: the module is untouched.
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty() && self.marks.is_empty()
+        self.values.is_empty() && self.marks.is_empty() && !self.enabled
+    }
+
+    /// Whether a switched module is on (decision 32); false for one off, and for every
+    /// module that is not switched, which is always on.
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Turns a switched module on or off, its values and marks as they are.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
     }
 
     pub fn get(&self, control: &str) -> Option<&ControlValue> {
@@ -122,8 +139,8 @@ impl ModuleValues {
         self.marks.iter().map(|(id, mark)| (id.as_str(), *mark))
     }
 
-    /// Only the values that differ from `defaults`, without marks: what a binding is
-    /// given, so a control set back to its default sets nothing.
+    /// Only the values that differ from `defaults`, without marks, on or off as these
+    /// are: what a binding is given, so a control set back to its default sets nothing.
     pub fn off_defaults(&self, defaults: &Controls) -> ModuleValues {
         let values = self
             .values
@@ -134,6 +151,7 @@ impl ModuleValues {
         ModuleValues {
             values,
             marks: BTreeMap::new(),
+            enabled: self.enabled,
         }
     }
 }
@@ -219,6 +237,16 @@ mod tests {
         values.remove("contrast");
         assert_eq!(values.mark("contrast"), Some(Mark::Auto));
         values.set_mark("contrast", None);
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn a_switched_module_on_with_no_value_is_not_untouched() {
+        let mut values = ModuleValues::new();
+        values.set_enabled(true);
+        assert!(!values.is_empty());
+        assert!(values.off_defaults(&Controls::new()).enabled());
+        values.set_enabled(false);
         assert!(values.is_empty());
     }
 }

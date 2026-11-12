@@ -543,6 +543,7 @@ fn untouched(modules: &[&dyn Module]) -> Values {
         }
         ModuleState {
             module: definition.id,
+            enabled: !definition.switched,
             edited: false,
             controls,
             presets,
@@ -868,7 +869,6 @@ pub fn show(values: &mut Values, change: &Pending, modules: &[&dyn Module], imag
         return;
     };
     change.show(*module, state, image);
-    state.edited = state.controls.iter().any(|c| c.value != c.default);
     values.edited |= state.edited;
 }
 
@@ -1105,6 +1105,7 @@ pub(crate) mod tests {
         };
         let exposure = |black, black_mark, exposure, exposure_mark| ModuleState {
             module: "exposure",
+            enabled: true,
             edited: black != 0.0 || exposure != 0.0,
             controls: vec![
                 control("black_level", black, black_mark),
@@ -1192,6 +1193,7 @@ pub(crate) mod tests {
         Values {
             modules: vec![ModuleState {
                 module: "exposure",
+                enabled: true,
                 edited: exposure != 0.0,
                 controls: vec![ControlState {
                     control: "exposure",

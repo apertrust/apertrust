@@ -23,19 +23,19 @@
 //! with two decimals: the size, the saturation and the mix as percentages, the brightness
 //! in EV.
 //!
-//! It drives `soften`, which an unedited photo does not run, and plans it only while the
-//! mix is off 0, whatever the other three hold: the mix is the blurred image's weight, so
-//! at 0 the operation returns its input and planning it would only cost its passes
-//! (`docs/ports/soften.md`, Tool binding notes). So the mix starts at 0, untouched, where
-//! darktable's new instance has 50 %, which becomes the "darktable's default" preset once
-//! the header's presets menu is built; the size, the saturation and the brightness start
-//! at darktable's 50 %, 100 % and 0.33 EV, the operation's own defaults, so the binding
-//! sets each only while it is off them.
+//! It is switched (decision 32), as darktable leaves soften off on a new photo: off, it
+//! renders nothing; any write of a control turns it on, with darktable's defaults for the
+//! others, 50 %, 100 %, 0.33 EV and a mix of 50 %, the operation's own, until its reset
+//! turns it off. So the binding sets each control only while it is off its default, and
+//! on at its defaults the session plans `soften` at the operation's defaults, darktable's
+//! new instance. Version 1 started the mix at 0 and planned `soften` only while it was off
+//! 0; its edits migrate on where the mix was off 0, and off, their values dropped, where
+//! it was not.
 
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, Module, ModuleValues, Owned, Setting};
+use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct Soften;
 
@@ -67,7 +67,8 @@ const fn number(
 
 /// darktable's hard ranges are the controls', in the units its sliders show, and their
 /// tracks span them, as darktable sets no soft range. The ids are darktable's parameter
-/// names, the mix's `amount`.
+/// names, the mix's `amount`, and the defaults darktable's, its params' introspection
+/// defaults.
 static CONTROLS: [Control; 4] = [
     // 0 % to 100 %, darktable's 50 % the default; darktable steps it by 1 %.
     number("size", (0.0, 100.0), 1.0, 50.0, Unit::Percent),
@@ -76,15 +77,16 @@ static CONTROLS: [Control; 4] = [
     // −2 to +2 EV, darktable's 0.33 EV the default; darktable steps it by 0.01 EV, a
     // hundredth of its larger end, 2, to the power of ten below.
     number("brightness", (-2.0, 2.0), 0.01, 0.33, Unit::Ev),
-    // 0 % to 100 %, untouched at 0; darktable steps it by 1 %.
-    number("amount", (0.0, 100.0), 1.0, 0.0, Unit::Percent),
+    // 0 % to 100 %, darktable's 50 % the default; darktable steps it by 1 %.
+    number("amount", (0.0, 100.0), 1.0, 50.0, Unit::Percent),
 ];
 
 static DEFINITION: Definition = Definition {
     id: "soften",
-    version: 1,
+    version: 2,
     layers: true,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,
@@ -120,14 +122,9 @@ impl Module for Soften {
         &OWNS
     }
 
-    /// Nothing while the mix is at 0, its default, whatever the others hold, so the
-    /// operation stays out of the plan. Off it, the mix and each other control off its
-    /// default set their parameters, as they are; a control at its default leaves its
-    /// parameter at the operation's default, which is the same value.
+    /// Each control off its default sets its parameter, as it is; a control at its
+    /// default leaves its parameter at the operation's default, which is the same value.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
-        if values.number("amount").is_none() {
-            return Vec::new();
-        }
         CONTROLS
             .iter()
             .filter_map(|control| {
@@ -135,6 +132,17 @@ impl Module for Soften {
                 Some(Setting::new(SOFTEN, control.id, Value::Float(value)))
             })
             .collect()
+    }
+
+    /// Version 1 planned `soften` only while the mix was off 0, its default then: such an
+    /// edit is on, its values as they were, the mix among them; any other rendered
+    /// nothing, so it is off, its values dropped.
+    fn migrate(&self, from: u32, values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
+        }
+        let rendered = values.number("amount").is_some_and(|mix| mix != 0.0);
+        switched_from(values, rendered)
     }
 }
 
@@ -208,15 +216,15 @@ mod tests {
                 panic!("{} is a float", control.id);
             };
             assert_eq!((min, max), (low, high), "{}", control.id);
-            if control.id != "amount" {
-                assert_eq!(default.to_bits(), untouched.to_bits(), "{}", control.id);
-            }
+            assert_eq!(default.to_bits(), untouched.to_bits(), "{}", control.id);
         }
         // The mix alone sets only itself; the others take the operation's defaults.
         assert_eq!(
-            bind(&[("amount", 50.0)]),
-            [Setting::new(SOFTEN, "amount", Value::Float(50.0))]
+            bind(&[("amount", 75.0)]),
+            [Setting::new(SOFTEN, "amount", Value::Float(75.0))]
         );
+        let image = crate::testing::image();
+        assert!(check::switched_defaults(&Soften, OPERATIONS, &image).is_empty());
     }
 
     #[test]
@@ -234,19 +242,44 @@ mod tests {
         assert!(bind(&defaults).is_empty());
     }
 
-    /// The mix is the blurred image's weight, so at 0 soften stays out of the plan,
-    /// whatever the other three hold, as grain does at a strength of 0.
+    /// Each control sets its parameter alone, whatever the mix holds: soften is switched,
+    /// so the session plans it while the module is on, not while the mix is off 0.
     #[test]
-    fn at_a_mix_of_0_nothing_else_sets_anything() {
-        for set in [
-            &[("size", 0.0)][..],
-            &[("size", 100.0)],
-            &[("saturation", 0.0)],
-            &[("brightness", -2.0)],
-            &[("brightness", 2.0)],
-            &[("size", 33.0), ("saturation", 50.0), ("brightness", 0.5)],
+    fn each_control_sets_its_parameter_alone() {
+        for (control, value) in [
+            ("size", 0.0),
+            ("saturation", 0.0),
+            ("brightness", -2.0),
+            ("amount", 0.0),
         ] {
-            assert!(bind(set).is_empty(), "{set:?}");
+            assert_eq!(
+                bind(&[(control, value)]),
+                [Setting::new(SOFTEN, control, Value::Float(value))]
+            );
+        }
+    }
+
+    /// Version 1's edits: on where the mix was off 0, with their values; else off, their
+    /// values dropped and their marks kept.
+    #[test]
+    fn version_1_s_edits_migrate_on_where_they_rendered() {
+        let v1 = |set: &[(&str, f32)]| {
+            let mut values = ModuleValues::new();
+            for &(control, value) in set {
+                values.set(control, ControlValue::Number(value));
+                values.set_mark(control, Some(crate::Mark::Kept));
+            }
+            Soften.migrate(1, values)
+        };
+        let on = v1(&[("amount", 35.0), ("size", 33.0)]);
+        assert!(on.enabled());
+        assert_eq!(on.number("amount"), Some(35.0));
+        assert_eq!(on.number("size"), Some(33.0));
+        for set in [&[("size", 100.0)][..], &[("amount", 0.0)], &[]] {
+            let off = v1(set);
+            assert!(!off.enabled(), "{set:?}");
+            assert_eq!(off.values().count(), 0, "{set:?}");
+            assert_eq!(off.marks().count(), set.len(), "{set:?}");
         }
     }
 

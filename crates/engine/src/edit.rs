@@ -185,7 +185,7 @@ impl Edit {
     /// module's values give it now (`Module::range`, decision 30), the definition's where
     /// the module's defaults for the photo panic, and a choice's option the photo, `image`,
     /// does not list (decision 30). Setting a control keeps it, so Auto and Match leave it
-    /// alone.
+    /// alone, and turns a switched module on, whatever the value (decision 32).
     pub fn set_control(
         &mut self,
         module: &dyn Module,
@@ -225,10 +225,33 @@ impl Edit {
         let values = self.modules.entry(id.to_owned()).or_default();
         values.set(control.id, value);
         values.set_mark(control.id, Some(Mark::Kept));
+        self.switch_on(module);
         Ok(())
     }
 
-    /// Takes a control back to its default for the photo, no longer kept.
+    /// Turns a switched module on (decision 32), as every write of one of its controls
+    /// does; a module that is not switched is always on, and stays as it is.
+    fn switch_on(&mut self, module: &dyn Module) {
+        let definition = module.definition();
+        if definition.switched {
+            let values = self.modules.entry(definition.id.to_owned()).or_default();
+            values.set_enabled(true);
+        }
+    }
+
+    /// Whether the module renders: a switched module while it is on (decision 32), every
+    /// other always.
+    pub fn is_on(&self, module: &dyn Module) -> bool {
+        let definition = module.definition();
+        !definition.switched
+            || self
+                .modules
+                .get(definition.id)
+                .is_some_and(ModuleValues::enabled)
+    }
+
+    /// Takes a control back to its default for the photo, no longer kept. A switched
+    /// module on stays on (decision 32).
     pub fn reset_control(&mut self, module: &dyn Module, control: &str) -> Result<(), EditError> {
         let (id, control) = find_control(module, control)?;
         if let Some(values) = self.modules.get_mut(id) {
@@ -245,7 +268,8 @@ impl Edit {
     /// as they are. An option the photo cannot have, or the row lacks, is refused, and so
     /// is one whose module fails, giving values its controls refuse, a choice's option the
     /// photo does not list (decision 30), or panicking: every value is checked before any
-    /// is set, so a refused option changes nothing.
+    /// is set, so a refused option changes nothing. Applied, it turns a switched module on
+    /// (decision 32).
     pub fn apply_preset(
         &mut self,
         module: &dyn Module,
@@ -307,6 +331,7 @@ impl Edit {
             values.set(control, value);
             values.set_mark(control, Some(Mark::Kept));
         }
+        self.switch_on(module);
         Ok(())
     }
 
@@ -318,7 +343,8 @@ impl Edit {
     /// would put a control outside its own, is refused, and so is one whose module fails:
     /// every value is checked before any is set, so a refused one changes nothing. Set to
     /// the value it has, it writes no value and keeps the controls, as setting a control
-    /// keeps it, so the stored values move only when the view is edited.
+    /// keeps it, so the stored values move only when the view is edited. Either way it
+    /// turns a switched module on, as setting a control does (decision 32).
     pub fn set_coordinate(
         &mut self,
         held: &mut Held,
@@ -333,7 +359,9 @@ impl Edit {
             .map_err(|source| EditError::Control { module: id, source })?;
         let mut coordinates = self.coordinates(held, module, view, image)?;
         if coordinates[at] == value {
-            return self.keep_coordinate(module, found.id, true);
+            self.keep_coordinate(module, found.id, true)?;
+            self.switch_on(module);
+            return Ok(());
         }
         coordinates[at] = value;
         self.write_view(held, module, view, coordinates, found.id, image)
@@ -664,6 +692,7 @@ impl Edit {
             values.set(control, value.clone());
             values.set_mark(control, Some(Mark::Kept));
         }
+        self.switch_on(module);
         held.0.insert(
             (id, view.id),
             Hold {
@@ -675,13 +704,15 @@ impl Edit {
         Ok(())
     }
 
-    /// Takes every control of the module back to its default, with no marks.
+    /// Takes every control of the module back to its default, with no marks, and turns a
+    /// switched module off (decision 32).
     pub fn reset_module(&mut self, module: &dyn Module) {
         self.modules.remove(module.definition().id);
     }
 
     /// Keeps a control or releases it. Keeping an untouched control holds it at its
-    /// default; releasing a set one leaves its value, free for Auto and Match.
+    /// default; releasing a set one leaves its value, free for Auto and Match. It never
+    /// turns a switched module on, nor off (decision 32).
     pub fn keep(
         &mut self,
         module: &dyn Module,
@@ -1020,7 +1051,9 @@ impl<'a> Bound<'a> {
     }
 }
 
-/// One module's settings for `values`, each checked: what it may set, or why not.
+/// One module's settings for `values`, each checked: what it may set, or why not. A
+/// switched module off is never bound; one on is bound with its values off its defaults,
+/// possibly none (decision 32).
 fn bind(
     module: &dyn Module,
     edit: &Edit,
@@ -1031,11 +1064,15 @@ fn bind(
     let Some(values) = edit.modules.get(module.definition().id) else {
         return Ok(Vec::new());
     };
+    let switched = module.definition().switched;
+    if switched && !values.enabled() {
+        return Ok(Vec::new());
+    }
     // A module's code may panic, as `Base::float` does on a parameter it lacks: that
     // module is left out, never the photo.
     let settings = catch_unwind(AssertUnwindSafe(|| {
         let values = values.off_defaults(&module.defaults(image));
-        if values.is_empty() {
+        if values.is_empty() && !switched {
             return Vec::new();
         }
         let base = base.get_or_insert_with(|| Base::new(operations, image));
@@ -1050,10 +1087,13 @@ fn bind(
 
 /// The instances `edit` renders on `image` (decision 28): every operation an unedited
 /// photo runs, with the edit's parameters no module owns, and every other operation only
-/// while a binding sets one of its parameters, each with what the bindings set, in the
-/// order of `operations`. A module is bound only with its controls off their defaults
-/// for the photo, and not at all when it has none, so an empty edit, or one whose modules
-/// are all at their defaults, gives exactly the default pipeline. A module whose binding
+/// while a binding sets one of its parameters or a switched module owning one of them is
+/// on (decision 32), each with what the bindings set, in the order of `operations`. A
+/// module is bound only with its controls off their defaults for the photo, and not at
+/// all when it has none, but a switched module on, bound with none, so its operations run
+/// at their own defaults; a switched module off is never bound. So an empty edit, or one
+/// whose modules are all at their defaults and off, gives exactly the default pipeline.
+/// A module whose binding
 /// sets a parameter it does not own or a value its schema refuses, or panics, is left
 /// out whole and reported in [`Bound::failed`]; the others still render.
 pub fn instances<'a>(
@@ -1068,6 +1108,12 @@ pub fn instances<'a>(
     for &module in modules {
         match bind(module, edit, operations, image, &mut base) {
             Ok(settings) => {
+                // A switched module on plans each operation it owns a parameter of.
+                if module.definition().switched && edit.is_on(module) {
+                    for owned in module.owns() {
+                        bound.entry(owned.operation).or_default();
+                    }
+                }
                 for setting in settings {
                     bound
                         .entry(setting.operation)
@@ -1961,5 +2007,82 @@ mod tests {
             edit.set_control(&Narrow(fault), "size", ControlValue::Choice(2), &plain)
                 .unwrap();
         }
+    }
+
+    /// Each instance's operation planned for `edit` with Grain, a switched module, alone.
+    fn planned_with_grain(edit: &Edit) -> Vec<(&'static str, Vec<(String, Value)>)> {
+        let modules: &[&dyn Module] = &[&apertrust_modules::grain::Grain];
+        instances(edit, OPERATIONS, modules, &testing::image())
+            .all()
+            .unwrap()
+            .into_iter()
+            .map(|instance| {
+                let params = instance
+                    .params
+                    .iter()
+                    .map(|(name, value)| (name.to_owned(), value))
+                    .collect();
+                (instance.operation.manifest().id, params)
+            })
+            .collect()
+    }
+
+    /// A switched module (decision 32): off until a control is written, whatever the
+    /// value, and then on, its operation planned at its own defaults for every control not
+    /// set; a control reset or kept leaves it on, and its reset turns it off.
+    #[test]
+    fn a_switched_module_is_on_from_a_control_s_write_until_its_reset() {
+        use apertrust_modules::grain::Grain;
+        let image = testing::image();
+        let none = planned_with_grain(&Edit::default());
+        let grain = |edit: &Edit| {
+            planned_with_grain(edit)
+                .into_iter()
+                .find(|(id, _)| *id == "grain")
+                .map(|(_, params)| params)
+        };
+        let mut edit = Edit::default();
+        assert!(!edit.is_on(&Grain));
+        // Keeping a control never turns it on.
+        edit.keep(&Grain, "scale", true).unwrap();
+        assert!(!edit.is_on(&Grain));
+        assert_eq!(planned_with_grain(&edit), none);
+        // A write at the default turns it on, grain at the operation's defaults.
+        edit.set_control(&Grain, "strength", ControlValue::Number(25.0), &image)
+            .unwrap();
+        assert!(edit.is_on(&Grain));
+        assert_eq!(grain(&edit), Some(Vec::new()));
+        // A move binds only the control moved.
+        edit.set_control(&Grain, "strength", ControlValue::Number(40.0), &image)
+            .unwrap();
+        let strength = vec![("strength".to_owned(), Value::Float(40.0))];
+        assert_eq!(grain(&edit), Some(strength));
+        // Its reset, and every keep released, leave it on at darktable's defaults.
+        edit.reset_control(&Grain, "strength").unwrap();
+        edit.keep(&Grain, "scale", false).unwrap();
+        assert!(edit.is_on(&Grain));
+        assert!(!edit.is_empty());
+        assert_eq!(grain(&edit), Some(Vec::new()));
+        // The module's reset turns it off, as no edit.
+        edit.reset_module(&Grain);
+        assert!(!edit.is_on(&Grain));
+        assert_eq!(edit, Edit::default());
+        assert_eq!(planned_with_grain(&edit), none);
+    }
+
+    /// A module that is not switched is always on, and a write leaves no `enabled` in its
+    /// values.
+    #[test]
+    fn a_module_not_switched_is_always_on() {
+        let mut edit = Edit::default();
+        assert!(edit.is_on(&Sample));
+        edit.set_control(
+            &Sample,
+            "brightness",
+            ControlValue::Number(0.5),
+            &testing::image(),
+        )
+        .unwrap();
+        assert!(!edit.module("sample").unwrap().enabled());
     }
 }

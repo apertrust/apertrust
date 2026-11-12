@@ -21,14 +21,16 @@
 //! centres, the shape, automatic ratio and the width/height ratio; then dithering.
 //!
 //! Each control is one `vignette` parameter, shown as darktable's slider shows it, as it
-//! is: the radii in percent, the rest as plain numbers. It drives `vignette`, which an
-//! unedited photo does not run, and plans it only while brightness or saturation is off
-//! 0, whatever the others hold: at both 0 the vignette gives every pixel back, its values
-//! exactly, since `unbound`, which no control shows, is fixed on, so planning it would
-//! only cost its pass, as Soften's mix at 0 does. So brightness and saturation start at
-//! 0, where darktable's new instance has −0.5 each, and an untouched module adds no
-//! operation and leaves the frame as it was; darktable's values and its lomo preset are
-//! presets (`docs/modules/README.md`).
+//! is: the radii in percent, the rest as plain numbers. It is switched (decision 32), as
+//! darktable leaves vignetting off on a new photo: off, it renders nothing; any write of a
+//! control turns it on, with darktable's defaults for the others, brightness and
+//! saturation −0.5 among them, the operation's own, until its reset turns it off. So the
+//! binding sets each control only while it is off its default, and on at its defaults the
+//! session plans `vignette` at the operation's defaults, darktable's new instance, with
+//! `unbound`, which no control shows, on. Version 1 started brightness and saturation at 0
+//! and planned `vignette` only while either was off 0, setting both; its edits migrate on
+//! where either was off 0, the other written at 0, and off, their values dropped, where
+//! neither was. darktable's lomo preset is to come with the header's presets menu.
 //!
 //! The width/height ratio is unavailable while automatic ratio is on, as darktable makes
 //! it insensitive in `gui_changed` (decision 30): it still takes a value and keeps it.
@@ -38,30 +40,16 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting};
+use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct Vignetting;
 
 /// The operation it drives.
 const VIGNETTE: &str = "vignette";
 
-/// The controls darktable's new instance sets otherwise, and so the binding always does
-/// once the operation is planned: brightness and saturation, at 0 untouched where
-/// darktable's are −0.5. Each binds its parameter of the same name, as it is.
-pub const UNTOUCHED_AT_0: [&str; 2] = ["brightness", "saturation"];
-
-/// The other controls that bind their parameter of the same name, as it is, each only
-/// once moved off its default, darktable's: the radii, the centre, the shape and the
-/// ratio. Dithering takes only its default, the operation's.
-pub const SET_ONCE_MOVED: [&str; 7] = [
-    "scale",
-    "falloff_scale",
-    "center_x",
-    "center_y",
-    "shape",
-    "autoratio",
-    "whratio",
-];
+/// The controls version 1 started at 0, where darktable's new instance has −0.5, and
+/// planned the operation only while either was off it: brightness and saturation.
+const STRENGTHS: [&str; 2] = ["brightness", "saturation"];
 
 /// Dithering's options, in the order of the operation's choices, `off`, `8bit` and
 /// `16bit`: darktable's off, 8-bit output and 16-bit output, an option's id starting
@@ -91,7 +79,7 @@ const fn number(
     }
 }
 
-/// darktable's hard ranges and steps; its defaults but for brightness and saturation.
+/// darktable's hard ranges, steps and defaults, its params' introspection defaults.
 static CONTROLS: [Control; 10] = [
     number("scale", (0.0, 200.0), 1.0, 80.0, Some(Unit::Percent)),
     number(
@@ -101,8 +89,8 @@ static CONTROLS: [Control; 10] = [
         50.0,
         Some(Unit::Percent),
     ),
-    number("brightness", (-1.0, 1.0), 0.01, 0.0, None),
-    number("saturation", (-1.0, 1.0), 0.01, 0.0, None),
+    number("brightness", (-1.0, 1.0), 0.01, -0.5, None),
+    number("saturation", (-1.0, 1.0), 0.01, -0.5, None),
     number("center_x", (-1.0, 1.0), 0.01, 0.0, None),
     number("center_y", (-1.0, 1.0), 0.01, 0.0, None),
     number("shape", (0.0, 5.0), 0.05, 1.0, None),
@@ -127,9 +115,10 @@ static CONTROLS: [Control; 10] = [
 
 static DEFINITION: Definition = Definition {
     id: VIGNETTE,
-    version: 1,
+    version: 2,
     layers: true,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,
@@ -163,7 +152,7 @@ static DEFINITION: Definition = Definition {
 };
 
 /// Every parameter of `vignette`: the module is darktable's and owns them all, `unbound`
-/// fixed on, with no control, as darktable shows none.
+/// at the operation's default, on, with no control, as darktable shows none.
 static OWNS: [Owned; 11] = [
     Owned::new(VIGNETTE, "scale"),
     Owned::new(VIGNETTE, "falloff_scale"),
@@ -187,36 +176,42 @@ impl Module for Vignetting {
         &OWNS
     }
 
-    /// Nothing while brightness and saturation are both 0, whatever the others hold, the
-    /// defaults among them. Otherwise brightness and saturation, whose untouched 0 is not
-    /// the operation's default, are set whatever they hold, each other control off its
-    /// default sets its parameter as it is, and `unbound` is on, so the operation's other
-    /// defaults, darktable's, are the module's. Dithering takes only its default, off,
-    /// the operation's.
+    /// Each control off its default sets its parameter of the same name, as it is; a
+    /// control at its default leaves its parameter at the operation's default, which is
+    /// the same value. Dithering takes only its default, off, the operation's.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
-        if UNTOUCHED_AT_0
+        CONTROLS
             .iter()
-            .all(|&control| values.number(control).is_none())
-        {
-            return Vec::new();
-        }
-        let mut settings: Vec<Setting> = UNTOUCHED_AT_0
-            .iter()
-            .map(|&control| {
-                let value = values.number(control).unwrap_or(0.0);
-                Setting::new(VIGNETTE, control, Value::Float(value))
+            .filter_map(|control| {
+                let value = match *values.get(control.id)? {
+                    ControlValue::Number(value) => Value::Float(value),
+                    ControlValue::Bool(on) => Value::Bool(on),
+                    _ => return None,
+                };
+                Some(Setting::new(VIGNETTE, control.id, value))
             })
-            .collect();
-        for control in SET_ONCE_MOVED {
-            let value = match values.get(control) {
-                Some(&ControlValue::Number(value)) => Value::Float(value),
-                Some(&ControlValue::Bool(on)) => Value::Bool(on),
-                _ => continue,
-            };
-            settings.push(Setting::new(VIGNETTE, control, value));
+            .collect()
+    }
+
+    /// Version 1 planned `vignette` only while brightness or saturation was off 0, their
+    /// default then, and set both: such an edit is on, its values as they were and the
+    /// other of the two written at 0; any other rendered nothing, so it is off, its values
+    /// dropped.
+    fn migrate(&self, from: u32, mut values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
         }
-        settings.push(Setting::new(VIGNETTE, "unbound", Value::Bool(true)));
-        settings
+        let rendered = STRENGTHS
+            .iter()
+            .any(|&control| values.number(control).is_some_and(|v| v != 0.0));
+        if rendered {
+            for control in STRENGTHS {
+                if values.number(control).is_none() {
+                    values.set(control, ControlValue::Number(0.0));
+                }
+            }
+        }
+        switched_from(values, rendered)
     }
 
     /// The width/height ratio acts on nothing while automatic ratio is on, which makes
@@ -307,8 +302,7 @@ mod tests {
         for param in &params {
             assert!(owned.contains(param), "{param}");
         }
-        // Each number control is its parameter as it is: the same range, and the same
-        // default but for brightness and saturation, 0 where darktable's are −0.5.
+        // Each number control is its parameter as it is: the same range and default.
         for control in &CONTROLS {
             let ControlKind::Number {
                 min, max, default, ..
@@ -325,13 +319,14 @@ mod tests {
                 panic!("{} is a float", control.id);
             };
             assert_eq!((min, max), (low, high), "{}", control.id);
-            let untouched = if UNTOUCHED_AT_0.contains(&control.id) {
-                0.0
-            } else {
-                darktable
-            };
-            assert_eq!(default, untouched, "{}", control.id);
+            assert_eq!(default.to_bits(), darktable.to_bits(), "{}", control.id);
         }
+        assert_eq!(
+            schema.param("unbound").unwrap().kind,
+            Kind::Bool { default: true }
+        );
+        let image = crate::testing::image();
+        assert!(check::switched_defaults(&Vignetting, OPERATIONS, &image).is_empty());
         let Kind::Choice { choices, default } = schema.param("dithering").unwrap().kind else {
             panic!("dithering is a choice");
         };
@@ -379,32 +374,18 @@ mod tests {
     }
 
     #[test]
-    fn it_plans_only_while_a_strength_is_off_0_then_binds_both_and_unbound_on() {
-        // While brightness and saturation are 0 nothing is set, whatever the others hold.
-        let geometry = [
-            ("scale", ControlValue::Number(40.0)),
-            ("falloff_scale", ControlValue::Number(100.0)),
-            ("center_x", ControlValue::Number(-0.3)),
-            ("shape", ControlValue::Number(3.7)),
-            ("autoratio", ControlValue::Bool(true)),
-            ("whratio", ControlValue::Number(1.6)),
-        ];
-        assert!(bind(&geometry[..1]).is_empty());
-        assert!(bind(&geometry).is_empty());
-        // A radius with a strength plans it, the other strength at 0, the operation's
-        // other parameters at darktable's defaults, and clipping off.
-        let settings = bind(&[
-            ("scale", ControlValue::Number(40.0)),
-            ("saturation", ControlValue::Number(0.3)),
-        ]);
-        assert_eq!(value(&settings, "scale"), Some(Value::Float(40.0)));
-        assert_eq!(value(&settings, "brightness"), Some(Value::Float(0.0)));
-        assert_eq!(value(&settings, "saturation"), Some(Value::Float(0.3)));
-        assert_eq!(value(&settings, "unbound"), Some(Value::Bool(true)));
-        assert_eq!(settings.len(), 4);
-        // Every control as it is.
+    fn each_control_off_its_default_binds_its_parameter_as_it_is() {
+        // A radius alone sets only itself: vignetting is switched, so the session plans
+        // the operation while the module is on.
+        let settings = bind(&[("scale", ControlValue::Number(40.0))]);
+        assert_eq!(
+            settings,
+            [Setting::new(VIGNETTE, "scale", Value::Float(40.0))]
+        );
+        // Every control as it is, the others at the operation's defaults.
         let settings = bind(&[
             ("brightness", ControlValue::Number(-0.968)),
+            ("saturation", ControlValue::Number(0.0)),
             ("center_y", ControlValue::Number(0.13)),
             ("autoratio", ControlValue::Bool(true)),
             ("whratio", ControlValue::Number(1.172)),
@@ -415,7 +396,40 @@ mod tests {
         assert_eq!(value(&settings, "autoratio"), Some(Value::Bool(true)));
         assert_eq!(value(&settings, "whratio"), Some(Value::Float(1.172)));
         assert_eq!(value(&settings, "dithering"), None);
-        assert_eq!(settings.len(), 6);
+        assert_eq!(value(&settings, "unbound"), None);
+        assert_eq!(settings.len(), 5);
+    }
+
+    /// Version 1's edits: on where brightness or saturation was off 0, with their values
+    /// and the other of the two at 0; else off, their values dropped and their marks kept.
+    #[test]
+    fn version_1_s_edits_migrate_on_where_they_rendered() {
+        let v1 = |set: &[(&str, ControlValue)]| {
+            let mut values = ModuleValues::new();
+            for (control, value) in set {
+                values.set(control, value.clone());
+                values.set_mark(control, Some(crate::Mark::Kept));
+            }
+            Vignetting.migrate(1, values)
+        };
+        let on = v1(&[
+            ("saturation", ControlValue::Number(0.3)),
+            ("scale", ControlValue::Number(40.0)),
+        ]);
+        assert!(on.enabled());
+        assert_eq!(on.number("saturation"), Some(0.3));
+        assert_eq!(on.number("brightness"), Some(0.0));
+        assert_eq!(on.number("scale"), Some(40.0));
+        for set in [
+            &[("scale", ControlValue::Number(40.0))][..],
+            &[("brightness", ControlValue::Number(0.0))],
+            &[],
+        ] {
+            let off = v1(set);
+            assert!(!off.enabled(), "{set:?}");
+            assert_eq!(off.values().count(), 0, "{set:?}");
+            assert_eq!(off.marks().count(), set.len(), "{set:?}");
+        }
     }
 
     #[test]

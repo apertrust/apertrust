@@ -15,10 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Colour balance RGB's invariants (`docs/modules/colour-balance-rgb.md`, Invariants),
-//! one test per row, each named after its row: B0 to B4, the rows a first-pass table has
-//! (decision 22). The synthetic ramp and sweep run on CI's software GPUs, B4 on the CPU.
-//! The raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it, and
-//! darktable's chart with `APERTRUST_TEST_IMAGES`:
+//! one test per row, each named after its row: a switched module's (decision 32), B0
+//! off, B1 the first step, on at darktable's defaults, B2 moved and reset, B3 the order,
+//! B4 the darktable match, B6 on at darktable's defaults on the CPU and B7 version 1's
+//! edits; B5, on a layer, waits for Phase 4. The synthetic ramp and sweep run on CI's
+//! software GPUs, B4, B6 and B7 on the CPU. The raw.pixls.us corpus runs locally, with
+//! `APERTRUST_RAW_CORPUS` naming it, and darktable's chart with `APERTRUST_TEST_IMAGES`:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-modules --test colour_balance_rgb -- --ignored --nocapture
@@ -34,6 +36,7 @@
 )]
 mod common;
 mod corpus;
+mod switched;
 
 use std::path::PathBuf;
 
@@ -42,10 +45,10 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{BUDGET, Tiling, export};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_modules::colour_balance_rgb::{ColourBalanceRgb, FORMULA, PARAMETERS};
-use apertrust_modules::{Base, ControlValue, MODULES, Module};
+use apertrust_modules::{ControlValue, MODULES};
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::colorbalancergb::ColorBalanceRgb as ColourBalanceOperation;
-use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues, Value};
+use apertrust_plugin::{ImageContext, ImageDesc, Operation, Value};
 use golden::synthetic;
 
 use common::{
@@ -104,18 +107,13 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The first step (row B1): colour balance rgb planned at the module's own defaults,
-    /// the operation's, over an unedited photo, as any control's first move off its
-    /// default adds it.
-    fn first_step(&self) -> Vec<Instance<'static>> {
-        let mut instances = edit::instances(&Edit::default(), OPERATIONS, MODULES, &self.image)
-            .all()
-            .unwrap();
-        instances.push(Instance {
-            operation: apertrust_operations::operation(COLOR_BALANCE).unwrap(),
-            params: ParamValues::new(),
-        });
-        self.keep(instances, Frame)
+    /// The module on at darktable's defaults: colour balance rgb planned at the
+    /// operation's defaults, darktable's new instance (rows B1 and B2).
+    fn on_at_defaults(&self) -> Vec<Instance<'static>> {
+        self.instances(
+            &switched::on_at_defaults(&ColourBalanceRgb, &self.image),
+            Frame,
+        )
     }
 
     fn set(&mut self, set: &[(&str, f32)]) -> Rendered {
@@ -123,42 +121,16 @@ impl Bench {
     }
 }
 
-// B0: every control at its default.
-
-/// Edits that leave every control at its default: each written at its default, and each
-/// kept there.
-fn untouched() -> Vec<Edit> {
-    let mut written = Edit::default();
-    let mut kept = Edit::default();
-    for control in ColourBalanceRgb.definition().controls {
-        written
-            .set_control(
-                &ColourBalanceRgb,
-                control.id,
-                control.default(),
-                &common::photo(),
-            )
-            .unwrap();
-        kept.keep(&ColourBalanceRgb, control.id, true).unwrap();
-    }
-    vec![written, kept]
-}
+// B0: off.
 
 /// B0 on one pipeline, as the session renders: no edit, then colour balance rgb joining
-/// and leaving the plan, then each untouched edit, every frame as the first.
+/// the plan, on at darktable's defaults, and leaving it, then each edit that leaves the
+/// module off, every frame as the first.
 fn b0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.first_step();
+    let joined = bench.on_at_defaults();
     bench.render(&joined);
-    for edit in untouched() {
-        let values = edit.module(COLOR_BALANCE).unwrap();
-        let defaults = ColourBalanceRgb.defaults(&bench.image);
-        let base = Base::new(OPERATIONS, &bench.image);
-        assert!(
-            ColourBalanceRgb
-                .bind(&values.off_defaults(&defaults), &bench.image, &base)
-                .is_empty()
-        );
+    for edit in switched::off(&ColourBalanceRgb) {
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "B0 on {:?}",
@@ -168,7 +140,7 @@ fn b0_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn b0_every_control_at_its_default_renders_as_no_edit() {
+fn b0_off_renders_as_no_edit() {
     for pipe in [
         Pipe::Export,
         Pipe::Viewport {
@@ -184,7 +156,8 @@ fn b0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-// B1: the first step, measured and reported without a bound (decision 22).
+// B1: the first step, on at darktable's defaults, measured and reported without a bound
+// (decision 22).
 
 /// The first step's jump on the ramp and on the sweep: all of it, inside the gamut (a
 /// saturation of at most 1) and within 80% of it.
@@ -193,7 +166,7 @@ fn b1_the_first_step_is_measured() {
     let jumps = |(picture, image): (Picture, ImageContext)| {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
         let untouched = bench.edit(&Edit::default(), Frame);
-        let first = bench.first_step();
+        let first = bench.on_at_defaults();
         let first = bench.render(&first);
         let of = |limit: f32| jump(&untouched.pixels, &first.pixels, |i| saturation(i) <= limit);
         [of(f32::INFINITY), of(1.0), of(0.8)]
@@ -226,7 +199,7 @@ fn export_of(instances: &[Instance], image: &ImageContext, input: &GpuImage) -> 
 fn first_step_on(image: &ImageContext, input: &GpuImage) -> Jump {
     let bench = export_bench(image.clone(), input.clone());
     let before = export_of(&bench.instances(&Edit::default(), Frame), image, input);
-    let after = export_of(&bench.first_step(), image, input);
+    let after = export_of(&bench.on_at_defaults(), image, input);
     jump(&before, &after, |_| true)
 }
 
@@ -270,9 +243,10 @@ fn b1_on_the_corpus() {
 
 // B2: each control moved, then reset.
 
-/// Moves on every tab, the formula included: each changes the frame, as the first step at
-/// least does.
-const MOVES: [&[(&str, f32)]; 5] = [
+/// Moves on every tab, the formula included, and a write of the contrast at its default,
+/// which turns the module on: each changes the frame, as the first step at least does.
+const MOVES: [&[(&str, f32)]; 6] = [
+    &[("contrast", 0.0)],
     &[("contrast", 20.0)],
     &[("brilliance_global", -20.0)],
     &[("global_h", 120.0), ("global_c", 5.0)],
@@ -286,11 +260,14 @@ const MOVES: [&[(&str, f32)]; 5] = [
     ],
 ];
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete) and by
-/// `ResetModule` (the header's reset), on the bench's one pipeline, which colour balance
-/// rgb joins with each move and leaves with each reset.
+/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
+/// control, which leaves the module on at darktable's defaults, and by `ResetModule` (the
+/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
+/// colour balance rgb joins with each move and leaves with each module's reset.
 fn b2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
+    let on = bench.on_at_defaults();
+    let on = bench.render(&on);
     for set in MOVES {
         let mut edit = edit_of(set);
         let moved = bench.edit(&edit, Frame);
@@ -298,14 +275,18 @@ fn b2_holds(bench: &mut Bench) {
         for (control, _) in set {
             edit.reset_control(&ColourBalanceRgb, control).unwrap();
         }
-        assert_eq!(edit, Edit::default());
         assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
+            edit.is_on(&ColourBalanceRgb),
+            "{set:?}, reset control by control"
+        );
+        assert!(
+            exact(&on, &bench.edit(&edit, Frame)),
             "{set:?}, reset control by control"
         );
         let mut edit = edit_of(set);
         bench.edit(&edit, Frame);
         edit.reset_module(&ColourBalanceRgb);
+        assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "{set:?}, the module reset"
@@ -314,7 +295,7 @@ fn b2_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn b2_a_control_moved_and_reset_renders_as_no_edit() {
+fn b2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
     let (picture, image) = ramp();
     b2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -367,8 +348,8 @@ fn b2_and_b3_on_the_corpus() {
     }
 }
 
-/// B0 on every corpus raw: the module at its defaults, written or kept, plans the very
-/// instances and cache keys no edit does, so the same frame.
+/// B0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn b0_on_the_corpus() {
@@ -384,7 +365,7 @@ fn b0_on_the_corpus() {
                 .collect()
         };
         let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in untouched() {
+        for edit in switched::off(&ColourBalanceRgb) {
             assert_eq!(keys(&bench.instances(&edit, Frame)), none, "B0 on {name}");
         }
         raws += 1;
@@ -488,5 +469,53 @@ fn b4_the_golden_cases_values_bind_to_darktable_s_parameters() {
             worst = worst.max(apart);
         }
         println!("B4 {name}: the kernel's uniforms at most {worst:.1e} from the golden case's");
+    }
+}
+
+// B6: on at darktable's defaults, on the CPU.
+
+/// The module's defaults, each made explicit, bind colour balance rgb's own, within one
+/// f32 step for a percentage divided by 100, and the module on at its defaults plans it
+/// with no parameter set, darktable's new instance; off, it plans none.
+#[test]
+fn b6_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
+    switched::on_at_defaults_holds(&ColourBalanceRgb, COLOR_BALANCE);
+}
+
+// B7: version 1's edits.
+
+/// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
+/// bound: colour balance rgb planned where a value was off its default, with what the
+/// binding gives those values, and not planned, the module off, where none was.
+#[test]
+fn b7_version_1_s_edits_bind_what_they_bound() {
+    let image = common::photo();
+    for (saved, values) in [
+        (&[("contrast", "20")][..], &[("contrast", 20.0)][..]),
+        (
+            &[
+                ("vibrance", "30"),
+                ("grey_fulcrum", "30"),
+                ("contrast", "0"),
+            ],
+            &[("vibrance", 30.0), ("grey_fulcrum", 30.0)],
+        ),
+        (&[("saturation_formula", "jzazbz")], &[(FORMULA, 0.0)]),
+    ] {
+        let edit = switched::version_1(COLOR_BALANCE, saved);
+        assert!(edit.is_on(&ColourBalanceRgb), "{saved:?}");
+        let params = switched::bound(&edit, COLOR_BALANCE, &image).expect("planned");
+        let then = switched::bound(&edit_of(values), COLOR_BALANCE, &image).unwrap();
+        assert_eq!(params, then, "{saved:?}");
+        assert!(params.iter().next().is_some(), "{saved:?}");
+    }
+    for saved in [&[("contrast", "0")][..], &[]] {
+        let edit = switched::version_1(COLOR_BALANCE, saved);
+        assert!(!edit.is_on(&ColourBalanceRgb), "{saved:?}");
+        assert!(edit.is_empty(), "{saved:?}");
+        assert!(
+            switched::bound(&edit, COLOR_BALANCE, &image).is_none(),
+            "{saved:?}"
+        );
     }
 }

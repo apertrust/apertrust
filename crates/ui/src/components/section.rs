@@ -73,6 +73,7 @@ pub struct Section<'a> {
     /// section gives one.
     menu: Option<Vec<Entry>>,
     peek: bool,
+    not_applied: bool,
 }
 
 impl Section<'_> {
@@ -98,6 +99,7 @@ impl<'a> Section<'a> {
             options: true,
             menu: None,
             peek: false,
+            not_applied: false,
         }
     }
 
@@ -154,6 +156,14 @@ impl<'a> Section<'a> {
     /// focus.
     pub fn peek(mut self, held: bool) -> Self {
         self.peek = held;
+        self
+    }
+
+    /// Whether the module is off and renders nothing, as a switched module is until a
+    /// control is written (decision 32): nothing more is drawn, and screen readers hear
+    /// "Not applied" (`section-not-applied`) first in the toggle's description.
+    pub fn not_applied(mut self, off: bool) -> Self {
+        self.not_applied = off;
         self
     }
 
@@ -269,6 +279,16 @@ impl<'a> Section<'a> {
             tip
         });
         drop(toggle);
+        if self.not_applied {
+            let not_applied = tr.text("section-not-applied");
+            ui.ctx().accesskit_node_builder(id, |node| {
+                let said = match node.description() {
+                    Some(tip) => format!("{not_applied}\n{tip}"),
+                    None => not_applied,
+                };
+                node.set_description(said);
+            });
+        }
 
         if self.open {
             let margin = Section::body_margin(&t);

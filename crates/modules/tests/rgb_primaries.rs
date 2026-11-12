@@ -15,10 +15,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! RGB primaries' invariants (`docs/modules/rgb-primaries.md`, Invariants), one test per
-//! row, each named after its row: P0 to P4, the rows a first-pass table has (decision
-//! 22), and P6, the tint's hue at a purity of 0. The synthetic ramp and sweep run on CI's
-//! software GPUs, P4 on the CPU. The raw.pixls.us corpus runs locally, with
-//! `APERTRUST_RAW_CORPUS` naming it, and darktable's chart with `APERTRUST_TEST_IMAGES`:
+//! row, each named after its row: a switched module's (decision 32), P0 off, P1 the
+//! first step, on at darktable's defaults, P2 moved and reset, P3 the order, P4 the
+//! darktable match, P7 on at darktable's defaults on the CPU and P8 version 1's edits; P5,
+//! on a layer, waits for Phase 4; and P6, the tint's hue at a purity of 0. The synthetic
+//! ramp and sweep run on CI's software GPUs, P4, P7 and P8 on the CPU. The raw.pixls.us
+//! corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it, and darktable's chart with
+//! `APERTRUST_TEST_IMAGES`:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-modules --test rgb_primaries -- --ignored --nocapture
@@ -34,6 +37,7 @@
 )]
 mod common;
 mod corpus;
+mod switched;
 
 use std::path::PathBuf;
 
@@ -42,10 +46,10 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{BUDGET, Tiling, export};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_modules::rgb_primaries::{PARAMETERS, RgbPrimaries};
-use apertrust_modules::{Base, ControlValue, MODULES, Module};
+use apertrust_modules::{ControlValue, MODULES};
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::primaries::{PARAMS_SIZE, Primaries};
-use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues, Value};
+use apertrust_plugin::{ImageContext, ImageDesc, Operation, Value};
 use golden::synthetic;
 
 use common::{
@@ -96,18 +100,10 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The first step (row P1): rgb primaries planned at the module's own defaults, the
-    /// operation's, over an unedited photo, as any control's first move off its default
-    /// adds it.
-    fn first_step(&self) -> Vec<Instance<'static>> {
-        let mut instances = edit::instances(&Edit::default(), OPERATIONS, MODULES, &self.image)
-            .all()
-            .unwrap();
-        instances.push(Instance {
-            operation: apertrust_operations::operation(PRIMARIES).unwrap(),
-            params: ParamValues::new(),
-        });
-        self.keep(instances, Frame)
+    /// The module on at darktable's defaults: rgb primaries planned at the operation's
+    /// defaults, darktable's new instance (rows P1, P2 and P6).
+    fn on_at_defaults(&self) -> Vec<Instance<'static>> {
+        self.instances(&switched::on_at_defaults(&RgbPrimaries, &self.image), Frame)
     }
 
     fn set(&mut self, set: &[(&str, f32)]) -> Rendered {
@@ -124,42 +120,16 @@ fn same_pixels(a: &Rendered, b: &Rendered) -> bool {
             .all(|(x, y)| x.map(f32::to_bits) == y.map(f32::to_bits))
 }
 
-// P0: every control at its default.
+// P0: off.
 
-/// Edits that leave every control at its default: each written at its default, and each
-/// kept there.
-fn untouched() -> Vec<Edit> {
-    let mut written = Edit::default();
-    let mut kept = Edit::default();
-    for control in RgbPrimaries.definition().controls {
-        written
-            .set_control(
-                &RgbPrimaries,
-                control.id,
-                control.default(),
-                &common::photo(),
-            )
-            .unwrap();
-        kept.keep(&RgbPrimaries, control.id, true).unwrap();
-    }
-    vec![written, kept]
-}
-
-/// P0 on one pipeline, as the session renders: no edit, then rgb primaries joining and
-/// leaving the plan, then each untouched edit, every frame as the first.
+/// P0 on one pipeline, as the session renders: no edit, then rgb primaries joining the
+/// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
+/// module off, every frame as the first.
 fn p0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.first_step();
+    let joined = bench.on_at_defaults();
     bench.render(&joined);
-    for edit in untouched() {
-        let values = edit.module(PRIMARIES).unwrap();
-        let defaults = RgbPrimaries.defaults(&bench.image);
-        let base = Base::new(OPERATIONS, &bench.image);
-        assert!(
-            RgbPrimaries
-                .bind(&values.off_defaults(&defaults), &bench.image, &base)
-                .is_empty()
-        );
+    for edit in switched::off(&RgbPrimaries) {
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "P0 on {:?}",
@@ -169,7 +139,7 @@ fn p0_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn p0_every_control_at_its_default_renders_as_no_edit() {
+fn p0_off_renders_as_no_edit() {
     for pipe in [
         Pipe::Export,
         Pipe::Viewport {
@@ -185,8 +155,8 @@ fn p0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// P0 on every corpus raw: the module at its defaults, written or kept, plans the very
-/// instances and cache keys no edit does, so the same frame.
+/// P0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn p0_on_the_corpus() {
@@ -202,7 +172,7 @@ fn p0_on_the_corpus() {
                 .collect()
         };
         let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in untouched() {
+        for edit in switched::off(&RgbPrimaries) {
             assert_eq!(keys(&bench.instances(&edit, Frame)), none, "P0 on {name}");
         }
         raws += 1;
@@ -210,7 +180,8 @@ fn p0_on_the_corpus() {
     println!("P0 holds on {raws} raws");
 }
 
-// P1: the first step, measured and reported without a bound (decision 22).
+// P1: the first step, on at darktable's defaults, measured and reported without a bound
+// (decision 22).
 
 /// The first step's jump on the ramp and on the sweep: all of it, inside the gamut (a
 /// saturation of at most 1) and within 80% of it.
@@ -219,7 +190,7 @@ fn p1_the_first_step_is_measured() {
     let jumps = |(picture, image): (Picture, ImageContext)| {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
         let untouched = bench.edit(&Edit::default(), Frame);
-        let first = bench.first_step();
+        let first = bench.on_at_defaults();
         let first = bench.render(&first);
         let of = |limit: f32| jump(&untouched.pixels, &first.pixels, |i| saturation(i) <= limit);
         [of(f32::INFINITY), of(1.0), of(0.8)]
@@ -252,7 +223,7 @@ fn export_of(instances: &[Instance], image: &ImageContext, input: &GpuImage) -> 
 fn first_step_on(image: &ImageContext, input: &GpuImage) -> Jump {
     let bench = export_bench(image.clone(), input.clone());
     let before = export_of(&bench.instances(&Edit::default(), Frame), image, input);
-    let after = export_of(&bench.first_step(), image, input);
+    let after = export_of(&bench.on_at_defaults(), image, input);
     jump(&before, &after, |_| true)
 }
 
@@ -296,10 +267,11 @@ fn p1_on_the_corpus() {
 
 // P2: each control moved, then reset.
 
-/// Moves of every control: a primary's hue, a primary's purity, both of one primary, the
-/// tint, and all eight at test 0152's values as its sliders show them. Each changes the
-/// frame.
-const MOVES: [&[(&str, f32)]; 5] = [
+/// Moves of every control: a write of a hue at its default, which turns the module on, a
+/// primary's hue, a primary's purity, both of one primary, the tint, and all eight at
+/// test 0152's values as its sliders show them. Each changes the frame.
+const MOVES: [&[(&str, f32)]; 6] = [
+    &[("red_hue", 0.0)],
     &[("red_hue", 10.0)],
     &[("green_purity", 25.0)],
     &[("blue_hue", -15.0), ("blue_purity", -30.0)],
@@ -319,11 +291,14 @@ const MOVES: [&[(&str, f32)]; 5] = [
     ],
 ];
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete) and by
-/// `ResetModule` (the header's reset), on the bench's one pipeline, which rgb primaries
-/// joins with each move and leaves with each reset.
+/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
+/// control, which leaves the module on at darktable's defaults, and by `ResetModule` (the
+/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
+/// rgb primaries joins with each move and leaves with each module's reset.
 fn p2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
+    let on = bench.on_at_defaults();
+    let on = bench.render(&on);
     for set in MOVES {
         let mut edit = edit_of(set);
         let moved = bench.edit(&edit, Frame);
@@ -331,14 +306,18 @@ fn p2_holds(bench: &mut Bench) {
         for (control, _) in set {
             edit.reset_control(&RgbPrimaries, control).unwrap();
         }
-        assert_eq!(edit, Edit::default());
         assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
+            edit.is_on(&RgbPrimaries),
+            "{set:?}, reset control by control"
+        );
+        assert!(
+            exact(&on, &bench.edit(&edit, Frame)),
             "{set:?}, reset control by control"
         );
         let mut edit = edit_of(set);
         bench.edit(&edit, Frame);
         edit.reset_module(&RgbPrimaries);
+        assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "{set:?}, the module reset"
@@ -347,7 +326,7 @@ fn p2_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn p2_a_control_moved_and_reset_renders_as_no_edit() {
+fn p2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     p2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -487,17 +466,72 @@ fn p4_the_golden_case_s_values_bind_to_darktable_s_parameters() {
 
 // P6: the tint's hue does nothing while its purity is 0.
 
-/// The tint's hue moved while its purity is 0 plans rgb primaries, as any control's
-/// first move does, and renders exactly the first step's pixels: the white moves by its
-/// purity, so the matrix is the defaults'. It stays enabled there, as darktable's does.
+/// The tint's hue moved while its purity is 0 turns rgb primaries on, as any control's
+/// write does, and renders exactly the first step's pixels, the module on at its
+/// defaults: the white moves by its purity, so the matrix is the defaults'. It stays
+/// enabled there, as darktable's does.
 #[test]
 fn p6_the_tint_s_hue_at_purity_0_renders_as_the_first_step() {
     let (picture, image) = sweep(-0.67);
     let mut bench = Bench::picture(&picture, image, Pipe::Export);
-    let first = bench.first_step();
+    let first = bench.on_at_defaults();
     let first = bench.render(&first);
     for hue in [-180.0, -33.2, 90.0, 180.0] {
         let hued = bench.set(&[("achromatic_tint_hue", hue)]);
         assert!(same_pixels(&first, &hued), "the tint's hue at {hue}°");
+    }
+}
+
+// P7: on at darktable's defaults, on the CPU.
+
+/// The module's defaults, each made explicit, bind rgb primaries' own, and the module on
+/// at its defaults plans it with no parameter set, darktable's new instance; off, it plans
+/// none.
+#[test]
+fn p7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
+    switched::on_at_defaults_holds(&RgbPrimaries, PRIMARIES);
+}
+
+// P8: version 1's edits.
+
+/// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
+/// bound: rgb primaries planned where a value was off its default, with what the binding
+/// gives those values, and not planned, the module off, where none was.
+#[test]
+fn p8_version_1_s_edits_bind_what_they_bound() {
+    let image = common::photo();
+    for (saved, values) in [
+        (&[("red_hue", "10")][..], &[("red_hue", 10.0)][..]),
+        (
+            &[
+                ("achromatic_tint_hue", "120"),
+                ("achromatic_tint_purity", "10"),
+                ("green_purity", "0"),
+            ],
+            &[
+                ("achromatic_tint_hue", 120.0),
+                ("achromatic_tint_purity", 10.0),
+            ],
+        ),
+        (
+            &[("achromatic_tint_hue", "-33.2")],
+            &[("achromatic_tint_hue", -33.2)],
+        ),
+    ] {
+        let edit = switched::version_1(PRIMARIES, saved);
+        assert!(edit.is_on(&RgbPrimaries), "{saved:?}");
+        let params = switched::bound(&edit, PRIMARIES, &image).expect("planned");
+        let then = switched::bound(&edit_of(values), PRIMARIES, &image).unwrap();
+        assert_eq!(params, then, "{saved:?}");
+        assert!(params.iter().next().is_some(), "{saved:?}");
+    }
+    for saved in [&[("red_purity", "0")][..], &[]] {
+        let edit = switched::version_1(PRIMARIES, saved);
+        assert!(!edit.is_on(&RgbPrimaries), "{saved:?}");
+        assert!(edit.is_empty(), "{saved:?}");
+        assert!(
+            switched::bound(&edit, PRIMARIES, &image).is_none(),
+            "{saved:?}"
+        );
     }
 }

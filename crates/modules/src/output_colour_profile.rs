@@ -110,6 +110,7 @@ static DEFINITION: Definition = Definition {
     version: 1,
     layers: false,
     auto: false,
+    switched: false,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,

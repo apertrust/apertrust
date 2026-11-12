@@ -50,6 +50,9 @@ section-toggle = Open or close { $section }. Hold H over it to see the photo wit
 section-tabs = { $section } tabs
 # The tooltip of a tab drawn disabled because nothing is behind it yet.
 section-tab-later = Coming in a later version
+# The description screen readers hear on a module section darktable leaves off on a new
+# photo while it is off (decision 32): it renders nothing until a control changes.
+section-not-applied = Not applied
 # The tooltip of a choice's option drawn disabled, as one darktable lists that is not
 # ported yet.
 choice-option-later = Coming in a later version

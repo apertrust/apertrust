@@ -43,6 +43,7 @@ section-options = Opcje: { $section }
 section-toggle = Otwórz lub zamknij: { $section }. Przytrzymaj H nad sekcją, aby zobaczyć zdjęcie bez niej.
 section-tabs = Karty: { $section }
 section-tab-later = Pojawi się w jednej z kolejnych wersji
+section-not-applied = Nie zastosowano
 choice-option-later = Pojawi się w jednej z kolejnych wersji
 choice-option-unavailable = Niedostępne dla tego zdjęcia
 

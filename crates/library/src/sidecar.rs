@@ -35,6 +35,10 @@
 //!       apertrust:kept="exposure black_level"
 //!       control:exposure="0.5" control:black_level="0.01"/>
 //!    </rdf:li>
+//!    <rdf:li>
+//!     <rdf:Description apertrust:module="grain" apertrust:moduleVersion="2"
+//!       apertrust:enabled="true"/>
+//!    </rdf:li>
 //!   </rdf:Seq>
 //!  </apertrust:modules>
 //!  <apertrust:operations>
@@ -45,10 +49,15 @@
 //!    </rdf:li>
 //! ```
 //!
+//! A switched module that is on (decision 32) has `apertrust:enabled="true"`; absent, it
+//! is off. The text layer keeps whatever the attribute holds, so the engine can tell a
+//! value it does not know.
+//!
 //! What the text layer tells of an edit a newer Apertrust wrote (decision 43), from the
 //! file alone, is a file version above [`VERSION`] ([`Document::newer`]). [`Newer`] also
-//! names the two things only the module definitions can tell, a module version above its
-//! definition's and a module the build neither has nor has retired, which the engine finds.
+//! names the three things only the module definitions can tell, a module version above its
+//! definition's, a module the build neither has nor has retired, and a module turned on
+//! that the build does not switch, which the engine finds.
 //! [`ViewOnly`] is the error an edit opened for viewing only carries.
 //!
 //! The namespaces are on `apertrust.org` (decision 48).
@@ -106,6 +115,9 @@ pub enum Newer {
     },
     /// A module this build neither has nor has retired, left out.
     Module(String),
+    /// A module whose `apertrust:enabled` this build cannot keep (decision 32): one it
+    /// does not switch, or a value other than `true`, whose state a save would lose.
+    Enabled(String),
 }
 
 impl fmt::Display for Newer {
@@ -126,6 +138,12 @@ impl fmt::Display for Newer {
                 write!(
                     f,
                     "holds the module {module}, which this build does not have"
+                )
+            }
+            Newer::Enabled(module) => {
+                write!(
+                    f,
+                    "turns the module {module} on, which this build does not switch"
                 )
             }
         }
@@ -193,6 +211,9 @@ pub enum Entry {
         kept: Vec<String>,
         /// The ids in `apertrust:auto`.
         auto: Vec<String>,
+        /// Its `apertrust:enabled` as written, `None` where absent: `true` for a switched
+        /// module that is on.
+        enabled: Option<String>,
         /// The `control:` attributes, by control id and text, in the file's order.
         controls: Vec<(String, String)>,
     },
@@ -292,11 +313,15 @@ impl Document {
                     version,
                     kept,
                     auto,
+                    enabled,
                     controls,
                 } => {
                     let mut fields = vec![own("module", module)];
                     if let Some(version) = version {
                         fields.push(own("moduleVersion", version));
+                    }
+                    if let Some(enabled) = enabled {
+                        fields.push(own("enabled", enabled));
                     }
                     for (id, ids) in [("kept", kept), ("auto", auto)] {
                         if !ids.is_empty() {
@@ -355,6 +380,7 @@ fn entry(fields: &[Property]) -> Option<Entry> {
     let (mut module, mut operation) = (String::new(), String::new());
     let (mut version, mut schema) = (None, None);
     let (mut kept, mut auto) = (Vec::new(), Vec::new());
+    let mut enabled = None;
     let (mut controls, mut params) = (Vec::new(), Vec::new());
     for field in fields {
         let Some(value) = field.node.as_str().map(str::to_owned) else {
@@ -369,6 +395,7 @@ fn entry(fields: &[Property]) -> Option<Entry> {
                 "moduleVersion" => version = Some(value),
                 "kept" => kept = list(&value),
                 "auto" => auto = list(&value),
+                "enabled" => enabled = Some(value),
                 "operation" => operation = value,
                 "schema" => schema = value.trim().parse().ok(),
                 _ => {}
@@ -385,6 +412,7 @@ fn entry(fields: &[Property]) -> Option<Entry> {
             version,
             kept,
             auto,
+            enabled,
             controls,
         })
     } else if !operation.is_empty() {

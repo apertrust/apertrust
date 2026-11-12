@@ -28,11 +28,12 @@
 //!
 //! Each control is one `toneequal` parameter as darktable's slider shows it: the bands, the
 //! compensations and the mask settings as they are, and the curve's σ as darktable's
-//! slider shows it, `s` with σ = √2^(1 + s). It drives `toneequal`, which an unedited photo
-//! does not run, planned only while a control is off its default (decisions 22 and 28): at
-//! its defaults it sets nothing, so it adds no operation and leaves the frame as it was.
-//! Its first step brings the operation's curve with every band at 0, darktable's ripple of
-//! −0.013 to +0.025 EV at the default smoothing, as darktable's first step does.
+//! slider shows it, `s` with σ = √2^(1 + s). It is switched (decision 32), as darktable
+//! leaves the tone equalizer off on a new photo: off, it renders nothing; any write of a
+//! control turns it on, with darktable's defaults for the others, until its reset turns it
+//! off, `toneequal` planned while it is on. Its first step, on at its defaults, brings
+//! the operation's curve with every band at 0, darktable's ripple of −0.013 to +0.025 EV
+//! at the default smoothing, as darktable's first step does.
 //!
 //! Every slider is darktable's: its hard range the control's, its track darktable's soft
 //! range, its decimals and its step darktable's (`docs/modules/tone-equalizer.md`, Sliders
@@ -53,7 +54,7 @@ use crate::definition::{
 };
 use crate::transfer::Transfer;
 use crate::values::{ControlValue, Controls};
-use crate::{Base, Module, ModuleValues, Owned, Setting};
+use crate::{Base, Module, ModuleValues, Owned, Setting, switched_from};
 
 pub struct ToneEqualizer;
 
@@ -151,7 +152,7 @@ const fn number(
     }
 }
 
-/// A band's gain, −2 EV to +2 EV, untouched at 0.
+/// A band's gain, −2 EV to +2 EV, darktable's default 0.
 const fn band(id: &'static str) -> Control {
     number(id, (-2.0, 2.0), 0.01, 0.0, Some(Unit::Ev))
 }
@@ -210,9 +211,10 @@ const fn soft(control: &'static str, min: f32, max: f32) -> Row {
 
 static DEFINITION: Definition = Definition {
     id: "toneequal",
-    version: 1,
+    version: 2,
     layers: true,
     auto: false,
+    switched: true,
     controls: &CONTROLS,
     tabs: &[
         Tab {
@@ -315,7 +317,7 @@ impl Module for ToneEqualizer {
 
     /// Each control off its default sets its parameter: a number as it is, curve
     /// smoothing as σ, the iterations as the nearest whole number, a choice by the same
-    /// index. Any of them plans the operation; none, at the defaults, plans nothing.
+    /// index.
     fn bind(&self, values: &ModuleValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
         CONTROLS
             .iter()
@@ -332,20 +334,27 @@ impl Module for ToneEqualizer {
             .collect()
     }
 
+    /// Version 1 planned `toneequal` while a control was off its default, darktable's then
+    /// as now, and bound every one that was: such an edit is on, its values as they were;
+    /// any other rendered nothing, so it is off, its values dropped (decision 32).
+    fn migrate(&self, from: u32, values: ModuleValues) -> ModuleValues {
+        if from >= 2 {
+            return values;
+        }
+        let off = values.off_defaults(&DEFINITION.defaults());
+        let rendered = off.values().next().is_some();
+        switched_from(values, rendered)
+    }
+
     /// The bands' curve as `toneequal` renders it (decision 31), on the graph's axes: the
     /// correction in EV for the mask's exposure in EV, darktable's fit of the nine gains at
     /// the σ the binding sets, through the curve `apertrust-color` gives the operation's
-    /// setup too. Flat at 0 EV while every control is at its default, as the module then
-    /// plans no operation; `None` where the fit fails.
+    /// setup too: at the defaults, darktable's ripple, which the module on renders. The
+    /// panel draws it flat while the module is off (decision 32), as nothing is corrected
+    /// then. `None` where the fit fails.
     fn curve(&self, control: &str, values: &Controls) -> Option<Box<dyn Fn(f32) -> f32>> {
         if !BANDS.contains(&control) {
             return None;
-        }
-        let untouched = CONTROLS
-            .iter()
-            .all(|c| values.get(c.id).is_none_or(|value| *value == c.default()));
-        if untouched {
-            return Some(Box::new(|_| 0.0));
         }
         let bands = BANDS.map(|band| value_of(values, band));
         let curve = Curve::new(&bands, sigma(values))?;
@@ -647,19 +656,17 @@ mod tests {
     }
 
     #[test]
-    fn the_graph_is_flat_while_the_module_plans_nothing() {
-        // At its defaults the module plans no operation, so nothing is corrected; the
-        // first step brings darktable's zero bands' ripple, as it renders.
-        let untouched = ToneEqualizer
+    fn the_graph_at_the_defaults_is_darktable_s_ripple() {
+        // On at its defaults the module renders darktable's zero bands' ripple, so the
+        // curve is that ripple; the panel draws it flat while the module is off.
+        let ripple = ToneEqualizer
             .curve(BANDS[0], &DEFINITION.defaults())
             .unwrap();
-        assert!((0..=80).all(|k| untouched(-8.0 + k as f32 / 10.0) == 0.0));
-        let stepped = shown(&[("exposure_boost", ControlValue::Number(0.05))]);
-        let ripple = ToneEqualizer.curve(BANDS[0], &stepped).unwrap();
         let highest = (0..=800)
             .map(|k| ripple(-8.0 + k as f32 / 100.0))
             .fold(f32::MIN, f32::max);
         assert!((highest - 0.0253).abs() < 1e-3, "{highest}");
+        let stepped = shown(&[("exposure_boost", ControlValue::Number(0.05))]);
         // Only the bands have a graph.
         assert!(ToneEqualizer.curve(SMOOTHING, &stepped).is_none());
         assert!(ToneEqualizer.curve_width(SMOOTHING, &stepped).is_none());

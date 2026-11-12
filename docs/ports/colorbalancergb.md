@@ -2,7 +2,7 @@
 
 Source: darktable (the reference release, commit 20891f6c6f), `src/iop/colorbalancergb.c` `commit_params()` and `process()`, with helpers from `src/common/colorspaces_inline_conversions.h` (Yrg, Ych, JzAzBz, `gamut_check_Yrg`, xyY, darktable UCS 22), `darktable_ucs_22_helpers.h` (`dt_UCS_22_build_gamut_LUT`, `lookup_gamut`, `soft_clip`), `chromatic_adaptation.h` (CAT16) and `math.h`. The OpenCL kernel is `colorbalancergb` in `data/kernels/extended.cl`, its UCS helpers in `data/kernels/colorspace.h`. The reference is darktable's CPU path.
 
-Status: ported, both saturation formulas, in Slang (`crates/op/colorbalancergb`), as an operation with its manifest, schema and `prepare` (`ColorBalanceRgb`): darktable UCS, darktable's default for new edits since params version 5 and the schema's default (decision 22), and JzAzBz, darktable's older formula and its other choice. It is in `OPERATIONS` with `default_enabled` off, as darktable has color balance rgb off until the user turns it on: it is planned only while a module sets one of its parameters (decision 28; Tool binding notes), or, once decision 32 switches its module (planned), while that module is on. Checked on one GPU so far.
+Status: ported, both saturation formulas, in Slang (`crates/op/colorbalancergb`), as an operation with its manifest, schema and `prepare` (`ColorBalanceRgb`): darktable UCS, darktable's default for new edits since params version 5 and the schema's default (decision 22), and JzAzBz, darktable's older formula and its other choice. It is in `OPERATIONS` with `default_enabled` off, as darktable has color balance rgb off until the user turns it on: it is planned while its switched module is on, from a write of one of its controls to its reset (decision 32); Tool binding notes. Checked on one GPU so far.
 
 Golden results (mire1.cr2, 3908×2602, Apple M4), through the operation's `prepare`:
 
@@ -184,7 +184,7 @@ What the binding needs:
 
 - **Contrast** is `contrast`, a float, −1 to 1, default 0; darktable's slider spans ±0.5 and shows ±50%. The kernel applies `Y' = g · (Y/g)^(1 + contrast)` to Yrg luminance at constant Yrg chromaticity (r, g): saturation as Yrg measures it does not change, and greys stay grey (GPU tests, within 2e-4 in r and g).
 - **Pivot** is `grey_fulcrum`, a float, 0 to 1, default 0.1845; darktable's slider spans 0.1 to 0.5 and shows a percentage. It is Yrg luminance: the default keeps RGB grey 0.1744 fixed (Precision).
-- **Contrast 0 is a no-op of the contrast** (the kernel gets an exponent of exactly 1), **but not of the operation**: its gamut mapping runs at every setting (Per pixel). An operation an unedited photo does not run is planned only while a binding sets one of its parameters (decision 28), so the module at its defaults sets nothing and leaves the frame byte-identical: zero stays exact. The first step off a default adds the operation and its gamut mapping, as darktable's does (decision 32), measured as the module's row B1 without a bound (decision 22).
+- **Contrast 0 is a no-op of the contrast** (the kernel gets an exponent of exactly 1), **but not of the operation**: its gamut mapping runs at every setting (Per pixel). The module is switched (decision 32): off, the operation is not planned and the frame is byte-identical to no edit. Its first step, on at its defaults, adds the operation and its gamut mapping, as darktable's does, measured as the module's row B1 without a bound (decision 22).
 - **The first step with darktable UCS**, the default (decision 22), is the module's row B1 (`docs/modules/colour-balance-rgb.md`): the frame's ΔE2000 against no edit, measured on CI's synthetic images and locally on the chart and the corpus, and reported without a bound. On the M4, with colour calibration on every colour raw (decision 27), which compresses the gamut first:
   - greys and the sweep's colours within 80% of the gamut's saturation: 0.000;
   - inside the gamut: a mean of 0.061, 2.2% over 1.0, max 3.9;
@@ -192,7 +192,7 @@ What the binding needs:
   - the chart: 0.0069, 0.021%, max 2.3;
   - the 31 corpus raws: means of 0.0000 to 0.021, at most 0.24% over 1.0, single pixels up to 3.2.
 - **The pivot's untouched value is its default** (decision 28, for a control whose unit has no natural zero): `grey_fulcrum` at 0.1845 with contrast 0 sets nothing.
-- **One module, one operation:** the Colour balance RGB module owns every parameter, so none can be set at operation level (`Set`, `--param`; decision 28); the operation is planned while the module sets one, as one instance.
+- **One module, one operation:** the Colour balance RGB module owns every parameter, so none can be set at operation level (`Set`, `--param`; decision 28); the operation is planned while the module is on, as one instance (decision 32).
 - **Derivatives:** `contrast` is the second of the kernel's four gradient slots; `grey_fulcrum` is not differentiated.
 - **Saturation formula:** `saturation_formula`, darktable's "saturation formula" on its Masks tab, an ordinary content tab (decision 29); darktable UCS by default, JzAzBz the other choice (decision 22). darktable's presets set it: "basic colorfulness | legacy" JzAzBz, "natural skin", "vibrant colors" and "standard" darktable UCS, all of which the port renders.
 

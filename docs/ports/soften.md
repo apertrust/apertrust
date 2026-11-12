@@ -18,7 +18,7 @@ The OpenCL path is `process_cl` with `data/kernels/soften.cl`. The reference is 
 **Ported**, in Slang (`crates/op/soften`), as an operation with its manifest, schema and `prepare` (`Soften`): every parameter and darktable's one algorithm; nothing is `NotPorted`.
 
 - The box mean is the colour library's, shared with bloom (decision 65), unchanged.
-- It is in `OPERATIONS` with `default_enabled` off, as darktable has soften off until the user turns it on. The session plans it only while a module's binding sets it: the first pass's Soften module (decision 28, `docs/modules/soften.md`).
+- It is in `OPERATIONS` with `default_enabled` off, as darktable has soften off until the user turns it on. It is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the first pass's Soften module (`docs/modules/soften.md`).
 - Checked on one GPU so far.
 
 **Golden result** (case `soften`, darktable test 0051-soften, mire1.cr2, 3908×2602, Apple M4, a one-instance plan of the engine): ΔE2000 mean 0.0001, p95 0.0003, max 0.0042, no pixel over 2.3, against a module effect of mean 8.39, p95 18.94, max 53.59.
@@ -235,11 +235,11 @@ In the first pass (decision 2) the Soften module is darktable's and owns every p
 - darktable's tooltips: "the size of blur", "the saturation of blur", "the brightness of blur", "the mix of effect";
 - darktable has no presets for soften.
 
-The module is untouched at a mix of 0, which plans nothing whatever the other three hold; darktable's 50 % waits for the header's presets menu. Its first step, the operation planned at a mix of 0, renders bit for bit as no edit (row S1), and its values for test 0051 bind the golden case's parameters bit for bit (row S4).
+The module is switched (decision 32): off until a control changes, then on with darktable's defaults, a mix of 50 % among them, until its reset. Its first step, darktable's new instance, is measured as row S1, and its values for test 0051 bind the golden case's parameters bit for bit (row S4).
 
 - **What is an identity:** Mix 0, whatever the other settings. The mix is then `0 · blur + 1 · in`, every pixel its input exactly (a negative zero becomes a positive one), an infinite pixel included, since the guard keeps the blur finite (`a_mix_of_zero_changes_nothing`).
   - No other setting is one. Size 0 still mixes in the softened image unblurred (its radius is 0 below a diagonal of 10,000 pixels). Saturation 100 % and Brightness 0 EV are factors of 1 that still clip the lightness and saturation and blur them.
-  - So the Soften module is not switched (decision 32): its untouched state is Mix 0, as the modules README has it, with darktable's 50 % as a preset.
+  - The Soften module is switched (decision 32) rather than untouched at a mix of 0: off, the operation is not planned; on, a mix of 0 is this identity.
 - **Derivatives:** slot 0, the amount, in percent, darktable's units (Gradients).
 
 ## Gradients

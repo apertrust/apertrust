@@ -149,6 +149,7 @@ static DEFINITION: Definition = Definition {
     // Background only, as the raw stage.
     layers: false,
     auto: false,
+    switched: false,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,

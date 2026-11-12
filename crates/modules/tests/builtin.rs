@@ -119,6 +119,80 @@ fn every_fixed_parameter_is_one_its_module_owns() {
     }
 }
 
+/// The switched modules (decision 32): those darktable leaves off on a new photo, each
+/// over operations an unedited photo does not run. The Tone curve, over the optional
+/// `rgbcurve`, is not among them: it is to be reshaped into RGB curve, darktable's module,
+/// which is switched as it is built (`docs/modules/README.md`, Planned changes).
+const SWITCHED: [&str; 7] = [
+    "toneequal",
+    "colorbalancergb",
+    "hazeremoval",
+    "primaries",
+    "grain",
+    "soften",
+    "vignette",
+];
+
+/// Exactly the modules darktable leaves off are switched, and each one's defaults, made
+/// explicit, bind its operations' own defaults for every photo (`check::switched_defaults`),
+/// so the module on and untouched is darktable's new instance.
+#[test]
+fn every_switched_module_s_defaults_bind_its_operations_defaults() {
+    let switched: Vec<&str> = MODULES
+        .iter()
+        .map(|module| module.definition())
+        .filter(|definition| definition.switched)
+        .map(|definition| definition.id)
+        .collect();
+    assert_eq!(
+        switched.iter().copied().collect::<BTreeSet<_>>(),
+        SWITCHED.into_iter().collect::<BTreeSet<_>>()
+    );
+    for image in images() {
+        for module in MODULES {
+            let problems = check::switched_defaults(*module, OPERATIONS, &image);
+            assert!(
+                problems.is_empty(),
+                "{}: {problems:?}",
+                module.definition().id
+            );
+        }
+    }
+}
+
+/// A switched module over an operation every photo runs is refused, since off it could not
+/// leave that operation untouched.
+#[test]
+fn a_switched_module_over_an_operation_every_photo_runs_is_refused() {
+    struct Switched(&'static Definition);
+    impl Module for Switched {
+        fn definition(&self) -> &'static Definition {
+            self.0
+        }
+        fn owns(&self) -> &'static [Owned] {
+            apertrust_modules::exposure::Exposure.owns()
+        }
+        fn bind(&self, _: &ModuleValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
+            Vec::new()
+        }
+    }
+    let over_exposure = Box::leak(Box::new(Definition {
+        switched: true,
+        ..*apertrust_modules::exposure::Exposure.definition()
+    }));
+    let (_, rejected) = check::accept(&[&Switched(over_exposure)], OPERATIONS);
+    assert!(
+        matches!(
+            rejected[..],
+            [check::Rejected {
+                error: check::ModuleError::SwitchedOverBase { .. },
+                ..
+            }]
+        ),
+        "{rejected:?}"
+    );
+}
+
 #[test]
 fn every_built_in_binding_sets_only_what_it_owns_within_the_schema() {
     for image in images() {
@@ -291,6 +365,7 @@ static LISTING: Definition = Definition {
     version: 1,
     layers: false,
     auto: false,
+    switched: false,
     controls: &[
         Control {
             id: "tone",

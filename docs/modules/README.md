@@ -31,7 +31,7 @@ darktable's base group, with RGB levels and RGB curve after the tone mapper, Dem
 | RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; module planned, switched | [port](../ports/rgblevels.md) |
 | RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
 | Crop | crop | `crop`, camera RGB 24.5 | Background only | Planned (Phase 3) | — |
-| Tone equalizer | tone equalizer | `toneequal`, camera RGB 24.0 | Yes | Built, to be switched (decision 32); the guided filters, wands and mask histogram to come | [page](tone-equalizer.md), [port](../ports/toneequal.md) |
+| Tone equalizer | tone equalizer | `toneequal`, camera RGB 24.0 | Yes | Built, switched (decision 32); the guided filters, wands and mask histogram to come | [page](tone-equalizer.md), [port](../ports/toneequal.md) |
 | Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built; its unported controls at their defaults, Contrast and Pivot left for Colour balance RGB | [page](exposure.md) |
 | Orientation | orientation | `flip`, camera RGB 16 | Background only | Built, darktable's page; runs on every photo at auto, the photo's own orientation; its guides and presets to come | [page](orientation.md), [port](../ports/flip.md) |
 | Rotate and perspective | rotate and perspective | `ashift`, camera RGB 15 | Background only | Planned (Phase 3) | — |
@@ -52,9 +52,9 @@ darktable's color group, with Output colour profile first and Input colour profi
 | Module | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Output colour profile | output color profile | `colorout`, display 70 | Background only | Built; an edit chooses sRGB only until the display converts from the edit's profile (decision 26) | [page](output-colour-profile.md), [port](../ports/colorout.md) |
-| Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, to be switched (decision 32); the graph, mask display and pickers to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
+| Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32); the graph, mask display and pickers to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
 | Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Operation ported; module planned (Phase 3), switched | [port](../ports/colorequal.md) |
-| RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, to be switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
+| RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
 | Colour calibration | color calibration | `channelmixerrgb`, working 28.5 | Background only, until layers | Built, every tab, the CAT tab with follow writes; runs on every colour raw (decision 27) | [page](colour-calibration.md), [port](../ports/channelmixerrgb.md) |
 | Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Operation ported, runs on every photo; module planned | [port](../ports/colorin.md) |
 
@@ -69,7 +69,7 @@ darktable's correct group. darktable's raw chromatic aberrations (`cacorrect`) i
 | Module | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Sharpen | sharpen | `sharpen`, working 35 | Yes | Planned (Phase 3), switched | — |
-| Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built; to be switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
+| Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built, switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
 | Chromatic aberrations | chromatic aberrations | `cacorrectrgb`, camera RGB 13.5 | Background only | Planned (Phase 3) | — |
 | Lens correction | lens correction | `lens`, camera RGB 13 | Background only | Planned (Phase 3), switched; the embedded-metadata method specified (decision 25), Lensfun's later | [port](../ports/lens.md) |
 | Denoise (profiled) | denoise (profiled) | `denoiseprofile`, camera RGB 9 | Yes | Planned (Phase 3), switched | [port](../ports/denoiseprofile.md) |
@@ -84,9 +84,9 @@ darktable's effect group, with Soften after Vignetting and Bloom after Grain. da
 
 | Module | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
-| Vignetting | vignetting | `vignette`, display 68 | Yes | Built, without dithering; to be switched at darktable's −0.5 (decision 32) | [page](vignetting.md), [port](../ports/vignette.md) |
-| Soften | soften | `soften`, display 66 | Yes | Built; to be switched at darktable's 50 % (decision 32) | [page](soften.md), [port](../ports/soften.md) |
-| Grain | grain | `grain`, display 65 | Background only | Built; to be switched at darktable's 25 % (decision 32) | [page](grain.md), [port](../ports/grain.md) |
+| Vignetting | vignetting | `vignette`, display 68 | Yes | Built, switched at darktable's −0.5 (decision 32), without dithering | [page](vignetting.md), [port](../ports/vignette.md) |
+| Soften | soften | `soften`, display 66 | Yes | Built, switched at darktable's 50 % (decision 32) | [page](soften.md), [port](../ports/soften.md) |
+| Grain | grain | `grain`, display 65 | Background only | Built, switched at darktable's 25 % (decision 32) | [page](grain.md), [port](../ports/grain.md) |
 | Bloom | bloom | `bloom`, display 61 | Yes | Operation ported; module planned (Phase 3), switched | [port](../ports/bloom.md) |
 | Diffuse or sharpen | diffuse or sharpen | `diffuse`, working, between 28.5 and 29 | Yes | Planned (Phase 3) | — |
 
@@ -172,6 +172,8 @@ stateDiagram-v2
 
 Off, it renders as no edit. On, every control it was not given takes darktable's default.
 
+Built for the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each at version 2 (`Definition::switched`). A version 1 edit migrates on where it rendered something, its values as they were, and off, its values dropped, where it rendered nothing. The other modules marked switched in the tables are switched as they are built.
+
 ### Fixed parameters
 
 A parameter with no editing meaning and no darktable widget is fixed at darktable's value, owned by its module with no control ([Owners by operation](#owners-by-operation)). `--param` and `Command::Set` refuse it (`EditError::Fixed`).
@@ -234,7 +236,6 @@ flowchart LR
 
 Each is separate work.
 
-- **Switched modules** (decision 32): Grain, Soften, Vignetting and Haze removal start at darktable's defaults (strength 25 %, mix 50 %, brightness and saturation −0.5, strength 0.2), each binding setting every control off its default, each module version 2 with a migration from version 1. Colour balance RGB, RGB primaries and the Tone equalizer, at darktable's defaults already, become version 2 too. Their rows at zero go: Grain's G5, Soften's S6, Haze removal's Z6 and Vignetting's V0 clause for the others at 0.
 - **The Tone curve becomes RGB curve,** `rgbcurve`, one instance with darktable's controls: the Luma curve is its linked curve, Preserve colours its preserve colours, and the RGB, Red, Green and Blue tabs give way to the mode and the channel tabs. `tone_curve` joins `RETIRED`, so an edit holding it loses those values with a warning and stays editable (decision 43).
 
 ## Invariants

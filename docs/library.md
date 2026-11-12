@@ -511,7 +511,7 @@ Decisions 28 and 48, built. `.apxmp` is XMP: attributes for values, one `rdf:Des
 
 Decisions 43 and 52. An edit holding anything a save would drop is never overwritten by an older build: it opens for viewing only, saying which version wrote it.
 
-- `sidecar::Newer` says why, never by comparing builds' versions, which development builds on different branches do not order: `Version`, a file version above `VERSION`, which `Document::newer` tells from the file alone; `ModuleVersion`, a module version above its definition's; `Module`, a module this build neither has nor has retired. The last two only the module definitions can tell, so the engine finds them.
+- `sidecar::Newer` says why, never by comparing builds' versions, which development builds on different branches do not order: `Version`, a file version above `VERSION`, which `Document::newer` tells from the file alone; `ModuleVersion`, a module version above its definition's; `Module`, a module this build neither has nor has retired; `Enabled`, a module's `apertrust:enabled` this build cannot keep, on a module it does not switch or with a value other than `true` (decision 32). The last three only the module definitions can tell, so the engine finds them.
 - `sidecar::ViewOnly` is the error such an edit carries, with the `build` that wrote it (`sidecar::writer`).
 - The index reports `Newer` from the file alone, so a folder's grid marks such a photo before it is opened; the engine adds what the module definitions tell as the photo opens ([engine.md](engine.md#edits-a-newer-apertrust-wrote)). Anything else a save would drop, metadata included, is to make the photo view-only too ([engine.md](engine.md#what-a-save-may-drop), planned).
 

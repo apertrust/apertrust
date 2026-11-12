@@ -14,7 +14,7 @@ darktable at the reference release, commit 20891f6c6f. The reference is darktabl
 
 Ported: the whole module, which has one algorithm and no modes, in Slang (`crates/op/primaries`), with its manifest, schema and `prepare` (`Primaries`). Checked on one GPU, the Apple M4.
 
-It is in `OPERATIONS` with `default_enabled` off, as darktable has rgb primaries off until the user turns it on. It is planned only while a module sets one of its parameters (decision 28). Once decision 32 switches its module (planned), it is planned while that module is on. The module, RGB primaries, is built (`docs/modules/rgb-primaries.md`).
+It is in `OPERATIONS` with `default_enabled` off, as darktable has rgb primaries off until the user turns it on. It is planned while its switched module is on, from a write of one of its controls to its reset (decision 32). The module, RGB primaries, is built (`docs/modules/rgb-primaries.md`).
 
 ## Results
 
@@ -192,7 +192,7 @@ In the first pass (decision 2) the RGB primaries module is darktable's and owns 
 | tint hue | `achromatic_tint_hue` | degrees | none: −180° to 180° | tint hue |
 | tint purity | `achromatic_tint_purity` | %, 100 × purity | 0% to 20% | tint purity |
 
-- **Every control at its default is untouched:** hues 0, purities 1, the tint's purity 0. The module at its defaults sets nothing, so the operation is not planned and the photo is unchanged. Its first step adds the operation, with the red leak above (Per pixel), as darktable's first step does.
+- **Off until a control changes** (decision 32): the module's defaults are darktable's, hues 0, purities 1, the tint's purity 0, and while it is off the operation is not planned and the photo is unchanged. Its first step, on at those defaults, adds the operation, with the red leak above (Per pixel), as darktable's first step does.
 - **The tint's hue changes nothing while its purity is 0** (the module's row P6). darktable draws it as any other slider, and so does the module.
 - **A primary's hue typed past a neighbour's direction at purity 100%**, the others untouched, blacks the image out (Precision; darktable shows noise there). The soft range of ±20° keeps a drag far from it; only a typed value or a wide drag reaches it.
 - **Units:** the schema is in darktable's units, radians and plain ratios. The module shows degrees and percentages as darktable does.

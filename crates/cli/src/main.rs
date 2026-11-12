@@ -746,7 +746,8 @@ fn instances(
 }
 
 /// The edit as lines to show: each module it touches, then each operation it sets a
-/// parameter of.
+/// parameter of. A switched module on with no control to show reads `<module>: on`
+/// (decision 32).
 fn describe(edit: &Edit, operations: &[&dyn Operation], modules: &[&dyn Module]) -> Vec<String> {
     let mut lines = Vec::new();
     for module in modules {
@@ -773,6 +774,8 @@ fn describe(edit: &Edit, operations: &[&dyn Operation], modules: &[&dyn Module])
             .collect();
         if !controls.is_empty() {
             lines.push(format!("{}: {}", definition.id, controls.join(", ")));
+        } else if definition.switched && values.enabled() {
+            lines.push(format!("{}: on", definition.id));
         }
     }
     for operation in operations {
@@ -2127,6 +2130,28 @@ mod tests {
             edit.module("sample").unwrap().get("method"),
             Some(&ControlValue::Choice(3))
         );
+    }
+
+    /// A switched module on at its defaults is shown on, not as no settings, and its
+    /// reset control by control leaves it so.
+    #[test]
+    fn a_switched_module_on_at_its_defaults_is_shown_on() {
+        use apertrust_modules::grain::Grain;
+        let modules: &[&dyn Module] = &[&Grain];
+        let mut edit = Edit::default();
+        apply(
+            &mut edit,
+            &flags(&["grain.strength=25"], &[]),
+            OPERATIONS,
+            modules,
+        )
+        .unwrap();
+        assert_eq!(
+            describe(&edit, OPERATIONS, modules),
+            ["grain: strength 25 (kept)"]
+        );
+        edit.reset_control(&Grain, "strength").unwrap();
+        assert_eq!(describe(&edit, OPERATIONS, modules), ["grain: on"]);
     }
 
     #[test]

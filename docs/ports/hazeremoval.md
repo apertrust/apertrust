@@ -17,7 +17,7 @@ The reference is darktable's CPU path. Its OpenCL path is `process_cl()` with `d
 - 24 whole-image passes estimate the ambient light, the image's depth and the filtered transmission on the GPU with no readback. They are one run, whose first pass alone reads the input (decision 15).
 - One per-pixel pass, `main`, removes the haze. It exports `hazeremoval_backward` and `hazeremoval_forward_diff`.
 - In the untiled viewport the estimate comes from the full resolution, and the transmission is downscaled for `main` (Neighbourhood and scale).
-- The operation is in `OPERATIONS` at camera RGB 14 with `default_enabled` off, so the default pipeline is unchanged. The session plans it only while a module's binding sets it: the first pass's Haze removal module (decision 28, `docs/modules/haze-removal.md`).
+- The operation is in `OPERATIONS` at camera RGB 14 with `default_enabled` off, so the default pipeline is unchanged. It is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the first pass's Haze removal module (`docs/modules/haze-removal.md`).
 
 Not ported: darktable's compatibility mode (its old quick select) and its fixed windows. Both serve only edits made before darktable 3.x's params versions 2 and 3 (Deliberate differences, 1 and 2).
 
@@ -346,9 +346,7 @@ The first pass's Haze removal module (`crates/modules/src/haze_removal.rs`, `doc
 - darktable defines no presets for the module.
 - Both parameters are the kernel's own units; no transfer function.
 
-The module is untouched at a strength of 0, darktable's 0.2 its "darktable's default" preset once the presets menu comes. The strength is written whenever the operation is planned, since this schema's default is darktable's 0.2. Its first step, the operation at a strength of 0, is measured as row Z1.
-
-**Planned** (decision 32): the module switched, off until a control changes, then darktable's 0.2 and 0.2, the module's defaults and this schema's, until its reset; the preset then goes.
+The module is switched (decision 32): off until a control changes, then on with darktable's 0.2 and 0.2, the module's defaults and this schema's, until its reset. Its first step, darktable's new instance, is measured as row Z1.
 
 ## Gradients
 

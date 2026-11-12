@@ -15,10 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Soften's invariants (`docs/modules/soften.md`, Invariants), one test per row, each
-//! named after its row: S0 to S4, the rows a first-pass table has (decision 22), and S6,
-//! the other controls while the mix is 0; S5, on a layer, waits for Phase 4. The
-//! synthetic ramp and sweep run on CI's software GPUs, S4 on the CPU. The raw.pixls.us
-//! corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it:
+//! named after its row: a switched module's (decision 32), S0 off, S1 the first step, on
+//! at darktable's defaults, S2 moved and reset, S3 the order, S4 the darktable match, S7
+//! on at darktable's defaults on the CPU and S8 version 1's edits; S5, on a layer, waits
+//! for Phase 4, and S6 is withdrawn. The synthetic ramp and sweep run on CI's software
+//! GPUs, S4, S7 and S8 on the CPU. The raw.pixls.us corpus runs locally, with
+//! `APERTRUST_RAW_CORPUS` naming it:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-modules --test soften -- --ignored --nocapture
@@ -34,13 +36,14 @@
 )]
 mod common;
 mod corpus;
+mod switched;
 
 use apertrust_engine::compute::GpuImage;
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{BUDGET, ExportError, Tiling, export};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_modules::soften::Soften;
-use apertrust_modules::{Base, ControlValue, MODULES, Module};
+use apertrust_modules::{ControlValue, MODULES};
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::soften::Soften as SoftenOperation;
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
@@ -87,21 +90,11 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The first step (row S1): soften planned at the module's own defaults made
-    /// explicit, a mix of 0 and darktable's size, saturation and brightness, the
-    /// operation's, over an unedited photo: what the mix's first step off 0 brings besides
-    /// its blur.
-    fn first_step(&self) -> Vec<Instance<'static>> {
-        let mut instances = edit::instances(&Edit::default(), OPERATIONS, MODULES, &self.image)
-            .all()
-            .unwrap();
-        let mut params = ParamValues::new();
-        params.set("amount", Value::Float(0.0));
-        instances.push(Instance {
-            operation: apertrust_operations::operation(SOFTEN).unwrap(),
-            params,
-        });
-        self.keep(instances, Frame)
+    /// The module on at darktable's defaults, 50 %, 100 %, +0.33 EV and a mix of 50 %:
+    /// soften planned at the operation's defaults, darktable's new instance (rows S1 and
+    /// S2).
+    fn on_at_defaults(&self) -> Vec<Instance<'static>> {
+        self.instances(&switched::on_at_defaults(&Soften, &self.image), Frame)
     }
 
     fn set(&mut self, set: &[(&str, f32)]) -> Rendered {
@@ -124,37 +117,16 @@ fn bits_apart(a: &[[f32; 4]], b: &[[f32; 4]]) -> usize {
         .count()
 }
 
-// S0: every control at its default.
+// S0: off.
 
-/// Edits that leave every control at its default: each written at its default, and each
-/// kept there.
-fn untouched() -> Vec<Edit> {
-    let mut written = Edit::default();
-    let mut kept = Edit::default();
-    for control in Soften.definition().controls {
-        written
-            .set_control(&Soften, control.id, control.default(), &common::photo())
-            .unwrap();
-        kept.keep(&Soften, control.id, true).unwrap();
-    }
-    vec![written, kept]
-}
-
-/// S0 on one pipeline, as the session renders: no edit, then soften joining and leaving
-/// the plan, then each untouched edit, every frame as the first.
+/// S0 on one pipeline, as the session renders: no edit, then soften joining the plan, on
+/// at darktable's defaults, and leaving it, then each edit that leaves the module off,
+/// every frame as the first.
 fn s0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.first_step();
+    let joined = bench.on_at_defaults();
     bench.render(&joined);
-    for edit in untouched() {
-        let values = edit.module(SOFTEN).unwrap();
-        let defaults = Soften.defaults(&bench.image);
-        let base = Base::new(OPERATIONS, &bench.image);
-        assert!(
-            Soften
-                .bind(&values.off_defaults(&defaults), &bench.image, &base)
-                .is_empty()
-        );
+    for edit in switched::off(&Soften) {
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "S0 on {:?}",
@@ -164,7 +136,7 @@ fn s0_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn s0_every_control_at_its_default_renders_as_no_edit() {
+fn s0_off_renders_as_no_edit() {
     for pipe in [
         Pipe::Export,
         Pipe::Viewport {
@@ -180,8 +152,8 @@ fn s0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// S0 on every corpus raw: the module at its defaults, written or kept, plans the very
-/// instances and cache keys no edit does, so the same frame.
+/// S0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn s0_on_the_corpus() {
@@ -197,7 +169,7 @@ fn s0_on_the_corpus() {
                 .collect()
         };
         let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in untouched() {
+        for edit in switched::off(&Soften) {
             assert_eq!(keys(&bench.instances(&edit, Frame)), none, "S0 on {name}");
         }
         raws += 1;
@@ -205,7 +177,8 @@ fn s0_on_the_corpus() {
     println!("S0 holds on {raws} raws");
 }
 
-// S1: the first step, measured and reported without a bound (decision 22).
+// S1: the first step, on at darktable's defaults, measured and reported without a bound
+// (decision 22).
 
 /// The first step on the ramp and on the sweep: its jump, and whether the frame's values
 /// are the untouched frame's.
@@ -214,7 +187,7 @@ fn s1_the_first_step_is_measured() {
     for (what, (picture, image)) in [("on the ramp", ramp()), ("on the sweep", sweep(-0.67))] {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
         let untouched = bench.edit(&Edit::default(), Frame);
-        let first = bench.first_step();
+        let first = bench.on_at_defaults();
         let first = bench.render(&first);
         let step = jump(&untouched.pixels, &first.pixels, |_| true);
         let same = same_values(&untouched.pixels, &first.pixels);
@@ -252,7 +225,7 @@ fn s1_on_the_corpus() {
         let bench = export_bench(image.clone(), input.clone());
         let untouched = &bench.instances(&Edit::default(), Frame);
         let before = export_of(untouched, &image, &input).unwrap();
-        let after = match export_of(&bench.first_step(), &image, &input) {
+        let after = match export_of(&bench.on_at_defaults(), &image, &input) {
             Ok(after) => after,
             Err(error @ ExportError::NoTiles { .. }) => {
                 println!("{name}: soften refused, {error}");
@@ -285,25 +258,29 @@ fn s1_on_the_corpus() {
 
 // S2: each control moved, then reset.
 
-/// Moves of every control: the mix's first step and darktable's 50 %, then, with the mix
-/// at 50 %, the size, the saturation and the brightness each moved, and all four at the
-/// golden case's values. Each changes the frame. The size moves the blur's radius in
-/// whole pixels, 1 % of the image's diagonal at 100 %, so on the small images here only a
-/// large move does: 100 % gives the sweep a radius of 4 where 50 % gives 2.
+/// Moves of every control: the mix one step off darktable's 50 % and a write of it at
+/// 50 %, which turns the module on; the size, the saturation and the brightness each
+/// moved; and three at the golden case's values. Each changes the frame. The size moves
+/// the blur's radius in whole pixels, 1 % of the image's diagonal at 100 %, so on the
+/// small images here only a large move does: 100 % gives the sweep a radius of 4 where
+/// 50 % gives 2.
 const MOVES: [&[(&str, f32)]; 6] = [
-    &[("amount", 1.0)],
+    &[("amount", 51.0)],
     &[("amount", 50.0)],
-    &[("amount", 50.0), ("size", 100.0)],
-    &[("amount", 50.0), ("saturation", 50.0)],
-    &[("amount", 50.0), ("brightness", -1.0)],
+    &[("size", 100.0)],
+    &[("saturation", 50.0)],
+    &[("brightness", -1.0)],
     &[("size", 33.0), ("brightness", 0.5), ("amount", 75.0)],
 ];
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete) and by
-/// `ResetModule` (the header's reset), on the bench's one pipeline, which soften joins
-/// with each move and leaves with each reset.
+/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
+/// control, which leaves the module on at darktable's defaults, and by `ResetModule` (the
+/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
+/// soften joins with each move and leaves with each module's reset.
 fn s2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
+    let on = bench.on_at_defaults();
+    let on = bench.render(&on);
     for set in MOVES {
         let mut edit = edit_of(set);
         let moved = bench.edit(&edit, Frame);
@@ -311,14 +288,15 @@ fn s2_holds(bench: &mut Bench) {
         for (control, _) in set {
             edit.reset_control(&Soften, control).unwrap();
         }
-        assert_eq!(edit, Edit::default());
+        assert!(edit.is_on(&Soften), "{set:?}, reset control by control");
         assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
+            exact(&on, &bench.edit(&edit, Frame)),
             "{set:?}, reset control by control"
         );
         let mut edit = edit_of(set);
         bench.edit(&edit, Frame);
         edit.reset_module(&Soften);
+        assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
             "{set:?}, the module reset"
@@ -327,7 +305,7 @@ fn s2_holds(bench: &mut Bench) {
 }
 
 #[test]
-fn s2_a_control_moved_and_reset_renders_as_no_edit() {
+fn s2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     s2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -427,35 +405,59 @@ fn s4_the_golden_case_s_values_bind_to_darktable_s_parameters_bit_for_bit() {
     }
 }
 
-// S6: the size, the saturation and the brightness do nothing while the mix is 0.
+// S7: on at darktable's defaults, on the CPU.
 
-/// The size, the saturation and the brightness, each moved, at either end of its range
-/// and together, while the mix is 0: the binding sets nothing, so soften stays out of the
-/// plan and the frame is no edit's, `exact` comparing the plan's operations with their
-/// cache keys as well as the pixels. They stay enabled there, as darktable's do.
+/// The module's defaults, each made explicit, bind soften's own, and the module on at its
+/// defaults plans soften with no parameter set, darktable's new instance; off, it plans
+/// none.
 #[test]
-fn s6_the_other_controls_at_a_mix_of_0_render_as_no_edit() {
-    let (picture, image) = sweep(-0.67);
-    let mut bench = Bench::picture(&picture, image, Pipe::Export);
-    let none = bench.edit(&Edit::default(), Frame);
-    for set in [
-        &[("size", 0.0)][..],
-        &[("size", 100.0)],
-        &[("saturation", 0.0)],
-        &[("brightness", -2.0)],
-        &[("brightness", 2.0)],
-        &[("size", 33.0), ("saturation", 50.0), ("brightness", 0.5)],
+fn s7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
+    switched::on_at_defaults_holds(&Soften, SOFTEN);
+}
+
+// S8: version 1's edits.
+
+/// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
+/// bound, resolved over the schema: soften planned where the mix was off 0, version 1's
+/// untouched value, and not planned, the module off, where it was not.
+#[test]
+fn s8_version_1_s_edits_bind_what_they_bound() {
+    let image = common::photo();
+    let schema = SoftenOperation.schema();
+    let resolved = |set: &[(&str, f32)]| {
+        let mut params = ParamValues::new();
+        for &(param, value) in set {
+            params.set(param, Value::Float(value));
+        }
+        schema.resolve(&params).unwrap()
+    };
+    for (saved, bound) in [
+        (
+            &[("size", "33"), ("amount", "75")][..],
+            &[("size", 33.0), ("amount", 75.0)][..],
+        ),
+        (&[("amount", "50")], &[("amount", 50.0)]),
+        (
+            &[("brightness", "-2"), ("amount", "1")],
+            &[("brightness", -2.0), ("amount", 1.0)],
+        ),
     ] {
-        let edit = edit_of(set);
-        let values = edit.module(SOFTEN).unwrap();
-        let defaults = Soften.defaults(&bench.image);
-        let base = Base::new(OPERATIONS, &bench.image);
-        assert!(
-            Soften
-                .bind(&values.off_defaults(&defaults), &bench.image, &base)
-                .is_empty(),
-            "{set:?}"
+        let edit = switched::version_1(SOFTEN, saved);
+        assert!(edit.is_on(&Soften), "{saved:?}");
+        let params = switched::bound(&edit, SOFTEN, &image).expect("soften planned");
+        assert_eq!(
+            schema.resolve(&params).unwrap(),
+            resolved(bound),
+            "{saved:?}"
         );
-        assert!(exact(&none, &bench.edit(&edit, Frame)), "S6 with {set:?}");
+    }
+    for saved in [&[("size", "100")][..], &[("amount", "0")], &[]] {
+        let edit = switched::version_1(SOFTEN, saved);
+        assert!(!edit.is_on(&Soften), "{saved:?}");
+        assert!(edit.is_empty(), "{saved:?}");
+        assert!(
+            switched::bound(&edit, SOFTEN, &image).is_none(),
+            "{saved:?}"
+        );
     }
 }
