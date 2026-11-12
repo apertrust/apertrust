@@ -47,8 +47,9 @@
 //!
 //! Each completed change is a step of the edit's history, kept in memory for the photo
 //! open (decision 78, [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`]
-//! move through, darktable's undo records first; the client is told it as
-//! [`Event::History`]. What is saved is the edit at the end.
+//! move through, darktable's undo records first, and [`Command::GoTo`] moves the end of;
+//! [`Command::Step`] makes several commands one step of its source and note. The client is
+//! told it as [`Event::History`]. What is saved is the edit at the end.
 //!
 //! A photo whose edit a newer Apertrust wrote opens for viewing only (decision 43,
 //! [`sidecar::ViewOnly`]): it renders what this build reads, [`Photo::view_only`] says
@@ -237,6 +238,34 @@ pub enum Command {
     /// step, which the next Undo reverses; with nothing to redo, nothing. Any new step
     /// clears what Undo took back.
     Redo,
+    /// Moves the end of the history just after `step`, or to Original with `None`, as a
+    /// click on a step in the History tab does (decision 78): the steps after it stay, and
+    /// the next change drops them. Undo takes it back, and after it a change, bringing back
+    /// the steps the change dropped. A change not yet a step is made one first. A step not
+    /// in the log is refused ([`SessionError::UnknownStep`]); the end where it is already
+    /// changes nothing. The edit then saves as a completed change does.
+    GoTo { step: Option<StepId> },
+    /// Several commands on the edit as one history step of `source` with `note` (decision
+    /// 78), as the app sends its changes of several commands and an assistant one request.
+    /// It holds only `SetControl`, `ResetControl`, `ResetModule`, `Keep`, `ApplyPreset`,
+    /// `Set` and `Reset`, applied in order, all or none: one refused refuses the whole,
+    /// which changes nothing, naming its index ([`SessionError::InStep`]), and any other
+    /// command inside is refused so ([`SessionError::NotInStep`]). [`StepSource::Default`]
+    /// is the session's alone, refused ([`SessionError::DefaultSource`]), and so is a `Step`
+    /// holding nothing ([`SessionError::EmptyStep`]), both before the gesture under way is
+    /// touched.
+    ///
+    /// One source per gesture: a `Step` takes in the gesture under way where its commands
+    /// write the gesture's module and its source and note are the gesture's, so a drag's
+    /// changes and a `Step` releasing it are one step; otherwise the gesture is a step of its
+    /// own first. One holding `SetControl { done: false }` changes alone is a gesture's
+    /// change, of its source and note, continued by the next of the same on the module and
+    /// completed as any gesture is. A `Step` refused begins no gesture.
+    Step {
+        source: StepSource,
+        note: Option<Note>,
+        commands: Vec<Command>,
+    },
     /// Write the open photo's edit again after its last write failed, as a client's Try
     /// again does; otherwise nothing. It changes no value and leaves a gesture under way,
     /// and is reported [`Event::Saved`] or failed as any write is.
@@ -353,8 +382,8 @@ pub enum Command {
 
 /// Whether `command` acts on the open photo's edit, as every command does but these: the
 /// values are reported after every command on the edit, and such a command ends a
-/// gesture under way and is refused on a photo open for viewing only, and on a photo
-/// not yet live.
+/// gesture under way, but a `Step` refused as `DefaultSource` or `EmptyStep`, and is
+/// refused on a photo open for viewing only, and on a photo not yet live.
 fn on_edit(command: &Command) -> bool {
     match command {
         Command::Open(_)
@@ -759,6 +788,26 @@ pub enum SessionError {
     /// from its `Open` until its values are live.
     #[error("the photo is still opening")]
     NotLive,
+    /// The command numbered `index`, counting from 0, of a [`Command::Step`] was refused,
+    /// as `error` says: the whole `Step` is refused and changes nothing.
+    #[error("command {index} of the step: {error}")]
+    InStep {
+        index: usize,
+        error: Box<SessionError>,
+    },
+    /// A command a [`Command::Step`] cannot hold: one not on the edit, `Undo`, `Redo`,
+    /// `GoTo`, a cancel or another `Step`.
+    #[error("a step holds only changes to the edit's values")]
+    NotInStep,
+    /// A [`Command::Step`] of [`StepSource::Default`], which the session alone writes.
+    #[error("only the session makes a step of the source Default")]
+    DefaultSource,
+    /// A [`Command::Step`] holding no command.
+    #[error("a step holds no command")]
+    EmptyStep,
+    /// [`Command::GoTo`] named a step not in the open photo's history.
+    #[error("the history has no step {step}")]
+    UnknownStep { step: StepId },
     /// A module that does not hold, left out of the session; or one whose binding failed,
     /// left out of the render until it binds again.
     #[error("the module {module} is left out: {source}")]
@@ -1775,6 +1824,9 @@ struct Open {
 /// writes and clamps, and a switched module's on or off (decision 32), comes back with it.
 struct Gesture {
     module: String,
+    /// The source and note of its step: those of the change that began it (decision 78).
+    source: StepSource,
+    note: Option<Note>,
     edit: Edit,
     held: Held,
     /// Whether `edit` differs from the edit handed to the writer last, so that putting it
@@ -2280,6 +2332,12 @@ impl Engine {
         {
             open.gesture_through(&command);
         }
+        self.apply_command(command)
+    }
+
+    /// Applies one command to the open photo's edit as it stands, once
+    /// [`Self::edit_command`] has let it through and followed the gesture through it.
+    fn apply_command(&mut self, command: Command) -> Result<Effect, SessionError> {
         let (changed, completes) = match command {
             Command::SetControl {
                 module,
@@ -2399,6 +2457,8 @@ impl Engine {
             }
             Command::Undo => return self.undo(false),
             Command::Redo => return self.undo(true),
+            Command::GoTo { step } => return self.go_to(step),
+            Command::Step { commands, .. } => return self.apply_step(commands),
             Command::Open(_)
             | Command::Close
             | Command::Resize { .. }
@@ -2533,7 +2593,7 @@ impl Engine {
     /// step, and writes again an edit whose last write failed, once any write still under
     /// way is done.
     fn save_unsaved(&mut self) {
-        self.step(None);
+        self.step_pending();
         let Some(open) = &self.open else {
             return;
         };
@@ -3300,27 +3360,26 @@ impl Engine {
 
 impl Open {
     /// Follows the gesture under way through `command`, a change to the edit about to
-    /// apply (decision 42): a `SetControl { done: false }` goes on with the gesture on
-    /// its module, or begins one there from the edit and the held coordinates as they
-    /// stand; any other change ends it as completed. A cancel is left to [`Self::cancel`].
+    /// apply (decision 42): a `SetControl { done: false }`, or a `Step` of such changes
+    /// alone, goes on with the gesture on its module of its source and note, or begins one
+    /// there from the edit and the held coordinates as they stand; any other change ends it
+    /// as completed. A cancel is left to [`Self::cancel`].
     fn gesture_through(&mut self, command: &Command) {
-        match command {
-            Command::SetControl {
-                module,
-                done: false,
-                ..
-            } => {
-                if self.gesture.as_ref().is_none_or(|g| g.module != *module) {
-                    self.gesture = Some(Gesture {
-                        module: module.clone(),
-                        edit: self.edit.clone(),
-                        held: self.held.clone(),
-                        unsaved: self.unsaved,
-                    });
-                }
+        if let Some((module, source, note)) = history::gesture_of(command) {
+            let other =
+                |g: &Gesture| g.module != module || g.source != source || g.note.as_ref() != note;
+            if self.gesture.as_ref().is_none_or(other) {
+                self.gesture = Some(Gesture {
+                    module: module.to_owned(),
+                    source,
+                    note: note.cloned(),
+                    edit: self.edit.clone(),
+                    held: self.held.clone(),
+                    unsaved: self.unsaved,
+                });
             }
-            Command::CancelGesture { .. } | Command::RetrySave => {}
-            _ => self.gesture = None,
+        } else if !matches!(command, Command::CancelGesture { .. } | Command::RetrySave) {
+            self.gesture = None;
         }
     }
 

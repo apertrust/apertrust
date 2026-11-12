@@ -90,7 +90,7 @@ use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
     CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand, Places,
-    Session, Values, ViewOnly,
+    Session, StepSource, Values, ViewOnly,
 };
 use apertrust_modules::Module;
 use apertrust_ui::components::{
@@ -2402,6 +2402,84 @@ fn open_cache(folder: &Path) -> Option<Arc<Cache>> {
     }
 }
 
+/// The command a module section's change of the edit's values sends, and what the app
+/// shows of it until a report includes it: `SetControl`, `ResetControl`, `Keep` or
+/// `ResetModule`, or several of them as one `Step { source: You }` (decision 78), each shown
+/// as alone; none for any other change.
+fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
+    Some(match change {
+        Change::Set {
+            module,
+            control,
+            value,
+            done,
+        } => (
+            Command::SetControl {
+                module: module.to_owned(),
+                control: control.to_owned(),
+                value: value.clone(),
+                done,
+            },
+            vec![Pending::Control {
+                module,
+                control,
+                value,
+            }],
+        ),
+        Change::Reset { module, control } => (
+            Command::ResetControl {
+                module: module.to_owned(),
+                control: control.to_owned(),
+            },
+            vec![Pending::Reset { module, control }],
+        ),
+        Change::Keep {
+            module,
+            control,
+            kept,
+        } => (
+            Command::Keep {
+                module: module.to_owned(),
+                control: control.to_owned(),
+                kept,
+            },
+            vec![Pending::Keep {
+                module,
+                control,
+                kept,
+            }],
+        ),
+        Change::ResetModule { module } => (
+            Command::ResetModule {
+                module: module.to_owned(),
+            },
+            vec![Pending::ResetModule { module }],
+        ),
+        Change::Step(changes) => {
+            let (commands, shown): (Vec<_>, Vec<_>) = changes.into_iter().filter_map(sent).unzip();
+            let step = Command::Step {
+                source: StepSource::You,
+                note: None,
+                commands,
+            };
+            (step, shown.concat())
+        }
+        _ => return None,
+    })
+}
+
+/// Whether `command` completes a change, which saves the edit, as the engine's history
+/// says: a gesture's change is saved with the one that ends it and `Set` with the next, and
+/// a `Step` completes one when it holds any command but a gesture's change.
+fn completes(command: &Command) -> bool {
+    let goes_on = |command: &Command| matches!(command, Command::SetControl { done: false, .. });
+    match command {
+        Command::SetControl { done: false, .. } | Command::Set { .. } => false,
+        Command::Step { commands, .. } => !commands.iter().all(goes_on),
+        _ => true,
+    }
+}
+
 /// A setting `now` where it differs from the `last` the session was given, which then
 /// becomes it; none where it is the same.
 fn changed<T: PartialEq + Copy>(last: &mut T, now: T) -> Option<T> {
@@ -3000,18 +3078,24 @@ impl App {
         value: ControlValue,
         done: bool,
     ) {
-        let number = self.send_edit(Command::SetControl {
-            module: module.to_owned(),
-            control: control.to_owned(),
-            value: value.clone(),
-            done,
-        });
-        let pending = Pending::Control {
+        self.send_change(Change::Set {
             module,
             control,
             value,
+            done,
+        });
+    }
+
+    /// Sends a change of the edit's values ([`sent`]) and shows it at once until a report
+    /// includes it.
+    fn send_change(&mut self, change: Change) {
+        let Some((command, shown)) = sent(change) else {
+            return;
         };
-        self.pend(number, pending);
+        let number = self.send_edit(command);
+        for pending in shown {
+            self.pend(number, pending);
+        }
     }
 
     /// Shows `pending`, sent as command `number`, until a report includes it
@@ -3033,6 +3117,7 @@ impl App {
                 | Change::ResetModule { .. }
                 | Change::ApplyPreset { .. }
                 | Change::Action { .. }
+                | Change::Step(_)
         );
         // Only the open photo's values, once they have arrived, can be changed: not the
         // defaults drawn with no photo or while one opens, nor a photo open for viewing
@@ -3040,42 +3125,12 @@ impl App {
         if edits && !self.mirror.takes_edits() {
             return;
         }
-        let (command, pending) = match change {
-            Change::Set {
-                module,
-                control,
-                value,
-                done,
-            } => return self.set_control(module, control, value, done),
-            Change::Reset { module, control } => (
-                Command::ResetControl {
-                    module: module.to_owned(),
-                    control: control.to_owned(),
-                },
-                Pending::Reset { module, control },
-            ),
-            Change::Keep {
-                module,
-                control,
-                kept,
-            } => (
-                Command::Keep {
-                    module: module.to_owned(),
-                    control: control.to_owned(),
-                    kept,
-                },
-                Pending::Keep {
-                    module,
-                    control,
-                    kept,
-                },
-            ),
-            Change::ResetModule { module } => (
-                Command::ResetModule {
-                    module: module.to_owned(),
-                },
-                Pending::ResetModule { module },
-            ),
+        match change {
+            change @ (Change::Set { .. }
+            | Change::Reset { .. }
+            | Change::Keep { .. }
+            | Change::ResetModule { .. }
+            | Change::Step(_)) => self.send_change(change),
             // Nothing to show before the session reports it: the option's values are the
             // photo's, which only the session knows.
             Change::ApplyPreset {
@@ -3088,7 +3143,6 @@ impl App {
                     preset: preset.to_owned(),
                     option: option.to_owned(),
                 });
-                return;
             }
             // darktable's button, run on the values shown: each control it writes, one
             // change, shown at once as a slider's is.
@@ -3111,27 +3165,20 @@ impl App {
                 for (control, value, done) in writes {
                     self.set_control(module, control, value, done);
                 }
-                return;
             }
             Change::Toggle { module } => {
                 let open = self.shell.section_open(module, modules::OPEN);
-                return self.shell.set_section_open(module, !open);
+                self.shell.set_section_open(module, !open);
             }
-            Change::Group { module, group } => return self.shell.toggle_group(module, group),
-            Change::Tab { .. } => return self.panels.apply(&change),
-        };
-        let number = self.send_edit(command);
-        self.pend(number, pending);
+            Change::Group { module, group } => self.shell.toggle_group(module, group),
+            Change::Tab { .. } => self.panels.apply(&change),
+        }
     }
 
     /// Sends a command that changes the edit: the top panel's save state waits for the
     /// session to report a write that includes it, one that completes a change at once.
     fn send_edit(&mut self, command: Command) -> u64 {
-        // A gesture's change is saved with the one that ends it, and `Set` with the next.
-        let completes = !matches!(
-            command,
-            Command::SetControl { done: false, .. } | Command::Set { .. }
-        );
+        let completes = completes(&command);
         let number = self.session.send(command);
         self.mirror.saving.sent(number, completes, Instant::now());
         number
@@ -5503,6 +5550,49 @@ mod tests {
             view_only_notice(&words, &view_only(None)),
             "Edited in a newer Apertrust: open for viewing only"
         );
+    }
+
+    /// A section's changes of several commands, the tone equalizer's release of its bands and
+    /// its reset of them, go as one `Step { source: You }`, one history step, each change
+    /// shown as it would be alone.
+    #[test]
+    fn changes_of_several_commands_are_sent_as_one_step() {
+        let set = |control, value| Change::Set {
+            module: "toneequal",
+            control,
+            value: ControlValue::Number(value),
+            done: true,
+        };
+        let reset = |control| Change::Reset {
+            module: "toneequal",
+            control,
+        };
+        let changes = vec![set("shadows", 0.5), set("blacks", 0.25), reset("noise")];
+        let alone: Vec<_> = changes.iter().cloned().map(|c| sent(c).unwrap()).collect();
+        let (command, shown) = sent(Change::Step(changes)).unwrap();
+        let (commands, each): (Vec<_>, Vec<_>) = alone.into_iter().unzip();
+        assert!(matches!(commands[2], Command::ResetControl { .. }));
+        assert_eq!(
+            command,
+            Command::Step {
+                source: StepSource::You,
+                note: None,
+                commands,
+            }
+        );
+        assert_eq!(shown, each.concat());
+        assert_eq!(shown.len(), 3);
+        // It completes a change, which the save state waits for; a `Step` of a gesture's
+        // changes alone does not, as the engine says.
+        assert!(completes(&command));
+        let dragged = Change::Set {
+            module: "toneequal",
+            control: "shadows",
+            value: ControlValue::Number(0.5),
+            done: false,
+        };
+        let (gesture, _) = sent(Change::Step(vec![dragged])).unwrap();
+        assert!(!completes(&gesture));
     }
 
     #[test]

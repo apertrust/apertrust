@@ -79,15 +79,17 @@ fn tidy(edit: &Edit) -> Edit {
     tidy
 }
 
-/// Over random sequences of changes, completed changes, Undo, Redo and reopening the photo,
-/// which leaves no undo records, so Undo and Redo fall back to moving the end: the fold is
-/// always the edit the history last stepped or moved to, and every step's fold, up to and
-/// with it, is the edit as that step left it; Undo and Redo are each other's inverse. Half
-/// the runs start from an edit read from a file, one step.
+/// Over random sequences of changes, completed changes, Undo, Redo, `GoTo` and reopening the
+/// photo, which leaves no undo records, so Undo and Redo fall back to moving the end: the
+/// fold is always the edit the history last stepped or moved to, and every step's fold, up
+/// to and with it, is the edit as that step left it; Undo and Redo are each other's
+/// inverse, and Undo takes a `GoTo` back. Half the runs start from an edit read from a
+/// file, one step.
 #[test]
 fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
-    // How many times Undo and Redo fell back to moving the end.
+    // How many times Undo and Redo fell back to moving the end, and a `GoTo` moved it.
     let mut fallbacks = [0, 0];
+    let mut gone_to = 0;
     for seed in 1..=40 {
         let mut random = Random(0x9e37_79b9_7f4a_7c15 ^ seed);
         let mut edit = Edit::default();
@@ -103,7 +105,7 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
         for round in 0..300 {
             let before = tidy(&edit);
             let context = format!("seed {seed}, round {round}");
-            match random.below(7) {
+            match random.below(8) {
                 // The photo closed and opened again: its change not yet a step made one,
                 // and the undo records gone with the session's memory.
                 6 => {
@@ -111,6 +113,35 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                     record(&history, &before, &mut left);
                     history.done.clear();
                     history.undone.clear();
+                }
+                // A step, or Original, gone to: a change not yet a step is made one first,
+                // which drops the steps after the end, so the step may be gone by then.
+                7 => {
+                    let steps = history.log.steps();
+                    let at = random.below(steps.len() as u64 + 1) as usize;
+                    let step = at.checked_sub(1).map(|at| steps[at].id);
+                    let went = history.go_to(&edit, step);
+                    record(&history, &before, &mut left);
+                    let end = |history: &PhotoHistory, id: Option<StepId>| {
+                        id.map_or(Some(0), |id| history.log.position(id).map(|at| at + 1))
+                    };
+                    match went {
+                        Err(id) => assert_eq!(end(&history, Some(id)), None, "{context}"),
+                        Ok(None) => {
+                            assert_eq!(Some(history.log.end()), end(&history, step), "{context}");
+                        }
+                        // The edit as the step left it; Undo takes it back to the edit as it
+                        // stood, and Redo goes there again.
+                        Ok(Some(gone)) => {
+                            gone_to += 1;
+                            let left = step.map_or_else(Edit::default, |id| left[&id].clone());
+                            assert_eq!(gone, left, "{context}");
+                            assert_eq!(Some(history.log.end()), end(&history, step), "{context}");
+                            assert_eq!(history.undo(&gone), Some(before.clone()), "{context}");
+                            assert_eq!(history.redo(&before), Some(gone.clone()), "{context}");
+                            edit = gone;
+                        }
+                    }
                 }
                 // A change not yet a step, a gesture's or a `Set`'s.
                 0 | 1 => change(&mut edit, &mut random),
@@ -155,6 +186,7 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
         }
     }
     assert!(fallbacks.iter().all(|&count| count > 0), "{fallbacks:?}");
+    assert!(gone_to > 0);
 }
 
 /// Records `edit` as what each step of `history`'s log not seen before left: a step is
@@ -277,6 +309,43 @@ fn the_fallback_mixed_with_records() {
     assert_eq!(fresh.redo(&exposed(1.0)), Some(exposed(2.0)));
 }
 
+/// `GoTo` moves the end just after a step, or to Original, and Undo takes it back. After it
+/// an edit drops the later steps, which Undo brings back, then the end where `GoTo` found
+/// it. A step not in the log is refused; the end where it is already changes nothing.
+#[test]
+fn go_to_moves_the_end_and_undo_takes_it_back_with_the_steps_an_edit_dropped() {
+    let mut history = reopened(&Edit::default());
+    for ev in [1.0, 2.0, 3.0] {
+        history.complete(&exposed(ev), StepSource::You, None);
+    }
+    let three = ids(&history);
+    assert_eq!(
+        history.go_to(&exposed(3.0), Some(three[0])),
+        Ok(Some(exposed(1.0)))
+    );
+    assert_eq!((ids(&history), history.log.end()), (three.clone(), 1));
+    assert_eq!(history.next(true), Some(Move::GoTo));
+    assert_eq!(history.undo(&exposed(1.0)), Some(exposed(3.0)));
+    assert_eq!(history.next(false), Some(Move::GoTo));
+    assert_eq!(history.redo(&exposed(3.0)), Some(exposed(1.0)));
+    // An edit there drops steps 2 and 3; Undo brings them back, then the end.
+    history.complete(&exposed(-1.0), StepSource::You, None);
+    assert_eq!(ids(&history).len(), 2);
+    assert_eq!(history.undo(&exposed(-1.0)), Some(exposed(1.0)));
+    assert_eq!((ids(&history), history.log.end()), (three.clone(), 1));
+    assert_eq!(history.undo(&exposed(1.0)), Some(exposed(3.0)));
+    assert_eq!(history.log.end(), 3);
+    // Original; there again, nothing; a step not in the log, refused.
+    assert_eq!(
+        history.go_to(&exposed(3.0), None),
+        Ok(Some(Edit::default()))
+    );
+    assert_eq!(history.go_to(&Edit::default(), None), Ok(None));
+    let unknown = StepId(!three[0].0);
+    assert_eq!(history.go_to(&Edit::default(), Some(unknown)), Err(unknown));
+    assert_eq!((ids(&history), history.log.end()), (three, 0));
+}
+
 #[test]
 fn undo_makes_a_change_not_yet_a_step_one_first_and_takes_it_back() {
     let mut history = reopened(&Edit::default());
@@ -374,6 +443,7 @@ fn json(history: &History) -> String {
     let mut out = String::new();
     let moves = |next: &Option<Move>| match next {
         Some(Move::Step(id)) => format!(r#"{{"Step":"{id}"}}"#),
+        Some(Move::GoTo) => r#""GoTo""#.to_owned(),
         None => "null".to_owned(),
     };
     write!(

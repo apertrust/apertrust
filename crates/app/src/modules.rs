@@ -93,6 +93,9 @@ pub enum Change {
     },
     /// The header's reset: `ResetModule`.
     ResetModule { module: &'static str },
+    /// Several of these changes as one history step, `Step { source: You }` (decision 78):
+    /// the tone equalizer's release of the bands a drag moved, and its reset of the bands.
+    Step(Vec<Change>),
     /// One of darktable's buttons of a button row, run on the values shown: the app sends
     /// each control the module's `action` writes as `SetControl`, one change.
     Action {
@@ -1468,8 +1471,9 @@ const EQUALIZER_SAMPLES: usize = 256;
 /// on the curve the module says they give, as darktable's does. It draws no histogram until
 /// the engine measures the mask (decision 19). Moving the bands sets each band whose value,
 /// rounded to the decimals of the band's own row, changes, no key moving one by less than
-/// the last of them, and the release ends the gesture on each band it moved; a reset resets
-/// the bands, one or all. The module's code runs on the UI thread, so a panic in it draws
+/// the last of them, and the release ends the gesture on each band it moved, as one history
+/// step with the drag; a reset resets the bands, one or all, all as one step. The module's
+/// code runs on the UI thread, so a panic in it draws
 /// no curve and moves nothing, as a pending change's `view` and `unview` are guarded.
 fn equalizer_row(
     ui: &mut egui::Ui,
@@ -1540,19 +1544,26 @@ fn equalizer_row(
     graph = graph.settle(&settle);
     match graph.show(ui) {
         Some(EqualizerAction::Move { from, to, done }) => {
+            let mut moved = Vec::new();
             for ((band, &control), (&from, &to)) in
                 shown.iter().zip(controls).zip(from.iter().zip(&to))
             {
                 let value = band.rounded(to);
                 // While dragged, what moves; on release, everything the gesture moved.
                 if value != band.value || (done && value != band.rounded(from)) {
-                    changes.push(Change::Set {
+                    moved.push(Change::Set {
                         module: id,
                         control,
                         value: ControlValue::Number(value),
                         done,
                     });
                 }
+            }
+            // The release, one step with the drag (decision 31).
+            if done {
+                changes.extend(one_step(moved));
+            } else {
+                changes.extend(moved);
             }
         }
         Some(EqualizerAction::ResetBand(i)) => {
@@ -1564,14 +1575,23 @@ fn equalizer_row(
             }
         }
         Some(EqualizerAction::Reset) => {
-            for &control in controls {
-                changes.push(Change::Reset {
-                    module: id,
-                    control,
-                });
-            }
+            let resets = controls.iter().map(|&control| Change::Reset {
+                module: id,
+                control,
+            });
+            changes.extend(one_step(resets.collect()));
         }
         None => {}
+    }
+}
+
+/// `changes` as one history step: the change itself where there is one, else
+/// [`Change::Step`].
+fn one_step(mut changes: Vec<Change>) -> Option<Change> {
+    match changes.len() {
+        0 => None,
+        1 => changes.pop(),
+        _ => Some(Change::Step(changes)),
     }
 }
 
@@ -1827,7 +1847,11 @@ mod tests {
                         if matches!(change, Change::Toggle { .. }) {
                             panel.open = !panel.open;
                         }
-                        if let Some(pending) = pending(change) {
+                        let shown: Vec<Pending> = match change {
+                            Change::Step(changes) => changes.iter().filter_map(pending).collect(),
+                            change => pending(change).into_iter().collect(),
+                        };
+                        for pending in shown {
                             pending.show(panel.module, &mut panel.state, &testing::image());
                         }
                         match change {
@@ -4923,11 +4947,14 @@ mod tests {
                 .map(|&(band, value)| (band, value, done))
                 .collect()
         };
-        // Every change while it moves, then once more on release, so history merges the
-        // drag into one step.
-        let mut expected = moved(false);
-        expected.extend(moved(true));
-        assert_eq!(bands_set(&harness.state().changes), expected);
+        // Every change while it moves, then once more on release, the bands' releases sent
+        // as one step, which takes in the drag (decision 31).
+        let changes = &harness.state().changes;
+        assert_eq!(bands_set(&changes[..9]), moved(false));
+        let [Change::Step(released)] = &changes[9..] else {
+            panic!("the release as one step: {changes:?}");
+        };
+        assert_eq!(bands_set(released), moved(true));
         // The mirror shows them at once, the slider rows of the Simple tab as well.
         let shown = control(&harness.state().state, "shadows").unwrap();
         assert_eq!(shown.value, ControlValue::Number(0.96));
@@ -4950,14 +4977,7 @@ mod tests {
             harness.step();
         }
         harness.step();
-        let resets: Vec<Change> = tone_equalizer::BANDS
-            .iter()
-            .map(|&control| Change::Reset {
-                module: "toneequal",
-                control,
-            })
-            .collect();
-        assert_eq!(harness.state().changes, resets);
+        assert_eq!(harness.state().changes, [bands_reset()]);
         let values: Vec<ControlValue> = tone_equalizer::BANDS
             .iter()
             .map(|band| control(&harness.state().state, band).unwrap().value.clone())
@@ -4996,14 +5016,20 @@ mod tests {
         harness.key_press_modifiers(Modifiers::SHIFT, Key::Delete);
         harness.run();
         let changes = &harness.state().changes;
-        assert_eq!(
-            changes[0],
-            Change::Reset {
-                module: "toneequal",
-                control: "speculars"
-            }
-        );
-        assert_eq!(changes.len(), 1 + 9);
+        let reset = Change::Reset {
+            module: "toneequal",
+            control: "speculars",
+        };
+        assert_eq!(changes, &[reset, bands_reset()]);
+    }
+
+    /// The nine bands' reset, as one step.
+    fn bands_reset() -> Change {
+        let resets = tone_equalizer::BANDS.iter().map(|&control| Change::Reset {
+            module: "toneequal",
+            control,
+        });
+        Change::Step(resets.collect())
     }
 
     /// The Tone equalizer, its curve or the curve's width panicking, as a module's code may.

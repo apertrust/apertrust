@@ -320,6 +320,12 @@ impl Log {
         taken
     }
 
+    /// Where the step `id` is among the steps, the first counting 0; `None` for one not in
+    /// the log.
+    pub fn position(&self, id: StepId) -> Option<usize> {
+        self.steps.iter().position(|step| step.id == id)
+    }
+
     /// Moves the end to `end`, at most the steps' count.
     pub fn set_end(&mut self, end: usize) {
         self.end = end.min(self.steps.len());
@@ -410,6 +416,8 @@ pub struct ControlChange {
 pub enum Move {
     /// Take back or put back this step: a step added, or the end moved over it.
     Step(StepId),
+    /// Take back or put back a `GoTo`: the end back where it was, or where it put it.
+    GoTo,
 }
 
 /// The modules darktable has on by default with no on/off button (`hide_enable_button`),
