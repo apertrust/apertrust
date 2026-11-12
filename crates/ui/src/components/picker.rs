@@ -164,7 +164,11 @@ impl<'a> PickerButton<'a> {
                 i.consume_key(Modifiers::NONE, Key::Menu)
                     || i.consume_key(Modifiers::SHIFT, Key::F10)
             });
-        let pressed = response.clicked() || response.secondary_clicked();
+        // darktable's quad takes every mouse button alike (its bauhaus gesture listens to
+        // button 0, any button), so on a quad a middle click is a click too.
+        let pressed = response.clicked()
+            || response.secondary_clicked()
+            || (self.quad && response.middle_clicked());
         let action = if self.on && (pressed || keyed) {
             Some(PickerAction::Off)
         } else if keyed || (!self.quad && response.secondary_clicked()) {
