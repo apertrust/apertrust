@@ -348,10 +348,522 @@ fn after_reopening_undo_moves_the_end_and_an_edit_drops_the_later_steps() {
     remove(&path);
 }
 
-/// Undo and Redo are commands on the edit: refused while the photo is not live, and on a
-/// photo open for viewing only, whose history is still sent.
+/// Several commands as one `Step`: one step of its source and note, which one Undo takes
+/// back whole.
 #[test]
-fn undo_and_redo_are_refused_while_not_live_and_view_only() {
+fn a_step_is_one_step_of_its_source_and_note() {
+    let path = scratch("history-step");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    driven.open(&path);
+    let note = Note::Text("Brighter, and softer".to_owned());
+    let events = driven.run([Command::Step {
+        source: StepSource::Assistant,
+        note: Some(note.clone()),
+        commands: vec![
+            set("brightness", ControlValue::Number(0.5), true),
+            amount(30.0, true),
+        ],
+    }]);
+    assert_eq!(kinds(&events), ["values", "history", "frame"]);
+    let made = history(&events);
+    assert_eq!((made.steps.len(), made.end), (1, 1));
+    let step = &made.steps[0];
+    assert_eq!(
+        (step.source, &step.note),
+        (StepSource::Assistant, &Some(note))
+    );
+    let modules: Vec<_> = step.changes.iter().map(|change| change.module).collect();
+    assert_eq!(modules, ["sample", "soften"]);
+    assert_eq!(fold(&driven), edit(&driven));
+    driven.run([Command::Undo]);
+    assert_eq!(edit(&driven), Edit::default());
+    remove(&path);
+}
+
+/// One command of a `Step` refused refuses the whole, naming its index: nothing changes, and
+/// no step is made. A command that is not a change to the edit's values is refused so.
+#[test]
+fn a_step_is_refused_whole_naming_its_index() {
+    let path = scratch("history-step-refused");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let edited = edit(&driven);
+    let step = |commands| Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands,
+    };
+    let events = driven.run([step(vec![
+        set("brightness", ControlValue::Number(0.8), true),
+        set("grain", ControlValue::Number(20.0), true),
+        set("nothing", ControlValue::Number(1.0), true),
+    ])]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::InStep { index: 2, error }]
+                if matches!(**error, SessionError::Edit(EditError::UnknownControl { .. }))
+        ),
+        "{events:?}"
+    );
+    assert_eq!(kinds(&events), ["failed", "values"]);
+    assert_eq!(brightness(&events), ControlValue::Number(0.5));
+    assert_eq!(edit(&driven), edited);
+    let events = driven.run([step(vec![
+        Command::ResetModule {
+            module: "sample".to_owned(),
+        },
+        Command::Undo,
+    ])]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::InStep { index: 1, error }]
+                if matches!(**error, SessionError::NotInStep)
+        ),
+        "{events:?}"
+    );
+    assert!(histories(&events).is_empty());
+    assert_eq!(edit(&driven), edited);
+    // Neither refusal wrote anything.
+    assert!(driven.writes().is_empty());
+    remove(&path);
+}
+
+/// The source `Default` is the session's alone: a client's `Step` of it is refused before
+/// it touches the gesture, so a `Step` of a gesture's changes begins none, and no step of
+/// `Default` follows.
+#[test]
+fn a_step_of_the_source_default_is_refused() {
+    let path = scratch("history-step-default");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let events = driven.run([Command::Step {
+        source: StepSource::Default,
+        note: None,
+        commands: vec![set("brightness", ControlValue::Number(0.5), false)],
+    }]);
+    assert!(
+        matches!(failures(&events)[..], [SessionError::DefaultSource]),
+        "{events:?}"
+    );
+    assert_eq!(brightness(&events), ControlValue::Number(0.0));
+    assert!(histories(&events).is_empty());
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_none());
+    let events = driven.run([set("grain", ControlValue::Number(10.0), true)]);
+    let sources: Vec<_> = (history(&events).steps.iter())
+        .map(|step| step.source)
+        .collect();
+    assert_eq!(sources, [StepSource::You]);
+    remove(&path);
+}
+
+/// A `Step` holding nothing is refused before it touches the gesture: the drag under way
+/// goes on, and its release is one step.
+#[test]
+fn an_empty_step_is_refused_and_the_gesture_goes_on() {
+    let path = scratch("history-step-empty");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.4), false)]);
+    let events = driven.run([Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands: Vec::new(),
+    }]);
+    assert!(
+        matches!(failures(&events)[..], [SessionError::EmptyStep]),
+        "{events:?}"
+    );
+    assert!(histories(&events).is_empty());
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_some());
+    let events = driven.run([set("brightness", ControlValue::Number(0.6), true)]);
+    let released = history(&events);
+    assert_eq!(released.steps.len(), 1);
+    let change = &released.steps[0].changes[0].controls[0];
+    assert_eq!(
+        (&change.before, &change.after),
+        (&ControlValue::Number(0.0), &ControlValue::Number(0.6))
+    );
+    remove(&path);
+}
+
+/// A `Step` refused begins no gesture: one of a gesture's changes alone, refused at its
+/// second, leaves no gesture and the edit as it was.
+#[test]
+fn a_refused_step_begins_no_gesture() {
+    let path = scratch("history-step-no-gesture");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let events = driven.run([Command::Step {
+        source: StepSource::Assistant,
+        note: None,
+        commands: vec![
+            set("brightness", ControlValue::Number(0.5), false),
+            set("nothing", ControlValue::Number(1.0), false),
+        ],
+    }]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::InStep { index: 1, .. }]
+        ),
+        "{events:?}"
+    );
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_none());
+    assert_eq!(edit(&driven), Edit::default());
+    assert!(histories(&events).is_empty());
+    remove(&path);
+}
+
+/// A `Step` of the gesture's own source going on with it, refused, leaves it under way: the
+/// edit as the drag left it, no step, and its release one step from before the drag.
+#[test]
+fn a_refused_step_going_on_with_the_gesture_leaves_it_under_way() {
+    let path = scratch("history-step-refused-going-on");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.4), false)]);
+    let dragged = edit(&driven);
+    let events = driven.run([Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands: vec![
+            set("brightness", ControlValue::Number(0.5), false),
+            set("nothing", ControlValue::Number(1.0), false),
+        ],
+    }]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::InStep { index: 1, .. }]
+        ),
+        "{events:?}"
+    );
+    assert!(histories(&events).is_empty(), "{events:?}");
+    assert_eq!(edit(&driven), dragged);
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_some());
+    let events = driven.run([set("brightness", ControlValue::Number(0.6), true)]);
+    let released = history(&events);
+    assert_eq!(released.steps.len(), 1);
+    let change = &released.steps[0].changes[0].controls[0];
+    assert_eq!(
+        (&change.before, &change.after),
+        (&ControlValue::Number(0.0), &ControlValue::Number(0.6))
+    );
+    remove(&path);
+}
+
+/// A `Step` of another source on the gesture's module, refused, still ends the gesture: the
+/// drag a step of its own, and no gesture left under way.
+#[test]
+fn a_refused_step_of_another_source_ends_the_gesture() {
+    let path = scratch("history-step-refused-other-source");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.4), false)]);
+    let dragged = edit(&driven);
+    let events = driven.run([Command::Step {
+        source: StepSource::Auto,
+        note: None,
+        commands: vec![
+            set("brightness", ControlValue::Number(0.5), false),
+            set("nothing", ControlValue::Number(1.0), false),
+        ],
+    }]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::InStep { index: 1, .. }]
+        ),
+        "{events:?}"
+    );
+    let ended = history(&events);
+    assert_eq!(ended.steps.len(), 1);
+    let step = &ended.steps[0];
+    let change = &step.changes[0].controls[0];
+    assert_eq!(
+        (step.source, &change.before, &change.after),
+        (
+            StepSource::You,
+            &ControlValue::Number(0.0),
+            &ControlValue::Number(0.4)
+        )
+    );
+    assert_eq!(edit(&driven), dragged);
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_none());
+    remove(&path);
+}
+
+/// A `Step` that would take in the gesture under way, refused, leaves the gesture a step of
+/// its own, as a release refused does, and the edit as the gesture left it.
+#[test]
+fn a_refused_step_leaves_the_gesture_it_would_take_in_a_step_of_its_own() {
+    let path = scratch("history-step-refused-release");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.4), false)]);
+    let dragged = edit(&driven);
+    let events = driven.run([Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands: vec![
+            set("brightness", ControlValue::Number(0.5), true),
+            set("nothing", ControlValue::Number(1.0), true),
+        ],
+    }]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::InStep { index: 1, .. }]
+        ),
+        "{events:?}"
+    );
+    let ended = history(&events);
+    assert_eq!(ended.steps.len(), 1);
+    let change = &ended.steps[0].changes[0].controls[0];
+    assert_eq!(
+        (&change.before, &change.after),
+        (&ControlValue::Number(0.0), &ControlValue::Number(0.4))
+    );
+    assert_eq!(edit(&driven), dragged);
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_none());
+    remove(&path);
+}
+
+/// One source per gesture: a gesture's change of another source or note on its module ends
+/// the gesture as a step of its own and begins another, and a completed change of another
+/// source or note does not take it in.
+#[test]
+fn a_gesture_has_one_source() {
+    let path = scratch("history-gesture-source");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let brightness = |value, done| set("brightness", ControlValue::Number(value), done);
+    let step = |source, note: Option<Note>, value, done| Command::Step {
+        source,
+        note,
+        commands: vec![brightness(value, done)],
+    };
+    // Auto's drag, then the person's on the same control: two gestures.
+    driven.run([step(StepSource::Auto, None, 0.2, false)]);
+    driven.run([brightness(0.4, false)]);
+    driven.run([brightness(0.6, true)]);
+    // The person's drag, then an assistant's release of it: two steps.
+    driven.run([brightness(0.8, false)]);
+    let note = Note::Text("Brighter".to_owned());
+    driven.run([step(StepSource::Assistant, Some(note.clone()), 1.0, true)]);
+    // Auto's drag, then Auto's release with a note: two steps.
+    driven.run([step(StepSource::Auto, None, 1.2, false)]);
+    let events = driven.run([step(StepSource::Auto, Some(note.clone()), 1.4, true)]);
+    let steps: Vec<_> = (history(&events).steps.iter())
+        .map(|step| {
+            let after = step.changes[0].controls[0].after.clone();
+            (step.source, step.note.clone(), after)
+        })
+        .collect();
+    let number = ControlValue::Number;
+    assert_eq!(
+        steps,
+        [
+            (StepSource::Auto, None, number(0.2)),
+            (StepSource::You, None, number(0.6)),
+            (StepSource::You, None, number(0.8)),
+            (StepSource::Assistant, Some(note.clone()), number(1.0)),
+            (StepSource::Auto, None, number(1.2)),
+            (StepSource::Auto, Some(note), number(1.4)),
+        ]
+    );
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// A `Step` writing the module of the gesture under way takes it in: the drag and the
+/// `Step` releasing it are one step. One that does not leaves the gesture a step of its
+/// own first.
+#[test]
+fn a_step_takes_in_the_gesture_under_way_on_a_module_it_writes() {
+    let path = scratch("history-step-gesture");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    driven.open(&path);
+    for value in [0.2, 0.4] {
+        driven.run([set("brightness", ControlValue::Number(value), false)]);
+    }
+    let you = |commands| Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands,
+    };
+    let events = driven.run([you(vec![
+        set("brightness", ControlValue::Number(0.5), true),
+        set("grain", ControlValue::Number(20.0), true),
+    ])]);
+    let released = history(&events);
+    assert_eq!(released.steps.len(), 1);
+    let controls = &released.steps[0].changes[0].controls;
+    let names: Vec<_> = controls.iter().map(|change| change.control).collect();
+    assert_eq!(names, ["brightness", "grain"]);
+    assert_eq!(
+        (&controls[0].before, &controls[0].after),
+        (&ControlValue::Number(0.0), &ControlValue::Number(0.5))
+    );
+    assert!(driven.engine.open.as_ref().unwrap().gesture.is_none());
+    // A gesture on Soften, then a `Step` on Sample alone: two steps.
+    driven.run([amount(20.0, false)]);
+    let events = driven.run([you(vec![set(
+        "brightness",
+        ControlValue::Number(0.7),
+        true,
+    )])]);
+    let modules: Vec<_> = (history(&events).steps.iter())
+        .map(|step| step.changes[0].module)
+        .collect();
+    assert_eq!(modules, ["sample", "soften", "sample"]);
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// A `Step` of `done: false` changes alone is a gesture's change of its source: it makes no
+/// step, the next goes on with it, and the one ending it, or another command, makes the
+/// gesture one step of that source.
+#[test]
+fn a_step_of_a_gesture_s_changes_alone_is_a_gesture_of_its_source() {
+    let path = scratch("history-step-auto");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let auto = |value, done| Command::Step {
+        source: StepSource::Auto,
+        note: None,
+        commands: vec![set("brightness", ControlValue::Number(value), done)],
+    };
+    for value in [0.2, 0.4] {
+        let events = driven.run([auto(value, false)]);
+        assert!(histories(&events).is_empty(), "{events:?}");
+    }
+    let events = driven.run([auto(0.6, true)]);
+    let made = history(&events);
+    assert_eq!(made.steps.len(), 1);
+    let change = &made.steps[0].changes[0].controls[0];
+    assert_eq!(
+        (&change.before, &change.after),
+        (&ControlValue::Number(0.0), &ControlValue::Number(0.6))
+    );
+    // Ended by another command, it is a step of its own, of its source.
+    driven.run([auto(0.8, false)]);
+    let events = driven.run([Command::Reset]);
+    let sources: Vec<_> = (history(&events).steps.iter())
+        .map(|step| step.source)
+        .collect();
+    assert_eq!(
+        sources,
+        [StepSource::Auto, StepSource::Auto, StepSource::You]
+    );
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// `GoTo` moves the end just after a step, or to Original, rendering and saving the edit
+/// there, and Undo takes it back. After it an edit drops the later steps, which Undo brings
+/// back, then the end where `GoTo` found it. The end where it is changes nothing.
+#[test]
+fn go_to_moves_the_end_and_undo_brings_back_the_steps_an_edit_after_it_dropped() {
+    let path = scratch("history-go-to");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let first = driven.run([set("brightness", ControlValue::Number(0.25), true)]);
+    // Read now: a later frame takes its display buffer in turn.
+    let first = frame(&driven.gpu, &first);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    let last = driven.run([set("brightness", ControlValue::Number(0.75), true)]);
+    let ids: Vec<StepId> = history(&last).steps.iter().map(|step| step.id).collect();
+    driven.writes();
+    let gone = driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    assert_eq!(kinds(&gone), ["values", "history", "frame"]);
+    assert_eq!(brightness(&gone), ControlValue::Number(0.25));
+    assert!(frame(&driven.gpu, &gone) == first);
+    let after = history(&gone);
+    assert_eq!((after.steps.len(), after.end), (3, 1));
+    // Undo takes it back; with nothing undone, Redo would move the end forward a step.
+    assert_eq!(
+        (after.undo, after.redo),
+        (Some(Move::GoTo), Some(Move::Step(ids[1])))
+    );
+    // Saved as a completed change: the file holds the edit at the end.
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    let read = sidecar::read(&sidecar, OPERATIONS, &[&Sample], &[]).unwrap();
+    assert_eq!(read.edit, edit(&driven));
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(brightness(&undone), ControlValue::Number(0.75));
+    let after = history(&undone);
+    assert_eq!((after.end, after.redo), (3, Some(Move::GoTo)));
+    let redone = driven.run([Command::Redo]);
+    assert_eq!(brightness(&redone), ControlValue::Number(0.25));
+    assert_eq!(history(&redone).end, 1);
+    // An edit there drops the later steps; Undo brings them back, then the end.
+    let edited = driven.run([set("brightness", ControlValue::Number(1.0), true)]);
+    let after = history(&edited);
+    assert_eq!((after.steps.len(), after.end), (2, 2));
+    let undone = driven.run([Command::Undo]);
+    let after = history(&undone);
+    let kept: Vec<StepId> = after.steps.iter().map(|step| step.id).collect();
+    assert_eq!((kept, after.end), (ids.clone(), 1));
+    assert_eq!(after.undo, Some(Move::GoTo));
+    assert_eq!(brightness(&undone), ControlValue::Number(0.25));
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(history(&undone).end, 3);
+    assert_eq!(brightness(&undone), ControlValue::Number(0.75));
+    // Original, then Original again, which changes nothing.
+    let original = driven.run([Command::GoTo { step: None }]);
+    assert_eq!(history(&original).end, 0);
+    assert_eq!(edit(&driven), Edit::default());
+    let nothing = driven.run([Command::GoTo { step: None }]);
+    assert_eq!(kinds(&nothing), ["values"]);
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// `GoTo` naming a step not in the log is refused, and changes nothing.
+#[test]
+fn go_to_an_unknown_step_is_refused() {
+    let path = scratch("history-go-to-unknown");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let set_one = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    let unknown = StepId(!history(&set_one).steps[0].id.0);
+    let events = driven.run([Command::GoTo {
+        step: Some(unknown),
+    }]);
+    assert!(
+        matches!(
+            failures(&events)[..],
+            [SessionError::UnknownStep { step }] if *step == unknown
+        ),
+        "{events:?}"
+    );
+    assert!(histories(&events).is_empty());
+    assert_eq!(brightness(&events), ControlValue::Number(0.5));
+    remove(&path);
+}
+
+/// The history's commands are commands on the edit: refused while the photo is not live,
+/// and on a photo open for viewing only, whose history is still sent.
+#[test]
+fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
+    let commands = || {
+        [
+            Command::Undo,
+            Command::Redo,
+            Command::GoTo { step: None },
+            Command::Step {
+                source: StepSource::You,
+                note: None,
+                commands: vec![set("brightness", ControlValue::Number(1.0), true)],
+            },
+        ]
+    };
     let path = scratch("history-not-live");
     let mut driven = Driven::new(&[&Sample]);
     let (hold, begun, permit) = export_job::testing::Hold::new();
@@ -359,9 +871,9 @@ fn undo_and_redo_are_refused_while_not_live_and_view_only() {
     driven.run([Command::Open(path.clone())]);
     driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::History(_))));
     begun.recv_timeout(TEST_WAIT).expect("the decode begins");
-    let events = driven.run([Command::Undo, Command::Redo]);
+    let events = driven.run(commands());
     let refused = failures(&events);
-    assert_eq!(refused.len(), 2, "{events:?}");
+    assert_eq!(refused.len(), 4, "{events:?}");
     assert!(refused.iter().all(|e| matches!(e, SessionError::NotLive)));
     assert!(histories(&events).is_empty());
     permit.send(()).unwrap();
@@ -375,9 +887,9 @@ fn undo_and_redo_are_refused_while_not_live_and_view_only() {
     let mut driven = Driven::new(&[&Sample]);
     let opened = driven.open(&path);
     assert_eq!(history(&opened).steps.len(), 1);
-    let events = driven.run([Command::Undo, Command::Redo]);
+    let events = driven.run(commands());
     let refused = failures(&events);
-    assert_eq!(refused.len(), 2, "{events:?}");
+    assert_eq!(refused.len(), 4, "{events:?}");
     assert!(
         refused
             .iter()
