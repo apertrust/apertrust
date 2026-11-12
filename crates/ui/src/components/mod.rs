@@ -46,6 +46,7 @@ mod icon_button;
 mod jobs;
 mod marker;
 mod photo_frame;
+mod picker;
 mod plate;
 mod section;
 mod segmented;
@@ -91,6 +92,7 @@ pub use photo_frame::{
     CAPTION_GAP, CAPTION_HEIGHT, CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption,
     PhotoFrame, Placed, middle_cut,
 };
+pub use picker::{PickerAction, PickerButton, PickerMarks, PickerPlace};
 pub use plate::ButtonState;
 pub use section::{Section, SectionAction, SectionOutput, section_list};
 pub use segmented::Segmented;

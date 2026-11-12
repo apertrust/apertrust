@@ -859,6 +859,8 @@ mod tests {
                 args.set("shown", 1107);
                 // The zoom's tooltip: the pointer's modifier.
                 args.set("command", "Ctrl");
+                // A picker button's tooltip: the picker's own words.
+                args.set("tip", "Pick colour from the photo");
                 // Open Recent's item for a name two recents share: the folder it is in.
                 args.set("parent", "Lisbon");
                 // Edit › Undo and Redo: the step they would take back or put back.

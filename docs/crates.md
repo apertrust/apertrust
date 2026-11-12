@@ -871,6 +871,12 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - a label in the line's white over its black, and the focus ring round a focused area or point, shown only after a key;
 - in the gallery over a light, a dark and a busy photo made in code, photographed in every theme and at twice the size in the dark theme.
 
+`components/picker.rs` ([pickers.md](pickers.md#the-picker-button)), used by no panel yet:
+
+- `PickerButton`, the pipette as an `IconButton` toggle 18 points square with no plate, the filled pipette in `text_strong` while on (decision 81), reporting `PickerAction::On { area }` (Ctrl-click or Cmd-click with no other modifier, Shift+F10 or the Menu key for an area, and a right-click too except on a quad, which takes every mouse button alike as darktable's does) or `Off` for any press while on; its tooltip darktable's words with `picker-tip-area`'s area hint, or why it is disabled; to AccessKit a toggled button described by its tooltip;
+- `PickerMarks`, the active picker's area with its corner handles or its point with its sampled colour, and the focus ring round it, painted with the overlay;
+- in the gallery's Pickers section, photographed in every theme and at twice the size in the dark and the light theme.
+
 ### Painted widgets
 
 **`Curve`:** points on a square plot through a curve the caller samples, black and white handles as `levels` or as the curve's `ends`, a histogram, display axes.
@@ -909,7 +915,7 @@ From decision 42 ([docs/gui.md](gui.md), Slider values and choices):
 - darktable's fine-control popup as the popup service's `Kind::Slider`, drawn on every platform, opened by Enter, a right-click, Shift+F10 or the Menu key, with `SliderAction::Cancel` on its cancel;
 - `Choice`'s list as the service's dropdown, with darktable's type-to-filter.
 
-From decision 79 ([pickers.md](pickers.md)): the on-photo overlay primitives ([gui.md](gui.md#on-photo-overlays)), `PickerButton` and the picker's marks.
+From decision 79 ([pickers.md](pickers.md)): the Colour picker section's rows (79.16) and stored samples' marks.
 
 ## apertrust-display
 
