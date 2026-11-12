@@ -2047,14 +2047,25 @@ fn cfa_letter(color: CfaColor) -> char {
 async fn show_gpu(engine: engine::Options) -> Result<()> {
     // A backend this build lacks lists nothing: said before anything is listed.
     gpu::check_backend(&engine.gpu)?;
-    println!("Adapters:");
-    for adapter in gpu::adapters(&gpu::instance(&engine.gpu)).await {
-        let info = adapter.get_info();
-        println!(
-            "  {} ({:?}, {:?})",
-            info.name, info.backend, info.device_type
-        );
-    }
+    // What this build has of them: wgpu's primary set names Metal on every platform.
+    let loaded =
+        gpu::instance_descriptor(&engine.gpu).backends & wgpu::Instance::enabled_backend_features();
+    let variable = std::env::var(engine::BACKEND_VARIABLE).ok();
+    println!(
+        "{}",
+        backends_line(
+            loaded,
+            engine.gpu.backend,
+            engine.sources[2],
+            variable.as_deref()
+        )
+    );
+    let adapters: Vec<wgpu::AdapterInfo> = gpu::adapters(&gpu::instance(&engine.gpu))
+        .await
+        .iter()
+        .map(wgpu::Adapter::get_info)
+        .collect();
+    print!("{}", adapter_lines(&adapters, gpu::power_preference()));
 
     let gpu = GpuContext::new(&engine.gpu).await?;
     let info = gpu.adapter.get_info();
@@ -2076,6 +2087,83 @@ async fn show_gpu(engine: engine::Options) -> Result<()> {
     Ok(())
 }
 
+/// The graphics APIs' names, as the app's Settings names them.
+fn api_name(backend: wgpu::Backend) -> &'static str {
+    match backend {
+        wgpu::Backend::Dx12 => "Direct3D 12",
+        wgpu::Backend::Vulkan => "Vulkan",
+        wgpu::Backend::Metal => "Metal",
+        wgpu::Backend::Gl => "OpenGL",
+        wgpu::Backend::BrowserWebGpu => "WebGPU",
+        wgpu::Backend::Noop => "none",
+    }
+}
+
+/// `gpu`'s line of the backends the engine's instance `loaded`, as this build has them,
+/// and why: `engine.backend`'s `chosen` value and where it came from, `from`, or
+/// `WGPU_BACKEND`'s text, `variable`, where it came first (decision 81).
+fn backends_line(
+    loaded: wgpu::Backends,
+    chosen: gpu::Backend,
+    from: Source,
+    variable: Option<&str>,
+) -> String {
+    let every = [
+        wgpu::Backend::Dx12,
+        wgpu::Backend::Vulkan,
+        wgpu::Backend::Metal,
+        wgpu::Backend::Gl,
+        wgpu::Backend::BrowserWebGpu,
+    ];
+    let names: Vec<&str> = every
+        .into_iter()
+        .filter(|backend| loaded.contains(wgpu::Backends::from(*backend)))
+        .map(api_name)
+        .collect();
+    let names = names.join(", ");
+    let why = match (from, variable) {
+        (Source::Variable(name), Some(text)) => format!("from {name}={text}"),
+        (from, _) => {
+            let chosen = match chosen {
+                gpu::Backend::Auto => "Automatic",
+                gpu::Backend::Dx12 => "Direct3D 12",
+                gpu::Backend::Vulkan => "Vulkan",
+            };
+            let source = match from {
+                Source::Default => "the default".to_owned(),
+                Source::File => "the settings file".to_owned(),
+                other => other.to_string(),
+            };
+            format!("{chosen}, from {source}")
+        }
+    };
+    format!("Backends: {names} ({why})")
+}
+
+/// `gpu`'s list of `adapters`, in wgpu's order, each with its name, backend and kind, the
+/// one Automatic opens for `preference` marked, and the software adapter marked as CPU,
+/// which `--adapter cpu` opens; its own name kept, as this is a tool for finding out.
+fn adapter_lines(adapters: &[wgpu::AdapterInfo], preference: wgpu::PowerPreference) -> String {
+    let kinds: Vec<wgpu::DeviceType> = adapters.iter().map(|info| info.device_type).collect();
+    let automatic = gpu::automatic(&kinds, preference);
+    let mut text = String::from("Adapters:\n");
+    for (at, info) in adapters.iter().enumerate() {
+        let mut line = format!(
+            "  {} ({:?}, {:?})",
+            info.name, info.backend, info.device_type
+        );
+        if info.device_type == wgpu::DeviceType::Cpu {
+            line.push_str("  CPU, --adapter cpu");
+        }
+        if automatic == Some(at) {
+            line.push_str("  <- Automatic");
+        }
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use apertrust_engine::edit::EditError;
@@ -2086,6 +2174,78 @@ mod tests {
     use super::*;
 
     const WITH_SAMPLE: &[&dyn Module] = &[&Sample];
+
+    /// `gpu` says which backends were loaded and why, then lists the adapters, Automatic's
+    /// marked, and the software one as CPU, under its own name (decision 81).
+    #[test]
+    fn gpu_says_what_was_loaded_and_marks_automatic_and_the_cpu() {
+        let both = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
+        let line = |chosen, from, variable| backends_line(both, chosen, from, variable);
+        assert_eq!(
+            line(gpu::Backend::Auto, Source::Default, None),
+            "Backends: Direct3D 12, Vulkan (Automatic, from the default)"
+        );
+        let dx12 = wgpu::Backends::DX12;
+        assert_eq!(
+            backends_line(dx12, gpu::Backend::Dx12, Source::File, None),
+            "Backends: Direct3D 12 (Direct3D 12, from the settings file)"
+        );
+        let vulkan = wgpu::Backends::VULKAN;
+        for (from, said) in [
+            (Source::Flag("--backend"), "--backend"),
+            (Source::Conf, "--conf"),
+        ] {
+            assert_eq!(
+                backends_line(vulkan, gpu::Backend::Vulkan, from, None),
+                format!("Backends: Vulkan (Vulkan, from {said})")
+            );
+        }
+        let gl = wgpu::Backends::GL;
+        let variable = Source::Variable("WGPU_BACKEND");
+        assert_eq!(
+            backends_line(gl, gpu::Backend::Dx12, variable, Some("gl")),
+            "Backends: OpenGL (from WGPU_BACKEND=gl)"
+        );
+        let info = |name: &str, backend, device_type| wgpu::AdapterInfo {
+            name: name.to_owned(),
+            ..wgpu::AdapterInfo::new(device_type, backend)
+        };
+        let adapters = [
+            info(
+                "AMD Radeon 780M Graphics",
+                wgpu::Backend::Vulkan,
+                wgpu::DeviceType::IntegratedGpu,
+            ),
+            info(
+                "NVIDIA GeForce RTX 5060",
+                wgpu::Backend::Vulkan,
+                wgpu::DeviceType::DiscreteGpu,
+            ),
+            info(
+                "Microsoft Basic Render Driver",
+                wgpu::Backend::Dx12,
+                wgpu::DeviceType::Cpu,
+            ),
+        ];
+        let high = adapter_lines(&adapters, wgpu::PowerPreference::HighPerformance);
+        assert_eq!(
+            high,
+            "Adapters:\n  AMD Radeon 780M Graphics (Vulkan, IntegratedGpu)\n  NVIDIA GeForce \
+             RTX 5060 (Vulkan, DiscreteGpu)  <- Automatic\n  Microsoft Basic Render Driver \
+             (Dx12, Cpu)  CPU, --adapter cpu\n"
+        );
+        let low = adapter_lines(&adapters, wgpu::PowerPreference::LowPower);
+        assert!(
+            low.lines()
+                .nth(1)
+                .is_some_and(|l| l.ends_with("<- Automatic")),
+            "{low}"
+        );
+        assert_eq!(
+            adapter_lines(&[], wgpu::PowerPreference::HighPerformance),
+            "Adapters:\n"
+        );
+    }
 
     #[test]
     fn a_full_disk_stops_a_run_whether_the_rename_or_the_encoder_found_it() {
