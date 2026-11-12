@@ -418,11 +418,17 @@ fn main() -> eframe::Result {
         .and_then(|folders| open_cache(folders.cache()));
     // The folders as Settings › Storage shows them.
     let storage_folders = storage::Folders::of(folders.as_ref(), export::places().home);
-    // The window's device is the engine's, so it is created from the engine's instance
-    // (its Direct3D 12 shader compiler included) and with the engine's needs. A display
-    // handle only matters for OpenGL on Wayland; the engine uses Vulkan.
+    // The window's device is the engine's, so it is created from the engine's instance,
+    // built from the same options, so the two load the same backends (decision 81), its
+    // Direct3D 12 shader compiler included, and with the engine's needs. A display handle
+    // only matters for OpenGL on Wayland; the engine uses Vulkan. A backend `--conf` names
+    // that this build lacks would find no adapter: it stops the start, as the CLI's does.
+    if let Err(error) = gpu::check_backend(&engine.gpu) {
+        eprintln!("apertrust: {error}");
+        std::process::exit(1);
+    }
     let mut setup = WgpuSetupCreateNew::without_display_handle();
-    setup.instance_descriptor = gpu::instance_descriptor();
+    setup.instance_descriptor = gpu::instance_descriptor(&engine.gpu);
     setup.device_descriptor = Arc::new(gpu::device_descriptor);
     // On the adapter `engine.adapter` names, chosen as the engine chooses it, or wgpu's
     // choice where it names none; once, so a change applies after a restart.

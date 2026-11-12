@@ -591,7 +591,7 @@ settings-group-start = Start
 settings-group-confirmations = Confirmations
 settings-group-thumbnails = Thumbnails
 settings-group-side-panel = Side panel
-settings-group-gpu = GPU
+settings-group-hardware-acceleration = Hardware acceleration
 settings-group-diagnostics = Diagnostics
 settings-group-cache = Cache
 # Each setting's row, by the setting's id, its dots and underscores as hyphens; a row's
@@ -629,6 +629,10 @@ setting-side-panel-tab-names-label = Show tab names
 setting-engine-adapter-label = Graphics card
 # What the graphics card's field shows while empty: the system's choice.
 setting-engine-adapter-hint = Automatic
+setting-engine-backend-label = Graphics API
+setting-engine-backend-option-auto = Automatic
+setting-engine-backend-option-dx12 = Direct3D 12
+setting-engine-backend-option-vulkan = Vulkan
 setting-engine-memory-budget-label = Memory budget
 setting-cache-limited-label = Limit the cache's size
 setting-cache-limited-help = Off, the cache is unlimited: nothing is removed from it to keep it within a size.

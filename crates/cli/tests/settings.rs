@@ -555,6 +555,137 @@ fn a_setting_that_names_no_adapter_falls_back_and_a_flag_is_refused() {
     );
 }
 
+/// The CLI with `args` and `-d settings`, reading no user data folder's settings but
+/// `folder`'s, with `WGPU_BACKEND` unset and the variables `envs` set; its stderr and exit
+/// status.
+fn run_backend(args: &[&str], folder: &Folder, envs: &[(&str, &str)]) -> (String, Option<i32>) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_apertrust-cli"));
+    command
+        .args(["-d", "settings", "--user-data-dir"])
+        .arg(&folder.0)
+        .args(args)
+        .env_remove("RUST_LOG")
+        .env_remove("APERTRUST_USER_DATA_DIR")
+        .env_remove("APERTRUST_CACHE_DIR")
+        .env_remove("WGPU_BACKEND")
+        .envs(envs.iter().copied());
+    let Output { status, stderr, .. } = command.output().expect("the CLI runs");
+    (String::from_utf8_lossy(&stderr).into_owned(), status.code())
+}
+
+/// The Vulkan loader's variable, naming a driver that is not there: Vulkan then lists no
+/// adapter, as on a machine without a Vulkan driver.
+#[cfg(windows)]
+fn no_vulkan_driver(folder: &Folder) -> (&'static str, String) {
+    let missing = folder.0.join("no-such-driver.json");
+    ("VK_DRIVER_FILES", missing.display().to_string())
+}
+
+/// The graphics API, `engine.backend` (decision 81): `WGPU_BACKEND`, then `--backend`, then
+/// `--conf`, then the file, then Automatic, each logged with where it came from; a name
+/// `--backend` does not know is a usage error.
+#[test]
+fn a_backend_comes_from_wgpu_backend_then_the_flag_then_conf_then_the_file() {
+    let folder = Folder::holding("backend", "version = 1\n[engine]\nbackend = \"vulkan\"\n");
+    let elsewhere = Folder::new("backend-elsewhere");
+    let export = export(&elsewhere);
+    let export: Vec<&str> = export.iter().map(String::as_str).collect();
+    let (stderr, _) = run_backend(&export, &folder, &[]);
+    // macOS's wgpu has no Vulkan, and a machine may have no Vulkan driver: the file's is
+    // then warned of and Automatic taken.
+    let used = if cfg!(target_os = "macos") {
+        let warned = "engine.backend vulkan in the settings file: the graphics API vulkan \
+                      is not built for macOS; Automatic used";
+        assert!(stderr.contains(warned), "{stderr}");
+        "auto"
+    } else if stderr.contains("the graphics API vulkan finds no adapter; Automatic used") {
+        "auto"
+    } else {
+        "vulkan"
+    };
+    let from_file = format!("engine.backend: {used}, from: file");
+    assert!(logged(&stderr, &from_file), "{stderr}");
+    let conf = [export.as_slice(), &["--conf", "engine.backend=dx12"]].concat();
+    let (stderr, _) = run_backend(&conf, &folder, &[]);
+    assert!(
+        logged(&stderr, "engine.backend: dx12, from: --conf"),
+        "{stderr}"
+    );
+    let flag = [conf.as_slice(), &["--backend", "vulkan"]].concat();
+    let (stderr, _) = run_backend(&flag, &folder, &[]);
+    assert!(
+        logged(&stderr, "engine.backend: vulkan, from: --backend"),
+        "{stderr}"
+    );
+    let (stderr, _) = run_backend(&flag, &folder, &[("WGPU_BACKEND", "vulkan")]);
+    let variable = "engine.backend: vulkan, from: WGPU_BACKEND";
+    assert!(logged(&stderr, variable), "{stderr}");
+
+    // The setting's names alone: Metal is Automatic on macOS, and no name of its own.
+    for name in ["opengl", "metal"] {
+        for command in [&["gpu"][..], &["preview", "no-such-raw.CR2"], &export] {
+            let args = [command, &["--backend", name]].concat();
+            let (stderr, status) = run_backend(&args, &folder, &[]);
+            assert_eq!(status, Some(2), "{stderr}");
+            let refused = format!("{name} is none of auto, dx12, vulkan");
+            assert!(stderr.contains(&refused), "{stderr}");
+        }
+    }
+}
+
+/// A backend this build lacks, typed for the run, is an error, unless `WGPU_BACKEND`
+/// chooses in its place; one in the file is Automatic (above). Windows builds every one.
+/// Needs a GPU adapter, hardware or software.
+#[cfg(not(windows))]
+#[test]
+fn a_backend_typed_for_the_run_that_this_build_lacks_is_refused() {
+    let folder = Folder::new("backend-lacking");
+    let (system, primary) = if cfg!(target_os = "macos") {
+        ("macOS", "metal")
+    } else {
+        ("Linux", "vulkan")
+    };
+    let refused = format!("the graphics API dx12 is not built for {system}");
+    for args in [
+        &["gpu", "--backend", "dx12"][..],
+        &["--conf", "engine.backend=dx12", "gpu"],
+    ] {
+        let (stderr, status) = run_backend(args, &folder, &[]);
+        assert_eq!(status, Some(1), "{stderr}");
+        assert!(stderr.contains(&refused), "{stderr}");
+    }
+    let args = ["gpu", "--backend", "dx12"];
+    let (stderr, status) = run_backend(&args, &folder, &[("WGPU_BACKEND", primary)]);
+    assert_eq!(status, Some(0), "{stderr}");
+}
+
+/// A backend the file names that finds no adapter on this machine, as Vulkan without a
+/// Vulkan driver, is warned of and Automatic taken, so the engine still opens; the same
+/// typed for the run is an error. On Windows, where Direct3D 12 is there without Vulkan
+/// (WARP at least). Needs a GPU adapter, hardware or software.
+#[cfg(windows)]
+#[test]
+fn a_file_s_backend_that_finds_no_adapter_falls_back_and_a_flag_s_is_refused() {
+    let folder = Folder::holding(
+        "backend-no-adapter",
+        "version = 1\n[engine]\nbackend = \"vulkan\"\n",
+    );
+    let (name, missing) = no_vulkan_driver(&folder);
+    let no_vulkan = [(name, missing.as_str())];
+    let (stderr, status) = run_backend(&["gpu"], &folder, &no_vulkan);
+    assert_eq!(status, Some(0), "{stderr}");
+    let warned = "engine.backend vulkan in the settings file: the graphics API vulkan finds \
+                  no adapter; Automatic used";
+    assert!(stderr.contains(warned), "{stderr}");
+    assert!(
+        logged(&stderr, "engine.backend: auto, from: file"),
+        "{stderr}"
+    );
+    let (stderr, status) = run_backend(&["gpu", "--backend", "vulkan"], &folder, &no_vulkan);
+    assert_eq!(status, Some(1), "{stderr}");
+    assert!(stderr.contains("no usable GPU adapter"), "{stderr}");
+}
+
 /// The cache folder `-d settings` names: `--cache-dir`'s or darktable's `--cachedir`'s, the
 /// last given, before or after the command, then `APERTRUST_CACHE_DIR`'s, then the user
 /// data folder's when that is given; created nowhere, a relative one not in the current

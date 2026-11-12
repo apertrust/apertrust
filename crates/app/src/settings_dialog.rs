@@ -28,6 +28,8 @@
 //! - A row `--conf` sets for this run is drawn disabled, saying so (decision 43), and so is
 //!   one whose required boolean (the schema's `requires`) is off, as the cache's limit
 //!   while it is unlimited.
+//! - A row whose `platforms` leave out the platform the dialog runs on, as the context's
+//!   operating system says, is not drawn: the graphics API's off Windows.
 //! - "Applies after a restart" is said under the control of a setting that does.
 //! - Every change applies at once and is kept, with no OK or Apply: it goes to the app as a
 //!   [`Change`], which keeps it through the settings' keeper and shows it in the main
@@ -38,7 +40,7 @@
 //! It is a [`Dialog`] (decision 41), which the dialog host draws in a window of its own:
 //! modeless on the Mac and modal on Windows and Linux.
 
-use apertrust_base::settings::{Applies, CONF_FLAG, Choice as _, Declared, Kind, Page};
+use apertrust_base::settings::{Applies, CONF_FLAG, Choice as _, Declared, Kind, Page, Platform};
 use apertrust_ui::components::{Choice, ChoiceAction, TextField, ToggleRow, ValueField};
 use apertrust_ui::popup::{self, Entry, Item, Request};
 use apertrust_ui::{Builtin, Locale, Theme, fonts, theme, tr, translator};
@@ -93,6 +95,8 @@ pub struct Row {
     pub overridden: bool,
     /// The boolean setting whose row must be on for this one to be enabled.
     pub requires: Option<&'static str>,
+    /// The platforms it is drawn on; None for every one.
+    pub platforms: Option<&'static [Platform]>,
 }
 
 impl Row {
@@ -110,7 +114,21 @@ impl Row {
             default: setting.default_value(),
             overridden: keeper.overridden(setting),
             requires: setting.requires(),
+            platforms: setting.platforms(),
         })
+    }
+
+    /// Whether the dialog draws it on `os`: on every platform, or on one its `platforms`
+    /// name. None of them is any other system's.
+    pub fn drawn_on(&self, os: OperatingSystem) -> bool {
+        let platform = match os {
+            OperatingSystem::Windows => Some(Platform::Windows),
+            OperatingSystem::Mac => Some(Platform::Mac),
+            OperatingSystem::Nix => Some(Platform::Linux),
+            _ => None,
+        };
+        self.platforms
+            .is_none_or(|platforms| platform.is_some_and(|p| platforms.contains(&p)))
     }
 
     /// Whether it is off its default, which the dot says.
@@ -247,7 +265,7 @@ impl Settings {
             focused: true,
         };
         let kept = keeper.page();
-        if dialog.holds(kept) {
+        if dialog.holds(kept, OperatingSystem::from_target_os()) {
             dialog.page = kept;
         }
         dialog
@@ -271,9 +289,11 @@ impl Settings {
         self.pressed.clear();
     }
 
-    /// Whether `page` holds a row, so it can be chosen.
-    pub fn holds(&self, page: Page) -> bool {
-        self.rows.iter().any(|row| row.page == page)
+    /// Whether `page` holds a row drawn on `os`, so it can be chosen.
+    pub fn holds(&self, page: Page, os: OperatingSystem) -> bool {
+        self.rows
+            .iter()
+            .any(|row| row.page == page && row.drawn_on(os))
     }
 
     /// The row of the setting `id`.
@@ -421,7 +441,7 @@ impl Settings {
                 pos2(column.left(), top + i as f32 * PAGE_LINE),
                 vec2(PAGES - line, PAGE_LINE),
             );
-            let enabled = self.holds(page);
+            let enabled = self.holds(page, ctx.os());
             let shown = page == self.page;
             let id = page_id(page);
             let sense = if enabled {
@@ -467,9 +487,9 @@ impl Settings {
                 );
                 let step = |key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key));
                 if step(Key::ArrowDown) {
-                    moved = self.next(page, 1);
+                    moved = self.next(page, 1, ctx.os());
                 } else if step(Key::ArrowUp) {
-                    moved = self.next(page, -1);
+                    moved = self.next(page, -1, ctx.os());
                 }
             }
             let response = if enabled {
@@ -488,13 +508,13 @@ impl Settings {
         chosen
     }
 
-    /// The page that can be chosen next to `from`, `by` 1 after it or −1 before it.
-    fn next(&self, from: Page, by: isize) -> Option<Page> {
+    /// The page that can be chosen on `os` next to `from`, `by` 1 after it or −1 before it.
+    fn next(&self, from: Page, by: isize, os: OperatingSystem) -> Option<Page> {
         let at = Page::ALL.iter().position(|page| *page == from)? as isize;
         let mut i = at + by;
         while (0..Page::ALL.len() as isize).contains(&i) {
             let page = Page::ALL[i as usize];
-            if self.holds(page) {
+            if self.holds(page, os) {
                 return Some(page);
             }
             i += by;
@@ -507,8 +527,15 @@ impl Settings {
     /// Returns what the user changed, and what Storage asked.
     fn page_rows(&self, ui: &mut Ui, t: &Theme) -> (Option<Change>, Option<storage::Asked>) {
         let ctx = ui.ctx().clone();
+        // The page's rows drawn on this platform.
+        let os = ctx.os();
+        let shown = || {
+            self.rows
+                .iter()
+                .filter(move |row| row.page == self.page && row.drawn_on(os))
+        };
         let mut groups: Vec<&str> = Vec::new();
-        for row in self.rows.iter().filter(|row| row.page == self.page) {
+        for row in shown() {
             if !groups.contains(&row.group) {
                 groups.push(row.group);
             }
@@ -517,12 +544,7 @@ impl Settings {
         let content = ui.available_width();
         let words = translator(&ctx);
         let storage = self.page == Page::Storage;
-        let mut labels: Vec<String> = self
-            .rows
-            .iter()
-            .filter(|row| row.page == self.page)
-            .map(|row| label_of(&words, row))
-            .collect();
+        let mut labels: Vec<String> = shown().map(|row| label_of(&words, row)).collect();
         if storage {
             labels.extend(storage::labels(&words));
         }
@@ -545,8 +567,7 @@ impl Settings {
             }
             let name = tr(&ctx, &format!("settings-group-{}", group.replace('_', "-")));
             group_title(ui, t, &name, &title, content);
-            let rows = self.rows.iter().filter(|row| row.group == group);
-            for row in rows.filter(|row| row.page == self.page) {
+            for row in shown().filter(|row| row.group == group) {
                 let widths = (label_width, control_width, content);
                 if let Some(changed) = draw_row(ui, t, row, self.enabled(row), widths) {
                     change = Some(changed);
@@ -613,10 +634,12 @@ fn label_of(words: &apertrust_ui::Translator, row: &Row) -> String {
 }
 
 /// The width of every control on `page` but its checkboxes: [`CONTROL_WIDTH`], or as wide
-/// as the widest box a choice there needs in `ui`'s language, up to [`CONTROL`].
+/// as the widest box a choice drawn there needs in `ui`'s language, up to [`CONTROL`].
 fn control_column(ui: &Ui, rows: &[Row], page: Page) -> f32 {
+    let os = ui.ctx().os();
     rows.iter()
-        .filter(|row| row.page == page && matches!(row.kind, Kind::Choice(_)))
+        .filter(|row| row.page == page && row.drawn_on(os))
+        .filter(|row| matches!(row.kind, Kind::Choice(_)))
         .map(|row| {
             let (_, names) = options(ui.ctx(), row);
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
@@ -993,6 +1016,16 @@ mod tests {
 
     /// The dialog as [`dialog_of`] draws it, in `locale`.
     fn dialog_in(keeper: &Keeper, which: Builtin, locale: Locale) -> Harness<'static, Bench> {
+        dialog_on(keeper, which, locale, OperatingSystem::Mac)
+    }
+
+    /// The dialog as [`dialog_in`] draws it, on `os`.
+    fn dialog_on(
+        keeper: &Keeper,
+        which: Builtin,
+        locale: Locale,
+        os: OperatingSystem,
+    ) -> Harness<'static, Bench> {
         let mut content = Settings::new(keeper, false);
         for row in content.rows.iter_mut().filter(|row| row.id == "locale") {
             row.default = Some("en-GB".into());
@@ -1002,7 +1035,7 @@ mod tests {
         }
         let mut harness = Harness::builder()
             .with_size(vec2(WIDTH, BODY) + vec2(16.0, 16.0))
-            .with_os(OperatingSystem::Mac)
+            .with_os(os)
             // Each event is a frame of its own: a 60th of a second apart, two clicks are one
             // double-click.
             .with_step_dt(1.0 / 60.0)
@@ -1375,6 +1408,61 @@ mod tests {
         assert_eq!(notes, 2);
     }
 
+    /// Processing's Hardware acceleration group: Graphics card, Graphics API and Memory
+    /// budget, the graphics API drawn on Windows alone, the only platform with a choice of
+    /// one (`platforms`; decision 81).
+    #[test]
+    fn the_graphics_api_is_drawn_on_windows_alone() {
+        let keeper = Keeper::nowhere().0;
+        for os in [
+            OperatingSystem::Windows,
+            OperatingSystem::Mac,
+            OperatingSystem::Nix,
+        ] {
+            let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+            harness.get_by_label("Processing").click();
+            harness.run();
+            harness.get_by_role_and_label(Role::Label, "Hardware acceleration");
+            assert!(harness.query_by_label("GPU").is_none(), "{os:?}");
+            let windows = os == OperatingSystem::Windows;
+            let mut rows = vec!["Graphics card", "Graphics API", "Memory budget"];
+            if !windows {
+                rows.remove(1);
+            }
+            let labels: Vec<String> = harness
+                .get_all_by_role(Role::Label)
+                .filter_map(|node| node.accesskit_node().value())
+                .filter(|name| name.starts_with("Graphics") || name == "Memory budget")
+                .collect();
+            assert_eq!(labels, rows, "{os:?}");
+            let api = harness.query_by_role_and_label(Role::ComboBox, "Graphics API");
+            assert_eq!(api.is_some(), windows, "{os:?}");
+            // Each row says it applies after a restart.
+            let notes = harness
+                .query_all_by_label("Applies after a restart")
+                .count();
+            assert_eq!(notes, rows.len(), "{os:?}");
+        }
+        // Its options, in the setting's order, and Automatic chosen.
+        let row = Settings::new(&keeper, false);
+        let row = row.row("engine.backend").expect("a row");
+        assert_eq!(row.options, ["auto", "dx12", "vulkan"]);
+        assert_eq!(row.value, Some("auto".into()));
+        let words = Translator::new(Locale::EnGb);
+        let names: Vec<String> = row
+            .options
+            .iter()
+            .map(|option| words.text(&format!("setting-engine-backend-option-{option}")))
+            .collect();
+        assert_eq!(names, ["Automatic", "Direct3D 12", "Vulkan"]);
+        // A page whose only rows are another platform's holds nothing there.
+        let mut alone = Settings::new(&keeper, false);
+        alone.rows.retain(|row| row.id == "engine.backend");
+        assert!(alone.holds(Page::Processing, OperatingSystem::Windows));
+        assert!(!alone.holds(Page::Processing, OperatingSystem::Mac));
+        assert!(!alone.holds(Page::Processing, OperatingSystem::Nix));
+    }
+
     /// A row is disabled while the boolean it requires is off, and enabled again once it
     /// is on: the cache's limit while the cache is unlimited.
     #[test]
@@ -1447,7 +1535,8 @@ mod tests {
                 harness.run();
                 let rows: Vec<Row> = harness.state().content.rows.clone();
                 let (mut widths, mut ends) = (Vec::new(), Vec::new());
-                for row in rows.iter().filter(|row| row.page == page) {
+                let drawn = |row: &&Row| row.page == page && row.drawn_on(OperatingSystem::Mac);
+                for row in rows.iter().filter(drawn) {
                     let label = label_of(&words, row);
                     let rect = harness.get_by_role_and_label(Role::Label, &label).rect();
                     widths.push(rect.width());

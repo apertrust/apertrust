@@ -983,6 +983,7 @@ mod tests {
             page: None,
             group: None,
             requires: None,
+            platforms: None,
             place: 0,
             line: 0,
         }

@@ -21,11 +21,11 @@
 //! (`--user-data-dir`, then `APERTRUST_USER_DATA_DIR`, then the platform's), and never
 //! writes them: it creates nothing in finding the folder (`Folders::find_to_read`) and its
 //! store is read-only (decision 43). Only the commands that run the engine read them, and
-//! `cache info` the cache's, `[cache]`. A
-//! flag of its own, `--adapter`, comes first, then `--conf KEY=VALUE`, which sets one for
-//! the run and is never written, then the file. `export` takes from the export settings
-//! what darktable-cli takes from darktablerc, the format's options, and its own flags give
-//! the rest (decision 56).
+//! `cache info` the cache's, `[cache]`. A flag of its own, `--adapter` or `--backend`,
+//! comes first (wgpu's `WGPU_BACKEND` before `--backend`, decision 81), then
+//! `--conf KEY=VALUE`, which sets one for the run and is never written, then the file.
+//! `export` takes from the export settings what darktable-cli takes from darktablerc, the
+//! format's options, and its own flags give the rest (decision 56).
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -133,6 +133,11 @@ enum Command {
         /// choice.
         #[arg(long)]
         adapter: Option<String>,
+        /// The graphics API: auto (wgpu's primary ones, Metal on macOS), dx12 or vulkan;
+        /// one this build lacks, or that finds no adapter, is an error. Before --conf and
+        /// the settings' engine.backend, after WGPU_BACKEND.
+        #[arg(long, value_name = "NAME", value_parser = backend_named)]
+        backend: Option<gpu::Backend>,
     },
     /// Decode a raw file and show what the decoder reports about it.
     Info { file: PathBuf },
@@ -219,6 +224,11 @@ enum Command {
         /// choice.
         #[arg(long)]
         adapter: Option<String>,
+        /// The graphics API: auto (wgpu's primary ones, Metal on macOS), dx12 or vulkan;
+        /// one this build lacks, or that finds no adapter, is an error. Before --conf and
+        /// the settings' engine.backend, after WGPU_BACKEND.
+        #[arg(long, value_name = "NAME", value_parser = backend_named)]
+        backend: Option<gpu::Backend>,
     },
     /// Change the edit saved beside a raw, `FILE.apxmp` (version 1: module values, and
     /// the parameters no module owns yet), then show it. `export` and `preview` start
@@ -307,6 +317,11 @@ enum Command {
         /// choice.
         #[arg(long)]
         adapter: Option<String>,
+        /// The graphics API: auto (wgpu's primary ones, Metal on macOS), dx12 or vulkan;
+        /// one this build lacks, or that finds no adapter, is an error. Before --conf and
+        /// the settings' engine.backend, after WGPU_BACKEND.
+        #[arg(long, value_name = "NAME", value_parser = backend_named)]
+        backend: Option<gpu::Backend>,
         /// Render each photo this many times directly, outside the export job, and log
         /// each render's time under `-d perf`: at 1 tiled as it needs, as the job does, as
         /// the timing workflow exports; above 1 whole, with each operation's median GPU
@@ -408,13 +423,15 @@ fn main() -> Result<()> {
     let store = || settings(folders.as_ref()).with_overrides(&overrides);
     // The engine's, under the command's own flags, as its options; the developer's switch,
     // never a setting, lowers the binding after them.
-    let engine = |store: &Store, adapter| {
-        let mut options = engine::Options::read(store, &Flags { adapter });
+    let engine = |store: &Store, adapter, backend| {
+        let mut options = engine::Options::read(store, &Flags { adapter, backend });
         options.gpu.max_storage_binding = cli.max_binding.map(|mib| mib << 20);
         options
     };
     match cli.command {
-        Command::Gpu { adapter } => pollster::block_on(show_gpu(engine(&store(), adapter))),
+        Command::Gpu { adapter, backend } => {
+            pollster::block_on(show_gpu(engine(&store(), adapter, backend)))
+        }
         Command::Info { file } => show_info(&file),
         Command::Library { command } => library::run(command),
         Command::Cache { command } => cache::run(command, folders.as_ref(), &store()),
@@ -443,6 +460,7 @@ fn main() -> Result<()> {
             beside_export: Some(rounds),
             interval,
             adapter,
+            backend,
             ..
         } => {
             let store = store();
@@ -455,7 +473,7 @@ fn main() -> Result<()> {
                     rounds,
                     format: format_with_options(&store, FileFormat::Jpeg),
                 },
-                engine(&store, adapter),
+                engine(&store, adapter, backend),
             )
         }
         Command::Preview {
@@ -468,6 +486,7 @@ fn main() -> Result<()> {
             join,
             scopes,
             adapter,
+            backend,
             ..
         } => pollster::block_on(preview(
             &file,
@@ -479,7 +498,7 @@ fn main() -> Result<()> {
                 scopes,
             },
             png.as_deref(),
-            engine(&store(), adapter),
+            engine(&store(), adapter, backend),
         )),
         Command::Export {
             files,
@@ -491,11 +510,12 @@ fn main() -> Result<()> {
             flags,
             skips,
             adapter,
+            backend,
             runs,
             tile,
         } => {
             let store = store();
-            let engine = engine(&store, adapter);
+            let engine = engine(&store, adapter, backend);
             pollster::block_on(export_all(
                 &files,
                 output.as_deref(),
@@ -1306,6 +1326,15 @@ fn stored_line(
     }
 }
 
+/// `--backend`'s value: one of `engine.backend`'s options, by its id as written.
+fn backend_named(value: &str) -> Result<gpu::Backend, String> {
+    use apertrust_base::settings::Choice as _;
+    gpu::Backend::from_id(value).ok_or_else(|| {
+        let ids: Vec<&str> = gpu::Backend::OPTIONS.iter().map(|(_, id)| *id).collect();
+        format!("{value} is none of {}", ids.join(", "))
+    })
+}
+
 /// `--interval`: milliseconds above 0, a finite number.
 fn interval_ms(value: &str) -> Result<f64, String> {
     match value.parse::<f64>() {
@@ -2013,8 +2042,10 @@ fn cfa_letter(color: CfaColor) -> char {
 }
 
 async fn show_gpu(engine: engine::Options) -> Result<()> {
+    // A backend this build lacks lists nothing: said before anything is listed.
+    gpu::check_backend(&engine.gpu)?;
     println!("Adapters:");
-    for adapter in gpu::adapters(&gpu::instance()).await {
+    for adapter in gpu::adapters(&gpu::instance(&engine.gpu)).await {
         let info = adapter.get_info();
         println!(
             "  {} ({:?}, {:?})",

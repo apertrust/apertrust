@@ -24,7 +24,7 @@ use std::fmt;
 
 use toml::Value;
 
-use super::{Applies, Choice, Kind, Number, Page, Setting, Store};
+use super::{Applies, Choice, Kind, Number, Page, Platform, Setting, Store};
 
 /// A type a setting's static is typed by, and how its value is read from `settings.toml`
 /// and written into it: `bool`, `f32`, a [`Choice`], `&'static str`, a list as an array (of
@@ -334,6 +334,9 @@ pub trait Declared: Sync {
     /// for most.
     fn requires(&self) -> Option<&'static str>;
 
+    /// The platforms the Settings dialog draws its row on; None for every one.
+    fn platforms(&self) -> Option<&'static [Platform]>;
+
     /// Its place among every owner's settings, in the schema's order.
     fn place(&self) -> u32;
 
@@ -391,6 +394,10 @@ impl<T: Stored> Declared for Setting<T> {
 
     fn requires(&self) -> Option<&'static str> {
         self.requires
+    }
+
+    fn platforms(&self) -> Option<&'static [Platform]> {
+        self.platforms
     }
 
     fn place(&self) -> u32 {

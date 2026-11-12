@@ -16,11 +16,14 @@
 
 //! GPU adapter and device setup.
 
+use apertrust_base::settings::Choice;
 use thiserror::Error;
 
 /// How the engine chooses its GPU adapter, and the device it opens on it.
 #[derive(Debug, Clone, Default)]
 pub struct GpuOptions {
+    /// Which graphics API its instance loads: wgpu's primary backends by default.
+    pub backend: Backend,
     /// Which adapter to open: wgpu's choice by default.
     pub adapter: AdapterChoice,
     /// Open the device binding at most this many bytes of a storage buffer at once,
@@ -30,6 +33,56 @@ pub struct GpuOptions {
     /// Open the device with bound windows' offsets aligned to at least this many bytes,
     /// a power of two up to WebGPU's largest, 256, when the adapter asks for less.
     pub storage_offset_alignment: Option<u32>,
+}
+
+/// The graphics API the engine's instance loads, and a window's that shares its device
+/// (decision 81), as `engine.backend`, `--backend` or `--conf engine.backend` asks.
+/// `WGPU_BACKEND`, where set, comes before it ([`instance_descriptor`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Backend {
+    /// wgpu's primary backends: Direct3D 12 and Vulkan on Windows, Vulkan on Linux, Metal
+    /// on macOS, never GL.
+    #[default]
+    Auto,
+    Dx12,
+    Vulkan,
+}
+
+/// Each by its id, as the setting, `--conf` and `--backend` take it, in the order Settings
+/// › Processing lists them on Windows, the only platform with a choice. macOS has Metal
+/// alone, which Automatic is there.
+impl Choice for Backend {
+    const OPTIONS: &'static [(Backend, &'static str)] = &[
+        (Backend::Auto, "auto"),
+        (Backend::Dx12, "dx12"),
+        (Backend::Vulkan, "vulkan"),
+    ];
+}
+
+impl Backend {
+    /// Its id, as `--backend` and `-d settings` write it.
+    pub fn name(self) -> &'static str {
+        let found = Backend::OPTIONS
+            .iter()
+            .find(|(backend, _)| *backend == self);
+        found.map_or("auto", |(_, name)| name)
+    }
+
+    /// The backends an instance loads for it.
+    pub fn backends(self) -> wgpu::Backends {
+        match self {
+            Backend::Auto => wgpu::Backends::PRIMARY,
+            Backend::Dx12 => wgpu::Backends::DX12,
+            Backend::Vulkan => wgpu::Backends::VULKAN,
+        }
+    }
+
+    /// Whether this build of wgpu has it, so an instance can find an adapter on it:
+    /// [`Backend::Auto`] always.
+    pub fn built(self) -> bool {
+        let built = wgpu::Instance::enabled_backend_features();
+        self == Backend::Auto || built.contains(self.backends())
+    }
 }
 
 /// Which adapter the engine opens (decision 43): wgpu's choice, or one by its name, as a
@@ -198,6 +251,8 @@ pub enum GpuError {
     NoAdapter(#[from] wgpu::RequestAdapterError),
     #[error("no GPU adapter name contains {0:?}")]
     AdapterNotFound(String),
+    #[error("the graphics API {} is not built for {}", .0.name(), system())]
+    BackendNotBuilt(Backend),
     #[error("GPU adapter {0:?} cannot draw to the window")]
     CannotDraw(String),
     #[error(
@@ -209,23 +264,59 @@ pub enum GpuError {
     RequestDevice(#[from] wgpu::RequestDeviceError),
 }
 
-/// The instance every Apertrust process creates, the app's included: wgpu's primary
-/// backends, Direct3D 12 and Vulkan on Windows, Vulkan on Linux, Metal on macOS, never
-/// GL, which the engine never chooses and a broken OpenGL driver can crash in as
-/// adapters are listed; with FXC as Direct3D 12's shader compiler (decision 10). wgpu's
-/// default would use DXC wherever it finds a `dxcompiler.dll`, a compiler CI never runs.
-/// wgpu's environment variables still choose others, for experiments: `WGPU_BACKEND`
-/// (GL among them) and `WGPU_DX12_COMPILER`.
-pub fn instance_descriptor() -> wgpu::InstanceDescriptor {
+/// The instance every Apertrust process creates, the app's included, from the same
+/// `options` as its engine, so a window and the engine always load the same backends: the
+/// backend `options` chooses, by default wgpu's primary backends, Direct3D 12 and Vulkan on
+/// Windows, Vulkan on Linux, Metal on macOS, never GL, which the engine never chooses and a
+/// broken OpenGL driver can crash in as adapters are listed (decision 81); with FXC as
+/// Direct3D 12's shader compiler (decision 10). wgpu's default would use DXC wherever it
+/// finds a `dxcompiler.dll`, a compiler CI never runs. wgpu's environment variables still
+/// choose others, before the options, for experiments: `WGPU_BACKEND` (GL among them) and
+/// `WGPU_DX12_COMPILER`.
+pub fn instance_descriptor(options: &GpuOptions) -> wgpu::InstanceDescriptor {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
-    descriptor.backends = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::PRIMARY);
+    descriptor.backends = loaded(wgpu::Backends::from_env(), options.backend);
     descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::Fxc.with_env();
     descriptor
 }
 
+/// The backends an instance loads: `WGPU_BACKEND`'s, `asked`, where it is set, else
+/// `backend`'s.
+fn loaded(asked: Option<wgpu::Backends>, backend: Backend) -> wgpu::Backends {
+    asked.unwrap_or(backend.backends())
+}
+
 /// Creates a wgpu instance from [`instance_descriptor`].
-pub fn instance() -> wgpu::Instance {
-    wgpu::Instance::new(instance_descriptor())
+pub fn instance(options: &GpuOptions) -> wgpu::Instance {
+    wgpu::Instance::new(instance_descriptor(options))
+}
+
+/// Whether an instance for `options` can find an adapter on the backend they choose: an
+/// error where they choose one this build lacks, unless `WGPU_BACKEND` chooses in their
+/// place. The app checks it before its window opens; [`GpuContext::new`] checks it too.
+pub fn check_backend(options: &GpuOptions) -> Result<(), GpuError> {
+    usable(wgpu::Backends::from_env(), options.backend)
+}
+
+/// Whether an instance that loads `backend` alone lists any adapter on this machine:
+/// Vulkan finds none without a Vulkan driver, as in a virtual machine, over Remote
+/// Desktop or on an old GPU, where Direct3D 12 still has WARP. Creates an instance for it,
+/// so it is asked only of a backend the settings file names, and only where
+/// `WGPU_BACKEND`, which the instance would load in its place, is not set.
+pub fn finds_adapter(backend: Backend) -> bool {
+    let options = GpuOptions {
+        backend,
+        ..GpuOptions::default()
+    };
+    !pollster::block_on(adapters(&instance(&options))).is_empty()
+}
+
+/// [`check_backend`], with `WGPU_BACKEND`'s backends `asked`.
+fn usable(asked: Option<wgpu::Backends>, backend: Backend) -> Result<(), GpuError> {
+    if asked.is_none() && !backend.built() {
+        return Err(GpuError::BackendNotBuilt(backend));
+    }
+    Ok(())
 }
 
 /// Lists every adapter the instance can see, software ones included.
@@ -372,13 +463,17 @@ pub fn backends() -> String {
     if without.is_empty() {
         return with;
     }
-    let system = match std::env::consts::OS {
+    format!("{with} ({} not built for {})", without.join(", "), system())
+}
+
+/// The platform this build is for, by its name.
+fn system() -> &'static str {
+    match std::env::consts::OS {
         "macos" => "macOS",
         "linux" => "Linux",
         "windows" => "Windows",
         other => other,
-    };
-    format!("{with} ({} not built for {system})", without.join(", "))
+    }
 }
 
 /// An adapter as the gpu domain names it: `Apple M4 (Metal, integrated)`.
@@ -440,7 +535,8 @@ pub fn log_adapters(all: &[wgpu::Adapter], chosen: &wgpu::Adapter) {
 
 impl GpuContext {
     pub async fn new(options: &GpuOptions) -> Result<Self, GpuError> {
-        let instance = instance();
+        check_backend(options)?;
+        let instance = instance(options);
         // Every adapter, to look one up by name or to list them under `-d gpu`.
         let all = if options.adapter != AdapterChoice::Any
             || tracing::enabled!(target: "gpu", tracing::Level::DEBUG)
@@ -688,7 +784,7 @@ mod tests {
     #[test]
     fn a_window_takes_the_adapter_wgpu_would() {
         use wgpu::PowerPreference;
-        let instance = instance();
+        let instance = instance(&GpuOptions::default());
         let all = pollster::block_on(adapters(&instance));
         for preference in [
             PowerPreference::HighPerformance,
@@ -752,7 +848,7 @@ mod tests {
     /// own device and in a window's.
     #[test]
     fn an_adapter_is_found_by_name_and_a_setting_that_names_none_falls_back() {
-        let all = pollster::block_on(adapters(&instance()));
+        let all = pollster::block_on(adapters(&instance(&GpuOptions::default())));
         let first = all.first().expect("a GPU adapter, hardware or software");
         let info = first.get_info();
         // Its name in other case.
@@ -789,7 +885,7 @@ mod tests {
 
     #[test]
     fn the_primary_backends_load_never_gl_unless_the_environment_says_otherwise() {
-        let backends = instance_descriptor().backends;
+        let backends = instance_descriptor(&GpuOptions::default()).backends;
         match wgpu::Backends::from_env() {
             Some(asked) => assert_eq!(backends, asked),
             None => {
@@ -799,9 +895,86 @@ mod tests {
         }
     }
 
+    /// Each backend loads itself alone, Automatic wgpu's primary set; `WGPU_BACKEND`, where
+    /// set, comes before any of them (decision 81).
+    #[test]
+    fn the_backend_chosen_loads_alone_unless_wgpu_backend_is_set() {
+        use wgpu::Backends;
+        let each = [
+            (Backend::Auto, Backends::PRIMARY),
+            (Backend::Dx12, Backends::DX12),
+            (Backend::Vulkan, Backends::VULKAN),
+        ];
+        for (backend, expected) in each {
+            assert_eq!(loaded(None, backend), expected, "{backend:?}");
+            assert_eq!(
+                loaded(Some(Backends::GL), backend),
+                Backends::GL,
+                "{backend:?}"
+            );
+            if wgpu::Backends::from_env().is_none() {
+                let options = GpuOptions {
+                    backend,
+                    ..GpuOptions::default()
+                };
+                assert_eq!(instance_descriptor(&options).backends, expected);
+            }
+        }
+        // By id, as the setting, `--conf` and `--backend` take them: no Metal.
+        for (backend, id) in Backend::OPTIONS {
+            assert_eq!(Backend::from_id(id), Some(*backend));
+            assert_eq!(backend.name(), *id);
+        }
+        assert_eq!(Backend::from_id("metal"), None);
+        assert_eq!(Backend::from_id("gl"), None);
+    }
+
+    /// A backend this build lacks finds no adapter, so it is an error, unless
+    /// `WGPU_BACKEND` chooses in its place; Automatic is always there. Windows builds
+    /// every one.
+    #[test]
+    fn a_backend_this_build_lacks_is_refused_unless_wgpu_backend_chooses() {
+        assert!(usable(None, Backend::Auto).is_ok());
+        let built = cfg!(any(windows, target_os = "linux"));
+        assert_eq!(Backend::Vulkan.built(), built);
+        assert_eq!(Backend::Dx12.built(), cfg!(windows));
+        let Some(lacking) = [Backend::Dx12, Backend::Vulkan]
+            .into_iter()
+            .find(|backend| !backend.built())
+        else {
+            return;
+        };
+        let refused = usable(None, lacking).expect_err("not built");
+        let system = system();
+        let named = format!(
+            "the graphics API {} is not built for {system}",
+            lacking.name()
+        );
+        assert_eq!(refused.to_string(), named);
+        assert!(usable(Some(wgpu::Backends::PRIMARY), lacking).is_ok());
+    }
+
+    /// Automatic finds an adapter wherever the tests run, hardware or software; one this
+    /// build lacks finds none.
+    #[test]
+    fn automatic_finds_an_adapter_and_a_backend_not_built_none() {
+        if wgpu::Backends::from_env().is_some() {
+            return;
+        }
+        assert!(finds_adapter(Backend::Auto));
+        for backend in [Backend::Dx12, Backend::Vulkan] {
+            if !backend.built() {
+                assert!(!finds_adapter(backend), "{backend:?}");
+            }
+        }
+    }
+
     #[test]
     fn direct3d_12_compiles_with_fxc_unless_the_environment_says_otherwise() {
-        let compiler = instance_descriptor().backend_options.dx12.shader_compiler;
+        let compiler = instance_descriptor(&GpuOptions::default())
+            .backend_options
+            .dx12
+            .shader_compiler;
         let expected = wgpu::Dx12Compiler::from_env().unwrap_or(wgpu::Dx12Compiler::Fxc);
         assert_eq!(format!("{compiler:?}"), format!("{expected:?}"));
         if std::env::var_os("WGPU_DX12_COMPILER").is_none() {

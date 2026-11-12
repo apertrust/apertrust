@@ -843,7 +843,8 @@ impl Keeper {
 
     /// The engine's settings as `--conf` and the file give them, as the plain options the
     /// engine takes, each logged under `-d settings` with where it came from: `--conf`,
-    /// the file or the default, since the app has no flag over them.
+    /// the file or the default, since the app has no flag over them; wgpu's `WGPU_BACKEND`
+    /// before `engine.backend`.
     pub fn engine(&self) -> engine::Options {
         engine::Options::read(&self.store, &engine::Flags::default())
     }
@@ -1590,9 +1591,10 @@ size = [1280, 800]
     /// app writes its own.
     #[test]
     fn the_engine_s_settings_are_read_from_the_app_s_file_and_kept() {
-        use apertrust_engine::gpu::AdapterChoice;
+        use apertrust_engine::gpu::{AdapterChoice, Backend};
         let folder = Folder::new("engine");
-        let text = "version = 1\nscale = 2\n[engine]\nadapter = \"Radeon\"\nmemory_budget = 4096\n";
+        let text = "version = 1\nscale = 2\n[engine]\nadapter = \"Radeon\"\nbackend = \"vulkan\"\n\
+                    memory_budget = 4096\n";
         std::fs::write(folder.settings(), text).expect("written");
         let (mut keeper, settings) = Keeper::open(folder.storage());
         assert!(
@@ -1603,6 +1605,18 @@ size = [1280, 800]
         let options = keeper.engine();
         let radeon = AdapterChoice::Preferred("Radeon".to_owned());
         assert_eq!((options.gpu.adapter, options.budget), (radeon, 4096 << 20));
+        // Vulkan where this build has it and it finds an adapter, as on most Windows and
+        // Linux machines; else Automatic.
+        if std::env::var_os("WGPU_BACKEND").is_none() {
+            let vulkan = if Backend::Vulkan.built()
+                && apertrust_engine::gpu::finds_adapter(Backend::Vulkan)
+            {
+                Backend::Vulkan
+            } else {
+                Backend::Auto
+            };
+            assert_eq!(options.gpu.backend, vulkan);
+        }
         keeper.frame(
             Instant::now(),
             &Settings {
@@ -1614,11 +1628,13 @@ size = [1280, 800]
         let table: Table = folder.text().parse().expect("TOML");
         assert_eq!(table["scale"].as_float(), Some(1.5));
         assert_eq!(table["engine"]["adapter"].as_str(), Some("Radeon"));
+        assert_eq!(table["engine"]["backend"].as_str(), Some("vulkan"));
         assert_eq!(table["engine"]["memory_budget"].as_integer(), Some(4096));
         // Nothing kept: the defaults.
         let options = Keeper::nowhere().0.engine();
-        let defaults = (AdapterChoice::Any, 2048 << 20);
-        assert_eq!((options.gpu.adapter, options.budget), defaults);
+        let defaults = (AdapterChoice::Any, Backend::Auto, 2048 << 20);
+        let read = (options.gpu.adapter, options.gpu.backend, options.budget);
+        assert_eq!(read, defaults);
     }
 
     fn conf(given: &[&str]) -> Result<Overrides, OverrideError> {
@@ -1893,6 +1909,20 @@ tab_names = false
         assert_eq!(settings.panel_width, Some(*crate::PANEL_WIDTHS.end()));
         let named = apertrust_engine::gpu::AdapterChoice::Named("M4".to_owned());
         assert_eq!(keeper.engine().gpu.adapter, named);
+        // A backend typed for the run is kept, even one this build lacks, which opening
+        // the device then refuses; Metal is no option of the setting's, Automatic on macOS.
+        let overrides = conf(&["engine.backend=dx12"]).expect("read");
+        let (keeper, _) = Keeper::open_in(None, &overrides);
+        let options = keeper.engine();
+        assert_eq!(options.gpu.backend, apertrust_engine::gpu::Backend::Dx12);
+        if std::env::var_os("WGPU_BACKEND").is_none() {
+            assert_eq!(options.sources[2], apertrust_engine::settings::Source::Conf);
+        }
+        let refused = conf(&["engine.backend=metal"]).expect_err("refused");
+        assert_eq!(
+            refused.to_string(),
+            "--conf engine.backend: cannot be \"metal\""
+        );
         assert_eq!(
             conf(&["density=compact"]).map(drop),
             Err(OverrideError::Unknown("density".to_owned()))

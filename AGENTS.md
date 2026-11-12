@@ -86,7 +86,7 @@ tools/build-icons.sh                       # the app icon's PNGs, .icns and .ico
 tools/build-dmg-background.sh              # the disk image's background.tiff from its SVG, on a Mac; commit it (docs/packaging.md)
 
 # The CLI; every flag in docs/crates.md, apertrust-cli
-cargo run -p apertrust-cli -- gpu [--adapter NAME]   # adapters, and the one the engine opens
+cargo run -p apertrust-cli -- gpu [--adapter NAME] [--backend auto|dx12|vulkan]   # adapters, and the one the engine opens
 cargo run -p apertrust-cli -- info FILE              # decode a raw, show its metadata
 cargo run --release -p apertrust-cli -- edit FILE [--set MODULE.CONTROL=VALUE] [--reset MODULE.CONTROL] [--param OP.PARAM=VALUE] [--reset-param OP.PARAM] [--clear]
 cargo run --release -p apertrust-cli -- export FILE... [-o PATTERN] [--width W --height H --hq BOOL --upscale BOOL] [--set ...] [--param ...] [--skip OP] [--tile N] [--runs N]

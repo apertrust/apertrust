@@ -23,7 +23,7 @@ The graphics card was a text setting, `engine.adapter`, matched against adapter 
 - **A card no longer there,** after a GPU is removed or the settings come from another computer, shows "Graphics card not found: Automatic used" in the warning colour, and Automatic runs (decision 7).
 - **An "In use" line** under the rows always shows the adapter and API running now. Without a hardware GPU in use, a warning says that Apertrust renders on the processor and is slower.
 - **Restart now.** While a setting that applies after a restart differs from what runs, the note "Your choice applies when Apertrust restarts" has a Restart now button: Apertrust quits as Quit does, saving edits and settings, and starts again with the same arguments, folder and photo (planned).
-- **The CLI** takes `--backend NAME` (`dx12`, `vulkan`, `metal`, `auto`) beside `--adapter`, and `--conf engine.backend=…`. Precedence: `WGPU_BACKEND`, then the flag, then `--conf`, then the file, then Automatic; `-d settings` says which won. An unknown name typed for the run is an error.
+- **The CLI** takes `--backend NAME` (`auto`, `dx12`, `vulkan`, the setting's names; on macOS Automatic is Metal) beside `--adapter`, and `--conf engine.backend=…`. Precedence: `WGPU_BACKEND`, then the flag, then `--conf`, then the file, then Automatic; `-d settings` says which won. An unknown name typed for the run is an error.
 
 ## Options considered
 

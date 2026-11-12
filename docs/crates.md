@@ -42,6 +42,8 @@ The GPU-resident pipeline, with no UI dependencies.
 - Every submission goes through `GpuContext::submit`, which holds a `SubmitGate`. A window client holds the gate while its toolkit reconfigures the surface. The holds take turns in the order asked, and a viewport frame is one submission (decision 18).
 - `gpu::AdapterChoice`: an adapter a flag names that is not there is an error; one a setting names is a warning, and wgpu's choice is used.
 - `gpu::choose_adapter`, for a window that creates the engine's device, in wgpu's order; a test holds it against `request_adapter`.
+- `gpu::Backend` (decision 81): the graphics API, `Auto` (wgpu's primary backends, never GL), `Dx12` or `Vulkan`, the `engine.backend` setting's `Choice`, in `GpuOptions::backend`.
+- `gpu::instance_descriptor(options)` and `gpu::instance(options)`: every instance, the app's window's included, loads the backends `options` choose, `WGPU_BACKEND` before them, with FXC as Direct3D 12's compiler (decision 10). `gpu::check_backend` refuses a backend this build lacks, unless `WGPU_BACKEND` chooses; `GpuContext::new` and the app's start call it. `gpu::finds_adapter` says whether a backend lists any adapter on this machine, for the settings file's backend.
 
 ### The pipeline
 
@@ -168,9 +170,9 @@ The groundwork for orientation:
 
 ### Settings
 
-`settings`: the engine's settings, `engine.adapter` and `engine.memory_budget`, and the cache's, `cache.limited`, `cache.limit` and `cache.unused_after` (decision 76), generated from the schema by its `build.rs` as `settings::registry` (decision 43).
+`settings`: the engine's settings, `engine.adapter`, `engine.backend` (decision 81) and `engine.memory_budget`, and the cache's, `cache.limited`, `cache.limit` and `cache.unused_after` (decision 76), generated from the schema by its `build.rs` as `settings::registry` (decision 43).
 
-- `settings::Options::read` turns a store a binary hands it, under the binary's own flags (`--adapter`), into `GpuOptions` and the budget. It logs each value, and where it came from, under `-d settings`.
+- `settings::Options::read` turns a store a binary hands it, under the binary's own flags (`--adapter`, `--backend`), into `GpuOptions` and the budget, wgpu's `WGPU_BACKEND` before every source of the backend. It logs each value, and where it came from, under `-d settings`. A backend the file names that this build lacks, or that finds no adapter on this machine (`gpu::finds_adapter`), is warned of and Automatic taken; one typed for the run is kept, and `GpuContext::new` (and the app, before its window opens, through `gpu::check_backend`) refuses one this build lacks.
 - `settings::cache_limit` turns a store's `cache.limited` and `cache.limit` into base's `cache::Limit`: `Unlimited` while the first is off, else the limit's GB as bytes, a GB 10⁹ of them. The app reads it for its session's start and each change (`Keeper::cache_limit`).
 - The engine opens no folder or settings file.
 
@@ -273,18 +275,19 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 
 ### Options for every command
 
-- **`--user-data-dir DIR`**, or `--config-dir`, darktable's `--configdir`, or `APERTRUST_USER_DATA_DIR`; else the platform's folder. `gpu`, `preview` and `export` read the engine's settings from the folder's `settings.toml`, its `[engine]` table (`adapter`, `memory_budget`), and never write them (decision 43).
+- **`--user-data-dir DIR`**, or `--config-dir`, darktable's `--configdir`, or `APERTRUST_USER_DATA_DIR`; else the platform's folder. `gpu`, `preview` and `export` read the engine's settings from the folder's `settings.toml`, its `[engine]` table (`adapter`, `backend`, `memory_budget`), and never write them (decision 43).
   - The folder is found for reading (`Folders::find_to_read`): nothing is created or probed, and one given that is missing is an error.
   - The settings are read through a read-only store, by the commands that run the engine and by `cache`, which reads the `[cache]` table.
   - The budget applies to `export` and `preview`.
 - **`--cache-dir DIR`**, or darktable's `--cachedir`, or `APERTRUST_CACHE_DIR`; else the user data folder's `cache` when that is given, else the platform's cache folder. Chosen and logged under `-d settings`, never created; read by the `cache` commands.
 - **`--adapter NAME`** comes before the file. A name that matches no adapter is an error, while a setting that names none falls back to wgpu's choice (decision 43).
+- **`--backend NAME`**, on `gpu`, `preview` and `export` beside `--adapter`: the graphics API, the setting's names, `auto` (wgpu's primary backends, Metal on macOS), `dx12` or `vulkan`, before `--conf engine.backend=…` and the file, after wgpu's `WGPU_BACKEND` (decision 81). An unknown name is a usage error; one this build lacks (Direct3D 12 off Windows, Vulkan on macOS) is an error as the engine starts, and one that finds no adapter fails as the device opens, where the file's is warned of and Automatic taken.
 - **`--conf KEY=VALUE`**: a setting for this run only, as darktable's `--conf`, never written.
   - Global and repeatable; the last value for a key counts.
   - KEY is the setting's id in `settings.toml`; VALUE is written as the file holds it, but text without quotes.
   - The CLI takes the engine's settings and the export settings (`export.jpeg.quality=80`); its store opens on both registries.
   - Every command checks it before the folder is looked for. An unknown key or a value that cannot be read stops the start.
-  - It counts after a flag of its own (`--adapter`) and before the file.
+  - It counts after a flag of its own (`--adapter`, `--backend`) and before the file.
 - **`--max-binding MIB`**: `export`, `preview` or `gpu` as on a GPU that binds at most that many MiB at once; 128 is lavapipe's (decision 14).
 - **`-d DOMAIN`** and **`--version`**, as every binary has them (see `apertrust-base`).
 
@@ -1027,15 +1030,16 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 **Types.** `Setting<T>`, typed by its value, with:
 
-- its `Kind`: boolean, number, choice, text, and lists and `Table`s of any kind. Whole numbers, folders, units, pages and platforms come with the first setting that needs one;
+- its `Kind`: boolean, number, choice, text, and lists and `Table`s of any kind. Whole numbers and folders come with the first setting that needs one;
 - `DefaultValue`, a value or `Computed`;
 - `Owner` (`App`, `Engine`, `Export`, `Module`) and `Applies`;
 - a number's `above`, an exclusive minimum;
-- `requires`, the boolean setting whose row must be on for its own to be enabled.
+- `requires`, the boolean setting whose row must be on for its own to be enabled;
+- `platforms`, the `Platform`s (`windows`, `macos`, `linux` in the schema) the Settings dialog draws its row on, None for every one; the value is read everywhere alike.
 
 `Choice` is a type's options, each with its stable id.
 
-**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) and the export settings (`export.*`, decision 56). The language and the side panel's width are computed, and the window's place is `optional`.
+**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.backend`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) and the export settings (`export.*`, decision 56). The language and the side panel's width are computed, and the window's place is `optional`.
 
 **The generator**, `settings::codegen`, reads the schema with toml_edit, in the file's order.
 

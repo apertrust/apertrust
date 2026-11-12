@@ -2253,6 +2253,7 @@ A top-level `data/` folder, as darktable's, holds darktable's data files verbati
 
 ## Limits and errors
 
+- **Backend** (decision 81). wgpu's primary backends, never GL, or the one `engine.backend` or a binary's `--backend` chooses (`GpuOptions::backend`, `gpu::Backend`), `WGPU_BACKEND` before them; `gpu::instance_descriptor` builds every instance from the options, the app's window's included. One the file names that this build lacks, or that lists no adapter on this machine (`gpu::finds_adapter`), is warned of and Automatic taken; typed for the run, one this build lacks is an error (`GpuError::BackendNotBuilt`), and one with no adapter fails as the device opens.
 - **Adapter** (decision 43). wgpu's high-performance choice, or the first adapter whose name holds the text `engine.adapter` or a binary's `--adapter` gives (`GpuOptions::adapter`, `gpu::AdapterChoice`).
   - A setting that names none is warned of and wgpu's choice taken, as decision 7 has it; a flag that names none is an error.
   - The app's window takes it through eframe's adapter selector (`gpu::choose_adapter`), after a restart. One named that cannot draw to the window is said so, and wgpu's choice taken, in the order wgpu-core 30's `request_adapter` sorts adapters, which a test holds against wgpu's own on the machine's adapters.
