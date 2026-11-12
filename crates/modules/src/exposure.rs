@@ -40,7 +40,8 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Quad, Row, Slider, Tab, ToolSetting, Unit,
+    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, Slider, Space,
+    Tab, ToolSetting, Unit,
 };
 use crate::transfer::Transfer;
 use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting};
@@ -194,7 +195,7 @@ static DEFINITION: Definition = Definition {
                         Slider::new("exposure")
                             .decimals(3)
                             .soft(-3.0, 4.0)
-                            .quad(Quad::Picker),
+                            .quad(Quad::Picker("exposure")),
                     ),
                 ],
             },
@@ -214,6 +215,22 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[PICKER],
+};
+
+/// darktable's picker on Exposure (`DT_COLOR_PICKER_AREA`): the exposure that maps the
+/// area to the target lightness, the black kept below the new white, or in measure mode
+/// the target the area gives; its pick comes with the area exposure mapping's settings.
+const PICKER: Picker = Picker {
+    id: "exposure",
+    operation: EXPOSURE,
+    kind: PickerKind::Area,
+    denoise: false,
+    output: false,
+    space: Space::Operation,
+    keep: false,
+    writes: &["exposure", "black_level"],
+    tools: &["area_mode", "lightness"],
 };
 
 /// Every parameter of `exposure`: the module is darktable's and owns them all.
@@ -400,7 +417,7 @@ mod tests {
 
     use super::*;
     use crate::check;
-    use crate::testing::DarktableSlider;
+    use crate::testing::{DarktablePicker, DarktableSlider};
     use crate::transfer::{self, increasing};
 
     /// A colour raw's context, with this exposure bias.
@@ -630,6 +647,23 @@ mod tests {
         };
         assert!((step / 10.0 - 1e-4).abs() < 1e-9);
         assert_eq!(black.check(&number(0.0001)), Ok(()));
+    }
+
+    /// darktable's picker on Exposure (`exposure.c:1211`): an area, writing the exposure
+    /// and the black `_exposure_set_white` keeps below the new white (`:763-779`), and
+    /// reading the area exposure mapping's settings (`:866-973`).
+    #[test]
+    fn its_picker_is_darktable_s() {
+        let darktable = [DarktablePicker {
+            id: "exposure",
+            slider: "exposure",
+            kind: PickerKind::Area,
+            denoise: false,
+            output: false,
+            writes: &["exposure", "black_level"],
+            tools: &["area_mode", "lightness"],
+        }];
+        assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
     }
 
     #[test]

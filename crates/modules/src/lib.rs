@@ -28,6 +28,7 @@
 //! - its binding: a pure function from its own values, the photo's image context and
 //!   [`Base`], each operation's defaults for the photo, to the parameters it sets,
 //!   through transfer functions that carry their derivatives ([`transfer`]);
+//! - its colour pickers, and what each makes of a reading of the photo ([`pick`]);
 //! - migrations from the values an earlier version saved.
 //!
 //! The engine's session runs the bindings: every client sends module values, and the
@@ -68,9 +69,10 @@ use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 
 pub use definition::{
     Button, ButtonIcon, ChoiceStyle, Control, ControlError, ControlKind, Coordinate, Definition,
-    DefinitionError, MAX_POINTS, MIN_GAP, PresetRow, Quad, Range, Row, Slider, Tab, ToolSetting,
-    Track, Unit, View, Widget, slider_step,
+    DefinitionError, MAX_POINTS, MIN_GAP, Picker, PickerKind, PresetRow, Quad, Range, Row, Slider,
+    Space, Tab, ToolSetting, Track, Unit, View, Widget, slider_step,
 };
+use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ModuleValues};
 
 /// The built-in modules, in the order the session reports them and an edit saves them:
@@ -298,6 +300,37 @@ pub trait Module: Send + Sync {
     /// step itself ([`Self::preset`]). None, as provided.
     fn follow(&self, _control: &str, _values: &Controls, _image: &ImageContext) -> Controls {
         Controls::new()
+    }
+
+    /// What the picker `picker` of [`Definition::pickers`] makes of `reading`, darktable's
+    /// `color_picker_apply` (decision 79; `docs/pickers.md`, Declaring pickers): the
+    /// controls it writes, each among the picker's `writes` and stored as darktable's rule
+    /// gives it, with no other bound, and what the panel shows of the reading. `values`
+    /// is every control, the edit's over the defaults; `tools` the tool settings its
+    /// picker reads, as the client sent them; `channel` the channel tab the module shows,
+    /// as RGB levels' and RGB curve's; `last` the module's last reading applied, one per
+    /// module and shared by its pickers, as darktable's `picked_color`; `keys` the keys
+    /// held as the reading was asked for. Pure, as [`Self::bind`] is, so the module's tests
+    /// drive it with readings and no GPU: the session calls it as a reading arrives and
+    /// applies what it gives as one change, with no follow writes ([`Self::follow`]).
+    /// `None`, as provided, for a picker the module does not run, and where a reading
+    /// writes and shows nothing, as RGB levels' when it equals the last.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "darktable's picker state, each part read by some module's pick"
+    )]
+    fn pick(
+        &self,
+        _picker: &str,
+        _reading: &Reading,
+        _values: &Controls,
+        _image: &ImageContext,
+        _tools: &[(&str, ControlValue)],
+        _channel: Option<&str>,
+        _last: Option<&Reading>,
+        _keys: PickKeys,
+    ) -> Option<Picked> {
+        None
     }
 
     /// Values saved by version `from`, brought up to this version. A module raises its

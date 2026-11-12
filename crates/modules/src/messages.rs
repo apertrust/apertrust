@@ -134,12 +134,13 @@ pub fn unit_value(unit: Unit) -> String {
 }
 
 /// Every message the definition implies, each once: its title, Auto's tooltip if it has
-/// Auto, each titled tab, each group label, each collapsible group's title, the words of
-/// each row that has its own, each tool's setting's words and options, each action's
-/// words, each control's
-/// label, full name and promise, each option, each view's coordinate's label, full name
-/// and promise, as a control's, each preset row's label, full name, promise and options,
-/// each unit it uses, and Custom if it has a preset row.
+/// Auto, each titled tab, each group label, a row of pickers' label among them, each
+/// collapsible group's title, the words of each row that has its own, each tool's
+/// setting's words and options, each action's words, each control's label, full name and
+/// promise, each option, each view's coordinate's label, full name and promise, as a
+/// control's, each preset row's label, full name, promise and options, each unit it uses,
+/// and Custom if it has a preset row. A picker's own words come with its button
+/// ([`crate::Picker`]).
 pub fn of(definition: &Definition) -> Vec<String> {
     let module = definition.id;
     let mut ids = vec![title(module)];
@@ -155,7 +156,10 @@ pub fn of(definition: &Definition) -> Vec<String> {
     );
     for row in definition.rows() {
         match row {
-            Row::Label { id } => ids.push(group(module, id)),
+            Row::Label { id }
+            | Row::Pickers {
+                label: Some(id), ..
+            } => ids.push(group(module, id)),
             Row::Group { id, .. } => ids.push(collapsible(module, id)),
             Row::Slider(Slider {
                 control,
@@ -229,6 +233,7 @@ mod tests {
                 "module-sample-tab-grain",
                 "module-sample-tab-shape",
                 "module-sample-group-grain",
+                "module-sample-group-measure",
                 "module-sample-collapsible-midtones",
                 "module-sample-control-brightness-label",
                 "module-sample-control-brightness-full",
@@ -335,6 +340,7 @@ mod tests {
             after: &[],
             presets: &[],
             views: &[],
+            pickers: &[],
         };
         LOCAL_CONTRAST.check().unwrap();
         let ids = of(&LOCAL_CONTRAST);
@@ -389,6 +395,7 @@ mod tests {
             })],
             presets: &[],
             views: &[],
+            pickers: &[],
         };
         CHECKER.check().unwrap();
         assert_eq!(
@@ -438,6 +445,7 @@ mod tests {
             after: &[],
             presets: &[],
             views: &[],
+            pickers: &[],
         };
         LEVELS.check().unwrap();
         assert_eq!(

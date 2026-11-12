@@ -103,6 +103,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// Every parameter of `soften`: the module is darktable's and owns them all.

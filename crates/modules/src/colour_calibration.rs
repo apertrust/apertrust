@@ -540,6 +540,7 @@ static DEFINITION: Definition = Definition {
     after: &CHECKER,
     presets: &[],
     views: &VIEWS,
+    pickers: &[],
 };
 
 /// Every parameter of `channelmixerrgb`: the CAT tab's, the mixer's, and `version`.

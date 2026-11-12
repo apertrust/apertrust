@@ -20,14 +20,14 @@
 //! only what it owns, within the schema, across every control's range, its preset rows'
 //! options hold their controls' ranges and read back, its choices list options for each
 //! photo that hold together (decision 30), its lossless views are given and their
-//! coordinates' ranges keep their controls in theirs, and every message its definition
-//! implies is in `crates/ui/locales`.
+//! coordinates' ranges keep their controls in theirs, its pickers are darktable's, and
+//! every message its definition implies is in `crates/ui/locales`.
 
 use std::collections::BTreeSet;
 
 use apertrust_modules::{
     Base, Control, ControlKind, ControlValue, Controls, Definition, MODULES, Module, ModuleValues,
-    Owned, Row, Setting, Tab, Unit, check, messages,
+    Owned, Quad, Row, Setting, Slider, Tab, Unit, check, messages,
 };
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Pattern};
@@ -100,6 +100,60 @@ fn every_built_in_module_is_accepted() {
     let (accepted, rejected) = check::accept(MODULES, OPERATIONS);
     assert!(rejected.is_empty(), "{rejected:?}");
     assert_eq!(accepted.len(), MODULES.len());
+}
+
+/// darktable's pickers on the built modules' sliders, each named by its quad (decision
+/// 79; `docs/pickers.md`, The first pass's pickers). White balance's, Colour calibration's
+/// and AgX's Auto tune levels come with their buttons' rows; no built module picks yet.
+#[test]
+fn the_built_in_modules_declare_darktable_s_pickers_on_their_sliders() {
+    let pickers: Vec<(&str, Vec<&str>)> = MODULES
+        .iter()
+        .map(|module| module.definition())
+        .filter(|definition| !definition.pickers.is_empty())
+        .map(|definition| {
+            (
+                definition.id,
+                definition.pickers.iter().map(|p| p.id).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pickers,
+        [
+            ("agx", vec!["white", "black", "pivot", "pivot_output"]),
+            ("exposure", vec!["exposure"]),
+            (
+                "colorbalancergb",
+                vec![
+                    "global_hue",
+                    "shadows_hue",
+                    "midtones_hue",
+                    "highlights_hue",
+                    "white_fulcrum",
+                    "grey_fulcrum",
+                ]
+            ),
+        ]
+    );
+    // Every slider's quad picks: a line only where darktable draws one, as rotate and
+    // perspective's horizon, which no built module has; which picker each names, and that
+    // each picker is in one row, are the modules' tables and `Definition::check`.
+    let not_pickers: Vec<(&str, &str, Quad)> = MODULES
+        .iter()
+        .flat_map(|module| {
+            let id = module.definition().id;
+            module.definition().rows().filter_map(move |row| match row {
+                Row::Slider(Slider {
+                    control,
+                    quad: Some(quad),
+                    ..
+                }) if !matches!(quad, Quad::Picker(_)) => Some((id, *control, *quad)),
+                _ => None,
+            })
+        })
+        .collect();
+    assert_eq!(not_pickers, []);
 }
 
 /// What a module fixes, with no control, is among what it owns, so the refusal that names
@@ -413,6 +467,7 @@ static LISTING: Definition = Definition {
         controls: &["tone", "grid"],
     }],
     views: &[],
+    pickers: &[],
 };
 
 impl Module for Listing {

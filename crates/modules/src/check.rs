@@ -15,14 +15,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! What the engine holds every module to (decisions 4 and 28): a definition that holds
-//! together, one owner per operation parameter, parameters that exist, and a binding
-//! that sets only what its module owns, within the schema. The session accepts modules
-//! with [`accept`] and leaves out the rest; the tests sweep every built-in module's
-//! binding with [`sweep`].
+//! together, one owner per operation parameter, parameters that exist, pickers that read
+//! operations the module drives as they can (decision 79), and a binding that sets only
+//! what its module owns, within the schema. The session accepts modules with [`accept`]
+//! and leaves out the rest; the tests sweep every built-in module's binding with
+//! [`sweep`].
 
-use apertrust_plugin::{ImageContext, Operation, ParamError, Value};
+use apertrust_plugin::{ImageContext, Operation, ParamError, Stage, Value};
 
-use crate::definition::{ControlKind, DefinitionError, MAX_POINTS};
+use crate::definition::{ControlKind, DefinitionError, MAX_POINTS, Space};
 use crate::{Base, Control, ControlValue, Controls, Module, ModuleValues, Owned, Range, Setting};
 
 /// A number control's range while the module's controls hold `values`, every control,
@@ -148,6 +149,16 @@ pub enum ModuleError {
         operation: &'static str,
         param: &'static str,
     },
+    /// A picker reading an operation the module owns no parameter of (decision 79).
+    #[error("its picker {picker} reads {operation}, which it owns no parameter of")]
+    PickerOperation {
+        picker: &'static str,
+        operation: &'static str,
+    },
+    /// A picker reading a mosaic other than in its operation's space or denoised, which
+    /// darktable's 4-channel conversions and B-spline cannot (decision 79).
+    #[error("its picker {0} reads a mosaic, which it can only in its own space and not denoised")]
+    PickerMosaic(&'static str),
 }
 
 /// A module left out, and why.
@@ -214,6 +225,24 @@ fn admit(
                 param,
                 owner,
             });
+        }
+    }
+    for picker in definition.pickers {
+        let operation = picker.operation;
+        let picked = || ModuleError::PickerOperation {
+            picker: picker.id,
+            operation,
+        };
+        if !owns.iter().any(|owned| owned.operation == operation) {
+            return Err(picked());
+        }
+        let found = operations
+            .iter()
+            .find(|candidate| candidate.manifest().id == operation)
+            .ok_or_else(picked)?;
+        let mosaic = found.manifest().slot.stage == Stage::Raw;
+        if mosaic && (picker.space != Space::Operation || picker.denoise) {
+            return Err(ModuleError::PickerMosaic(picker.id));
         }
     }
     Ok(())
@@ -555,7 +584,7 @@ mod tests {
     use apertrust_plugin::Value;
 
     use super::*;
-    use crate::definition::{Definition, Row, Slider, Tab};
+    use crate::definition::{Definition, Picker, PickerKind, Quad, Row, Slider, Tab};
     use crate::testing::{self, Sample};
 
     /// A module with one control, owning `owns`, whose binding sets `sets` whenever the
@@ -613,6 +642,7 @@ mod tests {
                 after: &[],
                 presets: &[],
                 views: &[],
+                pickers: &[],
             })),
             owns: Box::leak(owns.into()),
             sets,
@@ -694,6 +724,74 @@ mod tests {
                 ("sample", &ModuleError::Duplicate("sample")),
             ]
         );
+    }
+
+    #[test]
+    fn a_picker_reads_an_operation_its_module_drives_a_mosaic_as_it_is() {
+        // A module owning `owns` with one picker on its slider's quad.
+        let picking = |owns: &[Owned], picker: Picker| {
+            let mut module = fake("picking", owns, Vec::new());
+            module.definition = Box::leak(Box::new(Definition {
+                tabs: Box::leak(Box::new([Tab {
+                    id: None,
+                    rows: Box::leak(Box::new([Row::Slider(
+                        Slider::new("amount").quad(Quad::Picker(picker.id)),
+                    )])),
+                }])),
+                pickers: Box::leak(Box::new([picker])),
+                ..*module.definition
+            }));
+            let (_, rejected) = accept(&[&module], OPERATIONS);
+            rejected.into_iter().map(|r| r.error).collect::<Vec<_>>()
+        };
+        let exposure = [Owned::new("exposure", "exposure")];
+        let pick = Picker {
+            id: "pick",
+            operation: "exposure",
+            kind: PickerKind::PointArea,
+            denoise: true,
+            output: true,
+            space: Space::Hsl,
+            keep: false,
+            writes: &["amount"],
+            tools: &[],
+        };
+        assert_eq!(picking(&exposure, pick), []);
+        let elsewhere = Picker {
+            operation: "grain",
+            ..pick
+        };
+        assert_eq!(
+            picking(&exposure, elsewhere),
+            [ModuleError::PickerOperation {
+                picker: "pick",
+                operation: "grain"
+            }]
+        );
+        // White balance's: the mosaic, per CFA colour, as it is.
+        let temperature = [Owned::new("temperature", "red")];
+        let spot = Picker {
+            operation: "temperature",
+            denoise: false,
+            space: Space::Operation,
+            ..pick
+        };
+        assert_eq!(picking(&temperature, spot), []);
+        for wrong in [
+            Picker {
+                denoise: true,
+                ..spot
+            },
+            Picker {
+                space: Space::Lch,
+                ..spot
+            },
+        ] {
+            assert_eq!(
+                picking(&temperature, wrong),
+                [ModuleError::PickerMosaic("pick")]
+            );
+        }
     }
 
     #[test]

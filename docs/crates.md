@@ -1128,6 +1128,7 @@ Modules (decision 28): what the user edits with, bound to operation parameters. 
 - `preset` and `matching`, for a preset row's options.
 - `view` and `unview`, for a lossless view's coordinates (decision 2).
 - `follow`: the other controls darktable's GUI writes with one, which the session writes in the same change (decision 27).
+- `pick` (decision 79): what a picker makes of a `Reading`, its operation's input and output `Stats`, given the values, the image context, the tool settings, the channel shown, the module's last reading and the keys held: the controls it writes and what its panel shows (`Picked`, `Shown`, `Patch`). Pure; none by default, and no built module picks yet.
 
 ### Definitions
 
@@ -1141,16 +1142,17 @@ Modules (decision 28): what the user edits with, bound to operation parameters. 
 - A slider row's soft range, darktable's, is the track's span inside the control's range (`Slider::soft`).
 - A titled tab or a collapsible group without rows is drawn disabled, its rows to come.
 - Values with kept and Auto marks; `Base`; message ids (`messages`); transfer functions with derivatives.
-- **What a colour picker reads** (`pick`, decision 79): `Region`, a point or an area in the photo's coordinates; `Stats`, a reading's mean, minimum and maximum of four channels; `PickKeys`, the keys held. The engine's session takes and gives them; `Module::pick` is to.
 - **Switched modules** (decision 32): `Definition::switched`, true for a module darktable leaves off on a new photo, and `ModuleValues::enabled`, whether one is on. Off, it holds no value, only marks, and renders nothing; any write of a control turns it on with darktable's defaults for the rest, until its reset turns it off. `switched_from` is the migration a module that becomes switched gives its older version's edits: on with their values where they rendered, else off, their values dropped.
+- **What a colour picker reads** (`pick`, decision 79): `Region`, a point or an area in the photo's coordinates; `Stats`, a reading's mean, minimum and maximum of four channels; `PickKeys`, the keys held. The engine's session takes and gives them, and `Module::pick` takes them.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md#declaring-pickers)): `Definition::pickers`, each a `Picker` with darktable's flags (`PickerKind`, `denoise`, `output`, `keep`), its `Space`, the controls it may write and the tool settings it reads, ids a namespace of their own; each shown by one row, a slider's `Quad::Picker(id)` or a `Row::Pickers`, neither drawn yet. Exposure's, Colour balance RGB's six and AgX's four on sliders are declared.
 
 ### Checks and test helpers
 
-- `check::accept`, `owner` and `sweep`, which the session and the tests run. `check::accept` refuses a switched module over an operation every photo runs, and `check::switched_defaults` holds a switched module's defaults, made explicit, to bind its operations' own exactly, Colour balance RGB's two grey fulcrums within one f32 step (`check::ONE_STEP_FROM_DEFAULT`). `check::range` holds a module's ranges to its definition's; `check::clamp` is the one clamp the edit and the app share; the sweep holds every range to decision 30's rules.
+- `check::accept`, `owner` and `sweep`, which the session and the tests run. `check::accept` refuses a switched module over an operation every photo runs, and a picker reading an operation its module owns no parameter of, or a mosaic other than in its own space and not denoised; `check::switched_defaults` holds a switched module's defaults, made explicit, to bind its operations' own exactly, Colour balance RGB's two grey fulcrums within one f32 step (`check::ONE_STEP_FROM_DEFAULT`). `check::range` holds a module's ranges to its definition's; `check::clamp` is the one clamp the edit and the app share; the sweep holds every range to decision 30's rules.
 - `slider_step`, `dt_bauhaus_slider_get_step` restated.
 - `testing::slider_differences` holds each built module's sliders to darktable's (hard and soft ranges, factor, digits, step), comparing at the values it is given; the table is in each module's `docs/modules` file. None differs (decision 30). AgX's pivot is compared at its defaults and at other input ranges.
 - Behind the `testing` feature, for the other crates' tests:
-  - `testing::Sample`: its method lists camera only on a photo that records a bias; its coarseness is unavailable unless its size is coarse and its grain on (decision 30), and reaches up to 100 % plus the bias, the worked example of a range that follows other controls;
+  - `testing::Sample`: its method lists camera only on a photo that records a bias; its coarseness is unavailable unless its size is coarse and its grain on (decision 30), and reaches up to 100 % plus the bias, the worked example of a range that follows other controls; its three pickers, `brightness` on a quad and `spread` and `show` on a row of pickers, read the channel shown, the last reading and the keys held, one only showing;
   - `testing::Faulty`; `testing::Twin`, two lossless views of two controls; `testing::Pushing`, a follow write its change's clamp would rewrite; and `testing::Defaultless`, whose defaults panic.
 - `tests/corpus/mod.rs` gives Exposure's and Colour balance RGB's tests the corpus, and `tests/switched/mod.rs` gives the switched modules' tests their rows' edits: off, on at darktable's defaults, and an edit version 1 saved, read through the sidecar.
 - `RETIRED`: the ids of the modules Apertrust has retired, whose values an edit loses with a warning without opening the photo for viewing only, as a module neither built in nor retired does (decision 43). It is empty until RGB curve replaces the Tone curve.
@@ -1326,7 +1328,7 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 ### Planned
 
 - **Camera presets and tuning** (decision 27): preset rows listing a photo's options after their own under a heading (`PresetRow::camera`, `Module::listed`) and taking a tuning addressed like a control (`PresetRow::tuning`, `Module::tuning`), `Module::preset` given the tuning and the module's values. Then White balance's camera presets, stored in `preset` by darktable's name, and Finetune ([docs/modules/white-balance.md](modules/white-balance.md), Build).
-- **Colour pickers** (decision 79; [pickers.md](pickers.md)): `Picker`, `Definition::pickers`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` with `Picked` and `Shown`, and each built module's pickers.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each built module's `pick`; White balance's, Colour calibration's and AgX's Auto tune levels' pickers with their rows.
 
 ## apertrust-export
 

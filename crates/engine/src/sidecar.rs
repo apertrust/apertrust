@@ -716,6 +716,7 @@ mod tests {
         after: &[],
         presets: &[],
         views: &[],
+        pickers: &[],
     };
 
     impl Module for Look {

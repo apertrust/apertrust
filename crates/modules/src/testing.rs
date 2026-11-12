@@ -23,9 +23,10 @@
 use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Definition, PresetRow, Range, Row, Slider, Tab,
-    ToolSetting, Unit, View, slider_step,
+    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Picker, PickerKind, PresetRow, Quad,
+    Range, Row, Slider, Space, Tab, ToolSetting, Unit, View, slider_step,
 };
+use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
 use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting};
 
@@ -64,12 +65,24 @@ use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting};
 ///   second view of its light (decision 2): their `sum`, from 0 to 200 %, and their
 ///   `difference`, grain less bias, from −100 to 100 %. Its inverse halves their sum and
 ///   difference, exact in f32 but for a rounding; a pair of coordinates in range may still
-///   give a grain or a bias outside its own, which the session refuses.
+///   give a grain or a bias outside its own, which the session refuses;
+/// - three colour pickers (decision 79), each reading the exposure operation, as darktable's
+///   modules pick ([`Module::pick`]): `brightness`, on brightness's quad, an area read
+///   at exposure's output, which moves brightness by what brings the area's mean to 18 %
+///   grey, darktable's Exposure correction in short, and shows the area's patch; `spread`,
+///   a point or an area read at exposure's input, denoised, which sets grain to the
+///   spread from the area's minimum to its maximum in percent, of the channel shown,
+///   `red`, `green` or `blue`, else of the three's widest, and with `shift` held coarse
+///   grain, with `command` fine, writing nothing for a reading that equals the module's
+///   last, as RGB levels' picks; and `show`, a point or an area read at exposure's input
+///   and output, kept on as the module changes, which writes nothing and shows the
+///   output's patch, as RGB curve's show colour.
 ///
 /// The look's row and brightness's are before every tab's, shown whichever is open. The
-/// Grain tab holds grain, size and coarseness under a group label; the Shape tab, the
-/// Midtones collapsible group with method and bias, then the pair's coordinates, the
-/// sum's track over a soft range of 50 to 150 %, as darktable's sliders have one.
+/// Grain tab holds grain, size and coarseness under a group label, then the spread and
+/// show pickers' buttons on a row of their own; the Shape tab, the Midtones collapsible
+/// group with method and bias, then the pair's coordinates, the sum's track over a soft
+/// range of 50 to 150 %, as darktable's sliders have one.
 pub struct Sample;
 
 static DEFINITION: Definition = Definition {
@@ -155,6 +168,10 @@ static DEFINITION: Definition = Definition {
                     style: ChoiceStyle::Segmented,
                 },
                 Row::Slider(Slider::new("coarseness").decimals(0)),
+                Row::Pickers {
+                    label: Some("measure"),
+                    pickers: &["spread", "show"],
+                },
             ],
         },
         Tab {
@@ -182,7 +199,7 @@ static DEFINITION: Definition = Definition {
             preset: "look",
             style: ChoiceStyle::List,
         },
-        Row::Slider(Slider::new("brightness")),
+        Row::Slider(Slider::new("brightness").quad(Quad::Picker("brightness"))),
     ],
     after: &[],
     presets: &[PresetRow {
@@ -210,6 +227,41 @@ static DEFINITION: Definition = Definition {
             },
         ],
     }],
+    pickers: &[
+        Picker {
+            id: "brightness",
+            operation: "exposure",
+            kind: PickerKind::Area,
+            denoise: false,
+            output: true,
+            space: Space::Operation,
+            keep: false,
+            writes: &["brightness"],
+            tools: &[],
+        },
+        Picker {
+            id: "spread",
+            operation: "exposure",
+            kind: PickerKind::PointArea,
+            denoise: true,
+            output: false,
+            space: Space::Operation,
+            keep: false,
+            writes: &["grain", "size"],
+            tools: &[],
+        },
+        Picker {
+            id: "show",
+            operation: "exposure",
+            kind: PickerKind::PointArea,
+            denoise: false,
+            output: true,
+            space: Space::Operation,
+            keep: true,
+            writes: &[],
+            tools: &[],
+        },
+    ],
 };
 
 static OWNS: [Owned; 4] = [
@@ -343,6 +395,73 @@ impl Module for Sample {
         values.set("bias", ControlValue::Number(0.5 * (sum - difference)));
         Some(values)
     }
+
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &Reading,
+        values: &Controls,
+        _: &ImageContext,
+        _: &[(&str, ControlValue)],
+        channel: Option<&str>,
+        last: Option<&Reading>,
+        keys: PickKeys,
+    ) -> Option<Picked> {
+        let mut writes = Controls::new();
+        let shown = match picker {
+            "brightness" => {
+                let output = reading.output?;
+                // Not finite where the mean is 0 or less, which the session drops.
+                let ev = values.number("brightness") + (MID_GREY / grey(&output)).log2();
+                writes.set("brightness", ControlValue::Number(ev));
+                patch(&output)
+            }
+            "spread" => {
+                if last == Some(reading) {
+                    return None;
+                }
+                let Stats { min, max, .. } = reading.input;
+                let spread = |c: usize| max[c] - min[c];
+                let widest = match channel {
+                    Some("red") => spread(0),
+                    Some("green") => spread(1),
+                    Some("blue") => spread(2),
+                    _ => spread(0).max(spread(1)).max(spread(2)),
+                };
+                writes.set("grain", ControlValue::Number(100.0 * widest));
+                if keys.shift {
+                    writes.set("size", ControlValue::Choice(COARSE));
+                } else if keys.command {
+                    writes.set("size", ControlValue::Choice(0));
+                }
+                Shown::default()
+            }
+            "show" => patch(&reading.output?),
+            _ => return None,
+        };
+        Some(Picked { writes, shown })
+    }
+}
+
+/// The grey [`Sample`]'s brightness picker brings an area's mean to.
+const MID_GREY: f32 = 0.18;
+
+/// The mean of a reading's first three channels: a stand-in for luminance.
+fn grey(stats: &Stats) -> f32 {
+    (stats.mean[0] + stats.mean[1] + stats.mean[2]) / 3.0
+}
+
+/// A patch of a reading's mean, as it is: [`Sample`] shows no colour management, only that
+/// a pick shows something. Its L is its [`grey`] in percent, with no chroma.
+fn patch(stats: &Stats) -> Shown {
+    let [r, g, b, _] = stats.mean.map(|v| v.clamp(0.0, 1.0));
+    Shown {
+        patch: Some(Patch {
+            srgb: [r, g, b],
+            lch: [100.0 * grey(stats), 0.0, 0.0],
+        }),
+        tools: Vec::new(),
+    }
 }
 
 /// [`Sample`] with follow writes (decision 27), as Colour calibration's illuminant writes
@@ -447,6 +566,7 @@ static FAULTY: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 impl Module for Faulty {
@@ -545,6 +665,7 @@ static DEFAULTLESS: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 impl Module for Defaultless {
@@ -665,6 +786,7 @@ static TWIN: Definition = Definition {
             ],
         },
     ],
+    pickers: &[],
 };
 
 impl Module for Twin {
@@ -739,6 +861,54 @@ pub fn image() -> ImageContext {
         }),
         ..ImageContext::full(84, 62)
     }
+}
+
+/// darktable's picker on a slider, as its `gui_init` makes it with `dt_color_picker_new`: a
+/// row of a module's picker table, which [`pickers_on_sliders`] gives back from the
+/// module's definition, so a test holds every picker to darktable's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DarktablePicker {
+    pub id: &'static str,
+    /// The control of the slider whose quad it is.
+    pub slider: &'static str,
+    /// `DT_COLOR_PICKER_POINT`, `_AREA` or `_POINT_AREA`.
+    pub kind: PickerKind,
+    /// `DT_COLOR_PICKER_DENOISE`.
+    pub denoise: bool,
+    /// `DT_COLOR_PICKER_IO`.
+    pub output: bool,
+    /// What its `color_picker_apply` writes.
+    pub writes: &'static [&'static str],
+    /// The darktablerc settings it reads.
+    pub tools: &'static [&'static str],
+}
+
+/// Every picker of `definition` as a [`DarktablePicker`], in the definition's order, with
+/// the slider whose quad names it; `""` for one on a row of pickers.
+pub fn pickers_on_sliders(definition: &Definition) -> Vec<DarktablePicker> {
+    definition
+        .pickers
+        .iter()
+        .map(|picker| DarktablePicker {
+            id: picker.id,
+            slider: definition
+                .rows()
+                .find_map(|row| match row {
+                    Row::Slider(Slider {
+                        control,
+                        quad: Some(Quad::Picker(id)),
+                        ..
+                    }) if *id == picker.id => Some(*control),
+                    _ => None,
+                })
+                .unwrap_or(""),
+            kind: picker.kind,
+            denoise: picker.denoise,
+            output: picker.output,
+            writes: picker.writes,
+            tools: picker.tools,
+        })
+        .collect()
 }
 
 /// darktable's slider for one control or tool setting, as its params and `gui_init`
@@ -1227,5 +1397,68 @@ mod tests {
             crate::check::listed(grain, &[], &ControlValue::Number(0.0)),
             None
         );
+    }
+
+    /// A reading whose channels' means are `mean`, each from half to twice it.
+    fn reading(mean: [f32; 3], output: Option<[f32; 3]>) -> Reading {
+        let stats = |[r, g, b]: [f32; 3]| Stats {
+            mean: [r, g, b, 1.0],
+            min: [0.5 * r, 0.5 * g, 0.5 * b, 1.0],
+            max: [2.0 * r, 2.0 * g, 2.0 * b, 1.0],
+        };
+        Reading {
+            input: stats(mean),
+            output: output.map(stats),
+        }
+    }
+
+    #[test]
+    fn the_sample_s_pickers_write_its_controls_from_a_reading() {
+        let image = image();
+        let mut values = Sample.defaults(&image);
+        values.set("brightness", ControlValue::Number(0.5));
+        let keys = PickKeys::default();
+        let pick = |picker, reading: &Reading, channel, last, keys| {
+            Sample.pick(picker, reading, &values, &image, &[], channel, last, keys)
+        };
+        // Brightness moves by what brings the output's mean to 18 % grey.
+        let grey = reading([0.1; 3], Some([0.09; 3]));
+        let picked = pick("brightness", &grey, None, None, keys).unwrap();
+        assert_eq!(picked.writes.number("brightness"), 1.5);
+        assert_eq!(picked.shown.patch.unwrap().srgb, [0.09; 3]);
+        // With no output read, it has nothing to pick from.
+        let input_only = reading([0.1; 3], None);
+        assert_eq!(pick("brightness", &input_only, None, None, keys), None);
+        // The spread of the channel shown, else of the widest, its size by the keys held.
+        let warm = reading([0.5, 0.25, 0.125], None);
+        let spread = |channel, keys| pick("spread", &warm, channel, None, keys).unwrap();
+        let widest = spread(None, keys);
+        assert_eq!(widest.writes.number("grain"), 75.0);
+        assert_eq!(widest.writes.get("size"), None);
+        assert_eq!(widest.shown, Shown::default());
+        assert_eq!(spread(Some("blue"), keys).writes.number("grain"), 18.75);
+        let shift = PickKeys {
+            shift: true,
+            ..keys
+        };
+        let coarse = spread(Some("green"), shift);
+        assert_eq!(coarse.writes.number("grain"), 37.5);
+        assert_eq!(coarse.writes.choice("size"), COARSE);
+        let command = PickKeys {
+            command: true,
+            ..keys
+        };
+        assert_eq!(spread(None, command).writes.choice("size"), 0);
+        // Nothing for a reading that equals the module's last, as RGB levels'.
+        assert_eq!(pick("spread", &warm, None, Some(&warm), keys), None);
+        // Show writes nothing and shows the output's patch.
+        let both = reading([0.1; 3], Some([0.2, 0.4, 0.6]));
+        let shown = pick("show", &both, None, None, keys).unwrap();
+        assert!(shown.writes.is_empty());
+        assert_eq!(shown.shown.patch.unwrap().srgb, [0.2, 0.4, 0.6]);
+        // A picker it lacks, and a module's provided pick, give nothing.
+        assert_eq!(pick("contrast", &both, None, None, keys), None);
+        let provided = Faulty.pick("show", &both, &values, &image, &[], None, None, keys);
+        assert_eq!(provided, None);
     }
 }

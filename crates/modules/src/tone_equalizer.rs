@@ -285,6 +285,7 @@ static DEFINITION: Definition = Definition {
     })],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// Every parameter of `toneequal`, each by the control of its name: the module is

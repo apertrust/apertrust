@@ -139,6 +139,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// RGB curve's node parameters, `curve_nodes_<curve>_<node>_x` and `_y`, by curve and

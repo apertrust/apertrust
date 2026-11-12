@@ -99,6 +99,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
+    pickers: &[],
 };
 
 /// Both parameters of `hazeremoval`: the module is darktable's and owns them all.

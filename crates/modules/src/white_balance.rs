@@ -181,6 +181,7 @@ static DEFINITION: Definition = Definition {
         controls: &["red", "green", "blue", "various", "preset"],
     }],
     views: &VIEWS,
+    pickers: &[],
 };
 
 /// Every parameter of `temperature`: the four coefficients and `preset`.

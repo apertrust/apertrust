@@ -141,7 +141,8 @@ impl Engine {
                 if let Some(failed) = &self.pickers.failed {
                     return Err(SessionError::Pickers(failed.clone()));
                 }
-                // No module declares a picker yet (`docs/pickers.md`, The plan).
+                // Refused until 79.3, the session running no module's picker yet,
+                // declared or not (`docs/pickers.md`, The plan).
                 if picker != PickerRef::ColourPicker {
                     return Err(SessionError::UnknownPicker);
                 }
