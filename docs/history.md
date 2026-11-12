@@ -2,7 +2,7 @@
 
 Every change to a photo's edit is a step of its history: a slider's drag, a preset, a reset, an assistant's request. Undo and Redo move through those steps, the History tab lists them, and the sidecar keeps them, so reopening a photo brings Undo back. This document describes the history: what a step is, how the session serves undo and history to its clients, how the sidecar stores them, and how the work is built. Where edits live and the sidecar's other parts are in [library.md](library.md#sidecars); the session's other commands and events in [session-protocol.md](session-protocol.md) and [events.md](events.md).
 
-**Status.** [Decision 78](decisions/0078-undo-redo-and-the-edits-history.md) records the design, with the options considered, on [decision 47](decisions/0047-where-edits-live-and-what-the-sidecar-holds.md)'s log of steps. Nothing of it is built: the session keeps the edit alone, the app declares Undo and Redo and draws the History tab disabled, and `apertrust-cli edit` writes version 1. It is planned as the library's step 9, after switched modules (decision 32), with step 8's clock first, now built, and its version 2 before history is saved ([The plan](#the-plan)).
+**Status.** [Decision 78](decisions/0078-undo-redo-and-the-edits-history.md) records the design, with the options considered, on [decision 47](decisions/0047-where-edits-live-and-what-the-sidecar-holds.md)'s log of steps. Built, as step 9.1: the log in the session's memory, each completed change a step, `Reset` a step, `Undo` and `Redo` with the undo records, and `Event::History`; the file stays version 1, holding the edit at the end, and is read again as one step. Not built: `GoTo`, `Step`, merging, saving the log, the History tab, the eye, Compress and Truncate, and the CLI's history; the app declares Undo and Redo and draws the History tab disabled, and `apertrust-cli edit` writes version 1. The rest of the library's step 9 follows, with step 8's version 2 before history is saved ([The plan](#the-plan)).
 
 ## What it serves
 
@@ -39,7 +39,7 @@ Each virtual copy of a photo has one log: its steps in order, and its **end**, h
 
 **The edit is folded from the log:** for each module, its entry at its last step among the first `end`, else its reset state, its defaults for the photo and off when it is switched ([decision 32](decisions/0032-modules-off-until-first-touched.md)). Nothing else stores the edit; the session folds it as a photo opens and keeps it in step with each change, and export, thumbnails and the index read the same fold.
 
-The log is the engine's (`apertrust_engine::history`, planned): `Log`, `Step` and the functions that add, merge, fold and compress, plain data, used by the session and by `apertrust-cli` alike. The sidecar's text layer (`apertrust_library::sidecar`, [decision 54](decisions/0054-four-layers-for-the-librarys-code.md)) holds the steps as strings, knowing no module's meaning.
+The log is the engine's (`apertrust_engine::history`): `Log`, `Step` and the functions that add and fold, built, and that merge and compress, planned, plain data, used by the session and, planned, by `apertrust-cli`. The sidecar's text layer (`apertrust_library::sidecar`, [decision 54](decisions/0054-four-layers-for-the-librarys-code.md)) holds the steps as strings, knowing no module's meaning.
 
 ## A step
 
@@ -87,6 +87,7 @@ One completed change makes one step: a gesture ending with `done`, a reset, a pr
 | `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate` | None: they move the end or rewrite the log |
 
 - **A change that changes nothing makes no step,** as it writes nothing.
+- **A pending `Set` followed by `Reset`** joins the reset's step, which resets it with the rest.
 - **A pending `Set`** with no step after it becomes a step of its own, source You, before an Undo, Redo, GoTo, Compress or Truncate and as the photo closes, so no value waits outside the log.
 - **Discard History is `Reset`** (decision 47): one step that resets the edit, with the same note, on each photo of the selection when several are chosen, as a batch. The log stays; Compress shrinks it.
 - **The app's changes of several commands are one `Step { source: You }`:** the tone equalizer's release of the bands a drag moved, and its reset of the nine bands by a double-click or Shift+Delete ([modules/tone-equalizer.md](modules/tone-equalizer.md), [decision 31](decisions/0031-views-and-curves-of-the-same-stored-values.md)). A `Step` takes in the gesture under way when its commands write that gesture's module, so the drag's `done: false` changes and the release are one step.
@@ -111,7 +112,7 @@ darktable's history items merge further: a module's consecutive changes are one 
 ### Original and the Default lines
 
 - **Original** is end 0: no step applied, the photo as Apertrust shows it untouched, darktable's defaults included ([decision 21](decisions/0021-the-operation-interface.md), decision 32).
-- **The Default lines** are the modules every photo runs, those not switched, in darktable's history order, listed between Original and the first step, as darktable's history starts with the modules it applies to a new photo. They are derived from the photo's defaults and never stored, carry no number and are not places in the log to go to ([The History tab](#the-history-tab)). darktable's Original, its auto-applied modules not yet applied, has no Apertrust counterpart: the modules every photo runs cannot be turned off (decision 32).
+- **The Default lines** are the modules every photo runs, those not switched, listed between Original and the first step in darktable's history order for a new photo: those darktable has on by default with no on/off button first (Raw black/white point, Demosaic, Output colour profile), then those on by default with one (White balance, Highlight reconstruction, Orientation), as its `_dev_add_default_modules` adds them (`src/develop/develop.c:2142-2171`, called at `:2339`), then every other, Exposure, Colour calibration and the tone mapper among them, which darktable's workflow applies as presets after them (`_dev_auto_apply_presets`, `:2343`); each group in the pipe's order. They are derived from the photo's defaults and never stored, carry no number and are not places in the log to go to ([The History tab](#the-history-tab)). darktable's Original, its auto-applied modules not yet applied, has no Apertrust counterpart: the modules every photo runs cannot be turned off (decision 32).
 - **Planned:** darktable's auto-applied presets (Phase 3) and a project's start adjustments (the library's step 38) are written as real steps with source Default as they are applied, by the session itself; a client cannot send `StepSource::Default`.
 
 ## Behaviour
@@ -128,7 +129,7 @@ darktable's history items merge further: a module's consecutive changes are one 
 A change merged into the step before it adds no record, as darktable's merged change records no undo: Undo takes back the merged step whole.
 
 - **Two stacks:** the done records and the undone ones. Undo takes the newest done record back and puts it on the undone stack; Redo puts the newest undone record back and returns it to the done stack; a new command on the history clears the undone stack. Both are the session's memory alone, not a second log: they end as the photo closes, as darktable's end on leaving the darkroom.
-- **The fallback.** Only when the done stack is empty, as after reopening a photo, does Undo move the end back one step through the steps the sidecar kept; only when the undone stack is empty does Redo move it forward one. Each fallback move is pushed, as a `GoTo` record, onto the opposite stack, Undo's onto the undone stack and Redo's onto the done stack, so the next Redo or Undo reverses it; a fallback move clears no undone record. With nothing to undo or redo they change nothing; the `History` fact says beforehand what they would do (`undo`, `redo`).
+- **The fallback.** Only when the done stack is empty, as after reopening a photo, does Undo move the end back one step through the steps the sidecar kept; only when the undone stack is empty does Redo move it forward one. Each fallback move is recorded on the opposite stack, Undo's on the undone stack and Redo's on the done stack, so the next Redo or Undo reverses it, and is named as `Move::Step` of the step it crosses, not as a `GoTo`; a fallback move clears no undone record. With nothing to undo or redo they change nothing; the `History` fact says beforehand what they would do (`undo`, `redo`).
 - **Going to a step** (`GoTo`) sets the end just after it, or to 0 for Original. The later steps stay, greyed, and are saved, so Redo's fallback still reaches them after reopening. Undo takes the click back, as darktable's does (`src/libs/history.c:1297-1318`, recorded by `:664-686`), and after a click and an edit, which drops the later steps, Undo brings them back while the photo is open.
 - **An edit while the end is below the last step** drops the steps after the end, then adds its own, as darktable's `_dev_add_history_item_ext` removes the items above `history_end` (`src/develop/develop.c:1191-1229`). darktable keeps one kind above the end, moving it below: an always-on module's item (default-enabled, or with no on-off button) with no earlier entry, its first item of a new photo. Apertrust stores no such item, the modules every photo runs being the derived Default lines, so it has no counterpart. Until the photo closes, Undo brings the dropped steps back; after that they are gone.
 - **Reset** is a step (above): Undo brings the edit back.
@@ -157,7 +158,7 @@ All but `Hide` are commands on the edit (`on_edit`): each ends a gesture under w
 | `GoTo { step: Option<StepId> }` | The end just after `step`, or Original with `None`; a step not in the log refused, `UnknownStep` |
 | `Compress` | Compress History, as above, darktable's compress |
 | `Truncate` | The steps after the end dropped, as above, darktable's Ctrl-click on compress |
-| `Reset` | Built: the whole edit back to nothing. Planned: one step, noted `history-reset` |
+| `Reset` | The whole edit back to nothing, as one step noted `history-reset` |
 | `Step { source, note, commands }` | Several commands on the edit as one step with that source and note |
 | `Hide { module, hidden }` | The eye: the live frame shown as if the module were reset; no step, nothing written |
 
@@ -189,8 +190,9 @@ pub struct History {
     /// How many steps apply, darktable's `history_end`: 0 is Original, and the
     /// step numbered `end`, counting from 1, is the last applied.
     pub end: usize,
-    /// The Default lines' modules, in darktable's history order; their values are
-    /// each control's default in `Values`.
+    /// The Default lines' modules, in darktable's history order for a new photo: no
+    /// on/off button, then one, then the rest, each group in the pipe's order; their
+    /// values are each control's default in `Values`.
     pub defaults: Vec<&'static str>,
     /// What Undo and Redo would do now, so a menu names it; `None` when nothing.
     pub undo: Option<Move>,
@@ -234,7 +236,16 @@ pub enum Move {
 - **The types** live in `apertrust_engine::history`, re-exported by the session, plain data that moves into `apertrust-protocol` unchanged when it is made. `Clock` and `MachineId` are `apertrust_library::clock`'s, built with step 8's first part. `StepSource`, `StepId`, `BatchId` and `Note` are written by name or as text on the wire, a client ignoring a source it does not know.
 - **When it is sent:** at a photo's open, right after its `Values { live: false }` (decision 77's stage 2); in each batch whose commands changed the log, its end or the undo records, once, after the batch's `Values` and before its `Frame`; and when the session takes a newer file from disk. A gesture's `done: false` changes change no step and send none.
 - **Whole, not a delta.** A fact is always its whole topic (decision 59), a remote client is sent the latest and a client joining late needs nothing more. It is sent once per completed change, never per frame of a drag, and in process the steps it shares with the last are not copied. A step with one control changed is about 200 bytes in memory and 160 as JSON, so 200 steps make about 40 kB and 1,000 about 200 kB, estimated, a curve's points more. Deltas would need ordered notices, `Sync` replaying them and a merge in every client, for a topic smaller than one frame.
-- **Its budgets, measured in 9.1:** at 200 and at 1,000 steps on the M4, building the fact takes under 1 ms, and its JSON, as the remote protocol will encode it, is under 256 kB. A measurement that misses its budget brings the planned fallback: the fact holds the step range the client shows, which it names with a command, the count and the end always whole, so a client still knows where the end is and what Undo would do.
+- **Its budgets:** at 200 and at 1,000 steps on the M4, building the fact takes under 1 ms, and its JSON, as the remote protocol will encode it, is under 256 kB. A measurement that misses its budget brings the planned fallback: the fact holds the step range the client shows, which it names with a command, the count and the end always whole, so a client still knows where the end is and what Undo would do.
+- **Measured in 9.1** on the M4, release build, each step one control changed, three runs alike (`the_fact_s_budgets` in `session/history/tests.rs`, ignored, run by hand):
+
+  | Steps | A batch's fact | Every step described anew | JSON, serde's derive | Its `null`s left out |
+  | --- | --- | --- | --- | --- |
+  | 200 | 0.007 ms | 0.08 ms | 59 kB | 51 kB |
+  | 1,000 | 0.014 ms | 0.35 to 0.40 ms | 295 kB | 255 kB |
+
+  A batch describes only the steps it added, the rest shared behind their `Arc`s, so the time is well within its budget. The JSON is an estimate, the test's imitation of serde's derive, nothing in process serialising the fact: a step is about 295 bytes, not the 160 estimated, its id, clock and source as text, its note, batch and `enabled` as `null`, and both values and marks named.
+- **So the fallback is planned with the remote protocol,** the fact's only reader that serialises it: 295 kB at 1,000 steps, and 255 kB with its `null`s left out, miss the budget, so there the fact holds the step range a client names, with the count, the end, `undo` and `redo` always whole. Leaving out a field that is `None` (serde's `skip_serializing_if`) is a wire convention of `apertrust-protocol`; field names are not shortened.
 - **The app's mirror** keeps the latest, by its `through`, and drops a replaced open's as it drops its values (`PhotoState::stale`).
 
 **Gaps left for later, on purpose:**
@@ -242,7 +253,8 @@ pub enum Move {
 - `History` names no photo or copy: it is the active photo's, its open's number ordering it. With several photos (decision 37) and virtual copies (step 11) it gains the photo's `PhotoRef`, its copy included.
 - `Step` names no photos: with several photos it gains them, a batch's.
 - `ModuleChange` is keyed by module alone: layers (Phase 4) add a layer and an instance to its key.
-- An unowned operation's parameters, while `Set` exists, show as a `ModuleChange` under the operation's id, its controls the parameters.
+- An unowned operation's parameters, while `Set` exists, show as a `ModuleChange` under the operation's id, its controls the parameters, an integer as a number.
+- **Built in 9.1:** `Move::Step` alone, `GoTo`, `Compress` and `Truncate` coming with their commands. A move of the end by Undo's or Redo's fallback names the step it takes back or puts back, as `Move::Step`.
 - A module this build does not know, in a photo open for viewing only, has no `&'static str`: such entries are listed by their stored name once `module` is widened to hold one, part of 9.6's scope, where the History tab first shows a view-only photo's steps.
 
 ## In the sidecar
@@ -323,7 +335,7 @@ Part 8.2 fixes the exact layout, holding this outline; a whole file with one ste
 
 - **A fixture holds it:** a sidecar with a history in `crates/library/tests/fixtures/xmp`, which ExifTool and exiv2 read without error, as decision 50's fixtures are, and the text layer writes back byte for byte.
 - **The end is stored as a step's id,** not a count, so it stays right when two logs join by clock (step 14); the protocol's `end` is its count, worked out as the log is read.
-- **Version 1 reads as one step:** source You, no note; its id the first 16 hex digits of a hash of the file's bytes, so every machine reading the same file gives the same step; its clock's time the file's modified time, its counter 0 and its machine id `00000000`, unknown; its end 1, or 0 for a file with no module and no parameter. Version 0 reads through version 1's reading, as now. Such a file is written as version 2 only at the next change.
+- **Version 1 reads as one step:** source You, no note; its id the first 16 hex digits of a hash of the file's bytes, so every machine reading the same file gives the same step; its clock's time the file's modified time, its counter 0 and its machine id `00000000`, unknown; its end 1; a file with no module and no parameter reads as no step, end 0. Version 0 reads through version 1's reading, as now. Such a file is written as version 2 only at the next change.
 - **Every entry of every step** follows decision 48's rules, not only the edit at the end, since a save writes them all: a newer module version or an unknown module anywhere in the log makes the photo view-only, and an older one is migrated entry by entry.
 - **Compress and Truncate in the file** leave only the steps they kept, and the copy's clock vector advanced with their own clock.
 - **No limit on the number of steps,** as darktable has none; Compress and Truncate are how the person shrinks a log. A step is about 100 to 300 bytes (decision 47), so 1,000 steps make about 100 to 300 kB. With the sidecar's build, a 1,000-step log's bytes and its read and write times are measured on the M4's SSD and over SMB to the NAS, against reading it within 20 ms and writing it within 50 ms on the SSD; a miss blocks 9.5 until it is met.
@@ -366,6 +378,7 @@ History needs two parts of the library's step 8, and they come first:
 | A click on a history item is undone by Ctrl+Z (`history.c:1297-1318`) | The same, while the photo is open | Kept |
 | Compress keeps the last item per operation and instance below `history_end` and deletes the rest, those above the end among them, the whole history at end 0, undone by Ctrl+Z (`src/common/history.c:1212-1216`, `:1244-1255`) | The same, its empty entries dropped, since an empty entry and none are the same reset state | Kept |
 | Ctrl-click on compress truncates: the items at and above `history_end` deleted, the rest kept, undone by Ctrl+Z (`src/common/history.c:1366-1376`) | `Truncate`, Ctrl-click or Cmd-click on Compress history | Kept |
+| A new photo's history lists the modules on by default with no on/off button, then those with one, each in the pipe's order, then the workflow's auto-applied presets in the order its preset query returns them (`develop.c:2142-2171`, `:2343`) | The Default lines in the same three groups, the third in the pipe's order | The third group is no presets in Apertrust, but the modules every photo runs |
 | Original shows the image without its auto-applied modules | Original is the untouched photo, darktable's defaults included; the Default lines open their modules | The modules every photo runs cannot be turned off (decision 32) |
 | Discard history removes the history, undone by Ctrl+Z until leaving the darkroom; no default key | Discard is Reset, a step; no default key | Undoable after reopening too (decision 47) |
 | `history_end` stored as a count | The last applied step's id | Logs that join by clock (step 14) |
@@ -374,7 +387,7 @@ History needs two parts of the library's step 8, and they come first:
 
 | Part | Where |
 | --- | --- |
-| The log, steps, fold, merge and compress | `apertrust-engine`'s `history` (planned) |
+| The log, steps and fold, built; merge and compress, planned | `apertrust-engine`'s `history` |
 | Commands, `Event::History`, the undo records, the gesture and merge clocks, the newer file taken in | the engine's `session` |
 | Version 2's copies and steps as strings | `apertrust-library`'s `sidecar` |
 | Reading and writing steps with the module definitions | the engine's `sidecar` |
@@ -384,11 +397,17 @@ History needs two parts of the library's step 8, and they come first:
 
 ## Tests
 
-Planned, with each part:
+**Built with 9.1:**
 
-- **The log:** fold equals the edit after every sequence of steps; an edit while the end is below the last step drops the later steps; Compress keeps each module's last entry, drops empty ones and every step after the end, and renders the same; Truncate drops the steps after the end alone, at end 0 all of them; Reset turns every switched module off and its Undo brings each back; merging by the two times on an injected clock and frame publication, and no merge across another command, another control, a note or a source.
-- **The session:** one `History` per batch that changed it, after `Values` and before `Frame`; none during a gesture; `through` never decreasing; each undo record's Undo and Redo; the fallback mixed with records (Undo past the done stack after reopening, then Redo reversing it, then Redo of an undone record still there), Undo after Compress and after Truncate restoring the steps and the end, Undo after a `GoTo` and an edit bringing the dropped steps back; a `Step` refused whole with its index, `Default` refused, a `Step` taking in a gesture; `GoTo` with an unknown step refused; Undo during a drag taking back the drag; a pending `Set` made a step before Undo; the commands refused while not live and view-only; `Hide` changing no file and no export; each move advancing the clock vector.
-- **The sidecar:** version 1 read as one step with the same id on every read; version 2 written back byte for byte; the history fixture read by ExifTool and exiv2 without error, each step's `apertrust:when` read as a date; a newer module version in an old step making the photo view-only; reopening restoring the steps and the end; a writer stopped after a completed change losing nothing but the gesture in flight; a file the CLI wrote meanwhile taken in, the session's unsaved step laid on it; the 1,000-step measurements.
+- **The log** (`history/tests.rs`): a step holding each changed module's whole state, an empty entry its reset; the fold, each module's last entry up to the end; a step added below the end dropping the steps after it; version 1 read as one step with the same id on every read; the steps described control by control, before → after, a switched module's on and off and an unowned parameter, each described once.
+- **The session's history** (`session/history/tests.rs`): over 40 seeded random sequences of 300 changes, completed changes, Undo, Redo and reopening, which clears the records so Undo and Redo fall back, half of them from an edit read from a file, the fold always the edit, every step's fold the edit as it left it, and Undo and Redo each other's inverse; Undo taking a step out of the log and Redo putting it back; an edit below the end dropping the later steps and Undo bringing them back; the fallback mixed with records; a change not yet a step made one before Undo; the budgets measured (`the_fact_s_budgets`, ignored).
+- **The session** (`session/tests/history.rs`): the `History` after an open's values not yet live; one `History` per batch that changed it, after `Values` and before `Frame`, none during a gesture, `through` never decreasing, shared steps the same `Arc`s; Undo and Redo rendering and saving each other's inverse; Reset a step, turning a switched module off, its Undo bringing each back; a pending `Set` and a drag taken back by Undo, a gesture another command ends, or whose release is refused, a step of its own; after reopening, the fallback and an edit dropping the step read, which Undo brings back; `Undo` and `Redo` refused while not live and view-only.
+
+**Planned, with each part:**
+
+- **The log:** Compress keeps each module's last entry, drops empty ones and every step after the end, and renders the same; Truncate drops the steps after the end alone, at end 0 all of them; merging by the two times on an injected clock and frame publication, and no merge across another command, another control, a note or a source.
+- **The session:** Undo after Compress and after Truncate restoring the steps and the end, Undo after a `GoTo` and an edit bringing the dropped steps back; a `Step` refused whole with its index, `Default` refused, a `Step` taking in a gesture; `GoTo` with an unknown step refused; `GoTo`, `Compress`, `Truncate` and `Step` refused while not live and view-only; `Hide` changing no file and no export; each move advancing the clock vector.
+- **The sidecar:** version 2 written back byte for byte; the history fixture read by ExifTool and exiv2 without error, each step's `apertrust:when` read as a date; a newer module version in an old step making the photo view-only; reopening restoring the steps and the end; a writer stopped after a completed change losing nothing but the gesture in flight; a file the CLI wrote meanwhile taken in, the session's unsaved step laid on it; the 1,000-step measurements.
 - **The app:** the mirror's reducer fed `History` sequences; Undo's words naming what it would do; the tone equalizer's release and nine-band reset each one step; the History tab's snapshots, light and dark.
 - **The CLI:** `edit` adding one step; `history`'s moves, `--compress` and `--truncate` on fixtures.
 
@@ -399,11 +418,11 @@ The library's step 9 ([roadmap.md](roadmap.md#the-librarys-steps)), one pull req
 | # | Delivers | Touches | Out of scope |
 | --- | --- | --- | --- |
 | 8.1 | Built: the hybrid logical clock and the machine id in `apertrust-library`'s `clock`, the system's machine id read through `machine-uid` with no `unsafe` of Apertrust's | library | version 2 |
-| 9.1 | The log in the session's memory: `history`'s `Log` and `Step`, each completed change a step, `Reset` a step with its note, a pending `Set` made a step, `Undo` and `Redo` with the undo records, `Event::History`, its build time and JSON size measured at 200 and 1,000 steps on the M4 against their budgets; the file still version 1, the edit at the end | engine | `GoTo`, `Step`, merging, the app, the file |
+| 9.1 | Built: the log in the session's memory: `history`'s `Log` and `Step`, each completed change a step, `Reset` a step with its note, a pending `Set` made a step, `Undo` and `Redo` with the undo records, `Event::History`, its build time and JSON size measured at 200 and 1,000 steps on the M4 against their budgets; the file still version 1, the edit at the end | engine | `GoTo`, `Step`, merging, the app, the file |
 | 9.2 | `GoTo` and `Step`, with `InStep`, the scratch edit and the gesture taken in; the app sending the tone equalizer's release and nine-band reset as one `Step { source: You }` | engine, app's tone equalizer | other app work |
 | 9.3 | Merging consecutive changes, darktable's 10 s and 2 s, on an injected clock and frame publication | engine | anything else |
 | 9.4 | Edit › Undo and Redo and their keys enabled, naming what they would do, from the mirror | app | the History tab |
-| 8.2 | Version 2's text layer: the photo's identity with its fingerprint, `apertrust:copies` with one virtual copy, its id, number, name, clock vector, log and end, each time an XMP Date; version 1 read as one step; a fixture with a history in `tests/fixtures/xmp` that ExifTool and exiv2 read without error | library | virtual copies' commands (step 11), comparing copies (step 10) |
+| 8.2 | Version 2's text layer: the photo's identity with its fingerprint, `apertrust:copies` with one virtual copy, its id, number, name, clock vector, log and end, each time an XMP Date; version 1 read as one step, or as none, end 0, for a file holding nothing; a fixture with a history in `tests/fixtures/xmp` that ExifTool and exiv2 read without error | library | virtual copies' commands (step 11), comparing copies (step 10) |
 | 9.5 | History saved: the engine reads and writes the log in version 2; Undo after reopening; the newer file taken in before a write; the crash test; view-only over every entry; the 1,000-step measurements | engine | the app |
 | 9.6 | The History tab: lines, numbers, tags, tooltips, a click going to a step, Shift-click and the Default lines opening modules, Reset in the header; `ModuleChange::module` widened to name a module this build does not know | engine, app | the eye, Compress and Truncate |
 | 9.7 | The eye: `Hide` and `ModuleState::hidden`, and the tab's eye | engine, app | layers |

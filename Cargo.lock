@@ -363,6 +363,7 @@ dependencies = [
  "apertrust-raw",
  "bytemuck",
  "chrono",
+ "getrandom 0.4.3",
  "naga",
  "pollster 1.0.1",
  "thiserror 2.0.21",

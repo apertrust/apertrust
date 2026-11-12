@@ -984,7 +984,7 @@ Commands are plain data in the engine and move into the protocol unchanged ([ses
 **Module values:**
 
 - **`SetControl { module, control, value, done }`,** a number, a choice, a boolean or curve points. `done` comes on the last change of a drag, a click or a typed value, so history merges a gesture into one step. Setting a control keeps it (decision 28).
-- **`ResetControl { module, control }`,** back to its default for the photo and no longer kept; **`ResetModule { module }`;** **`Reset`,** the whole edit.
+- **`ResetControl { module, control }`,** back to its default for the photo and no longer kept; **`ResetModule { module }`;** **`Reset`,** the whole edit, as one history step noted `history-reset`. **`Undo`** and **`Redo`** move through the history ([History and undo](#history-and-undo)).
 - **`CancelGesture { module }`** (decision 42), a slider popup's cancel.
   - A gesture is the run of `SetControl { done: false }` on one module from the first after a completed change. The session keeps the edit and the held view coordinates as they were before it.
   - Any other command on the edit, refused or not, ends the gesture as completed first. A resize, the scopes and a cancel naming another module leave it under way.
@@ -1112,13 +1112,14 @@ Built (`session::thumbnail::rendered`, `pipeline::still`). The live photo's save
 
 ### History and undo
 
-Decisions 47 and 78, planned; the design in full is [history.md](history.md). History and undo live in the session, as each virtual copy's log of steps and its end, first in the session's memory and then saved in the sidecar's version 2, so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight.
+Decisions 47 and 78; the design in full is [history.md](history.md). History and undo live in the session, as each virtual copy's log of steps and its end. Built (step 9.1): the log in the session's memory, with the edit saved as version 1 holds it; planned: the log saved in the sidecar's version 2, so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight.
 
-- A completed change is one step, with its source, note and batch, holding each module's whole state after it; a gesture merges into one step on its `done`, a cancelled gesture (`CancelGesture`, decision 42) leaves none, and a `SetControl` repeated on one control within darktable's 10 s and 2 s merges into the step before it.
-- Undo and Redo take back and put back the session's undo records, as darktable's undo does (a step with the steps it dropped, a `GoTo`, a `Compress`, a `Truncate`), and with none move the log's end.
-- `Undo`, `Redo`, `GoTo { step }`, `Compress` and `Truncate` (darktable's compress and its Ctrl-click) are commands on the edit; `Reset` is a step; `Step { source, note, commands }` makes several of the edit's commands one step with a source and a note, refused whole (`InStep { index, error }`); `Hide { module, hidden }` is the History tab's eye, view state only. The session answers with one `History` fact, after the batch's `Values` and before its `Frame`.
-- A command on several selected photos, a rating or Apply edit, is one step on each photo, sharing a batch id, which one Undo takes back on every photo it changed (decision 37).
-- The log is `history`'s (`Log`, `Step`, fold, merge, compress), used by the session and by `apertrust-cli` alike.
+- **The log is `history`'s** (`apertrust_engine::history`): `Log` and `Step`, each step a random 64-bit `StepId`, a hybrid logical clock (`apertrust_library::clock`), a `StepSource`, an optional `Note`, an optional `BatchId` and its `Entry`s, each touched module's whole state after it, or an operation's unowned parameters; an empty entry is the reset state. The edit is the fold: each module's last entry up to the end, else its reset state (`Log::fold`).
+- **Built, in the session** (`session/history.rs`): a completed change (`done`, a reset of a control or a module, a keep, a preset's option, `Reset`) is one step of source You, holding what changed since the last step, so a `Set` joins the next; a change that changes nothing makes none; a gesture merges into one step on its `done`, a cancelled gesture (`CancelGesture`, decision 42) leaves none, and one another command ends is a step of its own first. `Reset` is a step noted `history-reset`, switched modules going off. A change not yet a step is made one before Undo and Redo and as the photo closes.
+- **Undo and Redo** take back and put back the session's undo records, as darktable's undo does: a step added leaves the log, the steps it dropped after the end coming back. With no record, as after reopening, they move the log's end one step, each such move recorded on the other stack so the next Redo or Undo reverses it. Both are commands on the edit, refused while not live and while view-only; the edit then saves as a completed change does.
+- **`Event::History`,** a fact, after `Values { live: false }` as the photo opens and once in each batch that changed the log, its end or the records, after its `Values` and before its `Frame`; its steps are described once each (`history::Described`) and shared behind `Arc`s.
+- **The file stays version 1:** what is saved is the edit at the end, and a version 1 file reads as one step, its id the first 64 bits of the file's BLAKE3 hash and its clock the file's modified time (`Log::read`).
+- **Planned:** `GoTo { step }`, `Compress`, `Truncate` (darktable's compress and its Ctrl-click), `Step { source, note, commands }`, refused whole (`InStep { index, error }`), and the eye's `Hide { module, hidden }`; merging a control's quick repeats within darktable's 10 s and 2 s; a command on several selected photos, a rating or Apply edit, one step on each photo, sharing a batch id, which one Undo takes back on every photo it changed (decision 37); the log used by `apertrust-cli` too.
 
 ### Several photos
 

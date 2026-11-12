@@ -45,6 +45,11 @@
 //! edit and the held coordinates as they stood before its first change, puts both back,
 //! leaving no history step, and writes nothing while the file holds that edit.
 //!
+//! Each completed change is a step of the edit's history, kept in memory for the photo
+//! open (decision 78, [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`]
+//! move through, darktable's undo records first; the client is told it as
+//! [`Event::History`]. What is saved is the edit at the end.
+//!
 //! A photo whose edit a newer Apertrust wrote opens for viewing only (decision 43,
 //! [`sidecar::ViewOnly`]): it renders what this build reads, [`Photo::view_only`] says
 //! which build wrote the edit, no control is reported available, every command that would
@@ -84,6 +89,7 @@
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
 mod cache;
+mod history;
 pub(crate) mod open;
 mod outbox;
 mod pickers;
@@ -119,6 +125,10 @@ pub use crate::export_job::{Cause, ExportStatus, Failure, PhotoResult, Summary, 
 use crate::export_preview;
 pub use crate::export_preview::ExportPreview;
 use crate::gpu::{GpuContext, SubmitGate};
+pub use crate::history::{
+    BatchId, Clock, ControlChange, History, HistoryStep, ModuleChange, Move, Note, StepId,
+    StepSource,
+};
 use crate::jobs::{self, Background, Queue, Tasks, Waiting};
 pub use crate::jobs::{JobEvent, JobId};
 use crate::names::Shot;
@@ -212,8 +222,21 @@ pub enum Command {
         param: String,
         value: Value,
     },
-    /// The whole edit back to nothing.
+    /// The whole edit back to nothing, as one history step noted `history-reset`
+    /// ([`Note::reset`]): every module the edit holds back to its defaults, a switched one
+    /// off (decision 32), which Undo brings back.
     Reset,
+    /// Takes back the newest change to the history this photo's session made, as
+    /// darktable's undo does (decision 78): a step added leaves the log, and the steps it
+    /// dropped after the end come back. With none, as after reopening the photo, the end
+    /// moves back one step, which the next Redo reverses; with nothing to undo, nothing. A
+    /// change not yet a step, a gesture under way or a `Set`, is made one first, so Undo
+    /// during a drag takes back the drag. The edit then saves as a completed change does.
+    Undo,
+    /// Puts back the newest change Undo took back; with none, moves the end forward one
+    /// step, which the next Undo reverses; with nothing to redo, nothing. Any new step
+    /// clears what Undo took back.
+    Redo,
     /// Write the open photo's edit again after its last write failed, as a client's Try
     /// again does; otherwise nothing. It changes no value and leaves a gesture under way,
     /// and is reported [`Event::Saved`] or failed as any write is.
@@ -435,6 +458,11 @@ pub enum Event {
     /// that the session has none (decision 76): a fact, the whole cache, answering
     /// [`CacheCommand::Sizes`] and sent again as a [`CacheCommand::Clear`] ends.
     Cache(CacheEvent),
+    /// The open photo's history (decision 78): its steps, its end and what Undo and Redo
+    /// would do, after its values not yet live as it opens, and once in each batch whose
+    /// commands changed the log, its end or the undo records, after the batch's values and
+    /// before its frame; a gesture's `done: false` changes send none.
+    History(History),
     Failed(SessionError),
 }
 
@@ -475,6 +503,8 @@ pub enum Fact {
     State(JobId),
     /// The disk cache's sizes: [`Event::Cache`].
     Cache,
+    /// The open photo's history: [`Event::History`].
+    History,
 }
 
 impl Event {
@@ -488,6 +518,7 @@ impl Event {
             Event::Picker(_) => Fact::Picker,
             Event::ExportPreview { .. } => Fact::ExportPreview,
             Event::Cache(_) => Fact::Cache,
+            Event::History(_) => Fact::History,
             // Each of a job's values is a topic of its own, since each event carries only
             // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
@@ -1734,6 +1765,8 @@ struct Open {
     /// for the photo.
     views_failed: BTreeSet<&'static str>,
     pipeline: Option<Pipeline>,
+    /// The edit's history in memory, and its undo records (decision 78).
+    history: history::PhotoHistory,
 }
 
 /// A gesture under way (decision 42): the run of `SetControl { done: false }` on one
@@ -2172,6 +2205,8 @@ impl Engine {
                 &self.modules,
                 self.applied,
             )));
+            // Once a batch, after its values and before its frame.
+            events.extend(self.history_event());
         }
         let needs_save = self.needs_save();
         if save && needs_save {
@@ -2226,9 +2261,9 @@ impl Engine {
         false
     }
 
-    /// Applies one command that changes the edit; on a photo still opening, or open for
-    /// viewing only, refuses it.
-    fn apply_edit(&mut self, command: Command) -> Result<Effect, SessionError> {
+    /// Applies one command that changes the edit, its steps left to [`Self::apply_edit`];
+    /// on a photo still opening, or open for viewing only, refuses it.
+    fn edit_command(&mut self, command: Command) -> Result<Effect, SessionError> {
         let edits = on_edit(&command);
         // Refused, never held (decision 77), so `through` still counts what a report
         // includes, and a newer `Open` never waits behind it.
@@ -2362,6 +2397,8 @@ impl Engine {
                 })?;
                 (changed, true)
             }
+            Command::Undo => return self.undo(false),
+            Command::Redo => return self.undo(true),
             Command::Open(_)
             | Command::Close
             | Command::Resize { .. }
@@ -2492,9 +2529,11 @@ impl Engine {
         }
     }
 
-    /// Before the photo closes: saves a change never completed, and writes again an edit
-    /// whose last write failed, once any write still under way is done.
+    /// Before the photo closes: saves a change never completed, which becomes a history
+    /// step, and writes again an edit whose last write failed, once any write still under
+    /// way is done.
     fn save_unsaved(&mut self) {
+        self.step(None);
         let Some(open) = &self.open else {
             return;
         };
@@ -2567,6 +2606,7 @@ impl Engine {
                     .map(|photo| photo.values(self.operations, &self.modules, self.applied));
                 events.push(Event::Opened(photo));
                 events.extend(values.map(Event::Values));
+                events.extend(self.history_event());
                 let ms = started.elapsed().as_secs_f64() * 1e3;
                 tracing::debug!(target: "perf", "open {name}: values, at {ms:.0} ms");
                 None
@@ -2629,9 +2669,11 @@ impl Engine {
         let open::Read {
             metadata,
             hash,
+            modified,
             edit,
             view_only,
         } = read;
+        let history = history::PhotoHistory::read(&edit, hash, modified);
         let path = (self.opening.as_ref())
             .map(|opening| opening.path.clone())
             .unwrap_or_default();
@@ -2676,6 +2718,7 @@ impl Engine {
             gesture: None,
             views_failed: BTreeSet::new(),
             pipeline: None,
+            history,
         });
         photo
     }
@@ -2749,6 +2792,8 @@ impl Engine {
                     tracing::warn!(target: "pipe", "{warning}");
                 }
             }
+            // Its steps, read as the edit now stands and described on the new context.
+            photo.history.read_again(&photo.edit);
         }
         photo.sensor = input.desc();
         photo.shot = metadata.shot;
@@ -2756,6 +2801,7 @@ impl Engine {
         self.opening = None;
         let values = photo.values(self.operations, &self.modules, self.applied);
         events.push(Event::Values(values));
+        events.extend(self.history_event());
         match self.render(started, events) {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
             Ok(None) => {}
@@ -3598,6 +3644,8 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 
 #[cfg(test)]
 mod tests {
+    mod history;
+
     use std::sync::mpsc::Receiver;
 
     use apertrust_modules::testing::{self, Defaultless, Faulty, Pushing, Sample};
@@ -9048,6 +9096,7 @@ mod tests {
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),
             },
+            Event::History(_) => Topic::Fact(Fact::History),
             Event::Failed(_) => Topic::Notice,
         }
     }
@@ -9184,7 +9233,7 @@ mod tests {
             assert!(line.ends_with(kind), "{line}");
         }
         // Every variant, the ones a session sent among them, and every job event.
-        assert_eq!(seen.len(), 13, "{events:?}");
+        assert_eq!(seen.len(), 14, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.

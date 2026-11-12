@@ -345,7 +345,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
   - [x] 8.1, before 9.1: the hybrid logical clock and the machine id (`apertrust_library::clock`);
   - [ ] 8.2, before 9.5: version 2's text layer with the photo's identity and fingerprint, and one virtual copy with its id, number, name, clock vector, log and end, each time an XMP Date (ISO 16684-1:2019); version 1 read as one step; a fixture with a history that ExifTool and exiv2 read without error.
 - [ ] **Step 9.** Undo, redo and the edit's history (decision 78; each part's scope in [history.md](history.md#the-plan)), one pull request each, after switched modules (decision 32, [Editing](#editing)), which history relies on throughout:
-  - 9.1: the log in the session's memory, each completed change a step, `Reset` a step, `Undo` and `Redo` with the undo records, `Event::History` with its build time and size measured; the file still version 1;
+  - [x] 9.1: the log in the session's memory, each completed change a step, `Reset` a step, `Undo` and `Redo` with the undo records, `Event::History` with its build time and size measured (its JSON over budget at 1,000 steps, so the remote protocol takes the planned fallback, [history.md](history.md#the-history-event)); the file still version 1;
   - 9.2: `GoTo` and `Step`, and the app's changes of several commands, the tone equalizer's release and band reset, as one `Step`;
   - 9.3: consecutive changes merged as darktable's undo merges them;
   - 9.4: Edit › Undo and Redo and their keys, naming what they would do;

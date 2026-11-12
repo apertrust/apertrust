@@ -385,6 +385,11 @@ impl Snapshot {
     pub(crate) fn xml(self) -> io::Result<Option<String>> {
         self.xml
     }
+
+    /// When its file was last modified, where it could be read.
+    pub(crate) fn changed(&self) -> Option<SystemTime> {
+        self.changed
+    }
 }
 
 /// What an export job runs with: everything it needs of the session, owned, so its body
