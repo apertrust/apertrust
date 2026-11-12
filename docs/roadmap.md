@@ -112,7 +112,7 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [x] File › Open… for one or more raws, their folder opened behind the first (decision 46); a folder or raws dropped onto the window; View › Browse (L) choosing the first tab holding Browse (decisions 37 and 73).
 - [x] Dialogs as native windows on the Mac, and its system alerts.
 - [x] Wayland modal dialogs and drawn alerts on Linux; X11's native hints come later.
-- [ ] Native dialogs and alerts on Windows, with the dialogs' border and drop shadow.
+- [ ] Native dialogs and alerts on Windows: their frame is built; the owner disabled while one is open and the task dialog are left.
 - [x] An edit written by a newer Apertrust opens for viewing only and is never overwritten.
 
 ### Editing

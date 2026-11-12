@@ -26,7 +26,8 @@
 //! | Modeless | A window where it was last left | The same | The same | Placed by the compositor |
 //! | A modal window's parent | Its sheet's window | Its owner | None set yet: no `WM_TRANSIENT_FOR` | `xdg_toplevel.set_parent` ([`made`]) |
 //! | An alert | AppKit's `NSAlert`, a sheet | None yet: no task dialog | Drawn by the host in a modal window ([`draws_alerts`]) | As X11 |
-//! | Border and shadow | AppKit's | The system's frame's | None: a transparent margin can show black without a compositing manager | Drawn by the host round a transparent margin ([`shadowed`]) |
+//! | Frame | AppKit's | Drawn by the host ([`draws_frame`]) | Drawn by the host | Drawn by the host |
+//! | Border and shadow | AppKit's | The system's undecorated shadow | None: a transparent margin can show black without a compositing manager | Drawn by the host round a transparent margin ([`shadowed`]) |
 //! | Bringing a window forward | `focus_window` | The same | The same | An xdg-activation request ([`activate`]) |
 //!
 //! Under a modal dialog or a sheet the app keeps the main window's input from it on every
@@ -82,26 +83,28 @@ pub fn draws_alerts(os: OperatingSystem) -> bool {
 /// main window, [`wayland`]): every hosted window on Linux under Wayland, modal or
 /// modeless, whose window has no decorations ([`draws_frame`]). Not on X11, where the
 /// transparent margin can show black without a compositing manager. The Mac's sheets and
-/// windows are AppKit's, and Windows' keep the system's frame and shadow until its dialogs
-/// are undecorated on a transparent surface (planned).
+/// windows are AppKit's, and Windows' have the system's undecorated shadow ([`attributes`]).
 pub fn shadowed(os: OperatingSystem, wayland: bool) -> bool {
     os == OperatingSystem::Nix && wayland
 }
 
-/// Whether the host draws a dialog window's frame on `os`: on Linux, where GNOME on
-/// Wayland draws none and winit's fallback frame shows minimise and maximise as bare
-/// squares, a strip at the window's top with its close button, in the main window's
-/// caption style, and the window's title but an alert's ([`super::draw`]). Its window then
-/// has no decorations, on X11 too, so the frame is the same on every desktop. The Mac's and
-/// Windows' frames are the system's.
+/// Whether the host draws a dialog window's frame on `os`: a strip at the window's top with
+/// its close button, in the main window's caption style, and the window's title but an
+/// alert's ([`super::draw`]). On Windows, where the main window's top panel is its title
+/// bar, so a dialog's frame matches it, with no icon and no system caption; on Linux,
+/// where GNOME on Wayland draws none and winit's fallback frame shows minimise and maximise
+/// as bare squares. Its window then has no decorations, on X11 too, so the frame is the
+/// same on every desktop. The Mac's frames are the system's.
 pub fn draws_frame(os: OperatingSystem) -> bool {
-    os == OperatingSystem::Nix
+    matches!(os, OperatingSystem::Windows | OperatingSystem::Nix)
 }
 
-/// `attributes` for the window of a dialog shown as `form` over `main`: on Linux no
-/// decorations ([`draws_frame`]); and what the platform gives a modal one at creation, on
-/// Windows its owner, the main window, on X11 the dialog window type, which Wayland
-/// ignores. A modeless window takes nothing more there, nor the Mac's windows.
+/// `attributes` for the window of a dialog shown as `form` over `main`: on Windows and
+/// Linux no decorations ([`draws_frame`]), on Windows with the system's undecorated shadow
+/// and Windows 11's rounded corners, as the main window's; and what the platform gives a
+/// modal one at creation, on Windows its owner, the main window, on X11 the dialog window
+/// type, which Wayland ignores. A modeless window takes nothing more there, nor the Mac's
+/// windows.
 pub(super) fn attributes(
     attributes: WindowAttributes,
     form: Form,
@@ -109,6 +112,13 @@ pub(super) fn attributes(
 ) -> WindowAttributes {
     #[cfg(target_os = "linux")]
     let attributes = attributes.with_decorations(false);
+    #[cfg(target_os = "windows")]
+    let attributes = {
+        use egui_winit::winit::platform::windows::WindowAttributesExtWindows as _;
+        attributes
+            .with_decorations(false)
+            .with_undecorated_shadow(true)
+    };
     if !form.modal() {
         return attributes;
     }
@@ -135,6 +145,17 @@ pub(super) fn made(window: &Window, form: Form, parent: &Window) {
         tracing::warn!(target: "gpu", "Wayland dialog parent not set: {e}");
     }
     let _ = (window, form, parent);
+}
+
+/// Opens a hosted window's window menu at `at`, in the window's pixels, for a right-click
+/// on the frame the host draws: on Linux the compositor's or window manager's. Nothing on
+/// Windows, where winit builds the menu itself with Minimise always enabled and Maximise
+/// for a window the person resizes, which a dialog has neither of.
+pub(super) fn window_menu(window: &Window, at: egui_winit::winit::dpi::PhysicalPosition<f64>) {
+    #[cfg(not(target_os = "windows"))]
+    window.show_window_menu(at);
+    #[cfg(target_os = "windows")]
+    let _ = (window, at);
 }
 
 /// Brings a hosted window forward when the user asks, with winit's focus call. On Wayland,
@@ -234,8 +255,8 @@ mod tests {
     }
 
     #[test]
-    fn the_host_draws_the_frame_on_linux_alone() {
-        assert_eq!(PLATFORMS.map(draws_frame), [false, false, true]);
+    fn the_host_draws_the_frame_on_windows_and_linux() {
+        assert_eq!(PLATFORMS.map(draws_frame), [false, true, true]);
     }
 
     #[test]
