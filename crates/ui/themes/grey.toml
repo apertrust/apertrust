@@ -98,6 +98,7 @@ m = 8.0
 l = 12.0
 xl = 16.0
 xxl = 24.0
+section_button_gap = 4.0
 
 [sizes]
 row = 26.0
@@ -107,6 +108,7 @@ field = 18.0
 icon = 14.0
 icon_large = 16.0
 section_header = 30.0
+section_button = 14.0
 top_bar = 44.0
 slider_row = 37.0
 track_strip = 16.0

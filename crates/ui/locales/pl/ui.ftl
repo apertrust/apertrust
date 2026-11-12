@@ -40,6 +40,7 @@ panel-width = Szerokość panelu bocznego
 section-reset = Resetuj: { $section }
 section-presets = Ustawienia wstępne: { $section }
 section-options = Opcje: { $section }
+section-options-none = Na razie brak opcji
 section-toggle = Otwórz lub zamknij: { $section }. Przytrzymaj H nad sekcją, aby zobaczyć zdjęcie bez niej.
 section-tabs = Karty: { $section }
 section-tab-later = Pojawi się w jednej z kolejnych wersji

@@ -40,6 +40,7 @@ panel-width = Ширина бічної панелі
 section-reset = Скинути: { $section }
 section-presets = Пресети: { $section }
 section-options = Параметри: { $section }
+section-options-none = Параметрів поки немає
 section-toggle = Відкрити або закрити: { $section }. Утримуйте H над розділом, щоб побачити знімок без нього.
 section-tabs = Вкладки: { $section }
 section-tab-later = З'явиться в одній із наступних версій

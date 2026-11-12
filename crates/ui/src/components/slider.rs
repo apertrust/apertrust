@@ -140,7 +140,7 @@ pub struct Quad<'a> {
     pub icon: Icon,
     /// Translated: the tooltip and the accessible name.
     pub name: &'a str,
-    /// Drawn pressed while its tool is in use.
+    /// On while its tool is in use: its filled icon (decision 81).
     pub active: bool,
 }
 

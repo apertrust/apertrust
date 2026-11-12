@@ -20,9 +20,10 @@
 use apertrust_ui::components::{
     PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, section_list,
 };
+use apertrust_ui::icons::STROKE;
 use apertrust_ui::{Icon, Locale, Theme};
 use egui::Key;
-use egui::accesskit::{Role, Toggled};
+use egui::accesskit::{HasPopup, Role, Toggled};
 use egui::epaint::TextShape;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
@@ -124,24 +125,71 @@ fn module_and_utility(enabled: bool) -> Harness<'static, Vec<SectionAction>> {
         )
 }
 
-/// A module's header has no options button, even when asked for one; presets takes its
-/// place at the header's end. A utility keeps its own.
+/// A module's header ends in its options button, drawn disabled even when asked to run,
+/// with a tooltip saying why; a utility's runs. Each button is `sizes.section_button` wide,
+/// `spacing.section_button_gap` from the next, and the last ends where both headers' do.
 #[test]
-fn a_module_has_no_options_button_and_a_utility_has_one() {
+fn a_module_s_options_are_disabled_and_a_utility_s_run() {
     let mut harness = module_and_utility(true);
     harness.run();
-    assert!(harness.query_by_label("Exposure options").is_none());
-    let presets = harness.get_by_label("Exposure presets").rect();
-    let reset = harness.get_by_label("Reset Exposure").rect();
-    let options = harness.get_by_label("Scopes options").rect();
-    assert!(
-        reset.right() <= presets.left(),
-        "{reset:?} before {presets:?}"
+    let t = Theme::default();
+    let rect = |name: &str| harness.get_by_label(name).rect();
+    let reset = rect("Reset Exposure");
+    let presets = rect("Exposure presets");
+    let options = rect("Exposure options");
+    for button in [reset, presets, options] {
+        assert_eq!(button.width(), t.sizes.section_button, "{button:?}");
+    }
+    assert_eq!(presets.left() - reset.right(), t.spacing.section_button_gap);
+    assert_eq!(
+        options.left() - presets.right(),
+        t.spacing.section_button_gap
     );
-    assert_eq!(presets.right(), options.right());
+    assert_eq!(options.right(), rect("Scopes options").right());
+
+    let module = harness.get_by_label("Exposure options");
+    assert!(module.accesskit_node().is_disabled());
+    // Screen readers hear why without a hover.
+    assert_eq!(
+        module.accesskit_node().description(),
+        Some("No options yet".to_owned())
+    );
+    module.hover();
+    harness.run();
+    harness.get_by_label("No options yet");
+    harness.get_by_label("Exposure options").click();
+    harness.run();
+    assert!(harness.state().is_empty());
     harness.get_by_label("Scopes options").click();
     harness.run();
     assert_eq!(*harness.state(), vec![SectionAction::Options]);
+}
+
+/// The header's last button's ink, not its box, ends where the rows do, `body_margin` from
+/// the section's end: ⋯'s last dot ends 4 of its 24 units inside its box less half its
+/// line, which the icon's own test holds.
+#[test]
+fn the_header_s_ink_ends_where_the_rows_do() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 60.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, end: &mut f32| {
+                *end = ui.max_rect().right();
+                Section::new("Exposure", false).module().show(ui, |_| {});
+            },
+            0.0,
+        );
+    harness.run();
+    let t = Theme::default();
+    let options = harness.get_by_label("Exposure options").rect();
+    let ink = options.right() - (4.0 / 24.0 * Icon::Options.size() - STROKE / 2.0);
+    let inset = *harness.state() - ink;
+    // egui rounds a widget's rect to 1/32 of a point (`emath::GUI_ROUNDING`).
+    assert!(
+        (inset - Section::body_margin(&t)).abs() <= egui::emath::GUI_ROUNDING,
+        "the ink ends {inset} points from the section's end"
+    );
 }
 
 /// A module that is off and renders nothing (decision 32) shows nothing more, but its
@@ -193,7 +241,7 @@ fn a_module_header_has_no_auto_button() {
 fn presets_and_options_drawn_disabled_do_not_run() {
     let mut harness = module_and_utility(false);
     harness.run();
-    for name in ["Exposure presets", "Scopes options"] {
+    for name in ["Exposure presets", "Exposure options", "Scopes options"] {
         let button = harness.get_by_label(name);
         assert!(button.accesskit_node().is_disabled(), "{name}");
         button.click();
@@ -681,11 +729,21 @@ fn the_options_menu_hides_tab_names_and_opens_customise() {
 fn the_more_menu_is_a_popup_list_and_gives_the_focus_back() {
     let mut harness = tab_bar(220.0);
     harness.run();
+    // A pull-down's button says it has a menu and whether it is open (`pull_down`).
+    let expanded = |harness: &Harness<'_, _>| {
+        let data = harness
+            .get_by_role_and_label(Role::Button, "More tabs")
+            .accesskit_node();
+        assert_eq!(data.data().has_popup(), Some(HasPopup::Menu));
+        data.data().is_expanded()
+    };
+    assert_eq!(expanded(&harness), Some(false));
     // Focused as a key left it, so the list can give the focus back.
     harness.get_by_label("More tabs").focus();
     harness.run();
     harness.get_by_label("More tabs").click();
     harness.run();
+    assert_eq!(expanded(&harness), Some(true));
     let menu = harness.get_by_role(Role::Menu);
     assert_eq!(menu.accesskit_node().label().as_deref(), Some("More tabs"));
     let effect = harness.get_by_role_and_label(Role::MenuItem, "Effect");
@@ -711,6 +769,7 @@ fn the_more_menu_is_a_popup_list_and_gives_the_focus_back() {
     harness.run();
     assert!(harness.query_by_role(Role::Menu).is_none());
     assert_eq!(focused(&harness), "More tabs");
+    assert_eq!(expanded(&harness), Some(false));
     assert!(harness.state().2.is_empty());
     // Opened again, Enter chooses its first line.
     harness.get_by_label("More tabs").click();

@@ -14,13 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! What checkboxes, text buttons and icon buttons share (`docs/gui.md`, Checkboxes, text
-//! buttons and icon buttons): the state each is drawn in, the plate under what is pressed,
-//! and the focus ring with its gap of ground.
+//! What checkboxes and buttons share (`docs/gui.md`, Checkboxes, text buttons and icon
+//! buttons): the state each is drawn in and the focus ring with its gap of ground, and
+//! the plate under a checkbox and a button with words. Icon buttons draw none
+//! (decision 81).
 //!
-//! What you press is a plate a step apart from any ground, `button`: a step further under
-//! the pointer, a step back while pressed, with no border but the high-contrast theme's
-//! `button_edge`. Focus never changes the fill; it is one ring for the three controls.
+//! A checkbox or a button with words is a plate a step apart from any ground, `button`: a
+//! step further under the pointer, a step back while pressed, with no border but the
+//! high-contrast theme's `button_edge`. Focus never changes the fill; it is one ring for
+//! every control.
 
 use egui::{Color32, Painter, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
 
@@ -130,7 +132,7 @@ pub(crate) enum Plate {
     /// A dialog's one primary button: amber, and drawn as a default one while disabled,
     /// so amber always means it will act.
     Primary,
-    /// An icon button's and a word's on a bar: there only while touched.
+    /// A word's on a bar, and the jobs spinner's: there only while touched.
     Quiet,
 }
 

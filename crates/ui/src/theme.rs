@@ -173,9 +173,7 @@ pub struct Colors {
     /// The side panel and its sections.
     #[serde(with = "hex")]
     pub panel: Color32,
-    /// Menus and popovers, a step above the ground; dialog windows sit on `panel`. Also
-    /// behind an icon button drawn pressed, with a `border` hairline: a toggle with no
-    /// filled form that is on, and a button whose menu is open.
+    /// Menus and popovers, a step above the ground; dialog windows sit on `panel`.
     #[serde(with = "hex")]
     pub raised: Color32,
     /// Over the window under About, Apertrust's own modal: translucent, so the window shows
@@ -198,7 +196,8 @@ pub struct Colors {
     pub surround_text_on_light: Color32,
     #[serde(with = "hex")]
     pub text: Color32,
-    /// Text that stands out from `text`: the active photo's name under its thumbnail.
+    /// Text that stands out from `text`: the active photo's name under its thumbnail; an
+    /// icon button's icon under the pointer and while on (decision 81).
     #[serde(with = "hex")]
     pub text_strong: Color32,
     /// Summaries, captions, labels of lesser weight.
@@ -222,7 +221,7 @@ pub struct Colors {
     #[serde(with = "hex")]
     pub control_outline: Color32,
     /// The plate of what is pressed (`docs/gui.md`, Checkboxes, text buttons and icon
-    /// buttons): a text button's at rest, and an icon or quiet button's under the pointer.
+    /// buttons): a text button's at rest, and a quiet button's under the pointer.
     /// A step apart from `sunken`, `panel` and `raised` alike, so it reads on any ground.
     #[serde(with = "hex")]
     pub button: Color32,
@@ -240,7 +239,8 @@ pub struct Colors {
     #[serde(with = "hex")]
     pub button_pressed: Color32,
     /// The edge round every plate: transparent, so none, where plates part from the ground
-    /// by their tone; white in the high-contrast theme, whose grounds are all black.
+    /// by their tone; white in the high-contrast theme, whose grounds are all black, where
+    /// it also outlines an icon button under the pointer (decision 81).
     #[serde(with = "hex")]
     pub button_edge: Color32,
     /// A ticked checkbox's fill: neutral, never the accent.
@@ -271,7 +271,8 @@ pub struct Colors {
     /// A primary button pressed.
     #[serde(with = "hex")]
     pub accent_pressed: Color32,
-    /// Accent-coloured text and marks on the panel: a selected tab, a link.
+    /// Accent-coloured text and marks on the panel: a selected tab, a link, an icon
+    /// button's icon while held down (decision 81).
     #[serde(with = "hex")]
     pub accent_text: Color32,
     /// Behind something selected.
@@ -434,6 +435,8 @@ pub struct Spacing {
     pub l: f32,
     pub xl: f32,
     pub xxl: f32,
+    /// Between a section header's buttons, every pair alike: 4 points.
+    pub section_button_gap: f32,
 }
 
 /// Fixed sizes, in points: the wireframe's grid.
@@ -456,6 +459,9 @@ pub struct Sizes {
     /// A section's header, whose title and buttons are centred in it; the whole height is
     /// the click target.
     pub section_header: f32,
+    /// The width of a section header's buttons, each around an icon as wide: 14 points,
+    /// a control high.
+    pub section_button: f32,
     /// The top panel's height; theme files keep its old name.
     pub top_bar: f32,
     /// A slider row's height, its padding included, and the strip the track runs in,

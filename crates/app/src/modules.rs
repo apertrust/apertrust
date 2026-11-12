@@ -695,9 +695,7 @@ pub fn section(
             SectionAction::Tab(tab) => Change::Tab { module: id, tab },
             SectionAction::Reset => Change::ResetModule { module: id },
             // Drawn disabled: nothing is behind them yet.
-            SectionAction::Presets => continue,
-            // A module has no options button.
-            SectionAction::Options => continue,
+            SectionAction::Presets | SectionAction::Options => continue,
         });
     }
     changes
@@ -2089,16 +2087,17 @@ mod tests {
     }
 
     #[test]
-    fn presets_are_drawn_disabled_and_there_is_no_auto_or_options_button() {
+    fn presets_and_options_are_drawn_disabled_and_there_is_no_auto_button() {
         let mut harness = panel(&Exposure, untouched(&Exposure));
         harness.run();
-        let button = harness.get_by_label("Exposure presets");
-        assert!(button.accesskit_node().is_disabled());
-        button.click();
-        harness.run();
+        for name in ["Exposure presets", "Exposure options"] {
+            let button = harness.get_by_label(name);
+            assert!(button.accesskit_node().is_disabled(), "{name}");
+            button.click();
+            harness.run();
+        }
         assert!(harness.state().changes.is_empty());
-        // A module's header has no options button and no Auto.
-        assert!(harness.query_by_label("Exposure options").is_none());
+        // A module's header draws no Auto yet.
         assert!(harness.query_by_label("Auto").is_none());
     }
 

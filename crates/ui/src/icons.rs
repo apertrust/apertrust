@@ -148,8 +148,8 @@ pub enum Icon {
     /// The app's mark, the folded A with its cut, at the top panel's start: filled shapes,
     /// not lines, the one icon drawn so (`assets/icons/README.md`).
     Mark,
-    /// Filled forms, drawn only to show a state: the chosen side panel tab, a bar's
-    /// toggle that is on, a rating's points (`Icon::filled`).
+    /// Filled forms, drawn only to show a state: the chosen side panel tab, an icon
+    /// button that is on, a rating's points (`Icon::filled`).
     BaseFilled,
     ColorFilled,
     CorrectFilled,
@@ -163,10 +163,12 @@ pub enum Icon {
     GridFilled,
     LabelsFilled,
     StarFilled,
+    PickFilled,
+    LineFilled,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 78] = [
+    pub const ALL: [Icon; 80] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -245,10 +247,14 @@ impl Icon {
         Icon::GridFilled,
         Icon::LabelsFilled,
         Icon::StarFilled,
+        Icon::PickFilled,
+        Icon::LineFilled,
     ];
 
-    /// The icon's filled form, which shows a state: the chosen tab, a toggle that is on or
-    /// a rating's point. An icon without one is its own.
+    /// The icon's filled form, which shows a state: the chosen tab, an icon button that is
+    /// on (a toggle, a quad's picker, a button whose menu is open) or a rating's point. An
+    /// icon without one is its own: one of lines and dots alone, as ⋯, ☰ and », has no
+    /// shape to fill.
     pub fn filled(self) -> Icon {
         match self {
             Icon::Base => Icon::BaseFilled,
@@ -264,6 +270,8 @@ impl Icon {
             Icon::Grid => Icon::GridFilled,
             Icon::Labels => Icon::LabelsFilled,
             Icon::Star => Icon::StarFilled,
+            Icon::Pick => Icon::PickFilled,
+            Icon::Line => Icon::LineFilled,
             other => other,
         }
     }
@@ -412,6 +420,8 @@ impl Icon {
             Icon::GridFilled => derived!("grid-filled", "grid-3x3", 16.0),
             Icon::LabelsFilled => derived!("labels-filled", "eye", 16.0),
             Icon::StarFilled => derived!("star-filled", "star", 12.0),
+            Icon::PickFilled => derived!("pick-filled", "pipette", 14.0),
+            Icon::LineFilled => own!("line-filled", 14.0),
         }
     }
 
@@ -695,6 +705,28 @@ mod tests {
         (0..h)
             .map(|y| image.pixels[y * w + x].a() as f32 / 255.0)
             .sum()
+    }
+
+    /// The section header's end inset counts on ⋯'s last dot ending 4 of Lucide's 24 units
+    /// inside its box, less half the line drawn round it (`Section`'s buttons): 1.7 points
+    /// at 14. Changing the icon fails here before it moves the header's ink off the rows'
+    /// edge.
+    #[test]
+    fn the_options_ink_ends_four_units_inside_its_box() {
+        let (points, ppp) = (14.0, 16.0);
+        let pixels = (points * ppp) as u32;
+        let image = render(Icon::Options, pixels, points).unwrap();
+        let [w, h] = image.size;
+        let last = (0..w)
+            .rev()
+            .find(|&x| (0..h).any(|y| image.pixels[y * w + x].a() > 127))
+            .unwrap();
+        let inside = (w - 1 - last) as f32 / ppp;
+        let expected = 4.0 / 24.0 * points - STROKE / 2.0;
+        assert!(
+            (inside - expected).abs() < 0.1,
+            "{inside} points inside, {expected} expected"
+        );
     }
 
     #[test]

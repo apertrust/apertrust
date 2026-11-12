@@ -441,7 +441,8 @@ impl<'a> Jobs<'a> {
         let response = ui.interact(rect, spinner_id(ui), Sense::click());
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
-            // An icon button's quiet plate and ring.
+            // The quiet plate and the ring: the spinner is drawn apart from `IconButton`,
+            // whose buttons have no plate (decision 81).
             let touch = Touch::of(&ctx, &response, true, None);
             paint_plate(painter, rect, Plate::Quiet, touch, &t);
             paint_focus(painter, rect, t.shape.radius, touch, &t);

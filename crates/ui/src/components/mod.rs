@@ -22,9 +22,10 @@
 //! reads the theme and the language from the context, and reports its role, its full
 //! name and its value to AccessKit, so screen readers and the interaction tests find it.
 //!
-//! Checkboxes, text buttons and icon buttons are the design system's own ([`Checkbox`],
-//! [`Button`], [`IconButton`], [`ToolButton`]), drawn from one plate and one focus ring;
-//! the few egui buttons left take the plate through the theme. Menus are the popup
+//! Checkboxes, text buttons and icon buttons are the design system's own: [`Checkbox`],
+//! [`Button`] and [`ToolButton`] drawn from one plate, [`IconButton`] with none (decision
+//! 81), all with one focus ring; the few egui buttons left take the plate through the
+//! theme. Menus are the popup
 //! service's plain lists, never egui's `Popup`.
 
 mod action_row;
@@ -105,6 +106,7 @@ pub use toggle_row::ToggleRow;
 pub use top_panel::{Available, SaveState, TopPanel, TopPanelAction, caption_button};
 pub use value_field::ValueField;
 
+use egui::accesskit::HasPopup;
 use egui::text::LayoutJob;
 use egui::{
     Align, Color32, FocusDirection, FontId, Key, Modifiers, Painter, Pos2, Rect, Response, Stroke,
@@ -116,8 +118,10 @@ use crate::popup::{self, Answer, Entry, Request};
 
 /// A pull-down menu hung from `button`, the popup service's (decision 40): the button, or
 /// ↓ while it has the focus, opens it, and a second press closes it. `entries` is built
-/// only as it opens. Returns the id of the item chosen this frame; the focus goes back to
-/// the button as the service gives it. Drawn, and answered, in the frame it opens in.
+/// only as it opens. The button says to screen readers that it has a menu and whether it
+/// is open, as the ☰ does. Returns the id of the item chosen this frame; the focus goes
+/// back to the button as the service gives it. Drawn, and answered, in the frame it opens
+/// in.
 pub fn pull_down(
     ui: &egui::Ui,
     button: &Response,
@@ -143,9 +147,14 @@ pub fn pull_down(
             popup::open(ctx, id, request);
         }
     }
-    if popup::is_open(ctx, id) {
+    let open = popup::is_open(ctx, id);
+    if open {
         popup::show(ctx);
     }
+    ctx.accesskit_node_builder(button.id, |node| {
+        node.set_has_popup(HasPopup::Menu);
+        node.set_expanded(open);
+    });
     match popup::answer(ctx, id) {
         Some(Answer::Chosen(chosen)) => Some(chosen),
         _ => None,

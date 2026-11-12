@@ -17,12 +17,14 @@
 //! A section of the side panel: a module or a utility such as Scopes or History.
 //!
 //! The header holds the chevron and the title, then the buttons, in the wireframe's order:
-//! reset, presets. A title that would run under them is cut at its end with …, whole in the
-//! tooltip and for screen readers. A module has no options button; utilities have options
-//! only. A closed section is its header alone, with no summary of what is set. An open
-//! section shows its tabs, if it has any, and its body. Holding H over a section, or with
-//! its header in focus, shows the photo without it: the section reports that it is peeking,
-//! and the app asks the engine. The section never reads the key itself: the app's actions
+//! a module's reset, presets and options, a utility's options alone, each as narrow as its
+//! icon and evenly spaced, the last one's ink ending where the rows do. A module's options
+//! are drawn disabled until what their menu holds is decided. A title that would run under
+//! the buttons is cut at its end with …, whole in the tooltip and for screen readers. A
+//! closed section is its header alone, with no summary of what is set. An open section
+//! shows its tabs, if it has any, and its body. Holding H over a section, or with its
+//! header in focus, shows the photo without it: the section reports that it is peeking, and
+//! the app asks the engine. The section never reads the key itself: the app's actions
 //! registry says whether it is held ([`Section::peek`]), so the key can be rebound.
 
 use egui::{
@@ -32,6 +34,7 @@ use egui::{
 
 use super::{IconButton, Tabs, focus_ring, icon_colour, icon_lit, pull_down, truncated};
 use crate::i18n::Args;
+use crate::icons::STROKE;
 use crate::popup::Entry;
 use crate::{Icon, fonts, theme, translator};
 
@@ -103,7 +106,8 @@ impl<'a> Section<'a> {
         }
     }
 
-    /// A module: reset and presets, and no options button.
+    /// A module: reset, presets and options, its options drawn disabled for now ("No
+    /// options yet", `section-options-none`).
     pub fn module(mut self) -> Self {
         self.module = true;
         self
@@ -136,8 +140,8 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// Whether a utility's options button can run; see [`Self::presets`]. A module has
-    /// none, so this changes nothing on one.
+    /// Whether a utility's options button can run; see [`Self::presets`]. A module's is
+    /// drawn disabled whatever this says, so this changes nothing on one.
     pub fn options(mut self, enabled: bool) -> Self {
         self.options = enabled;
         self
@@ -184,17 +188,38 @@ impl<'a> Section<'a> {
         let menu = self.menu;
         let mut chosen = None;
 
-        // The buttons, right to left.
+        // The buttons, right to left, each `sizes.section_button` wide round its icon and
+        // a control high, `spacing.section_button_gap` apart. The last one's ink, not its
+        // box, ends where the rows do (`body_margin`, 12 points): it is ⋯ on every header,
+        // Lucide's ellipsis, whose last dot ends 4 of its 24 units inside the icon's box,
+        // less half the line drawn round it (`icons::STROKE`, 1.25 points), so 1.7 points
+        // inside at 14 and the header's end inset 10.3.
+        let icon = Icon::Options.size();
+        let ink = (t.sizes.section_button - icon) / 2.0 + 4.0 / 24.0 * icon - STROKE / 2.0;
+        let end = Section::body_margin(&t) - ink;
+        let narrow = t.sizes.section_button;
         let buttons = ui
             .scope_builder(
                 UiBuilder::new()
-                    .max_rect(header.shrink2(vec2(t.spacing.s, 0.0)))
+                    .max_rect(Rect::from_min_max(
+                        pos2(header.left() + t.spacing.s, header.top()),
+                        pos2(header.right() - end, header.bottom()),
+                    ))
                     .layout(Layout::right_to_left(Align::Center)),
                 |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.spacing_mut().item_spacing.x = t.spacing.section_button_gap;
                     let mut pressed = Vec::new();
+                    let name = say("section-options");
                     if self.module {
+                        // Drawn disabled until what its menu holds is decided.
+                        let none = tr.text("section-options-none");
+                        IconButton::new(Icon::Options, &name)
+                            .width(narrow)
+                            .tip(&none)
+                            .enabled(false)
+                            .show(ui);
                         if IconButton::new(Icon::Presets, &say("section-presets"))
+                            .width(narrow)
                             .enabled(self.presets)
                             .show(ui)
                             .clicked()
@@ -202,6 +227,7 @@ impl<'a> Section<'a> {
                             pressed.push(SectionAction::Presets);
                         }
                         if IconButton::new(Icon::Reset, &say("section-reset"))
+                            .width(narrow)
                             .enabled(self.reset)
                             .show(ui)
                             .clicked()
@@ -209,8 +235,8 @@ impl<'a> Section<'a> {
                             pressed.push(SectionAction::Reset);
                         }
                     } else {
-                        let name = say("section-options");
                         let options = IconButton::new(Icon::Options, &name)
+                            .width(narrow)
                             .enabled(self.options)
                             .show(ui);
                         match menu {
