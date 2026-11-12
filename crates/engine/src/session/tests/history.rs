@@ -15,11 +15,33 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The session's history (decision 78): each completed change a step, Undo and Redo,
-//! Reset a step, and the `History` fact.
+//! Reset a step, a control's quick repeats merged, and the `History` fact.
 
 use apertrust_modules::soften::Soften;
 
 use super::*;
+use crate::session::history::{MERGE_WITHIN, REVIEW};
+
+/// The times a test sends its batches at, from now on, each later than the last: a
+/// change sent a merge window [`Times::apart`] never merges into the step before it.
+struct Times(Instant);
+
+impl Times {
+    fn new() -> Self {
+        Times(Instant::now())
+    }
+
+    /// [`MERGE_WITHIN`] after the last.
+    fn apart(&mut self) -> Instant {
+        self.after(MERGE_WITHIN)
+    }
+
+    /// `time` after the last.
+    fn after(&mut self, time: Duration) -> Instant {
+        self.0 += time;
+        self.0
+    }
+}
 
 /// The `History` facts among `events`.
 fn histories(events: &[Event]) -> Vec<&History> {
@@ -158,8 +180,16 @@ fn undo_and_redo_are_inverses_rendered_and_saved() {
     let sidecar = sidecar::path_for(&path);
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    let half = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
-    let one = driven.run([set("brightness", ControlValue::Number(1.0), true)]);
+    // Apart, so the second does not merge into the first.
+    let mut times = Times::new();
+    let half = driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(0.5), true)],
+    );
+    let one = driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(1.0), true)],
+    );
     let second = history(&one).steps[1].id;
     driven.writes();
     let undone = driven.run([Command::Undo]);
@@ -647,17 +677,20 @@ fn a_gesture_has_one_source() {
         note,
         commands: vec![brightness(value, done)],
     };
+    // Each batch apart, so no step merges into the one before it.
+    let mut times = Times::new();
+    let mut run = |command| driven.run_at(times.apart(), [command]);
     // Auto's drag, then the person's on the same control: two gestures.
-    driven.run([step(StepSource::Auto, None, 0.2, false)]);
-    driven.run([brightness(0.4, false)]);
-    driven.run([brightness(0.6, true)]);
+    run(step(StepSource::Auto, None, 0.2, false));
+    run(brightness(0.4, false));
+    run(brightness(0.6, true));
     // The person's drag, then an assistant's release of it: two steps.
-    driven.run([brightness(0.8, false)]);
+    run(brightness(0.8, false));
     let note = Note::Text("Brighter".to_owned());
-    driven.run([step(StepSource::Assistant, Some(note.clone()), 1.0, true)]);
+    run(step(StepSource::Assistant, Some(note.clone()), 1.0, true));
     // Auto's drag, then Auto's release with a note: two steps.
-    driven.run([step(StepSource::Auto, None, 1.2, false)]);
-    let events = driven.run([step(StepSource::Auto, Some(note.clone()), 1.4, true)]);
+    run(step(StepSource::Auto, None, 1.2, false));
+    let events = run(step(StepSource::Auto, Some(note.clone()), 1.4, true));
     let steps: Vec<_> = (history(&events).steps.iter())
         .map(|step| {
             let after = step.changes[0].controls[0].after.clone();
@@ -738,11 +771,12 @@ fn a_step_of_a_gesture_s_changes_alone_is_a_gesture_of_its_source() {
         note: None,
         commands: vec![set("brightness", ControlValue::Number(value), done)],
     };
+    let mut times = Times::new();
     for value in [0.2, 0.4] {
-        let events = driven.run([auto(value, false)]);
+        let events = driven.run_at(times.apart(), [auto(value, false)]);
         assert!(histories(&events).is_empty(), "{events:?}");
     }
-    let events = driven.run([auto(0.6, true)]);
+    let events = driven.run_at(times.apart(), [auto(0.6, true)]);
     let made = history(&events);
     assert_eq!(made.steps.len(), 1);
     let change = &made.steps[0].changes[0].controls[0];
@@ -750,9 +784,10 @@ fn a_step_of_a_gesture_s_changes_alone_is_a_gesture_of_its_source() {
         (&change.before, &change.after),
         (&ControlValue::Number(0.0), &ControlValue::Number(0.6))
     );
-    // Ended by another command, it is a step of its own, of its source.
-    driven.run([auto(0.8, false)]);
-    let events = driven.run([Command::Reset]);
+    // Ended by another command, it is a step of its own, of its source; apart, so it does
+    // not merge into the step before it.
+    driven.run_at(times.apart(), [auto(0.8, false)]);
+    let events = driven.run_at(times.apart(), [Command::Reset]);
     let sources: Vec<_> = (history(&events).steps.iter())
         .map(|step| step.source)
         .collect();
@@ -773,11 +808,19 @@ fn go_to_moves_the_end_and_undo_brings_back_the_steps_an_edit_after_it_dropped()
     let sidecar = sidecar::path_for(&path);
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    let first = driven.run([set("brightness", ControlValue::Number(0.25), true)]);
+    // Apart, so none merges into the one before it.
+    let mut times = Times::new();
+    let mut brighten = |driven: &mut Driven, value| {
+        driven.run_at(
+            times.apart(),
+            [set("brightness", ControlValue::Number(value), true)],
+        )
+    };
+    let first = brighten(&mut driven, 0.25);
     // Read now: a later frame takes its display buffer in turn.
     let first = frame(&driven.gpu, &first);
-    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
-    let last = driven.run([set("brightness", ControlValue::Number(0.75), true)]);
+    brighten(&mut driven, 0.5);
+    let last = brighten(&mut driven, 0.75);
     let ids: Vec<StepId> = history(&last).steps.iter().map(|step| step.id).collect();
     driven.writes();
     let gone = driven.run([Command::GoTo { step: Some(ids[0]) }]);
@@ -899,5 +942,167 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
     assert_eq!(brightness(&events), ControlValue::Number(0.5));
     assert!(driven.writes().is_empty());
     assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml);
+    remove(&path);
+}
+
+/// A control's quick repeats merge into one step, as darktable's undo merges a widget's:
+/// each sent less than 2 s after the frame of the last, and less than 10 s after the step's
+/// first. The merged step keeps its id and goes from before the first to after the last; a
+/// reset of the control merges too. One Undo takes each merged step back whole.
+#[test]
+fn quick_changes_to_one_control_merge_into_one_step() {
+    let path = scratch("history-merge");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let mut times = Times::new();
+    let sixteenths = |value: f32| ControlValue::Number(value / 16.0);
+    let mut nudge = |driven: &mut Driven, value: f32, after| {
+        let command = set("brightness", sixteenths(value), true);
+        driven.run_at(times.after(after), [command])
+    };
+    let quick = Duration::from_millis(1250);
+    let first = history(&nudge(&mut driven, 1.0, MERGE_WITHIN)).steps[0].id;
+    // 1.25 s apart, each frame published as its change is sent: merged, up to 8.75 s.
+    for value in 2..=8 {
+        let events = nudge(&mut driven, value as f32, quick);
+        let merged = history(&events);
+        let ids: Vec<StepId> = merged.steps.iter().map(|step| step.id).collect();
+        assert_eq!((ids, merged.undo), (vec![first], Some(Move::Step(first))));
+        let change = &merged.steps[0].changes[0].controls[0];
+        assert_eq!(
+            (&change.before, &change.after),
+            (&ControlValue::Number(0.0), &sixteenths(value as f32))
+        );
+    }
+    // 10 s after the step's first: a step of its own.
+    let split = nudge(&mut driven, 9.0, quick);
+    assert_eq!(history(&split).steps.len(), 2);
+    // 2 s after the frame of the last: a step of its own.
+    let reviewed = nudge(&mut driven, 10.0, REVIEW);
+    assert_eq!(history(&reviewed).steps.len(), 3);
+    // A reset of the control a second later merges into it.
+    let reset = driven.run_at(
+        times.after(Duration::from_secs(1)),
+        [Command::ResetControl {
+            module: "sample".to_owned(),
+            control: "brightness".to_owned(),
+        }],
+    );
+    assert_eq!(history(&reset).steps.len(), 3);
+    assert_eq!(fold(&driven), edit(&driven));
+    // One Undo each.
+    for value in [9.0, 8.0, 0.0] {
+        assert_eq!(brightness(&driven.run([Command::Undo])), sixteenths(value));
+    }
+    assert_eq!(kinds(&driven.run([Command::Undo])), ["values"]);
+    remove(&path);
+}
+
+/// No merge across another control, another command, a note, another source or a `Step`
+/// of several commands, each sent a quarter second after the last; Auto's quick repeats
+/// merge as the person's do, and so do a preset row's.
+#[test]
+fn no_merge_across_another_command_control_note_or_source() {
+    let path = scratch("history-no-merge");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let brightness = |value| set("brightness", ControlValue::Number(value), true);
+    let step = |source, note, commands| Command::Step {
+        source,
+        note,
+        commands,
+    };
+    let note = || Some(Note::Text("Brighter".to_owned()));
+    let look = |option: &str| Command::ApplyPreset {
+        module: "sample".to_owned(),
+        preset: "look".to_owned(),
+        option: option.to_owned(),
+    };
+    let release = Command::Keep {
+        module: "sample".to_owned(),
+        control: "brightness".to_owned(),
+        kept: false,
+    };
+    // Each command, and how many steps the log holds after it.
+    let sequence = [
+        (brightness(0.1), 1),
+        (set("grain", ControlValue::Number(10.0), true), 2),
+        (brightness(0.2), 3),
+        // Refused: a command between.
+        (set("nothing", ControlValue::Number(1.0), true), 3),
+        (brightness(0.3), 4),
+        (release, 5),
+        (brightness(0.35), 6),
+        (step(StepSource::You, note(), vec![brightness(0.4)]), 7),
+        (brightness(0.5), 8),
+        (step(StepSource::Auto, None, vec![brightness(0.6)]), 9),
+        (step(StepSource::Auto, None, vec![brightness(0.7)]), 9),
+        (
+            step(
+                StepSource::You,
+                None,
+                vec![brightness(0.8), brightness(0.9)],
+            ),
+            10,
+        ),
+        (brightness(1.0), 11),
+        (look("grainy"), 12),
+        (look("untouched"), 12),
+        (brightness(0.45), 13),
+        // Refused before it touches the gesture, as a `Step` of `Default`: a command between.
+        (step(StepSource::Default, None, vec![brightness(0.5)]), 13),
+        (brightness(0.55), 14),
+        (brightness(0.6), 14),
+        // An empty `Step`, refused alike.
+        (step(StepSource::You, None, Vec::new()), 14),
+        (brightness(0.65), 15),
+    ];
+    let mut times = Times::new();
+    for (index, (command, steps)) in sequence.into_iter().enumerate() {
+        driven.run_at(times.after(Duration::from_millis(250)), [command]);
+        let log = driven.engine.open.as_ref().unwrap().history.log();
+        assert_eq!(log.steps().len(), steps, "command {index}");
+    }
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// A change that changes nothing counts as none: a gesture's on another control, or a
+/// `Set`'s, sets neither a target nor when the change began, and is no command between, so
+/// the control's next change still merges into the step before it.
+#[test]
+fn a_change_that_changes_nothing_counts_as_none() {
+    let path = scratch("history-merge-nothing");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let mut times = Times::new();
+    let brightness = |value| set("brightness", ControlValue::Number(value), true);
+    let black = || Command::Set {
+        operation: "exposure".to_owned(),
+        param: "black".to_owned(),
+        value: Value::Float(0.01),
+    };
+    let steps = |driven: &Driven| {
+        let open = driven.engine.open.as_ref().unwrap();
+        open.history.log().steps().len()
+    };
+    // Grain kept at 10, then black set with a brightness, then a step of brightness alone.
+    let grain = set("grain", ControlValue::Number(10.0), true);
+    driven.run_at(times.apart(), [grain, black(), brightness(0.25)]);
+    driven.run_at(times.apart(), [brightness(0.5)]);
+    assert_eq!(steps(&driven), 3);
+    // Grain dragged to where it is, then brightness: merged.
+    let quick = Duration::from_millis(500);
+    let still = set("grain", ControlValue::Number(10.0), false);
+    let before = edit(&driven);
+    driven.run_at(times.after(quick), [still]);
+    assert_eq!(edit(&driven), before);
+    driven.run_at(times.after(quick), [brightness(0.75)]);
+    assert_eq!(steps(&driven), 3);
+    // Black set to what it is, then brightness: merged.
+    driven.run_at(times.after(quick), [black()]);
+    driven.run_at(times.after(quick), [brightness(1.0)]);
+    assert_eq!(steps(&driven), 3);
+    assert_eq!(fold(&driven), edit(&driven));
     remove(&path);
 }

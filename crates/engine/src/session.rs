@@ -1535,6 +1535,9 @@ struct Engine {
     /// The job walking that tree for each folder's raw count ([`library::walk`]), which a
     /// new root or a close cancels, and an open inside the tree leaves running.
     walk: Option<JobId>,
+    /// When a frame is published, for a test of the history's merging; else when it is.
+    #[cfg(test)]
+    published_at: Option<Instant>,
     /// Holds the next export's renders for a test.
     #[cfg(test)]
     export_hold: Option<export_job::testing::Hold>,
@@ -1915,6 +1918,8 @@ impl Engine {
             tree: None,
             walk: None,
             #[cfg(test)]
+            published_at: None,
+            #[cfg(test)]
             export_hold: None,
             #[cfg(test)]
             preview_hold: None,
@@ -2233,7 +2238,7 @@ impl Engine {
                     self.clear_hold = Some(hold);
                     Ok(())
                 }
-                command => self.apply_edit(command).map(|effect| {
+                command => self.apply_edit(command, at).map(|effect| {
                     render |= effect.render;
                     save |= effect.save;
                     cancelled |= effect.cancelled;
@@ -2302,13 +2307,13 @@ impl Engine {
     /// handle, rendering nothing, up to one that opens another photo or closes this one;
     /// whether it reached one.
     fn apply_edits(&mut self, batch: Vec<(Instant, Command)>) -> bool {
-        for (_, command) in batch {
+        for (at, command) in batch {
             if matches!(command, Command::Open(_) | Command::Close) {
                 return true;
             }
             self.applied += 1;
             // A refused change is refused as it would have been; no one is told.
-            let _ = self.apply_edit(command);
+            let _ = self.apply_edit(command, at);
         }
         false
     }
@@ -3342,6 +3347,12 @@ impl Engine {
         })?;
         display.published = next;
         display.through = self.applied;
+        // The frame includes every change so far, which the history's merging times from.
+        #[cfg(not(test))]
+        let published = Instant::now();
+        #[cfg(test)]
+        let published = self.published_at.unwrap_or_else(Instant::now);
+        open.history.published(published);
         let buffer = display.buffers[next].clone();
         // Counted after the copy, if a client asks, then measured under the colour picker
         // on; the readings come later.
@@ -4832,7 +4843,19 @@ mod tests {
         }
 
         fn run(&mut self, commands: impl IntoIterator<Item = Command>) -> Vec<Event> {
+            self.engine.published_at = None;
             let batch = commands.into_iter().map(|c| (Instant::now(), c)).collect();
+            self.engine.apply(batch)
+        }
+
+        /// [`Self::run`], the commands sent at `at` and the frame published at `at`.
+        fn run_at(
+            &mut self,
+            at: Instant,
+            commands: impl IntoIterator<Item = Command>,
+        ) -> Vec<Event> {
+            self.engine.published_at = Some(at);
+            let batch = commands.into_iter().map(|c| (at, c)).collect();
             self.engine.apply(batch)
         }
 

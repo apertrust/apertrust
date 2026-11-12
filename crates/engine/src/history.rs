@@ -23,7 +23,8 @@
 //! (decision 32). The edit is the fold of the log: each module's last entry among the
 //! steps up to the end, else its reset state, so nothing else stores it. The before of a
 //! step is derived, never stored: the module's entry at the previous step that touched it,
-//! else its reset state.
+//! else its reset state. A control's quick repeats merge into the step before them
+//! ([`Log::merge`]), as darktable's undo merges them; the session decides when.
 //!
 //! Plain data, which the session keeps in memory for the photo open; the sidecar's
 //! version 2 saves it later.
@@ -311,6 +312,25 @@ impl Log {
         dropped
     }
 
+    /// Merges a change into the last step applied, as darktable's undo merges a widget's
+    /// quick repeats (`docs/history.md`, Merging consecutive changes): the step keeps its id,
+    /// each of `entries`, the change's, takes the place of the step's entry of its module or
+    /// operation or joins them, and its clock becomes `clock`. With no step applied, nothing.
+    pub fn merge(&mut self, entries: Vec<Entry>, clock: Clock) {
+        let Some(step) = self.steps[..self.end].last_mut() else {
+            return;
+        };
+        for entry in entries {
+            match (step.entries.iter_mut()).find(|kept| kept.key() == entry.key()) {
+                Some(kept) => *kept = entry,
+                None => step.entries.push(entry),
+            }
+        }
+        // In `Entry::between`'s order: modules first, each in id order.
+        step.entries.sort_by(|a, b| a.key().cmp(&b.key()));
+        step.clock = clock;
+    }
+
     /// Keeps the first `at` steps, puts `after` after them, and returns the steps it took
     /// out in their place; the end goes to `end`, at most the steps' count.
     pub fn replace_after(&mut self, at: usize, after: Vec<Step>, end: usize) -> Vec<Step> {
@@ -481,7 +501,8 @@ pub struct Described {
 
 impl Described {
     /// Every step of `log`, described on the photo `image`: those described already kept
-    /// up to the first that differs, the rest described anew.
+    /// up to the first that differs, the rest described anew. A step that took in a merged
+    /// change keeps its id, but its clock moves on, so it differs.
     pub fn steps(
         &mut self,
         log: &Log,
@@ -490,7 +511,9 @@ impl Described {
         image: &ImageContext,
     ) -> Vec<Arc<HistoryStep>> {
         let kept = (self.steps.iter().zip(log.steps()))
-            .take_while(|(described, step)| described.id == step.id)
+            .take_while(|(described, step)| {
+                (described.id, described.clock) == (step.id, step.clock)
+            })
             .count();
         self.steps.truncate(kept);
         if kept < log.steps().len() {

@@ -121,6 +121,48 @@ fn a_step_added_below_the_end_drops_the_steps_after_it() {
     assert_eq!(log.end(), 1);
 }
 
+/// A change merged into the last step applied: the step keeps its id, its entry of a module
+/// the change touched takes the change's, one it did not touch stays, a module only the
+/// change touched joins it in id order, and its clock is the merge's. With no step applied,
+/// nothing.
+#[test]
+fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
+    let image = testing::image();
+    let mut log = Log::default();
+    log.merge(
+        Entry::between(&Edit::default(), &brightened(1.0)),
+        Clock::at(9, None, MachineId::UNKNOWN),
+    );
+    assert!(log.steps().is_empty());
+    let mut grained = brightened(0.5);
+    (grained.set_control(&Grain, "strength", ControlValue::Number(30.0), &image)).unwrap();
+    let mut first = step(1, Entry::between(&Edit::default(), &grained));
+    // Its Grain entry first, out of `Entry::between`'s order, to show the merge sorts.
+    first.entries.reverse();
+    log.add(first);
+    let mut merged = brightened(0.75);
+    merged
+        .modules
+        .insert("grain".to_owned(), grained.module("grain").unwrap().clone());
+    let clock = Clock::at(10, None, MachineId::UNKNOWN);
+    log.merge(Entry::between(&grained, &merged), clock);
+    let [step] = log.steps() else {
+        panic!("one step, not {}", log.steps().len());
+    };
+    assert_eq!((step.id, step.clock), (StepId(1), clock));
+    assert_eq!(step.entries, Entry::between(&Edit::default(), &merged));
+    assert_eq!(log.fold(), merged);
+    // Below the end, the last step applied takes it, the steps after it untouched.
+    log.add(self::step(2, Entry::between(&merged, &brightened(2.0))));
+    log.set_end(1);
+    log.merge(Entry::between(&merged, &grained), clock);
+    assert_eq!(log.fold_to(1), grained);
+    assert_eq!(
+        log.steps()[1].entries,
+        Entry::between(&merged, &brightened(2.0))
+    );
+}
+
 #[test]
 fn a_version_1_edit_reads_as_one_step_with_the_same_id_every_time() {
     let edit = brightened(0.5);

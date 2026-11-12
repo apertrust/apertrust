@@ -79,19 +79,39 @@ fn tidy(edit: &Edit) -> Edit {
     tidy
 }
 
+/// A random target of two controls, or a change of several or none, written by a change
+/// sent between 0 and 3 s after the last, a frame published after it half the time: so
+/// some changes merge into the step before them, by the two times, and some do not.
+fn write(history: &mut PhotoHistory, at: &mut Instant, random: &mut Random) {
+    let control = |control: &str| Target::Control {
+        module: "a".to_owned(),
+        control: control.to_owned(),
+    };
+    let target = [Some(control("x")), Some(control("y")), None][random.below(3) as usize].clone();
+    *at += Duration::from_millis(random.below(3000));
+    history.wrote(target, *at);
+    if random.below(2) == 0 {
+        history.published(*at + Duration::from_millis(random.below(500)));
+    }
+}
+
 /// Over random sequences of changes, completed changes, Undo, Redo, `GoTo` and reopening the
 /// photo, which leaves no undo records, so Undo and Redo fall back to moving the end: the
 /// fold is always the edit the history last stepped or moved to, and every step's fold, up
-/// to and with it, is the edit as that step left it; Undo and Redo are each other's
-/// inverse, and Undo takes a `GoTo` back. Half the runs start from an edit read from a
+/// to and with it, is the edit as that step, or the last change merged into it, left it;
+/// Undo and Redo are each other's inverse, Undo takes a `GoTo` back, and a merged step
+/// whole, and a merged change adds no record. Half the runs start from an edit read from a
 /// file, one step.
 #[test]
 fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
-    // How many times Undo and Redo fell back to moving the end, and a `GoTo` moved it.
+    // How many times Undo and Redo fell back to moving the end, a `GoTo` moved it, and a
+    // change merged.
     let mut fallbacks = [0, 0];
     let mut gone_to = 0;
+    let mut merged = 0;
     for seed in 1..=40 {
         let mut random = Random(0x9e37_79b9_7f4a_7c15 ^ seed);
+        let mut at = Instant::now();
         let mut edit = Edit::default();
         if seed % 2 == 1 {
             for _ in 0..4 {
@@ -99,20 +119,21 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
             }
         }
         let mut history = reopened(&edit);
-        // The edit each step left, by id.
-        let mut left: BTreeMap<StepId, Edit> = BTreeMap::new();
+        // The edit each step left, by id, with the step's clock then.
+        let mut left: BTreeMap<StepId, (Clock, Edit)> = BTreeMap::new();
         record(&history, &tidy(&edit), &mut left);
         for round in 0..300 {
             let before = tidy(&edit);
             let context = format!("seed {seed}, round {round}");
             match random.below(8) {
                 // The photo closed and opened again: its change not yet a step made one,
-                // and the undo records gone with the session's memory.
+                // and the undo records and what may merge gone with the session's memory.
                 6 => {
                     history.complete(&edit, StepSource::You, None);
                     record(&history, &before, &mut left);
                     history.done.clear();
                     history.undone.clear();
+                    history.merge = None;
                 }
                 // A step, or Original, gone to: a change not yet a step is made one first,
                 // which drops the steps after the end, so the step may be gone by then.
@@ -134,7 +155,7 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                         // stood, and Redo goes there again.
                         Ok(Some(gone)) => {
                             gone_to += 1;
-                            let left = step.map_or_else(Edit::default, |id| left[&id].clone());
+                            let left = step.map_or_else(Edit::default, |id| left[&id].1.clone());
                             assert_eq!(gone, left, "{context}");
                             assert_eq!(Some(history.log.end()), end(&history, step), "{context}");
                             assert_eq!(history.undo(&gone), Some(before.clone()), "{context}");
@@ -144,10 +165,22 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                     }
                 }
                 // A change not yet a step, a gesture's or a `Set`'s.
-                0 | 1 => change(&mut edit, &mut random),
+                0 | 1 => {
+                    change(&mut edit, &mut random);
+                    write(&mut history, &mut at, &mut random);
+                }
                 2 | 3 => {
                     change(&mut edit, &mut random);
-                    history.complete(&edit, StepSource::You, None);
+                    write(&mut history, &mut at, &mut random);
+                    let (steps, done) = (ids(&history), history.done.len());
+                    if history.complete(&edit, StepSource::You, None) && history.done.len() == done
+                    {
+                        // Merged: no record, and into the last step, at the end, which keeps
+                        // its id.
+                        merged += 1;
+                        assert_eq!(ids(&history), steps, "{context}");
+                        assert_eq!(history.log.end(), steps.len(), "{context}");
+                    }
                 }
                 4 => {
                     let Some(undone) = history.undo(&edit) else {
@@ -181,19 +214,25 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
             record(&history, &tidy(&edit), &mut left);
             assert_eq!(history.log.fold(), tidy(&history.stepped), "{context}");
             for (at, step) in history.log.steps().iter().enumerate() {
-                assert_eq!(history.log.fold_to(at + 1), left[&step.id], "{context}");
+                assert_eq!(history.log.fold_to(at + 1), left[&step.id].1, "{context}");
             }
         }
     }
     assert!(fallbacks.iter().all(|&count| count > 0), "{fallbacks:?}");
-    assert!(gone_to > 0);
+    assert!(
+        gone_to > 0 && merged > 0,
+        "{gone_to} gone to, {merged} merged"
+    );
 }
 
-/// Records `edit` as what each step of `history`'s log not seen before left: a step is
-/// made of the edit as it stands.
-fn record(history: &PhotoHistory, edit: &Edit, left: &mut BTreeMap<StepId, Edit>) {
+/// Records `edit` as what each step of `history`'s log not seen before, or whose clock
+/// moved on as a change merged into it, left: a step is made of the edit as it stands.
+fn record(history: &PhotoHistory, edit: &Edit, left: &mut BTreeMap<StepId, (Clock, Edit)>) {
     for step in history.log.steps() {
-        left.entry(step.id).or_insert_with(|| edit.clone());
+        let seen = (left.get(&step.id)).is_some_and(|(clock, _)| *clock == step.clock);
+        if !seen {
+            left.insert(step.id, (step.clock, edit.clone()));
+        }
     }
 }
 
@@ -355,6 +394,187 @@ fn undo_makes_a_change_not_yet_a_step_one_first_and_takes_it_back() {
     assert_eq!(history.undo(&pending), Some(exposed(1.0)));
     assert_eq!(history.log.steps().len(), 1);
     assert_eq!(history.redo(&exposed(1.0)), Some(pending));
+    assert_eq!(history.log.steps().len(), 2);
+}
+
+/// The target of Exposure's exposure control, which [`exposed`] writes.
+fn exposure() -> Target {
+    Target::Control {
+        module: "exposure".to_owned(),
+        control: "exposure".to_owned(),
+    }
+}
+
+/// A step of `exposure` written at a time, its first frame published `published` after it
+/// where given, then a change of it written `after` it: whether the change merged.
+fn merges(published: Option<Duration>, after: Duration) -> bool {
+    let start = Instant::now();
+    let mut history = reopened(&Edit::default());
+    history.wrote(Some(exposure()), start);
+    history.complete(&exposed(1.0), StepSource::You, None);
+    if let Some(published) = published {
+        history.published(start + published);
+    }
+    history.wrote(Some(exposure()), start + after);
+    history.complete(&exposed(2.0), StepSource::You, None);
+    history.log.steps().len() == 1
+}
+
+fn secs(secs: f64) -> Duration {
+    Duration::from_secs_f64(secs)
+}
+
+/// A change merges into the step before it of its target when its first write comes less
+/// than 10 s after the step's first and, once a frame including the step's last change is
+/// published, less than 2 s after that frame; until then only the 10 s count. At either
+/// time, it is a step of its own.
+#[test]
+fn a_change_merges_by_the_two_times_and_splits_at_each() {
+    assert!(merges(None, secs(9.999)));
+    assert!(!merges(None, MERGE_WITHIN));
+    assert!(merges(Some(secs(0.5)), secs(2.499)));
+    assert!(!merges(Some(secs(0.5)), secs(0.5) + REVIEW));
+    // Within 2 s of the frame, but not within 10 s of the step's first.
+    assert!(merges(Some(secs(9.0)), secs(9.999)));
+    assert!(!merges(Some(secs(9.0)), MERGE_WITHIN));
+}
+
+/// The 10 s count from the step's first write, however many changes merged into it since,
+/// and the 2 s from the first frame including the last of them. A merged step keeps its id
+/// and takes the change's state and the latest clock, adding no undo record: one Undo takes
+/// it back whole.
+#[test]
+fn a_merged_step_keeps_its_id_and_one_undo_takes_it_back_whole() {
+    let start = Instant::now();
+    let mut history = reopened(&Edit::default());
+    let nudge = |history: &mut PhotoHistory, ev: f32, after: f64| {
+        history.wrote(Some(exposure()), start + secs(after));
+        history.complete(&exposed(ev), StepSource::You, None);
+        history.published(start + secs(after + 0.1));
+        ids(history)
+    };
+    let first = nudge(&mut history, 0.5, 0.0);
+    let clock = history.log.steps()[0].clock;
+    // Each less than 2 s after the frame of the one before, more than 2 s after the first's.
+    for (ev, after) in [(1.0, 1.5), (1.5, 3.0), (2.0, 4.5)] {
+        assert_eq!(nudge(&mut history, ev, after), first);
+    }
+    let step = &history.log.steps()[0];
+    assert!(step.clock > clock);
+    assert_eq!(
+        step.entries,
+        Entry::between(&Edit::default(), &exposed(2.0))
+    );
+    assert_eq!(history.done.len(), 1);
+    // Ten seconds after the step's first write: a step of its own.
+    for (ev, after) in [(2.25, 6.0), (2.5, 7.5), (2.75, 9.0)] {
+        assert_eq!(nudge(&mut history, ev, after), first);
+    }
+    let split = nudge(&mut history, 3.0, 10.0);
+    assert_eq!((split.len(), split[0]), (2, first[0]));
+    // One Undo each.
+    assert_eq!(history.undo(&exposed(3.0)), Some(exposed(2.75)));
+    assert_eq!(history.undo(&exposed(2.75)), Some(Edit::default()));
+    assert_eq!(history.undo(&Edit::default()), None);
+}
+
+/// No merge across another target, a control or a preset row, another source, a note, a
+/// change of several targets or of none, nor another command between; and a step of
+/// Style or Assistant, or noted, is merged into by none.
+#[test]
+fn no_merge_across_another_target_source_note_or_command() {
+    let preset = Target::Preset {
+        module: "exposure".to_owned(),
+        preset: "look".to_owned(),
+    };
+    let black = Target::Control {
+        module: "exposure".to_owned(),
+        control: "black".to_owned(),
+    };
+    let note = || Some(Note::Text("Brighter".to_owned()));
+    // A change after a step of `exposure` by the person with no note, both sent at once,
+    // `edit` the edit the step left: whether it merged.
+    let merged = |change: &dyn Fn(&mut PhotoHistory, &Edit)| {
+        let mut history = reopened(&Edit::default());
+        history.wrote(Some(exposure()), Instant::now());
+        history.complete(&exposed(1.0), StepSource::You, None);
+        change(&mut history, &exposed(1.0));
+        history.log.steps().len() == 1
+    };
+    let you = |target: Option<Target>| {
+        move |history: &mut PhotoHistory, _: &Edit| {
+            history.wrote(target.clone(), Instant::now());
+            history.complete(&exposed(2.0), StepSource::You, None);
+        }
+    };
+    assert!(merged(&you(Some(exposure()))));
+    assert!(!merged(&you(Some(black.clone()))));
+    assert!(!merged(&you(Some(preset))));
+    assert!(!merged(&you(None)));
+    assert!(!merged(&|history, _| {
+        history.wrote(Some(exposure()), Instant::now());
+        history.wrote(Some(black.clone()), Instant::now());
+        history.complete(&exposed(2.0), StepSource::You, None);
+    }));
+    for (source, note) in [
+        (StepSource::Auto, None),
+        (StepSource::You, note()),
+        (StepSource::Assistant, None),
+    ] {
+        assert!(!merged(&|history, _| {
+            history.wrote(Some(exposure()), Instant::now());
+            history.complete(&exposed(2.0), source, note.clone());
+        }));
+    }
+    // A command between, then the same change.
+    assert!(!merged(&|history, edit| {
+        history.interrupted(edit);
+        you(Some(exposure()))(history, edit);
+    }));
+    // Undo and Redo between.
+    assert!(!merged(&|history, edit| {
+        history.undo(edit);
+        history.redo(&Edit::default());
+        you(Some(exposure()))(history, edit);
+    }));
+    // Auto merges with Auto; a step of Style or Assistant, or with a note, is merged into
+    // by none, even of its own source and note.
+    for (source, note, merges) in [
+        (StepSource::Auto, None, true),
+        (StepSource::Style, None, false),
+        (StepSource::Assistant, None, false),
+        (StepSource::You, note(), false),
+    ] {
+        let mut history = reopened(&Edit::default());
+        for ev in [1.0, 2.0] {
+            history.wrote(Some(exposure()), Instant::now());
+            history.complete(&exposed(ev), source, note.clone());
+        }
+        assert_eq!(
+            history.log.steps().len() == 1,
+            merges,
+            "{source:?} {note:?}"
+        );
+    }
+}
+
+/// A gesture cancelled leaves nothing written, and is a command between: the next change,
+/// of the step's target, is a step of its own, timed from its own first write.
+#[test]
+fn a_cancelled_gesture_is_forgotten() {
+    let start = Instant::now();
+    let mut history = reopened(&Edit::default());
+    history.wrote(Some(exposure()), start);
+    history.complete(&exposed(1.0), StepSource::You, None);
+    // A drag begun at once, cancelled: the edit back where the step left it.
+    history.wrote(Some(exposure()), start);
+    history.interrupted(&exposed(1.0));
+    assert!(history.written.is_none() && history.merge.is_none());
+    // The next change, 12 s on, merges with the one after it: timed from its own first.
+    history.wrote(Some(exposure()), start + secs(12.0));
+    history.complete(&exposed(2.0), StepSource::You, None);
+    history.wrote(Some(exposure()), start + secs(13.0));
+    history.complete(&exposed(3.0), StepSource::You, None);
     assert_eq!(history.log.steps().len(), 2);
 }
 

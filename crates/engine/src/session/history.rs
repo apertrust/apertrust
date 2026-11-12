@@ -29,8 +29,17 @@
 //! (`src/libs/history.c:1297-1318`). `Step` makes several commands one step of its source
 //! and note, all or none, taking in the gesture under way on a module it writes, of its
 //! source and note.
+//!
+//! A change merges into the step before it as darktable's undo merges a widget's quick
+//! repeats (`_dev_undo_start_record_target`, `src/develop/develop.c:1351-1370`): the same
+//! target, a control or a preset row, of the same source, You or Auto, with no note, made
+//! right after that step with no other command on the edit between, its first write within
+//! [`MERGE_WITHIN`] of the step's first and, once a frame including the step's last change
+//! is published, within [`REVIEW`] of that frame (`develop.c:885`). It adds no undo record,
+//! so one Undo takes the merged step back whole. The times are the commands' own, as the
+//! client sent them, and the frames' publications, both handed in, so a test sets them.
 
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use apertrust_library::clock::{Clock, MachineId};
 use apertrust_modules::Module;
@@ -59,6 +68,54 @@ pub(super) struct PhotoHistory {
     described: Described,
     /// Whether the log, its end or the records changed since the last `History` sent.
     changed: bool,
+    /// The changes not yet a step, from their first write; `None` while nothing is
+    /// written.
+    written: Option<Written>,
+    /// The step the next change may merge into: the log's last, at the end, made with no
+    /// command on the edit since but changes not yet a step, of one target, source You or
+    /// Auto, no note and no batch.
+    merge: Option<Merge>,
+}
+
+/// darktable's `darkroom/undo/merge_same_secs`: a change merges into the step before it
+/// only when its first write comes within this of the step's first.
+pub(super) const MERGE_WITHIN: Duration = Duration::from_secs(10);
+
+/// darktable's `darkroom/undo/review_secs`: nor once this has passed since the first frame
+/// published that includes the step's last change, its `gui_previous_pipe_time`.
+pub(super) const REVIEW: Duration = Duration::from_secs(2);
+
+/// What a change wrote, darktable's widget: a change merges only into a step of the same
+/// target (`docs/history.md`, Merging consecutive changes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Target {
+    /// A control set or reset, a view's coordinate among them.
+    Control { module: String, control: String },
+    /// A preset row an option was applied from.
+    Preset { module: String, preset: String },
+}
+
+/// The changes not yet a step.
+#[derive(Debug)]
+struct Written {
+    /// When the first was sent.
+    began: Instant,
+    /// The one target they all wrote; `None` for several, or for a change of none.
+    target: Option<Target>,
+    /// When the first frame including the last of them was published; `None` until then.
+    published: Option<Instant>,
+}
+
+/// The step a change may merge into, and its two times.
+#[derive(Debug)]
+struct Merge {
+    target: Target,
+    source: StepSource,
+    /// When its first change's first write was sent: darktable's record start.
+    began: Instant,
+    /// When the first frame including its last change was published; `None` until then,
+    /// while only [`MERGE_WITHIN`] counts.
+    published: Option<Instant>,
 }
 
 /// What one command on the history changed, which Undo takes back and Redo puts back.
@@ -92,6 +149,8 @@ impl PhotoHistory {
             file: (hash, modified),
             described: Described::default(),
             changed: true,
+            written: None,
+            merge: None,
         }
     }
 
@@ -111,29 +170,97 @@ impl PhotoHistory {
 
     /// Makes what changed since the last step one step, of `source` with `note`, and says
     /// whether it did: a change that changes nothing makes none. It drops the steps after
-    /// the end, which Undo brings back, and clears the undone records.
+    /// the end, which Undo brings back, and clears the undone records. A change that merges
+    /// into the step before it makes none of its own and adds no record: that step keeps
+    /// its id, takes the change's entries and the latest clock.
     pub(super) fn complete(&mut self, edit: &Edit, source: StepSource, note: Option<Note>) -> bool {
+        let written = self.written.take();
         let entries = Entry::between(&self.stepped, edit);
         if entries.is_empty() {
             return false;
         }
         let clock = Clock::now(self.clock.as_ref(), self.machine);
-        let step = Step {
-            id: self.log.new_id(),
-            clock,
-            source,
-            note,
-            batch: None,
-            entries,
+        // Of one target, source You or Auto, no note: what may merge, or be merged into.
+        let target = written.as_ref().and_then(|written| {
+            let merges = matches!(source, StepSource::You | StepSource::Auto) && note.is_none();
+            (written.target.clone()).filter(|_| merges)
+        });
+        let merges = |merge: &Merge, written: &Written| {
+            Some(&merge.target) == target.as_ref()
+                && merge.source == source
+                && written.began < merge.began + MERGE_WITHIN
+                && (merge.published).is_none_or(|published| written.began < published + REVIEW)
         };
-        let at = self.log.end();
-        let dropped = self.log.add(step);
-        self.done.push(Record::Added { at, held: dropped });
-        self.undone.clear();
+        match (&mut self.merge, written) {
+            (Some(merge), Some(written)) if merges(merge, &written) => {
+                self.log.merge(entries, clock);
+                merge.published = written.published;
+            }
+            (merge, written) => {
+                let step = Step {
+                    id: self.log.new_id(),
+                    clock,
+                    source,
+                    note,
+                    batch: None,
+                    entries,
+                };
+                let at = self.log.end();
+                let dropped = self.log.add(step);
+                self.done.push(Record::Added { at, held: dropped });
+                self.undone.clear();
+                *merge = target.zip(written).map(|(target, written)| Merge {
+                    target,
+                    source,
+                    began: written.began,
+                    published: written.published,
+                });
+            }
+        }
         self.clock = Some(clock);
         self.stepped = edit.clone();
         self.changed = true;
         true
+    }
+
+    /// A command on the edit, sent at `at`, wrote `target`, or, with `None`, wrote several
+    /// or none: the changes not yet a step go on, or begin with it.
+    pub(super) fn wrote(&mut self, target: Option<Target>, at: Instant) {
+        self.written = Some(match self.written.take() {
+            None => Written {
+                began: at,
+                target,
+                published: None,
+            },
+            Some(written) => Written {
+                target: (written.target).filter(|one| target.as_ref() == Some(one)),
+                published: None,
+                ..written
+            },
+        });
+    }
+
+    /// A command on the edit that wrote nothing, Undo, Redo, `GoTo`, a cancel or a refused
+    /// one, `edit` the edit after it: nothing before it merges with what follows, and the
+    /// changes not yet a step are forgotten where the edit is the last step's again, as
+    /// after a cancelled gesture.
+    pub(super) fn interrupted(&mut self, edit: &Edit) {
+        self.merge = None;
+        if Entry::between(&self.stepped, edit).is_empty() {
+            self.written = None;
+        }
+    }
+
+    /// A frame was published at `at`, including every change made so far: the first such
+    /// frame for the last step's change, and for the changes not yet a step, starts their
+    /// [`REVIEW`].
+    pub(super) fn published(&mut self, at: Instant) {
+        if let Some(written) = &mut self.written {
+            written.published.get_or_insert(at);
+        }
+        if let Some(merge) = &mut self.merge {
+            merge.published.get_or_insert(at);
+        }
     }
 
     /// Undo, `edit` the edit as it stands, a change not yet a step made one first: the
@@ -222,9 +349,10 @@ impl PhotoHistory {
     }
 
     /// After Undo, Redo or `GoTo`: the edit the log folds to, which the next step is
-    /// measured from.
+    /// measured from; nothing before merges with what follows.
     fn moved(&mut self) -> Edit {
         self.stepped = self.log.fold();
+        self.merge = None;
         self.changed = true;
         self.stepped.clone()
     }
@@ -330,6 +458,31 @@ fn writes(command: &Command, module: &str) -> bool {
     }
 }
 
+/// The target `command` writes, which a change merges by: a control a `SetControl` or
+/// `ResetControl` names, a preset row an `ApplyPreset` names, or a `Step`'s one command's;
+/// `None` for a change of several, as a `Step` of several commands, or of none, as a module
+/// reset, a keep, a `Set` or `Reset`.
+fn target(command: &Command) -> Option<Target> {
+    match command {
+        Command::SetControl {
+            module, control, ..
+        }
+        | Command::ResetControl { module, control } => Some(Target::Control {
+            module: module.clone(),
+            control: control.clone(),
+        }),
+        Command::ApplyPreset { module, preset, .. } => Some(Target::Preset {
+            module: module.clone(),
+            preset: preset.clone(),
+        }),
+        Command::Step { commands, .. } => match &commands[..] {
+            [command] => target(command),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Whether a `Step` may hold `command`: the edit's own commands alone.
 fn in_step(command: &Command) -> bool {
     matches!(
@@ -353,17 +506,34 @@ impl Engine {
     /// has one source: only a change of its source and note goes on with it or takes it in.
     /// A `Step` of `Default`, or of nothing, is refused before the gesture is touched, and a
     /// `Step` refused begins no gesture.
-    pub(super) fn apply_edit(&mut self, command: Command) -> Result<Effect, SessionError> {
-        // A `Step` that cannot be one is refused before it touches the gesture.
+    ///
+    /// `at` is when the client sent it: a change taken that changes the edit writes its
+    /// target then, which the next step may merge by, and one that changes nothing counts
+    /// as none; a command on the edit that writes nothing, or is refused, keeps what came
+    /// before it from merging with what follows, but a retried save.
+    pub(super) fn apply_edit(
+        &mut self,
+        command: Command,
+        at: Instant,
+    ) -> Result<Effect, SessionError> {
+        // A `Step` that cannot be one is refused before it touches the gesture, but, as
+        // every refused command, it keeps what came before it from merging.
         if let Command::Step {
             source, commands, ..
         } = &command
         {
-            if *source == StepSource::Default {
-                return Err(SessionError::DefaultSource);
-            }
-            if commands.is_empty() {
-                return Err(SessionError::EmptyStep);
+            let refused = if *source == StepSource::Default {
+                Some(SessionError::DefaultSource)
+            } else if commands.is_empty() {
+                Some(SessionError::EmptyStep)
+            } else {
+                None
+            };
+            if let Some(refused) = refused {
+                if let Some(open) = &mut self.open {
+                    open.history.interrupted(&open.edit);
+                }
+                return Err(refused);
             }
         }
         let gesture = (self.open.as_ref())
@@ -411,7 +581,21 @@ impl Engine {
         }
         let completes = completes(&command);
         let is_step = matches!(command, Command::Step { .. });
+        let writes = (in_step(&command) || is_step).then(|| target(&command));
+        let retry = matches!(command, Command::RetrySave);
+        let before = self.open.as_ref().map(|open| open.edit.clone());
         let applied = self.edit_command(command);
+        if let Some(open) = &mut self.open {
+            match (&applied, writes) {
+                // A change that changes nothing counts as none.
+                (Ok(_), Some(target)) if before.as_ref() != Some(&open.edit) => {
+                    open.history.wrote(target, at);
+                }
+                (Ok(_), Some(_)) => {}
+                _ if !retry => open.history.interrupted(&open.edit),
+                _ => {}
+            }
+        }
         match (&applied, completes, ended) {
             (Ok(_), Some((source, note)), _) => self.step(source, note),
             (Err(_), _, Some((source, note))) if releases => self.step(source, note),
