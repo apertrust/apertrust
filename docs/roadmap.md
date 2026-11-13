@@ -124,7 +124,10 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [x] Edits save themselves after each change.
 - [x] Sixteen migrated modules, listed [below](#the-migrated-modules), each darktable's module with its parameters as controls (decision 2, [modules/README.md](modules/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
 - [x] The side panel's tabs are darktable's scene-referred groups (decision 38): Base, Colour, Correct and Effect, between Photos and History.
-- [ ] Input colour profile, RGB levels and RGB curve as modules (their processing is ported), the built Tone curve reshaped into RGB curve.
+- [ ] Phase 2's modules are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
+  - [ ] Input colour profile and Colour equalizer as modules (their processing is ported).
+  - [ ] Rotate and perspective, ported.
+  - [ ] Denoise (profiled), ported, with darktable's noise profiles.
 - [x] Switched modules (decision 32): modules darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
 - [ ] Undo, redo and the History tab, with the history saved in the sidecar as its log of steps (decisions 47 and 78; [history.md](history.md), [the library's step 9](#the-librarys-steps)).
 - [ ] Per-pixel steps fused into fewer GPU passes, once a spike measures how.
@@ -141,7 +144,7 @@ darktable's colour pickers and its Colour picker module, one API (decision 79; [
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.
 - [x] 79.6 The app: quads and picker rows, the marks over the photo, the central bar's words, the pointer, the keys and focus, the live region.
-- [ ] 79.7 to 79.13 Each module's pickers: Exposure, White balance, Colour calibration, Colour balance RGB, AgX, then RGB curve and RGB levels with their modules.
+- [ ] 79.7 to 79.11 Each module's pickers: Exposure, White balance, Colour calibration, Colour balance RGB and AgX.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker module in the History tab: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
@@ -201,10 +204,11 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 ### The rest of the migration
 
 - [x] Haze removal, RGB primaries and Soften (built ahead of this phase).
-- [ ] Local contrast, Colour equalizer and Bloom (their processing is ported).
+- [ ] Local contrast and Bloom (their processing is ported).
+- [ ] RGB levels and RGB curve as modules (their processing is ported), the built Tone curve reshaped into RGB curve, with their pickers (79.12 and 79.13).
 - [ ] Sigmoid and Filmic RGB as tone mappers, one per edit (their processing is ported; decision 33).
-- [ ] Lens correction (from the corrections the raw carries, then Lensfun's), chromatic aberrations, rotate and perspective, orientation and crop.
-- [ ] Denoise (profiled), diffuse or sharpen, and sharpen.
+- [ ] Lens correction (from the corrections the raw carries, then Lensfun's), chromatic aberrations and crop.
+- [ ] Diffuse or sharpen, and sharpen.
 - [ ] darktable's presets and styles; copy and apply an edit.
 - [ ] Before and after, and warnings.
 - [ ] Colour calibration's colour checker, darktable's, with its chart data and fit.

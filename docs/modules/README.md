@@ -28,13 +28,13 @@ darktable's base group, with RGB levels and RGB curve after the tone mapper, Dem
 | AgX | AgX | `agx`, working 45.5 | Background; on layers when they come, as a replacement | Built, the default tone mapper; its pickers, actions and Show curve to come | [page](agx.md), [port](../ports/agx.md) |
 | Sigmoid | sigmoid | `sigmoid`, darktable's 45.3 | Background; on layers when they come, as a replacement | Operation ported; module planned (Phase 3), a tone mapper | [port](../ports/sigmoid.md) |
 | Filmic RGB | filmic rgb | `filmicrgb`, darktable's 46.0 | Background; on layers when they come, as a replacement | Operation ported, v3 to v7; module planned (Phase 3), a tone mapper | [port](../ports/filmicrgb.md) |
-| RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; module planned, switched | [port](../ports/rgblevels.md) |
+| RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; module planned (Phase 3), switched | [port](../ports/rgblevels.md) |
 | RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
 | Crop | crop | `crop`, camera RGB 24.5 | Background only | Planned (Phase 3) | — |
 | Tone equalizer | tone equalizer | `toneequal`, camera RGB 24.0 | Yes | Built, switched (decision 32); the guided filters, wands and mask histogram to come | [page](tone-equalizer.md), [port](../ports/toneequal.md) |
 | Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built; its unported controls at their defaults, Contrast and Pivot left for Colour balance RGB | [page](exposure.md) |
 | Orientation | orientation | `flip`, camera RGB 16 | Background only | Built, darktable's page; runs on every photo at auto, the photo's own orientation; its guides and presets to come | [page](orientation.md), [port](../ports/flip.md) |
-| Rotate and perspective | rotate and perspective | `ashift`, camera RGB 15 | Background only | Planned (Phase 3) | — |
+| Rotate and perspective | rotate and perspective | `ashift`, camera RGB 15 | Background only | Planned (Phase 2) | — |
 | Demosaic | demosaic | `demosaic`, raw 8 | Background only | Built; RCD and Markesteijn 1-pass ported, the method listing the sensor's methods | [page](demosaic.md), [port](../ports/demosaic.md) |
 | Highlight reconstruction | highlight reconstruction | `highlights`, raw 4 | Background only | Built; inpaint opposed ported, the threshold starting at the photo's own | [page](highlight-reconstruction.md), [port](../ports/highlights.md) |
 | White balance | white balance | `temperature`, raw 3 | Background only | Built; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
@@ -53,10 +53,10 @@ darktable's color group, with Output colour profile first and Input colour profi
 | --- | --- | --- | --- | --- | --- |
 | Output colour profile | output color profile | `colorout`, display 70 | Background only | Built; an edit chooses sRGB only until the display converts from the edit's profile (decision 26) | [page](output-colour-profile.md), [port](../ports/colorout.md) |
 | Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32); the graph, mask display and pickers to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
-| Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Operation ported; module planned (Phase 3), switched | [port](../ports/colorequal.md) |
+| Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Operation ported; module planned (Phase 2), switched | [port](../ports/colorequal.md) |
 | RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
 | Colour calibration | color calibration | `channelmixerrgb`, working 28.5 | Background only, until layers | Built, every tab, the CAT tab with follow writes; runs on every colour raw (decision 27) | [page](colour-calibration.md), [port](../ports/channelmixerrgb.md) |
-| Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Operation ported, runs on every photo; module planned | [port](../ports/colorin.md) |
+| Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Operation ported, runs on every photo; module planned (Phase 2) | [port](../ports/colorin.md) |
 
 - **Input colour profile** owns every colorin parameter, the camera profile included.
 - **Colour calibration's** grey tab is darktable's black and white: any grey weight off 0 makes the photo grey.
@@ -72,7 +72,7 @@ darktable's correct group. darktable's raw chromatic aberrations (`cacorrect`) i
 | Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built, switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
 | Chromatic aberrations | chromatic aberrations | `cacorrectrgb`, camera RGB 13.5 | Background only | Planned (Phase 3) | — |
 | Lens correction | lens correction | `lens`, camera RGB 13 | Background only | Planned (Phase 3), switched; the embedded-metadata method specified (decision 25), Lensfun's later | [port](../ports/lens.md) |
-| Denoise (profiled) | denoise (profiled) | `denoiseprofile`, camera RGB 9 | Yes | Planned (Phase 3), switched | [port](../ports/denoiseprofile.md) |
+| Denoise (profiled) | denoise (profiled) | `denoiseprofile`, camera RGB 9 | Yes | Planned (Phase 2), switched | [port](../ports/denoiseprofile.md) |
 
 - **Sharpen,** once on, starts at darktable's radius 2, amount 0.5 and threshold 0.5.
 - **darktable's retouch** is not a module of the first pass: it is ported as retouch layers, heal and clone, with layers in Phase 4 ([layers.md](../layers.md#retouch-layers), decisions 34 and 74).
