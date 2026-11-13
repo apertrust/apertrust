@@ -766,6 +766,26 @@ history-line-controls =
        *[other] { $count } параметра
     }
 history-step-name-change = Крок { $number }: { $name }, { $change }
+history-group-modules =
+    { $count ->
+        [one] { $count } модуль
+        [few] { $count } модулі
+        [many] { $count } модулів
+       *[other] { $count } модуля
+    }
+history-group-name = Кроки з { $first } по { $last }: { $name }, { $modules }
+history-defaults = Типові
+history-defaults-modules =
+    { $count ->
+        [one] { $count } модуль, що працює для кожного фото
+        [few] { $count } модулі, що працюють для кожного фото
+        [many] { $count } модулів, що працюють для кожного фото
+       *[other] { $count } модуля, що працюють для кожного фото
+    }
+history-line-name = { $name }, { $change }
+history-day-today = Сьогодні
+history-day-yesterday = Учора, { $date }
+history-day-unknown = Без дати
 history-undone =
     { $count ->
         [1] ↑ 1 скасований · наступна зміна його замінить

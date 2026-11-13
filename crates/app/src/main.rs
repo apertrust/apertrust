@@ -5770,6 +5770,17 @@ fn edit_tab(
         );
         words.text_with("controls-opening", Some(&args))
     });
+    // The History tab holds History alone, its header staying at the tab's top.
+    if shell.panel_tab == HISTORY {
+        let open = shell.section_open(history::ID, history::OPEN);
+        let takes = mirror.takes_edits();
+        // As Reset Edit: while the edit holds anything the photo takes back.
+        let resettable = takes && mirror.values.edited;
+        let shown = mirror.history.as_ref();
+        let today = history::today();
+        let history = history::tab(ui, shown, modules, open, peek, takes, resettable, today);
+        return (Vec::new(), Vec::new(), history);
+    }
     // A module's picker is pressed only on the open photo once live, and never on one
     // open for viewing only, whose notice says why.
     let view_only = match &mirror.photo {
@@ -5783,18 +5794,6 @@ fn edit_tab(
         enabled: shown.editable(),
         why: opening.as_deref().or(view_only.as_deref()),
     };
-    let mut history = Vec::new();
-    let utilities = |ui: &mut egui::Ui| {
-        if shell.panel_tab != HISTORY {
-            return;
-        }
-        let open = shell.section_open(history::ID, history::OPEN);
-        let takes = mirror.takes_edits();
-        // As Reset Edit: while the edit holds anything the photo takes back.
-        let resettable = takes && mirror.values.edited;
-        let shown = mirror.history.as_ref();
-        history = history::section(ui, shown, modules, open, peek, takes, resettable);
-    };
     let (scopes, changes) = panel_body(
         ui,
         shell,
@@ -5806,19 +5805,17 @@ fn edit_tab(
         shown.editable(),
         opening.as_deref(),
         &pickers,
-        utilities,
     );
-    (scopes, changes, history)
+    (scopes, changes, Vec::new())
 }
 
 /// The side panel's sections under its tab bar: Scopes pinned over the band where the
 /// tab pins it, unless `scopes` is `None`, its graph from what it holds and drawn disabled
 /// unless its flag says a photo is shown, then the tab's
-/// modules among `modules`, drawn from their definitions with the mirror's `values`, then
-/// the tab's utilities, which `utilities` draws; each section open as the shell keeps it,
-/// peeking while `peek` holds, its reset disabled unless `editable`, and its colour pickers
-/// as `pickers` says; the section a History line opened scrolled to. Returns what Scopes
-/// and the modules asked for.
+/// modules among `modules`, drawn from their definitions with the mirror's `values`; each
+/// section open as the shell keeps it, peeking while `peek` holds, its reset disabled
+/// unless `editable`, and its colour pickers as `pickers` says; the section a History line
+/// opened scrolled to. Returns what Scopes and the modules asked for.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the side panel, each part apart"
@@ -5834,7 +5831,6 @@ fn panel_body(
     editable: bool,
     opening: Option<&str>,
     pickers: &modules::Pickers,
-    utilities: impl FnOnce(&mut egui::Ui),
 ) -> (Vec<scopes::Change>, Vec<Change>) {
     let shown = TAB_MODULES
         .get(shell.panel_tab)
@@ -5871,7 +5867,6 @@ fn panel_body(
                 changes.extend(drawn.inner);
             }
         }
-        utilities(ui);
     });
     (pinned, changes)
 }
@@ -8447,7 +8442,6 @@ mod tests {
                         true,
                         None,
                         &modules::Pickers::NONE,
-                        |_| {},
                     );
                     for change in scopes {
                         side.shell.scopes_change(change);
@@ -8617,7 +8611,7 @@ mod tests {
                 .query_by_role_and_label(Role::Button, "Scopes")
                 .is_none()
         );
-        let original = harness.get_by_role_and_label(Role::ListItem, "Original");
+        let original = harness.get_by_role_and_label(Role::TreeItem, "Original");
         assert!(original.accesskit_node().is_disabled());
         let mirror = &mut harness.state_mut().mirror;
         mirror.apply(Event::Opened(photo(1)));
@@ -8628,10 +8622,10 @@ mod tests {
         )));
         harness.run();
         harness
-            .get_by_role_and_label(Role::ListItem, "Original")
+            .get_by_role_and_label(Role::TreeItem, "Original")
             .click();
         harness.run();
-        harness.get_by_role_and_label(Role::ListItem, "Step 1: Exposure");
+        harness.get_by_role_and_label(Role::TreeItem, "Step 1: Exposure");
         assert_eq!(harness.state().history, [history::Action::GoTo(None)]);
         harness.state_mut().shell.panel_tab = BASE;
         harness.run();
@@ -8704,12 +8698,12 @@ mod tests {
         harness.run();
         let item = |harness: &Harness<'_, Editing>, name: &str| {
             harness
-                .get_by_role_and_label(Role::ListItem, name)
+                .get_by_role_and_label(Role::TreeItem, name)
                 .rect()
                 .center()
         };
         harness
-            .get_by_role_and_label(Role::ListItem, "Step 1: Exposure")
+            .get_by_role_and_label(Role::TreeItem, "Step 1: Exposure")
             .click();
         harness.run();
         let to_first = Command::GoTo {
@@ -8738,7 +8732,7 @@ mod tests {
         // Shift-click: Grain's section, in Effect, open; no command.
         harness.state_mut().sent.clear();
         harness
-            .get_by_role_and_label(Role::ListItem, "Step 2: Grain")
+            .get_by_role_and_label(Role::TreeItem, "Step 2: Grain")
             .click_modifiers(Modifiers::SHIFT);
         harness.run();
         assert!(
@@ -8759,14 +8753,14 @@ mod tests {
         harness.run();
         assert!(
             harness
-                .query_by_role_and_label(Role::List, "History")
+                .query_by_role_and_label(Role::Tree, "History")
                 .is_none()
         );
         harness.get_by_role_and_label(Role::Tab, "History").click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, HISTORY);
-        harness.get_by_role_and_label(Role::List, "History");
-        harness.get_by_role_and_label(Role::ListItem, "Original");
+        harness.get_by_role_and_label(Role::Tree, "History");
+        harness.get_by_role_and_label(Role::TreeItem, "Original");
     }
 
     /// Shift-click on a step's or a Default line's History line opens the module's

@@ -18,7 +18,8 @@
 //! AccessKit (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, section_list,
+    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, section_body,
+    section_list,
 };
 use apertrust_ui::icons::STROKE;
 use apertrust_ui::{Icon, Locale, Theme};
@@ -1259,4 +1260,60 @@ fn a_section_list_keeps_its_height_scrolls_and_floats_its_bar_in_the_end_margin(
     long.run_steps(60);
     assert!(long.get_by_label("Line 59").rect().bottom() < end(&long));
     assert_eq!(end(&long), end(&short));
+}
+
+/// A section of `lines` labels in the side panel's body, its header drawn apart and kept
+/// over the scrolling body where `apart`, else as any section.
+fn utility(lines: usize, apart: bool) -> Harness<'static> {
+    Harness::builder()
+        .with_size(egui::vec2(300.0, 240.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(move |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let rows = |ui: &mut egui::Ui| {
+                for line in 0..lines {
+                    ui.label(format!("Line {line}"));
+                }
+            };
+            let section = || Section::new("History", true).utility_reset("Reset edit");
+            if apart {
+                PanelBody::new()
+                    .header(|ui| {
+                        section().show_header(ui);
+                    })
+                    .show(ui, |ui| section_body(ui, rows));
+            } else {
+                PanelBody::new().show(ui, |ui| {
+                    section().show(ui, rows);
+                });
+            }
+        })
+}
+
+/// A header drawn apart lays its body out as any section's, and stays at the top while
+/// the body scrolls under it.
+#[test]
+fn a_header_drawn_apart_stays_over_its_body_as_it_scrolls() {
+    let mut whole = utility(3, false);
+    let mut apart = utility(3, true);
+    whole.run();
+    apart.run();
+    let at = |harness: &Harness<'_>, label: &str| harness.get_by_label(label).rect();
+    assert_eq!(at(&apart, "Line 0"), at(&whole, "Line 0"));
+    assert_eq!(at(&apart, "Line 2"), at(&whole, "Line 2"));
+    let header = |harness: &Harness<'_>| {
+        harness
+            .get_by_role_and_label(Role::Button, "History")
+            .rect()
+    };
+    assert_eq!(header(&apart), header(&whole));
+    // A long body scrolls under the header, which stays where it was.
+    let mut long = utility(40, true);
+    long.run();
+    let top = header(&long);
+    long.get_by_label("Line 39").scroll_to_me();
+    long.run();
+    assert_eq!(header(&long), top);
+    assert!(at(&long, "Line 39").bottom() <= 240.0);
+    assert!(at(&long, "Line 0").top() < top.bottom());
 }

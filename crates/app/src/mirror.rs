@@ -2341,8 +2341,9 @@ pub(crate) mod tests {
                     let m = &scene.live.mirror;
                     let (history, takes) = (m.history.as_ref(), m.takes_edits());
                     let modules = m.modules();
+                    let today = crate::history::today();
                     let asked =
-                        crate::history::section(ui, history, modules, true, false, takes, false);
+                        crate::history::tab(ui, history, modules, true, false, takes, false, today);
                     scene.actions.extend(asked);
                 },
                 Scene {
@@ -2357,7 +2358,7 @@ pub(crate) mod tests {
                 let label = node.accesskit_node().label().unwrap_or_default();
                 label.starts_with(&format!("{name}, "))
             };
-            (harness.query_all_by_role(eframe::egui::accesskit::Role::ListItem))
+            (harness.query_all_by_role(eframe::egui::accesskit::Role::TreeItem))
                 .find(named)
                 .unwrap_or_else(|| panic!("no line {name}"))
         }

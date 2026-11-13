@@ -769,6 +769,26 @@ history-line-controls =
        *[other] { $count } parametru
     }
 history-step-name-change = Krok { $number }: { $name }, { $change }
+history-group-modules =
+    { $count ->
+        [one] { $count } moduł
+        [few] { $count } moduły
+        [many] { $count } modułów
+       *[other] { $count } modułu
+    }
+history-group-name = Kroki od { $first } do { $last }: { $name }, { $modules }
+history-defaults = Domyślne
+history-defaults-modules =
+    { $count ->
+        [one] { $count } moduł działający na każdym zdjęciu
+        [few] { $count } moduły działające na każdym zdjęciu
+        [many] { $count } modułów działających na każdym zdjęciu
+       *[other] { $count } modułu działającego na każdym zdjęciu
+    }
+history-line-name = { $name }, { $change }
+history-day-today = Dzisiaj
+history-day-yesterday = Wczoraj, { $date }
+history-day-unknown = Bez daty
 history-undone =
     { $count ->
         [one] ↑ { $count } cofnięty · następna edycja go zastąpi

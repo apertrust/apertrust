@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The edit's history as the app words and draws it (`docs/history.md`, In the app;
-//! decision 78): the History section, and what Undo and Redo would do, named as History
+//! decision 78): the History tab, and what Undo and Redo would do, named as History
 //! names a step, for Edit's items.
 //!
 //! A step with a note reads its note, Reset's among them, and one without its module's
@@ -34,38 +34,60 @@
 //!   darktable's active item, and the steps after it in the secondary text, which
 //!   darktable draws as any other (`docs/history.md`, Against darktable), the undone mark
 //!   under them;
-//! - the rail down the lines' start (`Rail`): a dot a step, Reset's glyph, the end a
-//!   larger filled dot, the undone steps hollow on a dashed rail;
-//! - then the Default lines, the modules every photo runs, unnumbered and with no tag,
-//!   and Original, 0, one block that always applies, never greyed; at end 0 the top
-//!   Default line chosen, or Original with none;
+//! - a batch, one change's steps on several modules, one closed line, a group: its note
+//!   or how many modules, its steps' numbers as a range, its modules' titles, its source;
+//!   the chevron, or →, opens it, its steps indented under it, and it opens itself when
+//!   the end lands inside it; a click on it goes to its last step, as Undo moves it whole.
+//!   Closed with the end inside it, it is the end's line, the undone mark under it.
+//!   Which groups are open the app keeps while it runs, never saved;
+//! - a heading over each day's steps, from their clocks: Today, Yesterday with its date,
+//!   then the date, in the interface's language; No date over steps of unknown time under
+//!   a day's;
+//! - the rail down the lines' start (`Rail`): a dot a step, a square a group, Reset's
+//!   glyph, the end a larger filled dot, or square, the undone steps hollow on a dashed
+//!   rail;
+//! - then the Default lines, the modules every photo runs, one closed group, Defaults,
+//!   which opens as a batch does, unnumbered and with no tag, and Original, 0: one block
+//!   that always applies, never greyed; at end 0 the Defaults line chosen, or the top
+//!   Default line while it is open, or Original with none;
 //! - a step's tooltip: a small table, a row for each control it changed, its label, its
 //!   value before, an arrow and its value after as its row writes them, in lined-up
 //!   columns, then its note, who made it and when apart, on the local clock in the
-//!   interface's language; a Default line's who and when alone;
-//! - a click on a step goes to it ([`Action::GoTo`]), and on a Default line or Original
-//!   to Original, but on where the end is, which changes nothing, as darktable's click on
-//!   its active item; Shift-click on a step or a Default line opens its module's section
-//!   ([`Action::Open`]), as darktable's Shift-click focuses it;
-//! - the keys: ↑ and ↓ move between the lines, Enter does what a click does, Shift+Enter
-//!   what Shift-click does; to screen readers a list of items, each named by its number
-//!   and name, its tooltip its description, the end selected;
-//! - Reset in the header, which resets the edit as one step, as Reset Edit does.
+//!   interface's language; a group's, its steps' rows under each module's title; a
+//!   Default line's who alone;
+//! - a click on a step goes to it ([`Action::GoTo`]), and on the Defaults or a Default
+//!   line or Original to Original, but on where the end is, which changes nothing, as
+//!   darktable's click on its active item; Shift-click on a step or a Default line opens
+//!   its module's section ([`Action::Open`]), as darktable's Shift-click focuses it;
+//! - the keys, a tree's: ↑ and ↓ move between the lines, → opens a group, or goes into
+//!   one open, ← closes it, or goes from a line inside it to it, Home to the newest line
+//!   and End to Original, a key with nothing to do keeping the focus; Enter does what a
+//!   click does, Shift+Enter what Shift-click does. To screen readers a tree of items,
+//!   each named by its number and name, a group by its numbers, name and modules, its
+//!   tooltip its description, the end selected, each saying where it is among its level's,
+//!   a group expanded or not, offering Expand or Collapse, its Click going to its last
+//!   step as a click does, the lines inside one a level down in a group of their own; the
+//!   day headings named, never focused;
+//! - Reset in the header, which resets the edit as one step, as Reset Edit does; the
+//!   header stays at the top of the tab while the list scrolls under it, and the end is
+//!   scrolled into sight whenever it moves.
 //!
 //! The eye and Compress history come with later parts (9.7 and 9.8).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use apertrust_engine::session::{
-    ControlChange, ControlValue, History, HistoryStep, Mark, Move, Note, StepId, StepSource,
+    BatchId, ControlChange, ControlValue, History, HistoryStep, Mark, Move, Note, StepId,
+    StepSource,
 };
 use apertrust_modules::{ControlKind, Definition, Module, Row, Slider, messages};
 use apertrust_ui::components::{
-    Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred,
+    PanelBody, Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred, section_body,
 };
-use apertrust_ui::i18n::Args;
-use apertrust_ui::{Translator, fonts, theme, translator};
-use eframe::egui::{self, FontId, Role, Sense, UiBuilder, WidgetInfo, pos2, vec2};
+use apertrust_ui::i18n::{Args, local_day};
+use apertrust_ui::{Icon, Translator, fonts, theme, translator};
+use eframe::egui::{self, FontId, Key, Modifiers, Role, Sense, UiBuilder, WidgetInfo, pos2, vec2};
 
 use crate::menus::Steps;
 
@@ -102,6 +124,19 @@ pub enum Place {
         applied: bool,
         end: bool,
     },
+    /// A batch's line, its group's: its steps numbered `first` to `last`, the last's id
+    /// `last_id`, which a click goes to; `applied` while its first is at or under the end,
+    /// and `end` where the end is its last, which it shows while closed.
+    Batch {
+        last_id: StepId,
+        first: usize,
+        last: usize,
+        applied: bool,
+        end: bool,
+    },
+    /// The Defaults' line, the group of the Default lines: `there` at end 0, which it
+    /// shows while closed.
+    Defaults { there: bool },
     /// A Default line: a module every photo runs, never greyed. With Original it is one
     /// block under the steps, which a click goes to, end 0: `there` while the end is
     /// there, and `end` for the top Default line then, the boundary between what is undone
@@ -111,13 +146,35 @@ pub enum Place {
     Original { end: bool, there: bool },
 }
 
+/// A group of lines shown as one that opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GroupKey {
+    /// A batch's steps.
+    Batch(BatchId),
+    /// The Default lines.
+    Defaults,
+}
+
+/// What a line is, which keeps its widget's id, and so its focus, whatever opens or
+/// closes over it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LineKey {
+    Step(StepId),
+    Group(GroupKey),
+    /// The Default line of a module.
+    Default(&'static str),
+    Original,
+}
+
 /// One line of the list, in the interface's words.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     pub place: Place,
+    pub key: LineKey,
     pub name: String,
     /// What changed, after the name in the small text, cut at its end where the line has no
-    /// room; none where there is nothing to say, as on a Default line.
+    /// room; none where there is nothing to say, as on a Default line. A group's, its
+    /// modules or how many.
     pub change: Option<String>,
     /// What changed as screen readers hear it in the step's name, its values before and
     /// after, since they have no tooltip to rest on.
@@ -126,11 +183,49 @@ pub struct Line {
     /// Assistant.
     pub tag: Option<String>,
     pub tip: Tip,
-    /// Its piece of the rail.
-    pub rail: Rail,
+    /// Its node on the rail; a group's is drawn the end's only while it is closed.
+    pub node: RailNode,
     /// The module Shift-click opens; none where the app
     /// does not know it, as an operation's unowned parameters or a newer build's module.
     pub module: Option<&'static str>,
+}
+
+/// What the list holds, newest first, worded once for a history ([`kept`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Entry {
+    /// A day's heading, over its steps.
+    Day(String),
+    Line(Line),
+    /// A group: its line, and the lines it holds, newest first. `holds_end` where the end
+    /// is inside it, under its last step, where it opens itself.
+    Group {
+        key: GroupKey,
+        line: Line,
+        lines: Vec<Line>,
+        holds_end: bool,
+    },
+}
+
+/// A history's list as the section draws it.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Listed {
+    pub entries: Vec<Entry>,
+    /// How many steps are undone.
+    pub undone: usize,
+}
+
+impl Listed {
+    /// Every line, a group's and those it holds after it, in the list's order.
+    pub fn lines(&self) -> impl Iterator<Item = &Line> {
+        self.entries.iter().flat_map(|entry| {
+            let (line, inside): (Option<&Line>, &[Line]) = match entry {
+                Entry::Day(_) => (None, &[]),
+                Entry::Line(line) => (Some(line), &[]),
+                Entry::Group { line, lines, .. } => (Some(line), lines),
+            };
+            line.into_iter().chain(inside)
+        })
+    }
 }
 
 /// A line's tooltip.
@@ -201,92 +296,297 @@ impl Tip {
 }
 
 impl Line {
-    /// Its number: a step's, and Original's 0; a Default line has none.
+    /// Its number: a step's, and Original's 0; a group's line and a Default line have none.
     fn number(&self) -> Option<usize> {
         match self.place {
             Place::Step { number, .. } => Some(number),
             Place::Original { .. } => Some(0),
-            Place::Default { .. } => None,
+            Place::Batch { .. } | Place::Defaults { .. } | Place::Default { .. } => None,
         }
     }
 
-    /// Whether it is the end's line, chosen: at end 0, the top Default line, else
-    /// Original.
+    /// Its numbers as its line writes them: a step's, Original's 0, a batch's first and
+    /// last with an en dash between, "12–16".
+    fn numbers(&self, tr: &Translator) -> Option<String> {
+        let number = |n: usize| tr.format_number(n as f64, 0, false);
+        match self.place {
+            Place::Batch { first, last, .. } => Some(range(&number(first), &number(last))),
+            _ => self.number().map(number),
+        }
+    }
+
+    /// Whether it is the end's line: at end 0, the Defaults line, or the top Default line
+    /// while they show, else Original; a batch's line where the end is its last. A group's
+    /// line is drawn chosen only while it is closed.
     fn end(&self) -> bool {
         matches!(
             self.place,
             Place::Step { end: true, .. }
+                | Place::Batch { end: true, .. }
+                | Place::Defaults { there: true }
                 | Place::Default { end: true, .. }
                 | Place::Original { end: true, .. }
         )
     }
 
+    /// Whether it is a group's line, which opens.
+    fn group(&self) -> bool {
+        matches!(self.place, Place::Batch { .. } | Place::Defaults { .. })
+    }
+
     /// Whether it takes a click or a Shift-click, which its hover band says: a click going
     /// somewhere while the photo takes edits (`editable`), or a Shift-click opening its
-    /// module, as on a Default line, whatever the photo. Original, the end already there,
-    /// takes neither.
+    /// module, as on a Default line, whatever the photo. A group's line always takes one,
+    /// on its chevron. Original, the end already there, takes neither.
     fn takes(&self, editable: bool) -> bool {
-        (editable && !self.there()) || self.module.is_some()
+        (editable && !self.there()) || self.module.is_some() || self.group()
     }
 
     /// Whether a click goes nowhere: on the end's line, or on the block of Default lines
     /// and Original while the end is there.
     fn there(&self) -> bool {
         match self.place {
-            Place::Step { end, .. } => end,
-            Place::Default { there, .. } | Place::Original { there, .. } => there,
+            Place::Step { end, .. } | Place::Batch { end, .. } => end,
+            Place::Defaults { there }
+            | Place::Default { there, .. }
+            | Place::Original { there, .. } => there,
         }
     }
 
-    /// Whether it is a step after the end, greyed.
+    /// Whether it is a step after the end, greyed; a batch whose every step is.
     fn greyed(&self) -> bool {
-        matches!(self.place, Place::Step { applied: false, .. })
+        matches!(
+            self.place,
+            Place::Step { applied: false, .. } | Place::Batch { applied: false, .. }
+        )
+    }
+
+    /// What a click on it asks for, Shift held or not, where the photo takes edits
+    /// (`editable`).
+    fn clicked(&self, shift: bool, editable: bool) -> Option<Action> {
+        match self.place {
+            Place::Step { .. } | Place::Default { .. } if shift => self.module.map(Action::Open),
+            _ if shift => None,
+            // The end where it is changes nothing, as darktable's click on its active item.
+            _ if self.there() || !editable => None,
+            Place::Step { id, .. } => Some(Action::GoTo(Some(id))),
+            // A batch's line goes to its last step, as Undo and Redo move it whole.
+            Place::Batch { last_id, .. } => Some(Action::GoTo(Some(last_id))),
+            // A Default line is Original: the modules every photo runs always run.
+            Place::Defaults { .. } | Place::Default { .. } | Place::Original { .. } => {
+                Some(Action::GoTo(None))
+            }
+        }
     }
 }
 
-/// The list's lines from `history`, the open photo's, in `tr`'s words: its steps newest
-/// first, the Default lines, also last added first, then Original; Original alone with no
-/// history. `modules`
+/// A range of numbers, its first and last with an en dash between.
+fn range(first: &str, last: &str) -> String {
+    format!("{first}\u{2013}{last}")
+}
+
+/// The list from `history`, the open photo's, in `tr`'s words: its steps newest first, a
+/// batch's as a group, with a heading over each day's, then the Defaults group, its lines
+/// also last added first, then Original; Original alone with no history. `today` is the
+/// local calendar's day now ([`local_day`]), which the headings count back from. `modules`
 /// are the session's, whose titles, controls and rows word the lines.
-pub fn lines(history: Option<&History>, modules: &[&dyn Module], tr: &Translator) -> Vec<Line> {
-    let mut lines = Vec::new();
+pub fn listed(
+    history: Option<&History>,
+    modules: &[&dyn Module],
+    tr: &Translator,
+    today: i32,
+) -> Listed {
+    let mut entries = Vec::new();
     let end = history.map_or(0, |h| h.end);
+    let mut day = None;
     if let Some(history) = history {
-        for (index, step) in history.steps.iter().enumerate().rev() {
-            let number = index + 1;
-            lines.push(Line {
-                place: Place::Step {
-                    id: step.id,
-                    number,
-                    applied: number <= end,
-                    end: number == end,
-                },
-                name: line_name(step, modules, tr),
-                change: summary(step, modules, tr),
-                heard: heard(step, modules, tr),
-                tag: tag(step.source, tr),
-                tip: tip(step, modules, tr),
-                rail: Rail {
-                    node: match () {
-                        () if is_reset(step) => RailNode::Reset { end: number == end },
-                        () if number == end => RailNode::End,
-                        () if number > end => RailNode::Undone,
-                        () => RailNode::Step,
-                    },
-                    above: RailLine::None,
-                    below: RailLine::None,
-                },
-                module: (step.changes.iter()).find_map(|change| known(modules, &change.module)),
+        let steps = &history.steps;
+        // Newest first: the steps from `first` to `last`, one change's, each pass.
+        let mut next = steps.len();
+        while next > 0 {
+            let last = next - 1;
+            let mut first = last;
+            if let Some(batch) = steps[last].batch {
+                while first > 0 && steps[first - 1].batch == Some(batch) {
+                    first -= 1;
+                }
+            }
+            next = first;
+            let newest = &steps[last];
+            let on = (newest.clock.when > 0)
+                .then(|| local_day(newest.clock.when))
+                .flatten();
+            // A step of unknown time, under a day's steps, has a heading of its own, No
+            // date, never the newer day's; at the top it has none.
+            if on != day {
+                match on {
+                    Some(on) => entries.push(Entry::Day(heading(on, today, tr))),
+                    None if !entries.is_empty() => {
+                        entries.push(Entry::Day(tr.text("history-day-unknown")));
+                    }
+                    None => {}
+                }
+                day = on;
+            }
+            let lines = (first..=last)
+                .rev()
+                .map(|index| step_line(&steps[index], index + 1, end, modules, tr));
+            match steps[last].batch {
+                Some(batch) if first < last => entries.push(Entry::Group {
+                    key: GroupKey::Batch(batch),
+                    line: batch_line(&steps[first..=last], first + 1, end, modules, tr),
+                    // The source is the group's, on its line alone.
+                    lines: lines.map(|line| Line { tag: None, ..line }).collect(),
+                    holds_end: (first + 1..last + 1).contains(&end),
+                }),
+                _ => entries.extend(lines.map(Entry::Line)),
+            }
+        }
+        if !history.defaults.is_empty() {
+            entries.push(defaults(&history.defaults, end, modules, tr));
+        }
+    }
+    let original = end == 0 && history.is_none_or(|h| h.defaults.is_empty());
+    entries.push(Entry::Line(Line {
+        place: Place::Original {
+            end: original,
+            there: end == 0,
+        },
+        key: LineKey::Original,
+        name: tr.text("history-original"),
+        change: None,
+        heard: None,
+        tag: None,
+        tip: Tip::Text(tr.text("history-original-tip")),
+        node: if original {
+            RailNode::End
+        } else {
+            RailNode::Step
+        },
+        module: None,
+    }));
+    Listed {
+        entries,
+        undone: history.map_or(0, |h| h.steps.len().saturating_sub(h.end)),
+    }
+}
+
+/// A step's line, numbered `number`, with the end at `end`.
+fn step_line(
+    step: &HistoryStep,
+    number: usize,
+    end: usize,
+    modules: &[&dyn Module],
+    tr: &Translator,
+) -> Line {
+    Line {
+        place: Place::Step {
+            id: step.id,
+            number,
+            applied: number <= end,
+            end: number == end,
+        },
+        key: LineKey::Step(step.id),
+        name: line_name(step, modules, tr),
+        change: summary(step, modules, tr),
+        heard: heard(step, modules, tr),
+        tag: tag(step.source, tr),
+        tip: tip(step, modules, tr),
+        node: match () {
+            () if is_reset(step) => RailNode::Reset { end: number == end },
+            () if number == end => RailNode::End,
+            () if number > end => RailNode::Undone,
+            () => RailNode::Step,
+        },
+        module: (step.changes.iter()).find_map(|change| known(modules, &change.module)),
+    }
+}
+
+/// A batch's line, its `steps` numbered from `first`, with the end at `end`: its note,
+/// which its last step carries, else how many modules; its modules' titles in its steps'
+/// order; the last step's source; a tooltip with each step's rows under its module's
+/// title, then its note, who and when.
+fn batch_line(
+    steps: &[Arc<HistoryStep>],
+    first: usize,
+    end: usize,
+    modules: &[&dyn Module],
+    tr: &Translator,
+) -> Line {
+    let newest = &steps[steps.len() - 1];
+    let last = first + steps.len() - 1;
+    let name = match &newest.note {
+        Some(note) => noted(note, tr),
+        None => {
+            let mut args = Args::new();
+            args.set("count", steps.len());
+            tr.text_with("history-group-modules", Some(&args))
+        }
+    };
+    let titles: Vec<String> = (steps.iter())
+        .filter_map(|step| step.changes.first())
+        .map(|change| title(modules, &change.module, tr))
+        .collect();
+    let mut changed = Vec::new();
+    for step in steps {
+        for change in &step.changes {
+            let definition = definition(modules, &change.module);
+            changed.push(Changed {
+                heading: Some(title(modules, &change.module, tr)),
+                rows: (change.controls.iter())
+                    .map(|control| control_change(definition, control, tr))
+                    .collect(),
             });
         }
-        // Newest first, as the steps: the first darktable adds, Raw black/white point,
-        // just over Original.
-        for (index, &module) in history.defaults.iter().rev().enumerate() {
-            lines.push(Line {
+    }
+    let Tip::Changes { by, .. } = tip(newest, modules, tr) else {
+        unreachable!("a step's tooltip has its changes")
+    };
+    let applied = first <= end;
+    Line {
+        place: Place::Batch {
+            last_id: newest.id,
+            first,
+            last,
+            applied,
+            end: last == end,
+        },
+        key: LineKey::Group(GroupKey::Batch(newest.batch.unwrap_or(BatchId(0)))),
+        name,
+        change: Some(titles.join(", ")),
+        heard: None,
+        tag: tag(newest.source, tr),
+        tip: Tip::Changes {
+            modules: changed,
+            by,
+        },
+        node: RailNode::Group {
+            end: last == end,
+            undone: !applied,
+        },
+        module: None,
+    }
+}
+
+/// The Defaults group: its line, "Defaults", how many modules every photo runs, and the
+/// Default lines of `defaults`, newest first, as the steps: the first darktable adds, Raw
+/// black/white point, just over Original.
+fn defaults(
+    defaults: &[&'static str],
+    end: usize,
+    modules: &[&dyn Module],
+    tr: &Translator,
+) -> Entry {
+    let by = || vec![source(StepSource::Default, tr)];
+    let lines = (defaults.iter().rev().enumerate())
+        .map(|(index, &module)| {
+            let top = end == 0 && index == 0;
+            Line {
                 place: Place::Default {
-                    end: end == 0 && index == 0,
+                    end: top,
                     there: end == 0,
                 },
+                key: LineKey::Default(module),
                 name: title(modules, module, tr),
                 change: None,
                 heard: None,
@@ -294,44 +594,174 @@ pub fn lines(history: Option<&History>, modules: &[&dyn Module], tr: &Translator
                 // Its source alone: the photo's own, with no change or time to show.
                 tip: Tip::Changes {
                     modules: Vec::new(),
-                    by: vec![source(StepSource::Default, tr)],
+                    by: by(),
                 },
+                node: if top { RailNode::End } else { RailNode::Step },
                 module: known(modules, module),
-                rail: Rail {
-                    node: if end == 0 && index == 0 {
-                        RailNode::End
-                    } else {
-                        RailNode::Step
+            }
+        })
+        .collect();
+    let mut args = Args::new();
+    args.set("count", defaults.len());
+    Entry::Group {
+        key: GroupKey::Defaults,
+        line: Line {
+            place: Place::Defaults { there: end == 0 },
+            key: LineKey::Group(GroupKey::Defaults),
+            name: tr.text("history-defaults"),
+            change: Some(tr.text_with("history-defaults-modules", Some(&args))),
+            heard: None,
+            tag: None,
+            tip: Tip::Changes {
+                modules: Vec::new(),
+                by: by(),
+            },
+            node: RailNode::Group {
+                end: end == 0,
+                undone: false,
+            },
+            module: None,
+        },
+        lines,
+        holds_end: false,
+    }
+}
+
+/// A day's heading, `day` counted as [`local_day`] counts it: Today, Yesterday with its
+/// date, else its date alone.
+fn heading(day: i32, today: i32, tr: &Translator) -> String {
+    match today - day {
+        0 => tr.text("history-day-today"),
+        1 => {
+            let mut args = Args::new();
+            args.set("date", tr.format_day(day, today));
+            tr.text_with("history-day-yesterday", Some(&args))
+        }
+        _ => tr.format_day(day, today),
+    }
+}
+
+/// The local calendar's day now, as [`local_day`] counts it, which the day headings count
+/// back from.
+pub fn today() -> i32 {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+    let now = now.map_or(0, |since| since.as_millis() as u64);
+    local_day(now).unwrap_or_default()
+}
+
+/// A row of the list as drawn this frame, groups open or closed.
+#[derive(Clone, Copy, Debug)]
+enum Drawn<'a> {
+    Day(&'a str),
+    /// The space over the Defaults' line.
+    Gap,
+    Line(Shown<'a>),
+    /// The undone mark, under the last undone line shown.
+    Undone,
+}
+
+/// A line as drawn this frame.
+#[derive(Clone, Copy, Debug)]
+struct Shown<'a> {
+    line: &'a Line,
+    /// 0 at the top, 1 inside a group, as AccessKit counts, from 0.
+    level: usize,
+    /// A group's line: whether it is open.
+    open: Option<bool>,
+    /// A line inside a group: the group's.
+    within: Option<GroupKey>,
+    /// Drawn the end's, on `list_chosen`: the end's line, or a closed group's holding
+    /// the end.
+    chosen: bool,
+    /// A closed group's line holding the end, some of its steps undone and out of sight.
+    holds: bool,
+    /// Where it is among the lines of its level, its group's inside one, from 0, and how
+    /// many they are, as screen readers say "3 of 9".
+    position: usize,
+    set: usize,
+    rail: Rail,
+}
+
+/// The rows `listed` draws with the groups in `open` open: a group's lines under its own
+/// while open, a gap over the Defaults' line, the undone mark under the last undone line,
+/// or under a closed group's holding the end, whose undone steps are out of sight, and the
+/// rail through them all, dashed under an undone line and through the rows between.
+fn drawn<'a>(listed: &'a Listed, open: &HashSet<GroupKey>) -> Vec<Drawn<'a>> {
+    let mut rows = Vec::new();
+    let shown = |line: &'a Line, level, open: Option<bool>, within, holds_end: bool| {
+        let holds = holds_end && open == Some(false);
+        Shown {
+            line,
+            level,
+            open,
+            within,
+            chosen: (line.end() && open != Some(true)) || holds,
+            holds,
+            position: 0,
+            set: 0,
+            rail: Rail {
+                node: match line.node {
+                    RailNode::Group { undone, .. } => RailNode::Group {
+                        end: holds || (line.end() && open != Some(true)),
+                        undone,
                     },
-                    above: RailLine::None,
-                    below: RailLine::None,
+                    node => node,
                 },
-            });
+                above: RailLine::None,
+                below: RailLine::None,
+            },
+        }
+    };
+    for entry in &listed.entries {
+        match entry {
+            Entry::Day(day) => rows.push(Drawn::Day(day)),
+            Entry::Line(line) => rows.push(Drawn::Line(shown(line, 0, None, None, false))),
+            Entry::Group {
+                key,
+                line,
+                lines,
+                holds_end,
+            } => {
+                let is_open = open.contains(key);
+                if *key == GroupKey::Defaults && !rows.is_empty() {
+                    rows.push(Drawn::Gap);
+                }
+                rows.push(Drawn::Line(shown(line, 0, Some(is_open), None, *holds_end)));
+                if is_open {
+                    let inside = (lines.iter()).map(|line| shown(line, 1, None, Some(*key), false));
+                    rows.extend(inside.map(Drawn::Line));
+                }
+            }
         }
     }
-    let original = end == 0 && history.is_none_or(|h| h.defaults.is_empty());
-    lines.push(Line {
-        place: Place::Original {
-            end: original,
-            there: end == 0,
-        },
-        name: tr.text("history-original"),
-        change: None,
-        heard: None,
-        tag: None,
-        tip: Tip::Text(tr.text("history-original-tip")),
-        module: None,
-        rail: Rail {
-            node: if original {
-                RailNode::End
-            } else {
-                RailNode::Step
-            },
-            above: RailLine::None,
-            below: RailLine::None,
-        },
-    });
-    // The rail between the lines: dashed under an undone step, solid else.
+    // Each line's place among its level's, a group's lines among their group's.
+    let mut sets: Vec<(usize, Option<GroupKey>, Vec<usize>)> = Vec::new();
+    for (at, row) in rows.iter().enumerate() {
+        if let Drawn::Line(shown) = row {
+            let set = (sets.iter_mut())
+                .find(|(level, within, _)| *level == shown.level && *within == shown.within);
+            match set {
+                Some((_, _, members)) => members.push(at),
+                None => sets.push((shown.level, shown.within, vec![at])),
+            }
+        }
+    }
+    for (_, _, members) in &sets {
+        for (position, &at) in members.iter().enumerate() {
+            if let Drawn::Line(shown) = &mut rows[at] {
+                shown.position = position;
+                shown.set = members.len();
+            }
+        }
+    }
+    let last_undone = rows
+        .iter()
+        .rposition(|row| matches!(row, Drawn::Line(shown) if shown.line.greyed() || shown.holds));
+    if let Some(at) = last_undone.filter(|_| listed.undone > 0) {
+        rows.insert(at + 1, Drawn::Undone);
+    }
+    // The rail between the lines: dashed under an undone line, solid else, and through
+    // the rows between two lines as under the one above.
     let under = |line: &Line| {
         if line.greyed() {
             RailLine::Dashed
@@ -339,30 +769,47 @@ pub fn lines(history: Option<&History>, modules: &[&dyn Module], tr: &Translator
             RailLine::Solid
         }
     };
-    for index in 0..lines.len() {
-        if index > 0 {
-            lines[index].rail.above = under(&lines[index - 1]);
-        }
-        if index + 1 < lines.len() {
-            lines[index].rail.below = under(&lines[index]);
+    let lines: Vec<usize> = (rows.iter().enumerate())
+        .filter_map(|(at, row)| matches!(row, Drawn::Line(_)).then_some(at))
+        .collect();
+    let mut above = RailLine::None;
+    for (at, row) in rows.iter_mut().enumerate() {
+        if let Drawn::Line(shown) = row {
+            shown.rail.above = above;
+            if lines.last().is_some_and(|&last| last > at) {
+                shown.rail.below = under(shown.line);
+            }
+            above = shown.rail.below;
         }
     }
-    lines
+    rows
 }
 
-/// The undone steps' count, and the index of the last of them, over which the undone mark
-/// goes; none where no step is undone.
-fn undone(lines: &[Line]) -> Option<(usize, usize)> {
-    let count = lines.iter().filter(|line| line.greyed()).count();
-    let last = lines.iter().rposition(Line::greyed)?;
-    Some((count, last))
+/// The rail through a row between lines, `rows[at]`: as under the line above it, none
+/// where no line is above or below it.
+fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
+    let rail = |row: &Drawn<'_>| match row {
+        Drawn::Line(shown) => Some(shown.rail.below),
+        _ => None,
+    };
+    let below = rows[at + 1..].iter().any(|row| rail(row).is_some());
+    match rows[..at].iter().rev().find_map(rail) {
+        Some(above) if below => above,
+        _ => RailLine::None,
+    }
 }
 
-/// Draws the section, open or closed as `open` says, its lines from `history`, the open
-/// photo's, drawn disabled where there is none; it peeks while `peek` holds, as every
-/// section does. A step is gone to only while `editable` (a photo live and not open for
-/// viewing only), and Reset runs only while `resettable`. Returns what the user did.
-pub fn section(
+/// Draws the History tab: the History section, open or closed as `open` says, its header
+/// staying at the top of the tab while its list scrolls under it, the list from
+/// `history`, the open photo's, drawn disabled where there is none; it peeks while `peek`
+/// holds, as every section does. A step is gone to only while `editable` (a photo live
+/// and not open for viewing only), and Reset runs only while `resettable`. `today` is the
+/// local calendar's day ([`today`]). Returns what the user did.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the section's state from the app, each part apart"
+)]
+pub fn tab(
     ui: &mut egui::Ui,
     history: Option<&History>,
     modules: &[&dyn Module],
@@ -370,49 +817,31 @@ pub fn section(
     peek: bool,
     editable: bool,
     resettable: bool,
+    today: i32,
 ) -> Vec<Action> {
     let words = translator(ui.ctx());
     let title = words.text("section-history");
     let reset = words.text("history-reset-edit");
+    let mut header = None;
     let mut actions = Vec::new();
     // A utility: Reset before its options, which are drawn disabled while nothing is
     // behind them.
-    let out = Section::new(&title, open)
-        .utility_reset(&reset)
-        .reset(resettable)
-        .options(false)
-        .peek(peek)
+    PanelBody::new()
+        .header(|ui| {
+            let section = Section::new(&title, open)
+                .utility_reset(&reset)
+                .reset(resettable)
+                .options(false)
+                .peek(peek);
+            header = Some(section.show_header(ui));
+        })
         .show(ui, |ui| {
-            let lines = kept_lines(ui.ctx(), history, modules, &words);
-            // Disabled through the list's own builder, so the lines are its children, as
-            // screen readers count them.
-            let list = UiBuilder::new()
-                .id_salt("history lines")
-                .accessibility_role(Role::List)
-                .accessibility_label(&title);
-            let list = if history.is_some() {
-                list
-            } else {
-                list.disabled()
-            };
-            ui.scope_builder(list, |ui| {
-                // Rows stack with no space between, so the rail runs through.
-                ui.spacing_mut().item_spacing.y = 0.0;
-                let undone = undone(&lines);
-                // One numbers' column for the whole section, so the names stay put as it
-                // scrolls.
-                let columns = Columns::of(ui.ctx(), &lines);
-                for (index, line) in lines.iter().enumerate() {
-                    actions.extend(line_row(ui, line, columns, editable));
-                    if let Some((count, last)) = undone
-                        && last == index
-                    {
-                        undone_mark(ui, count, columns);
-                    }
-                }
-            });
+            if open {
+                actions = section_body(ui, |ui| list(ui, history, modules, editable, today));
+            }
         });
-    let mut done: Vec<Action> = (out.actions.into_iter())
+    let mut done: Vec<Action> = (header.into_iter())
+        .flat_map(|out| out.actions)
         .filter_map(|action| match action {
             SectionAction::Toggle => Some(Action::Toggle),
             SectionAction::Reset => Some(Action::Reset),
@@ -423,33 +852,270 @@ pub fn section(
     done
 }
 
-/// [`lines`], worded once for each history and language and kept in egui's memory: a
-/// history of hundreds of steps would otherwise be worded again each frame. A history is
+/// Draws the section's list, a tree, and returns what a click or a key asked for.
+fn list(
+    ui: &mut egui::Ui,
+    history: Option<&History>,
+    modules: &[&dyn Module],
+    editable: bool,
+    today: i32,
+) -> Vec<Action> {
+    let words = translator(ui.ctx());
+    let listed = kept(ui.ctx(), history, modules, &words, today);
+    let base = ui.make_persistent_id("history lines");
+    let open_id = base.with("open");
+    let mut open: HashSet<GroupKey> = ui.data(|d| d.get_temp(open_id)).unwrap_or_default();
+    // The end moved, or another photo's history came: the group it lands inside opens,
+    // and it is scrolled into sight.
+    let seen_id = base.with("end");
+    let seen = history.map(|h| (h.end, h.steps.len(), h.steps.first().map(|s| s.id)));
+    let moved =
+        ui.data(|d| d.get_temp::<Option<(usize, usize, Option<StepId>)>>(seen_id)) != Some(seen);
+    if moved {
+        ui.data_mut(|d| d.insert_temp(seen_id, seen));
+        for entry in &listed.entries {
+            if let Entry::Group {
+                key,
+                holds_end: true,
+                ..
+            } = entry
+            {
+                open.insert(*key);
+            }
+        }
+    }
+    let rows = drawn(&listed, &open);
+    // Disabled through the list's own builder, so the lines are its children, as screen
+    // readers count them.
+    let title = words.text("section-history");
+    let tree = UiBuilder::new()
+        .id_salt("history lines")
+        .accessibility_role(Role::Tree)
+        .accessibility_label(&title);
+    let tree = if history.is_some() {
+        tree
+    } else {
+        tree.disabled()
+    };
+    let mut pass = Pass {
+        order: (rows.iter())
+            .filter_map(|row| match row {
+                Drawn::Line(shown) => Some(*shown),
+                _ => None,
+            })
+            .collect(),
+        // One numbers' column for the whole section, so the names stay put as it scrolls.
+        columns: Columns::of(ui.ctx(), &listed, &words),
+        rows: &rows,
+        undone: listed.undone,
+        base,
+        editable,
+        moved,
+        index: 0,
+        actions: Vec::new(),
+        toggled: Vec::new(),
+    };
+    ui.scope_builder(tree, |ui| {
+        // Rows stack with no space between, so the rail runs through.
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let top = pass.order.iter().filter(|shown| shown.level == 0).count();
+        ui.ctx()
+            .accesskit_node_builder(ui.unique_id(), |node| node.set_size_of_set(top));
+        let mut at = 0;
+        while at < rows.len() {
+            let Some(group) = inside(&rows[at]) else {
+                pass.row(ui, at);
+                at += 1;
+                continue;
+            };
+            // An open group's lines, and the undone mark among them, in a group of their
+            // own, so screen readers count them apart from the top's.
+            let run = (rows[at..].iter())
+                .take_while(|row| matches!(row, Drawn::Undone) || inside(row).is_some())
+                .count();
+            let count = (rows[at..at + run].iter())
+                .filter(|row| inside(row).is_some())
+                .count();
+            let lines = UiBuilder::new()
+                .id_salt(("history group", group))
+                .accessibility_role(Role::Group);
+            ui.scope_builder(lines, |ui| {
+                ui.ctx()
+                    .accesskit_node_builder(ui.unique_id(), |node| node.set_size_of_set(count));
+                for row in at..at + run {
+                    pass.row(ui, row);
+                }
+            });
+            at += run;
+        }
+    });
+    let Pass {
+        actions, toggled, ..
+    } = pass;
+    if !toggled.is_empty() {
+        for key in toggled {
+            let LineKey::Group(group) = key else { continue };
+            if !open.remove(&group) {
+                open.insert(group);
+            }
+        }
+        ui.ctx().request_repaint();
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+    actions
+}
+
+/// The group of a line inside one.
+fn inside(row: &Drawn<'_>) -> Option<GroupKey> {
+    match row {
+        Drawn::Line(shown) => shown.within,
+        _ => None,
+    }
+}
+
+/// One frame's drawing of the list's rows, and what they asked for.
+struct Pass<'a> {
+    rows: &'a [Drawn<'a>],
+    /// The lines in order, for the keys, and the index of the next one drawn.
+    order: Vec<Shown<'a>>,
+    index: usize,
+    columns: Columns,
+    undone: usize,
+    /// The id the lines' ids are made from.
+    base: egui::Id,
+    editable: bool,
+    /// Whether the end moved, to be scrolled into sight.
+    moved: bool,
+    actions: Vec<Action>,
+    /// The groups to open or close.
+    toggled: Vec<LineKey>,
+}
+
+impl Pass<'_> {
+    /// Draws the row `rows[at]`.
+    fn row(&mut self, ui: &mut egui::Ui, at: usize) {
+        let rows = self.rows;
+        let shown = match &rows[at] {
+            Drawn::Day(day) => return day_row(ui, day, through(rows, at), self.columns),
+            Drawn::Gap => return gap_row(ui, through(rows, at)),
+            Drawn::Undone => return undone_mark(ui, self.undone, self.columns),
+            Drawn::Line(shown) => shown,
+        };
+        let id_of = |key: LineKey| self.base.with(key);
+        let out = line_row(
+            ui,
+            id_of(shown.line.key),
+            shown,
+            self.columns,
+            self.editable,
+        );
+        self.actions.extend(out.action);
+        if out.toggle {
+            self.toggled.push(shown.line.key);
+        }
+        if self.moved && shown.chosen {
+            out.response.scroll_to_me(None);
+        }
+        if out.response.has_focus() {
+            match keyed(ui, &out.response, &self.order, self.index) {
+                Some(Keyed::Focus(to)) => {
+                    let to = id_of(self.order[to].line.key);
+                    ui.memory_mut(|m| m.request_focus(to));
+                }
+                Some(Keyed::Toggle) => self.toggled.push(shown.line.key),
+                None => {}
+            }
+        }
+        self.index += 1;
+    }
+}
+
+/// What a key did on a focused line.
+enum Keyed {
+    /// Move the focus to the line at this index.
+    Focus(usize),
+    /// Open or close the focused group.
+    Toggle,
+}
+
+/// The keys of a tree on the focused line, `order[index]`, its `response`: ↑ and ↓ the
+/// line above and below, Home the first and End the last; → opens a closed group and
+/// goes into an open one, ← closes an open group and goes from a line inside one to its
+/// group's. The arrows kept from egui's own moves of the focus, which might leave the list.
+fn keyed(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    order: &[Shown<'_>],
+    index: usize,
+) -> Option<Keyed> {
+    let filter = egui::EventFilter {
+        horizontal_arrows: true,
+        vertical_arrows: true,
+        ..Default::default()
+    };
+    ui.memory_mut(|m| m.set_focus_lock_filter(response.id, filter));
+    let pressed = |key| ui.input_mut(|i| i.consume_key(Modifiers::NONE, key));
+    let shown = order[index];
+    if pressed(Key::ArrowUp) {
+        return index.checked_sub(1).map(Keyed::Focus);
+    }
+    if pressed(Key::ArrowDown) {
+        return (index + 1 < order.len()).then_some(Keyed::Focus(index + 1));
+    }
+    if pressed(Key::Home) {
+        return Some(Keyed::Focus(0));
+    }
+    if pressed(Key::End) {
+        return Some(Keyed::Focus(order.len() - 1));
+    }
+    if pressed(Key::ArrowRight) {
+        return match shown.open {
+            Some(false) => Some(Keyed::Toggle),
+            Some(true) => (index + 1 < order.len()).then_some(Keyed::Focus(index + 1)),
+            None => None,
+        };
+    }
+    if pressed(Key::ArrowLeft) {
+        if shown.open == Some(true) {
+            return Some(Keyed::Toggle);
+        }
+        let within = shown.within?;
+        let group = order[..index]
+            .iter()
+            .rposition(|line| line.line.key == LineKey::Group(within))?;
+        return Some(Keyed::Focus(group));
+    }
+    None
+}
+
+/// [`listed`], worded once for each history, language and day and kept in egui's memory:
+/// a history of hundreds of steps would otherwise be worded again each frame. A history is
 /// told from another by its `through`, its end, its Default lines and its steps, each
 /// behind the `Arc` the session shares while the step stays as it is.
-fn kept_lines(
+fn kept(
     ctx: &egui::Context,
     history: Option<&History>,
     modules: &[&dyn Module],
     tr: &Translator,
-) -> Arc<Vec<Line>> {
+    today: i32,
+) -> Arc<Listed> {
     let steps = history.map(|h| {
         let shared = h.steps.iter().map(|step| Arc::as_ptr(step) as usize);
         (h.through, h.end, &h.defaults, shared.collect::<Vec<_>>())
     });
     let key = {
         use std::hash::{BuildHasher as _, BuildHasherDefault, DefaultHasher};
-        BuildHasherDefault::<DefaultHasher>::default().hash_one((tr.locale().id(), steps))
+        BuildHasherDefault::<DefaultHasher>::default().hash_one((tr.locale().id(), today, steps))
     };
     // One slot, the latest only.
     let slot = egui::Id::unique("history lines");
-    let kept = ctx.data(|data| data.get_temp::<(u64, Arc<Vec<Line>>)>(slot));
-    if let Some((kept, lines)) = kept
+    let kept = ctx.data(|data| data.get_temp::<(u64, Arc<Listed>)>(slot));
+    if let Some((kept, listed)) = kept
         && kept == key
     {
-        return lines;
+        return listed;
     }
-    let worded = Arc::new(lines(history, modules, tr));
+    let worded = Arc::new(listed(history, modules, tr, today));
     ctx.data_mut(|data| data.insert_temp(slot, (key, Arc::clone(&worded))));
     worded
 }
@@ -462,23 +1128,27 @@ const RAIL: f32 = 4.0;
 const NUMBERS: f32 = 14.0;
 const NAME_GAP: f32 = 8.0;
 
+/// How far a group's name stands after its chevron, and a line inside a group after the
+/// group's: the chevron's width and its gap.
+const CHEVRON: f32 = 13.0;
+
 /// The range the numbers' column is wide enough for by default: two-digit steps, as a
-/// group of them reads, so the names stand where they will once groups come.
+/// batch's line writes them, so the names stay put as a history grows its first groups.
 const DEFAULT_RANGE: (usize, usize) = (12, 16);
 
-/// The numbers' column of a section: as wide as its widest number, the highest step's, or
-/// a two-digit range, whichever is wider, in the caption size; each number centred in it,
-/// and the names after it. One for the whole section, so nothing moves as it scrolls.
+/// The numbers' column of a section: as wide as its widest number, the highest step's or
+/// a batch's range, or a two-digit range, whichever is widest, in the caption size; each
+/// number centred in it, and the names after it. One for the whole section, so nothing
+/// moves as it scrolls or a group opens.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Columns {
     width: f32,
 }
 
 impl Columns {
-    /// The column for `lines`, measured in `ctx`'s caption font.
-    fn of(ctx: &egui::Context, lines: &[Line]) -> Columns {
+    /// The column for `listed`, measured in `ctx`'s caption font.
+    fn of(ctx: &egui::Context, listed: &Listed, tr: &Translator) -> Columns {
         let t = theme(ctx);
-        let tr = translator(ctx);
         let font = FontId::proportional(t.text.caption);
         let width_of = |text: String| {
             ctx.fonts_mut(|fonts| fonts.layout_no_wrap(text, font.clone(), t.colors.text))
@@ -487,11 +1157,17 @@ impl Columns {
         };
         let number = |n: usize| tr.format_number(n as f64, 0, false);
         let (first, last) = DEFAULT_RANGE;
-        let range = format!("{}\u{2013}{}", number(first), number(last));
-        let highest = lines.iter().filter_map(Line::number).max().unwrap_or(0);
-        Columns {
-            width: width_of(range).max(width_of(number(highest))),
-        }
+        let highest = listed.lines().filter_map(Line::number).max().unwrap_or(0);
+        let ranges = (listed.entries.iter()).filter_map(|entry| match entry {
+            Entry::Group { line, .. } => line.numbers(tr),
+            _ => None,
+        });
+        let widest = [range(&number(first), &number(last)), number(highest)]
+            .into_iter()
+            .chain(ranges)
+            .map(width_of)
+            .fold(0.0, f32::max);
+        Columns { width: widest }
     }
 
     /// Where a number `width` wide starts, centred in the column.
@@ -504,6 +1180,74 @@ impl Columns {
         NUMBERS + self.width + NAME_GAP
     }
 }
+
+/// A day's heading, 18 points high: its words in the caption's medium weight and the
+/// secondary text, where the names start, the rail through it as `rail` says. To screen
+/// readers a heading, never focused.
+fn day_row(ui: &mut egui::Ui, day: &str, rail: RailLine, columns: Columns) {
+    let t = theme(ui.ctx());
+    let size = vec2(ui.available_width(), DAY);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let through = Rail {
+            node: RailNode::None,
+            above: rail,
+            below: rail,
+        };
+        let enabled = ui.is_enabled();
+        through.paint(
+            painter,
+            rect,
+            rect.left() + RAIL,
+            t.colors.panel,
+            enabled,
+            &t,
+        );
+        let font = FontId::new(t.text.caption, egui::FontFamily::Name(fonts::MEDIUM.into()));
+        let colour = t.colors.text_secondary;
+        let room = rect.right() - rect.left() - columns.name();
+        if let Some(galley) = cut_at(painter, day, font, colour, room) {
+            // A point under the middle, nearer the steps it heads, as the board sets it.
+            let at = pos2(
+                rect.left() + columns.name(),
+                rect.center().y + 1.0 - galley.size().y / 2.0,
+            );
+            painter.galley(at, galley, colour);
+        }
+    }
+    response.widget_info(|| WidgetInfo::labeled(Role::Heading, ui.is_enabled(), day));
+}
+
+/// A day heading's row, its height.
+const DAY: f32 = 18.0;
+
+/// The space over the Defaults' line, the rail through it as `rail` says.
+fn gap_row(ui: &mut egui::Ui, rail: RailLine) {
+    let t = theme(ui.ctx());
+    // Space alone, no widget, which screen readers would count among the list's.
+    let rect = egui::Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), GAP));
+    ui.add_space(GAP);
+    if ui.is_rect_visible(rect) {
+        let through = Rail {
+            node: RailNode::None,
+            above: rail,
+            below: rail,
+        };
+        let enabled = ui.is_enabled();
+        through.paint(
+            ui.painter(),
+            rect,
+            rect.left() + RAIL,
+            t.colors.panel,
+            enabled,
+            &t,
+        );
+    }
+}
+
+/// The gap's height.
+const GAP: f32 = 4.0;
 
 /// The mark under the undone steps, `count` of them: "↑ 2 undone · your next edit
 /// replaces them" in the caption's secondary text, cut at the row's end with its whole
@@ -564,27 +1308,61 @@ fn undone_mark(ui: &mut egui::Ui, count: usize, columns: Columns) {
 /// The undone mark's row, its height.
 const UNDONE_MARK: f32 = 20.0;
 
-/// One line, `sizes.panel_line` high, as the board draws it: its piece of the rail, its
-/// number centred in the section's numbers' column, the name, then what changed in the small text,
-/// cut at its end where there is no room, and the tag at the row's end; the end's on
-/// `list_chosen`, an undone step's in `text_secondary`. Returns what a click, or Enter,
-/// asked for.
-fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) -> Option<Action> {
+/// What a line's click asked for.
+struct Clicked {
+    response: egui::Response,
+    action: Option<Action>,
+    /// A group's chevron was clicked: open or close it.
+    toggle: bool,
+}
+
+/// One line, `sizes.panel_line` high, as the board draws it, its widget `id`: its piece
+/// of the rail, its number, or a batch's range, centred in the section's numbers' column,
+/// a group's chevron, the name, a group's in the medium weight and a line inside a group
+/// indented under it, then what changed in the small text, cut at its end where there is
+/// no room, and the tag at the row's end; the end's on `list_chosen`, an undone step's in
+/// `text_secondary`. Returns what a click, or Enter, asked for.
+fn line_row(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    shown: &Shown<'_>,
+    columns: Columns,
+    editable: bool,
+) -> Clicked {
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
-    let size = vec2(ui.available_width(), t.sizes.panel_line);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let line = shown.line;
+    let rect = egui::Rect::from_min_size(
+        ui.cursor().min,
+        vec2(ui.available_width(), t.sizes.panel_line),
+    );
+    let response = ui.interact(rect, id, Sense::click());
+    ui.advance_cursor_after_rect(rect);
     // A line the keys reach is scrolled into sight.
     if response.gained_focus() {
         response.scroll_to_me(None);
     }
-    let (chosen, greyed) = (line.end(), line.greyed());
+    let (chosen, greyed) = (shown.chosen, line.greyed());
+    let start = rect.left()
+        + columns.name()
+        + if shown.open.is_some() || shown.level > 0 {
+            CHEVRON
+        } else {
+            0.0
+        };
+    let chevron = shown.open.map(|_| {
+        egui::Rect::from_min_max(
+            pos2(rect.left() + columns.name() - 2.0, rect.top()),
+            pos2(start, rect.bottom()),
+        )
+    });
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let band = rect.expand2(vec2(t.spacing.xs, 0.0));
+        let hovered = response.hovered() && line.takes(editable);
         let ground = if chosen {
             t.colors.list_chosen
-        } else if response.hovered() && line.takes(editable) {
+        } else if hovered {
             t.colors.hover
         } else {
             t.colors.panel
@@ -593,11 +1371,12 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
             painter.rect_filled(band, t.shape.radius, ground);
         }
         let enabled = ui.is_enabled();
-        line.rail
+        shown
+            .rail
             .paint(painter, rect, rect.left() + RAIL, ground, enabled, &t);
         // The end in the strong text, its change and number in the text; an undone step
         // all in the secondary text, which still reads as a line that takes a click.
-        let (ink, quiet, number) = if !ui.is_enabled() {
+        let (ink, quiet, number) = if !enabled {
             let off = t.colors.text_disabled;
             (off, off, off)
         } else if chosen {
@@ -616,11 +1395,32 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
         let middle = rect.center().y;
         let centred =
             |galley: &std::sync::Arc<egui::Galley>, x: f32| pos2(x, middle - galley.size().y / 2.0);
-        if let Some(n) = line.number() {
-            let n = words.format_number(n as f64, 0, false);
+        if let Some(n) = line.numbers(&words) {
             let galley = painter.layout_no_wrap(n, caption.clone(), number);
             let at = centred(&galley, rect.left() + columns.number_at(galley.size().x));
             painter.galley(at, galley, number);
+        }
+        // A group's chevron where the names start, in the line's ink while it is chosen
+        // or under the pointer, else the secondary text.
+        if let Some(open) = shown.open {
+            let icon = if open {
+                Icon::ChevronDown
+            } else {
+                Icon::Chevron
+            };
+            let colour = if !enabled {
+                t.colors.text_disabled
+            } else if chosen || hovered {
+                ink
+            } else {
+                t.colors.text_secondary
+            };
+            let at = pos2(rect.left() + columns.name() - 1.0, middle - 5.0);
+            icon.paint(
+                painter,
+                egui::Rect::from_min_size(at, vec2(10.0, 10.0)),
+                colour,
+            );
         }
         let mut end = rect.right();
         if let Some(tag) = &line.tag {
@@ -634,8 +1434,11 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
             painter.galley(centred(&galley, end), galley, tagged);
             end -= t.spacing.s;
         }
-        let start = rect.left() + columns.name();
-        let body = FontId::proportional(t.text.body);
+        let body = if line.group() {
+            FontId::new(t.text.body, egui::FontFamily::Name(fonts::MEDIUM.into()))
+        } else {
+            FontId::proportional(t.text.body)
+        };
         let small = FontId::proportional(t.text.small);
         // The name first, but a name cut leaves part of what changed in sight.
         let width_of = |text: &str, font: &FontId| {
@@ -663,27 +1466,21 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
     }
     // Worded only when asked, by screen readers: a long history has many lines.
     let enabled = ui.is_enabled();
-    response.widget_info(|| {
-        let name = match (line.place, &line.heard) {
-            (Place::Step { number, .. }, change) => {
-                let mut args = Args::new();
-                args.set("number", number);
-                args.set("name", line.name.as_str());
-                let id = match change {
-                    Some(change) => {
-                        args.set("change", change.as_str());
-                        "history-step-name-change"
-                    }
-                    None => "history-step-name",
-                };
-                words.text_with(id, Some(&args))
-            }
-            (Place::Default { .. } | Place::Original { .. }, _) => line.name.clone(),
-        };
-        WidgetInfo::labeled(Role::ListItem, enabled, name)
-    });
+    response.widget_info(|| WidgetInfo::labeled(Role::TreeItem, enabled, said(line, &words)));
     ui.ctx().accesskit_node_builder(response.id, |node| {
         node.set_selected(chosen);
+        node.set_level(shown.level);
+        node.set_position_in_set(shown.position);
+        // A group's line opens and closes by its own actions; its click goes to its last
+        // step, as a pointer's click on the line does.
+        if let Some(open) = shown.open {
+            node.set_expanded(open);
+            node.add_action(if open {
+                egui::accesskit::Action::Collapse
+            } else {
+                egui::accesskit::Action::Expand
+            });
+        }
         // A later step's description says first that it does not apply.
         node.set_description(if greyed {
             format!(
@@ -696,18 +1493,63 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
         });
     });
     let response = response.on_hover_ui(|ui| tip_ui(ui, &line.tip));
+    // A screen reader's Expand on a closed group, or Collapse on an open one.
+    let disclosed = shown.open.is_some_and(|open| {
+        let asked = if open {
+            egui::accesskit::Action::Collapse
+        } else {
+            egui::accesskit::Action::Expand
+        };
+        ui.input(|i| i.has_accesskit_action_request(response.id, asked))
+    });
+    let mut clicked = Clicked {
+        action: None,
+        toggle: disclosed,
+        response: response.clone(),
+    };
     if !response.clicked() {
-        return None;
+        return clicked;
     }
-    let shift = shift_clicked(ui);
+    // The chevron, under the pointer, opens or closes the group; a key's click goes to it.
+    let on_chevron = (response.interact_pointer_pos())
+        .is_some_and(|at| chevron.is_some_and(|chevron| chevron.contains(at)));
+    if on_chevron {
+        clicked.toggle = true;
+    } else {
+        clicked.action = line.clicked(shift_clicked(ui), editable);
+    }
+    clicked
+}
+
+/// A line's name as screen readers hear it: a step's number, name and what changed, its
+/// values before and after; a batch's numbers, name and modules; the Defaults' name and
+/// how many; a Default line's and Original's name.
+fn said(line: &Line, words: &Translator) -> String {
+    let mut args = Args::new();
+    args.set("name", line.name.as_str());
     match line.place {
-        Place::Step { .. } | Place::Default { .. } if shift => line.module.map(Action::Open),
-        Place::Original { .. } if shift => None,
-        // The end where it is changes nothing, as darktable's click on its active item.
-        _ if line.there() || !editable => None,
-        Place::Step { id, .. } => Some(Action::GoTo(Some(id))),
-        // A Default line is Original: the modules every photo runs always run.
-        Place::Default { .. } | Place::Original { .. } => Some(Action::GoTo(None)),
+        Place::Step { number, .. } => {
+            args.set("number", number);
+            let id = match &line.heard {
+                Some(change) => {
+                    args.set("change", change.as_str());
+                    "history-step-name-change"
+                }
+                None => "history-step-name",
+            };
+            words.text_with(id, Some(&args))
+        }
+        Place::Batch { first, last, .. } => {
+            args.set("first", first);
+            args.set("last", last);
+            args.set("modules", line.change.clone().unwrap_or_default());
+            words.text_with("history-group-name", Some(&args))
+        }
+        Place::Defaults { .. } => {
+            args.set("change", line.change.clone().unwrap_or_default());
+            words.text_with("history-line-name", Some(&args))
+        }
+        Place::Default { .. } | Place::Original { .. } => line.name.clone(),
     }
 }
 
@@ -1253,7 +2095,6 @@ pub(crate) mod tests {
 
     use apertrust_engine::history::{Clock, MachineId};
     use apertrust_engine::session::{BatchId, ModuleChange, StepId, StepSource};
-    use apertrust_ui::components::PanelBody;
     use apertrust_ui::{Builtin, Locale, Theme};
     use egui::accesskit::Role as AccessRole;
     use egui_kittest::Harness;
@@ -1530,12 +2371,23 @@ pub(crate) mod tests {
         }
     }
 
-    fn lines_in(history: Option<&History>, locale: Locale) -> Vec<Line> {
-        lines(
+    /// The local calendar's day of [`wireframe_s_time`], today as the tests have it.
+    fn today() -> i32 {
+        local_day(wireframe_s_time()).expect("a day the local clock has")
+    }
+
+    fn listed_in(history: Option<&History>, locale: Locale) -> Listed {
+        listed(
             history,
             apertrust_modules::MODULES,
             &Translator::new(locale),
+            today(),
         )
+    }
+
+    /// Every line, a group's and those it holds, open or closed.
+    fn lines_in(history: Option<&History>, locale: Locale) -> Vec<Line> {
+        listed_in(history, locale).lines().cloned().collect()
     }
 
     #[test]
@@ -1555,7 +2407,9 @@ pub(crate) mod tests {
                 (Some(3), "Exposure", Some("Auto")),
                 (Some(2), "Grain", None),
                 (Some(1), "Exposure", None),
-                // The Default lines, the first darktable adds just over Original.
+                // The Defaults' line, then the Default lines it holds, the first darktable
+                // adds just over Original.
+                (None, "Defaults", None),
                 (None, "AgX", None),
                 (None, "Tone curve", None),
                 (None, "Colour calibration", None),
@@ -1586,20 +2440,26 @@ pub(crate) mod tests {
             ]
         );
         assert!(state[5..].iter().all(|s| *s == (false, false)));
-        // Each opens its first module the app knows; Original none.
+        // Each opens its first module the app knows; the Defaults' line and Original none.
         assert_eq!(lines[2].module, Some("exposure"));
         assert_eq!(lines[3].module, Some("grain"));
-        assert_eq!(lines[5].module, Some("agx"));
-        assert_eq!(lines[15].module, None);
-        // At end 0 every step is greyed, the Default lines and Original none, and the top
-        // Default line alone is chosen: the boundary between what is undone and what
-        // always applies.
+        assert_eq!(lines[5].module, None);
+        assert_eq!(lines[6].module, Some("agx"));
+        assert_eq!(lines[16].module, None);
+        // The Defaults' line says how many modules every photo runs.
+        assert_eq!(
+            lines[5].change.as_deref(),
+            Some("10 modules every photo runs")
+        );
+        // At end 0 every step is greyed, the Default lines and Original none, and the
+        // Defaults' line is chosen while closed, the top Default line while it is open: the
+        // boundary between what is undone and what always applies.
         let lines = lines_in(Some(&photo_s(0)), Locale::EnGb);
         let chosen: Vec<&str> = (lines.iter())
             .filter(|line| line.end())
             .map(|line| line.name.as_str())
             .collect();
-        assert_eq!(chosen, ["AgX"]);
+        assert_eq!(chosen, ["Defaults", "AgX"]);
         assert!(lines[..5].iter().all(Line::greyed));
         assert!(!lines[5..].iter().any(Line::greyed));
         // With no Default line, Original is.
@@ -1612,6 +2472,7 @@ pub(crate) mod tests {
         // No history: Original alone.
         let alone = lines_in(None, Locale::EnGb);
         assert_eq!(alone.len(), 1);
+        assert_eq!(listed_in(None, Locale::EnGb).entries.len(), 1);
         assert_eq!(
             alone[0].place,
             Place::Original {
@@ -1857,10 +2718,16 @@ pub(crate) mod tests {
                     let mut actions = Vec::new();
                     ui.scope_builder(UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
-                        PanelBody::new().show(ui, |ui| {
-                            actions =
-                                section(ui, history, modules, true, false, editable, resettable);
-                        });
+                        actions = tab(
+                            ui,
+                            history,
+                            modules,
+                            true,
+                            false,
+                            editable,
+                            resettable,
+                            today(),
+                        );
                     });
                     scene.actions.extend(actions);
                 },
@@ -1888,9 +2755,26 @@ pub(crate) mod tests {
             let label = node.accesskit_node().label().unwrap_or_default();
             label == name || label.starts_with(&format!("{name}, "))
         };
-        (harness.query_all_by_role(AccessRole::ListItem))
+        (harness.query_all_by_role(AccessRole::TreeItem))
             .find(named)
             .unwrap_or_else(|| panic!("no line {name}"))
+    }
+
+    /// Whether a line named `name` is shown.
+    fn shows(harness: &Harness<'_, Scene>, name: &str) -> bool {
+        (harness.query_all_by_role(AccessRole::TreeItem)).any(|node| {
+            let label = node.accesskit_node().label().unwrap_or_default();
+            label == name || label.starts_with(&format!("{name}, "))
+        })
+    }
+
+    /// Opens or closes the group named `name` with a click on its chevron.
+    fn chevron(harness: &mut Harness<'_, Scene>, name: &str) {
+        let line = item(harness, name).rect();
+        let at = pos2(line.left() + 56.0, line.center().y);
+        harness.drag_at(at);
+        harness.drop_at(at);
+        harness.run();
     }
 
     #[test]
@@ -1915,6 +2799,10 @@ pub(crate) mod tests {
             ]
         );
         harness.state_mut().actions.clear();
+        // The Default lines are inside the Defaults' group, closed at first.
+        assert!(!shows(&harness, "Raw black/white point"));
+        chevron(&mut harness, "Defaults");
+        assert!(harness.state().actions.is_empty());
         // Shift-click opens the module, of a step, the end's too, and of a Default line;
         // Original has none.
         let shift_click = |harness: &mut Harness<'_, Scene>, name: &str| {
@@ -1976,14 +2864,16 @@ pub(crate) mod tests {
     fn at_end_0_a_click_below_the_steps_goes_nowhere() {
         let mut harness = photo_scene(0);
         harness.run();
-        assert_eq!(
-            item(&harness, "AgX").accesskit_node().is_selected(),
-            Some(true)
-        );
-        assert_eq!(
-            item(&harness, "Original").accesskit_node().is_selected(),
-            Some(false)
-        );
+        // The Defaults' line chosen while it is closed, the top Default line while open.
+        let selected =
+            |harness: &Harness<'_, Scene>, name| item(harness, name).accesskit_node().is_selected();
+        assert_eq!(selected(&harness, "Defaults"), Some(true));
+        assert_eq!(selected(&harness, "Original"), Some(false));
+        item(&harness, "Defaults").click();
+        harness.run();
+        chevron(&mut harness, "Defaults");
+        assert_eq!(selected(&harness, "Defaults"), Some(false));
+        assert_eq!(selected(&harness, "AgX"), Some(true));
         for name in ["AgX", "Demosaic", "Original"] {
             item(&harness, name).click();
             harness.run();
@@ -2048,15 +2938,60 @@ pub(crate) mod tests {
         harness.key_press(egui::Key::Enter);
         harness.run();
         assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xa4)))]);
+        // Home the newest line, End Original, and neither leaves the list.
+        let focused = |harness: &Harness<'_, Scene>, name| item(harness, name).is_focused();
+        harness.key_press(egui::Key::End);
+        harness.run();
+        assert!(focused(&harness, "Original"));
+        harness.key_press(egui::Key::ArrowDown);
+        harness.run();
+        assert!(focused(&harness, "Original"));
+        harness.key_press(egui::Key::Home);
+        harness.run();
+        assert!(focused(&harness, "Step 5: Exposure"));
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+        assert!(focused(&harness, "Step 5: Exposure"));
+        // → opens the Defaults, and goes into them open; ← goes back to their line and
+        // closes them.
+        harness.key_press(egui::Key::End);
+        harness.run();
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+        assert!(focused(&harness, "Defaults"));
+        harness.key_press(egui::Key::ArrowRight);
+        harness.run();
+        assert!(shows(&harness, "AgX"));
+        assert!(focused(&harness, "Defaults"));
+        harness.key_press(egui::Key::ArrowRight);
+        harness.run();
+        assert!(focused(&harness, "AgX"));
+        harness.key_press(egui::Key::ArrowDown);
+        harness.run();
+        assert!(focused(&harness, "Tone curve"));
+        // Shift+Enter opens the line's module.
+        harness.state_mut().actions.clear();
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::Open("tone_curve")]);
+        harness.key_press(egui::Key::ArrowLeft);
+        harness.run();
+        assert!(focused(&harness, "Defaults"));
+        harness.key_press(egui::Key::ArrowLeft);
+        harness.run();
+        assert!(!shows(&harness, "AgX"));
+        assert!(focused(&harness, "Defaults"));
     }
 
     #[test]
     fn screen_readers_hear_each_line_s_name_tooltip_and_the_end() {
         let mut harness = photo_scene(3);
         harness.run();
-        let list = harness.get_by_role_and_label(AccessRole::List, "History");
-        // Sixteen lines, and the undone mark under the two undone steps.
-        assert_eq!(list.children().count(), 17);
+        let list = harness.get_by_role_and_label(AccessRole::Tree, "History");
+        // Today's heading, the five steps, the undone mark under the two undone, the
+        // Defaults' line and Original.
+        assert_eq!(list.children().count(), 9);
+        harness.get_by_role_and_label(AccessRole::Heading, "Today");
         let end = item(&harness, "Step 3: Exposure");
         assert_eq!(end.accesskit_node().is_selected(), Some(true));
         let first = item(&harness, "Step 1: Exposure");
@@ -2069,7 +3004,19 @@ pub(crate) mod tests {
         let later = item(&harness, "Step 5: Exposure");
         let said = later.accesskit_node().description().unwrap_or_default();
         assert!(said.starts_with("Not applied\n"), "{said}");
+        // The Defaults' line: a top item, level 0, expanded or not, its lines a level down.
+        let defaults = item(&harness, "Defaults, 10 modules every photo runs");
+        assert_eq!(defaults.accesskit_node().level(), Some(0));
+        assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(false));
+        assert_eq!(
+            defaults.accesskit_node().description().as_deref(),
+            Some("Default")
+        );
+        chevron(&mut harness, "Defaults");
+        let defaults = item(&harness, "Defaults");
+        assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(true));
         let default = item(&harness, "Exposure");
+        assert_eq!(default.accesskit_node().level(), Some(1));
         assert_eq!(
             default.accesskit_node().description().as_deref(),
             Some("Default")
@@ -2088,41 +3035,48 @@ pub(crate) mod tests {
         assert!(harness.state().actions.is_empty());
         assert_eq!(
             harness
-                .get_by_role_and_label(AccessRole::List, "History")
+                .get_by_role_and_label(AccessRole::Tree, "History")
                 .children()
                 .count(),
             1
         );
     }
 
-    /// The lines are worded once for a history and a language, and again when either
-    /// changes: the end moved, a step described anew, another language.
+    /// The lines are worded once for a history, a language and a day, and again when any
+    /// changes: the end moved, a step described anew, another language, another day.
     #[test]
-    fn the_lines_are_worded_once_for_each_history_and_language() {
+    fn the_lines_are_worded_once_for_each_history_language_and_day() {
         let ctx = egui::Context::default();
         let modules = apertrust_modules::MODULES;
         let (en, uk) = (Translator::new(Locale::EnGb), Translator::new(Locale::Uk));
         let history = photo_s(3);
-        let kept = kept_lines(&ctx, Some(&history), modules, &en);
-        assert!(Arc::ptr_eq(
-            &kept,
-            &kept_lines(&ctx, Some(&history), modules, &en)
-        ));
+        let kept_now =
+            |history: &History, tr: &Translator| kept(&ctx, Some(history), modules, tr, today());
+        let first = kept_now(&history, &en);
+        assert!(Arc::ptr_eq(&first, &kept_now(&history, &en)));
         let moved = History {
             end: 2,
             ..history.clone()
         };
-        let again = kept_lines(&ctx, Some(&moved), modules, &en);
-        assert!(!Arc::ptr_eq(&kept, &again));
-        assert!(again[3].end());
+        let again = kept_now(&moved, &en);
+        assert!(!Arc::ptr_eq(&first, &again));
+        assert!(again.lines().nth(3).is_some_and(Line::end));
         let mut anew = moved.clone();
         anew.steps[0] = Arc::new((*anew.steps[0]).clone());
-        assert!(!Arc::ptr_eq(
-            &again,
-            &kept_lines(&ctx, Some(&anew), modules, &en)
-        ));
-        let ukrainian = kept_lines(&ctx, Some(&anew), modules, &uk);
-        assert_eq!(ukrainian[4].name, "Експозиція");
+        let described = kept_now(&anew, &en);
+        assert!(!Arc::ptr_eq(&again, &described));
+        let ukrainian = kept_now(&anew, &uk);
+        assert_eq!(
+            ukrainian.lines().nth(4).map(|line| line.name.as_str()),
+            Some("Експозиція")
+        );
+        // The next day, its heading says Yesterday.
+        let tomorrow = kept(&ctx, Some(&anew), modules, &uk, today() + 1);
+        assert!(!Arc::ptr_eq(&ukrainian, &tomorrow));
+        assert_eq!(
+            tomorrow.entries.first(),
+            Some(&Entry::Day("Учора, 21 жовтня".to_owned()))
+        );
     }
 
     /// The section as the board draws it: each line saying what changed, the rail, the
@@ -2167,9 +3121,29 @@ pub(crate) mod tests {
                 end: count,
                 ..base.clone()
             };
-            lines_in(Some(&history), Locale::EnGb)
+            listed_in(Some(&history), Locale::EnGb)
         };
-        let lines = [with(9), with(99), with(150), with(12_345)];
+        // 104 steps, the last four a batch: its range, 101–104, is the widest.
+        let batched_at = |count: usize| {
+            // The steps cycled, as `with` does, with ids of their own.
+            let steps: Vec<Arc<HistoryStep>> = (0..count)
+                .map(|i| {
+                    let step = &base.steps[i % base.steps.len()];
+                    Arc::new(HistoryStep {
+                        id: StepId(0x100 + i as u64),
+                        batch: (i + 4 >= count).then_some(BatchId(0xb9)),
+                        ..(**step).clone()
+                    })
+                })
+                .collect();
+            let history = History {
+                steps,
+                end: count,
+                ..base.clone()
+            };
+            listed_in(Some(&history), Locale::EnGb)
+        };
+        let lines = [with(9), with(99), with(150), with(12_345), batched_at(104)];
         let mut harness = Harness::builder()
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
             .build_ui_state(
@@ -2187,9 +3161,10 @@ pub(crate) mod tests {
                         );
                         galley.size().x
                     };
-                    for lines in &lines {
-                        let columns = Columns::of(ui.ctx(), lines);
-                        let widths = ["9", "99", "150", "12345", "12\u{2013}16"]
+                    let tr = Translator::new(Locale::EnGb);
+                    for listed in &lines {
+                        let columns = Columns::of(ui.ctx(), listed, &tr);
+                        let widths = ["9", "99", "150", "12345", "12\u{2013}16", "101\u{2013}104"]
                             .map(width_of)
                             .to_vec();
                         measured.push((columns, widths));
@@ -2208,6 +3183,9 @@ pub(crate) mod tests {
         let wide = measured[3].0;
         assert_eq!(wide.width, widths[3]);
         assert!(wide.name() - default.name() == wide.width - default.width);
+        // A batch's range wider than the default widens it too.
+        assert!(widths[5] > widths[4]);
+        assert_eq!(measured[4].0.width, widths[5]);
         for (columns, widths) in [(default, &widths[..3]), (wide, &widths[..4])] {
             let centre = NUMBERS + columns.width / 2.0;
             for &width in widths {
@@ -2365,19 +3343,22 @@ pub(crate) mod tests {
             shown("gamma ↑")
         );
         let lines = lines_in(Some(&photo_s(3)), Locale::EnGb);
-        assert!((lines.iter()).all(|line| line.number().is_some() || line.change.is_none()));
+        assert!(
+            (lines.iter())
+                .all(|line| line.number().is_some() || line.group() || line.change.is_none())
+        );
         // Screen readers: the values before and after in the step's name.
         let mut harness = photo_scene(3);
         harness.run();
         harness.get_by_role_and_label(
-            AccessRole::ListItem,
+            AccessRole::TreeItem,
             "Step 1: Exposure, +0.700 EV to +1.200 EV",
         );
         harness.get_by_role_and_label(
-            AccessRole::ListItem,
+            AccessRole::TreeItem,
             "Step 2: Grain, Strength, 25.00% to 30.00%",
         );
-        harness.get_by_role_and_label(AccessRole::ListItem, "Step 4: Reset");
+        harness.get_by_role_and_label(AccessRole::TreeItem, "Step 4: Reset");
     }
 
     /// The rail as the board draws it: a dot a step, the end a larger dot, Reset its glyph,
@@ -2385,8 +3366,17 @@ pub(crate) mod tests {
     /// language, under the last undone step.
     #[test]
     fn the_rail_and_the_undone_mark_show_where_the_edit_stands() {
-        let lines = lines_in(Some(&photo_s(3)), Locale::EnGb);
-        let nodes: Vec<RailNode> = lines.iter().take(6).map(|line| line.rail.node).collect();
+        let listed = listed_in(Some(&photo_s(3)), Locale::EnGb);
+        let closed = HashSet::new();
+        let rows = drawn(&listed, &closed);
+        let rails: Vec<Rail> = (rows.iter())
+            .filter_map(|row| match row {
+                Drawn::Line(shown) => Some(shown.rail),
+                _ => None,
+            })
+            .collect();
+        let nodes: Vec<RailNode> = rails.iter().map(|rail| rail.node).collect();
+        let group = |end, undone| RailNode::Group { end, undone };
         assert_eq!(
             nodes,
             [
@@ -2395,24 +3385,41 @@ pub(crate) mod tests {
                 RailNode::End,
                 RailNode::Step,
                 RailNode::Step,
+                group(false, false),
                 RailNode::Step,
             ]
         );
         assert_eq!(
-            (lines[0].rail.above, lines[0].rail.below),
+            (rails[0].above, rails[0].below),
             (RailLine::None, RailLine::Dashed)
         );
-        assert_eq!(lines[2].rail.above, RailLine::Dashed);
-        assert_eq!(lines[2].rail.below, RailLine::Solid);
-        assert_eq!(
-            lines.last().map(|line| line.rail.below),
-            Some(RailLine::None)
-        );
-        assert_eq!(undone(&lines), Some((2, 1)));
-        // At end 0 the top Default line is the end, and every step undone.
-        let at_0 = lines_in(Some(&photo_s(0)), Locale::EnGb);
-        assert_eq!(at_0[5].rail.node, RailNode::End);
-        assert_eq!(undone(&at_0), Some((5, 4)));
+        assert_eq!(rails[2].above, RailLine::Dashed);
+        assert_eq!(rails[2].below, RailLine::Solid);
+        assert_eq!(rails.last().map(|rail| rail.below), Some(RailLine::None));
+        // Today's heading first, no rail over it; the mark under the second line, the
+        // last undone; the gap over the Defaults, the rail solid through it.
+        assert!(matches!(rows[0], Drawn::Day("Today")));
+        assert_eq!(through(&rows, 0), RailLine::None);
+        assert!(matches!(rows[3], Drawn::Undone));
+        assert_eq!(listed.undone, 2);
+        let gap = (rows.iter().position(|row| matches!(row, Drawn::Gap))).expect("the gap");
+        assert_eq!(through(&rows, gap), RailLine::Solid);
+        // At end 0 the Defaults' line is the end while closed, the top Default line while
+        // open, and every step undone.
+        let at_0 = listed_in(Some(&photo_s(0)), Locale::EnGb);
+        let node_of = |open: &HashSet<GroupKey>, name: &str| {
+            (drawn(&at_0, open).into_iter())
+                .find_map(|row| match row {
+                    Drawn::Line(shown) if shown.line.name == name => Some(shown.rail.node),
+                    _ => None,
+                })
+                .expect(name)
+        };
+        assert_eq!(node_of(&closed, "Defaults"), group(true, false));
+        let defaults = HashSet::from([GroupKey::Defaults]);
+        assert_eq!(node_of(&defaults, "Defaults"), group(false, false));
+        assert_eq!(node_of(&defaults, "AgX"), RailNode::End);
+        assert_eq!(at_0.undone, 5);
         let mut harness = photo_scene(3);
         harness.run();
         // To screen readers a note, its words with no arrow or dot.
@@ -2437,5 +3444,497 @@ pub(crate) mod tests {
             words(Locale::Pl, 5),
             "↑ 5 cofniętych · następna edycja je zastąpi"
         );
+    }
+
+    /// A day in milliseconds.
+    const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+
+    /// A step of `source` with `note` made `days` before [`wireframe_s_time`], its
+    /// `changes` each a module's, in `batch` where there is one.
+    fn dated(
+        id: u64,
+        days: u64,
+        batch: Option<u64>,
+        source: StepSource,
+        note: Option<Note>,
+        changes: Vec<ModuleChange>,
+    ) -> Arc<HistoryStep> {
+        Arc::new(HistoryStep {
+            id: StepId(id),
+            clock: Clock::at(wireframe_s_time() - days * DAY_MS, None, MachineId::UNKNOWN),
+            source,
+            note,
+            batch: batch.map(BatchId),
+            changes,
+        })
+    }
+
+    /// A photo's history over two days, the end at `end`: yesterday Exposure and Grain;
+    /// today a style, Warm film, on Colour balance RGB, Grain and Vignetting, one batch,
+    /// steps 3 to 5, then Exposure again.
+    fn styled(end: usize) -> History {
+        let one = |module, control, before, after| {
+            vec![change_of(module, vec![number(control, before, after)])]
+        };
+        let warm = || Some(Note::Text("Warm film".to_owned()));
+        let steps = vec![
+            dated(
+                0xc1,
+                1,
+                None,
+                StepSource::You,
+                None,
+                one("exposure", "exposure", 0.0, 0.7),
+            ),
+            dated(
+                0xc2,
+                1,
+                None,
+                StepSource::You,
+                None,
+                one("grain", "strength", 25.0, 12.0),
+            ),
+            dated(
+                0xc3,
+                0,
+                Some(0xb1),
+                StepSource::Style,
+                warm(),
+                vec![change_of(
+                    "colorbalancergb",
+                    vec![number("vibrance", 0.0, 0.2), number("contrast", 0.0, 0.1)],
+                )],
+            ),
+            dated(
+                0xc4,
+                0,
+                Some(0xb1),
+                StepSource::Style,
+                warm(),
+                one("grain", "strength", 12.0, 30.0),
+            ),
+            dated(
+                0xc5,
+                0,
+                Some(0xb1),
+                StepSource::Style,
+                warm(),
+                one("vignette", "brightness", 0.0, -0.2),
+            ),
+            dated(
+                0xc6,
+                0,
+                None,
+                StepSource::You,
+                None,
+                one("exposure", "exposure", 0.7, 0.9),
+            ),
+        ];
+        History {
+            through: 9,
+            steps,
+            end,
+            defaults: apertrust_engine::history::default_lines(
+                apertrust_modules::MODULES,
+                apertrust_operations::OPERATIONS,
+            ),
+            undo: None,
+            redo: None,
+        }
+    }
+
+    fn styled_scene(end: usize) -> Harness<'static, Scene> {
+        scene(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(640.0, 480.0),
+            Some(styled(end)),
+        )
+    }
+
+    /// A batch is one closed line: its note, its numbers as a range, its modules' titles,
+    /// its source, a square on the rail, and its steps inside it, a level down.
+    #[test]
+    fn a_batch_is_one_closed_group_of_its_steps() {
+        let listed = listed_in(Some(&styled(6)), Locale::EnGb);
+        let tr = Translator::new(Locale::EnGb);
+        let group = (listed.entries.iter())
+            .find_map(|entry| match entry {
+                Entry::Group {
+                    key: GroupKey::Batch(_),
+                    line,
+                    lines,
+                    holds_end,
+                    ..
+                } => Some((line, lines, *holds_end)),
+                _ => None,
+            })
+            .expect("the style's group");
+        let (line, lines, holds_end) = group;
+        assert_eq!(line.name, "Warm film");
+        assert_eq!(line.numbers(&tr).as_deref(), Some("3\u{2013}5"));
+        assert_eq!(
+            line.change.as_deref(),
+            Some("Colour balance RGB, Grain, Vignetting")
+        );
+        assert_eq!(line.tag.as_deref(), Some("Style"));
+        assert_eq!(
+            line.node,
+            RailNode::Group {
+                end: false,
+                undone: false
+            }
+        );
+        assert!(!holds_end);
+        let numbers: Vec<Option<usize>> = lines.iter().map(Line::number).collect();
+        assert_eq!(numbers, [Some(5), Some(4), Some(3)]);
+        // Its tooltip: each step's rows under its module's title, then the note, who and
+        // when.
+        let Tip::Changes { modules, by } = &line.tip else {
+            panic!("a group's tooltip has its changes")
+        };
+        let headings: Vec<Option<&str>> = (modules.iter())
+            .map(|changed| changed.heading.as_deref())
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                Some("Colour balance RGB"),
+                Some("Grain"),
+                Some("Vignetting")
+            ]
+        );
+        assert_eq!(by[..2], ["Warm film".to_owned(), "Style".to_owned()]);
+        // A batch without a note: how many modules, in each language.
+        let plain = History {
+            steps: (styled(6).steps.into_iter())
+                .map(|step| {
+                    Arc::new(HistoryStep {
+                        note: None,
+                        ..(*step).clone()
+                    })
+                })
+                .collect(),
+            ..styled(6)
+        };
+        let named = |locale| {
+            let listed = listed_in(Some(&plain), locale);
+            (listed.lines())
+                .find(|line| matches!(line.place, Place::Batch { .. }))
+                .map(|line| line.name.clone())
+        };
+        assert_eq!(named(Locale::EnGb).as_deref(), Some("3 modules"));
+        assert_eq!(named(Locale::Uk).as_deref(), Some("3 модулі"));
+        assert_eq!(named(Locale::Pl).as_deref(), Some("3 moduły"));
+        let mut harness = styled_scene(6);
+        harness.run();
+        let header = item(&harness, "Steps 3 to 5: Warm film");
+        assert_eq!(header.accesskit_node().level(), Some(0));
+        assert!(!shows(&harness, "Step 4: Grain"));
+    }
+
+    /// A click on a batch's line goes to its last step, as Undo moves it whole; its
+    /// chevron, or →, opens it, its steps under it, and the end inside it shows there.
+    #[test]
+    fn a_group_opens_on_its_chevron_and_a_click_goes_to_its_last_step() {
+        let mut harness = styled_scene(2);
+        harness.run();
+        item(&harness, "Steps 3 to 5: Warm film").click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xc5)))]);
+        harness.state_mut().actions.clear();
+        chevron(&mut harness, "Steps 3 to 5: Warm film");
+        assert!(harness.state().actions.is_empty());
+        let inside = item(&harness, "Step 4: Grain");
+        assert_eq!(inside.accesskit_node().level(), Some(1));
+        let header = item(&harness, "Steps 3 to 5: Warm film");
+        assert_eq!(header.accesskit_node().data().is_expanded(), Some(true));
+        // A step inside goes to itself; ← on it goes to its group's line, ← there closes it.
+        item(&harness, "Step 4: Grain").click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xc4)))]);
+        item(&harness, "Step 4: Grain").focus();
+        harness.run();
+        harness.key_press(egui::Key::ArrowLeft);
+        harness.run();
+        assert!(item(&harness, "Steps 3 to 5: Warm film").is_focused());
+        harness.key_press(egui::Key::ArrowLeft);
+        harness.run();
+        assert!(!shows(&harness, "Step 4: Grain"));
+        // At its last step, the closed line is the end, chosen.
+        let mut harness = styled_scene(5);
+        harness.run();
+        let header = item(&harness, "Steps 3 to 5: Warm film");
+        assert_eq!(header.accesskit_node().is_selected(), Some(true));
+        assert!(!shows(&harness, "Step 5: Vignetting"));
+    }
+
+    /// The end landing inside a group opens it, and the step there is chosen; the group
+    /// stays as the person leaves it until the end moves again.
+    #[test]
+    fn a_group_opens_itself_when_the_end_lands_inside_it() {
+        let mut harness = styled_scene(6);
+        harness.run();
+        assert!(!shows(&harness, "Step 4: Grain"));
+        harness.state_mut().history = Some(styled(4));
+        harness.run();
+        let end = item(&harness, "Step 4: Grain");
+        assert_eq!(end.accesskit_node().is_selected(), Some(true));
+        assert_eq!(
+            item(&harness, "Steps 3 to 5: Warm film")
+                .accesskit_node()
+                .is_selected(),
+            Some(false)
+        );
+        chevron(&mut harness, "Steps 3 to 5: Warm film");
+        assert!(!shows(&harness, "Step 4: Grain"));
+        harness.run();
+        assert!(!shows(&harness, "Step 4: Grain"));
+        // Closed with the end inside, its line is the end's, chosen, its square the end's,
+        // and the undone mark under it counts the steps out of sight with those over it.
+        let header = item(&harness, "Steps 3 to 5: Warm film");
+        assert_eq!(header.accesskit_node().is_selected(), Some(true));
+        let line = header.rect();
+        let note = harness
+            .get_by_role_and_label(AccessRole::Note, "2 undone: your next edit replaces them");
+        assert!(note.rect().top() >= line.bottom() - 0.5);
+        let listed = listed_in(Some(&styled(4)), Locale::EnGb);
+        let closed = HashSet::new();
+        let node = (drawn(&listed, &closed).into_iter())
+            .find_map(|row| match row {
+                Drawn::Line(shown) if shown.line.name == "Warm film" => Some(shown.rail.node),
+                _ => None,
+            })
+            .expect("the group's line");
+        assert_eq!(
+            node,
+            RailNode::Group {
+                end: true,
+                undone: false
+            }
+        );
+        // A click on it still goes to its last step.
+        item(&harness, "Steps 3 to 5: Warm film").click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xc5)))]);
+    }
+
+    /// Sends a screen reader's `action` to the line named `name`.
+    fn act(harness: &Harness<'_, Scene>, name: &str, action: egui::accesskit::Action) {
+        let line = item(harness, name);
+        let (target_node, target_tree) = line.accesskit_node().locate();
+        harness.event(egui::Event::AccessKitActionRequest(
+            egui::accesskit::ActionRequest {
+                target_node,
+                target_tree,
+                action,
+                data: None,
+            },
+        ));
+    }
+
+    /// Screen readers open a group with Expand and close it with Collapse, which it offers
+    /// by its state; their Click goes to its last step, as a click on the line does, and
+    /// opens nothing.
+    #[test]
+    fn screen_readers_open_and_close_a_group_by_its_own_actions() {
+        use egui::accesskit::Action as Ask;
+        let mut harness = styled_scene(6);
+        harness.run();
+        let group = "Steps 3 to 5: Warm film";
+        let offers = |harness: &Harness<'_, Scene>, ask| {
+            item(harness, group)
+                .accesskit_node()
+                .data()
+                .supports_action(ask)
+        };
+        assert!(offers(&harness, Ask::Expand));
+        assert!(!offers(&harness, Ask::Collapse));
+        act(&harness, group, Ask::Expand);
+        harness.run();
+        assert!(shows(&harness, "Step 4: Grain"));
+        assert!(offers(&harness, Ask::Collapse));
+        assert!(harness.state().actions.is_empty());
+        item(&harness, group).click_accesskit();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xc5)))]);
+        assert!(shows(&harness, "Step 4: Grain"));
+        act(&harness, group, Ask::Collapse);
+        harness.run();
+        assert!(!shows(&harness, "Step 4: Grain"));
+        // A step's line offers neither.
+        let step = item(&harness, "Step 6: Exposure");
+        assert!(!step.accesskit_node().data().supports_action(Ask::Expand));
+    }
+
+    /// The keys that have nothing to do keep the focus where it is: → on a line with
+    /// nothing inside, ← on a top line, ← on a closed group.
+    #[test]
+    fn the_arrows_with_nothing_to_do_keep_the_focus() {
+        let mut harness = styled_scene(6);
+        harness.run();
+        let focused = |harness: &Harness<'_, Scene>, name| item(harness, name).is_focused();
+        item(&harness, "Step 6: Exposure").focus();
+        harness.run();
+        for key in [egui::Key::ArrowRight, egui::Key::ArrowLeft] {
+            harness.key_press(key);
+            harness.run();
+            assert!(focused(&harness, "Step 6: Exposure"), "{key:?}");
+        }
+        let group = "Steps 3 to 5: Warm film";
+        item(&harness, group).focus();
+        harness.run();
+        harness.key_press(egui::Key::ArrowLeft);
+        harness.run();
+        assert!(focused(&harness, group));
+        assert!(!shows(&harness, "Step 4: Grain"));
+        assert!(harness.state().actions.is_empty());
+    }
+
+    /// Screen readers say where a line is among its level's, "2 of 6", a group's lines
+    /// among their group's, the headings, the gap and the mark not counted.
+    #[test]
+    fn each_line_says_where_it_is_among_its_level_s() {
+        let mut harness = styled_scene(6);
+        harness.run();
+        chevron(&mut harness, "Steps 3 to 5: Warm film");
+        let tree = harness.get_by_role_and_label(AccessRole::Tree, "History");
+        // Step 6, the batch, steps 2 and 1, the Defaults and Original.
+        assert_eq!(tree.accesskit_node().data().size_of_set(), Some(6));
+        let position = |name| {
+            item(&harness, name)
+                .accesskit_node()
+                .data()
+                .position_in_set()
+        };
+        assert_eq!(position("Step 6: Exposure"), Some(0));
+        assert_eq!(position("Steps 3 to 5: Warm film"), Some(1));
+        assert_eq!(position("Step 2: Grain"), Some(2));
+        assert_eq!(position("Original"), Some(5));
+        // The batch's three lines, in a group of their own.
+        let group = harness.get_by_role(AccessRole::Group);
+        assert_eq!(group.accesskit_node().data().size_of_set(), Some(3));
+        assert_eq!(group.children().count(), 3);
+        assert_eq!(position("Step 5: Vignetting"), Some(0));
+        assert_eq!(position("Step 3: Colour balance RGB"), Some(2));
+    }
+
+    /// A heading over each day's steps: Today, Yesterday with its date, then the date
+    /// alone, with its year where it is another year's; named for screen readers, never
+    /// focused.
+    #[test]
+    fn a_heading_names_each_day_the_edit_was_worked_on() {
+        let listed = listed_in(Some(&styled(6)), Locale::EnGb);
+        let days: Vec<&str> = (listed.entries.iter())
+            .filter_map(|entry| match entry {
+                Entry::Day(day) => Some(day.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(days, ["Today", "Yesterday, 20 October"]);
+        let tr = Translator::new(Locale::EnGb);
+        let day = today();
+        assert_eq!(heading(day - 6, day, &tr), "15 October");
+        assert_eq!(heading(day - 300, day, &tr), "25 December 2025");
+        let uk = Translator::new(Locale::Uk);
+        assert_eq!(heading(day, day, &uk), "Сьогодні");
+        assert_eq!(heading(day - 1, day, &uk), "Учора, 20 жовтня");
+        let pl = Translator::new(Locale::Pl);
+        assert_eq!(heading(day - 1, day, &pl), "Wczoraj, 20 października");
+        // A step whose time is unknown, a version 1 edit's, has none over it.
+        let unknown = listed_in(
+            Some(&history(1, vec![step(1, &["exposure"], None)], None, None)),
+            Locale::EnGb,
+        );
+        assert!(!unknown.entries.iter().any(|e| matches!(e, Entry::Day(_))));
+        // Under a day's steps, steps of unknown time have a heading of their own, never
+        // the newer day's.
+        let mixed = History {
+            steps: vec![
+                dated(0xd1, 1, None, StepSource::You, None, Vec::new()),
+                step(0xd2, &["exposure"], None),
+                dated(0xd3, 0, None, StepSource::You, None, Vec::new()),
+            ],
+            end: 3,
+            ..styled(6)
+        };
+        let days: Vec<String> = (listed_in(Some(&mixed), Locale::EnGb).entries.into_iter())
+            .filter_map(|entry| match entry {
+                Entry::Day(day) => Some(day),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(days, ["Today", "No date", "Yesterday, 20 October"]);
+        let mut harness = styled_scene(6);
+        harness.run();
+        harness.get_by_role_and_label(AccessRole::Heading, "Yesterday, 20 October");
+    }
+
+    /// A batch, closed and open, under today's heading and over yesterday's, and the
+    /// Defaults open at end 0, as the board draws them.
+    #[test]
+    fn the_groups_and_the_days_are_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        let mut harness = styled_scene(6);
+        harness.run();
+        harness.snapshot("history-tab-group");
+        results.extend(harness.take_snapshot_results());
+        chevron(&mut harness, "Steps 3 to 5: Warm film");
+        harness.remove_cursor();
+        harness.run();
+        harness.snapshot("history-tab-group-open");
+        results.extend(harness.take_snapshot_results());
+        let mut harness = styled_scene(0);
+        harness.run();
+        chevron(&mut harness, "Defaults");
+        harness.remove_cursor();
+        harness.run();
+        harness.snapshot("history-tab-defaults");
+        results.extend(harness.take_snapshot_results());
+    }
+
+    /// A history longer than the panel scrolled to its end: History's header stays at the
+    /// top, the list under it, with a hairline and a shadow under the header.
+    #[test]
+    fn the_header_stays_at_the_top_as_a_long_history_scrolls() {
+        let mut long = styled(6);
+        let base = long.steps.clone();
+        long.steps = (0..30)
+            .map(|i| {
+                let step = &base[i % base.len()];
+                Arc::new(HistoryStep {
+                    id: StepId(0x1000 + i as u64),
+                    batch: step
+                        .batch
+                        .map(|batch| BatchId(batch.0 + (i / base.len()) as u64)),
+                    clock: Clock::at(wireframe_s_time(), None, MachineId::UNKNOWN),
+                    ..(**step).clone()
+                })
+            })
+            .collect();
+        long.end = 30;
+        let mut harness = scene(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(640.0, 480.0),
+            Some(long),
+        );
+        harness.run();
+        let top = |harness: &Harness<'_, Scene>| {
+            (harness.get_by_role_and_label(AccessRole::Button, "History"))
+                .rect()
+                .top()
+        };
+        let before = top(&harness);
+        // The end, at the top, is in sight; End goes to Original, scrolled into sight.
+        item(&harness, "Step 30: Exposure").focus();
+        harness.run();
+        harness.key_press(egui::Key::End);
+        harness.run();
+        assert!(item(&harness, "Original").is_focused());
+        harness.remove_cursor();
+        harness.run();
+        harness.snapshot("history-tab-scrolled");
+        assert_eq!(top(&harness), before);
+        let first = item(&harness, "Step 30: Exposure").rect();
+        assert!(first.top() < before, "{first:?} scrolled under the header");
     }
 }

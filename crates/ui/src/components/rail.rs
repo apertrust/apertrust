@@ -24,6 +24,8 @@
 //! - **An undone step** is a hollow dot, and the rail under it dashed in `text_disabled`.
 //! - **Reset** is its glyph, the Reset icon, on the row's ground; at the end in `text_strong`
 //!   and ringed, a shape cue as well as a colour.
+//! - **A group** of steps shown as one line is a square, larger and ringed at the end,
+//!   hollow where undone.
 //! - The rail itself is a hairline in `border`; no accent anywhere.
 
 use egui::{Color32, Painter, Rect, Shape, Stroke, pos2, vec2};
@@ -41,6 +43,10 @@ pub enum RailNode {
     Undone,
     /// A reset of the whole edit; `end` where the list stands at it.
     Reset { end: bool },
+    /// A group of steps, shown as one closed line: a square, as the steps' dot is round;
+    /// the end's larger and ringed where the list stands at its last step, hollow where it
+    /// is undone.
+    Group { end: bool, undone: bool },
     /// No node: the rail runs through, as past a note between steps.
     None,
 }
@@ -136,6 +142,26 @@ impl Rail {
                 };
                 Icon::Reset.paint(painter, glyph, off(colour));
             }
+            RailNode::Group { end, undone } => {
+                if end {
+                    let square = Rect::from_center_size(centre, vec2(END, END));
+                    painter.rect_filled(square.expand(RING), CORNER + RING, ground);
+                    painter.rect_filled(square, CORNER, off(t.colors.text_strong));
+                } else if undone {
+                    let square = Rect::from_center_size(centre, vec2(UNDONE, UNDONE));
+                    let stroke = Stroke::new(t.shape.hairline, off(t.colors.text_secondary));
+                    painter.rect(
+                        square,
+                        CORNER / 2.0,
+                        ground,
+                        stroke,
+                        egui::StrokeKind::Middle,
+                    );
+                } else {
+                    let square = Rect::from_center_size(centre, vec2(SQUARE, SQUARE));
+                    painter.rect_filled(square, CORNER - 0.5, off(t.colors.text_secondary));
+                }
+            }
             RailNode::None => {}
         }
     }
@@ -148,6 +174,9 @@ const END: f32 = 9.0;
 const RING: f32 = 2.0;
 /// An undone step's hollow dot, across its outline.
 const UNDONE: f32 = 5.0;
+/// A group's square, across, and the corners of a group's squares.
+const SQUARE: f32 = 7.0;
+const CORNER: f32 = 2.0;
 /// Reset's glyph, the Reset icon's box.
 const GLYPH: f32 = 11.0;
 /// A dash of the undone rail, and the gap after it.
