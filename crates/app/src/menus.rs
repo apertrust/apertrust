@@ -177,6 +177,7 @@ static PANEL_TAB: Menu = Menu {
         item(ActionId::PANEL_TABS[2]),
         item(ActionId::PANEL_TABS[3]),
         item(ActionId::PANEL_TABS[4]),
+        item(ActionId::PANEL_TABS[5]),
     ]],
 };
 

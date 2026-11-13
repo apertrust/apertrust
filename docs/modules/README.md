@@ -112,7 +112,7 @@ darktable's scene-referred preset lists these modules in no group; darktable rea
 
 - **Photos,** Apertrust's own tab, first (decisions 37, 38 and 73): Browse, pinned, with Folders in folder mode (Phase 2) and Albums and Smart albums (Phase 5); Filters, Keywords, Metadata and Styles (Phase 3).
 - **Styles** are darktable's styles, bundles of module values with no parameters of their own, with content tabs All and Favourites. Applying one is one change, or a layer with opacity (Phase 4). It is in the Photos tab because darktable's styles module is a lighttable module.
-- **History,** Apertrust's own tab, last (decision 38): the edit's history, drawn disabled until built, and the Colour picker module, darktable's color picker utility, under the Scopes pinned there ([pickers.md](../pickers.md#the-colour-picker-module), decision 79, planned).
+- **History,** Apertrust's own tab, last (decision 38): Snapshots, planned, then the edit's history ([history.md](../history.md#the-history-tab)), with no Scopes. The Colour picker module, darktable's color picker utility, is hidden by default, its place to be decided ([pickers.md](../pickers.md#the-colour-picker-module), decision 79, planned).
 - **Scopes** (decision 19): pinned over the modules in every tab but the Photos tab, as darktable's histogram sits over its groups. Its drags send Exposure's commands, so nothing is owned twice.
 - **Layers** (Phase 4): Apertrust's own model, pinned in the four groups' tabs. A layer's mask, opacity and blend mode become the blend settings of each instance it adds; it owns no operation parameter.
 - **AI denoise and AI erase** are Apertrust's own models (Phase 6), not darktable's, so in no darktable group; their tab is decided with their design.

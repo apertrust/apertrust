@@ -50,6 +50,8 @@ apertrust-engine = { workspace = true, features = ["testing"] }
 apertrust-base = { workspace = true, features = ["jobs"] }
 # Its `testing::Sample` module, whose rows the renderer's tests draw too.
 apertrust-modules = { workspace = true, features = ["testing"] }
+# A history step's time on the local clock, so its tooltip reads the same in every zone.
+chrono.workspace = true
 egui_kittest.workspace = true
 naga.workspace = true
 # The app icon's platform files, rendered from its SVGs by `examples/icons.rs`

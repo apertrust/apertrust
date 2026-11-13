@@ -89,6 +89,10 @@ egui-winit = { version = "0.37.0", default-features = false }
 # About's Credits, CREDITS.md drawn as Markdown: the parser alone, no image loading.
 egui_commonmark = { version = "0.26.0", default-features = false, features = ["pulldown_cmark"] }
 egui_kittest = { version = "0.37.0", features = ["wgpu", "snapshot"] }
+# The Gregorian calendar a date is written in, which needs no data of its own.
+icu_calendar = { version = "2.4.0", default-features = false }
+# CLDR date and time formats, compiled in (Unicode-3.0, allowed by deny.toml): History's.
+icu_datetime = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
 # CLDR number formats, compiled in (Unicode-3.0, allowed by deny.toml).
 icu_decimal = { version = "2.4.0", features = ["alloc"] }
 icu_locale_core = "2.4.0"

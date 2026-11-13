@@ -15,11 +15,13 @@ publish.workspace = true
 # For `settings::Choice` alone, which its theme, language and scopes' choices implement
 # (decision 43); never the base crate's logging.
 apertrust-base.workspace = true
-# The time a job ended, on the local clock, in the jobs window.
+# The time a job ended, and a history step's, on the local clock.
 chrono.workspace = true
 egui.workspace = true
 fluent-bundle.workspace = true
 fluent-syntax.workspace = true
+icu_calendar.workspace = true
+icu_datetime.workspace = true
 icu_decimal.workspace = true
 icu_locale_core.workspace = true
 icu_provider.workspace = true

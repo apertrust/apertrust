@@ -113,6 +113,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - byteorder 1.5.0: Unlicense OR MIT
 - byteorder-lite 0.1.0: Unlicense OR MIT
 - bytes 1.12.1: MIT
+- calendrical_calculations 0.2.4: Apache-2.0
 - calloop 0.13.0: MIT
 - calloop-wayland-source 0.3.0: MIT
 - cfg-if 1.0.5: MIT OR Apache-2.0
@@ -131,6 +132,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - core-foundation-sys 0.8.7: MIT OR Apache-2.0
 - core-graphics 0.23.2: MIT OR Apache-2.0
 - core-graphics-types 0.1.3: MIT OR Apache-2.0
+- core_maths 0.1.1: MIT
 - cpufeatures 0.3.1: MIT OR Apache-2.0
 - crc32fast 1.5.3: MIT OR Apache-2.0
 - crossbeam-channel 0.5.17: MIT OR Apache-2.0
@@ -210,7 +212,11 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - hex 0.4.3: MIT OR Apache-2.0
 - iana-time-zone 0.1.65: MIT OR Apache-2.0
 - iana-time-zone-haiku 0.1.2: MIT OR Apache-2.0
+- icu_calendar 2.4.0: Unicode-3.0
+- icu_calendar_data 2.4.0: Unicode-3.0
 - icu_collections 2.4.0: Unicode-3.0
+- icu_datetime 2.4.0: Unicode-3.0
+- icu_datetime_data 2.4.0: Unicode-3.0
 - icu_decimal 2.4.0: Unicode-3.0
 - icu_decimal_data 2.4.0: Unicode-3.0
 - icu_locale_core 2.4.0: Unicode-3.0
@@ -218,9 +224,14 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - icu_locale_fallback_data 2.4.0: Unicode-3.0
 - icu_normalizer 2.4.0: Unicode-3.0
 - icu_normalizer_data 2.4.0: Unicode-3.0
+- icu_pattern 0.5.1: Unicode-3.0
+- icu_plurals 2.4.0: Unicode-3.0
+- icu_plurals_data 2.4.0: Unicode-3.0
 - icu_properties 2.4.0: Unicode-3.0
 - icu_properties_data 2.4.0: Unicode-3.0
 - icu_provider 2.4.0: Unicode-3.0
+- icu_time 2.4.0: Unicode-3.0
+- icu_time_data 2.4.0: Unicode-3.0
 - idna 1.1.0: MIT OR Apache-2.0
 - idna_adapter 1.2.2: Apache-2.0 OR MIT
 - image 0.25.10: MIT OR Apache-2.0
