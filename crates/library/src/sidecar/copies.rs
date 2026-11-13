@@ -138,6 +138,15 @@ pub enum Problem {
     /// text arguments are read; the rest is left out.
     #[error("step {step} of copy {copy} has note arguments that cannot be read: left out")]
     NoteArguments { copy: String, step: String },
+    /// `apertrust:note` or `apertrust:noteMessage`, by its local name `field`, that is no
+    /// plain text: a struct, an array, a resource or a text with qualifiers. It is left
+    /// out.
+    #[error("the {field} of step {step} of copy {copy} is not plain text: left out")]
+    UnreadableNote {
+        copy: String,
+        step: String,
+        field: String,
+    },
 }
 
 /// One virtual copy (decision 47): its id, place and name, its clock vector, its history
@@ -263,7 +272,9 @@ impl Edits {
             history: Vec::new(),
         };
         if !document.entries.is_empty() {
-            let hash = crate::index::hash(bytes);
+            // BLAKE3 itself, not the index's (layer 3), as the text layer calls nothing above
+            // it (decision 54); the same hash as `index::hash`, which the engine's reading uses.
+            let hash = *blake3::hash(bytes).as_bytes();
             let id: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
             let clock = Clock::at(modified, None, MachineId::UNKNOWN);
             copy.end.clone_from(&id);
@@ -421,7 +432,24 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
             None
         }
     };
-    let note = match (text("noteMessage"), text("note")) {
+    // A note's field as plain text; one that is not, a struct, an array, a resource or a
+    // qualified text, which a save would change or drop, is a problem and read as absent.
+    let mut note_text = |local: &str| {
+        let node = own_node(fields, local)?;
+        match &node.value {
+            Value::Simple(text) if node.qualifiers.is_empty() => Some(text.clone()),
+            _ => {
+                problems.push(Problem::UnreadableNote {
+                    copy: copy.clone(),
+                    step: step.clone(),
+                    field: local.to_owned(),
+                });
+                None
+            }
+        }
+    };
+    let (message, words) = (note_text("noteMessage"), note_text("note"));
+    let note = match (message, words) {
         (Some(message), words) => {
             if words.is_some() {
                 problems.push(Problem::TwoNotes { copy, step });
