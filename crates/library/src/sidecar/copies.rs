@@ -199,6 +199,15 @@ pub enum Note {
     Text(String),
 }
 
+/// What orders a version 1 file's entries as steps: modules first, then operations, each
+/// by its id.
+fn entry_key(entry: &Entry) -> (u8, &str) {
+    match entry {
+        Entry::Module { module, .. } => (0, module),
+        Entry::Operation { operation, .. } => (1, operation),
+    }
+}
+
 impl Edits {
     /// An empty file of version [`COPIES_VERSION`] for `build` to write.
     pub fn new(build: &str) -> Self {
@@ -221,12 +230,15 @@ impl Edits {
     /// Reads an `.apxmp` file's XMP through the XMP layer, `modified` its modified time in
     /// milliseconds since 1970. A file of version 2 or above is read as version 2 lays it
     /// out. A file of version 1 or 0 is read as one virtual copy, [`FIRST_COPY`], number
-    /// `0` with no name, its history one step holding the file's entries in its order: the
-    /// step's id the first 16 hex digits of the BLAKE3 hash of `xml`'s bytes, so every
-    /// machine reading the same file gives the same step; its clock `modified` with counter
-    /// 0 and machine [`MachineId::UNKNOWN`], also the copy's clock vector; source `you`,
-    /// no note, no batch; the end that step. A version 1 or 0 file holding no entry reads
-    /// as a copy with no step, its end empty.
+    /// `0` with no name, its history a step of each of the file's entries, as a history step
+    /// is one module's (decision 78): modules first, then operations, each in id order
+    /// whatever the file's order, as the engine's own reading orders them. The first step's
+    /// id is the first 16 hex digits of the BLAKE3 hash of `xml`'s bytes and each next one
+    /// more, so every machine reading the same file gives the same steps; several share a
+    /// batch, the hash's next 16 hex digits, so one Undo takes the edit read back whole.
+    /// Their clock is `modified` with counter 0 and machine [`MachineId::UNKNOWN`], also the
+    /// copy's clock vector; source `you`, no note; the end the last step. A version 1 or 0
+    /// file holding no entry reads as a copy with no step, its end empty.
     ///
     /// What cannot be read as written, a clock or a note, is read as far as it can be and
     /// told in [`Edits::problems`] (decision 48); a value missing elsewhere reads as empty
@@ -275,18 +287,28 @@ impl Edits {
             // BLAKE3 itself, not the index's (layer 3), as the text layer calls nothing above
             // it (decision 54); the same hash as `index::hash`, which the engine's reading uses.
             let hash = *blake3::hash(bytes).as_bytes();
-            let id: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
+            let bits = |at: usize| u64::from_be_bytes(hash[at..at + 8].try_into().expect("8"));
             let clock = Clock::at(modified, None, MachineId::UNKNOWN);
-            copy.end.clone_from(&id);
+            let mut entries = document.entries;
+            // Stable, so a module written twice keeps its order, the later one folding last.
+            entries.sort_by(|a, b| entry_key(a).cmp(&entry_key(b)));
+            let batch = (entries.len() > 1).then(|| format!("{:016x}", bits(8)));
+            for (index, entry) in entries.into_iter().enumerate() {
+                copy.history.push(Step {
+                    id: format!("{:016x}", bits(0).wrapping_add(index as u64)),
+                    clock: Some(clock),
+                    source: YOU.to_owned(),
+                    note: None,
+                    batch: batch.clone(),
+                    entries: vec![entry],
+                });
+            }
+            copy.end = copy
+                .history
+                .last()
+                .map(|step| step.id.clone())
+                .unwrap_or_default();
             copy.clocks.push(clock);
-            copy.history.push(Step {
-                id,
-                clock: Some(clock),
-                source: YOU.to_owned(),
-                note: None,
-                batch: None,
-                entries: document.entries,
-            });
         }
         Edits {
             version: document.version,

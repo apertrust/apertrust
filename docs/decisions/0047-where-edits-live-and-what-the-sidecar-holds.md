@@ -13,7 +13,7 @@ Edits are sidecars ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-p
 - The library's setting covers photos copied in and folders added without sidecars; a folder added with sidecars keeps them. A read-only root's edits are always its library's.
 - **A user data folder never decides where edits go** ([0043](0043-settings-and-apertrusts-folders.md)).
 
-**`.apxmp` version 2** (its text layer built, the engine writing it once history is saved, planned; version 1 is [0048](0048-the-apxmp-format.md)'s and stays read, as one virtual copy with one step):
+**`.apxmp` version 2** (its text layer built, the engine writing it once history is saved, planned; version 1 is [0048](0048-the-apxmp-format.md)'s and stays read, as one virtual copy with a step of each module):
 
 - the photo's identity: `apertrust:photo`, `apertrust:fingerprint` ([0053](0053-finding-folders-and-photos.md)) and the build that wrote it;
 - `apertrust:copies`: each virtual copy a random id of 8 hex digits, a number (darktable's version), a name, its history, `apertrust:end` (darktable's `history_end`), its snapshots and its clock vector;
@@ -21,7 +21,7 @@ Edits are sidecars ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-p
 
 **History is a log of steps,** and the session's Undo and History are this log, kept in the session's memory in their first build and saved in the sidecar as soon as version 2 lands ([0078](0078-undo-redo-and-the-edits-history.md)), so reopening a photo brings Undo back and a crash loses at most the gesture in flight.
 
-- A step is one completed change (a gesture ending with `done`, a reset, a preset, a `Step`), a control's quick repeats merged ([0078](0078-undo-redo-and-the-edits-history.md)): an id, a clock, its source and an optional note, each module it touched with its values after it (`off` for a reset that turns a switched module off, [0032](0032-modules-off-until-first-touched.md)), the ratings, reject, labels, keywords and metadata it set, and a batch's id ([0078](0078-undo-redo-and-the-edits-history.md)).
+- A step is one module's change, a completed change of several modules a step of each sharing a batch id, a control's quick repeats merged ([0078](0078-undo-redo-and-the-edits-history.md)): an id, a clock, its source and an optional note, the module it touched with its values after it, or Reset's every module (`off` for a reset that turns a switched module off, [0032](0032-modules-off-until-first-touched.md)), the ratings, reject, labels, keywords and metadata it set, and a batch's id ([0078](0078-undo-redo-and-the-edits-history.md)).
 - The edit is each module's values at its last step up to the end, else its defaults. Undo and Redo move the end, `apertrust:end` holding the last applied step's id, and take back what the session's undo records hold while the photo is open; a change after Undo drops the steps after it.
 - Compress History keeps each module's and field's last entry, and advances the copy's clock vector with a clock of its own, so a copy still holding the folded steps is known to be older; Undo puts the log back while the photo is open. Each move of the end advances the clock vector likewise. Reset is a step; Discard History… clears the log and resets the edit, darktable's discard ([0078](0078-undo-redo-and-the-edits-history.md)). The log alone is stored, never the state beside it: about 100 to 300 bytes a step.
 - The commands, the event and the rest of the design are [0078](0078-undo-redo-and-the-edits-history.md)'s ([history.md](../history.md)).

@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The session's history (decision 78): each completed change a step, Undo and Redo,
-//! Reset a step, a control's quick repeats merged, and the `History` fact.
+//! The session's history (decision 78): each completed change a step of each module it
+//! touched, Undo and Redo, Reset a step, a control's quick repeats merged, and the `History`
+//! fact.
 
 use apertrust_modules::soften::Soften;
 
@@ -40,6 +41,14 @@ impl Times {
     fn after(&mut self, time: Duration) -> Instant {
         self.0 += time;
         self.0
+    }
+}
+
+/// Undo or Redo moving the one step `id`.
+fn single(id: StepId) -> Move {
+    Move::Steps {
+        first: id,
+        count: 1,
     }
 }
 
@@ -148,7 +157,7 @@ fn one_history_a_batch_that_changed_it_and_none_during_a_gesture() {
         (&change.before, &change.after),
         (&ControlValue::Number(0.0), &ControlValue::Number(0.6))
     );
-    assert_eq!(released.undo, Some(Move::Step(step.id)));
+    assert_eq!(released.undo, Some(single(step.id)));
     // Two completed changes in a batch: two steps, one fact.
     let events = driven.run([
         set("grain", ControlValue::Number(10.0), true),
@@ -199,7 +208,7 @@ fn undo_and_redo_are_inverses_rendered_and_saved() {
     let after = history(&undone);
     // Undo takes the step out of the log; Redo would put it back.
     assert_eq!((after.steps.len(), after.end), (1, 1));
-    assert_eq!(after.redo, Some(Move::Step(second)));
+    assert_eq!(after.redo, Some(single(second)));
     // Saved as a completed change: the file holds the edit at the end.
     assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
     let read = sidecar::read(&sidecar, OPERATIONS, &[&Sample], &[]).unwrap();
@@ -236,8 +245,8 @@ fn reset_is_a_step_and_its_undo_brings_each_module_back() {
     let history = history(&reset);
     assert_eq!((history.steps.len(), history.end), (3, 3));
     let step = &history.steps[2];
-    assert_eq!(step.note, Some(Note::reset()));
-    // Each module the edit held, the switched one turned off.
+    assert_eq!((&step.note, step.batch), (&Some(Note::reset()), None));
+    // One step of each module the edit held, the switched one turned off.
     let modules: Vec<_> = step.changes.iter().map(|c| (c.module, c.enabled)).collect();
     assert_eq!(modules, [("sample", None), ("soften", Some([true, false]))]);
     let undone = driven.run([Command::Undo]);
@@ -358,7 +367,7 @@ fn after_reopening_undo_moves_the_end_and_an_edit_drops_the_later_steps() {
     assert_eq!(brightness(&undone), ControlValue::Number(0.0));
     let after = history(&undone);
     assert_eq!((after.steps.len(), after.end), (1, 0));
-    assert_eq!((after.undo, after.redo), (None, Some(Move::Step(read))));
+    assert_eq!((after.undo, after.redo), (None, Some(single(read))));
     let redone = driven.run([Command::Redo]);
     assert_eq!(brightness(&redone), ControlValue::Number(0.5));
     assert_eq!(history(&redone).end, 1);
@@ -378,10 +387,11 @@ fn after_reopening_undo_moves_the_end_and_an_edit_drops_the_later_steps() {
     remove(&path);
 }
 
-/// Several commands as one `Step`: one step of its source and note, which one Undo takes
-/// back whole.
+/// Several commands as one `Step`, writing two modules: a step of each, in the order written,
+/// of its source and note, sharing a batch, which one Undo takes back whole and one Redo
+/// puts back.
 #[test]
-fn a_step_is_one_step_of_its_source_and_note() {
+fn a_step_of_two_modules_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     let path = scratch("history-step");
     let mut driven = Driven::new(&[&Sample, &Soften]);
     driven.open(&path);
@@ -390,21 +400,42 @@ fn a_step_is_one_step_of_its_source_and_note() {
         source: StepSource::Assistant,
         note: Some(note.clone()),
         commands: vec![
-            set("brightness", ControlValue::Number(0.5), true),
             amount(30.0, true),
+            set("brightness", ControlValue::Number(0.5), true),
         ],
     }]);
     assert_eq!(kinds(&events), ["values", "history", "frame"]);
     let made = history(&events);
-    assert_eq!((made.steps.len(), made.end), (1, 1));
-    let step = &made.steps[0];
-    assert_eq!(
-        (step.source, &step.note),
-        (StepSource::Assistant, &Some(note))
-    );
-    let modules: Vec<_> = step.changes.iter().map(|change| change.module).collect();
-    assert_eq!(modules, ["sample", "soften"]);
+    assert_eq!((made.steps.len(), made.end), (2, 2));
+    let modules: Vec<_> = (made.steps.iter())
+        .map(|step| {
+            let modules: Vec<_> = step.changes.iter().map(|change| change.module).collect();
+            (step.source, step.note.clone(), modules)
+        })
+        .collect();
+    let assistant = |module| (StepSource::Assistant, Some(note.clone()), vec![module]);
+    assert_eq!(modules, [assistant("soften"), assistant("sample")]);
+    let batch = made.steps[0].batch;
+    assert!(batch.is_some());
+    assert_eq!(made.steps[1].batch, batch);
+    let both = Move::Steps {
+        first: made.steps[0].id,
+        count: 2,
+    };
+    assert_eq!(made.undo, Some(both));
     assert_eq!(fold(&driven), edit(&driven));
+    let edited = edit(&driven);
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(edit(&driven), Edit::default());
+    let after = history(&undone);
+    assert_eq!((after.steps.len(), after.redo), (0, Some(both)));
+    driven.run([Command::Redo]);
+    assert_eq!(edit(&driven), edited);
+    // After reopening, with no undo records, Undo's fallback moves over the whole batch.
+    driven.writes();
+    let reopened = driven.open(&path);
+    let read = history(&reopened);
+    assert_eq!(read.end, 2);
     driven.run([Command::Undo]);
     assert_eq!(edit(&driven), Edit::default());
     remove(&path);
@@ -832,7 +863,7 @@ fn go_to_moves_the_end_and_undo_brings_back_the_steps_an_edit_after_it_dropped()
     // Undo takes it back; with nothing undone, Redo would move the end forward a step.
     assert_eq!(
         (after.undo, after.redo),
-        (Some(Move::GoTo), Some(Move::Step(ids[1])))
+        (Some(Move::GoTo), Some(single(ids[1])))
     );
     // Saved as a completed change: the file holds the edit at the end.
     assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
@@ -967,7 +998,7 @@ fn quick_changes_to_one_control_merge_into_one_step() {
         let events = nudge(&mut driven, value as f32, quick);
         let merged = history(&events);
         let ids: Vec<StepId> = merged.steps.iter().map(|step| step.id).collect();
-        assert_eq!((ids, merged.undo), (vec![first], Some(Move::Step(first))));
+        assert_eq!((ids, merged.undo), (vec![first], Some(single(first))));
         let change = &merged.steps[0].changes[0].controls[0];
         assert_eq!(
             (&change.before, &change.after),
@@ -1086,11 +1117,12 @@ fn a_change_that_changes_nothing_counts_as_none() {
         let open = driven.engine.open.as_ref().unwrap();
         open.history.log().steps().len()
     };
-    // Grain kept at 10, then black set with a brightness, then a step of brightness alone.
+    // Grain kept at 10, then black set with a brightness, a step of each in a batch, then a
+    // step of brightness alone.
     let grain = set("grain", ControlValue::Number(10.0), true);
     driven.run_at(times.apart(), [grain, black(), brightness(0.25)]);
     driven.run_at(times.apart(), [brightness(0.5)]);
-    assert_eq!(steps(&driven), 3);
+    assert_eq!(steps(&driven), 4);
     // Grain dragged to where it is, then brightness: merged.
     let quick = Duration::from_millis(500);
     let still = set("grain", ControlValue::Number(10.0), false);
@@ -1098,11 +1130,11 @@ fn a_change_that_changes_nothing_counts_as_none() {
     driven.run_at(times.after(quick), [still]);
     assert_eq!(edit(&driven), before);
     driven.run_at(times.after(quick), [brightness(0.75)]);
-    assert_eq!(steps(&driven), 3);
+    assert_eq!(steps(&driven), 4);
     // Black set to what it is, then brightness: merged.
     driven.run_at(times.after(quick), [black()]);
     driven.run_at(times.after(quick), [brightness(1.0)]);
-    assert_eq!(steps(&driven), 3);
+    assert_eq!(steps(&driven), 4);
     assert_eq!(fold(&driven), edit(&driven));
     remove(&path);
 }

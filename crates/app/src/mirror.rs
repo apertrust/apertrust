@@ -1678,7 +1678,10 @@ pub(crate) mod tests {
         m.apply(Event::Values(report(0.0, 1)));
         m.apply(one(1, None));
         assert_eq!(undo(&m), Some((1, None)));
-        let back = Some(Move::Step(StepId(1)));
+        let back = Some(Move::Steps {
+            first: StepId(1),
+            count: 1,
+        });
         m.apply(one(4, back));
         assert_eq!(undo(&m), Some((4, back)));
         // An earlier one, late.

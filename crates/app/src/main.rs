@@ -13119,7 +13119,13 @@ mod tests {
             harness.run();
             assert!(harness.state().commands.is_empty(), "{os:?}");
             // A step to take back: Ctrl+Z (Cmd+Z), and its button, undo it.
-            harness.state_mut().history = Some(one_step(Some(Move::Step(StepId(7))), None));
+            harness.state_mut().history = Some(one_step(
+                Some(Move::Steps {
+                    first: StepId(7),
+                    count: 1,
+                }),
+                None,
+            ));
             harness.run();
             harness.key_press_modifiers(command, Key::Z);
             harness.run();
@@ -13129,7 +13135,13 @@ mod tests {
             harness.run();
             assert_eq!(harness.state().commands, [Command::Undo, Command::Undo]);
             // Then one to put back: Shift+Ctrl+Z, and Ctrl+Y off the Mac.
-            harness.state_mut().history = Some(one_step(None, Some(Move::Step(StepId(7)))));
+            harness.state_mut().history = Some(one_step(
+                None,
+                Some(Move::Steps {
+                    first: StepId(7),
+                    count: 1,
+                }),
+            ));
             harness.state_mut().commands.clear();
             harness.run();
             harness.key_press_modifiers(command, Key::Z);
@@ -13178,7 +13190,13 @@ mod tests {
             (OperatingSystem::Nix, "Ctrl+Shift+Z"),
         ] {
             let mut harness = bench(os);
-            let history = one_step(Some(Move::Step(StepId(7))), Some(Move::GoTo));
+            let history = one_step(
+                Some(Move::Steps {
+                    first: StepId(7),
+                    count: 1,
+                }),
+                Some(Move::GoTo),
+            );
             harness.state_mut().history = Some(history);
             harness.run();
             alt(&mut harness, Key::E, Some("e"));

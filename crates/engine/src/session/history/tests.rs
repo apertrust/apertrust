@@ -38,11 +38,13 @@ impl Random {
     }
 }
 
-/// A random change to `edit`, of the kinds an edit's commands make: a value, a mark, a
-/// switched module turned on or off, a module reset, an unowned parameter, the whole edit
-/// reset. A mark taken away may leave a module holding nothing, as no command does.
-fn change(edit: &mut Edit, random: &mut Random) {
+/// A random change to `edit`, of the kinds an edit's commands make, and what it wrote: a
+/// value, a mark, a switched module turned on or off, a module reset, an unowned parameter,
+/// the whole edit reset. A mark taken away may leave a module holding nothing, as no
+/// command does.
+fn change(edit: &mut Edit, random: &mut Random) -> Wrote {
     let module = ["a", "b", "c"][random.below(3) as usize].to_owned();
+    let wrote = Wrote::Module(module.clone());
     match random.below(12) {
         0..=3 => {
             let value = ControlValue::Number(random.below(4) as f32);
@@ -65,9 +67,14 @@ fn change(edit: &mut Edit, random: &mut Random) {
                 .entry("op".to_owned())
                 .or_default()
                 .set("p", value);
+            return Wrote::Operation("op".to_owned());
         }
-        _ => *edit = Edit::default(),
+        _ => {
+            *edit = Edit::default();
+            return Wrote::All;
+        }
     }
+    wrote
 }
 
 /// `edit` without the modules and operations that hold nothing: the same state.
@@ -79,17 +86,24 @@ fn tidy(edit: &Edit) -> Edit {
     tidy
 }
 
-/// A random target of two controls, or a change of several or none, written by a change
-/// sent between 0 and 3 s after the last, a frame published after it half the time: so
-/// some changes merge into the step before them, by the two times, and some do not.
-fn write(history: &mut PhotoHistory, at: &mut Instant, random: &mut Random) {
-    let control = |control: &str| Target::Control {
-        module: "a".to_owned(),
-        control: control.to_owned(),
+/// A change that wrote `wrote`, of a random target of two controls of its module, or of
+/// several or none, sent between 0 and 3 s after the last, a frame published after it half
+/// the time: so some changes merge into the step before them, by the two times, and some
+/// do not. An operation's parameters or `Reset` have no target, as the session gives them.
+fn write(history: &mut PhotoHistory, wrote: Wrote, at: &mut Instant, random: &mut Random) {
+    let pick = random.below(3) as usize;
+    let target = match &wrote {
+        Wrote::Module(module) => {
+            let control = |control: &str| Target::Control {
+                module: module.clone(),
+                control: control.to_owned(),
+            };
+            [Some(control("x")), Some(control("y")), None][pick].clone()
+        }
+        Wrote::Operation(_) | Wrote::All => None,
     };
-    let target = [Some(control("x")), Some(control("y")), None][random.below(3) as usize].clone();
     *at += Duration::from_millis(random.below(3000));
-    history.wrote(target, *at);
+    history.wrote(target, vec![wrote], *at);
     if random.below(2) == 0 {
         history.published(*at + Duration::from_millis(random.below(500)));
     }
@@ -97,11 +111,13 @@ fn write(history: &mut PhotoHistory, at: &mut Instant, random: &mut Random) {
 
 /// Over random sequences of changes, completed changes, Undo, Redo, `GoTo` and reopening the
 /// photo, which leaves no undo records, so Undo and Redo fall back to moving the end: the
-/// fold is always the edit the history last stepped or moved to, and every step's fold, up
-/// to and with it, is the edit as that step, or the last change merged into it, left it;
-/// Undo and Redo are each other's inverse, Undo takes a `GoTo` back, and a merged step
-/// whole, and a merged change adds no record. Half the runs start from an edit read from a
-/// file, one step.
+/// fold is always the edit the history last stepped or moved to, and every change's fold,
+/// up to and with its last step, is the edit as that change, or the last merged into it,
+/// left it; Undo and Redo are each other's inverse, over a batch's steps whole, Undo takes
+/// a `GoTo` back, and a merged step whole, and a merged change adds no record; a `GoTo`
+/// inside a batch lands on the batch's steps up to it. A change not yet a step goes on
+/// over several rounds, so it may touch several modules, a batch. Half the runs start from
+/// an edit read from a file, a step of each module.
 #[test]
 fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
     // How many times Undo and Redo fell back to moving the end, a `GoTo` moved it, and a
@@ -109,6 +125,9 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
     let mut fallbacks = [0, 0];
     let mut gone_to = 0;
     let mut merged = 0;
+    // How many times Undo took back a batch, and a `GoTo` went inside one.
+    let mut batches = 0;
+    let mut inside = 0;
     for seed in 1..=40 {
         let mut random = Random(0x9e37_79b9_7f4a_7c15 ^ seed);
         let mut at = Instant::now();
@@ -151,12 +170,16 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                         Ok(None) => {
                             assert_eq!(Some(history.log.end()), end(&history, step), "{context}");
                         }
-                        // The edit as the step left it; Undo takes it back to the edit as it
-                        // stood, and Redo goes there again.
+                        // The edit as the step left it, or inside a batch, the batch's steps
+                        // up to it; Undo takes it back to the edit as it stood, and Redo
+                        // goes there again.
                         Ok(Some(gone)) => {
                             gone_to += 1;
-                            let left = step.map_or_else(Edit::default, |id| left[&id].1.clone());
-                            assert_eq!(gone, left, "{context}");
+                            let at = history.log.end();
+                            if !last_of_change(&history.log, at) {
+                                inside += 1;
+                            }
+                            assert_left(&history.log, at, &gone, &left, &context);
                             assert_eq!(Some(history.log.end()), end(&history, step), "{context}");
                             assert_eq!(history.undo(&gone), Some(before.clone()), "{context}");
                             assert_eq!(history.redo(&before), Some(gone.clone()), "{context}");
@@ -166,12 +189,12 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                 }
                 // A change not yet a step, a gesture's or a `Set`'s.
                 0 | 1 => {
-                    change(&mut edit, &mut random);
-                    write(&mut history, &mut at, &mut random);
+                    let wrote = change(&mut edit, &mut random);
+                    write(&mut history, wrote, &mut at, &mut random);
                 }
                 2 | 3 => {
-                    change(&mut edit, &mut random);
-                    write(&mut history, &mut at, &mut random);
+                    let wrote = change(&mut edit, &mut random);
+                    write(&mut history, wrote, &mut at, &mut random);
                     let (steps, done) = (ids(&history), history.done.len());
                     if history.complete(&edit, StepSource::You, None) && history.done.len() == done
                     {
@@ -183,7 +206,13 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                     }
                 }
                 4 => {
-                    let Some(undone) = history.undo(&edit) else {
+                    // What Undo would take back, a change's steps made first.
+                    history.complete(&edit, StepSource::You, None);
+                    record(&history, &before, &mut left);
+                    if let Some(Move::Steps { count: 2.., .. }) = history.next(true) {
+                        batches += 1;
+                    }
+                    let Some(undone) = checked(&mut history, &edit, false, &context) else {
                         assert_eq!(history.log.end(), 0, "{context}");
                         assert_eq!(history.log.fold(), before, "{context}");
                         continue;
@@ -193,40 +222,142 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                     }
                     // Redo puts back exactly what Undo took, the change it made a step
                     // first included; Undo again takes it back again.
-                    assert_eq!(history.redo(&undone), Some(before.clone()), "{context}");
+                    let redone = checked(&mut history, &undone, true, &context);
+                    assert_eq!(redone, Some(before.clone()), "{context}");
                     record(&history, &before, &mut left);
-                    assert_eq!(history.undo(&before), Some(undone.clone()), "{context}");
+                    let again = checked(&mut history, &before, false, &context);
+                    assert_eq!(again, Some(undone.clone()), "{context}");
                     edit = undone;
                 }
                 // With a change not yet a step, Redo makes it one, which leaves nothing to
                 // redo.
                 _ => {
-                    if let Some(redone) = history.redo(&edit) {
+                    if let Some(redone) = checked(&mut history, &edit, true, &context) {
                         if matches!(history.done.last(), Some(Record::Moved { .. })) {
                             fallbacks[1] += 1;
                         }
-                        assert_eq!(history.undo(&redone), Some(before.clone()), "{context}");
-                        assert_eq!(history.redo(&before), Some(redone.clone()), "{context}");
+                        let undone = checked(&mut history, &redone, false, &context);
+                        assert_eq!(undone, Some(before.clone()), "{context}");
+                        let again = checked(&mut history, &before, true, &context);
+                        assert_eq!(again, Some(redone.clone()), "{context}");
                         edit = redone;
                     }
                 }
             }
             record(&history, &tidy(&edit), &mut left);
             assert_eq!(history.log.fold(), tidy(&history.stepped), "{context}");
-            for (at, step) in history.log.steps().iter().enumerate() {
-                assert_eq!(history.log.fold_to(at + 1), left[&step.id].1, "{context}");
+            for at in 1..=history.log.steps().len() {
+                let fold = history.log.fold_to(at);
+                assert_left(&history.log, at, &fold, &left, &context);
             }
         }
     }
     assert!(fallbacks.iter().all(|&count| count > 0), "{fallbacks:?}");
     assert!(
-        gone_to > 0 && merged > 0,
-        "{gone_to} gone to, {merged} merged"
+        gone_to > 0 && merged > 0 && batches > 0 && inside > 0,
+        "{gone_to} gone to, {merged} merged, {batches} batches undone, {inside} inside one"
     );
 }
 
+/// Undo, or Redo where `redo`, on `edit`, a change not yet a step made one first, held to
+/// what `next` said it would move: a fallback's or a moved record's end moved over `count`
+/// steps from the one named, the log as it was; steps added taken out of the log, `count`
+/// of them, the steps they dropped back, or put back after the end, the end after them. A
+/// `GoTo` taken back or put back, or nothing where `next` names nothing. What it left.
+fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -> Option<Edit> {
+    history.complete(edit, StepSource::You, None);
+    let next = history.next(!redo);
+    let records = if redo { &history.undone } else { &history.done };
+    let held = match records.last() {
+        Some(Record::Added { held, .. }) => Some(held.len()),
+        _ => None,
+    };
+    let (end, before) = (history.log.end(), ids(history));
+    let moved = if redo {
+        history.redo(edit)
+    } else {
+        history.undo(edit)
+    };
+    let after = ids(history);
+    match next {
+        None => assert_eq!(moved, None, "{context}"),
+        Some(Move::GoTo) => assert!(moved.is_some(), "{context}"),
+        Some(Move::Steps { first, count }) => {
+            assert!(moved.is_some() && count > 0, "{context}");
+            if redo {
+                assert_eq!(history.log.end(), end + count, "{context}");
+                assert_eq!(after[end], first, "{context}");
+                match held {
+                    // The steps after the end the change dropped, dropped again.
+                    Some(_) => assert_eq!(after.len(), end + count, "{context}"),
+                    None => assert_eq!(after, before, "{context}"),
+                }
+            } else {
+                let start = end - count;
+                assert_eq!(history.log.end(), start, "{context}");
+                assert_eq!(before[start], first, "{context}");
+                match held {
+                    // The change's steps out, the steps they dropped back.
+                    Some(dropped) => {
+                        assert_eq!(after.len(), before.len() - count + dropped, "{context}");
+                        assert_eq!(after[..start], before[..start], "{context}");
+                    }
+                    None => assert_eq!(after, before, "{context}"),
+                }
+            }
+        }
+    }
+    moved
+}
+
+/// Whether `end` is at the end of a change's steps: Original, or the step before it the
+/// last of its batch, or in none.
+fn last_of_change(log: &Log, end: usize) -> bool {
+    let steps = log.steps();
+    let Some(last) = end.checked_sub(1).map(|at| &steps[at]) else {
+        return true;
+    };
+    last.batch.is_none() || steps.get(end).is_none_or(|next| next.batch != last.batch)
+}
+
+/// `edit` is the log's at `end` by the edit each change left, `left`: a step in no batch's,
+/// its change's; inside a batch, or at the end of one whose last steps an edit after a
+/// `GoTo` dropped, from the edit before the batch it changes only the batch's steps up to
+/// `end`, each as the change left it.
+fn assert_left(
+    log: &Log,
+    end: usize,
+    edit: &Edit,
+    left: &BTreeMap<StepId, (Clock, Edit)>,
+    context: &str,
+) {
+    let steps = log.steps();
+    let Some(step) = end.checked_sub(1).map(|at| &steps[at]) else {
+        assert_eq!(*edit, Edit::default(), "{context}");
+        return;
+    };
+    let left = &left[&step.id].1;
+    if step.batch.is_none() {
+        assert_eq!(edit, left, "{context}");
+        return;
+    }
+    let start = log.batch_start(end).unwrap();
+    let keys: Vec<String> = (steps[start..end].iter())
+        .flat_map(|step| step.change.entries())
+        .map(|entry| format!("{:?}", entry.key()))
+        .collect();
+    let done = |entry: &Entry| keys.contains(&format!("{:?}", entry.key()));
+    for entry in Entry::between(&log.fold_to(start), edit) {
+        assert!(done(&entry), "{context}: {entry:?} changed");
+    }
+    for entry in Entry::between(edit, left) {
+        assert!(!done(&entry), "{context}: {entry:?} not as left");
+    }
+}
+
 /// Records `edit` as what each step of `history`'s log not seen before, or whose clock
-/// moved on as a change merged into it, left: a step is made of the edit as it stands.
+/// moved on as a change merged into it, left: a change's steps are made of the edit as it
+/// stands.
 fn record(history: &PhotoHistory, edit: &Edit, left: &mut BTreeMap<StepId, (Clock, Edit)>) {
     for step in history.log.steps() {
         let seen = (left.get(&step.id)).is_some_and(|(clock, _)| *clock == step.clock);
@@ -255,6 +386,14 @@ fn ids(history: &PhotoHistory) -> Vec<StepId> {
     history.log.steps().iter().map(|step| step.id).collect()
 }
 
+/// Undo or Redo moving the one step `id`.
+fn one(id: StepId) -> Move {
+    Move::Steps {
+        first: id,
+        count: 1,
+    }
+}
+
 /// Undo of a step added takes it out of the log, as darktable's undo restores the history
 /// without it, and Redo puts it back; a new step then clears what Redo would put back.
 #[test]
@@ -266,7 +405,7 @@ fn undo_takes_a_step_out_of_the_log_and_redo_puts_it_back() {
     let two = ids(&history);
     assert_eq!(history.undo(&exposed(2.0)), Some(exposed(1.0)));
     assert_eq!((ids(&history), history.log.end()), (two[..1].to_vec(), 1));
-    assert_eq!(history.next(false), Some(Move::Step(two[1])));
+    assert_eq!(history.next(false), Some(one(two[1])));
     assert_eq!(history.redo(&exposed(1.0)), Some(exposed(2.0)));
     assert_eq!((ids(&history), history.log.end()), (two.clone(), 2));
     assert_eq!(history.undo(&exposed(2.0)), Some(exposed(1.0)));
@@ -298,7 +437,7 @@ fn an_edit_below_the_end_drops_the_later_steps_which_undo_brings_back() {
     assert_eq!(history.undo(&exposed(-1.0)), Some(exposed(1.0)));
     assert_eq!((ids(&history), history.log.end()), (three, 1));
     // Redo puts the new step back first, then, with no record, moves the end.
-    assert_eq!(history.next(false), Some(Move::Step(new)));
+    assert_eq!(history.next(false), Some(one(new)));
     assert_eq!(history.redo(&exposed(1.0)), Some(exposed(-1.0)));
     assert_eq!(history.undo(&exposed(-1.0)), Some(exposed(1.0)));
     history.undone.clear();
@@ -312,13 +451,13 @@ fn an_edit_below_the_end_drops_the_later_steps_which_undo_brings_back() {
 fn the_fallback_mixed_with_records() {
     let mut history = reopened(&exposed(1.0));
     let read = history.log.steps()[0].id;
-    assert_eq!(history.next(true), Some(Move::Step(read)));
+    assert_eq!(history.next(true), Some(one(read)));
     assert_eq!(history.next(false), None);
     history.complete(&exposed(2.0), StepSource::You, None);
     let added = history.log.steps()[1].id;
     // The record first, then the fallback over the step read.
     assert_eq!(history.undo(&exposed(2.0)), Some(exposed(1.0)));
-    assert_eq!(history.next(true), Some(Move::Step(read)));
+    assert_eq!(history.next(true), Some(one(read)));
     assert_eq!(history.undo(&exposed(1.0)), Some(Edit::default()));
     assert_eq!(
         (history.log.end(), history.undo(&Edit::default())),
@@ -326,9 +465,9 @@ fn the_fallback_mixed_with_records() {
     );
     assert_eq!(history.next(true), None);
     // Redo reverses the fallback, then puts the record's step back.
-    assert_eq!(history.next(false), Some(Move::Step(read)));
+    assert_eq!(history.next(false), Some(one(read)));
     assert_eq!(history.redo(&Edit::default()), Some(exposed(1.0)));
-    assert_eq!(history.next(false), Some(Move::Step(added)));
+    assert_eq!(history.next(false), Some(one(added)));
     assert_eq!(history.redo(&exposed(1.0)), Some(exposed(2.0)));
     assert_eq!((history.log.end(), history.redo(&exposed(2.0))), (2, None));
     // Undo takes back the step, then the fallback's move, recorded on the done stack.
@@ -397,6 +536,135 @@ fn undo_makes_a_change_not_yet_a_step_one_first_and_takes_it_back() {
     assert_eq!(history.log.steps().len(), 2);
 }
 
+/// `edit` with the module `b`'s control at `x`.
+fn with_b(edit: &Edit, x: f32) -> Edit {
+    let mut edit = edit.clone();
+    (edit.modules.entry("b".to_owned()).or_default()).set("x", ControlValue::Number(x));
+    edit
+}
+
+fn module(id: &str) -> Wrote {
+    Wrote::Module(id.to_owned())
+}
+
+/// A change of two modules is a step of each, in the order written, of its source and note,
+/// sharing a batch: one Undo takes both back and one Redo puts both back, and, with no
+/// records, as after reopening, Undo's and Redo's fallback moves over both.
+#[test]
+fn a_change_of_two_modules_is_two_steps_in_one_batch_which_undo_and_redo_move_whole() {
+    let mut history = reopened(&Edit::default());
+    history.complete(&exposed(1.0), StepSource::You, None);
+    let both = with_b(&exposed(2.0), 1.0);
+    let note = Some(Note::Text("Style".to_owned()));
+    history.wrote(None, vec![module("b"), module("exposure")], Instant::now());
+    assert!(history.complete(&both, StepSource::Style, note.clone()));
+    let steps = history.log.steps();
+    let made: Vec<_> = (steps.iter())
+        .map(|step| (format!("{:?}", step.change.entries()[0].key()), step.source))
+        .collect();
+    assert_eq!(
+        made[1..],
+        [
+            (r#"Module("b")"#.to_owned(), StepSource::Style),
+            (r#"Module("exposure")"#.to_owned(), StepSource::Style),
+        ]
+    );
+    let batch = steps[1].batch;
+    assert!(batch.is_some() && steps[2].batch == batch && steps[0].batch.is_none());
+    assert!(steps[1..].iter().all(|step| step.note == note));
+    let (first, second) = (steps[1].id, steps[2].id);
+    let both_steps = Move::Steps { first, count: 2 };
+    assert_eq!(history.next(true), Some(both_steps));
+    assert_eq!(history.undo(&both), Some(exposed(1.0)));
+    assert_eq!(history.log.steps().len(), 1);
+    assert_eq!(history.next(false), Some(both_steps));
+    assert_eq!(history.redo(&exposed(1.0)), Some(both.clone()));
+    assert_eq!(ids(&history)[1..], [first, second]);
+    // With no records: the fallback over the whole batch, each way.
+    history.done.clear();
+    assert_eq!(history.next(true), Some(both_steps));
+    assert_eq!(history.undo(&both), Some(exposed(1.0)));
+    assert_eq!(history.log.end(), 1);
+    history.undone.clear();
+    assert_eq!(history.next(false), Some(both_steps));
+    assert_eq!(history.redo(&exposed(1.0)), Some(both.clone()));
+    assert_eq!(history.log.end(), 3);
+}
+
+/// A change of one target that touched another module too, as a tone mapper turning another
+/// off: a batch, its written module first, which the target's next change does not merge
+/// into.
+#[test]
+fn a_batch_s_step_is_merged_into_by_none() {
+    let start = Instant::now();
+    let mut history = reopened(&Edit::default());
+    history.wrote(Some(exposure()), vec![module("exposure")], start);
+    history.complete(&with_b(&exposed(1.0), 1.0), StepSource::You, None);
+    let steps = history.log.steps();
+    assert_eq!(steps.len(), 2);
+    assert!(steps[0].batch.is_some());
+    assert!(matches!(
+        &steps[0].change,
+        Change::Entry(Entry::Module { module, .. }) if module == "exposure"
+    ));
+    history.wrote(
+        Some(exposure()),
+        vec![module("exposure")],
+        start + secs(0.5),
+    );
+    history.complete(&with_b(&exposed(2.0), 1.0), StepSource::You, None);
+    assert_eq!(history.log.steps().len(), 3);
+    assert_eq!(history.log.steps()[2].batch, None);
+}
+
+/// `GoTo` lands on a step inside a batch, as darktable's click on any item: the batch's
+/// steps up to it apply. Undo takes it back and Redo puts it back; with no records, Undo's
+/// fallback moves back over the part that applied and Redo's forward to the batch's end. An
+/// edit there drops the rest of the batch, which Undo brings back.
+#[test]
+fn go_to_lands_inside_a_batch() {
+    let mut history = reopened(&Edit::default());
+    history.complete(&exposed(1.0), StepSource::You, None);
+    let both = with_b(&exposed(2.0), 1.0);
+    history.wrote(None, vec![module("b"), module("exposure")], Instant::now());
+    history.complete(&both, StepSource::You, None);
+    let three = ids(&history);
+    // Inside: `b` applied, Exposure's second step not.
+    let inside = with_b(&exposed(1.0), 1.0);
+    assert_eq!(
+        history.go_to(&both, Some(three[1])),
+        Ok(Some(inside.clone()))
+    );
+    assert_eq!(history.log.end(), 2);
+    assert_eq!(history.undo(&inside), Some(both.clone()));
+    assert_eq!(history.redo(&both), Some(inside.clone()));
+    // With no records, as after reopening.
+    history.done.clear();
+    assert_eq!(history.next(true), Some(one(three[1])));
+    assert_eq!(history.undo(&inside), Some(exposed(1.0)));
+    // Its Redo puts back the part it took; with no record, Redo's fallback the whole.
+    assert_eq!(history.next(false), Some(one(three[1])));
+    history.undone.clear();
+    let rest = Move::Steps {
+        first: three[1],
+        count: 2,
+    };
+    assert_eq!(history.next(false), Some(rest));
+    assert_eq!(history.redo(&exposed(1.0)), Some(both.clone()));
+    // An edit inside the batch drops its rest; Undo brings it back.
+    assert_eq!(
+        history.go_to(&both, Some(three[1])),
+        Ok(Some(inside.clone()))
+    );
+    let edited = with_b(&exposed(1.0), 2.0);
+    history.complete(&edited, StepSource::You, None);
+    assert_eq!(history.log.steps().len(), 3);
+    assert_ne!(ids(&history)[2], three[2]);
+    assert_eq!(history.log.fold(), edited);
+    assert_eq!(history.undo(&edited), Some(inside));
+    assert_eq!(ids(&history), three);
+}
+
 /// The target of Exposure's exposure control, which [`exposed`] writes.
 fn exposure() -> Target {
     Target::Control {
@@ -410,12 +678,12 @@ fn exposure() -> Target {
 fn merges(published: Option<Duration>, after: Duration) -> bool {
     let start = Instant::now();
     let mut history = reopened(&Edit::default());
-    history.wrote(Some(exposure()), start);
+    history.wrote(Some(exposure()), vec![module("exposure")], start);
     history.complete(&exposed(1.0), StepSource::You, None);
     if let Some(published) = published {
         history.published(start + published);
     }
-    history.wrote(Some(exposure()), start + after);
+    history.wrote(Some(exposure()), vec![module("exposure")], start + after);
     history.complete(&exposed(2.0), StepSource::You, None);
     history.log.steps().len() == 1
 }
@@ -448,7 +716,11 @@ fn a_merged_step_keeps_its_id_and_one_undo_takes_it_back_whole() {
     let start = Instant::now();
     let mut history = reopened(&Edit::default());
     let nudge = |history: &mut PhotoHistory, ev: f32, after: f64| {
-        history.wrote(Some(exposure()), start + secs(after));
+        history.wrote(
+            Some(exposure()),
+            vec![module("exposure")],
+            start + secs(after),
+        );
         history.complete(&exposed(ev), StepSource::You, None);
         history.published(start + secs(after + 0.1));
         ids(history)
@@ -462,7 +734,7 @@ fn a_merged_step_keeps_its_id_and_one_undo_takes_it_back_whole() {
     let step = &history.log.steps()[0];
     assert!(step.clock > clock);
     assert_eq!(
-        step.entries,
+        step.change.entries(),
         Entry::between(&Edit::default(), &exposed(2.0))
     );
     assert_eq!(history.done.len(), 1);
@@ -496,14 +768,14 @@ fn no_merge_across_another_target_source_note_or_command() {
     // `edit` the edit the step left: whether it merged.
     let merged = |change: &dyn Fn(&mut PhotoHistory, &Edit)| {
         let mut history = reopened(&Edit::default());
-        history.wrote(Some(exposure()), Instant::now());
+        history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
         history.complete(&exposed(1.0), StepSource::You, None);
         change(&mut history, &exposed(1.0));
         history.log.steps().len() == 1
     };
     let you = |target: Option<Target>| {
         move |history: &mut PhotoHistory, _: &Edit| {
-            history.wrote(target.clone(), Instant::now());
+            history.wrote(target.clone(), vec![module("exposure")], Instant::now());
             history.complete(&exposed(2.0), StepSource::You, None);
         }
     };
@@ -512,8 +784,12 @@ fn no_merge_across_another_target_source_note_or_command() {
     assert!(!merged(&you(Some(preset))));
     assert!(!merged(&you(None)));
     assert!(!merged(&|history, _| {
-        history.wrote(Some(exposure()), Instant::now());
-        history.wrote(Some(black.clone()), Instant::now());
+        history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
+        history.wrote(
+            Some(black.clone()),
+            vec![module("exposure")],
+            Instant::now(),
+        );
         history.complete(&exposed(2.0), StepSource::You, None);
     }));
     for (source, note) in [
@@ -522,7 +798,7 @@ fn no_merge_across_another_target_source_note_or_command() {
         (StepSource::Assistant, None),
     ] {
         assert!(!merged(&|history, _| {
-            history.wrote(Some(exposure()), Instant::now());
+            history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
             history.complete(&exposed(2.0), source, note.clone());
         }));
     }
@@ -547,7 +823,7 @@ fn no_merge_across_another_target_source_note_or_command() {
     ] {
         let mut history = reopened(&Edit::default());
         for ev in [1.0, 2.0] {
-            history.wrote(Some(exposure()), Instant::now());
+            history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
             history.complete(&exposed(ev), source, note.clone());
         }
         assert_eq!(
@@ -564,16 +840,24 @@ fn no_merge_across_another_target_source_note_or_command() {
 fn a_cancelled_gesture_is_forgotten() {
     let start = Instant::now();
     let mut history = reopened(&Edit::default());
-    history.wrote(Some(exposure()), start);
+    history.wrote(Some(exposure()), vec![module("exposure")], start);
     history.complete(&exposed(1.0), StepSource::You, None);
     // A drag begun at once, cancelled: the edit back where the step left it.
-    history.wrote(Some(exposure()), start);
+    history.wrote(Some(exposure()), vec![module("exposure")], start);
     history.interrupted(&exposed(1.0));
     assert!(history.written.is_none() && history.merge.is_none());
     // The next change, 12 s on, merges with the one after it: timed from its own first.
-    history.wrote(Some(exposure()), start + secs(12.0));
+    history.wrote(
+        Some(exposure()),
+        vec![module("exposure")],
+        start + secs(12.0),
+    );
     history.complete(&exposed(2.0), StepSource::You, None);
-    history.wrote(Some(exposure()), start + secs(13.0));
+    history.wrote(
+        Some(exposure()),
+        vec![module("exposure")],
+        start + secs(13.0),
+    );
     history.complete(&exposed(3.0), StepSource::You, None);
     assert_eq!(history.log.steps().len(), 2);
 }
@@ -662,7 +946,9 @@ fn ms(duration: Duration) -> f64 {
 fn json(history: &History) -> String {
     let mut out = String::new();
     let moves = |next: &Option<Move>| match next {
-        Some(Move::Step(id)) => format!(r#"{{"Step":"{id}"}}"#),
+        Some(Move::Steps { first, count }) => {
+            format!(r#"{{"Steps":{{"first":"{first}","count":{count}}}}}"#)
+        }
         Some(Move::GoTo) => r#""GoTo""#.to_owned(),
         None => "null".to_owned(),
     };

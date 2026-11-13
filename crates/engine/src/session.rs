@@ -45,10 +45,11 @@
 //! edit and the held coordinates as they stood before its first change, puts both back,
 //! leaving no history step, and writes nothing while the file holds that edit.
 //!
-//! Each completed change is a step of the edit's history, kept in memory for the photo
-//! open (decision 78, [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`]
-//! move through, darktable's undo records first, and [`Command::GoTo`] moves the end of;
-//! [`Command::Step`] makes several commands one step of its source and note. The client is
+//! Each completed change is a step of the edit's history for each module it touched,
+//! several sharing a batch, kept in memory for the photo open (decision 78,
+//! [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`] move through,
+//! darktable's undo records first, a batch whole, and [`Command::GoTo`] moves the end of;
+//! [`Command::Step`] makes several commands one change of its source and note. The client is
 //! told it as [`Event::History`]. What is saved is the edit at the end.
 //!
 //! A photo whose edit a newer Apertrust wrote opens for viewing only (decision 43,
@@ -228,29 +229,33 @@ pub enum Command {
         value: Value,
     },
     /// The whole edit back to nothing, as one history step noted `history-reset`
-    /// ([`Note::reset`]): every module the edit holds back to its defaults, a switched one
-    /// off (decision 32), which Undo brings back.
+    /// ([`Note::reset`]) holding every module it reset: each back to its defaults, a
+    /// switched one off (decision 32), which Undo brings back.
     Reset,
     /// Takes back the newest change to the history this photo's session made, as
-    /// darktable's undo does (decision 78): a step added leaves the log, and the steps it
-    /// dropped after the end come back. With none, as after reopening the photo, the end
-    /// moves back one step, which the next Redo reverses; with nothing to undo, nothing. A
+    /// darktable's undo does (decision 78): one change's steps added, a batch's whole, leave
+    /// the log, and the steps they dropped after the end come back. With none, as after
+    /// reopening the photo, the end moves back over the step before it and its batch, which
+    /// the next Redo reverses; with nothing to undo, nothing. A
     /// change not yet a step, a gesture under way or a `Set`, is made one first, so Undo
     /// during a drag takes back the drag. The edit then saves as a completed change does.
     Undo,
-    /// Puts back the newest change Undo took back; with none, moves the end forward one
-    /// step, which the next Undo reverses; with nothing to redo, nothing. Any new step
+    /// Puts back the newest change Undo took back; with none, moves the end forward over
+    /// the next step and its batch, which the next Undo reverses; with nothing to redo,
+    /// nothing. Any new step
     /// clears what Undo took back.
     Redo,
-    /// Moves the end of the history just after `step`, or to Original with `None`, as a
-    /// click on a step in the History tab does (decision 78): the steps after it stay, and
+    /// Moves the end of the history just after `step`, one inside a batch among them, or to
+    /// Original with `None`, as a click on a step in the History tab does (decision 78): the steps after it stay, and
     /// the next change drops them. Undo takes it back, and after it a change, bringing back
     /// the steps the change dropped. A change not yet a step is made one first. A step not
     /// in the log is refused ([`SessionError::UnknownStep`]); the end where it is already
     /// changes nothing. The edit then saves as a completed change does.
     GoTo { step: Option<StepId> },
-    /// Several commands on the edit as one history step of `source` with `note` (decision
-    /// 78), as the app sends its changes of several commands and an assistant one request.
+    /// Several commands on the edit as one change of `source` with `note` (decision 78), a
+    /// history step of each module they write, in the order written, sharing a batch where
+    /// there are several, as the app sends its changes of several commands and an assistant
+    /// one request. A `Reset` inside is one step noted `history-reset`, not with `note`.
     /// It holds only `SetControl`, `ResetControl`, `ResetModule`, `Keep`, `ApplyPreset`,
     /// `Set` and `Reset`, applied in order, all or none: one refused refuses the whole,
     /// which changes nothing, naming its index ([`SessionError::InStep`]), and any other
@@ -261,8 +266,8 @@ pub enum Command {
     ///
     /// One source per gesture: a `Step` takes in the gesture under way where its commands
     /// write the gesture's module and its source and note are the gesture's, so a drag's
-    /// changes and a `Step` releasing it are one step; otherwise the gesture is a step of its
-    /// own first. One holding `SetControl { done: false }` changes alone is a gesture's
+    /// changes and a `Step` releasing it are one change; otherwise the gesture is a change of
+    /// its own first. One holding `SetControl { done: false }` changes alone is a gesture's
     /// change, of its source and note, continued by the next of the same on the module and
     /// completed as any gesture is. A `Step` refused begins no gesture.
     Step {

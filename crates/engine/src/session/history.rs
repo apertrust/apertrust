@@ -15,28 +15,34 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The open photo's history in the session (decision 78, `docs/history.md`, Behaviour):
-//! its log in memory, each completed change a step, and the undo records, which Undo and
-//! Redo take back and put back as darktable's undo does (`src/libs/history.c:664-686`).
+//! its log in memory, each completed change a step of each module it touched, and the undo
+//! records, which Undo and Redo take back and put back as darktable's undo does
+//! (`src/libs/history.c:664-686`).
 //!
-//! Two stacks, the done records and the undone ones: Undo takes the newest done record
-//! back onto the undone stack, Redo the newest undone one back onto the done stack, and a
-//! new step clears the undone stack. Only when the done stack is empty, as after
-//! reopening a photo, does Undo move the end back one step, and only when the undone stack
-//! is empty does Redo move it forward one; each such move is pushed onto the other stack,
-//! so the next Redo or Undo reverses it. Both stacks end as the photo closes.
+//! A completed change that touched several modules is a step for each, in the order the
+//! modules were written, sharing a batch id, and one undo record, as darktable's undo group
+//! (`dt_undo_start_group`, `src/common/history.c:157`); Reset is one step of every module
+//! it reset. Two stacks, the done records and the undone ones: Undo takes the newest done
+//! record back onto the undone stack, Redo the newest undone one back onto the done stack,
+//! and a new step clears the undone stack. Only when the done stack is empty, as after
+//! reopening a photo, does Undo move the end back over one change's steps, the step before
+//! it and the steps of its batch before that, and only when the undone stack is empty does
+//! Redo move it forward over the next; each such move is pushed onto the other stack, so
+//! the next Redo or Undo reverses it. Both stacks end as the photo closes.
 //!
 //! `GoTo` moves the end, a record of its own, as darktable's click on a history item is
-//! (`src/libs/history.c:1297-1318`). `Step` makes several commands one step of its source
-//! and note, all or none, taking in the gesture under way on a module it writes, of its
-//! source and note.
+//! (`src/libs/history.c:1297-1318`), to any step, one inside a batch among them. `Step`
+//! makes several commands one change of its source and note, all or none, taking in the
+//! gesture under way on a module it writes, of its source and note.
 //!
 //! A change merges into the step before it as darktable's undo merges a widget's quick
 //! repeats (`_dev_undo_start_record_target`, `src/develop/develop.c:1351-1370`): the same
 //! target, a control or a preset row, of the same source, You or Auto, with no note, made
 //! right after that step with no other command on the edit between, its first write within
 //! [`MERGE_WITHIN`] of the step's first and, once a frame including the step's last change
-//! is published, within [`REVIEW`] of that frame (`develop.c:885`). It adds no undo record,
-//! so one Undo takes the merged step back whole. The times are the commands' own, as the
+//! is published, within [`REVIEW`] of that frame (`develop.c:885`); a change of several
+//! modules never merges, nor is a step of a batch merged into. It adds no undo record, so
+//! one Undo takes the merged step back whole. The times are the commands' own, as the
 //! client sent them, and the frames' publications, both handed in, so a test sets them.
 
 use std::time::{Duration, Instant, SystemTime};
@@ -48,7 +54,8 @@ use apertrust_plugin::{ImageContext, Operation};
 use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
 use crate::history::{
-    Described, Entry, History, Log, Move, Note, Step, StepId, StepSource, default_lines,
+    Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource, Wrote,
+    default_lines,
 };
 
 /// The open photo's log, its undo records and what its next step is measured from.
@@ -73,7 +80,7 @@ pub(super) struct PhotoHistory {
     written: Option<Written>,
     /// The step the next change may merge into: the log's last, at the end, made with no
     /// command on the edit since but changes not yet a step, of one target, source You or
-    /// Auto, no note and no batch.
+    /// Auto, no note, and of one module, so in no batch.
     merge: Option<Merge>,
 }
 
@@ -102,6 +109,8 @@ struct Written {
     began: Instant,
     /// The one target they all wrote; `None` for several, or for a change of none.
     target: Option<Target>,
+    /// What each of their commands wrote, in order, which orders their steps.
+    wrote: Vec<Wrote>,
     /// When the first frame including the last of them was published; `None` until then.
     published: Option<Instant>,
 }
@@ -121,13 +130,13 @@ struct Merge {
 /// What one command on the history changed, which Undo takes back and Redo puts back.
 #[derive(Debug)]
 enum Record {
-    /// A step added at `at`, the end before it. `held` is what the log does not hold:
-    /// while the record is done, the steps after the end that the step dropped; while it
-    /// is undone, the step itself.
+    /// One change's steps added at `at`, the end before them: one, or a batch's. `held` is
+    /// what the log does not hold: while the record is done, the steps after the end that
+    /// they dropped; while it is undone, the steps themselves.
     Added { at: usize, held: Vec<Step> },
-    /// The end moved over the step at `at`, between `at` and `at + 1`, by Undo's or Redo's
-    /// fallback.
-    Moved { at: usize },
+    /// The end moved over the steps from `start` to `end`, one change's or the part of one
+    /// that applied, by Undo's or Redo's fallback: Undo puts it at `start`, Redo at `end`.
+    Moved { start: usize, end: usize },
     /// The end moved by a `GoTo` from `from` to `to`.
     GoTo { from: usize, to: usize },
 }
@@ -135,7 +144,7 @@ enum Record {
 impl PhotoHistory {
     /// The history of a photo whose edit was read as `edit` from a file whose bytes hash
     /// to `hash` and which was last modified at `modified`, none for a photo never
-    /// edited: the file is version 1, read as one step ([`Log::read`]).
+    /// edited: the file is version 1, read as a step of each module ([`Log::read`]).
     pub(super) fn read(edit: &Edit, hash: Option<[u8; 32]>, modified: Option<SystemTime>) -> Self {
         let log = Log::read(edit, hash, modified);
         let clock = log.steps().last().map(|step| step.clock);
@@ -155,7 +164,7 @@ impl PhotoHistory {
     }
 
     /// The same file read again as `edit`, as the decode's image context clamps it before
-    /// any command can change it: its step holds that, and every step is described anew
+    /// any command can change it: its steps hold that, and every step is described anew
     /// on the new context.
     pub(super) fn read_again(&mut self, edit: &Edit) {
         let (hash, modified) = self.file;
@@ -168,15 +177,20 @@ impl PhotoHistory {
         &self.log
     }
 
-    /// Makes what changed since the last step one step, of `source` with `note`, and says
-    /// whether it did: a change that changes nothing makes none. It drops the steps after
-    /// the end, which Undo brings back, and clears the undone records. A change that merges
-    /// into the step before it makes none of its own and adds no record: that step keeps
-    /// its id, takes the change's entries and the latest clock.
+    /// Makes what changed since the last step a step of each module it touched, of `source`
+    /// with `note` ([`Change::between`]), and says whether it made any: a change that changes
+    /// nothing makes none. Several share a batch id; a Reset's step is noted
+    /// `history-reset`. They drop the steps after the end, which Undo brings back, and clear
+    /// the undone records. A change of one module that merges into the step before it makes
+    /// none of its own and adds no record: that step keeps its id, takes the change's entry
+    /// and the latest clock.
     pub(super) fn complete(&mut self, edit: &Edit, source: StepSource, note: Option<Note>) -> bool {
         let written = self.written.take();
-        let entries = Entry::between(&self.stepped, edit);
-        if entries.is_empty() {
+        let wrote = written
+            .as_ref()
+            .map_or(&[][..], |written| &written.wrote[..]);
+        let changes = Change::between(&self.stepped, edit, wrote);
+        if changes.is_empty() {
             return false;
         }
         let clock = Clock::now(self.clock.as_ref(), self.machine);
@@ -191,31 +205,43 @@ impl PhotoHistory {
                 && written.began < merge.began + MERGE_WITHIN
                 && (merge.published).is_none_or(|published| written.began < published + REVIEW)
         };
-        match (&mut self.merge, written) {
-            (Some(merge), Some(written)) if merges(merge, &written) => {
-                self.log.merge(entries, clock);
-                merge.published = written.published;
-            }
-            (merge, written) => {
+        if let (Some(merge), Some(written), [Change::Entry(entry)]) =
+            (&mut self.merge, &written, &changes[..])
+            && merges(merge, written)
+            && self.log.merge(entry, clock)
+        {
+            merge.published = written.published;
+        } else {
+            let one = changes.len() == 1;
+            let batch = (!one).then(|| self.log.new_batch());
+            let at = self.log.end();
+            let mut dropped = Vec::new();
+            for change in changes {
+                let note = match change {
+                    Change::Reset(_) => Some(Note::reset()),
+                    Change::Entry(_) => note.clone(),
+                };
                 let step = Step {
                     id: self.log.new_id(),
                     clock,
                     source,
                     note,
-                    batch: None,
-                    entries,
+                    batch,
+                    change,
                 };
-                let at = self.log.end();
-                let dropped = self.log.add(step);
-                self.done.push(Record::Added { at, held: dropped });
-                self.undone.clear();
-                *merge = target.zip(written).map(|(target, written)| Merge {
+                // Only the first drops any: the rest go on at the end.
+                dropped.extend(self.log.add(step));
+            }
+            self.done.push(Record::Added { at, held: dropped });
+            self.undone.clear();
+            self.merge = (target.zip(written))
+                .filter(|_| one)
+                .map(|(target, written)| Merge {
                     target,
                     source,
                     began: written.began,
                     published: written.published,
                 });
-            }
         }
         self.clock = Some(clock);
         self.stepped = edit.clone();
@@ -224,19 +250,24 @@ impl PhotoHistory {
     }
 
     /// A command on the edit, sent at `at`, wrote `target`, or, with `None`, wrote several
-    /// or none: the changes not yet a step go on, or begin with it.
-    pub(super) fn wrote(&mut self, target: Option<Target>, at: Instant) {
+    /// or none, and wrote the modules and operations `wrote`, in order: the changes not yet
+    /// a step go on, or begin with it.
+    pub(super) fn wrote(&mut self, target: Option<Target>, wrote: Vec<Wrote>, at: Instant) {
         self.written = Some(match self.written.take() {
             None => Written {
                 began: at,
                 target,
+                wrote,
                 published: None,
             },
-            Some(written) => Written {
-                target: (written.target).filter(|one| target.as_ref() == Some(one)),
-                published: None,
-                ..written
-            },
+            Some(mut written) => {
+                written.wrote.extend(wrote);
+                Written {
+                    target: (written.target).filter(|one| target.as_ref() == Some(one)),
+                    published: None,
+                    ..written
+                }
+            }
         });
     }
 
@@ -269,23 +300,25 @@ impl PhotoHistory {
         self.complete(edit, StepSource::You, None);
         let record = match self.done.pop() {
             Some(Record::Added { at, held }) => {
-                // The step leaves the log, and the steps it dropped come back.
-                let step = self.log.replace_after(at, held, at);
-                Record::Added { at, held: step }
+                // The change's steps leave the log, and the steps they dropped come back.
+                let steps = self.log.replace_after(at, held, at);
+                Record::Added { at, held: steps }
             }
-            Some(Record::Moved { at }) => {
-                self.log.set_end(at);
-                Record::Moved { at }
+            Some(Record::Moved { start, end }) => {
+                self.log.set_end(start);
+                Record::Moved { start, end }
             }
             Some(Record::GoTo { from, to }) => {
                 self.log.set_end(from);
                 Record::GoTo { from, to }
             }
-            // The fallback: the end back one step, which Redo reverses.
+            // The fallback: the end back over the step before it and its batch, which Redo
+            // reverses.
             None => {
-                let at = self.log.end().checked_sub(1)?;
-                self.log.set_end(at);
-                Record::Moved { at }
+                let end = self.log.end();
+                let start = self.log.batch_start(end)?;
+                self.log.set_end(start);
+                Record::Moved { start, end }
             }
         };
         self.undone.push(record);
@@ -298,25 +331,27 @@ impl PhotoHistory {
         self.complete(edit, StepSource::You, None);
         let record = match self.undone.pop() {
             Some(Record::Added { at, held }) => {
-                // The step again, and the steps after the end dropped again.
-                let dropped = self.log.replace_after(at, held, at + 1);
+                // The change's steps again, and the steps after the end dropped again.
+                let end = at + held.len();
+                let dropped = self.log.replace_after(at, held, end);
                 Record::Added { at, held: dropped }
             }
-            Some(Record::Moved { at }) => {
-                self.log.set_end(at + 1);
-                Record::Moved { at }
+            Some(Record::Moved { start, end }) => {
+                self.log.set_end(end);
+                Record::Moved { start, end }
             }
             Some(Record::GoTo { from, to }) => {
                 self.log.set_end(to);
                 Record::GoTo { from, to }
             }
-            // The fallback: the end forward one step, which Undo reverses.
-            None if self.log.end() < self.log.steps().len() => {
-                let at = self.log.end();
-                self.log.set_end(at + 1);
-                Record::Moved { at }
+            // The fallback: the end forward over the step after it and its batch, which Undo
+            // reverses.
+            None => {
+                let start = self.log.end();
+                let end = self.log.batch_end(start)?;
+                self.log.set_end(end);
+                Record::Moved { start, end }
             }
-            None => return None,
         };
         self.done.push(record);
         Some(self.moved())
@@ -327,7 +362,8 @@ impl PhotoHistory {
     /// `None` where the end is there already, as darktable's click on the item applied last
     /// does nothing (`src/libs/history.c:1265`); `Err` with a step not in the log, which
     /// changes nothing more. Undo takes it back, a record as darktable's click is
-    /// (`:1297-1318`), and it clears the undone records.
+    /// (`:1297-1318`), and it clears the undone records. Any step, one inside a batch among
+    /// them, as darktable's click on any item.
     pub(super) fn go_to(
         &mut self,
         edit: &Edit,
@@ -362,18 +398,30 @@ impl PhotoHistory {
         self.changed
     }
 
-    /// What Undo, or Redo where `undo` is false, would do now: the step it would take back
+    /// What Undo, or Redo where `undo` is false, would do now: the steps it would take back
     /// or put back, a record's or the fallback's.
     fn next(&self, undo: bool) -> Option<Move> {
         let records = if undo { &self.done } else { &self.undone };
-        let step = match records.last() {
+        let (steps, end) = (self.log.steps(), self.log.end());
+        let (start, end) = match records.last() {
             Some(Record::GoTo { .. }) => return Some(Move::GoTo),
-            Some(Record::Added { held, .. }) if !undo => held.first(),
-            Some(Record::Added { at, .. } | Record::Moved { at }) => self.log.steps().get(*at),
-            None if undo => (self.log.end().checked_sub(1)).and_then(|at| self.log.steps().get(at)),
-            None => self.log.steps().get(self.log.end()),
+            Some(Record::Added { held, .. }) if !undo => {
+                let first = held.first()?;
+                return Some(Move::Steps {
+                    first: first.id,
+                    count: held.len(),
+                });
+            }
+            Some(Record::Added { at, .. }) => (*at, steps.len()),
+            Some(Record::Moved { start, end }) => (*start, *end),
+            None if undo => (self.log.batch_start(end)?, end),
+            None => (end, self.log.batch_end(end)?),
         };
-        step.map(|step| Move::Step(step.id))
+        let first = steps.get(start)?;
+        Some(Move::Steps {
+            first: first.id,
+            count: end - start,
+        })
     }
 
     /// The `History` fact, through the first `through` commands, the photo's steps
@@ -408,7 +456,8 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
         | Command::ResetModule { .. }
         | Command::Keep { .. }
         | Command::ApplyPreset { .. } => Some((StepSource::You, None)),
-        Command::Reset => Some((StepSource::You, Some(Note::reset()))),
+        // Its step is noted `history-reset` as it is made.
+        Command::Reset => Some((StepSource::You, None)),
         Command::Step {
             source,
             note,
@@ -455,6 +504,22 @@ fn writes(command: &Command, module: &str) -> bool {
         | Command::ApplyPreset { module: named, .. } => named == module,
         Command::Reset => true,
         _ => false,
+    }
+}
+
+/// What `command` writes, in order: the module it names, the operation a `Set` names, every
+/// module and operation for `Reset`, or a `Step`'s commands' in turn; nothing for any other.
+fn wrote(command: &Command) -> Vec<Wrote> {
+    match command {
+        Command::SetControl { module, .. }
+        | Command::ResetControl { module, .. }
+        | Command::ResetModule { module }
+        | Command::Keep { module, .. }
+        | Command::ApplyPreset { module, .. } => vec![Wrote::Module(module.clone())],
+        Command::Set { operation, .. } => vec![Wrote::Operation(operation.clone())],
+        Command::Reset => vec![Wrote::All],
+        Command::Step { commands, .. } => commands.iter().flat_map(wrote).collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -581,15 +646,15 @@ impl Engine {
         }
         let completes = completes(&command);
         let is_step = matches!(command, Command::Step { .. });
-        let writes = (in_step(&command) || is_step).then(|| target(&command));
+        let writes = (in_step(&command) || is_step).then(|| (target(&command), wrote(&command)));
         let retry = matches!(command, Command::RetrySave);
         let before = self.open.as_ref().map(|open| open.edit.clone());
         let applied = self.edit_command(command);
         if let Some(open) = &mut self.open {
             match (&applied, writes) {
                 // A change that changes nothing counts as none.
-                (Ok(_), Some(target)) if before.as_ref() != Some(&open.edit) => {
-                    open.history.wrote(target, at);
+                (Ok(_), Some((target, wrote))) if before.as_ref() != Some(&open.edit) => {
+                    open.history.wrote(target, wrote, at);
                 }
                 (Ok(_), Some(_)) => {}
                 _ if !retry => open.history.interrupted(&open.edit),
