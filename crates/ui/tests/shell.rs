@@ -1702,3 +1702,32 @@ fn the_shell_at_full_width() {
     harness.run();
     harness.snapshot("shell-full-width");
 }
+
+/// While a colour picker is on, the central bar says which it is and how to use it, after
+/// the layer's buttons, in place of the values under the cursor (`docs/pickers.md`, On the
+/// photo); where how does not fit, the name alone.
+#[test]
+fn a_picker_s_words_take_the_values_place() {
+    const NAME: &str = "Exposure · Exposure";
+    const HOW: &str = "Drag an area on the photo. Ctrl-click switches to a point. Esc ends.";
+    for (width, how) in [(1000.0, true), (520.0, false)] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(width, 60.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(|ui| {
+                CentralBar::new("Image", Zoom::Fit)
+                    .values(Some([142, 128, 113]))
+                    .picker(NAME, HOW)
+                    .show(ui);
+            });
+        harness.run();
+        let name = harness.get_by_role_and_label(Role::Label, NAME);
+        assert!(name.rect().left() > harness.get_by_label("New layer").rect().right());
+        assert_eq!(
+            harness.query_by_role_and_label(Role::Label, HOW).is_some(),
+            how,
+            "{width}"
+        );
+        assert!(harness.query_by_label("Values under the cursor").is_none());
+    }
+}

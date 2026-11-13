@@ -25,9 +25,10 @@
 //!   reported them with the changes sent since shown over them, what the side panel's
 //!   editing tabs draw of them ([`Shown`]), the latest frame, the scopes' reading, whether
 //!   the edit is on disk ([`Saving`]), the photo's history, which names what Undo and Redo
-//!   would do ([`History`]), the jobs ([`jobs::Mirror`]), the failure the central panel
-//!   shows, the open folder ([`folder::FolderState`]) and the Export dialog's floor for
-//!   previews. Panels read it each frame; nothing subscribes.
+//!   would do ([`History`]), the active colour picker ([`pickers::Mirror`]), the jobs
+//!   ([`jobs::Mirror`]), the failure the central panel shows, the open folder
+//!   ([`folder::FolderState`]) and the Export dialog's floor for previews. Panels read it
+//!   each frame; nothing subscribes.
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
 //! - **No photo:** before any, from the moment another is asked for until its values
@@ -59,6 +60,7 @@ use apertrust_ui::components::SaveState;
 use crate::folder::{self, FolderState};
 use crate::jobs;
 use crate::modules::Pending;
+use crate::pickers;
 use crate::scopes::Scopes;
 
 /// What the app must do in reply to an event, that the mirror cannot: it touches egui, the
@@ -149,6 +151,9 @@ pub struct Mirror {
     /// `through` (decision 78): what Undo and Redo would do, which Edit's items name; none
     /// with no photo, and while one opens until its own arrives.
     pub history: Option<History>,
+    /// The active colour picker, as the session last reported it with what the app asked
+    /// since (decision 79); none with no photo, and while one opens.
+    pub pickers: pickers::Mirror,
     /// The jobs the session has reported, which the spinner and the jobs window show
     /// (decision 57).
     pub jobs: jobs::Mirror,
@@ -188,6 +193,7 @@ impl Mirror {
             scopes: Scopes::default(),
             saving: Saving::default(),
             history: None,
+            pickers: pickers::Mirror::default(),
             jobs,
             folder: FolderState::default(),
             cache: crate::storage::Mirror::default(),
@@ -305,12 +311,14 @@ impl Mirror {
         }
     }
 
-    /// No photo is open: every module untouched, no history and no scopes reading.
+    /// No photo is open: every module untouched, no history, no picker and no scopes
+    /// reading.
     fn no_photo(&mut self) {
         self.shown = Shown::Nothing;
         self.values = self.untouched.clone();
         self.pending.clear();
         self.history = None;
+        self.pickers.forget();
         self.scopes.forget();
     }
 
@@ -395,8 +403,8 @@ impl Mirror {
                 }
             }
             Event::Scopes(reading) => self.scopes.receive(&reading),
-            // The app turns no colour picker on yet (`docs/pickers.md`, The plan).
-            Event::Picker(_) => {}
+            // The active picker's reading, or `None` as it turns off.
+            Event::Picker { through, reading } => self.pickers.apply(through, reading),
             // The Export dialog shows the preview, the newest it holds.
             Event::ExportPreview { through, preview } => {
                 if through >= self.export_floor {
@@ -452,6 +460,7 @@ impl Mirror {
             // It changed nothing: what was shown for it, and a save awaited for it, stop.
             let command = *command;
             self.pending.retain(|(number, _)| *number != command);
+            self.pickers.refused(command);
             self.saving.refused(command);
             self.jobs.refused(command);
         }
@@ -478,6 +487,7 @@ impl Mirror {
         // No job the engine ran will report again: they end as failed.
         if matches!(error, SessionError::Panicked(_) | SessionError::Stopped) {
             self.saving.stopped();
+            self.pickers.forget();
             let show = self.jobs.engine_stopped();
             jobs_reaction(show, reactions);
         }
@@ -580,7 +590,8 @@ fn untouched(modules: &[&dyn Module]) -> Values {
 }
 
 /// Whether `event` is a photo's own, which only a photo open or opening sends: its
-/// picture, its opening or its failure, its values, history, frames and scopes readings.
+/// picture, its opening or its failure, its values, history, frames, scopes readings and
+/// picker readings.
 fn of_a_photo(event: &Event) -> bool {
     matches!(
         event,
@@ -590,6 +601,7 @@ fn of_a_photo(event: &Event) -> bool {
             | Event::History(_)
             | Event::Frame(_)
             | Event::Scopes(_)
+            | Event::Picker { .. }
             | Event::Failed(SessionError::Open { .. })
     )
 }
@@ -673,7 +685,11 @@ impl PhotoState {
         match event {
             Event::Opened(photo) => photo.open != *open,
             Event::Failed(SessionError::Open { open: failed, .. }) => failed != open,
-            Event::Values(_) | Event::History(_) | Event::Frame(_) | Event::Scopes(_) => true,
+            Event::Values(_)
+            | Event::History(_)
+            | Event::Frame(_)
+            | Event::Scopes(_)
+            | Event::Picker { .. } => true,
             _ => false,
         }
     }
@@ -1520,6 +1536,116 @@ pub(crate) mod tests {
         // A new dialog starts over.
         m.previews_from(12);
         assert_eq!(m.apply(answer(9)), []);
+    }
+
+    /// The photo's picker readings reach the pickers' mirror; a refused `On` stops
+    /// showing, and so does one the session turned off again before its first reading, as
+    /// a change of its module does; another photo, and a photo closed, forget it and drop
+    /// what it still sends.
+    #[test]
+    fn the_mirror_keeps_the_photo_s_picker() {
+        use apertrust_engine::session::{PickerReading, PickerRef, Region};
+
+        let exposure = PickerRef::Module {
+            module: "exposure",
+            picker: "exposure",
+        };
+        let reading = |through| Event::Picker {
+            through,
+            reading: Some(PickerReading {
+                through,
+                picker: exposure,
+                region: Region::Area([0.02, 0.02, 0.98, 0.98]),
+                module: None,
+                frame: None,
+            }),
+        };
+        let off = |through| Event::Picker {
+            through,
+            reading: None,
+        };
+        let mut m = mirror();
+        m.opening(PathBuf::from("/photos/a.ARW"), 1, Instant::now());
+        m.apply(Event::Opened(photo(1)));
+        m.apply(Event::Values(report(0.0, 1)));
+        m.pickers.asked(2, Some((exposure, true)));
+        m.apply(refused(2, "no picker"));
+        assert_eq!(m.pickers.active(), None);
+        // On, then Exposure changed before its first reading: the session turns it off.
+        m.pickers.asked(3, Some((exposure, true)));
+        send(&mut m, 4, 0.5);
+        assert_eq!(m.pickers.active(), Some(exposure));
+        m.apply(off(4));
+        assert_eq!(m.pickers.active(), None);
+        // An end from before an `On` leaves it shown.
+        m.pickers.asked(5, Some((exposure, true)));
+        m.apply(off(4));
+        assert_eq!(m.pickers.active(), Some(exposure));
+        m.apply(reading(5));
+        assert_eq!(m.pickers.active(), Some(exposure));
+        m.apply(off(6));
+        assert_eq!(m.pickers.active(), None);
+        m.apply(reading(6));
+        // Another photo: none, the photo left's readings dropped on their way.
+        m.opening(PathBuf::from("/photos/b.ARW"), 7, Instant::now());
+        assert_eq!(m.pickers.active(), None);
+        m.apply(reading(6));
+        assert_eq!(m.pickers.active(), None);
+        m.apply(Event::Opened(photo(7)));
+        m.apply(Event::Values(report(0.0, 7)));
+        m.apply(reading(8));
+        assert_eq!(m.pickers.active(), Some(exposure));
+        // Closed, and what the session still sends of it.
+        m.closing();
+        assert_eq!(m.pickers.active(), None);
+        m.apply(reading(9));
+        assert_eq!(m.pickers.active(), None);
+    }
+
+    /// A module pick's command that completes a change is waited for as any completed
+    /// change is: the session answers it with `Saved`, the edit written or, where the pick
+    /// wrote nothing, reported held, so a release whose only answer is `Saved`, with no
+    /// `Values`, is waited for no more, and a slider's drag after it shows no Saving…; a
+    /// failed write of a pick is told.
+    #[test]
+    fn a_pick_is_waited_for_until_its_save_and_no_longer() {
+        let edit = sidecar::path_for(&photo(1).path);
+        let mut m = mirror();
+        m.apply(Event::Opened(photo(1)));
+        m.apply(Event::Values(report(0.0, 1)));
+        // A release, saved in its own batch: `Saved` alone answers it.
+        let now = Instant::now();
+        m.saving.sent(2, true, now);
+        assert!(m.saving.writing());
+        m.apply(Event::Saved {
+            path: edit.clone(),
+            through: 2,
+        });
+        assert!(!m.saving.writing());
+        // A slider's drag after it: its steps wait for no write, and nothing shows.
+        for (number, value) in [(3, 0.2), (4, 0.4)] {
+            m.pend(number, set_exposure(value));
+            m.saving.sent(number, false, now);
+            m.apply(Event::Values(report(value, number)));
+        }
+        let later = now + SAVING_AFTER + Duration::from_millis(1);
+        assert_eq!(m.saving.saving_from(), None);
+        assert_eq!(m.saving.state(later), SaveState::Saved);
+
+        // A pick whose write fails is told.
+        m.saving.sent(5, true, now);
+        assert_eq!(m.saving.state(later), SaveState::Saving);
+        m.apply(Event::Failed(SessionError::Save {
+            path: edit,
+            through: 5,
+            source: std::io::Error::other("disk full"),
+        }));
+        assert!(!m.saving.writing());
+        assert!(
+            m.saving
+                .failed()
+                .is_some_and(|why| why.contains("disk full"))
+        );
     }
 
     /// Whether `values` are every module's, untouched and unavailable, as with no photo.

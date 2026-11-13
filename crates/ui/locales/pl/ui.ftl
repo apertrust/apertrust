@@ -801,6 +801,24 @@ picker-tip-area-quad =
     { $tip }
     { $command }+kliknięcie, aby zaznaczyć obszar
 
+## Aktywny próbnik na zdjęciu (docs/pickers.md, On the photo, Accessibility). $module to
+## nazwa modułu, $picker nazwa próbnika: etykieta jego kontrolki na kwadracie suwaka, inaczej
+## własna; $command to modyfikator wskaźnika, tak jak zapisują go skróty, $what własne
+## zdanie próbnika
+
+picker-bar-name = { $module } · { $picker }
+picker-bar-area = Przeciągnij obszar na zdjęciu. { $command }+kliknięcie przełącza na punkt. Esc kończy.
+picker-bar-point = { $what } { $command }+kliknięcie przełącza na obszar. Esc kończy.
+picker-bar-point-what = Kliknij lub przeciągnij punkt na zdjęciu.
+picker-photo-area = Obszar próbnika, { $picker }
+picker-photo-point = Punkt próbnika, { $picker }
+picker-photo-at-point = punkt na { $x }%, { $y }%
+picker-photo-at-area = obszar od { $left }%, { $top }% do { $right }%, { $bottom }%
+picker-photo-up = Przesuń w górę
+picker-photo-down = Przesuń w dół
+picker-said-control = { $control } { $value }
+picker-said-rgb = średnie RGB { $red }, { $green }, { $blue }
+
 ## Okno eksportu (docs/gui.md, The Export dialog): moduł eksportu darktable, nazwy
 ## wielką literą tylko pierwszego słowa. $count to liczba zdjęć, jedno zdjęcie to dokładnie
 ## liczba 1. $file to nazwa zdjęcia lub pliku, $source plik raw, $folder folder, $width

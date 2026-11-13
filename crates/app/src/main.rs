@@ -65,6 +65,7 @@ mod menus;
 mod mirror;
 mod modules;
 mod paths;
+mod pickers;
 mod popups;
 mod recents;
 mod recovery;
@@ -93,16 +94,16 @@ use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
-    CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand, Places,
-    Session, StepSource, Values, ViewOnly,
+    CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand,
+    PickerCommand, PickerRef, Places, Session, StepSource, Values, ViewOnly,
 };
 use apertrust_modules::Module;
 use apertrust_ui::components::{
     ActivityAction, Available, CellRating, CentralBar, CentralBarAction, GridEdge, GridEdgeAction,
     GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody, PanelEdge,
-    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, Placed, SaveState, ScopeView, TabBar,
-    TabBarAction, Thumb, Toggle, TopPanel, TopPanelAction, Zoom, grid_panel_lines,
-    grid_panel_thickness,
+    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
+    ScopeView, TabBar, TabBarAction, Thumb, Toggle, TopPanel, TopPanelAction, Zoom,
+    grid_panel_lines, grid_panel_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Icon, Locale, Theme, Translator, popup, theme, tr, translator,
@@ -1298,6 +1299,8 @@ struct App {
     /// That picture fading out over the photo's first live frame, its texture taken from
     /// `picture` (decision 77).
     fade: Option<fade::Fade>,
+    /// What the colour picker's live region reads out (decision 79).
+    said: pickers::Said,
     /// The grid panel's thumbnails as textures, made of what the mirror holds.
     thumbnails: thumbnails::Textures,
     /// The thumbnails asked for of the photos in the grid panel's sight.
@@ -2868,6 +2871,7 @@ impl App {
             quit_again: false,
             picture: None,
             fade: None,
+            said: pickers::Said::default(),
             thumbnails: thumbnails::Textures::default(),
             thumbnails_asked: thumbnails::Asking::default(),
             kept,
@@ -3333,8 +3337,8 @@ impl App {
     /// Sends what a module section asks of the session, shown at once until a report
     /// includes it, or applies what it asks of the section's own state. A photo open for
     /// viewing only takes no change of its edit, whose controls and resets are drawn
-    /// disabled.
-    fn change(&mut self, change: Change) {
+    /// disabled, nor a module's picker turned on.
+    fn change(&mut self, change: Change, ctx: &egui::Context) {
         let edits = matches!(
             change,
             Change::Set { .. }
@@ -3344,6 +3348,10 @@ impl App {
                 | Change::ApplyPreset { .. }
                 | Change::Action { .. }
                 | Change::Step(_)
+                | Change::Picker {
+                    action: PickerAction::On { .. },
+                    ..
+                }
         );
         // Only the open photo's values, once they have arrived, can be changed: not the
         // defaults drawn with no photo or while one opens, nor a photo open for viewing
@@ -3398,7 +3406,45 @@ impl App {
             }
             Change::Group { module, group } => self.shell.toggle_group(module, group),
             Change::Tab { .. } => self.panels.apply(&change),
+            Change::Picker {
+                module,
+                picker,
+                action,
+                keys,
+            } => {
+                let command = pickers::pressed(PickerRef::Module { module, picker }, action, keys);
+                self.send_picker(command, ctx);
+            }
         }
+    }
+
+    /// Sends a colour picker's command (decision 79) and shows what it asks at once: a
+    /// picker turned on, with the focus moved to the photo, or off, and a region moved; the
+    /// live region waits for the reading of a command that applies one, and the save
+    /// state, for a command that completes a change, for the values its pick reports.
+    fn send_picker(&mut self, command: PickerCommand, ctx: &egui::Context) {
+        let showing = pickers::Showing::of(&command, self.mirror.modules());
+        // A module's pick is a change on the edit, which the session answers with a
+        // write, or the edit reported held where it wrote nothing; the Colour picker's
+        // writes nothing.
+        let picker = match &command {
+            PickerCommand::On { picker, .. } => Some(*picker),
+            _ => self.mirror.pickers.active(),
+        };
+        let module = matches!(picker, Some(PickerRef::Module { .. }));
+        let completes = module && pickers::completes(&command);
+        let number = self.session.send(Command::Picker(command));
+        let mirror = &mut self.mirror;
+        if completes {
+            mirror.saving.sent(number, true, Instant::now());
+        }
+        showing.sent(
+            number,
+            &mut mirror.pickers,
+            &mut self.said,
+            &mirror.values,
+            ctx,
+        );
     }
 
     /// Sends a command that changes the edit: the top panel's save state waits for the
@@ -3618,7 +3664,7 @@ impl App {
             self.shell.scopes_change(change);
         }
         for change in changes {
-            self.change(change);
+            self.change(change, ui.ctx());
         }
         tab_clicked
     }
@@ -3854,6 +3900,16 @@ impl App {
                 Some((*entry, self.shell.keymap.tip(*id, ui.ctx().os(), &words)?))
             })
             .collect();
+        // While a picker is on, which it is and how to use it; what the live region said
+        // goes with the picker it was about.
+        self.said.follow(self.mirror.pickers.active());
+        let mac = ui.ctx().os() == OperatingSystem::Mac;
+        let picker_words = (self.mirror.pickers.active())
+            .zip(self.mirror.pickers.area())
+            .filter(|_| open)
+            .and_then(|(picker, area)| {
+                pickers::bar_words(&words, self.mirror.modules(), picker, area, mac)
+            });
         // The viewport only fits the photo for now: the zoom shows Fit, and its menu
         // offers Fit alone, which it already is.
         let mut bar = CentralBar::new(&layer, Zoom::Fit)
@@ -3865,6 +3921,9 @@ impl App {
             )
             .zoom_enabled(open)
             .status(rendering.as_deref());
+        if let Some((name, how)) = &picker_words {
+            bar = bar.picker(name, how);
+        }
         for (entry, keys) in &keys {
             bar = bar.shortcut(*entry, keys);
         }
@@ -3911,6 +3970,7 @@ impl App {
             .as_ref()
             .or(self.mirror.saving.failure.as_ref());
         // A failed render keeps the last frame, if any, and says what failed over it.
+        let mut picking = None;
         if message.is_none()
             && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
         {
@@ -3918,6 +3978,10 @@ impl App {
             // The first picture fading out over the first live frame, until it ends.
             let open = self.mirror.photo.open().unwrap_or_default();
             fade::Fade::paint(&mut self.fade, &ui.painter_at(slot), placed, open);
+            // The active picker over the live photo, once the rest is drawn.
+            if live {
+                picking = Some((placed.photo, [frame.width, frame.height]));
+            }
         } else if message.is_none()
             && failure.is_none()
             && let (Some((shown, generation)), Some(placed)) = (picture, &placed)
@@ -3986,11 +4050,55 @@ impl App {
                 .details(&details)
                 .show(ui, placed.caption);
         }
+        if let Some((photo, pixels)) = picking {
+            self.picker_on_photo(ui, photo, pixels);
+        }
         self.carry_out(asked, ui.ctx());
         (
             central_bar,
             self.background_menu(ui.ctx(), &background, photo_rect),
         )
+    }
+
+    /// The active colour picker over the photo drawn at `photo` from a frame of `pixels`
+    /// (`docs/pickers.md`, On the photo): its marks, what the pointer and the keys send,
+    /// and the live region reading a pick out once it has rested.
+    fn picker_on_photo(&mut self, ui: &mut egui::Ui, photo: egui::Rect, pixels: [u32; 2]) {
+        let mirror = &self.mirror.pickers;
+        let (Some(picker), Some(region)) = (mirror.active(), mirror.region()) else {
+            return;
+        };
+        let words = translator(ui.ctx());
+        let name = match picker {
+            PickerRef::Module { module, picker } => (self.mirror.modules().iter())
+                .find(|m| m.definition().id == module)
+                .map(|m| pickers::name(&words, m.definition(), picker))
+                .unwrap_or_default(),
+            PickerRef::ColourPicker => String::new(),
+        };
+        let on = pickers::OnPhoto {
+            picker,
+            photo,
+            pixels,
+            region,
+            switched: mirror.switched(region),
+            colour: pickers::sampled(mirror.reading()),
+            name: &name,
+        };
+        for command in pickers::on_photo(ui, &on) {
+            self.send_picker(command, ui.ctx());
+        }
+        let wait = self.said.update(
+            Instant::now(),
+            self.mirror.pickers.reading(),
+            &self.mirror.values,
+            self.mirror.modules(),
+            &words,
+        );
+        if let Some(wait) = wait {
+            ui.ctx().request_repaint_after(wait);
+        }
+        pickers::live_region(ui, photo.left_bottom(), self.said.text());
     }
 
     /// The surround's right-click menu, View › Background's items, hung from the pointer
@@ -5555,6 +5663,7 @@ fn edit_tab(
     let scopes = Some((photo.then(|| mirror.scopes.measured()).flatten(), photo));
     let (modules, values) = (mirror.modules(), &mirror.values);
     // Every control of a photo opening says why it is disabled.
+    let words = translator(ui.ctx());
     let opening = mirror.opening_name().map(|name| {
         let mut args = apertrust_ui::i18n::Args::new();
         args.set(
@@ -5563,8 +5672,21 @@ fn edit_tab(
                 .file_stem()
                 .map_or(name.clone(), |stem| stem.to_string_lossy().into_owned()),
         );
-        translator(ui.ctx()).text_with("controls-opening", Some(&args))
+        words.text_with("controls-opening", Some(&args))
     });
+    // A module's picker is pressed only on the open photo once live, and never on one
+    // open for viewing only, whose notice says why.
+    let view_only = match &mirror.photo {
+        PhotoState::Open(photo) => photo.view_only.as_ref(),
+        _ => None,
+    };
+    let view_only = view_only.map(|view_only| view_only_notice(&words, view_only));
+    let pickers = modules::Pickers {
+        drawn: modules::PICKING,
+        on: mirror.pickers.active(),
+        enabled: shown.editable(),
+        why: opening.as_deref().or(view_only.as_deref()),
+    };
     panel_body(
         ui,
         shell,
@@ -5575,6 +5697,7 @@ fn edit_tab(
         peek,
         shown.editable(),
         opening.as_deref(),
+        &pickers,
     )
 }
 
@@ -5582,8 +5705,9 @@ fn edit_tab(
 /// tab pins it, unless `scopes` is `None`, its graph from what it holds and drawn disabled
 /// unless its flag says a photo is shown, then the tab's
 /// modules among `modules`, drawn from their definitions with the mirror's `values`; each
-/// section open as the shell keeps it, peeking while `peek` holds, and its reset disabled
-/// unless `editable`. Returns what Scopes and the modules asked for.
+/// section open as the shell keeps it, peeking while `peek` holds, its reset disabled
+/// unless `editable`, and its colour pickers as `pickers` says. Returns what Scopes and the
+/// modules asked for.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the side panel, each part apart"
@@ -5598,6 +5722,7 @@ fn panel_body(
     peek: bool,
     editable: bool,
     opening: Option<&str>,
+    pickers: &modules::Pickers,
 ) -> (Vec<scopes::Change>, Vec<Change>) {
     let shown = TAB_MODULES
         .get(shell.panel_tab)
@@ -5624,7 +5749,7 @@ fn panel_body(
                 // one.
                 let drawn = ui.push_id(id, |ui| {
                     modules::section(
-                        ui, *module, state, open, panels, &groups, peek, editable, opening,
+                        ui, *module, state, open, panels, &groups, peek, editable, opening, pickers,
                     )
                 });
                 changes.extend(drawn.inner);
@@ -8090,7 +8215,16 @@ mod tests {
                     let shell = &kept.shell;
                     let groups = |group: &str| shell.group_open("sample", group);
                     let changes = modules::section(
-                        ui, &Sample, &state, true, &panels, &groups, false, true, None,
+                        ui,
+                        &Sample,
+                        &state,
+                        true,
+                        &panels,
+                        &groups,
+                        false,
+                        true,
+                        None,
+                        &modules::Pickers::NONE,
                     );
                     for change in changes {
                         if let Change::Group { module, group } = change {
@@ -8195,6 +8329,7 @@ mod tests {
                         false,
                         true,
                         None,
+                        &modules::Pickers::NONE,
                     );
                     for change in scopes {
                         side.shell.scopes_change(change);
@@ -10250,6 +10385,112 @@ mod tests {
         assert_eq!(width(&harness), None);
         assert!(panel_edge(&harness).is_focused());
         assert_eq!(harness.state().pressed, vec![]);
+    }
+
+    /// The app's keys read first, as its frame reads them, then a point picker on the photo
+    /// (`docs/pickers.md`, On the photo), and what each asked for.
+    struct Picking {
+        shell: Shell,
+        pressed: Vec<ActionId>,
+        sent: Vec<PickerCommand>,
+    }
+
+    /// With the picker on the photo focused, its keys reach it before the app's actions,
+    /// as a focused slider's do: → and Space are Next Photo's, ← and Backspace Previous
+    /// Photo's, and here ↑ and Delete open Settings. Without the focus, the actions take
+    /// them and the picker hears none.
+    #[test]
+    fn the_focused_picker_takes_its_keys_before_the_app_s_actions() {
+        use apertrust_engine::session::{PickerRef, Region};
+        let settings = Settings {
+            keys: BTreeMap::from([(
+                "settings".to_owned(),
+                vec!["ArrowUp".to_owned(), "Delete".to_owned()],
+            )]),
+            ..Settings::default()
+        };
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(800.0, 600.0))
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, picking: &mut Picking| {
+                    let ctx = ui.ctx().clone();
+                    let state = State {
+                        photos: 2,
+                        ..picking.shell.state(&ctx, true, false)
+                    };
+                    let keys = actions::read(&ctx, &picking.shell.keymap, &state);
+                    picking.pressed.extend(keys.pressed);
+                    let photo = egui::Rect::from_min_size(
+                        egui::pos2(100.0, 100.0),
+                        egui::vec2(400.0, 300.0),
+                    );
+                    let on = pickers::OnPhoto {
+                        picker: PickerRef::ColourPicker,
+                        photo,
+                        pixels: [400, 300],
+                        region: Region::Point([0.5, 0.5]),
+                        switched: Region::Area([0.02, 0.02, 0.98, 0.98]),
+                        colour: egui::Color32::GRAY,
+                        name: "",
+                    };
+                    picking.sent.extend(pickers::on_photo(ui, &on));
+                },
+                Picking {
+                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                    pressed: Vec::new(),
+                    sent: Vec::new(),
+                },
+            );
+        harness.run();
+        let keys = [
+            Key::ArrowRight,
+            Key::Space,
+            Key::ArrowLeft,
+            Key::Backspace,
+            Key::ArrowUp,
+            Key::Delete,
+        ];
+        for key in keys {
+            harness.key_press(key);
+            harness.run();
+        }
+        assert_eq!(
+            harness.state().pressed,
+            [ActionId::SETTINGS, ActionId::SETTINGS]
+        );
+        assert_eq!(harness.state().sent, []);
+
+        harness.state_mut().pressed.clear();
+        harness
+            .get_by(|node| node.role() == Role::Group && node.value().is_some())
+            .focus();
+        harness.run();
+        for key in keys.into_iter().chain([Key::Escape]) {
+            harness.key_press(key);
+            harness.run();
+        }
+        assert_eq!(harness.state().pressed, []);
+        let point = |x: f32, y: f32| PickerCommand::Point {
+            at: [x, y],
+            done: true,
+            keys: Default::default(),
+        };
+        assert_eq!(
+            harness.state().sent,
+            [
+                point(0.5 + 1.0 / 400.0, 0.5),
+                PickerCommand::Switch,
+                point(0.5 - 1.0 / 400.0, 0.5),
+                PickerCommand::Reset,
+                point(0.5, 0.5 - 1.0 / 300.0),
+                PickerCommand::Reset,
+                PickerCommand::Off
+            ]
+        );
     }
 
     /// The shell as the app's frame runs it, without the engine, which `App` needs a GPU

@@ -1025,6 +1025,31 @@ picker-tip-area-quad =
     { $tip }
     { $command }+click to select an area
 
+## The active picker on the photo (docs/pickers.md, On the photo, Accessibility). $module is
+## the module's title, $picker the picker's name: its control's label on a slider's quad,
+## else its own; $command is the pointer's modifier as shortcuts spell it, $what the
+## picker's own sentence
+
+# The central bar's start while a picker is on.
+picker-bar-name = { $module } · { $picker }
+# How to use a picker measuring an area.
+picker-bar-area = Drag an area on the photo. { $command }-click switches to a point. Esc ends.
+# How to use a picker measuring a point, after its own sentence.
+picker-bar-point = { $what } { $command }-click switches to an area. Esc ends.
+# The sentence of a picker with none of its own: an area picker switched to a point.
+picker-bar-point-what = Click or drag the point on the photo.
+# The picker on the photo, as screen readers hear it, and its value in percent of the photo.
+picker-photo-area = Picker area, { $picker }
+picker-photo-point = Picker point, { $picker }
+picker-photo-at-point = point at { $x }%, { $y }%
+picker-photo-at-area = area from { $left }%, { $top }% to { $right }%, { $bottom }%
+picker-photo-up = Move up
+picker-photo-down = Move down
+# What is read out once a pick has rested: each control it changed with its value, or the
+# colour it measured, each channel 0 to 255.
+picker-said-control = { $control } { $value }
+picker-said-rgb = mean RGB { $red }, { $green }, { $blue }
+
 ## The Export dialog (docs/gui.md, The Export dialog): darktable's export module, its
 ## labels in sentence case. $count is the photos, a single one the exact number 1. $file
 ## is a photo's name or a file's, $source the raw, $folder a folder, $width and $height

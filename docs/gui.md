@@ -313,7 +313,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 
 ### On-photo overlays
 
-One language for every mark drawn on the photo: pickers and their samples, masks' shapes, gradients, the brush, retouch's shapes, guides and their labels. It is darktable's line, from its picker drawing (`src/views/darkroom.c:331-470`), the wireframe's "On-photo overlays · one language" frame. The design system's `overlay` module draws it, given the photo's rectangle on screen and the marks in the photo's coordinates; no tool draws a line of its own. Built with the pickers ([pickers.md](pickers.md#on-the-photo), 79.4), before any mark on the photo; the picker's marks, `PickerMarks` (79.5), draw with it, in the gallery; nothing in the app draws with it yet, and masks' overlays (Phase 4) will use the same primitives.
+One language for every mark drawn on the photo: pickers and their samples, masks' shapes, gradients, the brush, retouch's shapes, guides and their labels. It is darktable's line, from its picker drawing (`src/views/darkroom.c:331-470`), the wireframe's "On-photo overlays · one language" frame. The design system's `overlay` module draws it, given the photo's rectangle on screen and the marks in the photo's coordinates; no tool draws a line of its own. Built with the pickers ([pickers.md](pickers.md#on-the-photo), 79.4), before any mark on the photo; the picker's marks, `PickerMarks` (79.5), draw with it, and the app draws the active picker's marks over the photo with them (79.6); masks' overlays (Phase 4) will use the same primitives.
 
 - **The line:** 1 point of white at 80 % over 3 points of black at 40 %, so it reads on any photo, light or dark, and needs no colour. Its ends and corners are square, and a rectangle's lines fall on the screen's pixels.
 - **Three weights:**
@@ -2131,6 +2131,7 @@ The thin bar along the central panel's top, `CentralBar` in the code. Up to the 
   - **Show all selected photos:** on, Photo shows the selected photos side by side; off, the active photo alone ([The central panel's layouts](#the-central-panels-layouts)). On by default. It is enabled whenever a photo is active, since it sets what Photo does once several are selected; View › Show All Selected is the same toggle.
   - **Guides,** the composition guides drawn over the photo in the `guides` token. Its message is `photo-guides`, and its action `guides` (View › Guides) comes with the menus. It is to take an icon of its own, thirds over a frame; until then it shows the icon `grid`. Which guides it draws is chosen with Crop's composition guides once Crop exists.
   - **The values under the cursor:** four numbers 0–255, with no swatch. Red, green and blue each in its channel's colour token and grey in the text colour, with no letters; their full names for screen readers.
+  - **While a colour picker is on,** its words take the values' place after the layer's buttons ([pickers.md](pickers.md#on-the-photo)): which picker it is, "Exposure · Exposure", in the text colour, then how to use it a step quieter, "Drag an area on the photo. Ctrl-click switches to a point. Esc ends.", each a label to screen readers; how is left out where it does not fit, and both where the name does not (`CentralBar::picker`). Built.
 - **In Map** (later): the photo's toggles where they are, drawn disabled, since they act on a photo the central panel does not show; the Map toggle where it is, on, under the pointer to be pressed again; after it, Map's own controls in place of the layer menu, the values and the scale. Show all selected photos stays enabled there, since it sets what Photo does.
 
 #### The Map toggle
@@ -2420,7 +2421,7 @@ Each module is darktable's page as darktable has it, with no Advanced controls t
 | Guides | darktable's guides widget, for a module with `IOP_FLAGS_GUIDES_WIDGET`: a `ToggleRow`, Show guides, with the global guide settings button (`IconButton`, the grid) at its end, drawn disabled, off, until the module's guides come; its words shared by every module (`messages::GUIDES`) | `Row::Guides` |
 
 - **A collapsible group whose rows are to come** (AgX's Show curve, before a read-only graph row) is a `Row::Group` with no rows, which `Definition::check` takes, drawn disabled and closed with the tooltip a titled tab with no rows has, "Coming in a later version" (`CollapsibleGroup::disabled`, `section-tab-later`).
-- **A quad with nothing behind it** is not drawn until its tool runs, so Exposure has no picker yet. Drawing it disabled needs a disabled state on `SliderRow`'s quad first. A picker's quad names its picker (`Quad::Picker(id)`) and will be the design system's `PickerButton`, built and shown in the gallery, drawn by no panel yet ([pickers.md](pickers.md#the-picker-button), decision 79).
+- **A quad with nothing behind it** is not drawn until its tool runs. A picker's quad names its picker (`Quad::Picker(id)`) and is the design system's `PickerButton` in its quad mode (`SliderRow::picker`), and a row of pickers holds them as toggle buttons ([pickers.md](pickers.md#the-picker-button), decision 79); both are drawn for a module whose pick is built (`modules::PICKING`), so Exposure's quad waits for its pick (79.7).
 
 #### View rows
 
@@ -2542,7 +2543,8 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   | cancels the popup: Esc, leaving it, a press outside, an app key | `SliderAction::Cancel` | `CancelGesture { module }`, which puts the module back as it was before the gesture ([engine.md](engine.md), Session and threads) |
   | clicks a choice's marker (●, or ○ under the pointer or focus; decision 42) | `ChoiceAction::ToggleKeep` | `Keep { module, control, kept }`, releasing a kept choice or keeping one |
   | presses the header's reset | `SectionAction::Reset` | `ResetModule { module }` |
-  | presses the quad | `SliderAction::Quad` | a picker's `PickerCommand::On` or `Off` ([pickers.md](pickers.md#the-picker-button), planned) |
+  | presses the quad | `SliderAction::Quad` | a line's tool (planned) |
+  | presses a picker's quad or button (decision 79) | `SliderAction::Picker` or the button's `PickerAction` | `PickerCommand::On { picker, area, keys }`, or `Off` for the picker on ([pickers.md](pickers.md#the-picker-button)) |
   | chooses a preset row's option | `ChoiceAction::Set`, the option's index | `ApplyPreset { module, preset, option }` |
 
 ### The renderer
@@ -2563,6 +2565,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - A label is a `group_label`. A collapsible group is a `CollapsibleGroup`, open as the shell keeps it, its toggle reported as `Change::Group`.
   - A mode's rows are drawn while the mirror's value of the control they follow is one of theirs, pending values included, so they follow a choice at once.
   - A tool's setting is drawn disabled at darktable's default, reporting nothing, a choice among them Blended.
+  - A colour picker, on a slider's quad or in a row of pickers, is a `PickerButton`, on while the mirror shows its picker on, disabled with the reason on a photo opening or open for viewing only, for a module whose pick is built ([pickers.md](pickers.md#the-picker-button)).
   - A preset row is a Blended `Choice` showing the option the session reports, or Custom, the options the photo cannot have disabled.
   - A slider row naming a lossless view's coordinate is a `SliderRow` showing the coordinate the session reports, set, reset and kept as a control.
 - **A control that can change nothing on the photo** is drawn disabled and reports so to AccessKit: `Module::available`, reported by the session with each control.
@@ -2577,6 +2580,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - `Set`, `Reset`, `Keep` and `ResetModule`, which the app sends as `SetControl`, `ResetControl`, `Keep` and `ResetModule` and shows at once through its pending values until a report includes them, so a slider never jumps back;
   - `Cancel`, a slider popup's cancelled gesture (decision 42), which it sends as `CancelGesture` and shows as the module was reported when the gesture began, until a report includes it (planned with the popup);
   - `ApplyPreset`, which it sends as `ApplyPreset` and shows once the session reports it, since the option's values are the photo's;
+  - `Picker`, a picker's button pressed, which it sends as `Command::Picker` and shows at once, the picker on or off ([pickers.md](pickers.md#the-picker-button));
   - `Toggle`, `Tab` and `Group`, which change the app's own state after the section is drawn.
 - **Values are what the row shows:** a definition's 0.01 is f32's 0.0099999998, so the renderer widens each f32 to the decimal it was written as before the slider steps and clamps in f64, and a key step lands on +2.00, not on +1.9999999. A value is then rounded to the row's decimals before it is sent, so nothing finer than the row shows is ever set: a Contrast of 0.1 would run colour balance rgb while its row read "0". A key's move is never less than that last decimal (darktable's `min_visible`), so Alt's tenth of a step still moves where the step is the last decimal, as on Global offset chroma.
 - **Which modules a tab shows** is a list per tab in the app (`TAB_MODULES`), in [modules/README.md](modules/README.md)'s order, darktable's groups and its on-screen order, the last in the pipeline at the top (decision 38; [The tabs](#the-tabs-darktables-groups)), until Customise tabs edits it (step 7). A test holds each list to `apertrust_operations::OPERATIONS` reversed. Built:
@@ -2597,7 +2601,7 @@ None of these blocks a module built so far:
 - **How a widened track looks,** which Colour calibration's temperature row needs first (its track over 3000 to 7000 K, its range 1667 to 25000). darktable draws the parts of a widened track outside the soft range in its insensitive colour (`_draw_baseline`), so the soft range stays visible within the span shown, where Apertrust draws the whole span alike. darktable also remaps a gradient track's stops onto the visible range, from positions over the hard range, where `Track::Gradient` places its stops along the track whatever it spans, so a colour band over a soft range or a widened span would show the wrong colours at each value.
 - **Track shapes.** `SliderRow` maps the track linearly, as darktable's sliders do. `Track` has temperature, tint and hue, but not the saturation and luminance bands the definition offers; the renderer draws those plain.
 - **Markers and resets.** `Choice`'s Blended style has the kept marker; a choice's reset (darktable's quick second click), and `Segmented`'s and the toggle's marker and reset, remain. Only `Choice` has a quad, which a choice with a picker needs.
-- **The quad's tools:** a quad's disabled state, and the tools behind it: the picker, designed in [pickers.md](pickers.md) (decision 79), and the line.
+- **The quad's tools:** a plain quad's disabled state, and the line's tool behind it; the picker's quad is built (decision 79).
 - **A disabled control's tooltip cannot say why:** Compensate camera exposure on a photo with no bias shows its promise, not that the camera recorded none.
 - **Colour balance RGB** leaves these rows out until they come (`docs/modules/colour-balance-rgb.md`, Gaps): a showmask quad, which `Quad` lacks; a read-only graph among the custom widgets, its luminance ranges'; a track following another control's value, its chroma at the wheel's hue; and words for a tab's tooltip and the module's own.
 - **The Tone equalizer** (`docs/modules/tone-equalizer.md`, Gaps): a `Quad` for darktable's wand, an Auto that solves one control from the photo, which its two mask compensations have; and its showmask button, drawn as a disabled checkbox meanwhile.
@@ -3276,6 +3280,7 @@ show_selected = false       # from Phase 3
   - while edited a text input named with its unit ("Exposure, in EV"), invalid when Enter finds no value once the field takes expressions, and never while it takes a number only;
   - the popup (planned) a SpinButton with a description of its keys and a polite live region for each step, the focus back on the slider when it closes;
   - an exact value by keyboard: Tab to the slider, type "6.5", Enter; the popup without a mouse: Enter, Shift+F10, the Menu key or ShowContextMenu.
+- **A colour picker** ([pickers.md](pickers.md#accessibility)): its button a toggle button described by its tooltip; while it is on, its point or area on the photo a group named "Picker area, Exposure", its value the region in percent of the photo, Increment and Decrement moving it along x and the custom actions Move up and Move down along y, the keys its own while it has the focus; and a polite live region reading out what a pick changed once it has rested half a second.
 - **Keyboard** as above, with a visible focus ring from the theme. The ring shows after a key or a screen reader's request moves focus, not after a click or a drag, as browsers' `:focus-visible` does (`apertrust-ui`'s `FocusVisible`): a slider being dragged has focus, and a ring around it only distracts.
 - **Scale:** the system's scale times the user's (egui's zoom factor, set in View › Interface Size and in Settings, with no default keys, since Ctrl+= and Ctrl+− are the photo's zoom); every size is a token in points.
 - **Colour:**

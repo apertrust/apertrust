@@ -21,7 +21,7 @@
 //! `UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test picker`, reviewed like a golden
 //! image.
 
-use apertrust_ui::components::{PickerAction, PickerButton};
+use apertrust_ui::components::{PickerAction, PickerButton, SliderAction, SliderRow};
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::{Role, Toggled};
@@ -385,6 +385,76 @@ fn the_tooltip_s_words_are_translated() {
         );
         assert!(description.contains("Ctrl+"), "{}", locale.id());
     }
+}
+
+/// A slider row with a picker as its quad, on while `on`, the row enabled while
+/// `enabled`, and what it reported.
+struct Quad {
+    on: bool,
+    enabled: bool,
+    reported: Vec<SliderAction>,
+}
+
+fn slider_quad(on: bool, enabled: bool) -> Harness<'static, Quad> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(360.0, 60.0))
+        .with_os(OperatingSystem::Nix)
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui_state(
+            |ui, state: &mut Quad| {
+                let reported = SliderRow::new("Exposure", 0.0, -3.0..=4.0)
+                    .picker(PickerButton::new(NAME, state.on))
+                    .enabled(state.enabled)
+                    .show(ui);
+                state.reported.extend(reported);
+            },
+            Quad {
+                on,
+                enabled,
+                reported: Vec::new(),
+            },
+        );
+    harness.run();
+    harness
+}
+
+/// A slider's picker is the quad, in its quad mode: a right-click is a click, Ctrl alone
+/// picks an area, a press while on turns it off, and the row disabled disables it.
+#[test]
+fn a_slider_s_picker_quad_reports_its_presses() {
+    let mut harness = slider_quad(false, true);
+    let button = harness.get_by_role_and_label(Role::Button, NAME);
+    assert_eq!(button.accesskit_node().toggled(), Some(Toggled::False));
+    button.click_secondary();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, NAME)
+        .click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    assert_eq!(
+        harness.state().reported,
+        vec![
+            SliderAction::Picker(PickerAction::On { area: false }),
+            SliderAction::Picker(PickerAction::On { area: true }),
+        ]
+    );
+
+    let mut harness = slider_quad(true, true);
+    let button = harness.get_by_role_and_label(Role::Button, NAME);
+    assert_eq!(button.accesskit_node().toggled(), Some(Toggled::True));
+    button.click();
+    harness.run();
+    assert_eq!(
+        harness.state().reported,
+        vec![SliderAction::Picker(PickerAction::Off)]
+    );
+
+    let mut harness = slider_quad(false, false);
+    let button = harness.get_by_role_and_label(Role::Button, NAME);
+    assert!(button.accesskit_node().is_disabled());
+    button.click();
+    harness.run();
+    assert_eq!(harness.state().reported, vec![]);
 }
 
 fn photograph(which: Builtin, name: &str) {

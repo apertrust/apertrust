@@ -38,7 +38,8 @@
 //!   now (`ValueField::number_only`); Enter, Tab or a click elsewhere sets it, clamped to
 //!   the range, Escape puts it back, and so does leaving it empty or with a sign or a
 //!   separator alone; the value is text again.
-//! - The quad is an optional action just before the value: a picker or a line tool.
+//! - The quad is an optional action just before the value: a line tool, or a colour
+//!   picker's [`PickerButton`] in its quad mode (`docs/pickers.md`, The picker button).
 //! - The track spans the soft range, as darktable's sliders do (`soft_range`), inside the
 //!   range, which stays what a value may hold: a value beyond it, typed, pasted or set by
 //!   a script, widens the track just enough to show it, and the track keeps that span
@@ -71,8 +72,8 @@ use egui::{
 
 use super::value_field::number_char;
 use super::{
-    IconButton, ValueField, field_inset, focus_ring, focus_ring_centred, marker, paint_keep_marker,
-    truncated,
+    ButtonState, IconButton, PickerAction, PickerButton, ValueField, field_inset, focus_ring,
+    focus_ring_centred, marker, paint_keep_marker, truncated,
 };
 use crate::{Icon, Theme, theme, translator};
 
@@ -155,6 +156,8 @@ pub enum SliderAction {
     ToggleKeep,
     /// The quad was pressed.
     Quad,
+    /// The quad's colour picker was pressed ([`SliderRow::picker`]).
+    Picker(PickerAction),
 }
 
 pub struct SliderRow<'a> {
@@ -172,6 +175,7 @@ pub struct SliderRow<'a> {
     mark: Mark,
     before_match: Option<f64>,
     quad: Option<Quad<'a>>,
+    picker: Option<PickerButton<'a>>,
     enabled: bool,
     unit: Option<&'a str>,
 }
@@ -197,6 +201,7 @@ impl<'a> SliderRow<'a> {
             mark: Mark::None,
             before_match: None,
             quad: None,
+            picker: None,
             enabled: true,
             unit: None,
         }
@@ -273,6 +278,14 @@ impl<'a> SliderRow<'a> {
         self
     }
 
+    /// A colour picker's button as the quad, darktable's picker on a slider: drawn in its
+    /// quad mode ([`PickerButton::quad`]), disabled with the row, and reported as
+    /// [`SliderAction::Picker`]. It takes the place of any [`Self::quad`].
+    pub fn picker(mut self, button: PickerButton<'a>) -> Self {
+        self.picker = Some(button.quad(true));
+        self
+    }
+
     /// A disabled row is dimmed and ignores input: a module's Basic sliders in manual mode.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
@@ -288,7 +301,7 @@ impl<'a> SliderRow<'a> {
         self
     }
 
-    pub fn show(self, ui: &mut Ui) -> Option<SliderAction> {
+    pub fn show(mut self, ui: &mut Ui) -> Option<SliderAction> {
         let t = theme(ui.ctx());
         let tr = translator(ui.ctx());
         let id = ui.make_persistent_id(("slider", self.name));
@@ -545,7 +558,7 @@ impl<'a> SliderRow<'a> {
         };
         // The label takes what the rest of the top line leaves, cut with … when long: the
         // value is never cut.
-        let quad = self.quad.is_some();
+        let quad = self.quad.is_some() || self.picker.is_some();
         let body = FontId::proportional(t.text.body);
         let room = Places::across(row, &t, quad, f32::INFINITY, value_width)
             .label
@@ -588,7 +601,16 @@ impl<'a> SliderRow<'a> {
 
         // The quad and the value field, each in a child that leaves the row's cursor under
         // the row, where a scope would move it back up to its own bottom.
-        if let Some(quad) = self.quad {
+        if let Some(mut picker) = self.picker.take() {
+            if !self.enabled {
+                picker = picker.state(ButtonState::Disabled);
+            }
+            let (_, pressed) =
+                picker.show(&mut ui.new_child(UiBuilder::new().max_rect(places.quad)));
+            if let Some(pressed) = pressed {
+                actions.push(SliderAction::Picker(pressed));
+            }
+        } else if let Some(quad) = self.quad {
             let pressed = IconButton::new(quad.icon, quad.name)
                 .size(t.sizes.field)
                 .toggled(quad.active)
@@ -800,7 +822,7 @@ impl<'a> SliderRow<'a> {
             SliderAction::Reset => 0,
             SliderAction::Set { .. } => 1,
             SliderAction::ToggleKeep => 2,
-            SliderAction::Quad => 3,
+            SliderAction::Quad | SliderAction::Picker(_) => 3,
         });
         actions.into_iter().next()
     }

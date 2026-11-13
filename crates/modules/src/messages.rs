@@ -106,6 +106,14 @@ pub fn action(module: &str, action: &str) -> [String; 3] {
     ["label", "full", "promise"].map(|part| format!("module-{module}-action-{action}-{part}"))
 }
 
+/// A colour picker's name, full name, promise and, for one that takes a point, the central
+/// bar's sentence ([`crate::Picker`]): `module-<module>-picker-<picker>-label`, `-full`,
+/// `-promise` and `-what`.
+pub fn picker(module: &str, picker: &str) -> [String; 4] {
+    ["label", "full", "promise", "what"]
+        .map(|part| format!("module-{module}-picker-{picker}-{part}"))
+}
+
 /// A preset row's short label, full name and promise:
 /// `module-<module>-preset-<preset>-label`, `-full` and `-promise`.
 pub fn preset(module: &str, preset: &str) -> [String; 3] {

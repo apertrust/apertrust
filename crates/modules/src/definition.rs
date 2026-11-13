@@ -88,8 +88,9 @@ pub struct Definition {
 /// Its words come with its button and the central bar (`docs/pickers.md`, The picker
 /// button, On the photo), in the controls' and actions' scheme:
 /// `module-<module>-picker-<id>-label`, its name; `-full`, what screen readers say;
-/// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence.
-/// [`crate::messages::of`] implies none of them until they are drawn.
+/// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence
+/// ([`crate::messages::picker`]). [`crate::messages::of`] implies none of them: the app
+/// draws a module's pickers only once its pick is built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Picker {
     /// snake_case ASCII and permanent, unique among the module's pickers: clients name it

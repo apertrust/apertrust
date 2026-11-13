@@ -962,7 +962,7 @@ impl DemoSlider {
                     Mark::Kept
                 };
             }
-            SliderAction::Quad => {}
+            SliderAction::Quad | SliderAction::Picker(_) => {}
         }
     }
 }

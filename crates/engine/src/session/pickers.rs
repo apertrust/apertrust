@@ -91,6 +91,13 @@ pub(super) struct Pickers {
     released: u64,
     /// The drag whose picks wrote changes the writer has yet to be handed.
     gesture: Option<u64>,
+    /// A module picker's commands that complete a change, `On`, `Switch`, `Reset` or a
+    /// move's release, with no answer yet, each by its number and its drag, oldest first.
+    /// One is answered by the first write handed over once its drag is complete, released
+    /// with no reading of it still to come, or then by the edit reported held where it has
+    /// nothing to write ([`Engine::settle`]), so a client always gets a `Saved` through it,
+    /// and never one before its pick reaches the edit ([`Pickers::owed_through`]).
+    pub(super) owed: Vec<(u64, u64)>,
 }
 
 /// The picker on, and whether it measures its area rather than its point.
@@ -263,6 +270,9 @@ pub(super) struct PickerEffect {
     pub(super) render: bool,
     /// The change is complete: the edit is saved.
     pub(super) save: bool,
+    /// A command owed an answer has nothing to write: where the edit needs no save, it is
+    /// reported held, as after a cancel ([`Pickers::owed`]).
+    pub(super) answer: bool,
 }
 
 impl Pickers {
@@ -343,6 +353,30 @@ impl Pickers {
         of(self.module_on().and_then(|on| on.due))
             || self.ready.iter().any(|arrived| of(arrived.due()))
             || (self.probe.iter()).any(|probe| probe.on_its_way().any(|p| of(p.due)))
+    }
+
+    /// Whether `drag` is complete: released, with no reading of it still to come.
+    fn complete(&self, drag: u64) -> bool {
+        drag <= self.released && !self.of_drag_to_come(drag)
+    }
+
+    /// Whether a command owed an answer can have it: its drag complete.
+    pub(super) fn answerable(&self) -> bool {
+        (self.owed.iter()).any(|&(_, drag)| self.complete(drag))
+    }
+
+    /// What a write handed over now answers, as the commands it is through: every one
+    /// applied, `applied`, but for a command owed an answer whose pick is still to come,
+    /// which only a later write answers. Those it answers are owed no more.
+    pub(super) fn owed_through(&mut self, applied: u64) -> u64 {
+        let owed = std::mem::take(&mut self.owed);
+        self.owed = owed
+            .into_iter()
+            .filter(|&(_, drag)| !self.complete(drag))
+            .collect();
+        self.owed
+            .first()
+            .map_or(applied, |&(command, _)| command - 1)
     }
 
     /// Whether the drag whose picks the writer has yet to be handed is complete, released
@@ -532,7 +566,7 @@ pub(super) fn probing(
 
 impl Engine {
     /// [`super::Command::Picker`]: what it changes beyond the pickers' state.
-    /// `Picker(None)` goes into `events` as a picker turns off.
+    /// A `Picker` with no reading goes into `events` as a picker turns off.
     pub(super) fn picker(
         &mut self,
         command: PickerCommand,
@@ -626,12 +660,15 @@ impl Engine {
             }
             if done {
                 pickers.released = pickers.drag;
+                pickers.owed.push((self.applied, pickers.drag));
             }
         }
         self.pickers.active = Some(active);
         // A release with no reading of its drag still to come completes the drag with the
         // values already written; otherwise the drag's newest reading does, as it arrives.
         effect.save = self.pickers.settled();
+        // One with nothing to write is answered all the same, the edit reported held.
+        effect.answer = self.pickers.answerable();
         Ok(effect)
     }
 
@@ -696,6 +733,10 @@ impl Engine {
                     }
                 }
             }
+            // Owed an answer from here, its drag still to come: no write handed over
+            // while it turns on, the drag under way's or the picker it replaces', answers it.
+            let owed = (self.applied, self.pickers.drag + 1);
+            self.pickers.owed.push(owed);
             // A drag under way is saved before the module turns on, never with it.
             if self.pickers.gesture.take().is_some() && self.needs_save() {
                 self.save();
@@ -703,7 +744,14 @@ impl Engine {
             let changed = self.change(|edit, _, _, _| {
                 edit.turn_on(found);
                 Ok(())
-            })?;
+            });
+            let changed = match changed {
+                Ok(changed) => changed,
+                Err(error) => {
+                    self.pickers.owed.retain(|&o| o != owed);
+                    return Err(error);
+                }
+            };
             if changed {
                 if let Some(open) = &mut self.open {
                     open.gesture = None;
@@ -711,7 +759,12 @@ impl Engine {
                 (effect.values, effect.render, effect.save) = (true, true, true);
             }
             self.pickers.tools.insert(found.definition().id, tools);
-            // A drag of its own, complete as it begins.
+            // The picker it replaces off first, its own commands answered; then a drag of
+            // its own, complete as it begins, answered once its first reading is applied or
+            // dropped.
+            if self.pickers.active.is_some() {
+                self.picker_off(events);
+            }
             self.pickers.drag += 1;
             self.pickers.released = self.pickers.drag;
             let area = match declared.kind {
@@ -769,15 +822,20 @@ impl Engine {
         let id = module.definition().id;
         let changed: BTreeSet<&str> = tools.iter().map(|(tool, _)| *tool).collect();
         self.pickers.tools.insert(id, tools);
+        // A completed change, answered whether it applies a pick or not.
+        let unapplied = PickerEffect {
+            answer: true,
+            ..PickerEffect::default()
+        };
         let Some(latest) = self.pickers.latest.get(id).copied() else {
-            return Ok(PickerEffect::default());
+            return Ok(unapplied);
         };
         let editable = self
             .open
             .as_ref()
             .is_some_and(|open| open.view_only.is_none());
         if !self.live() || !editable || !latest.picker.tools.iter().any(|t| changed.contains(t)) {
-            return Ok(PickerEffect::default());
+            return Ok(unapplied);
         }
         let due = Due {
             command: self.applied,
@@ -805,7 +863,7 @@ impl Engine {
             });
         let (changed, shown) = match picked {
             Ok(Some(written)) => written,
-            Ok(None) => return Ok(PickerEffect::default()),
+            Ok(None) => return Ok(unapplied),
             Err(error) => {
                 if on(&self.pickers).is_some() {
                     self.picker_off(events);
@@ -823,25 +881,39 @@ impl Engine {
                 self.send(self.applied, picker, region, events);
             }
         }
+        // A completed change, answered whether it wrote or not.
         Ok(PickerEffect {
             moved: false,
             values: true,
             render: changed,
             save: true,
+            answer: true,
         })
     }
 
     /// Turns the active picker off, as [`PickerCommand::Off`] does, as another photo opens
-    /// and as the photo closes: `Picker(None)` where one was on, and a pick's gesture
+    /// and as the photo closes: a `Picker` with no reading where one was on, and a pick's gesture
     /// under way closed, its edit handed to the writer.
     pub(super) fn picker_off(&mut self, events: &mut Vec<Event>) {
         if self.pickers.active.is_some() {
             let gesture = self.pickers.gesture.is_some();
+            let owed = !self.pickers.owed.is_empty();
             self.pickers.clear();
-            events.push(Event::Picker(None));
-            if gesture && self.needs_save() {
-                self.save();
-            }
+            events.push(Event::Picker {
+                through: self.applied,
+                reading: None,
+            });
+            self.answer(gesture, owed);
+        }
+    }
+
+    /// After a picker turned off or failed: a drag under way is saved, and a command still
+    /// owed an answer with nothing to write gets the edit reported held.
+    fn answer(&mut self, gesture: bool, owed: bool) {
+        if gesture && self.needs_save() {
+            self.save();
+        } else if owed && !self.unsaved() {
+            self.save_held();
         }
     }
 
@@ -1112,10 +1184,16 @@ impl Engine {
     }
 
     /// Hands the writer the picks of a drag complete: released, with no reading of it
-    /// still to come.
+    /// still to come; and where it has nothing to write, answers a command owed one with
+    /// the edit reported held, so a `Saved` through it always comes. Held, an edit whose
+    /// last write failed is written again; one with a change of its own still unsaved, as
+    /// a slider's gesture under way, waits for that change's save, which answers it.
     fn settle(&mut self) {
-        if self.pickers.settled() && self.needs_save() {
+        let settled = self.pickers.settled();
+        if settled && self.needs_save() {
             self.save();
+        } else if self.pickers.answerable() && !self.unsaved() {
+            self.save_held();
         }
     }
 
@@ -1336,7 +1414,10 @@ impl Engine {
         });
         if changed {
             pickers.sent = Some(reading.clone());
-            events.push(Event::Picker(Some(reading)));
+            events.push(Event::Picker {
+                through: reading.through,
+                reading: Some(reading),
+            });
         }
     }
 
@@ -1348,22 +1429,24 @@ impl Engine {
     }
 
     /// Turns the pickers off for the rest of the session, reporting why once, and
-    /// `Picker(None)` where one was on: the frames go on without them.
+    /// a `Picker` with no reading where one was on: the frames go on without them.
     pub(super) fn pickers_fail(&mut self, error: String, events: &mut Vec<Event>) {
         tracing::error!(target: "pipe", "pickers off: {error}");
         let on = self.pickers.active.is_some();
         let gesture = self.pickers.gesture.is_some();
+        let owed = !self.pickers.owed.is_empty();
         self.pickers.clear();
         self.pickers.reducer = None;
         self.pickers.probe = None;
         self.pickers.failed = Some(error.clone());
         events.push(Event::Failed(SessionError::Pickers(error)));
         if on {
-            events.push(Event::Picker(None));
+            events.push(Event::Picker {
+                through: self.applied,
+                reading: None,
+            });
         }
-        if gesture && self.needs_save() {
-            self.save();
-        }
+        self.answer(gesture, owed);
     }
 
     /// Whether the photo is live (decision 77): open, its raw uploaded, no open under way.
