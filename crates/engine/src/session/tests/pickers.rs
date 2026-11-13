@@ -1380,9 +1380,10 @@ impl Module for Tooled {
         };
         Some(apertrust_modules::pick::Picked {
             writes,
+            // The gain it measured, as a measure mode gives its tool settings back.
             shown: apertrust_modules::pick::Shown {
                 patch: Some(patch),
-                tools: Vec::new(),
+                tools: vec![("gain", ControlValue::Number(gain + 1.0))],
             },
         })
     }
@@ -1401,7 +1402,13 @@ fn tools_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picker_o
     let mut driven = Driven::new(&[&Tooled]);
     driven.open(&path);
     driven.run([on_picker("tooled", "level", true)]);
-    driven.picked();
+    let picked = driven.picked();
+    let shown = |events: &[Event]| match readings(events).last() {
+        Some(Some(reading)) => reading.module.as_ref().and_then(|m| m.picked.clone()),
+        _ => None,
+    };
+    // A reading's pick hands its tool settings back.
+    assert_eq!(shown(&picked).unwrap().tools.len(), 1, "{picked:?}");
     let (last, latest) = driven.engine.pickers.readings_of("tooled");
     assert_eq!(last, latest);
     // A larger viewport: exposure's input measured again, never applied, so the latest
@@ -1422,6 +1429,9 @@ fn tools_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picker_o
         (2.0 * latest.input.mean[0]).clamp(0.0, 10.0)
     );
     assert!(matches!(readings(&events)[..], [Some(_)]), "{events:?}");
+    // The settings the client has just sent are never handed back.
+    let shown = shown(&events).unwrap();
+    assert!(shown.patch.is_some() && shown.tools.is_empty(), "{shown:?}");
     assert_eq!(driven.engine.pickers.readings_of("tooled").0, Some(latest));
     // A pick its module gets wrong is refused, the picker off, the last reading kept.
     driven.run([Command::Resize {
@@ -1748,5 +1758,62 @@ fn replacing_a_picker_never_answers_the_new_one_early() {
     driven.picked();
     assert!(saved(&driven.writes()).is_some_and(|t| t >= on));
     assert!(driven.engine.pickers.owed.is_empty());
+    remove(&path);
+}
+
+/// Exposure's area exposure mapping in correction mode at this target lightness.
+fn mapping(lightness: f32) -> Vec<(&'static str, ControlValue)> {
+    vec![
+        ("area_mode", ControlValue::Choice(0)),
+        ("lightness", ControlValue::Number(lightness)),
+    ]
+}
+
+/// A pick that gives a value that is not finite, Exposure's at a target lightness of 0 %:
+/// that write is left out, Exposure as it was, and what the pick shows, its patch and L,
+/// still sent, as darktable shows them before it sets anything (`exposure.c:885-897`).
+/// The same reading at 50 % writes Exposure.
+#[test]
+fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() {
+    use apertrust_modules::exposure::Exposure;
+    let path = scratch("picker-not-finite");
+    let mut driven = Driven::new(&[&Exposure]);
+    let opened = driven.open(&path);
+    let before = number(values(&opened), "exposure", "exposure");
+    let mut events = driven.run([picker(PickerCommand::On {
+        picker: PickerRef::Module {
+            module: "exposure",
+            picker: "exposure",
+        },
+        area: true,
+        keys: PickKeys::default(),
+        tools: mapping(0.0),
+        channel: None,
+    })]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let shown = readings(&events)
+        .into_iter()
+        .rev()
+        .find_map(|reading| reading.as_ref()?.module.as_ref()?.picked.clone())
+        .unwrap_or_else(|| panic!("a pick shown in {events:?}"));
+    let patch = shown.patch.expect("the input patch");
+    assert!(patch.lch[0] > 0.0, "{patch:?}");
+    for event in &events {
+        if let Event::Values(values) = event {
+            assert_eq!(number(values, "exposure", "exposure"), before);
+        }
+    }
+    // The latest reading again, by a target that gives a value.
+    let events = driven.run([picker(PickerCommand::Tools {
+        module: "exposure",
+        tools: mapping(50.0),
+    })]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let after = number(values(&events), "exposure", "exposure");
+    assert!(
+        after.is_finite() && after != before,
+        "{after} after {before}"
+    );
     remove(&path);
 }

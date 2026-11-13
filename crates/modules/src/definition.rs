@@ -399,6 +399,18 @@ pub enum Row {
         label: Option<&'static str>,
         pickers: &'static [&'static str],
     },
+    /// darktable's input and target patches of a picker's area mapping, side by side
+    /// under their headings, as Exposure's area exposure mapping shows them: the input,
+    /// the area as the picker's last pick showed it ([`crate::pick::Shown::patch`]), with
+    /// its L readout, and the target, the colour of the tool settings `target` names, its
+    /// L, then its C and h where given, as darktable's `_target_color_draw` paints it
+    /// ([`crate::pick::Patch::of_lch`]). It is no control; its words are shared
+    /// ([`crate::messages::PATCHES`]), the target patch's tooltip its first setting's
+    /// promise. Until its picker is drawn the panel draws it disabled, with no input.
+    Patches {
+        picker: &'static str,
+        target: &'static [&'static str],
+    },
     /// One control's row of darktable's buttons, its label the control's, double-clicked
     /// to reset it, as darktable's reset label, with the buttons inline after it: actions
     /// that write the control from its value ([`crate::Module::action`]), never stored
@@ -456,6 +468,7 @@ impl Row {
             | Row::Preset { .. }
             | Row::Action { .. }
             | Row::Pickers { .. }
+            | Row::Patches { .. }
             | Row::Guides => &[],
             Row::Custom { controls, .. } => controls,
         }
@@ -636,6 +649,21 @@ pub struct ToolSetting {
 }
 
 impl ToolSetting {
+    /// Its default, darktable's.
+    pub fn default(&self) -> ControlValue {
+        self.control().default()
+    }
+
+    /// It as a control of its kind, which no edit stores.
+    fn control(&self) -> Control {
+        Control {
+            id: self.id,
+            kind: self.kind,
+            unit: None,
+            unported: false,
+        }
+    }
+
     /// Whether the setting holds together: its id, and its kind as a control's; curve
     /// points are no setting darktable has.
     fn check(&self) -> Result<(), DefinitionError> {
@@ -645,13 +673,7 @@ impl ToolSetting {
         if matches!(self.kind, ControlKind::Points { .. }) {
             return Err(DefinitionError::Row(self.id));
         }
-        Control {
-            id: self.id,
-            kind: self.kind,
-            unit: None,
-            unported: false,
-        }
-        .check_kind()
+        self.control().check_kind()
     }
 }
 
@@ -779,6 +801,10 @@ pub enum DefinitionError {
     GroupInGroup(&'static str),
     #[error("two tool settings are called {0}")]
     DuplicateSetting(&'static str),
+    #[error(
+        "the patches of the picker {0}: their target is not one to three numbers among the module's tool settings"
+    )]
+    UnknownSetting(&'static str),
     #[error("two actions are called {0}")]
     DuplicateAction(&'static str),
     #[error(
@@ -1100,6 +1126,22 @@ impl Definition {
             }
             if let Row::Pickers { pickers: [], .. } = row {
                 return Err(DefinitionError::NoPickers);
+            }
+            if let Row::Patches { picker, target } = row {
+                if self.picker(picker).is_none() {
+                    return Err(DefinitionError::UnknownPicker(picker));
+                }
+                // Its target's L, then C and h, each a number among the tool settings.
+                let number = |id: &&str| {
+                    placed.iter().any(|its| {
+                        matches!(its.row, Row::ToolSetting(setting)
+                            if setting.id == *id
+                                && matches!(setting.kind, ControlKind::Number { .. }))
+                    })
+                };
+                if target.is_empty() || target.len() > 3 || !target.iter().all(number) {
+                    return Err(DefinitionError::UnknownSetting(picker));
+                }
             }
             if let Some(picker) = row.pickers().iter().find(|id| self.picker(id).is_none()) {
                 return Err(DefinitionError::UnknownPicker(picker));

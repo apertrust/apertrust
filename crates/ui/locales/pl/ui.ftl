@@ -889,6 +889,14 @@ picker-photo-down = Przesuń w dół
 picker-said-control = { $control } { $value }
 picker-said-rgb = średnie RGB { $red }, { $green }, { $blue }
 
+## Próbki pipety (docs/pickers.md, Declaring pickers).
+picker-patch-input = Wejście
+picker-patch-input-tip = Kolor wejściowy, który ma zostać odwzorowany na cel.
+picker-patch-target = Cel
+picker-patch-lch-tip = Te współrzędne LCh obliczono ze współrzędnych CIE Lab 1976.
+picker-patch-lightness = L: { $value }%
+picker-patch-none = L: b.d.
+
 ## Okno eksportu (docs/gui.md, The Export dialog): moduł eksportu darktable, nazwy
 ## wielką literą tylko pierwszego słowa. $count to liczba zdjęć, jedno zdjęcie to dokładnie
 ## liczba 1. $file to nazwa zdjęcia lub pliku, $source plik raw, $folder folder, $width

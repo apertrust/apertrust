@@ -49,8 +49,8 @@ use std::time::{Duration, Instant};
 
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
-    ControlState, CoordinateState, Event, ExportPreview, Frame, History, ModuleState, OpenPreview,
-    Photo, PresetState, PreviewSource, SessionError, Values,
+    ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, ModuleState,
+    OpenPreview, Photo, PresetState, PreviewSource, SessionError, Values,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_modules::Module;
@@ -81,6 +81,12 @@ pub enum Reaction {
     FolderOpened(PathBuf),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
     FolderFailed { path: PathBuf, reason: String },
+    /// A module's pick measured these tool settings, measure mode's target: the app keeps
+    /// them in its settings, as darktable writes its target sliders and darktablerc.
+    Measured {
+        module: &'static str,
+        tools: Vec<(&'static str, ControlValue)>,
+    },
     /// The first live frame of the photo the open numbered `open` replaced its first
     /// picture, the mirror's of `generation`: the central panel fades that picture out over
     /// the frame (decision 77). Only that swap: never an edit's frame, nor another photo's.
@@ -154,6 +160,8 @@ pub struct Mirror {
     /// The active colour picker, as the session last reported it with what the app asked
     /// since (decision 79); none with no photo, and while one opens.
     pub pickers: pickers::Mirror,
+    /// What the modules' picks showed on the photo, for their patches; none with no photo.
+    pub picked: pickers::Picked,
     /// The jobs the session has reported, which the spinner and the jobs window show
     /// (decision 57).
     pub jobs: jobs::Mirror,
@@ -194,6 +202,7 @@ impl Mirror {
             saving: Saving::default(),
             history: None,
             pickers: pickers::Mirror::default(),
+            picked: pickers::Picked::default(),
             jobs,
             folder: FolderState::default(),
             cache: crate::storage::Mirror::default(),
@@ -319,6 +328,7 @@ impl Mirror {
         self.pending.clear();
         self.history = None;
         self.pickers.forget();
+        self.picked.forget();
         self.scopes.forget();
     }
 
@@ -404,7 +414,12 @@ impl Mirror {
             }
             Event::Scopes(reading) => self.scopes.receive(&reading),
             // The active picker's reading, or `None` as it turns off.
-            Event::Picker { through, reading } => self.pickers.apply(through, reading),
+            Event::Picker { through, reading } => {
+                if let Some((module, tools)) = self.picked.apply(reading.as_ref()) {
+                    reactions.push(Reaction::Measured { module, tools });
+                }
+                self.pickers.apply(through, reading);
+            }
             // The Export dialog shows the preview, the newest it holds.
             Event::ExportPreview { through, preview } => {
                 if through >= self.export_floor {

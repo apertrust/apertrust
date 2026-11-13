@@ -1135,6 +1135,16 @@ picker-photo-down = Move down
 picker-said-control = { $control } { $value }
 picker-said-rgb = mean RGB { $red }, { $green }, { $blue }
 
+## A picker's patches (docs/pickers.md, Declaring pickers): darktable's input and target
+## patches under an area mapping. $value is the input's L, in the language's number format
+## with one decimal.
+picker-patch-input = Input
+picker-patch-input-tip = The input colour that should be mapped to the target.
+picker-patch-target = Target
+picker-patch-lch-tip = These LCh coordinates are computed from CIE Lab 1976 coordinates.
+picker-patch-lightness = L: { $value }%
+picker-patch-none = L: N/A
+
 ## The Export dialog (docs/gui.md, The Export dialog): darktable's export module, its
 ## labels in sentence case. $count is the photos, a single one the exact number 1. $file
 ## is a photo's name or a file's, $source the raw, $folder a folder, $width and $height

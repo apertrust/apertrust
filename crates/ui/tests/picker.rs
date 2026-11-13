@@ -16,12 +16,15 @@
 
 //! The picker button and the active picker's marks (`docs/pickers.md`, The picker button
 //! and On the photo): the button driven by the pointer, the keys and a screen reader, each
-//! press reported as darktable's button reads it, and the gallery's Pickers section
+//! press reported as darktable's button reads it; the patches as a screen reader hears
+//! them; and the gallery's Pickers section
 //! photographed at twice the size in the dark and the light theme. Accepted with
 //! `UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test picker`, reviewed like a golden
 //! image.
 
-use apertrust_ui::components::{PickerAction, PickerButton, SliderAction, SliderRow};
+use apertrust_ui::components::{
+    Patch, Patches, PickerAction, PickerButton, SliderAction, SliderRow,
+};
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::{Role, Toggled};
@@ -459,7 +462,7 @@ fn a_slider_s_picker_quad_reports_its_presses() {
 
 fn photograph(which: Builtin, name: &str) {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(600.0, 680.0))
+        .with_size(egui::vec2(600.0, 820.0))
         .with_pixels_per_point(2.0)
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
         .build_ui_state(
@@ -485,4 +488,43 @@ fn the_pickers_in_the_dark_theme() {
 #[test]
 fn the_pickers_in_the_light_theme() {
     photograph(Builtin::Light, "picker-light");
+}
+
+/// Exposure's patches after a pick, or disabled before their picker is drawn.
+fn patches(enabled: bool) -> Harness<'static> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 120.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui(move |ui| {
+            Patches::new(
+                Patch {
+                    heading: "Input",
+                    colour: Some(egui::Color32::from_gray(108)),
+                    tip: "The input colour",
+                    readout: Some(("L: 45.2%", "LCh from Lab")),
+                },
+                Patch {
+                    heading: "Target",
+                    colour: Some(egui::Color32::from_gray(119)),
+                    tip: "The target",
+                    readout: None,
+                },
+            )
+            .enabled(enabled)
+            .show(ui);
+        });
+    harness.run();
+    harness
+}
+
+#[test]
+fn a_screen_reader_hears_each_patch_by_its_heading_and_the_input_s_readout() {
+    let harness = patches(true);
+    let input = harness.get_by_role_and_label(Role::Image, "Input, L: 45.2%");
+    assert!(!input.accesskit_node().is_disabled());
+    harness.get_by_role_and_label(Role::Image, "Target");
+    harness.get_by_label("L: 45.2%");
+    let harness = patches(false);
+    let input = harness.get_by_role_and_label(Role::Image, "Input, L: 45.2%");
+    assert!(input.accesskit_node().is_disabled());
 }

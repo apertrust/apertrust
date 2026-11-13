@@ -60,12 +60,13 @@
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use apertrust_base::settings::Kind;
 use apertrust_engine::session::{
     ControlState, ControlValue, CoordinateState, Mark, ModuleState, PickKeys, PickerRef,
 };
 use apertrust_modules::{
     Button, ButtonIcon, ChoiceStyle, ControlKind, Controls, Definition, MAX_POINTS, Module,
-    PickerKind, Quad, Row, Slider, ToolSetting, Track, Unit, View, Widget, check, messages,
+    PickerKind, Quad, Row, Slider, ToolSetting, Track, Unit, View, Widget, check, messages, tools,
 };
 use apertrust_plugin::ImageContext;
 use apertrust_ui::components::{
@@ -77,6 +78,9 @@ use apertrust_ui::components::{
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, translator};
 use eframe::egui;
+
+use crate::pickers::Picked;
+use crate::settings::Tools;
 
 /// What the user did to a module's section this frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -137,12 +141,21 @@ pub enum Change {
         action: PickerAction,
         keys: PickKeys,
     },
+    /// One of the module's tool settings, kept by the app in its settings, never in the
+    /// edit (decision 29): `done` on the last change of a gesture, when the app sends the
+    /// module's tool settings as `PickerCommand::Tools`.
+    Tool {
+        module: &'static str,
+        setting: &'static str,
+        value: ControlValue,
+        done: bool,
+    },
 }
 
 /// The modules whose pickers the panel draws: those whose pick is built, each joining with
-/// it (`docs/pickers.md`, The plan; Exposure's is next). Until then a module's quad and
-/// picker rows are not drawn, as a quad with nothing behind it is not.
-pub const PICKING: &[&str] = &[];
+/// it (`docs/pickers.md`, The plan): Exposure's. Until then a module's quad, its picker
+/// rows and its patches' input are not drawn, as a quad with nothing behind it is not.
+pub const PICKING: &[&str] = &["exposure"];
 
 /// The colour pickers as a section draws them.
 #[derive(Debug, Clone, Copy)]
@@ -156,7 +169,18 @@ pub struct Pickers<'a> {
     /// Why not, where there is a reason to tell: the photo opening, or open for viewing
     /// only.
     pub why: Option<&'a str>,
+    /// The modules' tool settings as the app keeps them: a tool setting kept there is
+    /// drawn live, any other disabled at its default until its tool comes.
+    pub tools: &'a Tools,
+    /// What the modules' picks showed on the photo, for their patches.
+    pub picked: &'a Picked,
 }
+
+/// No tool setting kept and nothing picked.
+#[cfg(test)]
+static NO_TOOLS: Tools = Tools::new();
+#[cfg(test)]
+static NOTHING_PICKED: Picked = Picked::new();
 
 #[cfg(test)]
 impl Pickers<'static> {
@@ -166,6 +190,8 @@ impl Pickers<'static> {
         on: None,
         enabled: true,
         why: None,
+        tools: &NO_TOOLS,
+        picked: &NOTHING_PICKED,
     };
 }
 
@@ -823,6 +849,7 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
             | Row::ToolSetting(_)
             | Row::Action { .. }
             | Row::Pickers { .. }
+            | Row::Patches { .. }
             | Row::Guides
     );
     let top = ui.cursor().top();
@@ -866,7 +893,8 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         // A list whatever its style: `Definition::check` refuses segments, which cannot
         // draw Custom or an option disabled yet.
         Row::Preset { preset, .. } => preset_row(ui, words, definition, preset, state, changes),
-        Row::ToolSetting(setting) => tool_setting_row(ui, words, definition.id, setting),
+        Row::ToolSetting(setting) => tool_setting_row(ui, page, setting, changes),
+        Row::Patches { picker, target } => patches_row(ui, page, picker, target),
         Row::Action { id } => action_row(ui, words, definition.id, id),
         Row::Pickers { label, pickers } => pickers_row(ui, page, *label, pickers, changes),
         Row::Buttons { control, buttons } => {
@@ -1056,52 +1084,189 @@ fn preset_row(
     }
 }
 
-/// One of darktable's own settings for a tool, the colour checker's chart: no control, so
-/// nothing an edit stores, drawn disabled at darktable's default until its tool comes and
-/// keeps it in settings. It reports nothing.
-fn tool_setting_row(ui: &mut egui::Ui, words: &Translator, module: &str, setting: &ToolSetting) {
+/// One of darktable's own settings for a tool: no control, so nothing an edit stores. One
+/// the app keeps in settings is drawn live with its value there, a change reported as
+/// [`Change::Tool`]; any other, the colour checker's chart, is drawn disabled at
+/// darktable's default until its tool comes.
+fn tool_setting_row(
+    ui: &mut egui::Ui,
+    page: &Page,
+    setting: &ToolSetting,
+    changes: &mut Vec<Change>,
+) {
+    let (words, module) = (page.words, page.module.definition().id);
     let [label, full, promise] = messages::setting(module, setting.id).map(|id| words.text(&id));
-    match setting.kind {
-        ControlKind::Number {
-            min,
-            max,
-            step,
-            default,
-        } => {
-            let _ = SliderRow::new(&label, widen(default), widen(min)..=widen(max))
+    let kept = page.pickers.tools.get(module, setting.id);
+    let live = kept.is_some();
+    let value = kept.cloned().unwrap_or_else(|| setting.default());
+    let mut set = |value: ControlValue, done: bool| {
+        changes.push(Change::Tool {
+            module,
+            setting: setting.id,
+            value,
+            done,
+        });
+    };
+    match (setting.kind, value) {
+        (
+            ControlKind::Number {
+                min,
+                max,
+                step,
+                default,
+            },
+            ControlValue::Number(value),
+        ) => {
+            let mut row = SliderRow::new(&label, widen(value), widen(min)..=widen(max))
                 .name(&full)
                 .promise(&promise)
                 .default_value(widen(default))
                 .step(widen(step))
                 .decimals(usize::from(setting.decimals))
-                .enabled(false)
-                .show(ui);
+                .enabled(live);
+            // The unit the settings schema declares for it, as a control's.
+            let unit =
+                tools::setting(module, setting.id).and_then(|declared| match declared.kind() {
+                    Kind::Number(number) => number.unit.map(|unit| format!("unit-{unit}-value")),
+                    _ => None,
+                });
+            if let Some(unit) = &unit {
+                row = row.unit(unit);
+            }
+            if lightness_target(page.module.definition(), setting.id) {
+                row = row.track(lightness_ramp(min, max));
+            }
+            match row.show(ui) {
+                Some(SliderAction::Set { value, done }) => {
+                    let value = shown_as(value, setting.decimals, min, max);
+                    set(ControlValue::Number(value), done);
+                }
+                Some(SliderAction::Reset) => set(ControlValue::Number(default), true),
+                _ => {}
+            }
         }
-        ControlKind::Choice {
-            options, default, ..
-        } => {
+        (ControlKind::Choice { options, .. }, ControlValue::Choice(chosen)) => {
             let names: Vec<String> = options
                 .iter()
                 .map(|option| words.text(&messages::setting_option(module, setting.id, option)))
                 .collect();
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
-            let _ = Choice::new(&label, &names, default as usize)
+            let action = Choice::new(&label, &names, chosen as usize)
                 .name(&full)
                 .promise(&promise)
                 .style(parts::ChoiceStyle::Blended)
-                .enabled(false)
+                .enabled(live)
                 .show(ui);
+            if let Some(ChoiceAction::Set(chosen)) = action {
+                set(ControlValue::Choice(chosen as u32), true);
+            }
         }
-        ControlKind::Bool { default } => {
-            let _ = ToggleRow::new(&label, default)
+        (ControlKind::Bool { .. }, ControlValue::Bool(on)) => {
+            let toggled = ToggleRow::new(&label, on)
                 .name(&full)
                 .promise(&promise)
-                .enabled(false)
+                .enabled(live)
                 .show(ui);
+            if let Some(on) = toggled.filter(|_| live) {
+                set(ControlValue::Bool(on), true);
+            }
         }
-        // No setting is curve points (`Definition::check`).
-        ControlKind::Points { .. } => {}
+        // No setting is curve points (`Definition::check`), and a kept value is its kind's.
+        _ => {}
     }
+}
+
+/// Whether `setting` is the L of a picker's target (`Row::Patches`), whose track
+/// darktable paints with the greys of its lightness (`_paint_hue`, `exposure.c:1123-1151`).
+fn lightness_target(definition: &Definition, setting: &str) -> bool {
+    definition
+        .rows()
+        .any(|row| matches!(row, Row::Patches { target: [l, ..], .. } if *l == setting))
+}
+
+/// darktable's lightness track: the grey of each lightness from `min` to `max`, at its
+/// slider's 20 stops (`DT_BAUHAUS_SLIDER_MAX_STOPS`), as `_paint_hue` sets them.
+fn lightness_ramp(min: f32, max: f32) -> parts::Track {
+    const STOPS: usize = 20;
+    parts::Track::Gradient(
+        (0..STOPS)
+            .map(|i| {
+                let stop = i as f32 / (STOPS - 1) as f32;
+                let lightness = min + stop * (max - min);
+                let patch = apertrust_modules::pick::Patch::of_lch([lightness, 0.0, 0.0]);
+                (stop, colour(patch.srgb))
+            })
+            .collect(),
+    )
+}
+
+/// A picker's input and target patches (`Row::Patches`), darktable's: the input the area
+/// its module's last pick showed on the photo, with its L readout, "L: N/A" before one;
+/// the target the colour of its tool settings, L then C and h, as the app keeps them or at
+/// their defaults. Drawn disabled while the module's pickers are not drawn.
+fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static str]) {
+    let (words, definition) = (page.words, page.module.definition());
+    let module = definition.id;
+    let enabled = page.pickers.drawn.contains(&module) && definition.picker(picker).is_some();
+    let lch: Vec<f32> = target
+        .iter()
+        .map(|id| {
+            let row = definition.rows().find_map(|row| match row {
+                Row::ToolSetting(setting) if setting.id == *id => Some(setting),
+                _ => None,
+            });
+            let value = page.pickers.tools.get(module, id).cloned();
+            match value.or_else(|| row.map(ToolSetting::default)) {
+                Some(ControlValue::Number(value)) => value,
+                _ => 0.0,
+            }
+        })
+        .collect();
+    let target_colour = apertrust_modules::pick::Patch::of_lch([
+        lch.first().copied().unwrap_or_default(),
+        lch.get(1).copied().unwrap_or_default(),
+        lch.get(2).copied().unwrap_or_default(),
+    ]);
+    let input = page.pickers.picked.patch(module).filter(|_| enabled);
+    let readout = match input {
+        Some(patch) => {
+            let mut args = Args::new();
+            args.set(
+                "value",
+                words.format_number(f64::from(patch.lch[0]), 1, false),
+            );
+            words.text_with("picker-patch-lightness", Some(&args))
+        }
+        None => words.text("picker-patch-none"),
+    };
+    let [input_heading, input_tip, target_heading, lch_tip, ..] =
+        messages::PATCHES.map(|id| words.text(id));
+    let target_tip = target
+        .first()
+        .map(|id| words.text(&messages::setting(module, id)[2]))
+        .unwrap_or_default();
+    parts::Patches::new(
+        parts::Patch {
+            heading: &input_heading,
+            colour: input.map(|patch| colour(patch.srgb)),
+            tip: &input_tip,
+            readout: Some((&readout, &lch_tip)),
+        },
+        parts::Patch {
+            heading: &target_heading,
+            colour: Some(colour(target_colour.srgb)),
+            tip: &target_tip,
+            readout: None,
+        },
+    )
+    .enabled(enabled)
+    .show(ui);
+}
+
+/// A patch's sRGB, 0 to 1, as the screen shows it.
+fn colour(srgb: [f32; 3]) -> egui::Color32 {
+    let [r, g, b] = srgb.map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8);
+    egui::Color32::from_rgb(r, g, b)
 }
 
 /// A collapsible group: its title, closed or open as the app keeps it, and its rows while
@@ -2003,6 +2168,7 @@ mod tests {
                         on: panel.on,
                         enabled: panel.why.is_none(),
                         why: panel.why,
+                        ..Pickers::NONE
                     };
                     let changes = section(
                         ui,
@@ -4526,6 +4692,7 @@ mod tests {
                     on: Some(BRIGHTNESS),
                     enabled: true,
                     why: None,
+                    ..Pickers::NONE
                 };
                 let page = Page {
                     words: &words,
@@ -5664,5 +5831,221 @@ mod tests {
     #[test]
     fn exposure_in_the_pseudo_locale() {
         photograph(Builtin::Dark, Locale::Pseudo, "exposure-pseudo");
+    }
+
+    /// Exposure's area exposure mapping as the app draws it once its pick is built.
+    struct Mapping {
+        tools: Tools,
+        picked: Picked,
+        changes: Vec<Change>,
+    }
+
+    fn mapping(picked: Picked) -> Harness<'static, Mapping> {
+        mapping_in(picked, Builtin::Dark)
+    }
+
+    /// The section in the theme `which`, on its panel's colour.
+    fn mapping_in(picked: Picked, which: Builtin) -> Harness<'static, Mapping> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 600.0))
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui_state(
+                |ui, mapping: &mut Mapping| {
+                    let panel = theme(ui.ctx()).colors.panel;
+                    ui.painter()
+                        .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                    let pickers = Pickers {
+                        drawn: PICKING,
+                        on: None,
+                        enabled: true,
+                        why: None,
+                        tools: &mapping.tools,
+                        picked: &mapping.picked,
+                    };
+                    let groups = |_: &str| true;
+                    let state = untouched(&Exposure);
+                    let changes = section(
+                        ui,
+                        &Exposure,
+                        &state,
+                        true,
+                        &Panels::default(),
+                        &groups,
+                        false,
+                        true,
+                        None,
+                        &pickers,
+                    );
+                    // Kept as the app keeps them.
+                    for change in changes {
+                        if let Change::Tool {
+                            module,
+                            setting,
+                            ref value,
+                            ..
+                        } = change
+                        {
+                            mapping.tools.set(module, setting, value.clone());
+                        }
+                        mapping.changes.push(change);
+                    }
+                },
+                Mapping {
+                    tools: Tools::default(),
+                    picked,
+                    changes: Vec::new(),
+                },
+            );
+        harness.run();
+        harness
+    }
+
+    /// The reading of Exposure's picker whose pick showed an input of L 45.2 and measured a
+    /// lightness of 61.
+    fn exposure_reading() -> apertrust_engine::session::PickerReading {
+        use apertrust_modules::pick::{Patch, Shown, Stats};
+        let stats = Stats {
+            mean: [0.15; 4],
+            min: [0.15; 4],
+            max: [0.15; 4],
+        };
+        apertrust_engine::session::PickerReading {
+            through: 3,
+            picker: PickerRef::Module {
+                module: "exposure",
+                picker: "exposure",
+            },
+            region: apertrust_engine::session::Region::Area([0.2, 0.2, 0.4, 0.4]),
+            module: Some(apertrust_engine::session::ModuleReading {
+                input: Some(stats),
+                output: None,
+                picked: Some(Shown {
+                    patch: Some(Patch {
+                        srgb: [0.42; 3],
+                        lch: [45.2, 0.0, 0.0],
+                    }),
+                    tools: vec![("lightness", ControlValue::Number(61.0))],
+                }),
+            }),
+            frame: None,
+        }
+    }
+
+    #[test]
+    fn exposure_s_area_exposure_mapping_is_live_with_its_settings_and_its_last_pick() {
+        // Before a pick: no input, its readout darktable's N/A, the target at 50 %.
+        let mut harness = mapping(Picked::default());
+        harness.get_by_role_and_label(Role::Image, "Input, L: N/A");
+        let target = harness.get_by_role_and_label(Role::Image, "Target");
+        assert!(!target.accesskit_node().is_disabled());
+        // The quad on Exposure is drawn, its picker's words its own.
+        harness.get_by_role_and_label(Role::Button, "Exposure: pick from the photo");
+        // The kept lightness is live: a drag is a change of the tool setting, not the
+        // edit's, done on its release.
+        let at = along(
+            harness
+                .get_by_role_and_label(Role::Slider, "Target lightness")
+                .rect(),
+            0.25,
+        );
+        harness.drag_at(at);
+        harness.run();
+        harness.drop_at(at);
+        harness.run();
+        let tool = |value, done| Change::Tool {
+            module: "exposure",
+            setting: "lightness",
+            value: ControlValue::Number(value),
+            done,
+        };
+        let changes = &harness.state().changes;
+        assert_eq!(changes.last(), Some(&tool(25.0, true)), "{changes:?}");
+        assert!(
+            changes
+                .iter()
+                .rev()
+                .skip(1)
+                .all(|c| *c == tool(25.0, false))
+        );
+        assert_eq!(
+            harness.state().tools.get("exposure", "lightness"),
+            Some(&ControlValue::Number(25.0))
+        );
+
+        // After a pick: its input patch and its L, which stays as the picker turns off.
+        let mut picked = Picked::default();
+        let reading = exposure_reading();
+        assert_eq!(
+            picked.apply(Some(&reading)),
+            Some(("exposure", vec![("lightness", ControlValue::Number(61.0))]))
+        );
+        // Measured once: the readings after it carry the same pick.
+        assert_eq!(picked.apply(Some(&reading)), None);
+        picked.apply(None);
+        let harness = mapping(picked);
+        harness.get_by_role_and_label(Role::Image, "Input, L: 45.2%");
+        // Lightness in the percent the settings schema gives it.
+        let lightness = harness.get_by_role_and_label(Role::Slider, "Target lightness");
+        assert_eq!(lightness.accesskit_node().value().as_deref(), Some("50.0%"));
+    }
+
+    /// The input patch goes as darktable's `gui_update` zeroes it (`exposure.c:707-710`):
+    /// at undo, redo, a move through history and the edit's reset, and at the module's own
+    /// reset, never another's, nor an edit of a control.
+    #[test]
+    fn the_input_patch_goes_as_the_module_s_values_change_from_outside_a_pick() {
+        use apertrust_engine::session::{Command, StepId};
+        let picked = || {
+            let mut picked = Picked::default();
+            picked.apply(Some(&exposure_reading()));
+            picked
+        };
+        let module = |module: &str| Command::ResetModule {
+            module: module.to_owned(),
+        };
+        let set = Command::SetControl {
+            module: "exposure".to_owned(),
+            control: "exposure".to_owned(),
+            value: ControlValue::Number(1.0),
+            done: true,
+        };
+        for (command, kept) in [
+            (Command::Undo, false),
+            (Command::Redo, false),
+            (
+                Command::GoTo {
+                    step: Some(StepId(1)),
+                },
+                false,
+            ),
+            (Command::Reset, false),
+            (module("exposure"), false),
+            (module("agx"), true),
+            (set, true),
+        ] {
+            let mut picked = picked();
+            picked.sent(&command);
+            assert_eq!(picked.patch("exposure").is_some(), kept, "{command:?}");
+        }
+    }
+
+    /// The area exposure mapping after a pick, in `which`: Area mode, the input's grey
+    /// beside the target's with the input's L, and Lightness on darktable's grey ramp.
+    fn photograph_mapping(which: Builtin, name: &str) {
+        let mut picked = Picked::default();
+        picked.apply(Some(&exposure_reading()));
+        let mut harness = mapping_in(picked, which);
+        harness.run();
+        harness.snapshot(name);
+    }
+
+    #[test]
+    fn exposure_s_mapping_after_a_pick_in_the_dark_theme() {
+        photograph_mapping(Builtin::Dark, "exposure-mapping-dark");
+    }
+
+    #[test]
+    fn exposure_s_mapping_after_a_pick_in_the_light_theme() {
+        photograph_mapping(Builtin::Light, "exposure-mapping-light");
     }
 }

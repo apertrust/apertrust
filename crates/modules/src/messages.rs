@@ -100,6 +100,19 @@ pub const GUIDES: [&str; 5] = [
     "guides-settings-promise",
 ];
 
+/// A picker's patches' words ([`crate::Row::Patches`]), every module's, darktable's: the
+/// input's heading and tooltip, the target's heading, the L readout's tooltip, and the
+/// readout, `$value` its L in the language's number format, or none before a pick. The
+/// target patch's tooltip is its first setting's promise.
+pub const PATCHES: [&str; 6] = [
+    "picker-patch-input",
+    "picker-patch-input-tip",
+    "picker-patch-target",
+    "picker-patch-lch-tip",
+    "picker-patch-lightness",
+    "picker-patch-none",
+];
+
 /// An action's short label, full name and promise ([`crate::Row::Action`]):
 /// `module-<module>-action-<action>-label`, `-full` and `-promise`.
 pub fn action(module: &str, action: &str) -> [String; 3] {
@@ -112,6 +125,26 @@ pub fn action(module: &str, action: &str) -> [String; 3] {
 pub fn picker(module: &str, picker: &str) -> [String; 4] {
     ["label", "full", "promise", "what"]
         .map(|part| format!("module-{module}-picker-{picker}-{part}"))
+}
+
+/// The words of `picker` of `definition` that its button and the central bar use, of
+/// [`picker`]'s: its full name and promise always; its name where it is no slider's quad,
+/// which takes its control's label; and its sentence where it takes a point, an area
+/// picker's being every picker's.
+pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<String> {
+    let [label, full, promise, what] = self::picker(definition.id, picker.id);
+    let on_quad = definition
+        .rows()
+        .any(|row| matches!(row, Row::Slider(_)) && row.pickers() == [picker.id]);
+    let mut words = Vec::new();
+    if !on_quad {
+        words.push(label);
+    }
+    words.extend([full, promise]);
+    if picker.kind != crate::PickerKind::Area {
+        words.push(what);
+    }
+    words
 }
 
 /// A preset row's short label, full name and promise:
@@ -147,8 +180,8 @@ pub fn unit_value(unit: Unit) -> String {
 /// setting's words and options, each action's words, each control's label, full name and
 /// promise, each option, each view's coordinate's label, full name and promise, as a
 /// control's, each preset row's label, full name, promise and options, each unit it uses,
-/// and Custom if it has a preset row. A picker's own words come with its button
-/// ([`crate::Picker`]).
+/// Custom if it has a preset row, the patches' words if it has patches, and each picker's
+/// words its button and the central bar use ([`picker_words`]).
 pub fn of(definition: &Definition) -> Vec<String> {
     let module = definition.id;
     let mut ids = vec![title(module)];
@@ -187,8 +220,12 @@ pub fn of(definition: &Definition) -> Vec<String> {
                 }
             }
             Row::Guides => ids.extend(GUIDES.map(str::to_owned)),
+            Row::Patches { .. } => ids.extend(PATCHES.map(str::to_owned)),
             _ => {}
         }
+    }
+    for picker in definition.pickers {
+        ids.extend(picker_words(definition, picker));
     }
     for control in definition.controls {
         let id = control.id;
@@ -243,6 +280,18 @@ mod tests {
                 "module-sample-group-grain",
                 "module-sample-group-measure",
                 "module-sample-collapsible-midtones",
+                // A quad's picker takes its slider's label, and an area's needs no
+                // sentence of its own.
+                "module-sample-picker-brightness-full",
+                "module-sample-picker-brightness-promise",
+                "module-sample-picker-spread-label",
+                "module-sample-picker-spread-full",
+                "module-sample-picker-spread-promise",
+                "module-sample-picker-spread-what",
+                "module-sample-picker-show-label",
+                "module-sample-picker-show-full",
+                "module-sample-picker-show-promise",
+                "module-sample-picker-show-what",
                 "module-sample-control-brightness-label",
                 "module-sample-control-brightness-full",
                 "module-sample-control-brightness-promise",

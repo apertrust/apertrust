@@ -141,7 +141,9 @@ use apertrust_base::folders::Folders;
 use apertrust_base::settings::{
     CONF_FLAG, Declared, FileStorage, OverrideError, Overrides, Setting, Storage, Store, Stored,
 };
+use apertrust_engine::session::ControlValue;
 use apertrust_engine::settings as engine;
+use apertrust_modules::{ControlKind, MODULES, Row, ToolSetting, tools};
 use apertrust_ui::components::{
     Channel, GridBarAction, GridPosition, Marker, ScopeView, Sort, ThumbnailSize,
 };
@@ -219,6 +221,8 @@ pub struct Settings {
     pub keys: BTreeMap<String, Vec<String>>,
     /// The Export dialog's last settings, `export.*`, kept as they are left.
     pub export: Values,
+    /// The modules' tool settings, `tools.<module>.*` (decision 29).
+    pub tools: Tools,
     /// Whether Export and Export Again ask before replacing files, `export.ask_before_overwrite`:
     /// kept apart from the dialog's settings, since the dialog does not edit it and its
     /// Default settings do not reset it.
@@ -258,6 +262,7 @@ impl Default for Settings {
             grid: Grid::default(),
             keys: BTreeMap::new(),
             export: Values::default(),
+            tools: Tools::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
         }
     }
@@ -341,6 +346,7 @@ impl Settings {
             },
             keys: store.get(&KEYS),
             export: Values::read(store),
+            tools: Tools::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
         }
     }
@@ -479,9 +485,135 @@ impl Settings {
         if s.export != was.export {
             s.export.write(store);
         }
+        if s.tools != was.tools {
+            s.tools.write(store, &was.tools);
+        }
         if s.ask_before_overwrite != was.ask_before_overwrite {
             store.set(&EXPORT_ASK_BEFORE_OVERWRITE, s.ask_before_overwrite);
         }
+    }
+}
+
+/// The modules' tool settings (decision 29; `docs/settings.md`, Tool settings): each kept
+/// tool setting of [`tools::registry`], by its module and its id there, as the value its
+/// row (`Row::ToolSetting`) shows and the picker's commands carry. Kept by the app as
+/// darktable keeps its darktablerc, never in an edit, and sent with `PickerCommand::On`
+/// and `Tools`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tools(BTreeMap<(&'static str, &'static str), ControlValue>);
+
+/// Each kept tool setting at its default, darktable's.
+impl Default for Tools {
+    fn default() -> Tools {
+        Tools(
+            kept()
+                .map(|(module, row, _)| ((module, row.id), row.default()))
+                .collect(),
+        )
+    }
+}
+
+impl Tools {
+    /// None kept.
+    #[cfg(test)]
+    pub const fn new() -> Tools {
+        Tools(BTreeMap::new())
+    }
+
+    /// Every kept tool setting's value in `store`, read by its row's kind: a number, the
+    /// option a choice's id names, or a boolean; one that cannot be read is its default.
+    pub fn read(store: &Store) -> Tools {
+        let mut tools = BTreeMap::new();
+        for (module, row, declared) in kept() {
+            let value = store.value(declared);
+            let value = value.as_ref().and_then(|value| control_value(row, value));
+            tools.insert((module, row.id), value.unwrap_or_else(|| row.default()));
+        }
+        Tools(tools)
+    }
+
+    /// Sets in `store` each value that differs from `was`.
+    fn write(&self, store: &mut Store, was: &Tools) {
+        for (module, row, declared) in kept() {
+            let value = self.get(module, row.id);
+            if value != was.get(module, row.id)
+                && let Some(value) = value.and_then(|value| toml_value(row, value))
+            {
+                store.set_value(declared, &value);
+            }
+        }
+    }
+
+    /// `module`'s tool setting `setting`, if it is kept.
+    pub fn get(&self, module: &str, setting: &str) -> Option<&ControlValue> {
+        self.0
+            .iter()
+            .find(|((m, s), _)| *m == module && *s == setting)
+            .map(|(_, value)| value)
+    }
+
+    /// Sets `module`'s tool setting `setting`, if it is kept.
+    pub fn set(&mut self, module: &str, setting: &str, value: ControlValue) {
+        if let Some((_, kept)) = self
+            .0
+            .iter_mut()
+            .find(|((m, s), _)| *m == module && *s == setting)
+        {
+            *kept = value;
+        }
+    }
+
+    /// `module`'s kept tool settings, as its picker's commands carry them.
+    pub fn of(&self, module: &str) -> Vec<(&'static str, ControlValue)> {
+        (self.0.iter())
+            .filter(|((m, _), _)| *m == module)
+            .map(|((_, setting), value)| (*setting, value.clone()))
+            .collect()
+    }
+}
+
+/// Each kept tool setting: its module's id, its row and its declaration.
+fn kept() -> impl Iterator<Item = (&'static str, &'static ToolSetting, &'static dyn Declared)> {
+    MODULES.iter().flat_map(|module| {
+        let id = module.definition().id;
+        module.definition().rows().filter_map(move |row| match row {
+            Row::ToolSetting(setting) => {
+                tools::setting(id, setting.id).map(|declared| (id, setting, declared))
+            }
+            _ => None,
+        })
+    })
+}
+
+/// A tool setting's value as `settings.toml` keeps it, read as its row's kind.
+fn control_value(row: &ToolSetting, value: &toml::Value) -> Option<ControlValue> {
+    match row.kind {
+        ControlKind::Number { .. } => match value {
+            toml::Value::Float(n) => Some(ControlValue::Number(*n as f32)),
+            toml::Value::Integer(n) => Some(ControlValue::Number(*n as f32)),
+            _ => None,
+        },
+        ControlKind::Choice { options, .. } => {
+            let id = value.as_str()?;
+            let index = options.iter().position(|option| *option == id)?;
+            Some(ControlValue::Choice(index as u32))
+        }
+        ControlKind::Bool { .. } => value.as_bool().map(ControlValue::Bool),
+        _ => None,
+    }
+}
+
+/// A tool setting's value as `settings.toml` keeps it.
+fn toml_value(row: &ToolSetting, value: &ControlValue) -> Option<toml::Value> {
+    match (row.kind, value) {
+        (ControlKind::Number { .. }, ControlValue::Number(n)) => {
+            Some(toml::Value::Float(f64::from(*n)))
+        }
+        (ControlKind::Choice { options, .. }, ControlValue::Choice(index)) => options
+            .get(*index as usize)
+            .map(|option| toml::Value::String((*option).to_owned())),
+        (ControlKind::Bool { .. }, ControlValue::Bool(on)) => Some(toml::Value::Boolean(*on)),
+        _ => None,
     }
 }
 
@@ -701,10 +833,12 @@ pub struct ViewState {
 fn registries() -> Vec<&'static dyn Declared> {
     let engine = engine::registry::ALL.iter();
     let export = apertrust_export::settings::registry::ALL.iter();
+    let tools = tools::registry::ALL.iter();
     registry::ALL
         .iter()
         .chain(engine)
         .chain(export)
+        .chain(tools)
         .copied()
         .collect()
 }
@@ -1058,6 +1192,12 @@ mod tests {
                 high_quality: true,
                 profile: apertrust_export::settings::Profile::Srgb,
             },
+            tools: {
+                let mut tools = Tools::default();
+                tools.set("exposure", "area_mode", ControlValue::Choice(1));
+                tools.set("exposure", "lightness", ControlValue::Number(42.5));
+                tools
+            },
             ask_before_overwrite: false,
         }
     }
@@ -1167,6 +1307,11 @@ mod tests {
                 },
                 keys: BTreeMap::new(),
                 export: Values::default(),
+                // Exposure's area exposure mapping at darktable's: correction, 50 %.
+                tools: Tools(BTreeMap::from([
+                    (("exposure", "area_mode"), ControlValue::Choice(0)),
+                    (("exposure", "lightness"), ControlValue::Number(50.0)),
+                ])),
                 ask_before_overwrite: true,
             }
         );
@@ -1193,11 +1338,13 @@ mod tests {
     /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
+        let tools = tools::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
         let reopen = LIBRARY_REOPEN_LAST.id;
         registry::ALL
             .iter()
             .chain(export)
+            .chain(tools)
             .map(|s| s.id())
             .filter(move |id| *id != page && *id != old && *id != reopen)
     }
@@ -1336,6 +1483,10 @@ width = 480
 
 [sliders]
 marker = \"triangle\"
+
+[tools.exposure]
+area_mode = \"measure\"
+lightness = 42.5
 
 [window]
 maximized = true

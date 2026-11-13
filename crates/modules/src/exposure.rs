@@ -28,7 +28,11 @@
 //!   EC readout waits for a row that draws a readout.
 //! - **Black level correction,** darktable's offset over the photo's own black.
 //! - **Area exposure mapping,** a collapsible group of darktable's settings for its
-//!   picker, which no edit stores, drawn disabled until the picker comes.
+//!   picker, which no edit stores, kept in settings ([`crate::tools`]), and the area's
+//!   input and target patches with the input's L readout.
+//! - **Its picker,** on Exposure's quad: darktable's `_auto_set_exposure`, which sets the
+//!   exposure that maps the area to the target lightness, or measures the target the area
+//!   gives.
 //!
 //! It drives `exposure`, which every photo runs, and owns every parameter of it. The
 //! controls whose parameters are not ported are marked so (`Control::unported`): drawn
@@ -37,12 +41,18 @@
 //! balance rgb, are the Colour balance RGB module's `contrast` and `grey_fulcrum`
 //! (decision 2), and Brightness that module's `midtones_y`.
 
+use apertrust_base::settings::Choice;
+use apertrust_color::{
+    Mat3, PROFILE_D65, REC2020_PRIMARIES, apply, camera_to_xyz_d50, lab_to_xyz_d50,
+    profile_rgb_to_xyz_d50, to_f32, xyz_to_lab_d50,
+};
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, Slider, Space,
     Tab, ToolSetting, Unit,
 };
+use crate::pick::{Patch, PickKeys, Picked, Reading, Shown};
 use crate::transfer::Transfer;
 use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting};
 
@@ -137,23 +147,27 @@ static CONTROLS: [Control; 7] = [
 ];
 
 /// darktable's area exposure mapping, under the page: what its picker does with the area
-/// picked and the lightness it maps it to, darktable's settings (`darkroom/modules/
-/// exposure/lightness` in its darktablerc, and an area mode it resets on every update),
-/// at their defaults there. The input's and the target's patches and the input's L
-/// readout come with the picker.
+/// picked and the lightness it maps it to, darktable's settings (an area mode it puts
+/// back to correction at every `gui_update`, `exposure.c:742`, and
+/// `darkroom/modules/exposure/lightness` in its darktablerc), at their defaults there,
+/// both kept in settings (`tools.exposure.*`), the area mode's keeping Apertrust's; between
+/// them the input's and the target's patches, with the input's L readout.
 const MAPPING: Row = Row::Group {
     id: "area_exposure_mapping",
     rows: &[
         Row::ToolSetting(ToolSetting {
             id: "area_mode",
             kind: ControlKind::Choice {
-                options: &["correction", "measure"],
+                options: &AREA_MODES,
                 default: 0,
                 unported: &[],
             },
             decimals: 0,
         }),
-        Row::Label { id: "target" },
+        Row::Patches {
+            picker: "exposure",
+            target: &["lightness"],
+        },
         Row::ToolSetting(ToolSetting {
             id: "lightness",
             kind: ControlKind::Number {
@@ -166,6 +180,27 @@ const MAPPING: Row = Row::Group {
         }),
     ],
 };
+
+/// darktable's area modes, `dt_spot_mode_t`'s two that Exposure lists, in its order.
+const AREA_MODES: [&str; 2] = ["correction", "measure"];
+
+/// The area exposure mapping's mode, the tool setting `tools.exposure.area_mode`:
+/// darktable's `dt_spot_mode_t`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AreaMode {
+    /// The exposure that maps the area to the target lightness.
+    #[default]
+    Correction,
+    /// The target lightness the area gives at the current exposure.
+    Measure,
+}
+
+impl Choice for AreaMode {
+    const OPTIONS: &'static [(Self, &'static str)] = &[
+        (Self::Correction, AREA_MODES[0]),
+        (Self::Measure, AREA_MODES[1]),
+    ];
+}
 
 static DEFINITION: Definition = Definition {
     id: "exposure",
@@ -253,6 +288,9 @@ const BIAS_LIMIT: f32 = 5.0;
 /// darktable's margin, which its `gui_changed` restores (decision 30).
 const WHITE_MARGIN: f32 = 0.01;
 
+/// darktable's floor under the white it takes the logarithm of (`white2exposure`).
+const WHITE_FLOOR: f32 = 1e-20;
+
 /// Where version 2's migration moves version 1's Exposure, which this version lacks, so
 /// the reader leaves it out with a warning.
 const STOPS: &str = "exposure_in_stops";
@@ -333,6 +371,138 @@ impl Module for Exposure {
             values.set_mark("exposure", None);
         }
         values
+    }
+
+    /// darktable's `color_picker_apply`, its `_auto_set_exposure` (`exposure.c:866-965`),
+    /// on the area's mean at Exposure's input, read through the input profile's matrix to
+    /// XYZ D50 ([`input_profile`]) and made grey of its lightness: the input patch and its
+    /// L, then by the area mode, `tools.exposure.area_mode`:
+    ///
+    /// - **Correction:** the exposure `−log2(Y / Y_target)`, `Y_target` the grey of the
+    ///   target lightness, plus the camera's bias where Compensate camera exposure is on,
+    ///   which the operation takes off again, so the area renders at the target. Nothing is
+    ///   written where it equals Exposure's value, as `_exposure_set_white` returns; a
+    ///   black at or above the new white goes 0.01 below it (`:763-779`), written as Black
+    ///   level correction over the photo's own black. darktable bounds neither: the session
+    ///   holds them to their ranges, and leaves out a target lightness of 0's, which is
+    ///   not finite, showing the patch still.
+    /// - **Measure:** no control; the target lightness the area renders at at the current
+    ///   exposure, held to the setting's 0 to 100 as darktable's slider holds it, which the
+    ///   client keeps (`Shown::tools`).
+    ///
+    /// Highlight preservation mode, not ported, is never on, so its bias is never added.
+    /// Nothing on a colour raw with no matrix, which colorin cannot render, as darktable
+    /// returns with no input profile.
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &Reading,
+        values: &Controls,
+        image: &ImageContext,
+        tools: &[(&str, ControlValue)],
+        _channel: Option<&str>,
+        _last: Option<&Reading>,
+        _keys: PickKeys,
+    ) -> Option<Picked> {
+        if picker != PICKER.id {
+            return None;
+        }
+        let [r, g, b, _] = reading.input.mean;
+        let xyz = apply(&input_profile(image)?, [r, g, b]);
+        // darktable makes it grey to keep only its lightness.
+        let lightness = xyz_to_lab_d50(xyz)[0];
+        let grey = lab_to_xyz_d50([lightness, 0.0, 0.0]);
+        let mut shown = Shown {
+            patch: Some(Patch {
+                srgb: apertrust_color::xyz_d50_to_srgb(grey).map(|c| c.clamp(0.0, 1.0)),
+                lch: [lightness, 0.0, 0.0],
+            }),
+            tools: Vec::new(),
+        };
+        let tool = |id: &str| tools.iter().find(|(tool, _)| *tool == id).map(|(_, v)| v);
+        let mode = match tool("area_mode") {
+            Some(&ControlValue::Choice(1)) => AreaMode::Measure,
+            _ => AreaMode::Correction,
+        };
+        let exposure = values.number("exposure");
+        let bias = if values.flag("camera_bias") {
+            camera_bias(image)
+        } else {
+            0.0
+        };
+        let mut writes = Controls::new();
+        match mode {
+            AreaMode::Measure => {
+                // The exposure the operation applies; `exposure2white(-expo)` its factor.
+                let white = exposure_to_white(-(exposure - bias));
+                let out = xyz_to_lab_d50(grey.map(|c| c * white))[0];
+                let out = ControlValue::Number(out.clamp(0.0, 100.0));
+                shown.tools.push(("lightness", out));
+            }
+            AreaMode::Correction => {
+                let target = match tool("lightness") {
+                    Some(&ControlValue::Number(target)) => target,
+                    _ => 50.0,
+                };
+                let target = lab_to_xyz_d50([target, 0.0, 0.0]);
+                let expo = -white_to_exposure(grey[1] / target[1]) - bias;
+                // `_exposure_set_white`.
+                let white = exposure_to_white(-expo);
+                let picked = white_to_exposure(white);
+                if picked != exposure {
+                    writes.set("exposure", ControlValue::Number(picked));
+                    // The black the operation holds now, darktable's `p->black`.
+                    let default = default_black(image);
+                    let level = values.number("black_level");
+                    let held = BlackLevel::new(default, rendered_white(exposure, bias));
+                    if held.value(level) >= white {
+                        let level = white - WHITE_MARGIN - default;
+                        writes.set("black_level", ControlValue::Number(level));
+                    }
+                }
+            }
+        }
+        Some(Picked { writes, shown })
+    }
+}
+
+/// darktable's `exposure2white`: the input an exposure renders at 1.0, the camera's bias
+/// aside.
+fn exposure_to_white(exposure: f32) -> f32 {
+    (-exposure).exp2()
+}
+
+/// darktable's `white2exposure`: the exposure that renders `white` at 1.0, the white
+/// floored at 1e-20.
+fn white_to_exposure(white: f32) -> f32 {
+    -white.max(WHITE_FLOOR).log2()
+}
+
+/// The input profile's camera RGB to XYZ D50, darktable's `matrix_in` of the pipe's input
+/// profile, through which Exposure's picker reads its area: colorin's default for the
+/// photo, which no module changes, the camera's matrix on a colour raw (darktable's
+/// standard matrix) and linear Rec2020 otherwise. This crate cannot call colorin, so its
+/// rule is repeated here; a test holds the two to agree. `None` on a colour raw with no
+/// matrix, which colorin cannot render.
+pub fn input_profile(image: &ImageContext) -> Option<Mat3> {
+    match &image.camera {
+        Some(camera) if camera.cfa.is_some() => {
+            Some(to_f32(camera_to_xyz_d50(camera.xyz_to_camera.as_ref()?)))
+        }
+        _ => Some(to_f32(profile_rgb_to_xyz_d50(
+            PROFILE_D65,
+            REC2020_PRIMARIES,
+        ))),
+    }
+}
+
+/// The photo's own black, the exposure operation's default `black`: darktable's −2⁻¹² on a
+/// colour raw, 0 otherwise, as its `reload_defaults` sets it. This crate cannot call the
+/// operation, so its rule is repeated here; a test holds the two to agree.
+pub fn default_black(image: &ImageContext) -> f32 {
+    match &image.camera {
+        Some(camera) if camera.cfa.is_some() => -1.0 / 4096.0,
+        _ => 0.0,
     }
 }
 
@@ -790,5 +960,296 @@ mod tests {
         assert_eq!(migrated.flag("camera_bias"), Some(false));
         // Version 2's values are its own.
         assert_eq!(Exposure.migrate(2, saved.clone()), saved);
+    }
+
+    // The picker: darktable's `_auto_set_exposure` (`exposure.c:866-965`) on readings
+    // made for the test, against its arithmetic in f64.
+
+    /// A reading whose mean is `rgb` at Exposure's input.
+    fn reading(rgb: [f32; 3]) -> Reading {
+        let [r, g, b] = rgb;
+        let stats = crate::pick::Stats {
+            mean: [r, g, b, 1.0],
+            min: [r, g, b, 1.0],
+            max: [r, g, b, 1.0],
+        };
+        Reading {
+            input: stats,
+            output: None,
+        }
+    }
+
+    /// Exposure's controls at `image`'s defaults, with these set.
+    fn values(image: &ImageContext, set: &[(&'static str, ControlValue)]) -> Controls {
+        let mut values = Exposure.defaults(image);
+        for (control, value) in set {
+            values.set(control, value.clone());
+        }
+        values
+    }
+
+    fn correction(lightness: f32) -> [(&'static str, ControlValue); 2] {
+        [
+            ("area_mode", ControlValue::Choice(0)),
+            ("lightness", number(lightness)),
+        ]
+    }
+
+    fn pick(
+        image: &ImageContext,
+        rgb: [f32; 3],
+        values: &Controls,
+        tools: &[(&str, ControlValue)],
+    ) -> Picked {
+        Exposure
+            .pick(
+                "exposure",
+                &reading(rgb),
+                values,
+                image,
+                tools,
+                None,
+                None,
+                PickKeys::default(),
+            )
+            .unwrap()
+    }
+
+    /// CIE L's Y for the D50 white, darktable's `lab_f_inv` above its knee: the grey a
+    /// target lightness maps to.
+    fn y_of(lightness: f64) -> f64 {
+        ((lightness + 16.0) / 116.0).powi(3)
+    }
+
+    /// The area's luminance, Y of XYZ D50, through the photo's input profile, in f64.
+    fn luminance(image: &ImageContext, rgb: [f32; 3]) -> f64 {
+        let row = input_profile(image).unwrap()[1];
+        (0..3).map(|c| f64::from(row[c]) * f64::from(rgb[c])).sum()
+    }
+
+    #[test]
+    fn its_pick_maps_the_area_to_the_target_lightness() {
+        // An image that is not a raw, read through linear Rec2020, and colour raws with
+        // and without a bias, compensated and not.
+        let cases = [
+            (ImageContext::full(8, 8), true),
+            (raw(0.0), true),
+            (raw(-0.67), true),
+            (raw(-0.67), false),
+            (raw(1.3), true),
+        ];
+        for (image, compensated) in cases {
+            let bias = if compensated {
+                f64::from(camera_bias(&image))
+            } else {
+                0.0
+            };
+            for rgb in [[0.18, 0.18, 0.18], [0.02, 0.05, 0.01], [0.7, 0.4, 0.9]] {
+                for target in [18.0, 50.0, 72.5, 100.0] {
+                    let values =
+                        values(&image, &[("camera_bias", ControlValue::Bool(compensated))]);
+                    let picked = pick(&image, rgb, &values, &correction(target));
+                    // −log2(Y / Y_target), plus the bias the operation takes off again.
+                    let expected =
+                        -(luminance(&image, rgb) / y_of(f64::from(target))).log2() + bias;
+                    let written = picked.writes.number("exposure");
+                    assert!(
+                        (f64::from(written) - expected).abs() < 1e-4,
+                        "{rgb:?} to L {target}: {written} for {expected}"
+                    );
+                    // Only Exposure: the black lies below every white here.
+                    assert_eq!(picked.writes.iter().count(), 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn its_pick_follows_darktable_s_lightness_through_lab() {
+        // The grey of 0.18: L 49.5, sRGB 0.461, shown with L, its C and h 0.
+        let image = ImageContext::full(8, 8);
+        let picked = pick(&image, [0.18; 3], &values(&image, &[]), &correction(50.0));
+        let patch = picked.shown.patch.unwrap();
+        let lightness = 116.0 * 0.18_f64.cbrt() - 16.0;
+        assert!(
+            (f64::from(patch.lch[0]) - lightness).abs() < 1e-3,
+            "{patch:?}"
+        );
+        assert_eq!(&patch.lch[1..], [0.0, 0.0]);
+        let srgb = 1.055 * 0.18_f64.powf(1.0 / 2.4) - 0.055;
+        for c in patch.srgb {
+            assert!((f64::from(c) - srgb).abs() < 1e-3, "{patch:?}");
+        }
+        // The default target is 50 %, darktable's.
+        let default = pick(&image, [0.18; 3], &values(&image, &[]), &[]);
+        assert_eq!(default.writes, picked.writes);
+        // An area whose colour differs is made grey of its own lightness first: L's Y,
+        // through Lab and back, is the area's.
+        let rgb = [0.6, 0.1, 0.05];
+        let picked = pick(&image, rgb, &values(&image, &[]), &correction(50.0));
+        let expected = -(luminance(&image, rgb) / y_of(50.0)).log2();
+        assert!((f64::from(picked.writes.number("exposure")) - expected).abs() < 1e-4);
+        // A target patch is the grey of its lightness, as `_target_color_draw` paints it.
+        let target = Patch::of_lch([50.0, 0.0, 0.0]);
+        let srgb = 1.055 * y_of(50.0).powf(1.0 / 2.4) - 0.055;
+        for c in target.srgb {
+            assert!((f64::from(c) - srgb).abs() < 1e-3, "{target:?}");
+        }
+    }
+
+    #[test]
+    fn its_pick_writes_nothing_where_exposure_already_is_the_one_picked() {
+        // `_exposure_set_white` returns where the exposure is the same.
+        let image = raw(-0.67);
+        let first = pick(
+            &image,
+            [0.3, 0.2, 0.1],
+            &values(&image, &[]),
+            &correction(60.0),
+        );
+        let picked = first.writes.number("exposure");
+        let again = pick(
+            &image,
+            [0.3, 0.2, 0.1],
+            &values(&image, &[("exposure", number(picked))]),
+            &correction(60.0),
+        );
+        assert!(again.writes.is_empty());
+        assert_eq!(again.shown, first.shown);
+    }
+
+    #[test]
+    fn its_pick_puts_a_black_at_or_above_the_new_white_darktable_s_margin_below_it() {
+        // A dark area: the white 2^−e is Y / Y_target, below a black of 0.5.
+        let image = ImageContext::full(8, 8);
+        let rgb = [0.001; 3];
+        let set = [("black_level", number(0.5))];
+        let picked = pick(&image, rgb, &values(&image, &set), &correction(50.0));
+        let white = luminance(&image, rgb) / y_of(50.0);
+        let level = picked.writes.number("black_level");
+        assert!(
+            (f64::from(level) - (white - 0.01)).abs() < 1e-6,
+            "{level} for {white}"
+        );
+        // Over a colour raw's own black, −2⁻¹², as Black level correction is.
+        let image = raw(0.0);
+        let picked = pick(&image, rgb, &values(&image, &set), &correction(50.0));
+        let white = 2f32.powf(-picked.writes.number("exposure"));
+        assert_eq!(
+            picked.writes.number("black_level"),
+            white - 0.01 + 1.0 / 4096.0
+        );
+        // A black below the new white is left as it is.
+        let picked = pick(&image, [0.5; 3], &values(&image, &set), &correction(50.0));
+        assert_eq!(picked.writes.get("black_level"), None);
+    }
+
+    #[test]
+    fn its_pick_has_darktable_s_ends() {
+        let image = ImageContext::full(8, 8);
+        // A target lightness of 0 maps to no exposure: not finite, which the session
+        // leaves out, keeping the patch.
+        let picked = pick(&image, [0.18; 3], &values(&image, &[]), &correction(0.0));
+        assert!(!picked.writes.number("exposure").is_finite());
+        // An area of black or below: the white floored at 1e-20, so log2 has a value,
+        // past Exposure's +18 EV, which the session holds there.
+        let picked = pick(&image, [0.0; 3], &values(&image, &[]), &correction(50.0));
+        let exposure = picked.writes.number("exposure");
+        assert!(exposure.is_finite() && exposure > 18.0, "{exposure}");
+        // Another picker's reading, or a colour raw with no matrix, picks nothing.
+        let none = |picker: &str, image: &ImageContext| {
+            Exposure.pick(
+                picker,
+                &reading([0.18; 3]),
+                &values(image, &[]),
+                image,
+                &[],
+                None,
+                None,
+                PickKeys::default(),
+            )
+        };
+        assert_eq!(none("black", &image), None);
+        let mut matrixless = raw(0.0);
+        matrixless.camera.as_mut().unwrap().xyz_to_camera = None;
+        assert_eq!(none("exposure", &matrixless), None);
+    }
+
+    #[test]
+    fn in_measure_mode_its_pick_gives_the_target_the_area_renders_at_and_writes_nothing() {
+        let measure = [
+            ("area_mode", ControlValue::Choice(1)),
+            ("lightness", number(50.0)),
+        ];
+        for (image, compensated, exposure) in [
+            (ImageContext::full(8, 8), false, 1.0),
+            (raw(-0.67), true, 0.7),
+            (raw(-0.67), false, -2.0),
+        ] {
+            let set = [
+                ("exposure", number(exposure)),
+                ("camera_bias", ControlValue::Bool(compensated)),
+            ];
+            let bias = if compensated {
+                f64::from(camera_bias(&image))
+            } else {
+                0.0
+            };
+            let rgb = [0.18, 0.12, 0.1];
+            let picked = pick(&image, rgb, &values(&image, &set), &measure);
+            assert!(picked.writes.is_empty());
+            let y = luminance(&image, rgb) * (f64::from(exposure) - bias).exp2();
+            let expected = 116.0 * y.cbrt() - 16.0;
+            let [("lightness", ControlValue::Number(lightness))] = picked.shown.tools[..] else {
+                panic!("{:?}", picked.shown.tools)
+            };
+            assert!(
+                (f64::from(lightness) - expected).abs() < 1e-3,
+                "{lightness} for {expected}"
+            );
+            // The patch is the input's, as in correction.
+            let input = pick(&image, rgb, &values(&image, &set), &correction(50.0));
+            assert_eq!(picked.shown.patch, input.shown.patch);
+        }
+        // Held to the setting's 0 to 100, as darktable's slider holds it.
+        let image = ImageContext::full(8, 8);
+        let bright = pick(
+            &image,
+            [4.0; 3],
+            &values(&image, &[("exposure", number(4.0))]),
+            &measure,
+        );
+        assert_eq!(
+            bright.shown.tools,
+            [("lightness", ControlValue::Number(100.0))]
+        );
+    }
+
+    #[test]
+    fn its_input_profile_and_black_are_colorin_s_and_the_exposure_operation_s() {
+        let mut monochrome = raw(0.0);
+        monochrome.camera.as_mut().unwrap().cfa = None;
+        for image in [raw(0.0), raw(-0.67), monochrome, ImageContext::full(8, 8)] {
+            let base = Base::new(OPERATIONS, &image);
+            assert_eq!(default_black(&image), base.float(EXPOSURE, "black"));
+            // colorin's matrix, from the input profile to the working space, linear
+            // Rec2020, at its defaults for the photo.
+            let colorin = apertrust_operations::operation("colorin").unwrap();
+            let params = colorin.defaults(&image);
+            let input = apertrust_plugin::ImageDesc::rgba(8, 8);
+            let prepared = colorin.prepare(&params, &image, &input).unwrap();
+            let floats: Vec<f32> = prepared.passes[0]
+                .params
+                .chunks(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            let to_working: Mat3 = [0, 1, 2].map(|r| [0, 1, 2].map(|c| floats[r * 4 + c]));
+            let working = to_f32(profile_rgb_to_xyz_d50(PROFILE_D65, REC2020_PRIMARIES));
+            let through = apertrust_color::mul(&working, &to_working);
+            let ours = input_profile(&image).unwrap();
+            for (a, b) in through.iter().flatten().zip(ours.iter().flatten()) {
+                assert!((a - b).abs() < 1e-5, "{through:?} for {ours:?}");
+            }
+        }
     }
 }

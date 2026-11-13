@@ -1757,6 +1757,8 @@ struct Shell {
     export_again: bool,
     /// The Export dialog's settings, as it left them (`export.*`).
     export: export::Values,
+    /// The modules' tool settings, as their rows and picks left them (`tools.*`).
+    tools: settings::Tools,
     /// Whether Export and Export Again ask before replacing files
     /// (`export.ask_before_overwrite`).
     overwrite: alerts::Overwrite,
@@ -1862,6 +1864,7 @@ impl Shell {
             export_asked: false,
             export_again: false,
             export: settings.export.clone(),
+            tools: settings.tools.clone(),
             overwrite: alerts::Overwrite::new(settings.ask_before_overwrite, false),
             drawn_menus: os != OperatingSystem::Mac,
             menu: false,
@@ -1915,6 +1918,7 @@ impl Shell {
             grid: self.grid,
             keys: self.keymap.overrides().clone(),
             export: self.export.clone(),
+            tools: self.tools.clone(),
             ask_before_overwrite: self.overwrite.asks(),
         }
     }
@@ -3349,6 +3353,12 @@ impl App {
                         self.dialogs.preview(through, *preview);
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
+                    // Measure mode's target, kept as the user's own.
+                    Reaction::Measured { module, tools } => {
+                        for (setting, value) in tools {
+                            self.shell.tools.set(module, setting, value);
+                        }
+                    }
                     Reaction::FolderFailed { path, reason } => {
                         self.shell.missing.insert(path, reason);
                     }
@@ -3490,8 +3500,25 @@ impl App {
                 action,
                 keys,
             } => {
-                let command = pickers::pressed(PickerRef::Module { module, picker }, action, keys);
+                let tools = self.shell.tools.of(module);
+                let picker = PickerRef::Module { module, picker };
+                let command = pickers::pressed(picker, action, keys, tools);
                 self.send_picker(command, ctx);
+            }
+            // Kept as the user moves it; the session takes them as the gesture ends, and
+            // applies the module's latest reading again by them, as darktable's settings
+            // callback does (`exposure.c:1170-1175`).
+            Change::Tool {
+                module,
+                setting,
+                value,
+                done,
+            } => {
+                self.shell.tools.set(module, setting, value);
+                if done {
+                    let tools = self.shell.tools.of(module);
+                    self.send_picker(PickerCommand::Tools { module, tools }, ctx);
+                }
             }
         }
     }
@@ -3529,6 +3556,7 @@ impl App {
     /// session to report a write that includes it, one that completes a change at once.
     fn send_edit(&mut self, command: Command) -> u64 {
         let completes = completes(&command);
+        self.mirror.picked.sent(&command);
         let number = self.session.send(command);
         self.mirror.saving.sent(number, completes, Instant::now());
         number
@@ -5793,6 +5821,8 @@ fn edit_tab(
         on: mirror.pickers.active(),
         enabled: shown.editable(),
         why: opening.as_deref().or(view_only.as_deref()),
+        tools: &shell.tools,
+        picked: &mirror.picked,
     };
     let (scopes, changes) = panel_body(
         ui,

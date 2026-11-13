@@ -30,9 +30,9 @@ use crate::components::{
     CollapsibleGroup, ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction,
     FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
-    PickerPlace, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope, ScopeView, Section,
-    SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar,
+    PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
+    PickerMarks, PickerPlace, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope, ScopeView,
+    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar,
     TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track,
     VectorscopeBins, WaveformBins, Zoom, group_label,
 };
@@ -579,6 +579,37 @@ fn pickers(ui: &mut Ui, t: &Theme) {
         RichText::new(
             "18 by 18, as in a slider's quad, with no plate: the filled pipette while on, \
              dimmed while disabled with its tooltip saying why.",
+        )
+        .color(t.colors.text_secondary),
+    );
+    // Exposure's area exposure mapping before a pick, and after one at L 45.2 %.
+    ui.push_id("patches", |ui| {
+        let target = Patch {
+            heading: "Target",
+            colour: Some(Color32::from_gray(119)),
+            tip: "The desired target exposure after mapping.",
+            readout: None,
+        };
+        let lch = "These LCh coordinates are computed from CIE Lab 1976 coordinates.";
+        for (colour, readout) in [
+            (None, "L: N/A"),
+            (Some(Color32::from_gray(108)), "L: 45.2%"),
+        ] {
+            Patches::new(
+                Patch {
+                    heading: "Input",
+                    colour,
+                    tip: "The input colour that should be mapped to the target.",
+                    readout: Some((readout, lch)),
+                },
+                target,
+            )
+            .show(ui);
+        }
+    });
+    ui.label(
+        RichText::new(
+            "Patches: the input before a pick, outlined, and after one, beside the target.",
         )
         .color(t.colors.text_secondary),
     );

@@ -142,8 +142,9 @@ pub enum PickerCommand {
     Reset,
     /// The tool settings of `module`'s pickers changed, as the client keeps them: kept,
     /// and the module's last reading applied again where the picker that read it reads
-    /// one of them, as one completed change. Refused for a setting none of its pickers
-    /// reads.
+    /// one of them, as one completed change, the tool settings that pick measures never
+    /// handed back (`Shown::tools` empty), since the client has just sent its own.
+    /// Refused for a setting none of its pickers reads.
     Tools {
         module: &'static str,
         tools: Vec<(&'static str, ControlValue)>,

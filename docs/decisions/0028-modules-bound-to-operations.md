@@ -8,7 +8,7 @@ A module is what the user edits with; an operation is the engine's algorithm ([0
 
 **Static module definitions and pure bindings in `apertrust-modules`, run by the engine's session.**
 
-**The crate,** `crates/modules`, depends on `apertrust-plugin` and `apertrust-color` only: no egui, wgpu, engine or operation crate; bindings name operations and parameters by id. The engine depends on it, since the edit, history and sidecar it owns hold module values, and `Session::start` takes the list the binaries hand it (`MODULES`), as with operations.
+**The crate,** `crates/modules`, depends on `apertrust-plugin`, `apertrust-color` and `apertrust-base`'s settings part, for its tool settings' generated statics (decision 43), only: no egui, wgpu, engine or operation crate; bindings name operations and parameters by id. The engine depends on it, since the edit, history and sidecar it owns hold module values, and `Session::start` takes the list the binaries hand it (`MODULES`), as with operations.
 
 **A definition** is static data: an id (snake_case, permanent), a version, whether it works on layers, whether it has Auto, its controls and its tabs. A **control** is what an edit stores: id, kind (a number with range, step and default; a choice; a boolean; curve points) and unit. A **row** is how a tab shows a control: a slider, a choice, a toggle, a group label, a preset row, a view's coordinate, or a custom widget from a closed registry naming the controls it edits ([0029](0029-a-module-is-darktables-page.md)). Message ids follow from the ids (`module-<module>-title`, `module-<module>-control-<control>-label`, `-option-<option>`, `-tab-<tab>`, `-group-<group>`; units `unit-<unit>`), in `crates/ui/locales/<locale>/modules.ftl`, checked by a test.
 

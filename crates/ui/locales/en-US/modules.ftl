@@ -159,3 +159,14 @@ module-vignette-control-center_x-promise = Horizontal offset of center of the ef
 module-vignette-control-center_y-label = Vertical center
 module-vignette-control-center_y-full = Vertical center
 module-vignette-control-center_y-promise = Vertical offset of center of the effect.
+
+# Pickers' words that American English spells differently.
+module-colorbalancergb-picker-global_hue-promise = Picks the color opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-shadows_hue-promise = Picks the color opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-highlights_hue-promise = Picks the color opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-midtones_hue-promise = Picks the color opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-white_fulcrum-promise = Pick color from the photo
+module-colorbalancergb-picker-grey_fulcrum-full = Contrast gray fulcrum: pick from the photo
+module-colorbalancergb-picker-grey_fulcrum-promise = Pick color from the photo
+module-agx-picker-pivot-promise = Sets the pivot relative to mid-gray from the average luminance of the selected area.
+module-agx-picker-pivot_output-promise = Sets the pivot relative to mid-gray from the average luminance of the selected area, and adjusts the output by the default mid-gray to mid-gray mapping.

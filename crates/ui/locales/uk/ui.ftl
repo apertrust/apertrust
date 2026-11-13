@@ -888,6 +888,14 @@ picker-photo-down = Посунути вниз
 picker-said-control = { $control } { $value }
 picker-said-rgb = середнє RGB { $red }, { $green }, { $blue }
 
+## Плашки піпетки (docs/pickers.md, Declaring pickers).
+picker-patch-input = Вхід
+picker-patch-input-tip = Вхідний колір, який має відобразитися на ціль.
+picker-patch-target = Ціль
+picker-patch-lch-tip = Ці координати LCh обчислено з координат CIE Lab 1976.
+picker-patch-lightness = L: { $value }%
+picker-patch-none = L: н/д
+
 ## Вікно експорту (docs/gui.md, The Export dialog): модуль експорту darktable, назви
 ## з великої літери лише першого слова. $count — кількість знімків, один знімок — точне
 ## число 1. $file — назва знімка чи файлу, $source — вихідний raw, $folder — тека, $width

@@ -92,3 +92,18 @@ pub struct Patch {
     /// Its L, C and h: CIE LCh of Lab D50, L 0 to 100, h in degrees from 0 to 360.
     pub lch: [f32; 3],
 }
+
+impl Patch {
+    /// The patch of CIE LCh `lch`, h in degrees, as darktable paints a picker's patches
+    /// (`_target_color_draw`, `exposure.c:1045-1086`): `dt_LCH_2_Lab`, `dt_Lab_to_XYZ`
+    /// and `dt_XYZ_to_sRGB`, held to 0 to 1 as cairo holds a colour.
+    pub fn of_lch(lch: [f32; 3]) -> Patch {
+        let [l, c, h] = lch;
+        let h = h.to_radians();
+        let xyz = apertrust_color::lab_to_xyz_d50([l, h.cos() * c, h.sin() * c]);
+        Patch {
+            srgb: apertrust_color::xyz_d50_to_srgb(xyz).map(|v| v.clamp(0.0, 1.0)),
+            lch,
+        }
+    }
+}

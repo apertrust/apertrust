@@ -194,6 +194,14 @@ module-agx-control-curve_pivot_x-promise = Встановити вхідну е�
 module-agx-control-curve_pivot_y_linear_output-label = Цільовий вихід опорної точки
 module-agx-control-curve_pivot_y_linear_output-full = Цільовий вихід опорної точки
 module-agx-control-curve_pivot_y_linear_output-promise = Затемнити або освітлити опорну точку (показник степеня лінійного виходу).
+module-agx-picker-white-full = Відносна експозиція білого: узяти зі знімка
+module-agx-picker-white-promise = Бере точку білого.
+module-agx-picker-black-full = Відносна експозиція чорного: узяти зі знімка
+module-agx-picker-black-promise = Бере точку чорного.
+module-agx-picker-pivot-full = Відносна експозиція опорної точки: узяти зі знімка
+module-agx-picker-pivot-promise = Задає опорну точку відносно середньо-сірого за середньою яскравістю виділеної ділянки.
+module-agx-picker-pivot_output-full = Цільовий вихід опорної точки: узяти зі знімка
+module-agx-picker-pivot_output-promise = Задає опорну точку відносно середньо-сірого за середньою яскравістю виділеної ділянки і коригує вихід за типовим відображенням середньо-сірого в середньо-сірий.
 module-agx-control-curve_contrast_around_pivot-label = Контраст
 module-agx-control-curve_contrast_around_pivot-full = Контраст кривої
 module-agx-control-curve_contrast_around_pivot-promise = Нахил лінійної ділянки навколо точки опори.
@@ -420,10 +428,11 @@ module-exposure-setting-area_mode-full = Режим області зображ�
 module-exposure-setting-area_mode-promise = «Корекція» регулює експозицію так, що вхідна освітленість відображається на цільову. «Вимірювання» лише показує, як вхідний колір відображається експозицією, і може використовуватися для визначення цілі.
 module-exposure-setting-area_mode-option-correction = Корекція
 module-exposure-setting-area_mode-option-measure = Вимірювання
-module-exposure-group-target = Ціль
 module-exposure-setting-lightness-label = Світлість
 module-exposure-setting-lightness-full = Цільова світлість
 module-exposure-setting-lightness-promise = Бажана цільова експозиція після відображення.
+module-exposure-picker-exposure-full = Експозиція: узяти зі знімка
+module-exposure-picker-exposure-promise = Задає корекцію експозиції за виділеною ділянкою.
 
 ## Калібрування кольору (docs/modules/colour-calibration.md)
 
@@ -818,6 +827,18 @@ module-colorbalancergb-control-white_fulcrum-promise = Пікова яскрав
 module-colorbalancergb-control-grey_fulcrum-label = Опорна точка контрасту сірого
 module-colorbalancergb-control-grey_fulcrum-full = Опорна точка контрасту сірого
 module-colorbalancergb-control-grey_fulcrum-promise = Пікова яскравість сірого, за якою нормалізується степенева функція: сірий, який зберігає Контраст.
+module-colorbalancergb-picker-global_hue-full = Відтінок глобального зміщення: узяти зі знімка
+module-colorbalancergb-picker-global_hue-promise = Бере колір, протилежний кольору виділеної ділянки. Ctrl-клацання, на Mac Cmd-клацання, бере власний колір ділянки.
+module-colorbalancergb-picker-shadows_hue-full = Відтінок підйому тіней: узяти зі знімка
+module-colorbalancergb-picker-shadows_hue-promise = Бере колір, протилежний кольору виділеної ділянки. Ctrl-клацання, на Mac Cmd-клацання, бере власний колір ділянки.
+module-colorbalancergb-picker-highlights_hue-full = Відтінок підсилення світлих тонів: узяти зі знімка
+module-colorbalancergb-picker-highlights_hue-promise = Бере колір, протилежний кольору виділеної ділянки. Ctrl-клацання, на Mac Cmd-клацання, бере власний колір ділянки.
+module-colorbalancergb-picker-midtones_hue-full = Відтінок показника степеня: узяти зі знімка
+module-colorbalancergb-picker-midtones_hue-promise = Бере колір, протилежний кольору виділеної ділянки. Ctrl-клацання, на Mac Cmd-клацання, бере власний колір ділянки.
+module-colorbalancergb-picker-white_fulcrum-full = Опорна точка білого: узяти зі знімка
+module-colorbalancergb-picker-white_fulcrum-promise = Узяти колір зі знімка
+module-colorbalancergb-picker-grey_fulcrum-full = Опорна точка контрасту сірого: узяти зі знімка
+module-colorbalancergb-picker-grey_fulcrum-promise = Узяти колір зі знімка
 
 ## Тонова крива (docs/modules/tone-curve.md)
 

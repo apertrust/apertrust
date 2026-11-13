@@ -509,6 +509,82 @@ fn e31_use_camera_bias_off_darkens_by_the_bias() {
     );
 }
 
+// E50: the picker.
+
+/// E50: a pick on a flat patch, by Exposure's pick with the patch's reading, sets the
+/// exposure that renders the patch's luminance at the target lightness's grey at
+/// Exposure's output, Y read through the input profile darktable's pick reads it through;
+/// only Exposure changes. On colour raws with biases 0 and −0.67 EV, compensated, at
+/// darktable's default target, 50 %, and at 30 % and 75 %. The photo's own black, −2⁻¹²,
+/// which darktable's rule leaves aside, keeps a patch from landing exactly: the darker
+/// the patch, the further.
+#[test]
+fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
+    use apertrust_modules::pick::{PickKeys, Reading, Stats};
+
+    let patches = [
+        [0.05, 0.05, 0.05],
+        [0.18, 0.18, 0.18],
+        [0.5, 0.5, 0.5],
+        [1.0, 1.0, 1.0],
+        [0.3, 0.2, 0.1],
+    ];
+    let pixels: Vec<[f32; 4]> = patches.iter().map(|&[r, g, b]| [r, g, b, 1.0]).collect();
+    let mut worst = 0.0_f64;
+    for bias in [0.0, -0.67] {
+        let (picture, image) = Picture::row(pixels.clone(), bias);
+        let mut bench = Bench::picture(&picture, image.clone(), SCENE);
+        let to_xyz = exposure::input_profile(&image).unwrap();
+        let luminance = |rgb: &[f32; 4]| {
+            (0..3)
+                .map(|c| f64::from(to_xyz[1][c] * rgb[c]))
+                .sum::<f64>()
+        };
+        for target in [30.0, 50.0, 75.0] {
+            let target_y = ((f64::from(target) + 16.0) / 116.0).powi(3);
+            let tools = [
+                ("area_mode", ControlValue::Choice(0)),
+                ("lightness", ControlValue::Number(target)),
+            ];
+            for (at, patch) in picture.pixels.iter().enumerate() {
+                let stats = Stats {
+                    mean: *patch,
+                    min: *patch,
+                    max: *patch,
+                };
+                let reading = Reading {
+                    input: stats,
+                    output: None,
+                };
+                let values = Exposure.defaults(&image);
+                let picked = Exposure
+                    .pick(
+                        "exposure",
+                        &reading,
+                        &values,
+                        &image,
+                        &tools,
+                        None,
+                        None,
+                        PickKeys::default(),
+                    )
+                    .unwrap();
+                let written: Vec<&str> = picked.writes.iter().map(|(c, _)| c).collect();
+                assert_eq!(written, ["exposure"], "E50: only Exposure changes");
+                let exposure = picked.writes.number("exposure");
+                let output = bench.set(&[("exposure", exposure)], Measure::Module);
+                let off = (luminance(&output.pixels[at]) / target_y).log2().abs();
+                worst = worst.max(off);
+                assert!(
+                    off <= 0.01,
+                    "E50: {patch:?} at L {target}, bias {bias}: {off:.4} EV off"
+                );
+            }
+        }
+    }
+    println!("E50: at most {worst:.4} EV from the target");
+}
+
 // E9: darktable's golden case.
 
 /// E9: Exposure and Black level correction set to the golden exposure case's values as

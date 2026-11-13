@@ -46,8 +46,9 @@ use std::time::{Duration, Instant};
 
 use apertrust_engine::picker::{DEFAULT_AREA, DEFAULT_POINT};
 use apertrust_engine::session::{
-    ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
+    Command, ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
 };
+use apertrust_modules::pick::{Patch, Shown};
 use apertrust_modules::{ControlKind, Definition, Module, PickerKind, Row, messages};
 use apertrust_ui::Translator;
 use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace};
@@ -195,6 +196,80 @@ impl Mirror {
     }
 }
 
+/// What the modules' picks showed on the photo, darktable's `spot_RGB` and L readout: each
+/// module's last input patch, for its panel's patches (`Row::Patches`), kept after its
+/// picker turns off until the module's values change from outside a pick ([`Picked::sent`])
+/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the tool settings
+/// a pick measured, measure mode's target, handed to the app's settings once.
+#[derive(Debug, Default)]
+pub struct Picked {
+    patches: BTreeMap<&'static str, Patch>,
+    /// The latest pick shown of the module whose picker is on, so the tool settings it
+    /// measured are taken once: every reading after it carries it again.
+    seen: Option<(&'static str, Shown)>,
+}
+
+impl Picked {
+    pub const fn new() -> Picked {
+        Picked {
+            patches: BTreeMap::new(),
+            seen: None,
+        }
+    }
+
+    /// The session's `Event::Picker`: the module's patch kept, and the module with the tool
+    /// settings its pick measured where they come for the first time.
+    pub fn apply(
+        &mut self,
+        reading: Option<&PickerReading>,
+    ) -> Option<(&'static str, Vec<(&'static str, ControlValue)>)> {
+        let Some(reading) = reading else {
+            // Off: the next `On` applies a reading of its own.
+            self.seen = None;
+            return None;
+        };
+        let PickerRef::Module { module, .. } = reading.picker else {
+            return None;
+        };
+        let shown = reading.module.as_ref()?.picked.as_ref()?;
+        if let Some(patch) = shown.patch {
+            self.patches.insert(module, patch);
+        }
+        let seen = (module, shown.clone());
+        if self.seen.as_ref() == Some(&seen) {
+            return None;
+        }
+        self.seen = Some(seen);
+        (!shown.tools.is_empty()).then(|| (module, shown.tools.clone()))
+    }
+
+    /// The input patch `module`'s last pick showed on the photo.
+    pub fn patch(&self, module: &str) -> Option<&Patch> {
+        self.patches.get(module)
+    }
+
+    /// The photo is left: its patches with it.
+    pub fn forget(&mut self) {
+        *self = Picked::new();
+    }
+
+    /// `command` is sent: one that changes a module's values from outside a pick takes its
+    /// input patch away, as darktable's `gui_update` zeroes `spot_RGB` and so the L shown
+    /// with it (`exposure.c:707-710`): undo, redo and a move through history, every
+    /// module's; the edit's reset, every module's; a module's reset, its own.
+    pub fn sent(&mut self, command: &Command) {
+        match command {
+            Command::Undo | Command::Redo | Command::GoTo { .. } | Command::Reset => {
+                self.patches.clear();
+            }
+            Command::ResetModule { module } => {
+                self.patches.remove(module.as_str());
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The region a picker command moves the active picker to, if it moves it.
 pub fn moved_to(command: &PickerCommand) -> Option<Region> {
     match *command {
@@ -209,16 +284,22 @@ pub fn moved_to(command: &PickerCommand) -> Option<Region> {
     }
 }
 
-/// What a press on `picker`'s button sends, `keys` held: `On`, with no tool settings and
-/// no channel tab until a module reads them, or `Off` for the picker on, since `On` for it
-/// would start it again (`docs/pickers.md`, Against darktable).
-pub fn pressed(picker: PickerRef, action: PickerAction, keys: PickKeys) -> PickerCommand {
+/// What a press on `picker`'s button sends, `keys` held: `On`, with the tool settings its
+/// module's pickers read as the app keeps them, `tools`, and no channel tab until a module
+/// reads one, or `Off` for the picker on, since `On` for it would start it again
+/// (`docs/pickers.md`, Against darktable).
+pub fn pressed(
+    picker: PickerRef,
+    action: PickerAction,
+    keys: PickKeys,
+    tools: Vec<(&'static str, ControlValue)>,
+) -> PickerCommand {
     match action {
         PickerAction::On { area } => PickerCommand::On {
             picker,
             area,
             keys,
-            tools: Vec::new(),
+            tools,
             channel: None,
         },
         PickerAction::Off => PickerCommand::Off,
@@ -1304,6 +1385,7 @@ mod tests {
                         on: scene.mirror.active(),
                         enabled: true,
                         why: None,
+                        ..modules::Pickers::NONE
                     };
                     let state = &scene.values.modules[0];
                     let changes = ui
@@ -1331,7 +1413,7 @@ mod tests {
                         } = change
                         {
                             let picker = PickerRef::Module { module, picker };
-                            scene.send(pressed(picker, action, keys), &ctx);
+                            scene.send(pressed(picker, action, keys, Vec::new()), &ctx);
                         }
                     }
                     // A sky over a pale wall over earth, as the wireframe's photo.

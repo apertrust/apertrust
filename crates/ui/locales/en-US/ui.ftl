@@ -59,6 +59,7 @@ scope-vectorscope-tip = Colors by hue, the angle, and by saturation, the distanc
 ## Colour pickers
 
 picker-tip = Pick color from the photo
+picker-patch-input-tip = The input color that should be mapped to the target.
 
 ## Format options
 
