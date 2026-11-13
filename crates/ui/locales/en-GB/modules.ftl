@@ -203,6 +203,15 @@ module-agx-control-curve_pivot_x-promise = Set the pivot's input exposure in EV 
 module-agx-control-curve_pivot_y_linear_output-label = Pivot target output
 module-agx-control-curve_pivot_y_linear_output-full = Pivot target output
 module-agx-control-curve_pivot_y_linear_output-promise = Darken or brighten the pivot (linear output power).
+# The pickers on the quads: darktable's quad tooltips.
+module-agx-picker-white-full = White relative exposure: pick from the photo
+module-agx-picker-white-promise = Picks the white point.
+module-agx-picker-black-full = Black relative exposure: pick from the photo
+module-agx-picker-black-promise = Picks the black point.
+module-agx-picker-pivot-full = Pivot relative exposure: pick from the photo
+module-agx-picker-pivot-promise = Sets the pivot relative to mid-grey from the average luminance of the selected area.
+module-agx-picker-pivot_output-full = Pivot target output: pick from the photo
+module-agx-picker-pivot_output-promise = Sets the pivot relative to mid-grey from the average luminance of the selected area, and adjusts the output by the default mid-grey to mid-grey mapping.
 module-agx-control-curve_contrast_around_pivot-label = Contrast
 module-agx-control-curve_contrast_around_pivot-full = Curve contrast
 module-agx-control-curve_contrast_around_pivot-promise = Slope of the linear section around the pivot.
@@ -435,10 +444,12 @@ module-exposure-setting-area_mode-full = Area mode
 module-exposure-setting-area_mode-promise = Correction adjusts the exposure so that the input's lightness is mapped to the target. Measure only shows how an input colour is mapped by the exposure, and can be used to define a target.
 module-exposure-setting-area_mode-option-correction = Correction
 module-exposure-setting-area_mode-option-measure = Measure
-module-exposure-group-target = Target
 module-exposure-setting-lightness-label = Lightness
 module-exposure-setting-lightness-full = Target lightness
 module-exposure-setting-lightness-promise = The desired target exposure after mapping.
+# Exposure's picker on its quad: darktable's quad tooltip.
+module-exposure-picker-exposure-full = Exposure: pick from the photo
+module-exposure-picker-exposure-promise = Sets the exposure adjustment using the selected area.
 
 ## Colour calibration (docs/modules/colour-calibration.md): darktable's color calibration,
 ## every tab, the CAT tab first. Its words are darktable's, the adaptation's and the area
@@ -842,6 +853,20 @@ module-colorbalancergb-control-white_fulcrum-promise = Peak white luminance used
 module-colorbalancergb-control-grey_fulcrum-label = Contrast grey fulcrum
 module-colorbalancergb-control-grey_fulcrum-full = Contrast grey fulcrum
 module-colorbalancergb-control-grey_fulcrum-promise = Peak grey luminance used to normalise the power function: the grey Contrast keeps.
+# The pickers on the four hues' quads and the two fulcrums': darktable's quad tooltips,
+# its "pick color from image" where it sets none.
+module-colorbalancergb-picker-global_hue-full = Global offset hue: pick from the photo
+module-colorbalancergb-picker-global_hue-promise = Picks the colour opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-shadows_hue-full = Shadows lift hue: pick from the photo
+module-colorbalancergb-picker-shadows_hue-promise = Picks the colour opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-highlights_hue-full = Highlights gain hue: pick from the photo
+module-colorbalancergb-picker-highlights_hue-promise = Picks the colour opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-midtones_hue-full = Power hue: pick from the photo
+module-colorbalancergb-picker-midtones_hue-promise = Picks the colour opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.
+module-colorbalancergb-picker-white_fulcrum-full = White fulcrum: pick from the photo
+module-colorbalancergb-picker-white_fulcrum-promise = Pick colour from the photo
+module-colorbalancergb-picker-grey_fulcrum-full = Contrast grey fulcrum: pick from the photo
+module-colorbalancergb-picker-grey_fulcrum-promise = Pick colour from the photo
 
 ## Tone curve (docs/modules/tone-curve.md)
 

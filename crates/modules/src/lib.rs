@@ -33,9 +33,13 @@
 //!
 //! The engine's session runs the bindings: every client sends module values, and the
 //! session turns them into operation parameters, so the app, the CLI and MCP see the same
-//! modules. This crate depends on the operation interface and the shared colour maths
+//! modules. This crate depends on the operation interface, the shared colour maths and
+//! the settings part of `apertrust-base`, for its tool settings' statics ([`tools`]),
 //! only, never on egui, wgpu, the engine or an operation crate; it names operations and
 //! parameters by id.
+
+// The tool settings' generated statics name their choices' types by this crate's name.
+extern crate self as apertrust_modules;
 
 pub mod agx;
 pub mod check;
@@ -58,6 +62,7 @@ pub mod soften;
 pub mod testing;
 pub mod tone_curve;
 pub mod tone_equalizer;
+pub mod tools;
 pub mod transfer;
 mod values;
 pub mod vignetting;

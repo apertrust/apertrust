@@ -144,7 +144,8 @@ darktable's colour pickers and its Colour picker module, one API (decision 79; [
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.
 - [x] 79.6 The app: quads and picker rows, the marks over the photo, the central bar's words, the pointer, the keys and focus, the live region.
-- [ ] 79.7 to 79.11 Each module's pickers: Exposure, White balance, Colour calibration, Colour balance RGB and AgX.
+- [x] 79.7 Exposure's picker: its pick in correction and measure modes, the area exposure mapping's settings in settings, the patches and the L readout.
+- [ ] 79.8 to 79.11 Each other module's pickers: White balance, Colour calibration, Colour balance RGB and AgX.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker module, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.

@@ -14,11 +14,19 @@ publish.workspace = true
 testing = []
 
 [dependencies]
+# Its settings part alone, for the types of the tool settings' generated statics (decisions
+# 29 and 43).
+apertrust-base.workspace = true
 # RGB curve's curve maths, for the Tone curve's panel, and darktable's illuminants, for
-# Colour calibration's defaults and follow writes; White balance's maths later.
+# Colour calibration's defaults and follow writes; Exposure's pick's Lab and its input
+# profile; White balance's maths later.
 apertrust-color.workspace = true
 apertrust-plugin.workspace = true
 thiserror.workspace = true
+
+[build-dependencies]
+# The settings generator, which writes the tool settings' statics from the schema.
+apertrust-base = { workspace = true, features = ["codegen"] }
 
 [dev-dependencies]
 # The invariant tests in tests/ render through the engine (decision 28); unit tests in

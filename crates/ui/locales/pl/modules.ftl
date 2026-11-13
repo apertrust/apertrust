@@ -195,6 +195,14 @@ module-agx-control-curve_pivot_x-promise = Ustal ekspozycję wejściową punktu 
 module-agx-control-curve_pivot_y_linear_output-label = Poziom wyjściowy punktu obrotu
 module-agx-control-curve_pivot_y_linear_output-full = Poziom wyjściowy punktu obrotu
 module-agx-control-curve_pivot_y_linear_output-promise = Ściemnij lub rozjaśnij punkt obrotu (liniowa moc wyjścia).
+module-agx-picker-white-full = Względna ekspozycja bieli: pobierz ze zdjęcia
+module-agx-picker-white-promise = Pobiera punkt bieli.
+module-agx-picker-black-full = Względna ekspozycja czerni: pobierz ze zdjęcia
+module-agx-picker-black-promise = Pobiera punkt czerni.
+module-agx-picker-pivot-full = Punkt obrotu ekspozycji względnej: pobierz ze zdjęcia
+module-agx-picker-pivot-promise = Ustawia punkt obrotu względem średniej szarości na podstawie średniej luminancji zaznaczonego obszaru.
+module-agx-picker-pivot_output-full = Poziom wyjściowy punktu obrotu: pobierz ze zdjęcia
+module-agx-picker-pivot_output-promise = Ustawia punkt obrotu względem średniej szarości na podstawie średniej luminancji zaznaczonego obszaru i dopasowuje wyjście według domyślnego odwzorowania średniej szarości na średnią szarość.
 module-agx-control-curve_contrast_around_pivot-label = Kontrast
 module-agx-control-curve_contrast_around_pivot-full = Kontrast krzywej
 module-agx-control-curve_contrast_around_pivot-promise = Nachylenie sekcji liniowej w otoczeniu punktu obrotu.
@@ -421,10 +429,11 @@ module-exposure-setting-area_mode-full = Tryb miejscowy
 module-exposure-setting-area_mode-promise = „Korekcja” ustawia ekspozycję tak, aby zmapować wejściową jasność na cel. „Pomiar” wskazuje tylko, jak wejściowy kolor jest mapowany przez ekspozycję, i może być użyty do zdefiniowania celu.
 module-exposure-setting-area_mode-option-correction = Korekcja
 module-exposure-setting-area_mode-option-measure = Pomiar
-module-exposure-group-target = Cel
 module-exposure-setting-lightness-label = Jasność
 module-exposure-setting-lightness-full = Docelowa jasność
 module-exposure-setting-lightness-promise = Pożądana docelowa ekspozycja po mapowaniu.
+module-exposure-picker-exposure-full = Ekspozycja: pobierz ze zdjęcia
+module-exposure-picker-exposure-promise = Ustawia korektę ekspozycji na podstawie zaznaczonego obszaru.
 
 ## Kalibracja koloru (docs/modules/colour-calibration.md)
 
@@ -819,6 +828,18 @@ module-colorbalancergb-control-white_fulcrum-promise = Szczytowa luminancja biel
 module-colorbalancergb-control-grey_fulcrum-label = Punkt szarości kontrastu
 module-colorbalancergb-control-grey_fulcrum-full = Punkt szarości kontrastu
 module-colorbalancergb-control-grey_fulcrum-promise = Szczytowa luminancja szarości, według której normalizowana jest funkcja potęgowa: szarość, którą zachowuje Kontrast.
+module-colorbalancergb-picker-global_hue-full = Odcień globalnego przesunięcia: pobierz ze zdjęcia
+module-colorbalancergb-picker-global_hue-promise = Pobiera kolor przeciwny do koloru zaznaczonego obszaru. Ctrl-klik, na Macu Cmd-klik, pobiera kolor samego obszaru.
+module-colorbalancergb-picker-shadows_hue-full = Odcień wzniosu cieni: pobierz ze zdjęcia
+module-colorbalancergb-picker-shadows_hue-promise = Pobiera kolor przeciwny do koloru zaznaczonego obszaru. Ctrl-klik, na Macu Cmd-klik, pobiera kolor samego obszaru.
+module-colorbalancergb-picker-highlights_hue-full = Odcień wzmocnienia w światłach: pobierz ze zdjęcia
+module-colorbalancergb-picker-highlights_hue-promise = Pobiera kolor przeciwny do koloru zaznaczonego obszaru. Ctrl-klik, na Macu Cmd-klik, pobiera kolor samego obszaru.
+module-colorbalancergb-picker-midtones_hue-full = Odcień potęgi: pobierz ze zdjęcia
+module-colorbalancergb-picker-midtones_hue-promise = Pobiera kolor przeciwny do koloru zaznaczonego obszaru. Ctrl-klik, na Macu Cmd-klik, pobiera kolor samego obszaru.
+module-colorbalancergb-picker-white_fulcrum-full = Punkt podparcia bieli: pobierz ze zdjęcia
+module-colorbalancergb-picker-white_fulcrum-promise = Pobierz kolor ze zdjęcia
+module-colorbalancergb-picker-grey_fulcrum-full = Punkt szarości kontrastu: pobierz ze zdjęcia
+module-colorbalancergb-picker-grey_fulcrum-promise = Pobierz kolor ze zdjęcia
 
 ## Krzywa tonalna (docs/modules/tone-curve.md)
 

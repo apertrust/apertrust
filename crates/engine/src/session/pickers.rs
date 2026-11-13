@@ -38,7 +38,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use apertrust_modules::pick::Picked;
-use apertrust_modules::{ControlValue, Picker, PickerKind};
+use apertrust_modules::{ControlValue, Controls, Picker, PickerKind};
 use apertrust_plugin::{Format, ImageContext, ImageDesc};
 
 use crate::compute::ComputeError;
@@ -858,7 +858,12 @@ impl Engine {
                 let Some(picked) = picked else {
                     return Ok(None);
                 };
-                let shown = picked.shown.clone();
+                // The client has just sent its tool settings: a pick applied again never
+                // hands them back, so measure mode, which writes only them, does nothing
+                // here, as darktable's settings callback re-runs only correction
+                // (`exposure.c:1170-1175`).
+                let mut shown = picked.shown.clone();
+                shown.tools.clear();
                 Ok(Some((self.write_pick(id, latest.picker, picked)?, shown)))
             });
         let (changed, shown) = match picked {
@@ -1268,8 +1273,8 @@ impl Engine {
 
     /// The module's pick of `reading` by its picker `picker`, for the reading `due` asked
     /// for: darktable's `color_picker_apply`, which the module's last reading becomes. A
-    /// pick that panicked is the module's failure; one that gives a number that is not
-    /// finite is dropped.
+    /// pick that panicked is the module's failure; a number it gives that is not finite is
+    /// left out, the rest of the pick and what it shows kept.
     fn pick(
         &mut self,
         id: &'static str,
@@ -1305,14 +1310,22 @@ impl Engine {
                 message: panic_message(panic.as_ref()),
             })
         })?;
-        // darktable's rule may leave no value, as `log2` of nothing: the pick is dropped.
-        let finite = |picked: &Picked| {
-            (picked.writes.iter()).all(|(_, value)| match value {
-                ControlValue::Number(number) => number.is_finite(),
-                _ => true,
-            })
+        // darktable's rule may leave no value, as `log2` of nothing: that write is dropped,
+        // and what the pick shows kept, as darktable shows its patch and L before it sets
+        // anything (`exposure.c:885-897`).
+        let finite = |value: &ControlValue| match value {
+            ControlValue::Number(number) => number.is_finite(),
+            _ => true,
         };
-        Ok(picked.filter(finite))
+        Ok(picked.map(|mut picked| {
+            let mut writes = Controls::new();
+            for (control, value) in picked.writes.iter().filter(|(_, v)| finite(v)) {
+                writes.set(control, value.clone());
+            }
+            picked.writes = writes;
+            picked.shown.tools.retain(|(_, value)| finite(value));
+            picked
+        }))
     }
 
     /// Writes what the module's picker picked as one change, and says whether the edit

@@ -45,6 +45,7 @@ mod histogram;
 mod icon_button;
 mod jobs;
 mod marker;
+mod patches;
 mod photo_frame;
 mod picker;
 mod plate;
@@ -89,6 +90,7 @@ pub use jobs::{
     kind_icon,
 };
 pub use marker::{Marker, marker, set_marker};
+pub use patches::{Patch, Patches};
 pub use photo_frame::{
     CAPTION_GAP, CAPTION_HEIGHT, CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption,
     PhotoFrame, Placed, middle_cut,

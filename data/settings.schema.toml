@@ -743,3 +743,33 @@ default = ["gpu", "raw", "pipe", "perf", "settings", "control", "event"]
 page = "general"
 group = "diagnostics"
 applies = "at-once"
+
+# Exposure's area exposure mapping (docs/modules/exposure.md; decision 29), the settings
+# its picker reads, kept here as darktable keeps them in its darktablerc, never in an
+# edit. The app sends them with the picker's On and Tools commands (docs/pickers.md, Tool
+# settings).
+
+# Area mode: correction sets Exposure so the area maps to the target lightness, measure
+# sets the target lightness the area gives at the current exposure. darktable's
+# combobox, which it keeps nowhere and puts back to correction at every gui_update
+# (exposure.c:742): another photo, undo and redo, a history move, the module's reset.
+# Apertrust keeps it.
+[tools.exposure.area_mode]
+owner = "module:exposure"
+kind = "choice"
+type = "apertrust_modules::exposure::AreaMode"
+default = "correction"
+applies = "at-once"
+
+# The target lightness, CIE L in per cent, darktable's
+# darkroom/modules/exposure/lightness, its slider's range and one decimal.
+[tools.exposure.lightness]
+owner = "module:exposure"
+kind = "number"
+min = 0.0
+max = 100.0
+step = 1.0
+decimals = 1
+unit = "percent"
+default = 50.0
+applies = "at-once"

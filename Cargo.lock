@@ -429,6 +429,7 @@ dependencies = [
 name = "apertrust-modules"
 version = "0.0.0"
 dependencies = [
+ "apertrust-base",
  "apertrust-color",
  "apertrust-engine",
  "apertrust-golden",

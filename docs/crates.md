@@ -570,7 +570,9 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 - **Custom rows:**
   - the Tone curve's `Curve`;
   - the Tone equalizer's graph of its bands, `Equalizer`, a second view of them. The module's curve is sampled at darktable's 256 points; each drag step settles the bands on it as darktable's does, and every band whose rounded value moves is sent as `SetControl`, the release's `done` writes of several bands as one `Step { source: You }` (`Change::Step`), one history step with the drag. A double-click and Shift+Delete reset the nine, as one `Step`. It has no histogram until the readouts (decision 19).
-- **Colour pickers** (decision 79; [pickers.md](pickers.md#the-picker-button)): a slider's `Quad::Picker(id)` is a `PickerButton` in its quad mode (`SliderRow::picker`), and a `Row::Pickers` its label and toggle `PickerButton`s at the row's end, each on while the mirror shows its picker on (`modules::Pickers`), disabled with the reason on a photo opening or open for viewing only, its words `messages::picker`'s. A press is `Change::Picker` with the keys held, sent as `PickerCommand::On`, or `Off` for the picker on (`pickers::pressed`). Only the modules in `modules::PICKING`, those whose pick is built, draw theirs; none yet, Exposure's joining with its pick (79.7).
+- **Colour pickers** (decision 79; [pickers.md](pickers.md#the-picker-button)): a slider's `Quad::Picker(id)` is a `PickerButton` in its quad mode (`SliderRow::picker`), and a `Row::Pickers` its label and toggle `PickerButton`s at the row's end, each on while the mirror shows its picker on (`modules::Pickers`), disabled with the reason on a photo opening or open for viewing only, its words `messages::picker`'s. A press is `Change::Picker` with the keys held, sent as `PickerCommand::On`, or `Off` for the picker on (`pickers::pressed`). Only the modules in `modules::PICKING`, those whose pick is built, draw theirs: Exposure's. `On` carries the module's tool settings as the app keeps them.
+- **Tool settings** (decisions 29 and 43): kept in the app's store with its own (`settings::Tools`, `[tools.<module>]`), each `Row::ToolSetting` that has one drawn live, a change reported as `Change::Tool`, kept at once and sent with the module's others as `PickerCommand::Tools` as the gesture ends; one with none drawn disabled at darktable's default. A pick's measured settings, measure mode's target, are kept as the user's own (`Reaction::Measured`).
+- **Patches** (`Row::Patches`): the design system's `Patches`, the input the module's last pick showed on the photo with its L readout (`pickers::Picked`, gone as darktable's `gui_update` zeroes it: undo, redo, a move through history, the edit's or the module's reset, another photo), the target from the module's tool settings, disabled until the module's pickers are drawn.
 
 ### The colour picker in the app
 
@@ -712,7 +714,7 @@ The actions registry and the default keyboard map:
 - The folder separates settings only. Edits are where each root's id file says, beside the photos by default, never decided by this folder (decision 47).
 - `src/paths.rs` keeps only Pictures, through `directories`.
 
-**`--conf KEY=VALUE`** (or `--conf=KEY=VALUE`) sets the app's settings, the engine's and the export's for one run (`apertrust --conf scale=1.5`):
+**`--conf KEY=VALUE`** (or `--conf=KEY=VALUE`) sets the app's settings, the engine's, the export's and the modules' tool settings (`tools.*`, as `tools.exposure.lightness=40`) for one run (`apertrust --conf scale=1.5`):
 
 - read before the folder by `settings::overrides`; an unknown key or a value that cannot be read stops the start;
 - each of the app's is logged under `-d settings` with `from: --conf`;
@@ -773,7 +775,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Switched modules** (decision 32): a switched module's reset available only while the session reports it edited, which it is while it is on, or while a change is pending; every other module's always, until kept marks count as edited. A switched module that is off is described to screen readers as "Not applied" (`Section::not_applied`), with no other sign of it.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the module shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
-- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each module's pickers drawn as its pick lands, with the tool settings its pickers read sent with `On`; and the Colour picker section, hidden by default, its place to be decided.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other module's pickers drawn as its pick lands; and the Colour picker section, hidden by default, its place to be decided.
 
 ## apertrust-ui
 
@@ -1185,7 +1187,7 @@ Modules (decision 28): what the user edits with, bound to operation parameters. 
 - `preset` and `matching`, for a preset row's options.
 - `view` and `unview`, for a lossless view's coordinates (decision 2).
 - `follow`: the other controls darktable's GUI writes with one, which the session writes in the same change (decision 27).
-- `pick` (decision 79): what a picker makes of a `Reading`, its operation's input and output `Stats`, given the values, the image context, the tool settings, the channel shown, the module's last reading and the keys held: the controls it writes and what its panel shows (`Picked`, `Shown`, `Patch`). Pure; none by default, and no built module picks yet; the session calls it as a reading is applied.
+- `pick` (decision 79): what a picker makes of a `Reading`, its operation's input and output `Stats`, given the values, the image context, the tool settings, the channel shown, the module's last reading and the keys held: the controls it writes and what its panel shows (`Picked`, `Shown`, `Patch`). Pure; none by default; Exposure's is built (`Exposure::pick`, darktable's `_auto_set_exposure`); the session calls it as a reading is applied.
 
 ### Definitions
 
@@ -1194,14 +1196,14 @@ Modules (decision 28): what the user edits with, bound to operation parameters. 
 - **Lossless views** (`View`, `Coordinate`): a `Row::Slider` naming a coordinate.
 - **darktable's page** as darktable has it (decision 29): content tabs, collapsible groups (`Row::Group`), rows that follow a choice or toggle's mode (`Row::When`), a control's row per mode with words of its own (`Slider::label`), and rows before and after every tab's.
 - **Unported options and controls.** Every option darktable lists for a choice on some photo is there; those not ported are marked and refused as values. A whole control not ported is marked so (`Control::unported`), takes only its default and is reported unavailable.
-- **Tool settings and actions.** darktable's own settings for a tool, which no edit stores, are rows of no control drawn disabled (`Row::ToolSetting`). Its buttons, actions that write controls and are never stored, are drawn disabled until their tools come (`Row::Action`).
+- **Tool settings and actions.** darktable's own settings for a tool, which no edit stores, are rows of no control (`Row::ToolSetting`), drawn disabled until their tool keeps them in settings: the settings schema's `[tools.<module>]`, `owner = "module:<module>"`, generated by the crate's `build.rs` into `tools::registry` and found by id (`tools::setting`), a test holding each to its row; Exposure's area mode (`exposure::AreaMode`) and lightness so far. A picker's input and target patches are `Row::Patches`, the target painted from tool settings (`pick::Patch::of_lch`). Its buttons, actions that write controls and are never stored, are drawn disabled until their tools come (`Row::Action`).
 - **Button rows** (`Row::Buttons`): a control's label, darktable's reset label, with darktable's buttons inline, each an action the module runs on the values shown (`Module::action`, its writes sent as `SetControl`, one change), as Orientation's rotate and flip; and darktable's guides widget (`Row::Guides`), drawn disabled until a module's guides come.
 - A slider row's soft range, darktable's, is the track's span inside the control's range (`Slider::soft`).
 - A titled tab or a collapsible group without rows is drawn disabled, its rows to come.
 - Values with kept and Auto marks; `Base`; message ids (`messages`); transfer functions with derivatives.
 - **Switched modules** (decision 32): `Definition::switched`, true for a module darktable leaves off on a new photo, and `ModuleValues::enabled`, whether one is on. Off, it holds no value, only marks, and renders nothing; any write of a control turns it on with darktable's defaults for the rest, until its reset turns it off. `switched_from` is the migration a module that becomes switched gives its older version's edits: on with their values where they rendered, else off, their values dropped.
 - **What a colour picker reads** (`pick`, decision 79): `Region`, a point or an area in the photo's coordinates; `Stats`, a reading's mean, minimum and maximum of four channels; `PickKeys`, the keys held. The engine's session takes and gives them, and `Module::pick` takes them.
-- **Colour pickers** (decision 79; [pickers.md](pickers.md#declaring-pickers)): `Definition::pickers`, each a `Picker` with darktable's flags (`PickerKind`, `denoise`, `output`, `keep`), its `Space`, the controls it may write and the tool settings it reads, ids a namespace of their own; each shown by one row, a slider's `Quad::Picker(id)` or a `Row::Pickers`, which the app draws for a module whose pick is built; their words `messages::picker`'s. Exposure's, Colour balance RGB's six and AgX's four on sliders are declared.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md#declaring-pickers)): `Definition::pickers`, each a `Picker` with darktable's flags (`PickerKind`, `denoise`, `output`, `keep`), its `Space`, the controls it may write and the tool settings it reads, ids a namespace of their own; each shown by one row, a slider's `Quad::Picker(id)` or a `Row::Pickers`, which the app draws for a module whose pick is built; their words `messages::picker`'s, which `messages::of` lists as the button and the central bar use them (`messages::picker_words`). Exposure's, Colour balance RGB's six and AgX's four on sliders are declared; Exposure's picks.
 
 ### Checks and test helpers
 

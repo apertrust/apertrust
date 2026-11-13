@@ -245,6 +245,24 @@ pub fn xyz_to_lab_d50(xyz: [f32; 3]) -> [f32; 3] {
     [116.0 * fy - 16.0, 500.0 * (fx - fy), -200.0 * (fz - fy)]
 }
 
+/// darktable `dt_XYZ_to_sRGB`: XYZ with the D50 white to sRGB, its transfer function
+/// applied, unclipped, through darktable's Bradford-adapted D50 matrix
+/// (`xyz_to_srgb_transposed`), as darktable paints its pickers' patches.
+pub fn xyz_d50_to_srgb(xyz: [f32; 3]) -> [f32; 3] {
+    const XYZ_D50_TO_SRGB: Mat3 = [
+        [3.133_856_1, -1.616_866_7, -0.490_614_6],
+        [-0.978_768_4, 1.916_141_5, 0.033_454],
+        [0.071_945_3, -0.228_991_4, 1.405_242_7],
+    ];
+    apply(&XYZ_D50_TO_SRGB, xyz).map(|c| {
+        if c <= 0.003_130_8 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        }
+    })
+}
+
 /// darktable `lab_f`.
 fn lab_f(x: f32) -> f32 {
     const EPSILON: f32 = 216.0 / 24389.0;
