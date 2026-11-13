@@ -227,6 +227,20 @@ impl Mirror {
         self.shown == Shown::Photo { editable: true }
     }
 
+    /// Whether Reset would change the photo: its edit holds anything, or the history's end
+    /// lies before a default step, leaving a module every photo runs not applied, which
+    /// Reset applies as a step (decision 78). Its edit's `edited` alone stays what the
+    /// folder marks as edited.
+    pub fn resettable(&self) -> bool {
+        let unapplied = |state: &ModuleState| {
+            !state.enabled
+                && (self.modules.iter()).any(|module| {
+                    module.definition().id == state.module && !module.definition().switched
+                })
+        };
+        self.values.edited || self.values.modules.iter().any(unapplied)
+    }
+
     /// The raw at `path` is asked for by the open numbered `open`, `now`: nothing of the
     /// photo left is shown for the new one, the side panel shows no photo until the new
     /// one's values arrive, and the central panel shows at once the largest thumbnail the
@@ -1881,6 +1895,23 @@ pub(crate) mod tests {
         assert_eq!(m.apply(Event::Opened(photo(2))), []);
         assert!(matches!(m.photo, PhotoState::Open(_)));
         assert!(!m.saving.writing());
+    }
+
+    /// Reset is available while a module every photo runs is not applied, the history's end
+    /// before its default step, though the edit holds nothing: Reset applies it (decision
+    /// 78). A switched module off is no reason, and the edit's `edited` stays as it was.
+    #[test]
+    fn reset_is_available_while_a_default_module_is_not_applied() {
+        let mut mirror = mirror();
+        assert!(!mirror.values.edited);
+        assert!(mirror.values.modules.iter().any(|state| !state.enabled));
+        assert!(!mirror.resettable());
+        let exposure = (mirror.values.modules.iter_mut())
+            .find(|state| state.module == "exposure")
+            .unwrap();
+        exposure.enabled = false;
+        assert!(mirror.resettable());
+        assert!(!mirror.values.edited);
     }
 
     /// The photo's history (decision 78): the latest by its `through`, an earlier one

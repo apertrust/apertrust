@@ -179,6 +179,13 @@ impl Edit {
             && self.params.values().all(|p| p.iter().next().is_none())
     }
 
+    /// Applies every module the history's end leaves not applied, as a change made there
+    /// does (decision 78): an override `apertrust-cli` applies to a saved edit, as
+    /// `export --set`, is such a change.
+    pub fn apply_all(&mut self) {
+        self.unapplied.clear();
+    }
+
     /// The values of the module called `id`, if the edit touches it.
     pub fn module(&self, id: &str) -> Option<&ModuleValues> {
         self.modules.get(id)

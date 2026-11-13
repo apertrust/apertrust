@@ -674,6 +674,10 @@ fn read_set<'m>(modules: &[&'m dyn Module], set: &'m str) -> Result<ControlSet<'
 /// Sets each control read on the photo `image`, bringing back inside its range a number
 /// the change's move of a range leaves outside (decision 30).
 fn set_controls(edit: &mut Edit, sets: &[ControlSet], image: &ImageContext) -> Result<()> {
+    // A change, which applies the modules a saved end leaves not applied (decision 78).
+    if !sets.is_empty() {
+        edit.apply_all();
+    }
     for set in sets {
         let before = edit.clone();
         edit.set_control(set.module, set.control.id, set.value.clone(), image)
@@ -699,6 +703,9 @@ fn set_params(
     operations: &[&dyn Operation],
     modules: &[&dyn Module],
 ) -> Result<()> {
+    if !params.is_empty() {
+        edit.apply_all();
+    }
     for set in params {
         set_param(edit, operations, modules, set).with_context(|| format!("--param {set}"))?;
     }
@@ -1797,6 +1804,9 @@ async fn preview(
         budget: engine.budget,
         ..Limits::of(&gpu)
     };
+    // Exposure set, a change, which applies the modules a saved end leaves not applied
+    // (decision 78).
+    edit.apply_all();
     let mut plan_at = |ev: f32| -> Result<pipeline::Plan> {
         edit.set_control(module, EXPOSURE.1, ControlValue::Number(ev), &image)
             .context("preview --exposure")?;
@@ -2471,6 +2481,32 @@ mod tests {
     ) -> Result<()> {
         let image = apertrust_modules::testing::image();
         apply_on(edit, flags, operations, modules, &image)
+    }
+
+    /// An override of a saved edit whose end lies before its default steps, as `--set`, is a
+    /// change: it applies the modules the end leaves not applied, as the
+    /// session's first change there does (decision 78), so `export --set` renders what
+    /// `edit --set` then `export` would.
+    #[test]
+    fn an_override_applies_the_modules_a_saved_end_leaves_out() {
+        use apertrust_engine::history::{Clock, Log, MachineId};
+
+        let image = apertrust_modules::testing::image();
+        let planned = |edit: &Edit| {
+            let bound = edit::instances(edit, OPERATIONS, MODULES, &image);
+            (bound.instances.iter()).any(|i| i.operation.manifest().id == "exposure")
+        };
+        let at_original = || {
+            let mut log = Log::default();
+            log.add_defaults(&["exposure"], Clock::at(1, None, MachineId::UNKNOWN));
+            log.set_end(0);
+            log.fold()
+        };
+        let mut edit = at_original();
+        assert!(!planned(&edit));
+        let set = flags(&["exposure.exposure=1"], &[]);
+        apply_on(&mut edit, &set, OPERATIONS, MODULES, &image).unwrap();
+        assert!(planned(&edit));
     }
 
     /// `--set` refuses a choice's option the photo does not list, after reading every
