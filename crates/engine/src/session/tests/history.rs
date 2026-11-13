@@ -2254,3 +2254,115 @@ fn a_step_another_program_dropped_under_a_change_is_no_move_not_kept() {
     assert_eq!(history(&taken).steps.len(), 3);
     remove(&path);
 }
+
+/// Another program's history written over the file: the file's log with its end at `end`,
+/// then, with `add`, its own step setting Soften's amount, at the unknown machine's clock a
+/// minute after the file's latest.
+fn moved_elsewhere(path: &Path, end: usize, add: bool) {
+    let read = saved(path);
+    let mut log = read.log.clone();
+    log.set_end(end);
+    let last = (read.log.steps().iter().map(|step| step.clock))
+        .max()
+        .unwrap();
+    let clock = Clock::at(last.when + 60_000, None, "00000000".parse().unwrap());
+    if add {
+        let mut edit = log.fold();
+        let amount = ControlValue::Number(40.0);
+        (edit.set_control(&Soften, "amount", amount, &testing::image())).unwrap();
+        let changes = crate::history::Change::between(&log.fold(), &edit, &[]);
+        log.add_change(changes, StepSource::You, None, clock);
+    }
+    let mut clocks = read.clocks().to_vec();
+    crate::history::advance(&mut clocks, clock);
+    let path = sidecar::path_for(path);
+    sidecar::write_log(
+        &path,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, SAVING),
+        "cli",
+    )
+    .unwrap();
+}
+
+/// The session's change drops a step the base had not applied, which another program redid
+/// before adding its own: that step applying again beneath the step laid is the other
+/// program's move, no Undo of the session's, so nothing is told.
+#[test]
+fn a_step_another_program_redid_under_a_change_is_no_move_not_kept() {
+    let path = scratch("history-redid-unapplied");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let first = saved(&path).log.steps()[0].id;
+    driven.run([Command::GoTo { step: Some(first) }]);
+    driven.writes();
+    // The other program's: both steps applied again, then its own.
+    moved_elsewhere(&path, 2, true);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    remove(&path);
+}
+
+/// A `GoTo` Original not yet saved where another program redid the step the base had not
+/// applied: the other side moved its end, so the newer end stands, and the person is told.
+#[test]
+fn a_go_to_over_another_program_s_redo_is_not_kept_and_told() {
+    let path = scratch("history-go-to-redo");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let first = saved(&path).log.steps()[0].id;
+    driven.run([Command::GoTo { step: Some(first) }]);
+    driven.writes();
+    // The other program's Redo of the second step, no step added.
+    moved_elsewhere(&path, 2, false);
+    driven.run([Command::GoTo { step: None }]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    assert_eq!(history(&taken).end, 2);
+    remove(&path);
+}
+
+/// An Undo made again over a step this machine's other program added, at a clock later
+/// than the Undo's: the move made again gets a clock of its own, so the file written holds
+/// more than the other program's, which takes it in rather than write over the Undo.
+#[test]
+fn a_move_made_again_on_a_newer_file_advances_the_clock_vector() {
+    let path = scratch("history-moved-clock");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let machine = apertrust_library::clock::MachineId::current();
+    let last = (saved(&path).log.steps().iter().map(|step| step.clock))
+        .max()
+        .unwrap();
+    add_at(&path, 40.0, Clock::at(last.when + 60_000, None, machine));
+    let theirs = saved(&path);
+    driven.run([Command::Undo]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(history(&taken).end, 1);
+    driven.writes();
+    let written = saved(&path);
+    assert_eq!(written.log.end(), 1);
+    let base = crate::session::history::Base::of(&theirs.log, theirs.clocks());
+    assert!(
+        !base.covers(written.clocks()),
+        "{:?} over {:?}",
+        written.clocks(),
+        theirs.clocks()
+    );
+    remove(&path);
+}

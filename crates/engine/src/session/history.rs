@@ -241,7 +241,8 @@ impl PhotoHistory {
     /// or the writer last wrote it: the steps up to this log's end that are in neither,
     /// by id and clock, the steps not yet saved, laid on it after its end, as an edit after
     /// Undo would, each with a new id where the newer log holds its id already; a step the
-    /// other side dropped stays dropped. The vectors join, and the undo records and the
+    /// other side dropped stays dropped. The vectors join, with a clock of this machine's
+    /// where a step was laid or a move made again, and the undo records and the
     /// merge state are cleared, as they describe a log that is gone.
     ///
     /// A move of the end not yet saved, an Undo, a Redo or a `GoTo` with no step to lay, is
@@ -278,17 +279,20 @@ impl PhotoHistory {
             .last()
             .map(|step| step.id);
         let mut kept = true;
+        let mut moved = false;
         if laid {
-            // A step of the base this log took out, by its id, by an Undo before the step
-            // laid, that applies again in the joined log. A step this log still holds by id
-            // with a new clock, as a quick repeat merged into it, was not taken out; nor
-            // was one the other side took out too, which applies nowhere.
+            // A step the base applied that this log took out, by its id, by an Undo before
+            // the step laid, that applies again in the joined log. A step this log still
+            // holds by id with a new clock, as a quick repeat merged into it, was not taken
+            // out; nor was one the other side took out too, which applies nowhere; and one
+            // the base had not applied, which the step laid dropped and the other side
+            // redid, is the other side's move, no Undo of this session's.
             let held: HashSet<StepId> = self.log.steps().iter().map(|step| step.id).collect();
             let applied: HashSet<(StepId, Clock)> = (log.steps()[..log.end()].iter())
                 .map(|step| (step.id, step.clock))
                 .collect();
             let again =
-                (base.steps.iter()).any(|key| applied.contains(key) && !held.contains(&key.0));
+                (base.applied.iter()).any(|key| applied.contains(key) && !held.contains(&key.0));
             // And a step of the base this log applies that the base did not, as a Redo made
             // before the step laid, which the joined log does not apply: a step the base
             // applied already that the other side dropped is its change, no move of this
@@ -303,17 +307,25 @@ impl PhotoHistory {
             kept = !again && !lost;
         } else if ours != base.end {
             // Where the base's end is in the newer log: the other side only added after it
-            // where every step of the base is there and its end is no earlier.
+            // where every step of the base is there, its end is no earlier, and no step it
+            // applies past the base's end is the base's, as a Redo would apply.
             let at = |end: Option<StepId>, log: &Log| match end {
                 None => Some(0),
                 Some(id) => log.position(id).map(|at| at + 1),
             };
             let appended = base.steps.iter().all(|key| theirs.contains(key))
-                && at(base.end, &log).is_some_and(|at| at <= log.end());
+                && at(base.end, &log).is_some_and(|at| {
+                    at <= log.end()
+                        && (log.steps()[at..log.end()].iter())
+                            .all(|step| !base.steps.contains(&(step.id, step.clock)))
+                });
             match at(ours, &log) {
                 // On this log's end's step already: nothing to make again.
                 Some(end) if end == log.end() => {}
-                Some(end) if appended => log.set_end(end),
+                Some(end) if appended => {
+                    log.set_end(end);
+                    moved = true;
+                }
                 _ => kept = false,
             }
         }
@@ -324,10 +336,11 @@ impl PhotoHistory {
         for clock in clocks {
             advance(&mut self.clocks, clock);
         }
-        // Steps laid are this machine's change to the newer file: a clock of its own, so the
-        // file it writes is newer than the one it read for every reader, this machine's other
-        // programs among them, as a move of the end's clock is.
-        if laid {
+        // Steps laid, or a move of the end made again, are this machine's change to the newer
+        // file: a clock of its own, so the file it writes is newer than the one it read for
+        // every reader, this machine's other programs among them, as a move of the end's
+        // clock is.
+        if laid || moved {
             let clock = Clock::now(self.clock.as_ref(), self.machine);
             self.clock = Some(clock);
             advance(&mut self.clocks, clock);
