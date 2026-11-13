@@ -636,8 +636,8 @@ Phase 2 ([roadmap.md](roadmap.md#pickers)), one pull request each, each reviewed
 | 79.9 | Colour calibration's picker: the readout row with CCT and the swatch, Area colour mapping's settings, its pick in both modes | modules, app | the colour checker |
 | 79.10 | Colour balance RGB's six pickers, `command` for the colour itself | modules | the mask display |
 | 79.11 | AgX's five pickers, Dynamic range scaling as their margin, Auto tune levels as a `Row::Pickers` | modules | Read exposure, Show curve |
-| 79.12 | RGB curve's two pickers and its graph's readings, with RGB curve | modules, app | blending |
-| 79.13 | RGB levels' three pickers, with RGB levels | modules, app | Auto region |
+| 79.12 | RGB curve's two pickers and its graph's readings, with RGB curve (Phase 3) | modules, app | blending |
+| 79.13 | RGB levels' three pickers, with RGB levels (Phase 3) | modules, app | Auto region |
 | 79.14 | `SamplesCommand` and `Event::Samples`: stored samples measured on the frame, locked, loaded, stored into, removed and cleared | engine | the app |
 | 79.15 | Restrict the scopes to the selection: `Command::Scopes` gaining the Colour picker's point or area, the scopes' kernel counting within it | engine | the app |
 | 79.16 | The Colour picker section in the History tab: the header's picker button, the statistic and colour mode, the live sample with its 52-point patch, Add sample, numbered stored samples, Show samples on the photo with the vectorscope's and RGB curve's marks, Restrict the scopes, its settings and actions | ui, app, settings schema | blending |
