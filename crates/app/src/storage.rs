@@ -338,6 +338,7 @@ pub fn folders(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<As
             value: &shown,
             cut: Cut::Middle,
             note: note.as_deref(),
+            warning: false,
             button,
         };
         if line.draw(ui, t, widths)
@@ -395,6 +396,7 @@ pub fn contents(
             value: &value,
             cut: Cut::End,
             note: None,
+            warning: false,
             button: Some(Press {
                 text: &clear,
                 name: words.text(&format!("settings-storage-clear-{}", kind.id())),
@@ -419,6 +421,7 @@ pub fn contents(
         value: &value,
         cut: Cut::End,
         note: None,
+        warning: false,
         button: None,
     }
     .draw(ui, t, widths);
@@ -432,6 +435,7 @@ pub fn contents(
         value: &value,
         cut: Cut::End,
         note: None,
+        warning: false,
         button: None,
     }
     .draw(ui, t, widths);
@@ -520,7 +524,7 @@ fn said(ui: &mut Ui, t: &Theme, text: &str, content: f32) {
 
 /// Where a value too long for its room is cut.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Cut {
+pub(crate) enum Cut {
     /// In its middle, as a path, whose start and end both say where it is.
     Middle,
     /// At its end.
@@ -528,7 +532,7 @@ enum Cut {
 }
 
 /// A line's button: its words, its full name for screen readers, its tooltip.
-struct Press<'a> {
+pub(crate) struct Press<'a> {
     text: &'a str,
     name: String,
     tip: &'a str,
@@ -536,18 +540,21 @@ struct Press<'a> {
 }
 
 /// One of the page's lines: a label in the rows' label column, a value where the rows'
-/// controls start, a note under it, and a button at the line's end.
-struct Line<'a> {
-    label: &'a str,
-    value: &'a str,
-    cut: Cut,
-    note: Option<&'a str>,
-    button: Option<Press<'a>>,
+/// controls start, a note under it, and a button at the line's end. Processing's In use
+/// line is one too (`hardware`).
+pub(crate) struct Line<'a> {
+    pub label: &'a str,
+    pub value: &'a str,
+    pub cut: Cut,
+    pub note: Option<&'a str>,
+    /// Whether the note is a warning, in the warning colour and the value's description.
+    pub warning: bool,
+    pub button: Option<Press<'a>>,
 }
 
 impl Line<'_> {
     /// Draws it; whether its button was pressed.
-    fn draw(self, ui: &mut Ui, t: &Theme, widths: Widths) -> bool {
+    pub(crate) fn draw(self, ui: &mut Ui, t: &Theme, widths: Widths) -> bool {
         let top = ui.cursor().min;
         let line = t.sizes.panel_line.max(t.sizes.control);
         let body = FontId::proportional(t.text.body);
@@ -600,19 +607,30 @@ impl Line<'_> {
         let response = ui.interact(value_rect, id, Sense::hover());
         let whole = self.value;
         response.widget_info(|| WidgetInfo::labeled(Role::Label, true, whole));
+        if self.warning
+            && let Some(note) = self.note
+        {
+            ui.ctx()
+                .accesskit_node_builder(response.id, |node| node.set_description(note));
+        }
         response.on_hover_text(whole);
         let mut bottom = top.y + line;
         // The note, under the value, in the small text.
         if let Some(note) = self.note {
+            let colour = if self.warning {
+                t.colors.warning
+            } else {
+                t.colors.text_secondary
+            };
             let galley = painter.layout(
                 note.to_owned(),
                 FontId::proportional(t.text.caption),
-                t.colors.text_secondary,
+                colour,
                 (end - start).max(0.0),
             );
             let at = pos2(start, bottom);
             let rect = Rect::from_min_size(at, galley.size());
-            painter.galley(at, galley, t.colors.text_secondary);
+            painter.galley(at, galley, colour);
             let id = egui::Id::unique(("storage note", self.label));
             let said = ui.interact(rect, id, Sense::hover());
             said.widget_info(|| WidgetInfo::labeled(Role::Label, true, note));

@@ -22,6 +22,10 @@
 //! settings and hand it plain options (`settings`, decision 43). See
 //! `docs/architecture.md`.
 
+// The generated settings name this crate's choice types by their paths in the schema,
+// `apertrust_engine::…`, as another crate would.
+extern crate self as apertrust_engine;
+
 pub mod compute;
 pub mod edit;
 pub mod export;

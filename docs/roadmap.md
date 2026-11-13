@@ -107,6 +107,7 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 - [x] Actions with a default keyboard map, shown in tooltips and menus; keys can be overridden in the settings file.
 - [x] Settings kept in a file, with `--user-data-dir` and darktable's `--conf` for one run; a Settings window for the theme and language.
 - [ ] The Settings window's other pages, key rebinding among them.
+- [x] Hardware acceleration in Settings › Processing (decision 82): the Graphics API row and `--backend`, the graphics card as a list with CPU (no graphics card), the "In use" line and its warning, Restart now, a way back from a start that did not finish, and `--safe-mode`.
 - [x] A log window, Help › Show Log: this session's log kept in memory while Settings' Diagnostics says so, filtered, copied or saved as the terminal writes it ([gui.md](gui.md#the-log-window)).
 - [x] The photo's background: six neutral greys from black to white, chosen from the surround's right-click menu or the View menu, the theme's own the default, those for judging colour within ISO 12646.
 - [x] File › Open… for one or more raws, their folder opened behind the first (decision 46); a folder or raws dropped onto the window; View › Browse (L) choosing the first tab holding Browse (decisions 37 and 73).

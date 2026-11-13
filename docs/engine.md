@@ -76,7 +76,7 @@ flowchart TB
 
 The pipeline runs on wgpu with kernels written in Slang, compiled ahead of time to WGSL, and stays resident on the GPU (decisions 8 and 9). Without a hardware GPU the same kernels run on a software one ([Software GPUs](#software-gpus)).
 
-**wgpu** gives one API over Vulkan, Metal, DX12 and browser WebGPU (decision 8). It already solves the host-side problem darktable's RFC #22732 proposes to build by hand, and it uses Metal natively on macOS, avoiding the MoltenVK problems vkdt ran into.
+**wgpu** gives one API over Vulkan, Metal, DX12 and browser WebGPU (decision 8). It already solves the host-side problem darktable's RFC #22732 proposes to build by hand, and it uses Metal natively on macOS, avoiding the MoltenVK problems vkdt ran into. Every process loads wgpu's primary backends, Direct3D 12 and Vulkan on Windows, Vulkan on Linux, Metal on macOS, never GL; on Windows wgpu chooses Vulkan wherever the GPU has a Vulkan driver, and Settings › Processing › Hardware acceleration chooses the graphics card and, on Windows, the API (decision 82).
 
 **Slang to WGSL** (decision 9). Real modules and generics suit a colour-maths library shared by 60 or more operations, where WGSL has no imports and no generics. Ports read almost line for line like darktable's OpenCL, so review is fast. Automatic differentiation lets the editor fit parameters. Slang's other selling point, one source to SPIR-V and Metal, does not apply here: wgpu and naga already take one WGSL source to every backend.
 
@@ -2253,7 +2253,8 @@ A top-level `data/` folder, as darktable's, holds darktable's data files verbati
 
 ## Limits and errors
 
-- **Adapter** (decision 43). wgpu's high-performance choice, or the first adapter whose name holds the text `engine.adapter` or a binary's `--adapter` gives (`GpuOptions::adapter`, `gpu::AdapterChoice`).
+- **Backend** (decision 82). wgpu's primary backends, never GL, or the one `engine.backend` or a binary's `--backend` chooses (`GpuOptions::backend`, `gpu::Backend`), `WGPU_BACKEND` before them; `gpu::instance_descriptor` builds every instance from the options, the app's window's included. One the file names that this build lacks, or that lists no adapter on this machine (`gpu::finds_adapter`), is warned of and Automatic taken; typed for the run, one this build lacks is an error (`GpuError::BackendNotBuilt`), and one with no adapter fails as the device opens.
+- **Adapter** (decision 43). wgpu's high-performance choice, or the adapter the text `engine.adapter` or a binary's `--adapter` gives names (`GpuOptions::adapter`, `gpu::AdapterChoice`, `gpu::matching`): the one of exactly that name, else the first whose name holds it, ignoring case; `cpu`, reserved, the chosen API's software adapter, whatever its name (decision 82).
   - A setting that names none is warned of and wgpu's choice taken, as decision 7 has it; a flag that names none is an error.
   - The app's window takes it through eframe's adapter selector (`gpu::choose_adapter`), after a restart. One named that cannot draw to the window is said so, and wgpu's choice taken, in the order wgpu-core 30's `request_adapter` sorts adapters, which a test holds against wgpu's own on the machine's adapters.
 - **Limits.** The engine requests the adapter's own limits (`gpu::device_descriptor`), lower if `GpuOptions` asks: a smaller binding and a larger offset alignment, so tests and `apertrust-cli --max-binding` render on any machine as on a GPU that binds less (decision 14). Plans respect the maximum buffer size, binding size and workgroup count per dimension: row strips cover a pass whose image is larger than one binding, tiling what does not fit otherwise. A pipeline refuses a plan that binds more than its GPU allows, naming the operation and the sizes.
@@ -2269,7 +2270,7 @@ Decision 7. wgpu runs the same WGSL on a software GPU, a driver that implements 
 - The engine takes a hardware adapter when there is one and the software one otherwise, in the app and the CLI alike. The opened-image event reports a `DeviceType::Cpu` adapter, so the app can say editing will be slow.
 - Interactive editing needs Vulkan, Metal or DX12 on real hardware.
 - The pipeline is timed on lavapipe and WARP at viewport size and for a 60 MP export. If viewport editing is too slow there, the app says so and points to the CLI for batch work.
-- Untested: wgpu's OpenGL backend, which has compute from OpenGL 4.3, for GPUs without Vulkan.
+- Not loaded: wgpu's OpenGL backend (decision 82). The engine never chooses it, no test runs on it, and a broken OpenGL driver can crash as adapters are listed; `WGPU_BACKEND=gl` still asks for it, for experiments.
 - **Rejected:** a CPU version of every operation, which doubles each port and its gradient checks and drifts from the GPU path, as darktable's CPU and OpenCL code do in places; and Slang's CPU target, which means compiling its generated C++ or shipping LLVM (decision 5).
 
 **Bindings.** A software GPU may bind less at once than a hardware one. lavapipe binds 128 MiB, which a 61 MP raw's float mosaic exceeds; the hardware GPUs measured bind 2047 MiB (an RTX 5060 and a Radeon 780M on Vulkan) or 4095 MiB (the M4). So a pass whose image is larger than one binding runs in row strips, each binding a window of the whole buffer, and the viewport's demosaic runs in tiles (decision 14, [On a GPU that binds less](#on-a-gpu-that-binds-less)).

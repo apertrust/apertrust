@@ -24,6 +24,8 @@ apertrust-operations.workspace = true
 apertrust-plugin.workspace = true
 apertrust-raw.workspace = true
 tracing.workspace = true
+# The adapters' kinds and backends `gpu` lists, as the engine's instance gives them.
+wgpu.workspace = true
 
 [build-dependencies]
 # The version and the banner's versions, read in this binary's own build (decision 44).

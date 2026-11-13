@@ -21,11 +21,11 @@
 //! (`--user-data-dir`, then `APERTRUST_USER_DATA_DIR`, then the platform's), and never
 //! writes them: it creates nothing in finding the folder (`Folders::find_to_read`) and its
 //! store is read-only (decision 43). Only the commands that run the engine read them, and
-//! `cache info` the cache's, `[cache]`. A
-//! flag of its own, `--adapter`, comes first, then `--conf KEY=VALUE`, which sets one for
-//! the run and is never written, then the file. `export` takes from the export settings
-//! what darktable-cli takes from darktablerc, the format's options, and its own flags give
-//! the rest (decision 56).
+//! `cache info` the cache's, `[cache]`. A flag of its own, `--adapter` or `--backend`,
+//! comes first (wgpu's `WGPU_BACKEND` before `--backend`, decision 82), then
+//! `--conf KEY=VALUE`, which sets one for the run and is never written, then the file.
+//! `export` takes from the export settings what darktable-cli takes from darktablerc, the
+//! format's options, and its own flags give the rest (decision 56).
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -128,11 +128,17 @@ struct Cli {
 enum Command {
     /// List GPU adapters and show the one the engine opens.
     Gpu {
-        /// Use the first adapter whose name contains this text, ignoring case; one that
+        /// Use the adapter of exactly this name, else the first whose name contains it,
+        /// ignoring case, or cpu for the software adapter (WARP, lavapipe); one that
         /// names none is an error. Before the settings' engine.adapter; empty for wgpu's
         /// choice.
         #[arg(long)]
         adapter: Option<String>,
+        /// The graphics API: auto (wgpu's primary ones, Metal on macOS), dx12 or vulkan;
+        /// one this build lacks, or that finds no adapter, is an error. Before --conf and
+        /// the settings' engine.backend, after WGPU_BACKEND.
+        #[arg(long, value_name = "NAME", value_parser = backend_named)]
+        backend: Option<gpu::Backend>,
     },
     /// Decode a raw file and show what the decoder reports about it.
     Info { file: PathBuf },
@@ -214,11 +220,17 @@ enum Command {
             requires = "beside_export"
         )]
         interval: f64,
-        /// Use the first adapter whose name contains this text, ignoring case; one that
+        /// Use the adapter of exactly this name, else the first whose name contains it,
+        /// ignoring case, or cpu for the software adapter (WARP, lavapipe); one that
         /// names none is an error. Before the settings' engine.adapter; empty for wgpu's
         /// choice.
         #[arg(long)]
         adapter: Option<String>,
+        /// The graphics API: auto (wgpu's primary ones, Metal on macOS), dx12 or vulkan;
+        /// one this build lacks, or that finds no adapter, is an error. Before --conf and
+        /// the settings' engine.backend, after WGPU_BACKEND.
+        #[arg(long, value_name = "NAME", value_parser = backend_named)]
+        backend: Option<gpu::Backend>,
     },
     /// Change the edit saved beside a raw, `FILE.apxmp` (version 1: module values, and
     /// the parameters no module owns yet), then show it. `export` and `preview` start
@@ -302,11 +314,17 @@ enum Command {
         /// Leave an operation out; repeat for more.
         #[arg(long = "skip", value_name = "OPERATION")]
         skips: Vec<String>,
-        /// Use the first adapter whose name contains this text, ignoring case; one that
+        /// Use the adapter of exactly this name, else the first whose name contains it,
+        /// ignoring case, or cpu for the software adapter (WARP, lavapipe); one that
         /// names none is an error. Before the settings' engine.adapter; empty for wgpu's
         /// choice.
         #[arg(long)]
         adapter: Option<String>,
+        /// The graphics API: auto (wgpu's primary ones, Metal on macOS), dx12 or vulkan;
+        /// one this build lacks, or that finds no adapter, is an error. Before --conf and
+        /// the settings' engine.backend, after WGPU_BACKEND.
+        #[arg(long, value_name = "NAME", value_parser = backend_named)]
+        backend: Option<gpu::Backend>,
         /// Render each photo this many times directly, outside the export job, and log
         /// each render's time under `-d perf`: at 1 tiled as it needs, as the job does, as
         /// the timing workflow exports; above 1 whole, with each operation's median GPU
@@ -408,13 +426,15 @@ fn main() -> Result<()> {
     let store = || settings(folders.as_ref()).with_overrides(&overrides);
     // The engine's, under the command's own flags, as its options; the developer's switch,
     // never a setting, lowers the binding after them.
-    let engine = |store: &Store, adapter| {
-        let mut options = engine::Options::read(store, &Flags { adapter });
+    let engine = |store: &Store, adapter, backend| {
+        let mut options = engine::Options::read(store, &Flags { adapter, backend });
         options.gpu.max_storage_binding = cli.max_binding.map(|mib| mib << 20);
         options
     };
     match cli.command {
-        Command::Gpu { adapter } => pollster::block_on(show_gpu(engine(&store(), adapter))),
+        Command::Gpu { adapter, backend } => {
+            pollster::block_on(show_gpu(engine(&store(), adapter, backend)))
+        }
         Command::Info { file } => show_info(&file),
         Command::Library { command } => library::run(command),
         Command::Cache { command } => cache::run(command, folders.as_ref(), &store()),
@@ -443,6 +463,7 @@ fn main() -> Result<()> {
             beside_export: Some(rounds),
             interval,
             adapter,
+            backend,
             ..
         } => {
             let store = store();
@@ -455,7 +476,7 @@ fn main() -> Result<()> {
                     rounds,
                     format: format_with_options(&store, FileFormat::Jpeg),
                 },
-                engine(&store, adapter),
+                engine(&store, adapter, backend),
             )
         }
         Command::Preview {
@@ -468,6 +489,7 @@ fn main() -> Result<()> {
             join,
             scopes,
             adapter,
+            backend,
             ..
         } => pollster::block_on(preview(
             &file,
@@ -479,7 +501,7 @@ fn main() -> Result<()> {
                 scopes,
             },
             png.as_deref(),
-            engine(&store(), adapter),
+            engine(&store(), adapter, backend),
         )),
         Command::Export {
             files,
@@ -491,11 +513,12 @@ fn main() -> Result<()> {
             flags,
             skips,
             adapter,
+            backend,
             runs,
             tile,
         } => {
             let store = store();
-            let engine = engine(&store, adapter);
+            let engine = engine(&store, adapter, backend);
             pollster::block_on(export_all(
                 &files,
                 output.as_deref(),
@@ -1306,6 +1329,15 @@ fn stored_line(
     }
 }
 
+/// `--backend`'s value: one of `engine.backend`'s options, by its id as written.
+fn backend_named(value: &str) -> Result<gpu::Backend, String> {
+    use apertrust_base::settings::Choice as _;
+    gpu::Backend::from_id(value).ok_or_else(|| {
+        let ids: Vec<&str> = gpu::Backend::OPTIONS.iter().map(|(_, id)| *id).collect();
+        format!("{value} is none of {}", ids.join(", "))
+    })
+}
+
 /// `--interval`: milliseconds above 0, a finite number.
 fn interval_ms(value: &str) -> Result<f64, String> {
     match value.parse::<f64>() {
@@ -2013,14 +2045,29 @@ fn cfa_letter(color: CfaColor) -> char {
 }
 
 async fn show_gpu(engine: engine::Options) -> Result<()> {
-    println!("Adapters:");
-    for adapter in gpu::adapters(&gpu::instance()).await {
-        let info = adapter.get_info();
-        println!(
-            "  {} ({:?}, {:?})",
-            info.name, info.backend, info.device_type
-        );
-    }
+    // A backend this build lacks lists nothing: said before anything is listed.
+    gpu::check_backend(&engine.gpu)?;
+    // What the instance asks for, of what this build has: wgpu's primary set names Metal
+    // on every platform. wgpu says nothing of which of them loaded: one that did not lists
+    // no adapter.
+    let asked =
+        gpu::instance_descriptor(&engine.gpu).backends & wgpu::Instance::enabled_backend_features();
+    let variable = std::env::var(engine::BACKEND_VARIABLE).ok();
+    println!(
+        "{}",
+        backends_line(
+            asked,
+            engine.gpu.backend,
+            engine.sources[2],
+            variable.as_deref()
+        )
+    );
+    let adapters: Vec<wgpu::AdapterInfo> = gpu::adapters(&gpu::instance(&engine.gpu))
+        .await
+        .iter()
+        .map(wgpu::Adapter::get_info)
+        .collect();
+    print!("{}", adapter_lines(&adapters, gpu::power_preference()));
 
     let gpu = GpuContext::new(&engine.gpu).await?;
     let info = gpu.adapter.get_info();
@@ -2042,6 +2089,83 @@ async fn show_gpu(engine: engine::Options) -> Result<()> {
     Ok(())
 }
 
+/// The graphics APIs' names, as the app's Settings names them.
+fn api_name(backend: wgpu::Backend) -> &'static str {
+    match backend {
+        wgpu::Backend::Dx12 => "Direct3D 12",
+        wgpu::Backend::Vulkan => "Vulkan",
+        wgpu::Backend::Metal => "Metal",
+        wgpu::Backend::Gl => "OpenGL",
+        wgpu::Backend::BrowserWebGpu => "WebGPU",
+        wgpu::Backend::Noop => "none",
+    }
+}
+
+/// `gpu`'s line of the backends the engine's instance `asked` for, as this build has them,
+/// and why: `engine.backend`'s `chosen` value and where it came from, `from`, or
+/// `WGPU_BACKEND`'s text, `variable`, where it came first (decision 82).
+fn backends_line(
+    asked: wgpu::Backends,
+    chosen: gpu::Backend,
+    from: Source,
+    variable: Option<&str>,
+) -> String {
+    let every = [
+        wgpu::Backend::Dx12,
+        wgpu::Backend::Vulkan,
+        wgpu::Backend::Metal,
+        wgpu::Backend::Gl,
+        wgpu::Backend::BrowserWebGpu,
+    ];
+    let names: Vec<&str> = every
+        .into_iter()
+        .filter(|backend| asked.contains(wgpu::Backends::from(*backend)))
+        .map(api_name)
+        .collect();
+    let names = names.join(", ");
+    let why = match (from, variable) {
+        (Source::Variable(name), Some(text)) => format!("from {name}={text}"),
+        (from, _) => {
+            let chosen = match chosen {
+                gpu::Backend::Auto => "Automatic",
+                gpu::Backend::Dx12 => "Direct3D 12",
+                gpu::Backend::Vulkan => "Vulkan",
+            };
+            let source = match from {
+                Source::Default => "the default".to_owned(),
+                Source::File => "the settings file".to_owned(),
+                other => other.to_string(),
+            };
+            format!("{chosen}, from {source}")
+        }
+    };
+    format!("Backends asked for: {names} ({why})")
+}
+
+/// `gpu`'s list of `adapters`, in wgpu's order, each with its name, backend and kind, the
+/// one Automatic opens for `preference` marked, and the software adapter marked as CPU,
+/// which `--adapter cpu` opens; its own name kept, as this is a tool for finding out.
+fn adapter_lines(adapters: &[wgpu::AdapterInfo], preference: wgpu::PowerPreference) -> String {
+    let kinds: Vec<wgpu::DeviceType> = adapters.iter().map(|info| info.device_type).collect();
+    let automatic = gpu::automatic(&kinds, preference);
+    let mut text = String::from("Adapters:\n");
+    for (at, info) in adapters.iter().enumerate() {
+        let mut line = format!(
+            "  {} ({:?}, {:?})",
+            info.name, info.backend, info.device_type
+        );
+        if info.device_type == wgpu::DeviceType::Cpu {
+            line.push_str("  CPU, --adapter cpu");
+        }
+        if automatic == Some(at) {
+            line.push_str("  <- Automatic");
+        }
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use apertrust_engine::edit::EditError;
@@ -2052,6 +2176,78 @@ mod tests {
     use super::*;
 
     const WITH_SAMPLE: &[&dyn Module] = &[&Sample];
+
+    /// `gpu` says which backends were asked for and why, then lists the adapters,
+    /// Automatic's marked, and the software one as CPU, under its own name (decision 82).
+    #[test]
+    fn gpu_says_what_was_asked_for_and_marks_automatic_and_the_cpu() {
+        let both = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
+        let line = |chosen, from, variable| backends_line(both, chosen, from, variable);
+        assert_eq!(
+            line(gpu::Backend::Auto, Source::Default, None),
+            "Backends asked for: Direct3D 12, Vulkan (Automatic, from the default)"
+        );
+        let dx12 = wgpu::Backends::DX12;
+        assert_eq!(
+            backends_line(dx12, gpu::Backend::Dx12, Source::File, None),
+            "Backends asked for: Direct3D 12 (Direct3D 12, from the settings file)"
+        );
+        let vulkan = wgpu::Backends::VULKAN;
+        for (from, said) in [
+            (Source::Flag("--backend"), "--backend"),
+            (Source::Conf, "--conf"),
+        ] {
+            assert_eq!(
+                backends_line(vulkan, gpu::Backend::Vulkan, from, None),
+                format!("Backends asked for: Vulkan (Vulkan, from {said})")
+            );
+        }
+        let gl = wgpu::Backends::GL;
+        let variable = Source::Variable("WGPU_BACKEND");
+        assert_eq!(
+            backends_line(gl, gpu::Backend::Dx12, variable, Some("gl")),
+            "Backends asked for: OpenGL (from WGPU_BACKEND=gl)"
+        );
+        let info = |name: &str, backend, device_type| wgpu::AdapterInfo {
+            name: name.to_owned(),
+            ..wgpu::AdapterInfo::new(device_type, backend)
+        };
+        let adapters = [
+            info(
+                "AMD Radeon 780M Graphics",
+                wgpu::Backend::Vulkan,
+                wgpu::DeviceType::IntegratedGpu,
+            ),
+            info(
+                "NVIDIA GeForce RTX 5060",
+                wgpu::Backend::Vulkan,
+                wgpu::DeviceType::DiscreteGpu,
+            ),
+            info(
+                "Microsoft Basic Render Driver",
+                wgpu::Backend::Dx12,
+                wgpu::DeviceType::Cpu,
+            ),
+        ];
+        let high = adapter_lines(&adapters, wgpu::PowerPreference::HighPerformance);
+        assert_eq!(
+            high,
+            "Adapters:\n  AMD Radeon 780M Graphics (Vulkan, IntegratedGpu)\n  NVIDIA GeForce \
+             RTX 5060 (Vulkan, DiscreteGpu)  <- Automatic\n  Microsoft Basic Render Driver \
+             (Dx12, Cpu)  CPU, --adapter cpu\n"
+        );
+        let low = adapter_lines(&adapters, wgpu::PowerPreference::LowPower);
+        assert!(
+            low.lines()
+                .nth(1)
+                .is_some_and(|l| l.ends_with("<- Automatic")),
+            "{low}"
+        );
+        assert_eq!(
+            adapter_lines(&[], wgpu::PowerPreference::HighPerformance),
+            "Adapters:\n"
+        );
+    }
 
     #[test]
     fn a_full_disk_stops_a_run_whether_the_rename_or_the_encoder_found_it() {

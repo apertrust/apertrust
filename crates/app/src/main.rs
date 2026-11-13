@@ -56,6 +56,7 @@ mod export_again;
 mod exposure;
 mod fade;
 mod folder;
+mod hardware;
 mod history;
 mod jobs;
 mod library;
@@ -66,6 +67,8 @@ mod modules;
 mod paths;
 mod popups;
 mod recents;
+mod recovery;
+mod restart;
 mod scopes;
 mod settings;
 mod settings_dialog;
@@ -116,7 +119,8 @@ use recents::Recents;
 use settings::{Keeper, Settings};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
-/// [--cache-dir DIR] [--conf KEY=VALUE]... [FILE | FOLDER | --in-folder FILE...]`.
+/// [--cache-dir DIR] [--conf KEY=VALUE]... [--safe-mode] [FILE | FOLDER | --in-folder
+/// FILE...]` ([`USAGE`]).
 #[derive(Debug, Default, PartialEq)]
 struct Arguments {
     /// What to open: the first path given, from a terminal.
@@ -143,6 +147,16 @@ struct Arguments {
     /// `--conf KEY=VALUE` or `--conf=KEY=VALUE`, darktable's, each a setting's value for
     /// this run, in the order given, which `settings::overrides` reads (decision 43).
     conf: Vec<String>,
+    /// `--safe-mode`: the graphics card and API at Automatic for this run, the settings
+    /// kept (decision 82, `recovery`).
+    safe_mode: bool,
+    /// The hidden `--reopen-last` a restart passes, true: what was open last reopens,
+    /// whatever `library.reopen_last` says; or `--no-reopen-last`, false: the start window
+    /// comes back (`restart`).
+    reopen: Option<bool>,
+    /// The flags as given, but `--safe-mode`, the two hidden ones, `--in-folder` and the paths,
+    /// each with its value, a folder's made absolute: what a restart starts with again.
+    flags: Vec<OsString>,
 }
 
 /// What the command line's path opens (`docs/gui.md`, The start window).
@@ -156,6 +170,32 @@ enum Start {
 
 /// `--in-folder`, which Open With's registrations pass before the files.
 const IN_FOLDER_FLAG: &str = "--in-folder";
+
+/// What `--help` prints: the app's command line. `--list-adapters`, `--reopen-last` and
+/// `--no-reopen-last` are the app's own, for Settings' helper and a restart, and left out.
+const USAGE: &str = "\
+Usage: apertrust [OPTIONS] [FILE | FOLDER | --in-folder FILE...]
+
+Opens a raw photo alone, or a folder in folder mode; with neither, what was open last.
+
+Options:
+  -d, --debug DOMAIN      Log a domain on stderr: gpu, raw, pipe, perf, memory, settings,
+                          control, event, all or verbose; again for another
+      --user-data-dir DIR The folder of settings and personal resources (also --config-dir,
+                          --configdir; APERTRUST_USER_DATA_DIR). Edits stay beside the photos
+      --cache-dir DIR     The cache folder (also --cachedir; APERTRUST_CACHE_DIR)
+      --conf KEY=VALUE    A setting's value for this run only
+      --safe-mode         Start with the graphics card and API at Automatic for this run,
+                          the settings kept
+      --in-folder FILE... Open the files' folder with the first file active, as Open With does
+  -h, --help              Print this help
+  -V, --version           Print the version, libraries and GPU backends
+";
+
+/// Whether `args`, the command line after the program's name, asks for [`USAGE`].
+fn help_asked(mut args: impl Iterator<Item = OsString>) -> bool {
+    args.any(|arg| arg == "--help" || arg == "-h")
+}
 
 /// Reads `args`, the command line after the program's name, `look` saying what its path
 /// is on the disk ([`start()`]), unless `--in-folder` comes anywhere in it, when the disk is
@@ -172,16 +212,27 @@ fn arguments(
     while let Some(arg) = args.next() {
         if arg == IN_FOLDER_FLAG {
             in_folder = true;
+        } else if arg == restart::SAFE_MODE_FLAG {
+            arguments.safe_mode = true;
+        } else if arg == restart::REOPEN_FLAG {
+            arguments.reopen = Some(true);
+        } else if arg == restart::NO_REOPEN_FLAG {
+            arguments.reopen = Some(false);
         } else if arg == "-d" || arg == "--debug" {
-            let domain = args.next().map(|d| d.to_string_lossy().into_owned());
-            arguments.domains.extend(domain);
+            let domain = args.next();
+            let named = domain.as_ref().map(|d| d.to_string_lossy().into_owned());
+            arguments.domains.extend(named);
+            arguments.flags.push(arg);
+            arguments.flags.extend(domain);
         } else if arg == CONF_FLAG {
             let given = args
                 .next()
                 .ok_or_else(|| format!("{CONF_FLAG} needs KEY=VALUE"))?;
-            arguments.conf.push(utf8(given)?);
+            arguments.conf.push(utf8(given.clone())?);
+            arguments.flags.extend([arg, given]);
         } else if let Some(given) = conf_joined(&arg) {
             arguments.conf.push(given?);
+            arguments.flags.push(arg);
         } else if let Some(flag) = FOLDER_FLAGS.into_iter().find(|flag| arg == *flag) {
             let folder = args
                 .next()
@@ -258,8 +309,16 @@ const FOLDER_FLAGS: [&str; 5] = [
 ];
 
 impl Arguments {
-    /// Takes the folder `flag`, one of [`FOLDER_FLAGS`], names: the last given counts.
+    /// Takes the folder `flag`, one of [`FOLDER_FLAGS`], names: the last given counts. A
+    /// restart is given it again, absolute but for a leading `~`, which `folders` expands,
+    /// since the Mac's `open` starts the app in another folder.
     fn named(&mut self, flag: &'static str, folder: PathBuf) {
+        let home = folder.starts_with("~");
+        let kept = match std::path::absolute(&folder) {
+            Ok(absolute) if !home => absolute,
+            _ => folder.clone(),
+        };
+        self.flags.extend([flag.into(), kept.into_os_string()]);
         let given = Some(Given { flag, folder });
         if folders::CACHE_FLAGS.contains(&flag) {
             self.cache = given;
@@ -337,6 +396,17 @@ fn main() -> eframe::Result {
         apertrust_base::log::print_version(program, &build(&program));
         return Ok(());
     }
+    if help_asked(std::env::args_os().skip(1)) {
+        print!("{USAGE}");
+        return Ok(());
+    }
+    // The helper Settings runs to list a graphics API's adapters (decision 82): it prints
+    // them and ends, never opening a window, so a driver that crashes as it loads ends it
+    // and not the app.
+    if let Some(backend) = hardware::helper_asked(std::env::args_os().skip(1)) {
+        hardware::print_listed(backend);
+        return Ok(());
+    }
     let Arguments {
         open,
         in_folder,
@@ -344,6 +414,9 @@ fn main() -> eframe::Result {
         user_data,
         cache,
         conf,
+        safe_mode,
+        reopen,
+        flags,
     } = match arguments(std::env::args_os().skip(1), dropped::found) {
         Ok(arguments) => arguments,
         Err(error) => {
@@ -382,6 +455,10 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         }
     };
+    // A folder an environment variable chose is a flag for a restart, which the Mac's
+    // `open` starts without this process's environment (`restart`).
+    let mut flags = flags;
+    flags.extend(carried(folders.as_ref()));
     // Before the window opens, since it opens where it was.
     let (keeper, settings) = Keeper::open_in(folders.as_ref(), &overrides);
     // The recents, from `state.toml` beside the settings, the old setting's moved into it
@@ -400,17 +477,34 @@ fn main() -> eframe::Result {
     // Whether the window opens as the start window, nothing to open given or reopened:
     // Finder's files at the launch come only once the loop runs, and `App::new` gives the
     // window the main window's size and place back where they come.
-    let reopens = keeper.reopen_last() && recents.last().is_some();
+    let reopen_last = reopen.unwrap_or_else(|| keeper.reopen_last());
+    let reopens = reopen_last && recents.last().is_some();
     let starts = open.is_none() && in_folder.is_empty() && !reopens;
     let placement = if starts {
         start_placement(&settings.window, settings.scale)
     } else {
         settings.window
     };
+    // A start that did not finish, or `--safe-mode`: Automatic, or the CPU, in place of the
+    // graphics settings for this run, without the API that did not start where Automatic
+    // loads another (decision 82). The marker, locked for this start, is
+    // written naming what it tries before anything loads a graphics driver, the engine's
+    // settings included, then what they resolve to, and removed once the window has drawn
+    // (`recovery`). One another start holds is that start's, under way at once.
+    let path = folders.as_ref().map(Folders::starting);
+    let (graphics, backend) = keeper.graphics();
+    let tried = recovery::Tried::of(graphics, backend);
+    let (run, mut marker) = recovery::begin(path, safe_mode, tried);
     // The engine's settings, from the same file, as the engine's options (decision 43).
     // The session takes the memory budget as it starts, so the settings read once here
     // give every photo of this run its budget: a change applies at the next start.
-    let engine = keeper.engine();
+    let engine = match run.instead() {
+        Some((adapter, api, by)) => keeper.engine_instead(adapter, api, by),
+        None => keeper.engine(),
+    };
+    if let Some(marker) = marker.as_mut() {
+        marker.write(&run.opened(&engine));
+    }
     tracing::debug!(target: "settings", "engine.memory_budget: for this run, a change at the next start");
     // The disk cache, on the folder chosen with the user data folder (decision 76).
     let cache = folders
@@ -418,11 +512,29 @@ fn main() -> eframe::Result {
         .and_then(|folders| open_cache(folders.cache()));
     // The folders as Settings › Storage shows them.
     let storage_folders = storage::Folders::of(folders.as_ref(), export::places().home);
-    // The window's device is the engine's, so it is created from the engine's instance
-    // (its Direct3D 12 shader compiler included) and with the engine's needs. A display
-    // handle only matters for OpenGL on Wayland; the engine uses Vulkan.
+    // The window's device is the engine's, so it is created from the engine's instance,
+    // built from the same options, so the two load the same backends (decision 82), its
+    // Direct3D 12 shader compiler included, and with the engine's needs. A display handle
+    // only matters for OpenGL on Wayland; the engine uses Vulkan. A backend `--conf` names
+    // that this build lacks would find no adapter: it stops the start, as the CLI's does.
+    if let Err(error) = gpu::check_backend(&engine.gpu) {
+        // The command line's error, not the device's: no marker is left for it.
+        if let Some(marker) = marker {
+            marker.remove();
+        }
+        eprintln!("apertrust: {error}");
+        std::process::exit(1);
+    }
+    // Where a restart's command line goes once the app has ended, for the last step here.
+    let relaunch = restart::Slot::default();
+    let mut launch = Launch {
+        reopen_last,
+        restart: restart::Restart::new(flags, safe_mode, relaunch.clone()),
+        run,
+        marker: recovery::Pending::new(marker),
+    };
     let mut setup = WgpuSetupCreateNew::without_display_handle();
-    setup.instance_descriptor = gpu::instance_descriptor();
+    setup.instance_descriptor = gpu::instance_descriptor(&engine.gpu);
     setup.device_descriptor = Arc::new(gpu::device_descriptor);
     // On the adapter `engine.adapter` names, chosen as the engine chooses it, or wgpu's
     // choice where it names none; once, so a change applies after a restart.
@@ -463,7 +575,15 @@ fn main() -> eframe::Result {
         &mut builder,
         false,
     );
-    let event_loop = builder.build()?;
+    // An event loop that cannot be made is no graphics device's failure: no marker is left
+    // for it. The returns before this one have none yet, or remove it themselves.
+    let event_loop = match builder.build() {
+        Ok(event_loop) => event_loop,
+        Err(error) => {
+            launch.marker.abandon();
+            return Err(error.into());
+        }
+    };
     // Finder's files, at the launch too, once winit's delegate is set and before its loop
     // runs.
     if let Err(e) = apertrust_display::receive_opened_files() {
@@ -486,7 +606,6 @@ fn main() -> eframe::Result {
             options,
             Box::new(move |cc| {
                 started.set(true);
-                let budget = engine.budget;
                 Ok(Box::new(App::new(
                     cc,
                     open,
@@ -495,12 +614,13 @@ fn main() -> eframe::Result {
                     keeper,
                     settings,
                     engine_gate,
-                    budget,
+                    engine,
                     cache,
                     recents,
                     storage_folders,
                     app_host,
                     kept,
+                    launch,
                 )))
             }),
             &event_loop,
@@ -512,7 +632,41 @@ fn main() -> eframe::Result {
             "the window could not open: eframe's error is in the log above".into(),
         ));
     }
+    // Restart now's new start, the very last step: the app has ended, its window gone,
+    // its settings and recents written and its session dropped, its edit saved, so the
+    // new one never races it for a file (decision 82).
+    let relaunch = relaunch.lock().map(|mut slot| slot.take());
+    if let Ok(Some(relaunch)) = relaunch {
+        restart::start(relaunch);
+    }
     Ok(())
+}
+
+/// The folders `folders` holds that an environment variable chose, `APERTRUST_USER_DATA_DIR`
+/// or `APERTRUST_CACHE_DIR`, as their flags with the folders found, absolute, for a
+/// restart: one a flag chose is among the flags already, and the platform's is found again.
+fn carried(folders: Option<&Folders>) -> Vec<OsString> {
+    let Some(folders) = folders else {
+        return Vec::new();
+    };
+    let mut flags = Vec::new();
+    if folders.chosen() == folders::Chosen::Variable {
+        flags.extend([folders::FLAGS[0].into(), folders.user_data().into()]);
+    }
+    if folders.cache_chosen() == folders::CacheChosen::Variable {
+        flags.extend([folders::CACHE_FLAGS[0].into(), folders.cache().into()]);
+    }
+    flags
+}
+
+/// What `main` hands the app of how it starts: whether it reopens what was open last, its
+/// restart, and what it opens its graphics device with, which decides what the window
+/// says (decision 82).
+struct Launch {
+    reopen_last: bool,
+    restart: restart::Restart,
+    run: recovery::Run,
+    marker: recovery::Pending,
 }
 
 /// eframe's winit application, run with the engine's [`SubmitGate`] held while any of its
@@ -1168,6 +1322,18 @@ struct App {
     storage_folders: storage::Folders,
     /// What Settings › Storage was last handed, so it is handed again only when it changes.
     storage_shown: storage::View,
+    /// What Settings › Processing's Hardware acceleration group is handed: the adapter in
+    /// use, how to list the others, and the values this run started with.
+    hardware: hardware::Running,
+    /// Restart now, once asked: the app quits, and `main` starts it again (decision 82).
+    restart: restart::Restart,
+    /// What the window says after a start that did not finish, until a button is pressed.
+    notice: Option<recovery::Notice>,
+    /// Whether Keep was pressed while `--conf` sets the graphics card or API, which then
+    /// cannot change: the notice stays, saying why.
+    notice_held: bool,
+    /// This run's start marker, removed once a frame has been drawn into the window.
+    marker: recovery::Pending,
     /// What was open last, while it reopens at the start ([`reopened`]).
     reopening: Option<Reopening>,
     /// The photo last active in each folder this run, and the one the folder changed to
@@ -2338,8 +2504,9 @@ impl Shell {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!on));
             }
             // The main window, the app's one: a dialog's own is the app's to close. A close
-            // the app leaves by, never the start window's own.
-            Intent::CloseWindow | Intent::Quit => {
+            // the app leaves by, never the start window's own. Restart is Quit by now
+            // (`App::run_actions`).
+            Intent::CloseWindow | Intent::Quit | Intent::Restart => {
                 self.leaving = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -2547,9 +2714,11 @@ impl App {
     /// looked at; `keeper` writes them back. Its window was made at `built`'s placement, as
     /// the start window where it says so, and is given the other where the start turns out
     /// otherwise, before it first shows.
-    /// Its session plans within `budget` bytes, `engine.memory_budget`, and keeps `cache`,
-    /// the disk cache, if the app could open one. Its dialogs are the host's. It keeps the
-    /// session's log in `kept` while settings say so.
+    /// Its session plans within `engine`'s budget, `engine.memory_budget`, and keeps
+    /// `cache`, the disk cache, if the app could open one; Settings says whether the
+    /// adapter in use is the one `engine` chose. Its dialogs are the host's. It keeps the
+    /// session's log in `kept` while settings say so. `launch` says whether it reopens what
+    /// was open last, how it restarts, and what a start that did not finish has it say.
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
         cc: &eframe::CreationContext<'_>,
@@ -2559,12 +2728,13 @@ impl App {
         keeper: Keeper,
         settings: Settings,
         gate: SubmitGate,
-        budget: u64,
+        engine: apertrust_engine::settings::Options,
         cache: Option<Arc<Cache>>,
         recents: Recents,
         storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
+        launch: Launch,
     ) -> Self {
         keep_log(&kept, &settings.log);
         let ask = &apertrust_export::settings::registry::EXPORT_ASK_BEFORE_OVERWRITE;
@@ -2626,6 +2796,27 @@ impl App {
             queue: state.queue.clone(),
             gate,
         };
+        // What Settings' In use line says: the adapter the window opened, the engine's
+        // (decision 82), whether the setting chose it, the graphics APIs this build has,
+        // and how its list of graphics cards is made; and the values this run started
+        // with, for the waiting line.
+        let info = state.adapter.get_info();
+        let hardware = hardware::Running {
+            in_use: Some(hardware::InUse::of(&info, &engine.gpu.adapter)),
+            built: egui_wgpu::wgpu::Instance::enabled_backend_features(),
+            lister: Some(hardware::Lister::helper()),
+            started: hardware::Started::of(settings::shown(), |s| keeper.value(s)),
+            restart_failed: None,
+        };
+        let Launch {
+            reopen_last,
+            restart,
+            run,
+            marker,
+        } = launch;
+        // What a start that did not finish has the window say, by what opened: where the
+        // CPU was asked for and the API has none, wgpu's choice opened again.
+        let notice = run.notice(info.device_type == egui_wgpu::wgpu::DeviceType::Cpu);
         let places = export::places();
         let ctx = cc.egui_ctx.clone();
         let modules = apertrust_modules::MODULES;
@@ -2639,7 +2830,7 @@ impl App {
             apertrust_operations::OPERATIONS,
             modules,
             apertrust_base::program!().version,
-            budget,
+            engine.budget,
             cache,
             move || ctx.request_repaint(),
         );
@@ -2688,6 +2879,11 @@ impl App {
             focused: true,
             storage_folders,
             storage_shown: storage::View::default(),
+            hardware,
+            restart,
+            notice,
+            notice_held: false,
+            marker,
             reopening: None,
             remembered: Remembered::default(),
             start: start::Window::new(false, settings.scale),
@@ -2703,7 +2899,7 @@ impl App {
             started(open, &mut app.mirror, send);
         } else if in_folder.is_empty() {
             let last = app.shell.recents.last();
-            app.reopening = reopen(last, app.keeper.reopen_last(), &mut app.mirror, send);
+            app.reopening = reopen(last, reopen_last, &mut app.mirror, send);
         }
         if !in_folder.is_empty() {
             app.opened.look(in_folder, &cc.egui_ctx);
@@ -2863,7 +3059,13 @@ impl App {
     fn alert_answered(&mut self, purpose: alerts::Purpose, answer: dialog_host::Answer) {
         self.shell.overwrite.answered(purpose, answer);
         match alerts::then(purpose, answer, &mut self.quit, &self.mirror.jobs) {
-            alerts::Then::Nothing => self.again.declined(),
+            alerts::Then::Nothing => {
+                self.again.declined();
+                // The app stays: a restart asked with Quit is asked no more.
+                if purpose == alerts::Purpose::Quit {
+                    self.restart.cancel();
+                }
+            }
             alerts::Then::Export => self.overwrite_confirmed(),
             alerts::Then::Stop(jobs) => {
                 for job in jobs {
@@ -3282,6 +3484,13 @@ impl App {
         regions: &[egui::Rect],
     ) {
         for id in ids {
+            let id = match quit_to_restart(id, &mut self.restart) {
+                Ok(id) => id,
+                Err(error) => {
+                    self.restart_failed(&error, ctx);
+                    continue;
+                }
+            };
             // The open dialog and the overwrite question are answered before Quit runs; the
             // quit alert is Quit's own, and decides below.
             let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
@@ -3312,7 +3521,7 @@ impl App {
                 dialogs,
                 keeper,
                 &self.jobs_view,
-                &self.storage_shown,
+                (&self.storage_shown, &self.hardware),
                 id,
                 &state,
                 ctx,
@@ -3935,6 +4144,8 @@ impl App {
         target: egui::Rect,
         gesture: Option<TitleBar>,
     ) {
+        // What a start that did not finish says, over the window's top (decision 82).
+        self.show_notice(ctx);
         let state = self.state(ctx);
         self.shell.open_menu(ctx, &state);
         // Open…'s and Open Folder…'s dialog, over the window; what is chosen opens a later
@@ -4017,6 +4228,54 @@ impl App {
         // never a frame of the main window with nothing open.
         if self.shows_start(ctx) != self.start.shown {
             ctx.request_discard("the start window shows or goes");
+        }
+    }
+
+    /// Restart could not find the app to start: nothing quits, the error is logged and
+    /// Settings' waiting line says it, in the warning colour (decision 82).
+    fn restart_failed(&mut self, error: &std::io::Error, ctx: &egui::Context) {
+        tracing::error!(target: "control", "not restarted: {error}");
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("error", error.to_string());
+        let said = translator(ctx).text_with("settings-restart-failed", Some(&args));
+        self.hardware.restart_failed = Some(said);
+        self.dialogs.hardware(self.hardware.clone(), Vec::new());
+    }
+
+    /// The notice of a start that did not finish, under the top panel or the start window's
+    /// strip, until one of its buttons is pressed: Keep sets the graphics settings to what
+    /// runs, so nothing waits for a restart, but where `--conf` sets either, which then
+    /// cannot change, it changes nothing and the notice stays, saying so; Try again
+    /// restarts with them, `--safe-mode` left out (`recovery`).
+    fn show_notice(&mut self, ctx: &egui::Context) {
+        let Some(notice) = self.notice.clone() else {
+            return;
+        };
+        let top = if self.start.shown {
+            start::STRIP
+        } else {
+            theme(ctx).sizes.top_bar
+        };
+        match notice.show(ctx, top, self.notice_held) {
+            Some(recovery::Pressed::Keep) if recovery::held(&self.keeper) => {
+                self.notice_held = true;
+            }
+            Some(recovery::Pressed::Keep) => {
+                apply_settings(&notice.kept(), &mut self.shell, &mut self.keeper, ctx);
+                for setting in recovery::graphics() {
+                    let kept = self.keeper.value(setting);
+                    self.hardware.started.keep(setting.id(), kept);
+                }
+                // Settings open beside it, as the Mac's modeless window, takes them too.
+                self.dialogs.hardware(self.hardware.clone(), notice.kept());
+                self.notice = None;
+            }
+            Some(recovery::Pressed::Retry) => match self.restart.ask(false) {
+                Ok(()) => self.run_actions([ActionId::RESTART], ctx, &[]),
+                Err(error) => self.restart_failed(&error, ctx),
+            },
+            Some(recovery::Pressed::Close) => self.notice = None,
+            None => {}
         }
     }
 
@@ -4181,6 +4440,8 @@ impl eframe::App for App {
             self.tag_failed = true;
         }
         let ctx = ui.ctx().clone();
+        // What says when this frame reaches the window, while the start marker waits.
+        self.marker.mark(&ctx);
         // With nothing open the main window is the start window, and draws nothing else.
         self.follow_start(&ctx, frame);
         if self.start.shown {
@@ -4311,6 +4572,8 @@ impl eframe::App for App {
     /// and alone while the window is minimised or hidden, when it runs no frame, so a choice
     /// such as Quit never waits for the window to show.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // The start marker goes once a frame has been drawn into the window (decision 82).
+        self.marker.frame(ctx);
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);
         // The recents checked again as the window gains the focus, a folder that came back
@@ -4462,6 +4725,20 @@ impl eframe::App for App {
             &self.mirror,
         );
         self.shell.recents.flush();
+        // Restart now's: what is open, for the new start to open again, and whether the
+        // graphics card or API changed this run, which `--safe-mode` gives way to.
+        let alone = match &self.mirror.folder.folder {
+            folder::Folder::Alone { path, .. } => Some(path.as_path()),
+            _ => None,
+        };
+        let last = self.shell.recents.last().map(|last| last.path.as_path());
+        let open = restart::Open::of(self.mirror.folder.root(), alone, last);
+        let started = &self.hardware.started;
+        let changed = recovery::graphics()
+            .into_iter()
+            .any(|setting| started.differs(setting.id(), self.keeper.value(setting).as_ref()));
+        self.restart.ended(open, changed);
+        self.marker.finish();
     }
 }
 
@@ -4912,7 +5189,7 @@ fn run_action(
     dialogs: &mut dialog_host::AppDialogs,
     keeper: &Keeper,
     jobs: &[apertrust_ui::components::Job],
-    storage: &storage::View,
+    shown: (&storage::View, &hardware::Running),
     id: ActionId,
     state: &State,
     ctx: &egui::Context,
@@ -4935,7 +5212,10 @@ fn run_action(
     let command = shell.run(id, state, ctx, regions);
     if std::mem::take(&mut shell.settings) {
         let close = ctx.os() != OperatingSystem::Mac;
-        let settings = settings_dialog::Settings::new(keeper, close).with_storage(storage.clone());
+        let (storage, hardware) = shown;
+        let settings = settings_dialog::Settings::new(keeper, close)
+            .with_storage(storage.clone())
+            .with_hardware(hardware.clone());
         dialogs.open(settings, shell.settings_window, ctx);
     }
     if std::mem::take(&mut shell.export_asked) {
@@ -4982,6 +5262,8 @@ fn take_dialogs(
             )),
             dialog_host::Output::Settings(change) => settings.push(change),
             dialog_host::Output::Storage(asked) => storage.push(asked),
+            // Settings' Restart now: the registry's action, run as the keys' are.
+            dialog_host::Output::Restart => actions.push(ActionId::RESTART),
             dialog_host::Output::Placed(place) => shell.settings_window = Some(place),
             dialog_host::Output::JobsPlaced(place) => shell.jobs_window = Some(place),
             dialog_host::Output::Jobs(action) => jobs.push(action),
@@ -5042,6 +5324,20 @@ struct Taken {
     log: Vec<log_window::Asked>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
+}
+
+/// The action that runs for `id`: for Restart (decision 82), Quit, the restart noted in
+/// `restart`, so it goes through the app's own quit path, the dialog open closed as its
+/// Cancel and the quit alert asked where a job runs, and Quit's own runs of itself later on
+/// that path, once the dialog has gone or the jobs have ended, keep it; `main` starts the
+/// app again once it has ended. Where the app to start cannot be found, nothing runs, and
+/// the error says why. Any other as it is.
+fn quit_to_restart(id: ActionId, restart: &mut restart::Restart) -> std::io::Result<ActionId> {
+    if id != ActionId::RESTART {
+        return Ok(id);
+    }
+    restart.ask(true)?;
+    Ok(ActionId::QUIT)
 }
 
 /// Whether `id` runs now, while the open dialog asks (`asking`) or not: every action but
@@ -6079,6 +6375,63 @@ mod tests {
         let refused_later = read(&["--in-folder", "/a/Home.aplibrary", "/nowhere/x.CR3"]);
         assert_eq!(refused_later.expect("read").in_folder.len(), 2);
         assert_eq!(read(&["--in-folder"]), Ok(Arguments::default()));
+    }
+
+    /// `--safe-mode` and the hidden `--reopen-last` are read anywhere; the flags a restart
+    /// starts with again are the rest but what was opened, each with its value as given, a
+    /// folder's made absolute but for a leading `~`. `--help` asks for the usage, which
+    /// names `--safe-mode`.
+    #[test]
+    fn a_restart_keeps_the_flags_but_what_was_opened() {
+        let absolute = |path: &str| OsString::from(std::path::absolute(path).expect("absolute"));
+        let line = [
+            "-d",
+            "gpu",
+            "--safe-mode",
+            "--conf",
+            "scale=2",
+            "--conf=log.keep=true",
+            "--user-data-dir",
+            "dev",
+            "--cache-dir=~/cache",
+            "photo.ARW",
+            "--reopen-last",
+        ];
+        let given = read(&line).expect("read");
+        assert!(given.safe_mode);
+        assert_eq!(given.reopen, Some(true));
+        assert_eq!(given.open, photo_arw());
+        let kept: Vec<OsString> = vec![
+            "-d".into(),
+            "gpu".into(),
+            "--conf".into(),
+            "scale=2".into(),
+            "--conf=log.keep=true".into(),
+            "--user-data-dir".into(),
+            absolute("dev"),
+            "--cache-dir".into(),
+            "~/cache".into(),
+        ];
+        assert_eq!(given.flags, kept);
+        let unasked = |path: &Path| -> std::io::Result<dropped::Kind> {
+            panic!("the disk asked of {}", path.display())
+        };
+        let line = ["--in-folder", "/a/IMG_2.CR3", "--debug", "settings"];
+        let given = arguments(line.map(OsString::from), unasked).expect("read");
+        let debug: Vec<OsString> = vec!["--debug".into(), "settings".into()];
+        assert_eq!(
+            (given.flags, given.safe_mode, given.reopen),
+            (debug, false, None)
+        );
+        let asks = |line: &[&str]| help_asked(line.iter().map(OsString::from));
+        assert!(asks(&["-d", "gpu", "--help"]) && asks(&["-h"]));
+        assert!(!asks(&["-d", "gpu", "photo.ARW"]));
+        assert!(USAGE.contains(restart::SAFE_MODE_FLAG));
+        assert!(!USAGE.contains(restart::REOPEN_FLAG));
+        assert_eq!(
+            read(&["--no-reopen-last"]).expect("read").reopen,
+            Some(false)
+        );
     }
 
     /// What Open With gave the app opens as a drop of it would, once looked at: a raw as
@@ -7490,6 +7843,13 @@ mod tests {
                 user_data: given("--user-data-dir", "dev"),
                 cache: None,
                 conf: Vec::new(),
+                safe_mode: false,
+                reopen: None,
+                flags: ["-d", "settings", "--user-data-dir"]
+                    .map(OsString::from)
+                    .into_iter()
+                    .chain([std::path::absolute("dev").expect("absolute").into()])
+                    .collect(),
             })
         );
         for flag in folders::FLAGS {
@@ -10666,6 +11026,8 @@ mod tests {
 
         fn storage(&mut self, _view: storage::View) {}
 
+        fn hardware(&mut self, _: hardware::Running, _: Vec<settings_dialog::Change>) {}
+
         fn open_jobs(
             &mut self,
             window: jobs::Window,
@@ -10814,6 +11176,10 @@ mod tests {
         quit_held: bool,
         /// The open photo's edit as Quit finds it.
         edit: TestEdit,
+        /// Restart now, as `App::restart` notes it; its slot is the relaunch `main` would
+        /// start, never started here.
+        restart: restart::Restart,
+        relaunch: restart::Slot,
     }
 
     /// The open photo's edit, as `quit_edit` reads the mirror.
@@ -10880,6 +11246,7 @@ mod tests {
 
     fn dialogged(host: FakeHost) -> Harness<'static, Dialogged> {
         let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        let relaunch = restart::Slot::default();
         Harness::builder()
             .with_os(OperatingSystem::Mac)
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
@@ -10887,6 +11254,7 @@ mod tests {
                 |ui, d: &mut Dialogged| {
                     let ctx = ui.ctx().clone();
                     let run = |d: &mut Dialogged, id| {
+                        let id = quit_to_restart(id, &mut d.restart).ok()?;
                         let overwrite = d.alerts.pending() == Some(alerts::Purpose::Overwrite);
                         if !hold_for_panel(id, overwrite, &mut d.quit_held) {
                             return None;
@@ -10905,7 +11273,7 @@ mod tests {
                             dialogs,
                             keeper,
                             &view,
-                            &storage::View::default(),
+                            (&storage::View::default(), &hardware::Running::default()),
                             id,
                             &state,
                             &ctx,
@@ -10927,7 +11295,12 @@ mod tests {
                     if let Some((purpose, answer)) = d.alerts.answered(&mut d.dialogs) {
                         d.shell.overwrite.answered(purpose, answer);
                         match alerts::then(purpose, answer, &mut d.quit, &d.jobs) {
-                            alerts::Then::Nothing => d.again.declined(),
+                            alerts::Then::Nothing => {
+                                d.again.declined();
+                                if purpose == alerts::Purpose::Quit {
+                                    d.restart.cancel();
+                                }
+                            }
                             alerts::Then::Export => overwrite_confirmed(d),
                             alerts::Then::Stop(jobs) => {
                                 d.stopped.extend(jobs);
@@ -10979,6 +11352,13 @@ mod tests {
                     sent: Vec::new(),
                     quit_held: false,
                     edit: TestEdit::Saved,
+                    restart: restart::Restart::new(
+                        vec!["-d".into(), "gpu".into()],
+                        true,
+                        relaunch.clone(),
+                    )
+                    .finding(restart::tests::launcher),
+                    relaunch,
                 },
             )
     }
@@ -12458,6 +12838,62 @@ mod tests {
             !harness.state().shell.open,
             "no open dialog over a modal one"
         );
+    }
+
+    /// Settings' Restart now runs the `restart` action through the app's own quit path:
+    /// Settings closed as its Cancel, the app leaving once it has gone, and only as it has
+    /// ended the relaunch handed to `main`, with this run's flags and what is open, never
+    /// started here. With a job running the quit alert asks; a no keeps the app, and the
+    /// restart is asked no more, so a later Quit only quits.
+    #[test]
+    fn restart_now_quits_as_quit_does_and_then_hands_main_the_relaunch() {
+        let host = FakeHost::on(OperatingSystem::Windows);
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        press_action(&mut harness, ActionId::SETTINGS);
+        host.0.borrow_mut().outputs = vec![dialog_host::Output::Restart];
+        harness.step();
+        assert!(host.0.borrow().closing, "Settings closed as its Cancel");
+        assert!(
+            !closing(&harness),
+            "and the app leaves only once it has gone"
+        );
+        host.gone(None);
+        harness.step();
+        assert!(closing(&harness));
+        let taken = |harness: &Harness<'_, Dialogged>| {
+            let relaunch = harness.state().relaunch.lock().expect("slot").take();
+            relaunch.map(|relaunch| relaunch.arguments)
+        };
+        assert_eq!(taken(&harness), None, "nothing before the app has ended");
+        // As `on_exit`, with a photo open alone, the graphics settings as they started.
+        let folder = settings::testing::Folder::new("restart-photo");
+        let photo = folder.0.join("IMG_1.CR3");
+        std::fs::write(&photo, b"").expect("a raw");
+        let open = restart::Open::Photo(photo.clone());
+        harness.state_mut().restart.ended(open, false);
+        let expected: Vec<OsString> = vec![
+            "-d".into(),
+            "gpu".into(),
+            "--safe-mode".into(),
+            photo.into(),
+        ];
+        assert_eq!(taken(&harness), Some(expected));
+
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        start_export(&mut harness);
+        press_action(&mut harness, ActionId::RESTART);
+        assert_eq!(asked_alerts(&host), 1);
+        answer_alert(&host, dialog_host::Answer::Pressed(1));
+        harness.step();
+        assert!(!closing(&harness));
+        harness
+            .state_mut()
+            .restart
+            .ended(restart::Open::Nothing, false);
+        assert_eq!(taken(&harness), None);
     }
 
     #[test]

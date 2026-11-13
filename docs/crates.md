@@ -41,7 +41,11 @@ The GPU-resident pipeline, with no UI dependencies.
 - GPU setup and the image kernel runner.
 - Every submission goes through `GpuContext::submit`, which holds a `SubmitGate`. A window client holds the gate while its toolkit reconfigures the surface. The holds take turns in the order asked, and a viewport frame is one submission (decision 18).
 - `gpu::AdapterChoice`: an adapter a flag names that is not there is an error; one a setting names is a warning, and wgpu's choice is used.
-- `gpu::choose_adapter`, for a window that creates the engine's device, in wgpu's order; a test holds it against `request_adapter`.
+- `gpu::matching` (decision 82): the adapter a name opens, the one of exactly that name first, then the first whose name holds it, ignoring case; `gpu::CPU`, `cpu`, the first software adapter, whatever the platform calls it. `GpuContext::new` and `gpu::choose_adapter` both find by it.
+- `gpu::choose_adapter`, for a window that creates the engine's device, in wgpu's order; a test holds it against `request_adapter`. `gpu::automatic` is its choice among adapters' kinds, `gpu::rank` the order, `gpu::power_preference` the preference, `WGPU_POWER_PREF`'s or high performance; Settings lists the graphics cards in that order.
+- `gpu::listed(backend)`: every adapter an instance loading that backend lists, for the app's helper that lists them for Settings.
+- `gpu::Backend` (decision 82): the graphics API, `Auto` (wgpu's primary backends, never GL), `Dx12` or `Vulkan`, the `engine.backend` setting's `Choice`, in `GpuOptions::backend`.
+- `gpu::instance_descriptor(options)` and `gpu::instance(options)`: every instance, the app's window's included, loads the backends `options` choose, `WGPU_BACKEND` before them, with FXC as Direct3D 12's compiler (decision 10). `gpu::check_backend` refuses a backend this build lacks, unless `WGPU_BACKEND` chooses; `GpuContext::new` and the app's start call it. `gpu::finds_adapter` says whether a backend lists any adapter on this machine, for the settings file's backend.
 
 ### The pipeline
 
@@ -168,9 +172,10 @@ The groundwork for orientation:
 
 ### Settings
 
-`settings`: the engine's settings, `engine.adapter` and `engine.memory_budget`, and the cache's, `cache.limited`, `cache.limit` and `cache.unused_after` (decision 76), generated from the schema by its `build.rs` as `settings::registry` (decision 43).
+`settings`: the engine's settings, `engine.adapter`, `engine.backend` (decision 82) and `engine.memory_budget`, and the cache's, `cache.limited`, `cache.limit` and `cache.unused_after` (decision 76), generated from the schema by its `build.rs` as `settings::registry` (decision 43).
 
-- `settings::Options::read` turns a store a binary hands it, under the binary's own flags (`--adapter`), into `GpuOptions` and the budget. It logs each value, and where it came from, under `-d settings`.
+- `settings::Options::read` turns a store a binary hands it, under the binary's own flags (`--adapter`, `--backend`), into `GpuOptions` and the budget, wgpu's `WGPU_BACKEND` before every source of the backend. It logs each value, and where it came from, under `-d settings`. A backend the file names that this build lacks, or that finds no adapter on this machine (`gpu::finds_adapter`), is warned of and Automatic taken; one typed for the run is kept, and `GpuContext::new` (and the app, before its window opens, through `gpu::check_backend`) refuses one this build lacks.
+- `settings::Options::instead` reads the same store with the graphics card given (empty for wgpu's choice, or `cpu`, preferred, never required) and the API given, Automatic or one, in place of the card and API settings for one run, the file and `--conf` keeping theirs, `WGPU_BACKEND` still first, and logs them as from its reason (`Source::Instead`): the app's `--safe-mode`, or a start after one that did not finish (decision 82).
 - `settings::cache_limit` turns a store's `cache.limited` and `cache.limit` into base's `cache::Limit`: `Unlimited` while the first is off, else the limit's GB as bytes, a GB 10⁹ of them. The app reads it for its session's start and each change (`Keeper::cache_limit`).
 - The engine opens no folder or settings file.
 
@@ -273,24 +278,25 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `export`, `preview`
 
 ### Options for every command
 
-- **`--user-data-dir DIR`**, or `--config-dir`, darktable's `--configdir`, or `APERTRUST_USER_DATA_DIR`; else the platform's folder. `gpu`, `preview` and `export` read the engine's settings from the folder's `settings.toml`, its `[engine]` table (`adapter`, `memory_budget`), and never write them (decision 43).
+- **`--user-data-dir DIR`**, or `--config-dir`, darktable's `--configdir`, or `APERTRUST_USER_DATA_DIR`; else the platform's folder. `gpu`, `preview` and `export` read the engine's settings from the folder's `settings.toml`, its `[engine]` table (`adapter`, `backend`, `memory_budget`), and never write them (decision 43).
   - The folder is found for reading (`Folders::find_to_read`): nothing is created or probed, and one given that is missing is an error.
   - The settings are read through a read-only store, by the commands that run the engine and by `cache`, which reads the `[cache]` table.
   - The budget applies to `export` and `preview`.
 - **`--cache-dir DIR`**, or darktable's `--cachedir`, or `APERTRUST_CACHE_DIR`; else the user data folder's `cache` when that is given, else the platform's cache folder. Chosen and logged under `-d settings`, never created; read by the `cache` commands.
-- **`--adapter NAME`** comes before the file. A name that matches no adapter is an error, while a setting that names none falls back to wgpu's choice (decision 43).
+- **`--adapter NAME`** comes before the file: the adapter of exactly that name, else the first whose name holds it, ignoring case, `cpu` the software adapter (decision 82). A name that matches no adapter is an error, while a setting that names none falls back to wgpu's choice (decision 43).
+- **`--backend NAME`**, on `gpu`, `preview` and `export` beside `--adapter`: the graphics API, the setting's names, `auto` (wgpu's primary backends, Metal on macOS), `dx12` or `vulkan`, before `--conf engine.backend=…` and the file, after wgpu's `WGPU_BACKEND` (decision 82). An unknown name is a usage error; one this build lacks (Direct3D 12 off Windows, Vulkan on macOS) is an error as the engine starts, and one that finds no adapter fails as the device opens, where the file's is warned of and Automatic taken.
 - **`--conf KEY=VALUE`**: a setting for this run only, as darktable's `--conf`, never written.
   - Global and repeatable; the last value for a key counts.
   - KEY is the setting's id in `settings.toml`; VALUE is written as the file holds it, but text without quotes.
   - The CLI takes the engine's settings and the export settings (`export.jpeg.quality=80`); its store opens on both registries.
   - Every command checks it before the folder is looked for. An unknown key or a value that cannot be read stops the start.
-  - It counts after a flag of its own (`--adapter`) and before the file.
+  - It counts after a flag of its own (`--adapter`, `--backend`) and before the file.
 - **`--max-binding MIB`**: `export`, `preview` or `gpu` as on a GPU that binds at most that many MiB at once; 128 is lavapipe's (decision 14).
 - **`-d DOMAIN`** and **`--version`**, as every binary has them (see `apertrust-base`).
 
 ### gpu and info
 
-- `gpu` lists the adapters and the one the engine opens.
+- `gpu` says which backends the engine's instance asks for and why, "Backends asked for: Direct3D 12, Vulkan (Automatic, from the default)", or from the settings file, `--backend`, `--conf` or `WGPU_BACKEND=…` (`backends_line`, only those this build has; wgpu does not say which loaded, and one that did not lists no adapter); then lists the adapters each finds, in wgpu's order, marking the one Automatic opens (`<- Automatic`) and the software adapter as `CPU, --adapter cpu` (`adapter_lines`, tested from a fake list), then the one the engine opens with its driver and limits. Unlike Settings, it keeps the software adapter's own name (WARP, llvmpipe) beside the mark: it is a tool for finding out what a machine has (decision 82).
 - `info FILE` decodes a raw and shows its metadata.
 
 ### edit
@@ -457,6 +463,10 @@ The shell comes from `apertrust-ui`: the top panel, the side panel, the central 
 
 - **Settings** (`src/settings_dialog.rs`): its pages listed at its start, the rows of each drawn from the settings registry by kind, a change kept at once through `Keeper::apply` and taken in by the shell (`docs/gui.md`, The Settings dialog); a window of the dialog host, modeless on the Mac, modal on Windows and Linux.
 - **Settings › Storage's hand-built part** (`src/storage.rs`, decision 76; [cache.md](cache.md#settings--storage)): the Folders group before the cache's rows, the user data and cache folders with how each was chosen and Show in Finder; the In the cache group after them, each limited kind's entries and size with its Clear, the libraries' caches as one line, the total against the limit. The page asks for `CacheCommand::Sizes` as it is shown and as its window comes back to the front (`Output::Storage`; a dialog's frame hands the app every output it asked for, in order, `Asks::outputs`), and `cache_commands` sends `Sizes` after each limit Settings changed. The mirror's `storage::Mirror` keeps the latest `Event::Cache` and each Clear from its command, or a `cache-clear` job's `Added` naming the kind, to its job's `Ended`, its button disabled meanwhile and from the press within the page, and words a refusal until the next sizes or a Clear's end; the app hands the dialog the page's `View` as it changes, open or asked for (`Dialogs::storage`). A size below 10 keeps its decimal: base's `jobs::Argument::Decimals` in the Clear's messages, `apertrust_ui::i18n::decimals` on the page.
+- **Settings › Processing's Hardware acceleration group** (`src/hardware.rs`, decision 82; [gui.md](gui.md#the-settings-dialog)): the graphics card's row as a list of the adapters the chosen API finds (`hardware::card`, pure and tested from a fake list), listed by the app's own executable as a helper process, `apertrust --list-adapters [auto|dx12|vulkan]`, which prints them as lines and exits without a window, read on a thread of its own with a 10-second limit (`hardware::run`, `hardware::parse`), each API once while the dialog is open; a card an API change leaves out reset with it (`settings_dialog::Asked::changes`, several a frame); and the In use line, from the adapter the window's `RenderState` opened, handed the dialog as `hardware::Running` with the lister (`Settings::with_hardware`), drawn as Storage's `Line`.
+- **Restart now** (`src/restart.rs`, decision 82): the waiting line and its button under the In use line (`hardware::waiting`, while a value that applies after a restart differs from `hardware::Started`, this run's), `Output::Restart` running the `restart` action, which `quit_to_restart` turns into Quit once `Restart::ask` has found the app to start (`Launcher::here`; else nothing quits and the line says why, `Running::restart_failed`), so the app's own quit path runs, a no to the quit alert taking it back; `on_exit` hands `main` the new start through a `restart::Slot` (`Restart::ended`: this run's flags as `Arguments::flags` keeps them, with the folders a variable chose (`carried`), `--safe-mode` while the card and API are as they started and Try again did not ask, then a photo alone's path, `--reopen-last` for a folder, or `--no-reopen-last` for nothing or one gone), and `main` starts it (`restart::start`) once the event loop has returned, its session dropped. `Launcher::of`, pure and tested per platform, picks the executable, the AppImage where the executable lies in `APPDIR`, or, on macOS from the Finder or the Dock, `open -n -a` with the bundle, whose answer is waited for.
+- **A start that did not finish** (`src/recovery.rs`, decision 82): `recovery::begin` opens `starting.toml` (`Folders::starting`) and locks it for the whole start (`File::try_lock`): locked by another start, it is that start's and this one keeps none; unlocked, what is in it is a start that did not finish. It writes what this start tries before the engine's settings are read, and what they resolve to after (`Tried::opened`); `decide` gives `--safe-mode`'s Automatic first, then Automatic or the CPU after a marker, on Automatic's APIs but the one the marker names where another is left (`gpu::Backend::without`, and `Backend::software` for the CPU, Direct3D 12 alone on Windows; `decide_in` takes the build's backends, tested for Windows, Linux and macOS; a marker of a start on the API left, `Tried::alternate`, gives the CPU), else the settings, read through `Keeper::engine_instead`; `Pending` empties and removes the marker on a thread of its own once a frame has been drawn into the window (`Pending::mark` adds `Drawn`, a physical pixel's paint callback that draws nothing, which egui's renderer runs only into a surface texture it got, so a frame it skips keeps the marker), is waited for on exit, and removes it at once where the event loop cannot be made (`abandon`); `Run::notice` picks the notice by what the window opened, the CPU or wgpu's choice again, and `Notice::show` draws it over the window's top from `App::finish_frame`, Keep applying `Notice::kept`, the API left included, and taking the values as the run's, in Settings open too (`Dialogs::hardware`, a row `--conf` sets left as it is), or, where `--conf` sets the card or the API (`recovery::held`), changing nothing, the notice staying to say why, Try again restarting without `--safe-mode`.
+- **The command line** (`Arguments`, `USAGE`): `apertrust [-d DOMAIN]... [--user-data-dir DIR] [--cache-dir DIR] [--conf KEY=VALUE]... [--safe-mode] [FILE | FOLDER | --in-folder FILE...]`, `--help` (`-h`) printing the usage and `--version` (`-V`) the banner; `--list-adapters`, `--reopen-last` and `--no-reopen-last` are the app's own, for Settings' helper and a restart, and left out of the usage.
 - **About** (`src/about.rs`): a modal over the scrim with the full logo, the version as the banner gives it, the copyright and the licence. Credits and Licence are one step in: `CREDITS.md` drawn as Markdown by `egui_commonmark`, and `LICENSE`. The `about` action opens it, from the top panel's mark.
 
 ### The title bar
@@ -792,7 +802,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 **`ChoiceBox`**, a Boxed choice's box alone, its list the caller's, hung from it with `components::pull_down`: Browse's top line, whose list holds submenus.
 
-**`Choice`**, with a text of its own while no option is chosen, and an option the photo does not list shown last, disabled and described (`unlisted`). Two styles (decision 42, `Choice::style`):
+**`Choice`**, with a text of its own while no option is chosen, and an option the photo does not list shown last, disabled and described (`unlisted`), a separator before an option (`separator_before`, Settings' CPU after the graphics cards) and a description screen readers hear on the box (`description`, a Settings row's note). Two styles (decision 42, `Choice::style`):
 
 - `ChoiceStyle::Boxed`, the default;
 - `Blended`, darktable's combobox: its option right-aligned with ⌄ after it, its stroke ending where slider values end, no box and no minimum width, the hover band across the row and the focus ring round it, and the kept marker a slider row has (`Choice::mark`, `ChoiceAction::ToggleKeep`).
@@ -1027,15 +1037,16 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 **Types.** `Setting<T>`, typed by its value, with:
 
-- its `Kind`: boolean, number, choice, text, and lists and `Table`s of any kind. Whole numbers, folders, units, pages and platforms come with the first setting that needs one;
+- its `Kind`: boolean, number, choice, text, and lists and `Table`s of any kind. Whole numbers and folders come with the first setting that needs one;
 - `DefaultValue`, a value or `Computed`;
 - `Owner` (`App`, `Engine`, `Export`, `Module`) and `Applies`;
 - a number's `above`, an exclusive minimum;
-- `requires`, the boolean setting whose row must be on for its own to be enabled.
+- `requires`, the boolean setting whose row must be on for its own to be enabled;
+- `platforms`, the `Platform`s (`windows`, `macos`, `linux` in the schema) the Settings dialog draws its row on, None for every one; the value is read everywhere alike.
 
 `Choice` is a type's options, each with its stable id.
 
-**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) and the export settings (`export.*`, decision 56). The language and the side panel's width are computed, and the window's place is `optional`.
+**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.backend`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) and the export settings (`export.*`, decision 56). The language and the side panel's width are computed, and the window's place is `optional`.
 
 **The generator**, `settings::codegen`, reads the schema with toml_edit, in the file's order.
 
@@ -1065,7 +1076,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - A leading `~` is the home folder (`~` or `~/…`, never `~user`); a relative folder is taken from the current folder; a missing one is created.
 - One given by flag or variable that cannot be created or written is an `Error` that stops the start, never falling back to the platform's. The platform's own failure is only warned of.
 - For a program that only reads, the CLI, `Folders::find_to_read` creates and probes nothing. One given that is missing or cannot be read is an `Error`; a missing platform folder is left missing.
-- `-d settings` logs the folder and how it was chosen (`Chosen`). `Folders::settings` is its `settings.toml`.
+- `-d settings` logs the folder and how it was chosen (`Chosen`). `Folders::settings` is its `settings.toml`, `Folders::state` the app's `state.toml` and `Folders::starting` the app's start marker, `starting.toml` (decision 82).
 - The cache folder (decision 76) is chosen by `--cache-dir` or darktable's `--cachedir` (`CACHE_FLAGS`, read into a `Given`), then `APERTRUST_CACHE_DIR` (`CACHE_VARIABLE`, empty as unset), then `<user data>/cache` when the user data folder was given by flag or variable, then the platform's cache folder, Apertrust Dev's its own. `~` and a relative folder are taken as for the user data folder; it is never created or probed. `Folders::cache` and `Folders::cache_chosen` (`CacheChosen`) give it, and `-d settings` logs it after the user data folder. `find` and `find_to_read` take it beside the user data folder's `Given`.
 
 ### The safe write

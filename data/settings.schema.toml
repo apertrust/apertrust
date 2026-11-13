@@ -38,9 +38,12 @@
 #   which the dialog never shows. A page's groups and rows are in this file's order.
 # - requires: on a setting with a page, the id of another boolean setting on a page, which
 #   its row needs on: the dialog draws the row disabled while that is off.
+# - platforms: on a setting with a page, the platforms the dialog draws its row on, a list
+#   of "windows", "macos" and "linux", each once; every platform without it. Only the row
+#   is left out: the value is read, kept and taken by --conf on every platform alike.
 #
-# Decision 43's other fields and kinds, platforms, whole numbers and folders, come with
-# the first setting that needs one.
+# Decision 43's other kinds, whole numbers and folders, come with the first setting that
+# needs one.
 #
 # The comment above a setting is a developer's note, which its static's docs carry. Its
 # words for people are Fluent messages (crates/ui/locales), with ids that follow from its
@@ -455,18 +458,41 @@ kind = "boolean"
 default = false
 applies = "at-once"
 
-# The GPU adapter the engine opens: the first whose name holds this text, ignoring case.
-# Empty takes wgpu's high-performance choice. One that names no adapter, as after a GPU
-# is removed or the folder moves to another machine, is warned of and wgpu's choice
-# taken, where a binary's own --adapter flag that names none is an error. After a
-# restart, since the window's device is the engine's (decision 17).
+# The GPU adapter the engine opens: the one of exactly this name, else the first whose
+# name holds this text, ignoring case; "cpu", reserved, the chosen API's software adapter
+# (WARP, lavapipe) whatever its name (decision 82). Empty takes wgpu's high-performance
+# choice. One that names no adapter, as after a GPU is removed or the folder moves to
+# another machine, is warned of and wgpu's choice taken, where a binary's own --adapter
+# flag that names none is an error. Settings draws it as a list of the adapters the
+# chosen API finds, listed by a helper process (the app's --list-adapters); what it keeps
+# stays a text. After a restart, since the window's device is the engine's (decision 17).
 [engine.adapter]
 owner = "engine"
 kind = "text"
 default = ""
 applies = "after-restart"
 page = "processing"
-group = "gpu"
+group = "hardware_acceleration"
+
+# The graphics API the engine's wgpu instance loads, and the app's window with it
+# (decision 82): auto, wgpu's primary backends (Direct3D 12 and Vulkan on Windows, Vulkan
+# on Linux, Metal on macOS), or dx12 or vulkan alone. WGPU_BACKEND, where set, comes before
+# it. Only Windows has a choice, so the row is drawn there alone; a value is read on every
+# platform. One naming an API this build lacks (dx12 off Windows, vulkan on macOS), or one
+# that finds no adapter on this machine (vulkan without a Vulkan driver), is warned of and
+# auto taken, as a settings file from another computer must never stop Apertrust, where a
+# binary's own --backend, or --conf, that names one is an error. There is no metal: on
+# macOS auto is Metal. After a restart, since the window's device is the engine's
+# (decision 17).
+[engine.backend]
+owner = "engine"
+kind = "choice"
+type = "apertrust_engine::gpu::Backend"
+default = "auto"
+applies = "after-restart"
+page = "processing"
+group = "hardware_acceleration"
+platforms = ["windows"]
 
 # The GPU memory a render may take before it tiles, in MiB, on top of the working
 # buffers (decision 12): wgpu reports no GPU's memory, so it is a setting. Kept whole.
@@ -483,7 +509,7 @@ unit = "mib"
 default = 2048
 applies = "after-restart"
 page = "processing"
-group = "gpu"
+group = "hardware_acceleration"
 
 # Whether the cache's limited kinds, thumbnails first, are kept within cache.limit
 # (decision 76; docs/cache.md, The limit and Unlimited). Off is Unlimited: nothing is

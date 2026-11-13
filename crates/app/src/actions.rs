@@ -116,6 +116,9 @@ impl ActionId {
     /// File › Close Window, the Mac's alone: the key window, a dialog's or the main one.
     pub const CLOSE_WINDOW: ActionId = ActionId("close-window");
     pub const QUIT: ActionId = ActionId("quit");
+    /// Quits as Quit does and starts the app again with what is open (decision 82):
+    /// Settings' Restart now, in no menu yet.
+    pub const RESTART: ActionId = ActionId("restart");
     pub const PEEK: ActionId = ActionId("peek");
     pub const NEXT_PHOTO: ActionId = ActionId("next-photo");
     pub const PREVIOUS_PHOTO: ActionId = ActionId("previous-photo");
@@ -240,6 +243,9 @@ pub enum Intent {
     /// app's to close (`run_action`, in the app's `main`).
     CloseWindow,
     Quit,
+    /// Quit, then the app started again (`restart`): the app turns it into Quit as it runs
+    /// it, having noted the restart, so the quit path's own runs of Quit keep it.
+    Restart,
     /// Held, never applied: the sections read it ([`Keys::held`]) and peek.
     Peek,
     /// The grid panel's sort, its direction, the thumbnails' size or where the panel is, as
@@ -514,7 +520,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 70] = [
+pub static ACTIONS: [Action; 71] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -859,6 +865,17 @@ pub static ACTIONS: [Action; 70] = [
         trigger: Trigger::Press,
         available: always,
         emits: Emit::Intent(Intent::Quit),
+    },
+    // Settings' Restart now, and Try again after a start that did not finish (decision 82):
+    // Quit, then the app again with what is open. No key, and no menu yet.
+    Action {
+        id: ActionId::RESTART,
+        message: "action-restart",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: always,
+        emits: Emit::Intent(Intent::Restart),
     },
     Action {
         id: ActionId::PEEK,

@@ -33,7 +33,7 @@ use std::fmt;
 use apertrust_base::cache::Limit;
 use apertrust_base::settings::{CONF_FLAG, Declared, Store};
 
-use crate::gpu::{AdapterChoice, GpuOptions};
+use crate::gpu::{self, AdapterChoice, Backend, GpuError, GpuOptions};
 
 /// The engine's settings as the settings schema declares them, generated from it by
 /// `build.rs` as typed statics, each named after its id, and `ALL`, every one of them, for
@@ -42,7 +42,7 @@ pub mod registry {
     include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 }
 
-use registry::{CACHE_LIMIT, CACHE_LIMITED, ENGINE_ADAPTER, ENGINE_MEMORY_BUDGET};
+use registry::{CACHE_LIMIT, CACHE_LIMITED, ENGINE_ADAPTER, ENGINE_BACKEND, ENGINE_MEMORY_BUDGET};
 
 /// A gigabyte of `cache.limit`, as disks count it.
 const GB: f64 = 1e9;
@@ -60,18 +60,29 @@ pub fn cache_limit(store: &Store) -> Limit {
 /// The flag a binary takes for `engine.adapter`.
 pub const ADAPTER_FLAG: &str = "--adapter";
 
+/// The flag a binary takes for `engine.backend`.
+pub const BACKEND_FLAG: &str = "--backend";
+
+/// wgpu's own variable, which chooses the backends before `engine.backend` (decision 82).
+pub const BACKEND_VARIABLE: &str = "WGPU_BACKEND";
+
 /// A binary's own flags over the engine's settings, for one run, each before `--conf` and
 /// the settings file (decision 43).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Flags {
-    /// `--adapter NAME`: the first adapter whose name contains it, an error where none
-    /// does; empty, wgpu's choice, whatever the file says.
+    /// `--adapter NAME`: the adapter of exactly that name, else the first whose name
+    /// contains it, ignoring case, `cpu` the software adapter (`gpu::matching`), an error
+    /// where none does; empty, wgpu's choice, whatever the file says.
     pub adapter: Option<String>,
+    /// `--backend NAME`: the graphics API, an error where this build lacks it.
+    pub backend: Option<Backend>,
 }
 
 /// Where a setting's value came from, as `-d settings` names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Source {
+    /// An environment variable before every setting, by its name: `WGPU_BACKEND`.
+    Variable(&'static str),
     /// A binary's own flag, by its name.
     Flag(&'static str),
     /// `--conf KEY=VALUE`, which the store holds over the file for this run.
@@ -80,6 +91,9 @@ pub enum Source {
     File,
     /// The schema's default.
     Default,
+    /// A binary's own choice for this run in place of the setting, by why: the app's
+    /// `--safe-mode`, or its start after one that did not finish ([`Options::instead`]).
+    Instead(&'static str),
 }
 
 impl Source {
@@ -97,7 +111,7 @@ impl Source {
 impl fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Source::Flag(flag) => flag,
+            Source::Variable(name) | Source::Flag(name) | Source::Instead(name) => name,
             Source::Conf => CONF_FLAG,
             Source::File => "file",
             Source::Default => "default",
@@ -108,38 +122,77 @@ impl fmt::Display for Source {
 /// The engine's settings as the plain options it takes.
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// The device to open: `engine.adapter`'s adapter, the rest as
-    /// [`GpuOptions::default`], for a binary's developer switches to lower
-    /// (`--max-binding`).
+    /// The device to open: `engine.backend`'s graphics API and `engine.adapter`'s
+    /// adapter, the rest as [`GpuOptions::default`], for a binary's developer switches to
+    /// lower (`--max-binding`).
     pub gpu: GpuOptions,
     /// `engine.memory_budget` in bytes: the GPU memory a render may take before it tiles
     /// (decision 12), for an export's `Tiling::Auto` and a plan's `Limits`.
     pub budget: u64,
-    /// Where each came from: the adapter's, then the budget's.
-    pub sources: [Source; 2],
+    /// Where each came from: the adapter's, the budget's, then the backend's.
+    pub sources: [Source; 3],
 }
 
 impl Options {
     /// The engine's settings in `store`, which a binary opened on a registry holding
     /// [`registry::ALL`] with its `--conf` values, under its own `flags`: a flag of its own
-    /// first, then `--conf`, then the file, then the default. Logs each value and where it
-    /// came from, under `-d settings`.
+    /// first, then `--conf`, then the file, then the default, and for the backend
+    /// `WGPU_BACKEND` before them all. Logs each value and where it came from, under
+    /// `-d settings`.
     ///
     /// An adapter named for this run, by `--adapter` or `--conf`, must be there, since what
     /// was typed for the run is never ignored; one the file names falls back to wgpu's
-    /// choice.
+    /// choice. So with a backend: typed for the run, one this build lacks is an error as
+    /// the device opens, and one that finds no adapter fails there; the file's, in either
+    /// case, is warned of and Automatic taken, so a settings file from another computer
+    /// never stops the engine, nor the app's window, which takes these options too.
     pub fn read(store: &Store, flags: &Flags) -> Options {
-        let (name, adapter_from) = match (&flags.adapter, store.kept(&ENGINE_ADAPTER)) {
-            (Some(name), _) => (name.clone(), Source::Flag(ADAPTER_FLAG)),
-            (None, Some(name)) => (name, Source::kept(store, &ENGINE_ADAPTER)),
-            (None, None) => (ENGINE_ADAPTER.default().to_owned(), Source::Default),
+        let variable = std::env::var(BACKEND_VARIABLE).ok();
+        let variable = variable.filter(|_| wgpu::Backends::from_env().is_some());
+        Options::read_with(store, flags, None, variable, &gpu::finds_adapter)
+    }
+
+    /// The engine's settings in `store`, as [`Options::read`] gives them with no flags, but
+    /// for the graphics card, which is `adapter` (empty for wgpu's choice, or [`gpu::CPU`]),
+    /// and the graphics API, which is `backend`, for this run, whatever `--conf` and the
+    /// file say, which keep theirs (decision 82): the app's `--safe-mode`, or its start
+    /// after one that did not finish, `by` saying which in the log. The adapter is
+    /// preferred, never required, as a setting's is; `WGPU_BACKEND` still comes first.
+    pub fn instead(store: &Store, adapter: &str, backend: Backend, by: &'static str) -> Options {
+        let variable = std::env::var(BACKEND_VARIABLE).ok();
+        let variable = variable.filter(|_| wgpu::Backends::from_env().is_some());
+        let instead = Instead {
+            adapter,
+            backend,
+            by,
+        };
+        let flags = Flags::default();
+        Options::read_with(store, &flags, Some(instead), variable, &gpu::finds_adapter)
+    }
+
+    /// [`Options::read`], or [`Options::instead`] where `instead` says, with
+    /// `WGPU_BACKEND`'s text, `variable`, where wgpu reads one, and `finds`, whether a
+    /// backend lists any adapter on this machine.
+    fn read_with(
+        store: &Store,
+        flags: &Flags,
+        instead: Option<Instead<'_>>,
+        variable: Option<String>,
+        finds: &dyn Fn(Backend) -> bool,
+    ) -> Options {
+        let kept = store.kept(&ENGINE_ADAPTER);
+        let (name, adapter_from) = match (instead, &flags.adapter, kept) {
+            (Some(instead), _, _) => (instead.adapter.to_owned(), Source::Instead(instead.by)),
+            (None, Some(name), _) => (name.clone(), Source::Flag(ADAPTER_FLAG)),
+            (None, None, Some(name)) => (name, Source::kept(store, &ENGINE_ADAPTER)),
+            (None, None, None) => (ENGINE_ADAPTER.default().to_owned(), Source::Default),
         };
         let (adapter, shown) = match adapter_from {
             _ if name.is_empty() => (AdapterChoice::Any, "wgpu's choice".to_owned()),
-            Source::Flag(_) | Source::Conf => {
+            Source::Variable(_) | Source::Flag(_) | Source::Conf => {
                 (AdapterChoice::Named(name.clone()), format!("{name:?}"))
             }
-            Source::File | Source::Default => {
+            Source::File | Source::Default | Source::Instead(_) => {
                 (AdapterChoice::Preferred(name.clone()), format!("{name:?}"))
             }
         };
@@ -149,18 +202,74 @@ impl Options {
         };
         // Kept whole: a value read with decimals is rounded.
         let mib = mib.round() as u64;
+        let by = instead.map(|instead| (instead.backend, instead.by));
+        let (backend, backend_from, backend_shown) = backend(store, flags, by, variable, finds);
         let (adapter_id, budget_id) = (ENGINE_ADAPTER.id, ENGINE_MEMORY_BUDGET.id);
+        let backend_id = ENGINE_BACKEND.id;
         tracing::debug!(target: "settings", "{adapter_id}: {shown}, from: {adapter_from}");
+        tracing::debug!(target: "settings", "{backend_id}: {backend_shown}, from: {backend_from}");
         tracing::debug!(target: "settings", "{budget_id}: {mib} MiB, from: {budget_from}");
         Options {
             gpu: GpuOptions {
+                backend,
                 adapter,
                 ..GpuOptions::default()
             },
             budget: mib << 20,
-            sources: [adapter_from, budget_from],
+            sources: [adapter_from, budget_from, backend_from],
         }
     }
+}
+
+/// What [`Options::instead`] takes for this run in place of the card and API settings.
+#[derive(Clone, Copy)]
+struct Instead<'a> {
+    adapter: &'a str,
+    backend: Backend,
+    by: &'static str,
+}
+
+/// `engine.backend` in `store` under `flags`, or the API `instead` of them, by that, with
+/// `WGPU_BACKEND`'s text, `variable`, before them all: the backend, where it came from and
+/// how `-d settings` shows it. One the file names that this build lacks, or that `finds` no
+/// adapter on this machine for, is warned of and Automatic taken.
+fn backend(
+    store: &Store,
+    flags: &Flags,
+    instead: Option<(Backend, &'static str)>,
+    variable: Option<String>,
+    finds: &dyn Fn(Backend) -> bool,
+) -> (Backend, Source, String) {
+    let (backend, from) = match (instead, flags.backend, store.kept(&ENGINE_BACKEND)) {
+        (Some((backend, by)), _, _) => (backend, Source::Instead(by)),
+        (None, Some(backend), _) => (backend, Source::Flag(BACKEND_FLAG)),
+        (None, None, Some(backend)) => (backend, Source::kept(store, &ENGINE_BACKEND)),
+        (None, None, None) => (ENGINE_BACKEND.default(), Source::Default),
+    };
+    if let Some(variable) = variable {
+        return (backend, Source::Variable(BACKEND_VARIABLE), variable);
+    }
+    if from == Source::File && backend != Backend::Auto {
+        let why = if !backend.built() {
+            Some(GpuError::BackendNotBuilt(backend).to_string())
+        } else if !finds(backend) {
+            Some(format!(
+                "the graphics API {} finds no adapter",
+                backend.name()
+            ))
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            let (id, name) = (ENGINE_BACKEND.id, backend.name());
+            tracing::warn!(
+                target: "gpu",
+                "{id} {name} in the settings file: {why}; Automatic used"
+            );
+            return (Backend::Auto, from, Backend::Auto.name().to_owned());
+        }
+    }
+    (backend, from, backend.name().to_owned())
 }
 
 #[cfg(test)]
@@ -203,12 +312,13 @@ mod tests {
     fn read_with(file: &'static str, conf: &[&str], flags: Flags) -> Options {
         let overrides = Overrides::read(conf, registry::ALL).expect("read");
         let store = Store::read_only(&Text(file), registry::ALL).with_overrides(&overrides);
-        Options::read(&store, &flags)
+        Options::read_with(&store, &flags, None, None, &|_| true)
     }
 
     fn flag(adapter: &str) -> Flags {
         Flags {
             adapter: Some(adapter.to_owned()),
+            backend: None,
         }
     }
 
@@ -220,6 +330,7 @@ mod tests {
             [
                 "library.raw_thumbnails_from",
                 "engine.adapter",
+                "engine.backend",
                 "engine.memory_budget",
                 "cache.limited",
                 "cache.limit",
@@ -241,11 +352,19 @@ mod tests {
     /// what a person without a settings file gets, so its results depend on no folder.
     #[test]
     fn the_defaults_are_those_the_golden_harness_takes() {
-        let options = Options::read(&Store::nowhere(registry::ALL), &Flags::default());
+        let options = Options::read_with(
+            &Store::nowhere(registry::ALL),
+            &Flags::default(),
+            None,
+            None,
+            &|_| true,
+        );
         assert_eq!(options.gpu.adapter, GpuOptions::default().adapter);
         assert_eq!(options.gpu.adapter, AdapterChoice::Any);
         assert_eq!(options.budget, crate::pipeline::BUDGET);
-        assert_eq!(options.sources, [Source::Default, Source::Default]);
+        assert_eq!(options.gpu.backend, GpuOptions::default().backend);
+        assert_eq!(options.gpu.backend, Backend::Auto);
+        assert_eq!(options.sources, [Source::Default; 3]);
     }
 
     #[test]
@@ -257,12 +376,15 @@ mod tests {
             AdapterChoice::Preferred("Radeon".to_owned())
         );
         assert_eq!(from_file.budget, 4096 << 20);
-        assert_eq!(from_file.sources, [Source::File, Source::File]);
+        assert_eq!(from_file.sources[..2], [Source::File, Source::File]);
 
         let from_flag = read(file, flag("M4"));
         assert_eq!(from_flag.gpu.adapter, AdapterChoice::Named("M4".to_owned()));
         assert_eq!(from_flag.budget, 4096 << 20);
-        assert_eq!(from_flag.sources, [Source::Flag("--adapter"), Source::File]);
+        assert_eq!(
+            from_flag.sources[..2],
+            [Source::Flag("--adapter"), Source::File]
+        );
 
         // An empty flag takes wgpu's choice over the file's adapter.
         let emptied = read(file, flag(""));
@@ -272,7 +394,7 @@ mod tests {
         let none = read("", Flags::default());
         assert_eq!(
             (none.gpu.adapter, none.budget, none.sources),
-            (AdapterChoice::Any, 2048 << 20, [Source::Default; 2])
+            (AdapterChoice::Any, 2048 << 20, [Source::Default; 3])
         );
         // An empty one in the file, and a budget out of range read as the nearer end, or
         // with decimals, rounded.
@@ -301,21 +423,162 @@ mod tests {
             AdapterChoice::Named("RTX".to_owned())
         );
         assert_eq!(from_conf.budget, 1024 << 20);
-        assert_eq!(from_conf.sources, [Source::Conf, Source::Conf]);
+        assert_eq!(from_conf.sources[..2], [Source::Conf, Source::Conf]);
         assert_eq!(Source::Conf.to_string(), "--conf");
 
         let from_flag = read_with(file, &conf, flag("M4"));
         assert_eq!(from_flag.gpu.adapter, AdapterChoice::Named("M4".to_owned()));
-        assert_eq!(from_flag.sources, [Source::Flag("--adapter"), Source::Conf]);
+        assert_eq!(
+            from_flag.sources[..2],
+            [Source::Flag("--adapter"), Source::Conf]
+        );
 
+        // `cpu`, the software adapter's reserved name, as any other (decision 82).
+        let cpu = read_with(file, &["engine.adapter=cpu"], Flags::default());
+        assert_eq!(cpu.gpu.adapter, AdapterChoice::Named(gpu::CPU.to_owned()));
+        let cpu = read("version = 1\nengine.adapter = \"cpu\"\n", Flags::default());
+        assert_eq!(cpu.gpu.adapter, AdapterChoice::Preferred("cpu".to_owned()));
         // Over the default too; an empty one takes wgpu's choice.
         let over_default = read_with("", &["engine.adapter="], Flags::default());
         assert_eq!(over_default.gpu.adapter, AdapterChoice::Any);
-        assert_eq!(over_default.sources, [Source::Conf, Source::Default]);
+        assert_eq!(over_default.sources[..2], [Source::Conf, Source::Default]);
         // Out of range, the nearer end, as the file's.
         let clamped = read_with(file, &["engine.memory_budget=100"], Flags::default());
         assert_eq!(clamped.budget, 256 << 20);
-        assert_eq!(clamped.sources, [Source::File, Source::Conf]);
+        assert_eq!(clamped.sources[..2], [Source::File, Source::Conf]);
+    }
+
+    /// `engine.backend`: `WGPU_BACKEND`, then `--backend`, then `--conf`, then the file,
+    /// then Automatic (decision 82). The file's naming one this build lacks, or one that
+    /// finds no adapter on this machine, is taken as Automatic; one typed for the run is
+    /// kept, for opening the device to refuse.
+    #[test]
+    fn the_backend_comes_from_wgpu_backend_then_a_flag_then_conf_then_the_file() {
+        // `finding` is the backends that list an adapter on the machine the test makes up.
+        let read = |file, conf: &[&str], backend, variable: Option<&str>, finding: &[Backend]| {
+            let overrides = Overrides::read(conf, registry::ALL).expect("read");
+            let store = Store::read_only(&Text(file), registry::ALL).with_overrides(&overrides);
+            let flags = Flags {
+                adapter: None,
+                backend,
+            };
+            let finds = |backend| finding.contains(&backend);
+            let variable = variable.map(str::to_owned);
+            let options = Options::read_with(&store, &flags, None, variable, &finds);
+            (options.gpu.backend, options.sources[2])
+        };
+        let every = [Backend::Auto, Backend::Dx12, Backend::Vulkan];
+        let options =
+            |file, conf: &[&str], backend, variable| read(file, conf, backend, variable, &every);
+        // What the file's backend is read as: itself where this build has it, else
+        // Automatic.
+        let built = |backend: Backend| {
+            if backend.built() {
+                backend
+            } else {
+                Backend::Auto
+            }
+        };
+        let file = "version = 1\n[engine]\nbackend = \"vulkan\"\n";
+        let conf = ["engine.backend=dx12"];
+        assert_eq!(
+            options("", &[], None, None),
+            (Backend::Auto, Source::Default)
+        );
+        let from_file = (built(Backend::Vulkan), Source::File);
+        assert_eq!(options(file, &[], None, None), from_file);
+        assert_eq!(
+            options(file, &conf, None, None),
+            (Backend::Dx12, Source::Conf)
+        );
+        let flag = Some(Backend::Vulkan);
+        let from_flag = (Backend::Vulkan, Source::Flag("--backend"));
+        assert_eq!(options(file, &conf, flag, None), from_flag);
+        let variable = Source::Variable("WGPU_BACKEND");
+        assert_eq!(options(file, &conf, flag, Some("gl")).1, variable);
+        assert_eq!(variable.to_string(), "WGPU_BACKEND");
+        // Each of the setting's options by its id in the file.
+        for (file, backend) in [
+            ("version = 1\nengine.backend = \"auto\"\n", Backend::Auto),
+            ("version = 1\nengine.backend = \"dx12\"\n", Backend::Dx12),
+            (
+                "version = 1\nengine.backend = \"vulkan\"\n",
+                Backend::Vulkan,
+            ),
+        ] {
+            let read = options(file, &[], None, None);
+            assert_eq!(read, (built(backend), Source::File), "{file}");
+        }
+        // On a machine where Vulkan lists no adapter, as one with no Vulkan driver: the
+        // file's is Automatic, and the same typed for the run is kept, for opening the
+        // device to refuse.
+        let no_vulkan = [Backend::Auto, Backend::Dx12];
+        let read_there = read(file, &[], None, None, &no_vulkan);
+        assert_eq!(read_there, (Backend::Auto, Source::File));
+        let typed = read(file, &[], flag, None, &no_vulkan);
+        assert_eq!(typed, from_flag);
+        let conf = ["engine.backend=vulkan"];
+        let typed = read("", &conf, None, None, &no_vulkan);
+        assert_eq!(typed, (Backend::Vulkan, Source::Conf));
+        // Metal is no option: macOS has no other API, which Automatic is there.
+        let metal = "version = 1\nengine.backend = \"metal\"\n";
+        assert_eq!(
+            options(metal, &[], None, None),
+            (Backend::Auto, Source::Default)
+        );
+        let given = |conf: &str| Overrides::read(&[conf.to_owned()], registry::ALL);
+        assert!(given("engine.backend=metal").is_err());
+        assert!(given("engine.backend=opengl").is_err());
+        assert_eq!(ENGINE_BACKEND.applies, Applies::AfterRestart);
+        let windows = Some(&[apertrust_base::settings::Platform::Windows][..]);
+        assert_eq!(ENGINE_BACKEND.platforms, windows);
+    }
+
+    /// In place of the card and API settings for this run (decision 82): the adapter given,
+    /// preferred, and the API given, Automatic or one, over `--conf` and the file, which keep theirs, and the
+    /// budget as read; `WGPU_BACKEND` still first. The file's backend is never looked for.
+    #[test]
+    fn instead_of_the_card_and_api_takes_its_own_and_automatic() {
+        let file = "version = 1\n[engine]\nadapter = \"Radeon\"\nbackend = \"vulkan\"\n";
+        let conf = [
+            "engine.adapter=RTX".to_owned(),
+            "engine.memory_budget=4096".into(),
+        ];
+        let overrides = Overrides::read(&conf, registry::ALL).expect("read");
+        let store = Store::read_only(&Text(file), registry::ALL).with_overrides(&overrides);
+        let looked = std::cell::Cell::new(false);
+        let finds = |_| {
+            looked.set(true);
+            true
+        };
+        let read_on = |adapter, backend, variable: Option<&str>| {
+            let instead = Instead {
+                adapter,
+                backend,
+                by: "--safe-mode",
+            };
+            let variable = variable.map(str::to_owned);
+            Options::read_with(&store, &Flags::default(), Some(instead), variable, &finds)
+        };
+        let read = |adapter, variable| read_on(adapter, Backend::Auto, variable);
+        let by = Source::Instead("--safe-mode");
+        let automatic = read("", None);
+        assert_eq!(automatic.gpu.adapter, AdapterChoice::Any);
+        assert_eq!(automatic.gpu.backend, Backend::Auto);
+        assert_eq!(automatic.sources, [by, Source::Conf, by]);
+        assert_eq!(automatic.budget, 4096 << 20);
+        let cpu = read(gpu::CPU, None);
+        assert_eq!(
+            cpu.gpu.adapter,
+            AdapterChoice::Preferred(gpu::CPU.to_owned())
+        );
+        // An API given in place of the file's, as after one that did not finish.
+        let dx12 = read_on("", Backend::Dx12, None);
+        assert_eq!((dx12.gpu.backend, dx12.sources[2]), (Backend::Dx12, by));
+        let variable = read("", Some("dx12"));
+        assert_eq!(variable.sources[2], Source::Variable("WGPU_BACKEND"));
+        assert!(!looked.get());
+        assert_eq!(by.to_string(), "--safe-mode");
     }
 
     /// Unlimited while `cache.limited` is off, whatever `cache.limit` says; else the limit

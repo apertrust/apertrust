@@ -69,6 +69,10 @@ const PAGES: [(&str, &str); 9] = [
     ("ai", "Ai"),
 ];
 
+/// The platforms a `platforms` may name, each with its `Platform` variant: Rust's
+/// `std::env::consts::OS` for each.
+const PLATFORMS: [(&str, &str); 3] = [("windows", "Windows"), ("macos", "Mac"), ("linux", "Linux")];
+
 /// For an owner's build script: writes the settings `owner` reads (`app`, `engine`,
 /// `export` or `module:<id>`) into `OUT_DIR/settings.rs`, or fails the build with each error in the
 /// schema, naming its line.
@@ -268,10 +272,18 @@ impl Reader<'_> {
             table,
             line,
             &[
-                "owner", "applies", "default", "optional", "page", "group", "requires",
+                "owner",
+                "applies",
+                "default",
+                "optional",
+                "page",
+                "group",
+                "requires",
+                "platforms",
             ],
         )?;
         let (page, group) = self.place_in_dialog(id, table, line)?;
+        let platforms = self.platforms(id, table, line, page != "None")?;
         let optional = match table.get("optional") {
             None => false,
             Some(item) => item
@@ -340,6 +352,7 @@ impl Reader<'_> {
              page: {page},\n    \
              group: {group},\n    \
              requires: {requires_code},\n    \
+             platforms: {platforms},\n    \
              place: {place},\n    \
              line: {line},\n\
              }};",
@@ -406,6 +419,44 @@ impl Reader<'_> {
                 "a page holds its rows in groups: give its group too",
             )),
         }
+    }
+
+    /// The platforms the Settings dialog draws the row of the setting `id` on, as code:
+    /// `None` for every one, else a list of [`PLATFORMS`], each once. Only a setting on a
+    /// page, `shown`, has a row to leave out.
+    fn platforms(
+        &self,
+        id: &str,
+        table: &Table,
+        line: usize,
+        shown: bool,
+    ) -> Result<String, Error> {
+        let fail = |why: &str| self.fail(table, "platforms", line, id, why);
+        let Some(item) = table.get("platforms") else {
+            return Ok("None".to_owned());
+        };
+        if !shown {
+            return Err(fail(
+                "platforms says where its row is drawn: give its page and group",
+            ));
+        }
+        let ids: Vec<&str> = PLATFORMS.iter().map(|(id, _)| *id).collect();
+        let why = format!("platforms is a list of {}, each once", ids.join(", "));
+        let items = item.as_array().filter(|items| !items.is_empty());
+        let items = items.ok_or_else(|| fail(&why))?;
+        let mut variants: Vec<&str> = Vec::new();
+        for item in items {
+            let found = PLATFORMS.iter().find(|(id, _)| item.as_str() == Some(id));
+            match found {
+                Some((_, variant)) if !variants.contains(variant) => variants.push(variant),
+                _ => return Err(fail(&why)),
+            }
+        }
+        let code: Vec<String> = variants
+            .iter()
+            .map(|variant| format!("{BASE}::Platform::{variant}"))
+            .collect();
+        Ok(format!("Some(&[{}])", code.join(", ")))
     }
 
     /// The kind `table` declares, with its fields; any other field but `common` is
@@ -820,6 +871,7 @@ mod tests {
             [
                 "library.raw_thumbnails_from",
                 "engine.adapter",
+                "engine.backend",
                 "engine.memory_budget",
                 "cache.limited",
                 "cache.limit",
@@ -858,7 +910,7 @@ mod tests {
         #[rustfmt::skip]
         let expect = [
             format!("/// The interface's size, as `[scale]` keeps it.\n/// Its \\<unit\\> is none.\n///\n/// `[scale]`, declared at line 5 of `test.toml`.\npub static SCALE: {s}::Setting<f32> = "),
-            format!("kind: {s}::Kind::Number({s}::Number {{ min: Some(0.5), max: Some(3.0), above: None, step: Some(0.1), decimals: Some(2), unit: None, factor: None }}),\n    default: {s}::DefaultValue::Value(1.0),\n    applies: {s}::Applies::AtOnce,\n    page: None,\n    group: None,\n    requires: None,\n    place: 0,\n    line: 5,"),
+            format!("kind: {s}::Kind::Number({s}::Number {{ min: Some(0.5), max: Some(3.0), above: None, step: Some(0.1), decimals: Some(2), unit: None, factor: None }}),\n    default: {s}::DefaultValue::Value(1.0),\n    applies: {s}::Applies::AtOnce,\n    page: None,\n    group: None,\n    requires: None,\n    platforms: None,\n    place: 0,\n    line: 5,"),
             format!("Value({s}::option::<apertrust_ui::Builtin>(\"dark\", \"test.toml:15: [theme]: \\\"dark\\\" is none of apertrust_ui::Builtin's options\"))"),
             format!("pub static WINDOW_POSITION: {s}::Setting<Option<[f32; 2]>> = "),
             format!("default: {s}::DefaultValue::Value(None),"),
@@ -914,11 +966,41 @@ mod tests {
         let code = schema.generate("engine");
         let expect = [
             "decimals: Some(0), unit: Some(\"mib\"), factor: Some(1.0) }),".to_owned(),
-            format!("applies: {s}::Applies::AfterRestart,\n    page: Some({s}::Page::Processing),\n    group: Some(\"gpu\"),\n    requires: None,\n    place: 0,"),
+            format!("applies: {s}::Applies::AfterRestart,\n    page: Some({s}::Page::Processing),\n    group: Some(\"gpu\"),\n    requires: None,\n    platforms: None,\n    place: 0,"),
         ];
         for part in expect {
             assert!(code.contains(&part), "{part}\nin:\n{code}");
         }
+    }
+
+    /// A row may be drawn on some platforms only, which its static names; anything but a
+    /// list of the platforms, each once, on a setting with a page, is refused.
+    #[test]
+    #[rustfmt::skip]
+    fn a_setting_shown_on_some_platforms_names_them() {
+        let backend = |platforms: &str| {
+            format!(
+                "[engine.backend]\nowner = \"engine\"\nkind = \"text\"\ndefault = \"auto\"\n\
+                 applies = \"after-restart\"\npage = \"processing\"\ngroup = \"x\"\n{platforms}"
+            )
+        };
+        use super::super::Platform;
+        let ids = [Platform::Windows.id(), Platform::Mac.id(), Platform::Linux.id()];
+        assert_eq!(PLATFORMS.map(|(id, _)| id), ids);
+        let s = "::apertrust_base::settings";
+        let code = accepted(&backend("platforms = [\"windows\"]\n")).generate("engine");
+        let windows = format!("requires: None,\n    platforms: Some(&[{s}::Platform::Windows]),\n    place: 0,");
+        assert!(code.contains(&windows), "{code}");
+        let code = accepted(&backend("platforms = [\"linux\", \"macos\"]\n")).generate("engine");
+        let two = format!("platforms: Some(&[{s}::Platform::Linux, {s}::Platform::Mac]),");
+        assert!(code.contains(&two), "{code}");
+        let why = "8: [engine.backend]: platforms is a list of windows, macos, linux, each once";
+        for wrong in ["\"windows\"", "[]", "[\"win32\"]", "[\"linux\", \"linux\"]"] {
+            assert_eq!(refused(&backend(&format!("platforms = {wrong}\n"))), [why], "{wrong}");
+        }
+        each_refused(&[
+            ("boolean", "default = true\nplatforms = [\"windows\"]\n", "6: [scale]: platforms says where its row is drawn: give its page and group"),
+        ]);
     }
 
     /// A page the dialog does not have fails the build, and so does a group without its
@@ -952,8 +1034,8 @@ mod tests {
         };
         let code = accepted(&limit("requires = \"cache.limited\"\n")).generate("engine");
         let s = "::apertrust_base::settings";
-        assert!(code.contains("group: Some(\"cache\"),\n    requires: Some(\"cache.limited\"),\n    place: 1,"), "{code}");
-        assert!(code.contains("requires: None,\n    place: 0,"), "{code}");
+        assert!(code.contains("group: Some(\"cache\"),\n    requires: Some(\"cache.limited\"),\n    platforms: None,\n    place: 1,"), "{code}");
+        assert!(code.contains("requires: None,\n    platforms: None,\n    place: 0,"), "{code}");
         assert!(code.contains(&format!("pub static CACHE_LIMIT: {s}::Setting<f32>")), "{code}");
         assert_eq!(refused(&limit("requires = \"cache.limt\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limt"]);
         assert_eq!(refused(&limit("requires = \"cache.limit\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limit"]);

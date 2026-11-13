@@ -42,6 +42,8 @@ struct State {
     style: ChoiceStyle,
     /// Fluorescent is an option darktable lists that is not ported.
     disabled: Vec<usize>,
+    /// The option a separator comes before, if any.
+    separator: Option<usize>,
 }
 
 fn row(style: ChoiceStyle) -> Harness<'static, State> {
@@ -58,11 +60,14 @@ fn row_in(theme: Theme, style: ChoiceStyle) -> Harness<'static, State> {
         })
         .build_ui_state(
             |ui, state: &mut State| {
-                let action = Choice::new("Illuminant", &OPTIONS, state.selected)
+                let mut choice = Choice::new("Illuminant", &OPTIONS, state.selected)
                     .name(ROW)
                     .style(state.style)
-                    .disabled_options(&state.disabled, "Coming in a later version")
-                    .show(ui);
+                    .disabled_options(&state.disabled, "Coming in a later version");
+                if let Some(at) = state.separator {
+                    choice = choice.separator_before(at);
+                }
+                let action = choice.show(ui);
                 if let Some(action) = action {
                     if let ChoiceAction::Set(i) = action {
                         state.selected = i;
@@ -75,6 +80,7 @@ fn row_in(theme: Theme, style: ChoiceStyle) -> Harness<'static, State> {
                 reported: Vec::new(),
                 style,
                 disabled: vec![2],
+                separator: None,
             },
         );
     harness.run();
@@ -563,4 +569,35 @@ fn space_enter_or_down_opens_a_focused_row() {
         assert!(!is_open(&harness));
         assert_eq!(focused(&harness), ROW);
     }
+}
+
+/// A separator sets the options after it apart: the arrows pass over it, both ways, as over
+/// a disabled option, and screen readers meet it as a separator, never focused.
+#[test]
+fn the_arrows_pass_over_a_separator() {
+    let mut harness = row(ChoiceStyle::Boxed);
+    harness.state_mut().disabled.clear();
+    harness.state_mut().separator = Some(3);
+    harness.run();
+    open(&mut harness);
+    let separator = harness.get_by_role(Role::Splitter);
+    assert!(!separator.accesskit_node().is_focused());
+    let focused = |harness: &Harness<'_, State>| {
+        harness
+            .get_by(|node| node.is_focused())
+            .accesskit_node()
+            .label()
+            .unwrap_or_default()
+    };
+    for expected in ["Black body", OPTIONS[2], "Custom", "Daylight"] {
+        key(&mut harness, Key::ArrowDown);
+        assert_eq!(focused(&harness), expected);
+    }
+    key(&mut harness, Key::ArrowUp);
+    assert_eq!(focused(&harness), "Custom");
+    key(&mut harness, Key::ArrowUp);
+    assert_eq!(focused(&harness), OPTIONS[2]);
+    key(&mut harness, Key::ArrowDown);
+    key(&mut harness, Key::Enter);
+    assert_eq!(harness.state().reported, [ChoiceAction::Set(3)]);
 }

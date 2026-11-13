@@ -28,7 +28,13 @@
 //! - A row `--conf` sets for this run is drawn disabled, saying so (decision 43), and so is
 //!   one whose required boolean (the schema's `requires`) is off, as the cache's limit
 //!   while it is unlimited.
+//! - A row whose `platforms` leave out the platform the dialog runs on, as the context's
+//!   operating system says, is not drawn: the graphics API's off Windows.
 //! - "Applies after a restart" is said under the control of a setting that does.
+//! - Processing's Hardware acceleration group draws the graphics card as a list of the
+//!   adapters the chosen API finds, says what is wrong with a card on its row, and ends in
+//!   the In use line, then, while a choice waits for a restart, the waiting line with
+//!   Restart now ([`hardware`], decision 82).
 //! - Every change applies at once and is kept, with no OK or Apply: it goes to the app as a
 //!   [`Change`], which keeps it through the settings' keeper and shows it in the main
 //!   window; the theme and the language are shown in this dialog's own window at once too.
@@ -38,7 +44,7 @@
 //! It is a [`Dialog`] (decision 41), which the dialog host draws in a window of its own:
 //! modeless on the Mac and modal on Windows and Linux.
 
-use apertrust_base::settings::{Applies, CONF_FLAG, Choice as _, Declared, Kind, Page};
+use apertrust_base::settings::{Applies, CONF_FLAG, Choice as _, Declared, Kind, Page, Platform};
 use apertrust_ui::components::{Choice, ChoiceAction, TextField, ToggleRow, ValueField};
 use apertrust_ui::popup::{self, Entry, Item, Request};
 use apertrust_ui::{Builtin, Locale, Theme, fonts, theme, tr, translator};
@@ -49,7 +55,11 @@ use eframe::egui::{
 };
 use toml::Value;
 
+use apertrust_engine::gpu::Backend;
+use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
+
 use crate::dialog_host::{Asks, Dialog, Form, Keys, Look, Output};
+use crate::hardware::{self, Hardware};
 use crate::settings::{self, Keeper, Position};
 use crate::storage;
 
@@ -93,6 +103,8 @@ pub struct Row {
     pub overridden: bool,
     /// The boolean setting whose row must be on for this one to be enabled.
     pub requires: Option<&'static str>,
+    /// The platforms it is drawn on; None for every one.
+    pub platforms: Option<&'static [Platform]>,
 }
 
 impl Row {
@@ -110,7 +122,21 @@ impl Row {
             default: setting.default_value(),
             overridden: keeper.overridden(setting),
             requires: setting.requires(),
+            platforms: setting.platforms(),
         })
+    }
+
+    /// Whether the dialog draws it on `os`: on every platform, or on one its `platforms`
+    /// name. None of them is any other system's.
+    pub fn drawn_on(&self, os: OperatingSystem) -> bool {
+        let platform = match os {
+            OperatingSystem::Windows => Some(Platform::Windows),
+            OperatingSystem::Mac => Some(Platform::Mac),
+            OperatingSystem::Nix => Some(Platform::Linux),
+            _ => None,
+        };
+        self.platforms
+            .is_none_or(|platforms| platform.is_some_and(|p| platforms.contains(&p)))
     }
 
     /// Whether it is off its default, which the dot says.
@@ -144,6 +170,8 @@ pub struct Settings {
     /// Whether its window had the focus at the last frame, so Storage asks for the sizes
     /// again as it comes back.
     focused: bool,
+    /// Processing's Hardware acceleration group: the adapters listed, and the one in use.
+    hardware: Hardware,
 }
 
 /// What the user changed in the dialog: a setting set to a value, as `settings.toml` keeps
@@ -169,9 +197,13 @@ impl Change {
 /// What one frame of the dialog asked for.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Asked {
-    pub change: Option<Change>,
+    /// What the user changed, in order: a row's change, and a graphics card an API change
+    /// left out going back to Automatic with it.
+    pub changes: Vec<Change>,
     /// What Storage asked, after the change.
     pub storage: Vec<storage::Asked>,
+    /// Restart now was pressed, for the app to run its `restart` action.
+    pub restart: bool,
     /// Its Close button was pressed.
     pub close: bool,
 }
@@ -215,10 +247,11 @@ impl Dialog for Settings {
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
         let open = self.menu_open(ui.ctx());
         let asked = self.frame(ui);
-        let change = asked.change.map(Output::Settings);
+        let change = asked.changes.into_iter().map(Output::Settings);
         let storage = asked.storage.into_iter().map(Output::Storage);
+        let restart = asked.restart.then_some(Output::Restart);
         Asks {
-            outputs: change.into_iter().chain(storage).collect(),
+            outputs: change.chain(storage).chain(restart).collect(),
             close: asked.close,
             keeps_escape: open,
         }
@@ -245,9 +278,10 @@ impl Settings {
             pressed: Vec::new(),
             sizes_asked: false,
             focused: true,
+            hardware: Hardware::default(),
         };
         let kept = keeper.page();
-        if dialog.holds(kept) {
+        if dialog.holds(kept, OperatingSystem::from_target_os()) {
             dialog.page = kept;
         }
         dialog
@@ -257,6 +291,35 @@ impl Settings {
     pub fn with_storage(mut self, view: storage::View) -> Settings {
         self.set_storage(view);
         self
+    }
+
+    /// The dialog with the Hardware acceleration group handed `running`: the adapter in
+    /// use, and how to list the others.
+    pub fn with_hardware(mut self, running: hardware::Running) -> Settings {
+        self.hardware = Hardware::new(running);
+        self
+    }
+
+    /// Hands the Hardware acceleration group `running` again, as the app changed it, and
+    /// takes in `changes` the app made to the settings meanwhile, as Keep's, but for a row
+    /// `--conf` sets, whose value the store refuses to change: whether it changed anything,
+    /// so its window is drawn again.
+    pub fn set_hardware(&mut self, running: hardware::Running, changes: &[Change]) -> bool {
+        let mut changed = false;
+        for change in changes {
+            let (id, value) = change.parts();
+            let row = self.rows.iter_mut().find(|row| row.id == id);
+            if let Some(row) = row.filter(|row| !row.overridden) {
+                let value = value.cloned().or_else(|| row.default.clone());
+                changed |= row.value != value;
+                row.value = value;
+            }
+        }
+        if self.hardware.running() != &running {
+            self.hardware.set_running(running);
+            changed = true;
+        }
+        changed
     }
 
     /// What Storage's hand-built part shows.
@@ -271,9 +334,11 @@ impl Settings {
         self.pressed.clear();
     }
 
-    /// Whether `page` holds a row, so it can be chosen.
-    pub fn holds(&self, page: Page) -> bool {
-        self.rows.iter().any(|row| row.page == page)
+    /// Whether `page` holds a row drawn on `os`, so it can be chosen.
+    pub fn holds(&self, page: Page, os: OperatingSystem) -> bool {
+        self.rows
+            .iter()
+            .any(|row| row.page == page && row.drawn_on(os))
     }
 
     /// The row of the setting `id`.
@@ -290,6 +355,32 @@ impl Settings {
             required.and_then(|other| other.value.as_ref()?.as_bool()) == Some(true)
         };
         !row.overridden && row.requires.is_none_or(on)
+    }
+
+    /// The text the row of the setting `id` holds, empty where it holds none.
+    fn text(&self, id: &str) -> &str {
+        let row = self.rows.iter().find(|row| row.id == id);
+        row.and_then(|row| row.value.as_ref()?.as_str())
+            .unwrap_or("")
+    }
+
+    /// The graphics API the card's list is for: the API row's, where this build has it,
+    /// else Automatic, as the engine takes it.
+    fn backend(&self) -> Backend {
+        let backend = Backend::from_id(self.text(ENGINE_BACKEND.id));
+        backend
+            .filter(|backend| self.hardware.built(*backend))
+            .unwrap_or_default()
+    }
+
+    /// The Hardware acceleration group's parts this frame, on Processing.
+    fn hardware_frame(&mut self, ctx: &egui::Context) -> Option<hardware::Frame> {
+        if self.page != Page::Processing {
+            return None;
+        }
+        let (stored, backend) = (self.text(ENGINE_ADAPTER.id).to_owned(), self.backend());
+        let words = translator(ctx);
+        Some(self.hardware.frame(ctx, &words, &stored, backend))
     }
 
     /// Whether a row's right-click menu is open, which Escape closes first.
@@ -313,11 +404,14 @@ impl Settings {
         ui.horizontal_top(|ui| {
             if let Some(page) = self.pages(ui, &t) {
                 self.page = page;
-                asked.change = Some(Change::Set(
+                self.hardware.left();
+                asked.changes.push(Change::Set(
                     settings::registry::SETTINGS_WINDOW_PAGE.id,
                     Value::String(page.id().to_owned()),
                 ));
             }
+            // The page's own parts, once the page shown this frame is known.
+            let gpu = self.hardware_frame(&ctx);
             let width = WIDTH - PAGES;
             ui.allocate_ui_with_layout(vec2(width, BODY), Layout::top_down(Align::Min), |ui| {
                 ui.set_min_size(vec2(width, BODY));
@@ -334,10 +428,10 @@ impl Settings {
                                 t.spacing.l as i8,
                             ))
                             .show(ui, |ui| {
-                                let (change, storage) = self.page_rows(ui, &t);
-                                if let Some(change) = change {
-                                    asked.change = Some(change);
-                                }
+                                let (change, storage, restart) =
+                                    self.page_rows(ui, &t, gpu.as_ref());
+                                asked.restart = restart;
+                                asked.changes.extend(change);
                                 if let Some(storage::Asked::Clear(kind)) = &storage {
                                     self.pressed.push(*kind);
                                 }
@@ -347,8 +441,32 @@ impl Settings {
                 );
             });
         });
-        if let Some(change) = &asked.change {
+        // A card `--conf` holds for this run is never the API change's to reset.
+        let held = self
+            .rows
+            .iter()
+            .any(|row| row.id == ENGINE_ADAPTER.id && row.overridden);
+        for change in &asked.changes {
+            match change.parts().0 {
+                id if id == ENGINE_BACKEND.id && !held => {
+                    let stored = self.text(ENGINE_ADAPTER.id).to_owned();
+                    self.hardware.api_changed(self.backend(), &stored);
+                }
+                id if id == ENGINE_ADAPTER.id => self.hardware.card_changed(),
+                _ => {}
+            }
             self.take(change, &ctx);
+        }
+        // A card the person's API change left out goes back to Automatic once the new
+        // API's listing is in: in this frame too, beside the API's change, where it is.
+        if !held
+            && self
+                .hardware
+                .settle(&ctx, &translator(&ctx), self.backend())
+        {
+            let reset = Change::Reset(ENGINE_ADAPTER.id);
+            self.take(&reset, &ctx);
+            asked.changes.push(reset);
         }
         // Storage asks for the sizes each time it is shown, and as its window comes back
         // to the front.
@@ -421,7 +539,7 @@ impl Settings {
                 pos2(column.left(), top + i as f32 * PAGE_LINE),
                 vec2(PAGES - line, PAGE_LINE),
             );
-            let enabled = self.holds(page);
+            let enabled = self.holds(page, ctx.os());
             let shown = page == self.page;
             let id = page_id(page);
             let sense = if enabled {
@@ -467,9 +585,9 @@ impl Settings {
                 );
                 let step = |key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key));
                 if step(Key::ArrowDown) {
-                    moved = self.next(page, 1);
+                    moved = self.next(page, 1, ctx.os());
                 } else if step(Key::ArrowUp) {
-                    moved = self.next(page, -1);
+                    moved = self.next(page, -1, ctx.os());
                 }
             }
             let response = if enabled {
@@ -488,13 +606,13 @@ impl Settings {
         chosen
     }
 
-    /// The page that can be chosen next to `from`, `by` 1 after it or −1 before it.
-    fn next(&self, from: Page, by: isize) -> Option<Page> {
+    /// The page that can be chosen on `os` next to `from`, `by` 1 after it or −1 before it.
+    fn next(&self, from: Page, by: isize, os: OperatingSystem) -> Option<Page> {
         let at = Page::ALL.iter().position(|page| *page == from)? as isize;
         let mut i = at + by;
         while (0..Page::ALL.len() as isize).contains(&i) {
             let page = Page::ALL[i as usize];
-            if self.holds(page) {
+            if self.holds(page, os) {
                 return Some(page);
             }
             i += by;
@@ -502,13 +620,36 @@ impl Settings {
         None
     }
 
+    /// Whether a setting that applies after a restart has a value other than the one this
+    /// run started with, which the waiting line says (decision 82).
+    fn waiting(&self) -> bool {
+        let started = &self.hardware.running().started;
+        self.rows.iter().any(|row| {
+            row.applies == Applies::AfterRestart && started.differs(row.id, row.value.as_ref())
+        })
+    }
+
     /// The shown page's groups, each under its title, in the order of their first rows,
-    /// and their rows; on Storage, its Folders group first and its In the cache group last.
-    /// Returns what the user changed, and what Storage asked.
-    fn page_rows(&self, ui: &mut Ui, t: &Theme) -> (Option<Change>, Option<storage::Asked>) {
+    /// and their rows; on Storage, its Folders group first and its In the cache group last;
+    /// on Processing, the Hardware acceleration group's parts as `gpu` has them, its In use
+    /// line, and the waiting line while a change waits for a restart. Returns what the user
+    /// changed, what Storage asked and whether Restart now was pressed.
+    fn page_rows(
+        &self,
+        ui: &mut Ui,
+        t: &Theme,
+        gpu: Option<&hardware::Frame>,
+    ) -> (Option<Change>, Option<storage::Asked>, bool) {
         let ctx = ui.ctx().clone();
+        // The page's rows drawn on this platform.
+        let os = ctx.os();
+        let shown = || {
+            self.rows
+                .iter()
+                .filter(move |row| row.page == self.page && row.drawn_on(os))
+        };
         let mut groups: Vec<&str> = Vec::new();
-        for row in self.rows.iter().filter(|row| row.page == self.page) {
+        for row in shown() {
             if !groups.contains(&row.group) {
                 groups.push(row.group);
             }
@@ -517,17 +658,16 @@ impl Settings {
         let content = ui.available_width();
         let words = translator(&ctx);
         let storage = self.page == Page::Storage;
-        let mut labels: Vec<String> = self
-            .rows
-            .iter()
-            .filter(|row| row.page == self.page)
-            .map(|row| label_of(&words, row))
-            .collect();
+        let mut labels: Vec<String> = shown().map(|row| label_of(&words, row)).collect();
         if storage {
             labels.extend(storage::labels(&words));
         }
+        let in_use = gpu.and(self.hardware.running().in_use.as_ref());
+        if in_use.is_some() {
+            labels.extend(hardware::labels(&words));
+        }
         let label_width = label_column(ui, t, &labels, content);
-        let control_width = control_column(ui, &self.rows, self.page);
+        let control_width = control_column(ui, &self.rows, self.page, gpu);
         let lines = storage::Widths {
             label: label_width,
             content,
@@ -535,6 +675,7 @@ impl Settings {
         };
         let mut change = None;
         let mut asked = None;
+        let mut restart = false;
         if storage {
             group_title(ui, t, &tr(&ctx, "settings-group-folders"), &title, content);
             asked = storage::folders(ui, t, &self.storage, lines);
@@ -545,12 +686,24 @@ impl Settings {
             }
             let name = tr(&ctx, &format!("settings-group-{}", group.replace('_', "-")));
             group_title(ui, t, &name, &title, content);
-            let rows = self.rows.iter().filter(|row| row.group == group);
-            for row in rows.filter(|row| row.page == self.page) {
+            for row in shown().filter(|row| row.group == group) {
                 let widths = (label_width, control_width, content);
-                if let Some(changed) = draw_row(ui, t, row, self.enabled(row), widths) {
+                let extra = Extra::of(row, gpu);
+                if let Some(changed) = draw_row(ui, t, row, self.enabled(row), widths, extra) {
                     change = Some(changed);
                 }
+            }
+            // What runs now, under the rows that choose what runs after a restart.
+            if let Some(in_use) = in_use.filter(|_| group == HARDWARE_GROUP) {
+                ui.add_space(t.spacing.m);
+                hardware::in_use(ui, t, in_use, lines);
+            }
+            // And while what is chosen differs from what this run started with, that it
+            // waits for a restart, with Restart now.
+            let failed = self.hardware.running().restart_failed.as_deref();
+            if gpu.is_some() && group == HARDWARE_GROUP && (self.waiting() || failed.is_some()) {
+                ui.add_space(t.spacing.m);
+                restart = hardware::waiting(ui, t, lines, failed);
             }
         }
         if storage {
@@ -562,7 +715,7 @@ impl Settings {
                 asked = Some(contents);
             }
         }
-        (change, asked)
+        (change, asked, restart)
     }
 }
 
@@ -613,29 +766,66 @@ fn label_of(words: &apertrust_ui::Translator, row: &Row) -> String {
 }
 
 /// The width of every control on `page` but its checkboxes: [`CONTROL_WIDTH`], or as wide
-/// as the widest box a choice there needs in `ui`'s language, up to [`CONTROL`].
-fn control_column(ui: &Ui, rows: &[Row], page: Page) -> f32 {
-    rows.iter()
-        .filter(|row| row.page == page && matches!(row.kind, Kind::Choice(_)))
-        .map(|row| {
-            let (_, names) = options(ui.ctx(), row);
-            let names: Vec<&str> = names.iter().map(String::as_str).collect();
-            Choice::new("", &names, None).box_width(ui)
-        })
+/// as the widest box a choice drawn there needs in `ui`'s language, the graphics card's
+/// list as `gpu` has it among them, up to [`CONTROL`].
+fn control_column(ui: &Ui, rows: &[Row], page: Page, gpu: Option<&hardware::Frame>) -> f32 {
+    let os = ui.ctx().os();
+    let width = |names: &[String]| {
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        Choice::new("", &names, None).box_width(ui)
+    };
+    let choices = rows
+        .iter()
+        .filter(|row| row.page == page && row.drawn_on(os))
+        .filter(|row| matches!(row.kind, Kind::Choice(_)))
+        .map(|row| width(&options(ui.ctx(), row).1));
+    let gpu = gpu.map(|gpu| width(&gpu.card.words));
+    choices
+        .chain(gpu)
         .fold(CONTROL_WIDTH, f32::max)
         .min(CONTROL)
 }
 
+/// The Hardware acceleration group, whose rows [`Extra`] adds to, by its id.
+const HARDWARE_GROUP: &str = "hardware_acceleration";
+
+/// What a row of the Hardware acceleration group draws in place of its kind's (decision
+/// 82): the graphics card's list for its text, and what is said under it or the API's.
+#[derive(Clone, Copy, Debug, Default)]
+struct Extra<'a> {
+    card: Option<&'a hardware::Card>,
+    note: Option<&'a hardware::Note>,
+}
+
+impl<'a> Extra<'a> {
+    /// `row`'s, as `gpu` has the group this frame.
+    fn of(row: &Row, gpu: Option<&'a hardware::Frame>) -> Extra<'a> {
+        match gpu {
+            Some(gpu) if row.id == ENGINE_ADAPTER.id => Extra {
+                card: Some(&gpu.card),
+                note: gpu.card.note.as_ref(),
+            },
+            Some(gpu) if row.id == ENGINE_BACKEND.id => Extra {
+                note: gpu.api_note.as_ref(),
+                ..Extra::default()
+            },
+            _ => Extra::default(),
+        }
+    }
+}
+
 /// Draws `row` across `content` points: its label in the first `label_width`, wrapped
 /// where longer, the dot while it is off its default, its control, and what is said of it
-/// under the row, wrapping at the content's end; disabled unless `enabled`. `widths` are the
-/// label's, the control's and the content's. Returns what the user changed.
+/// under the row, wrapping at the content's end, one note at a time: `--conf`'s, then what
+/// `extra` says, then "Applies after a restart"; disabled unless `enabled`. `widths` are
+/// the label's, the control's and the content's. Returns what the user changed.
 fn draw_row(
     ui: &mut Ui,
     t: &Theme,
     row: &Row,
     enabled: bool,
     widths: (f32, f32, f32),
+    extra: Extra<'_>,
 ) -> Option<Change> {
     let (label_width, control_width, content) = widths;
     let ctx = ui.ctx().clone();
@@ -726,40 +916,57 @@ fn draw_row(
     };
     let height = line * lines as f32;
     let control_rect = Rect::from_min_size(pos2(start, top.y), vec2(CONTROL, height));
+    // What is said of it, under the row: `--conf`'s first, then the group's own, then
+    // that it applies after a restart; in the warning colour where it is a warning, and
+    // announced as it appears where the person's change on another row made it.
+    let (note, warning, live) = if row.overridden {
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("flag", CONF_FLAG);
+        let text = tr_.text_with("settings-overridden", Some(&args));
+        (Some(text), false, false)
+    } else if let Some(note) = extra.note {
+        (Some(note.text.clone()), note.warning, note.live)
+    } else if row.applies == Applies::AfterRestart {
+        (Some(tr_.text("settings-after-restart")), false, false)
+    } else {
+        (None, false, false)
+    };
     let mut column = ui.new_child(UiBuilder::new().max_rect(control_rect).layout(layout));
     column.set_min_size(vec2(CONTROL, height));
     column.spacing_mut().item_spacing.x = t.spacing.m;
+    let said = note.as_deref();
     if let Some(changed) = column
-        .add_enabled_ui(enabled, |ui| control(ui, t, row, &label, control_width))
+        .add_enabled_ui(enabled, |ui| {
+            control(ui, t, row, &label, control_width, extra, said)
+        })
         .inner
     {
         change = Some(changed);
     }
     let mut bottom = label_rect.bottom().max(control_rect.bottom());
-    // What is said of it, under the row, wrapping at the content's end.
-    let note = if row.overridden {
-        let mut args = apertrust_ui::i18n::Args::new();
-        args.set("flag", CONF_FLAG);
-        Some(tr_.text_with("settings-overridden", Some(&args)))
-    } else if row.applies == Applies::AfterRestart {
-        Some(tr_.text("settings-after-restart"))
-    } else {
-        None
-    };
     if let Some(note) = note {
         let width = (top.x + content - start).max(0.0);
+        let colour = if warning {
+            t.colors.warning
+        } else {
+            t.colors.text_secondary
+        };
         let galley = ui.painter().layout(
             note.clone(),
             FontId::proportional(t.text.caption),
-            t.colors.text_secondary,
+            colour,
             width,
         );
         let at = pos2(start, control_rect.bottom());
         let rect = Rect::from_min_size(at, galley.size());
-        ui.painter().galley(at, galley, t.colors.text_secondary);
+        ui.painter().galley(at, galley, colour);
         let id = egui::Id::unique(("settings note", row.id));
         let said = ui.interact(rect, id, Sense::hover());
         said.widget_info(|| WidgetInfo::labeled(Role::Label, true, &note));
+        if live {
+            let polite = egui::accesskit::Live::Polite;
+            ctx.accesskit_node_builder(said.id, |node| node.set_live(polite));
+        }
         bottom = bottom.max(rect.bottom() + t.spacing.xs);
     }
     ui.allocate_rect(
@@ -771,11 +978,23 @@ fn draw_row(
 
 /// `row`'s control by its kind, `label` its full name: a checkbox, or `width` wide, a
 /// choice, a number with its unit inside it, or a text; for a list of a choice, a checkbox
-/// per option, each on a line of its own, named by its option. Returns the value the user
-/// gave it.
-fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option<Change> {
+/// per option, each on a line of its own, named by its option. The graphics card's is its
+/// list, as `extra` has it, described to screen readers by `said`, what the row says under
+/// it. Returns the value the user gave it.
+fn control(
+    ui: &mut Ui,
+    t: &Theme,
+    row: &Row,
+    label: &str,
+    width: f32,
+    extra: Extra<'_>,
+    said: Option<&str>,
+) -> Option<Change> {
     let ctx = ui.ctx().clone();
     let set = |value| Some(Change::Set(row.id, value));
+    if let Some(card) = extra.card {
+        return card_control(ui, t, row, card, (label, said), width);
+    }
     match row.kind {
         Kind::Boolean => {
             let on = row.value.as_ref().and_then(Value::as_bool).unwrap_or(false);
@@ -798,20 +1017,7 @@ fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option
             let choice = Choice::new("", &names, selected)
                 .name(label)
                 .min_box_width(width);
-            // The box at the column's start: the row's own gap before it falls in the
-            // dot's column.
-            let width = choice.box_width(ui).max(width) + t.spacing.l;
-            let start = ui.cursor().min.x - t.spacing.l;
-            let rect = Rect::from_min_size(
-                pos2(start, ui.max_rect().top()),
-                vec2(width, ui.max_rect().height()),
-            );
-            let mut boxed = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(Layout::left_to_right(Align::Center)),
-            );
-            match choice.show(&mut boxed) {
+            match boxed(ui, t, choice, width) {
                 Some(ChoiceAction::Set(i)) => set(Value::String(ids[i].to_owned())),
                 _ => None,
             }
@@ -940,6 +1146,63 @@ fn control(ui: &mut Ui, t: &Theme, row: &Row, label: &str, width: f32) -> Option
     }
 }
 
+/// Draws `choice` as a row's box, at the column's start, as wide as its widest option
+/// needs, at least `width` and at most [`CONTROL`]: the row's own gap before it falls in
+/// the dot's column, and a longer option is cut, whole in its tooltip.
+fn boxed(ui: &mut Ui, t: &Theme, choice: Choice<'_>, width: f32) -> Option<ChoiceAction> {
+    let width = choice.box_width(ui).max(width).min(CONTROL) + t.spacing.l;
+    let start = ui.cursor().min.x - t.spacing.l;
+    let rect = Rect::from_min_size(
+        pos2(start, ui.max_rect().top()),
+        vec2(width, ui.max_rect().height()),
+    );
+    let mut boxed = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    choice.show(&mut boxed)
+}
+
+/// The graphics card's list (decision 82), `named` its row's full name and what is said
+/// under it, which screen readers hear on the box: Automatic, the cards, a card not found,
+/// then CPU after a separator, as `card` has them; disabled while they are listed. Choosing
+/// Automatic resets the setting, so it leaves the file.
+fn card_control(
+    ui: &mut Ui,
+    t: &Theme,
+    row: &Row,
+    card: &hardware::Card,
+    named: (&str, Option<&str>),
+    width: f32,
+) -> Option<Change> {
+    let (label, said) = named;
+    let names: Vec<&str> = card.words.iter().map(String::as_str).collect();
+    let missing: Vec<usize> = card.missing.iter().map(|(at, _)| *at).collect();
+    let missing_tip = card.missing.as_ref().map_or("", |(_, tip)| tip.as_str());
+    let mut choice = Choice::new("", &names, card.selected)
+        .name(label)
+        .min_box_width(width)
+        .enabled(ui.is_enabled() && !card.listing)
+        .disabled_options(&missing, missing_tip);
+    if let Some((at, tip)) = &card.unlisted {
+        choice = choice.unlisted(*at, tip);
+    }
+    if let Some(at) = card.separator {
+        choice = choice.separator_before(at);
+    }
+    if let Some(said) = said {
+        choice = choice.description(said);
+    }
+    match boxed(ui, t, choice, width)? {
+        ChoiceAction::Set(item) => Some(match card.stores(item) {
+            Some(stored) => Change::Set(row.id, Value::String(stored.to_owned())),
+            None => Change::Reset(row.id),
+        }),
+        _ => None,
+    }
+}
+
 /// A number as `settings.toml` keeps it, whole or not.
 fn as_number(value: &Value) -> Option<f64> {
     value
@@ -979,10 +1242,14 @@ mod tests {
     use super::*;
     use crate::dialog_host;
 
-    /// The dialog as the host draws it in its window, and what each frame asked.
+    /// The dialog as the host draws it in its window, and what each frame asked: every
+    /// change, and those of each frame that asked any.
     struct Bench {
         content: Settings,
         changes: Vec<Change>,
+        frames: Vec<Vec<Change>>,
+        /// How many times Restart now was pressed.
+        restarts: usize,
     }
 
     /// The dialog over `keeper`'s settings, without Close as on the Mac, in `which` theme;
@@ -993,7 +1260,30 @@ mod tests {
 
     /// The dialog as [`dialog_of`] draws it, in `locale`.
     fn dialog_in(keeper: &Keeper, which: Builtin, locale: Locale) -> Harness<'static, Bench> {
-        let mut content = Settings::new(keeper, false);
+        dialog_on(keeper, which, locale, OperatingSystem::Mac)
+    }
+
+    /// The dialog as [`dialog_in`] draws it, on `os`, its graphics cards those of a
+    /// computer like the test laptop (`hardware::tests::running`).
+    fn dialog_on(
+        keeper: &Keeper,
+        which: Builtin,
+        locale: Locale,
+        os: OperatingSystem,
+    ) -> Harness<'static, Bench> {
+        let running = crate::hardware::tests::running(os);
+        dialog_with(keeper, which, locale, os, running)
+    }
+
+    /// The dialog as [`dialog_on`] draws it, handed `running`.
+    fn dialog_with(
+        keeper: &Keeper,
+        which: Builtin,
+        locale: Locale,
+        os: OperatingSystem,
+        running: hardware::Running,
+    ) -> Harness<'static, Bench> {
+        let mut content = Settings::new(keeper, false).with_hardware(running);
         for row in content.rows.iter_mut().filter(|row| row.id == "locale") {
             row.default = Some("en-GB".into());
             if !row.overridden {
@@ -1002,7 +1292,7 @@ mod tests {
         }
         let mut harness = Harness::builder()
             .with_size(vec2(WIDTH, BODY) + vec2(16.0, 16.0))
-            .with_os(OperatingSystem::Mac)
+            .with_os(os)
             // Each event is a frame of its own: a 60th of a second apart, two clicks are one
             // double-click.
             .with_step_dt(1.0 / 60.0)
@@ -1014,19 +1304,76 @@ mod tests {
             .build_ui_state(
                 |ui, bench: &mut Bench| {
                     let drawn = dialog_host::draw(ui, &mut bench.content);
+                    let mut frame = Vec::new();
                     for output in drawn.outputs {
-                        if let Output::Settings(change) = output {
-                            bench.changes.push(change);
+                        match output {
+                            Output::Settings(change) => frame.push(change),
+                            Output::Restart => bench.restarts += 1,
+                            _ => {}
                         }
+                    }
+                    bench.changes.extend(frame.iter().cloned());
+                    if !frame.is_empty() {
+                        bench.frames.push(frame);
                     }
                 },
                 Bench {
                     content,
                     changes: Vec::new(),
+                    frames: Vec::new(),
+                    restarts: 0,
                 },
             );
         harness.run();
         harness
+    }
+
+    /// The app's changes handed to the dialog, as the start notice's Keep's, change the rows
+    /// they name, but for one `--conf` sets, which keeps its value, as the store does.
+    #[test]
+    fn the_apps_changes_leave_a_row_set_by_conf() {
+        use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
+        let conf = ["engine.adapter=missing".to_owned()];
+        let (keeper, _) = Keeper::open_in(None, &settings::overrides(&conf).expect("read"));
+        let mut dialog = Settings::new(&keeper, false);
+        let running = crate::hardware::tests::running(OperatingSystem::Windows);
+        dialog.set_hardware(running.clone(), &[]);
+        let value = |dialog: &Settings, id: &str| {
+            let row = dialog.rows.iter().find(|row| row.id == id).expect("a row");
+            row.value.clone()
+        };
+        let missing = Some(Value::String("missing".into()));
+        assert_eq!(value(&dialog, ENGINE_ADAPTER.id), missing);
+        let keep = [
+            Change::Reset(ENGINE_ADAPTER.id),
+            Change::Set(ENGINE_BACKEND.id, Value::String("dx12".into())),
+        ];
+        assert!(dialog.set_hardware(running, &keep));
+        assert_eq!(value(&dialog, ENGINE_ADAPTER.id), missing);
+        let dx12 = Some(Value::String("dx12".into()));
+        assert_eq!(value(&dialog, ENGINE_BACKEND.id), dx12);
+    }
+
+    /// Shows Processing, its graphics cards listed, and forgets the page's change.
+    fn processing(harness: &mut Harness<'_, Bench>) {
+        harness.get_by_label("Processing").click();
+        harness.run();
+        listed(harness);
+        harness.state_mut().changes.clear();
+        harness.state_mut().frames.clear();
+    }
+
+    /// Lets the listings under way answer, and the dialog take them.
+    fn listed(harness: &mut Harness<'_, Bench>) {
+        harness.state().content.hardware.wait();
+        harness.run();
+    }
+
+    /// The keeper's settings with `id` set to `value`.
+    fn keeper_with(id: &str, value: &str) -> Keeper {
+        let (mut keeper, settings) = Keeper::nowhere();
+        keeper.apply(&settings, id, Some(&value.into()));
+        keeper
     }
 
     fn dialog() -> Harness<'static, Bench> {
@@ -1365,14 +1712,67 @@ mod tests {
             .center();
         double_click(&mut harness, at);
         assert!(harness.state().changes.is_empty());
-        harness.get_by_label("Processing").click();
-        harness.run();
-        harness.get_by_role_and_label(Role::TextInput, "Graphics card");
+        processing(&mut harness);
+        harness.get_by_role_and_label(Role::ComboBox, "Graphics card");
         harness.get_by_role_and_label(Role::TextInput, "Memory budget, in MiB");
         let notes = harness
             .query_all_by_label("Applies after a restart")
             .count();
         assert_eq!(notes, 2);
+    }
+
+    /// Processing's Hardware acceleration group: Graphics card, Graphics API and Memory
+    /// budget, the graphics API drawn on Windows alone, the only platform with a choice of
+    /// one (`platforms`; decision 82).
+    #[test]
+    fn the_graphics_api_is_drawn_on_windows_alone() {
+        let keeper = Keeper::nowhere().0;
+        for os in [
+            OperatingSystem::Windows,
+            OperatingSystem::Mac,
+            OperatingSystem::Nix,
+        ] {
+            let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+            processing(&mut harness);
+            harness.get_by_role_and_label(Role::Label, "Hardware acceleration");
+            assert!(harness.query_by_label("GPU").is_none(), "{os:?}");
+            let windows = os == OperatingSystem::Windows;
+            let mut rows = vec!["Graphics card", "Graphics API", "Memory budget"];
+            if !windows {
+                rows.remove(1);
+            }
+            let labels: Vec<String> = harness
+                .get_all_by_role(Role::Label)
+                .filter_map(|node| node.accesskit_node().value())
+                .filter(|name| name.starts_with("Graphics") || name == "Memory budget")
+                .collect();
+            assert_eq!(labels, rows, "{os:?}");
+            let api = harness.query_by_role_and_label(Role::ComboBox, "Graphics API");
+            assert_eq!(api.is_some(), windows, "{os:?}");
+            // Each row says it applies after a restart.
+            let notes = harness
+                .query_all_by_label("Applies after a restart")
+                .count();
+            assert_eq!(notes, rows.len(), "{os:?}");
+        }
+        // Its options, in the setting's order, and Automatic chosen.
+        let row = Settings::new(&keeper, false);
+        let row = row.row("engine.backend").expect("a row");
+        assert_eq!(row.options, ["auto", "dx12", "vulkan"]);
+        assert_eq!(row.value, Some("auto".into()));
+        let words = Translator::new(Locale::EnGb);
+        let names: Vec<String> = row
+            .options
+            .iter()
+            .map(|option| words.text(&format!("setting-engine-backend-option-{option}")))
+            .collect();
+        assert_eq!(names, ["Automatic", "Direct3D 12", "Vulkan"]);
+        // A page whose only rows are another platform's holds nothing there.
+        let mut alone = Settings::new(&keeper, false);
+        alone.rows.retain(|row| row.id == "engine.backend");
+        assert!(alone.holds(Page::Processing, OperatingSystem::Windows));
+        assert!(!alone.holds(Page::Processing, OperatingSystem::Mac));
+        assert!(!alone.holds(Page::Processing, OperatingSystem::Nix));
     }
 
     /// A row is disabled while the boolean it requires is off, and enabled again once it
@@ -1445,14 +1845,22 @@ mod tests {
                 let name = words.text(&format!("settings-page-{}", page.id()));
                 harness.get_by_role_and_label(Role::Tab, &name).click();
                 harness.run();
+                listed(&mut harness);
                 let rows: Vec<Row> = harness.state().content.rows.clone();
                 let (mut widths, mut ends) = (Vec::new(), Vec::new());
-                for row in rows.iter().filter(|row| row.page == page) {
+                let drawn = |row: &&Row| row.page == page && row.drawn_on(OperatingSystem::Mac);
+                for row in rows.iter().filter(drawn) {
                     let label = label_of(&words, row);
                     let rect = harness.get_by_role_and_label(Role::Label, &label).rect();
                     widths.push(rect.width());
                     let start = rect.left() + rect.width() + 34.0;
-                    match row.kind {
+                    // The graphics card's text is a list of the cards (decision 82).
+                    let kind = if row.id == ENGINE_ADAPTER.id {
+                        Kind::Choice("")
+                    } else {
+                        row.kind
+                    };
+                    match kind {
                         Kind::Number(_) | Kind::Text => {
                             let fields: Vec<egui::Rect> = harness
                                 .get_all_by_role(Role::TextInput)
@@ -1493,7 +1901,470 @@ mod tests {
         assert!(harness.query_by_label("Reset").is_none());
     }
 
+    /// The dialog on Windows over `keeper`'s settings, Processing shown with its graphics
+    /// cards listed.
+    fn windows(keeper: &Keeper) -> Harness<'static, Bench> {
+        let mut harness = dialog_on(
+            keeper,
+            Builtin::Dark,
+            Locale::EnGb,
+            OperatingSystem::Windows,
+        );
+        processing(&mut harness);
+        harness
+    }
+
+    /// The software adapter in use, `chosen` or fallen back to.
+    fn software_in_use(chosen: bool) -> hardware::InUse {
+        hardware::InUse {
+            name: WARP.to_owned(),
+            backend: eframe::egui_wgpu::wgpu::Backend::Dx12,
+            software: true,
+            chosen,
+        }
+    }
+
+    /// The graphics card box's value and description, as screen readers hear them.
+    fn card_box(harness: &Harness<'_, Bench>) -> (String, Option<String>, bool) {
+        let node = harness.get_by_role_and_label(Role::ComboBox, "Graphics card");
+        let node = node.accesskit_node();
+        let value = node.value().unwrap_or_default();
+        (value, node.description(), node.is_disabled())
+    }
+
+    /// The open list's items: each one's words, whether it is disabled and whether checked.
+    fn items(harness: &Harness<'_, Bench>) -> Vec<(String, bool, bool)> {
+        harness
+            .get_all_by_role(Role::MenuItemCheckBox)
+            .map(|node| {
+                let node = node.accesskit_node();
+                let checked = node.toggled() == Some(Toggled::True);
+                (
+                    node.label().unwrap_or_default(),
+                    node.is_disabled(),
+                    checked,
+                )
+            })
+            .collect()
+    }
+
+    /// Opens the list of the choice `name` and chooses `item`.
+    fn choose(harness: &mut Harness<'_, Bench>, name: &str, item: &str) {
+        harness.get_by_role_and_label(Role::ComboBox, name).click();
+        harness.run();
+        harness.get_by_label(item).click();
+        harness.run();
+    }
+
+    use crate::hardware::tests::{M4, RADEON, RTX, WARP};
+
+    const CPU_ITEM: &str = "CPU (no graphics card), slow";
+
+    /// Automatic first, saying what it picks, the cards in Automatic's order, a separator
+    /// and CPU; choosing a card stores its name, CPU `cpu`, and Automatic resets the
+    /// setting. The box's value is its whole text, its description the row's note, and the
+    /// software adapter's own name is never shown (decision 82).
+    #[test]
+    fn the_graphics_card_is_a_list_of_the_cards_the_api_finds() {
+        let mut harness = windows(&Keeper::nowhere().0);
+        let automatic = "Automatic".to_owned();
+        let after_restart = Some("Applies after a restart".to_owned());
+        assert_eq!(
+            card_box(&harness),
+            (automatic.clone(), after_restart, false)
+        );
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Graphics card")
+            .click();
+        harness.run();
+        let listed = [
+            (automatic.as_str(), false, true),
+            (RTX, false, false),
+            (RADEON, false, false),
+            (CPU_ITEM, false, false),
+        ]
+        .map(|(words, disabled, checked)| (words.to_owned(), disabled, checked));
+        assert_eq!(items(&harness), listed);
+        assert_eq!(harness.get_all_by_role(Role::Splitter).count(), 1);
+        assert!(harness.query_by_label(WARP).is_none());
+        harness.get_by_label(RADEON).click();
+        harness.run();
+        let set = |value: &str| Change::Set("engine.adapter", value.into());
+        assert_eq!(harness.state().changes, [set(RADEON)]);
+        assert!(dotted(&harness, "Graphics card"));
+        assert_eq!(card_box(&harness).0, RADEON);
+        choose(&mut harness, "Graphics card", CPU_ITEM);
+        assert_eq!(harness.state().changes.last(), Some(&set("cpu")));
+        assert_eq!(card_box(&harness).0, CPU_ITEM);
+        choose(&mut harness, "Graphics card", &automatic);
+        let reset = Change::Reset("engine.adapter");
+        assert_eq!(harness.state().changes.last(), Some(&reset));
+        assert!(!dotted(&harness, "Graphics card"));
+    }
+
+    /// Where the API has no software adapter, CPU is disabled, saying so: Vulkan on Linux
+    /// without lavapipe; the Mac never lists it.
+    #[test]
+    fn cpu_is_disabled_where_the_api_has_none_and_the_mac_lists_no_cpu() {
+        let keeper = Keeper::nowhere().0;
+        let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, OperatingSystem::Nix);
+        processing(&mut harness);
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Graphics card")
+            .click();
+        harness.run();
+        let cpu = items(&harness).pop().expect("an item");
+        assert_eq!(cpu, (CPU_ITEM.to_owned(), true, false));
+        harness.get_by_label(CPU_ITEM).hover();
+        harness.run_steps(10);
+        harness.get_by_label("Not found with Vulkan");
+
+        let mut harness = dialog();
+        processing(&mut harness);
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Graphics card")
+            .click();
+        harness.run();
+        let automatic = "Automatic".to_owned();
+        let listed = [(automatic, false, true), (M4.to_owned(), false, false)];
+        assert_eq!(items(&harness), listed);
+        assert_eq!(harness.query_all_by_role(Role::Splitter).count(), 0);
+    }
+
+    /// A stored card this computer does not have is kept, opening Settings writes nothing,
+    /// and the row says Automatic is used, in the box's description too; the list holds it,
+    /// disabled and checked. A reset clears it.
+    #[test]
+    fn a_card_not_found_is_kept_and_said_so() {
+        let gone = "NVIDIA GeForce RTX 4090";
+        let mut harness = windows(&keeper_with("engine.adapter", gone));
+        let said = "Graphics card not found: Automatic used";
+        harness.get_by_label(said);
+        assert_eq!(card_box(&harness), (gone.into(), Some(said.into()), false));
+        assert!(
+            harness
+                .query_all_by_label("Applies after a restart")
+                .count()
+                > 0
+        );
+        assert!(dotted(&harness, "Graphics card"));
+        assert!(harness.state().changes.is_empty());
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Graphics card")
+            .click();
+        harness.run();
+        assert!(items(&harness).contains(&(gone.to_owned(), true, true)));
+        harness.key_press(Key::Escape);
+        harness.run();
+        let at = harness
+            .get_by_role_and_label(Role::Label, "Graphics card")
+            .rect()
+            .center();
+        double_click(&mut harness, at);
+        let reset = Change::Reset("engine.adapter");
+        assert_eq!(harness.state().changes, [reset]);
+        assert!(harness.query_by_label(said).is_none());
+    }
+
+    /// A card found with the API the row had that the new API lacks goes back to
+    /// Automatic, saying so once on the card's row: both changes kept, in one frame where
+    /// the new API was listed before. A card found with neither API stays.
+    #[test]
+    fn an_api_change_drops_a_card_the_new_api_lacks() {
+        let mut harness = windows(&keeper_with("engine.adapter", "cpu"));
+        // The API row's Automatic is plain: the In use line says what runs.
+        let api = harness.get_by_role_and_label(Role::ComboBox, "Graphics API");
+        let api = api.accesskit_node().value();
+        assert_eq!(api.as_deref(), Some("Automatic"));
+        choose(&mut harness, "Graphics API", "Vulkan");
+        listed(&mut harness);
+        let backend = |value: &str| Change::Set("engine.backend", value.into());
+        let reset = Change::Reset("engine.adapter");
+        assert_eq!(harness.state().changes, [backend("vulkan"), reset.clone()]);
+        let said = "CPU isn’t available with Vulkan: set to Automatic";
+        let note = harness.get_by_label(said);
+        let polite = egui::accesskit::Live::Polite;
+        assert_eq!(note.accesskit_node().data().live(), Some(polite));
+        assert_eq!(card_box(&harness).1.as_deref(), Some(said));
+        // Back on Automatic it goes; CPU again, then Vulkan, listed already: one frame.
+        choose(&mut harness, "Graphics API", "Automatic");
+        assert!(harness.query_by_label(said).is_none());
+        choose(&mut harness, "Graphics card", CPU_ITEM);
+        choose(&mut harness, "Graphics API", "Vulkan");
+        let last = harness.state().frames.last().cloned();
+        assert_eq!(last, Some(vec![backend("vulkan"), reset]));
+        harness.get_by_label(said);
+        // Another page shown, and it goes.
+        harness.get_by_label("Storage").click();
+        harness.run();
+        processing(&mut harness);
+        assert!(harness.query_by_label(said).is_none());
+
+        // A card found with neither API is not this rule's.
+        let gone = "NVIDIA GeForce RTX 4090";
+        let mut harness = windows(&keeper_with("engine.adapter", gone));
+        choose(&mut harness, "Graphics API", "Vulkan");
+        listed(&mut harness);
+        assert_eq!(harness.state().changes, [backend("vulkan")]);
+        harness.get_by_label("Graphics card not found: Automatic used");
+    }
+
+    /// A card `--conf` holds for this run stays as it is through an API change, its row
+    /// saying so and nothing else.
+    #[test]
+    fn an_api_change_leaves_a_card_held_by_conf() {
+        let conf = ["engine.adapter=cpu".to_owned()];
+        let (keeper, _) = Keeper::open_in(None, &settings::overrides(&conf).expect("read"));
+        let mut harness = windows(&keeper);
+        choose(&mut harness, "Graphics API", "Vulkan");
+        listed(&mut harness);
+        let backend = Change::Set("engine.backend", "vulkan".into());
+        assert_eq!(harness.state().changes, [backend]);
+        let note = harness
+            .query_all_by_label("Set by --conf for this run")
+            .count();
+        assert_eq!(note, 1);
+        assert!(harness.query_by_label_contains("isn’t available").is_none());
+        assert_eq!(card_box(&harness).0, CPU_ITEM);
+    }
+
+    /// A gate on one API's listing, which waits until released, the other APIs listed at
+    /// once as the test laptop lists them.
+    fn gated(api: Backend) -> (hardware::Running, std::sync::mpsc::Sender<()>) {
+        let os = OperatingSystem::Windows;
+        let (release, gate) = std::sync::mpsc::channel::<()>();
+        let gate = std::sync::Mutex::new(gate);
+        let mut running = crate::hardware::tests::running(os);
+        running.lister = Some(hardware::Lister::new(move |listed| {
+            if listed == api {
+                let _ = gate.lock().expect("one listing at a time").recv();
+            }
+            Ok(crate::hardware::tests::listed(os, listed))
+        }));
+        (running, release)
+    }
+
+    /// An API changed before the old one's listing is in: the card is decided once both are
+    /// in, gone where the new API lacks it; and another page shown meanwhile says nothing
+    /// as the person comes back.
+    #[test]
+    fn an_api_change_before_the_old_listing_is_in_waits_for_it() {
+        let os = OperatingSystem::Windows;
+        let keeper = keeper_with("engine.adapter", "cpu");
+        let (running, release) = gated(Backend::Auto);
+        let mut harness = dialog_with(&keeper, Builtin::Dark, Locale::EnGb, os, running);
+        harness.get_by_label("Processing").click();
+        harness.run();
+        choose(&mut harness, "Graphics API", "Vulkan");
+        listed_for(&mut harness, Backend::Vulkan);
+        let backend = |value: &str| Change::Set("engine.backend", value.into());
+        assert!(
+            !harness
+                .state()
+                .changes
+                .contains(&Change::Reset("engine.adapter"))
+        );
+        release.send(()).expect("the listing waits");
+        listed(&mut harness);
+        let reset = Change::Reset("engine.adapter");
+        assert_eq!(harness.state().changes.last(), Some(&reset));
+        assert!(harness.state().changes.contains(&backend("vulkan")));
+        harness.get_by_label("CPU isn’t available with Vulkan: set to Automatic");
+
+        // Left for another page before the new API's listing is in: nothing is said after.
+        let (running, release) = gated(Backend::Vulkan);
+        let mut harness = dialog_with(&keeper, Builtin::Dark, Locale::EnGb, os, running);
+        processing(&mut harness);
+        choose(&mut harness, "Graphics API", "Vulkan");
+        harness.get_by_label("Storage").click();
+        harness.run();
+        release.send(()).expect("the listing waits");
+        harness.get_by_label("Processing").click();
+        harness.run();
+        listed(&mut harness);
+        assert!(harness.query_by_label_contains("isn’t available").is_none());
+        let reset = Change::Reset("engine.adapter");
+        assert!(!harness.state().changes.contains(&reset));
+    }
+
+    /// Lets `api`'s listing answer, and the dialog take it, others still under way.
+    fn listed_for(harness: &mut Harness<'_, Bench>, api: Backend) {
+        harness.state().content.hardware.wait_for(api);
+        harness.run();
+    }
+
+    /// While the cards are listed the box is disabled, showing the stored choice; it says
+    /// it is looking only after 0.3 seconds, so a quick listing flashes nothing.
+    #[test]
+    fn listing_says_so_only_after_a_moment() {
+        let os = OperatingSystem::Windows;
+        let (release, gate) = std::sync::mpsc::channel::<()>();
+        let gate = std::sync::Mutex::new(gate);
+        let mut running = crate::hardware::tests::running(os);
+        running.lister = Some(hardware::Lister::new(move |api| {
+            let _ = gate.lock().expect("one listing at a time").recv();
+            Ok(crate::hardware::tests::listed(os, api))
+        }));
+        let keeper = Keeper::nowhere().0;
+        let mut harness = dialog_with(&keeper, Builtin::Dark, Locale::EnGb, os, running);
+        harness.get_by_label("Processing").click();
+        harness.run();
+        let looking = "Looking for graphics cards…";
+        let after_restart = Some("Applies after a restart".to_owned());
+        assert_eq!(
+            card_box(&harness),
+            ("Automatic".into(), after_restart, true)
+        );
+        assert!(harness.query_by_label(looking).is_none());
+        harness.run_steps(10);
+        assert!(harness.query_by_label(looking).is_none());
+        harness.run_steps(20);
+        harness.get_by_label(looking);
+        assert_eq!(card_box(&harness).1.as_deref(), Some(looking));
+        release.send(()).expect("the listing waits");
+        listed(&mut harness);
+        assert!(harness.query_by_label(looking).is_none());
+        assert!(!card_box(&harness).2);
+    }
+
+    /// A helper that fails says the cards could not be listed and keeps the stored card; an
+    /// API that finds none says so under the API's row.
+    #[test]
+    fn a_listing_that_fails_or_finds_nothing_says_so() {
+        let os = OperatingSystem::Windows;
+        let mut running = crate::hardware::tests::running(os);
+        running.lister = Some(hardware::Lister::new(move |api| match api {
+            Backend::Auto => Err(hardware::Failure::Crashed("exit code: 3".into())),
+            _ => Ok(Vec::new()),
+        }));
+        let keeper = keeper_with("engine.adapter", RADEON);
+        let mut harness = dialog_with(&keeper, Builtin::Dark, Locale::EnGb, os, running);
+        processing(&mut harness);
+        harness.get_by_label("The graphics cards could not be listed");
+        assert_eq!(card_box(&harness).0, RADEON);
+        choose(&mut harness, "Graphics API", "Vulkan");
+        listed(&mut harness);
+        harness.get_by_label("No graphics card found with Vulkan: Automatic used");
+        let set = Change::Set("engine.backend", "vulkan".into());
+        assert_eq!(harness.state().changes, [set]);
+    }
+
+    /// The In use line says what the engine opened, CPU for the software adapter, never
+    /// its own name, warning that the processor renders, with the driver advice where
+    /// Automatic fell to it.
+    #[test]
+    fn the_in_use_line_says_what_runs_and_warns_of_the_processor() {
+        let harness = windows(&Keeper::nowhere().0);
+        harness.get_by_role_and_label(Role::Label, "In use");
+        harness.get_by_role_and_label(Role::Label, &format!("{RTX}, Vulkan"));
+        let software = "No graphics card in use: Apertrust renders on the processor, which \
+                        is slower";
+        assert!(harness.query_by_label(software).is_none());
+        let advice = "Updating the graphics driver may help";
+        for chosen in [false, true] {
+            let os = OperatingSystem::Windows;
+            let mut running = crate::hardware::tests::running(os);
+            running.in_use = Some(software_in_use(chosen));
+            let keeper = Keeper::nowhere().0;
+            let mut harness = dialog_with(&keeper, Builtin::Dark, Locale::EnGb, os, running);
+            processing(&mut harness);
+            let value = harness.get_by_role_and_label(Role::Label, "CPU, Direct3D 12");
+            let note = if chosen {
+                software.to_owned()
+            } else {
+                format!("{software}\n{advice}")
+            };
+            let described = value.accesskit_node().description();
+            assert_eq!(described.as_deref(), Some(note.as_str()), "{chosen}");
+            harness.get_by_label(&note);
+            assert!(harness.query_by_label(WARP).is_none());
+        }
+    }
+
+    /// The dialog on Windows over `keeper`'s settings, as a run that started with
+    /// `started`'s, Processing shown with its graphics cards listed.
+    fn started_with(keeper: &Keeper, started: &Keeper) -> Harness<'static, Bench> {
+        let os = OperatingSystem::Windows;
+        let mut running = crate::hardware::tests::running(os);
+        running.started = hardware::Started::of(settings::shown(), |s| started.value(s));
+        let mut harness = dialog_with(keeper, Builtin::Dark, Locale::EnGb, os, running);
+        processing(&mut harness);
+        harness
+    }
+
+    const WAITING: &str = "Your choice applies when Apertrust restarts";
+
+    /// The waiting line shows while a setting that applies after a restart has a value
+    /// other than this run's, compared by value, and goes as it comes back; Restart now
+    /// asks the app for the restart. The words are a label in a polite live region, the
+    /// button named Restart now and described by them, after the last row in Tab's order.
+    #[test]
+    fn the_waiting_line_shows_while_a_choice_waits_for_a_restart() {
+        let keeper = Keeper::nowhere().0;
+        let mut harness = started_with(&keeper, &keeper);
+        assert!(harness.query_by_label(WAITING).is_none());
+        choose(&mut harness, "Graphics card", RADEON);
+        harness.run();
+        let said = harness.get_by_role_and_label(Role::Label, WAITING);
+        let polite = egui::accesskit::Live::Polite;
+        assert_eq!(said.accesskit_node().data().live(), Some(polite));
+        let button = harness.get_by_role_and_label(Role::Button, "Restart now");
+        let described = button.accesskit_node().description();
+        assert_eq!(described.as_deref(), Some(WAITING));
+        // Below the In use line, the button after the words.
+        let in_use = harness.get_by_role_and_label(Role::Label, "In use").rect();
+        assert!(said.rect().top() > in_use.bottom());
+        assert!(button.rect().left() > said.rect().right());
+        // Back to the value it started with, Automatic, and it goes.
+        choose(&mut harness, "Graphics card", "Automatic");
+        harness.run();
+        assert!(harness.query_by_label(WAITING).is_none());
+        // The memory budget waits too; Tab reaches Restart now after its field.
+        let field = "Memory budget, in MiB";
+        harness
+            .get_by_role_and_label(Role::TextInput, field)
+            .click();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        harness
+            .get_by_role_and_label(Role::TextInput, field)
+            .type_text("4096");
+        harness.key_press(Key::Enter);
+        harness.run();
+        harness.get_by_label(WAITING);
+        harness
+            .get_by_role_and_label(Role::TextInput, field)
+            .focus();
+        harness.run();
+        harness.key_press(Key::Tab);
+        harness.run();
+        let button = harness.get_by_role_and_label(Role::Button, "Restart now");
+        assert!(button.accesskit_node().is_focused());
+        assert_eq!(harness.state().restarts, 0);
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert_eq!(harness.state().restarts, 1);
+        // Settings started with the card it holds now wait for nothing.
+        let radeon = keeper_with("engine.adapter", RADEON);
+        let harness = started_with(&radeon, &radeon);
+        assert!(harness.query_by_label(WAITING).is_none());
+        // A run that hands no values waits for nothing either.
+        let harness = windows(&radeon);
+        assert!(harness.query_by_label(WAITING).is_none());
+    }
+
     // How it looks.
+
+    /// A card chosen and waiting for a restart, on Windows: the waiting line and Restart now
+    /// under the In use line.
+    #[test]
+    fn the_waiting_line_in_the_dark_theme() {
+        let started = Keeper::nowhere().0;
+        let mut harness = started_with(&keeper_with("engine.adapter", RADEON), &started);
+        harness.event(Event::PointerGone);
+        harness.run();
+        harness.snapshot("settings-restart-waiting-dark");
+    }
 
     #[test]
     fn the_general_page_in_the_dark_theme() {
@@ -1508,10 +2379,39 @@ mod tests {
     #[test]
     fn the_processing_page_in_the_dark_theme() {
         let mut harness = dialog();
-        harness.get_by_label("Processing").click();
+        processing(&mut harness);
         harness.event(Event::PointerGone);
         harness.run();
         harness.snapshot("settings-processing-dark");
+    }
+
+    /// The graphics card's list open on Windows: Automatic with what it picks, the cards,
+    /// a separator and CPU.
+    #[test]
+    fn the_graphics_card_list_open_on_windows_in_the_dark_theme() {
+        let mut harness = windows(&Keeper::nowhere().0);
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Graphics card")
+            .click();
+        harness.run();
+        harness.event(Event::PointerGone);
+        harness.run();
+        harness.snapshot("settings-graphics-card-list-dark");
+    }
+
+    /// A card the computer does not have, and the processor in use, each in the warning
+    /// colour.
+    #[test]
+    fn a_card_not_found_and_the_processor_in_use_in_the_dark_theme() {
+        let keeper = keeper_with("engine.adapter", "NVIDIA GeForce RTX 4090");
+        let os = OperatingSystem::Windows;
+        let mut running = crate::hardware::tests::running(os);
+        running.in_use = Some(software_in_use(false));
+        let mut harness = dialog_with(&keeper, Builtin::Dark, Locale::EnGb, os, running);
+        processing(&mut harness);
+        harness.event(Event::PointerGone);
+        harness.run();
+        harness.snapshot("settings-graphics-card-warnings-dark");
     }
 
     /// Storage: its folders, the cache's three rows from the schema at their defaults, and

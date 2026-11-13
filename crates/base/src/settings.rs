@@ -124,6 +124,9 @@ pub struct Setting<T: 'static> {
     /// The boolean setting, by id, its row needs on: the Settings dialog draws it disabled
     /// while that is off, as `cache.limit`'s while `cache.limited` is. None for most.
     pub requires: Option<&'static str>,
+    /// The platforms the Settings dialog draws its row on, as an action's (decision 43);
+    /// None for every one. Its value is read and kept on every platform alike.
+    pub platforms: Option<&'static [Platform]>,
     /// Its place among every owner's settings, in the schema's order, which the Settings
     /// dialog follows.
     pub place: u32,
@@ -302,6 +305,26 @@ impl Choice for Page {
     ];
 }
 
+/// A desktop platform, as a setting's `platforms` in the schema names it: the Settings
+/// dialog draws a row only on the platforms it names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Platform {
+    Windows,
+    Mac,
+    Linux,
+}
+
+impl Platform {
+    /// Its id in the schema, Rust's `std::env::consts::OS`.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Platform::Windows => "windows",
+            Platform::Mac => "macos",
+            Platform::Linux => "linux",
+        }
+    }
+}
+
 /// When a change to a setting takes effect, which the Settings dialog says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Applies {
@@ -452,6 +475,7 @@ mod tests {
             page: Some(Page::General),
             group: Some("interface"),
             requires: None,
+            platforms: None,
             place: 0,
             line: 1,
         };
@@ -469,6 +493,7 @@ mod tests {
             page: None,
             group: None,
             requires: None,
+            platforms: None,
             place: 1,
             line: 10,
         };

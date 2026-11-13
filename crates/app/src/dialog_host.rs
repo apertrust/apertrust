@@ -279,6 +279,8 @@ pub enum Output {
     Settings(settings_dialog::Change),
     /// What Settings › Storage asked of the app: the sizes, a Clear, a folder shown.
     Storage(crate::storage::Asked),
+    /// Settings' Restart now was pressed, for the app to run its `restart` action.
+    Restart,
     /// Where Settings' own window was left as it closed, for it to open there next time;
     /// the one dialog whose place is kept.
     Placed(Position),
@@ -722,6 +724,14 @@ pub trait Dialogs {
     /// Hands Settings open what its Storage page shows; any other dialog, or none, takes
     /// nothing.
     fn storage(&mut self, view: crate::storage::View);
+    /// Hands Settings open its Hardware acceleration group again, `running`, and the changes
+    /// the app made to its settings meanwhile, as the start notice's Keep; any other dialog,
+    /// or none, takes nothing (decision 82).
+    fn hardware(
+        &mut self,
+        running: crate::hardware::Running,
+        changes: Vec<settings_dialog::Change>,
+    );
     /// Opens the jobs window, a window of its own beside any dialog, at `place`, where it
     /// was last left, if that is on a screen still, else centred on the main window, whose
     /// context is `main`. Where it is open already, its window comes to the front if `focus`
@@ -860,6 +870,15 @@ impl AppDialogs {
     /// Hands Settings open what its Storage page shows ([`Dialogs::storage`]).
     pub fn storage(&mut self, view: crate::storage::View) {
         self.host.storage(view);
+    }
+
+    /// Hands Settings open its Hardware acceleration group again ([`Dialogs::hardware`]).
+    pub fn hardware(
+        &mut self,
+        running: crate::hardware::Running,
+        changes: Vec<settings_dialog::Change>,
+    ) {
+        self.host.hardware(running, changes);
     }
 
     /// Asks `request` as the system's alert ([`Dialogs::ask`]).
@@ -1306,6 +1325,28 @@ impl Dialogs for Host {
         }
         if let Some(open) = inner.open[slot].as_mut()
             && hand_storage(&mut open.dialog, &view)
+        {
+            open.window.request_redraw();
+        }
+    }
+
+    fn hardware(
+        &mut self,
+        running: crate::hardware::Running,
+        changes: Vec<settings_dialog::Change>,
+    ) {
+        let mut inner = self.0.borrow_mut();
+        let slot = Slot::Dialog.index();
+        let hand =
+            |dialog: &mut Box<dyn Dialog>| match dialog_mut::<settings_dialog::Settings>(dialog) {
+                Some(settings) => settings.set_hardware(running.clone(), &changes),
+                None => false,
+            };
+        if let Some(asked) = inner.asked[slot].as_mut() {
+            hand(&mut asked.dialog);
+        }
+        if let Some(open) = inner.open[slot].as_mut()
+            && hand(&mut open.dialog)
         {
             open.window.request_redraw();
         }
