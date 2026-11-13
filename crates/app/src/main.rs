@@ -1360,8 +1360,9 @@ struct App {
 /// ([`Shell::history_action`]).
 #[derive(Clone, Debug, PartialEq)]
 enum FromHistory {
-    /// A command on the edit, for the session.
-    Send(Command),
+    /// A command on the edit, for the session, boxed: a `Command` is far larger than an
+    /// action id, most of all on Windows.
+    Send(Box<Command>),
     /// A registry action, run as its button runs it.
     Run(ActionId),
 }
@@ -2137,7 +2138,7 @@ impl Shell {
                 None
             }
             history::Action::GoTo(step) => {
-                takes.then_some(FromHistory::Send(Command::GoTo { step }))
+                takes.then_some(FromHistory::Send(Box::new(Command::GoTo { step })))
             }
             history::Action::Open(module) => {
                 self.reveal(module);
@@ -3754,7 +3755,7 @@ impl App {
             let takes = self.mirror.takes_edits();
             match self.shell.history_action(action, takes, ui.ctx()) {
                 Some(FromHistory::Send(command)) => {
-                    self.send_edit(command);
+                    self.send_edit(*command);
                 }
                 Some(FromHistory::Run(id)) => run = Some(id),
                 None => {}
@@ -8665,7 +8666,7 @@ mod tests {
                     for action in history {
                         editing.history.push(action);
                         match editing.shell.history_action(action, takes, &ctx) {
-                            Some(FromHistory::Send(command)) => editing.sent.push(command),
+                            Some(FromHistory::Send(command)) => editing.sent.push(*command),
                             Some(FromHistory::Run(_)) | None => {}
                         }
                     }
