@@ -3872,6 +3872,7 @@ impl App {
             photo,
             pixels,
             region,
+            switched: mirror.switched(region),
             colour: pickers::sampled(mirror.reading()),
             name: &name,
         };
@@ -10072,6 +10073,7 @@ mod tests {
                         photo,
                         pixels: [400, 300],
                         region: Region::Point([0.5, 0.5]),
+                        switched: Region::Area([0.02, 0.02, 0.98, 0.98]),
                         colour: egui::Color32::GRAY,
                         name: "",
                     };

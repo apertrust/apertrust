@@ -788,15 +788,20 @@ impl Engine {
         let id = module.definition().id;
         let changed: BTreeSet<&str> = tools.iter().map(|(tool, _)| *tool).collect();
         self.pickers.tools.insert(id, tools);
+        // A completed change, answered whether it applies a pick or not.
+        let unapplied = PickerEffect {
+            answer: true,
+            ..PickerEffect::default()
+        };
         let Some(latest) = self.pickers.latest.get(id).copied() else {
-            return Ok(PickerEffect::default());
+            return Ok(unapplied);
         };
         let editable = self
             .open
             .as_ref()
             .is_some_and(|open| open.view_only.is_none());
         if !self.live() || !editable || !latest.picker.tools.iter().any(|t| changed.contains(t)) {
-            return Ok(PickerEffect::default());
+            return Ok(unapplied);
         }
         let due = Due {
             command: self.applied,
@@ -824,7 +829,7 @@ impl Engine {
             });
         let (changed, shown) = match picked {
             Ok(Some(written)) => written,
-            Ok(None) => return Ok(PickerEffect::default()),
+            Ok(None) => return Ok(unapplied),
             Err(error) => {
                 if on(&self.pickers).is_some() {
                     self.picker_off(events);
@@ -871,10 +876,9 @@ impl Engine {
     /// After a picker turned off or failed: a drag under way is saved, and a command still
     /// owed an answer with nothing to write gets the edit reported held.
     fn answer(&mut self, gesture: bool, owed: bool) {
-        let needs_save = self.needs_save();
-        if gesture && needs_save {
+        if gesture && self.needs_save() {
             self.save();
-        } else if owed && !needs_save {
+        } else if owed && !self.unsaved() {
             self.save_held();
         }
     }
@@ -1147,13 +1151,14 @@ impl Engine {
 
     /// Hands the writer the picks of a drag complete: released, with no reading of it
     /// still to come; and where it has nothing to write, answers a command owed one with
-    /// the edit reported held, so a `Saved` through it always comes.
+    /// the edit reported held, so a `Saved` through it always comes. Held, an edit whose
+    /// last write failed is written again; one with a change of its own still unsaved, as
+    /// a slider's gesture under way, waits for that change's save, which answers it.
     fn settle(&mut self) {
         let settled = self.pickers.settled();
-        let needs_save = self.needs_save();
-        if settled && needs_save {
+        if settled && self.needs_save() {
             self.save();
-        } else if self.pickers.owed && self.pickers.quiet() && !needs_save {
+        } else if self.pickers.owed && self.pickers.quiet() && !self.unsaved() {
             self.save_held();
         }
     }

@@ -41,8 +41,10 @@
 //!   pick changed, or the colour measured, once the picker has rested half a second
 //!   ([`Said`]).
 
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+use apertrust_engine::picker::{DEFAULT_AREA, DEFAULT_POINT};
 use apertrust_engine::session::{
     ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
 };
@@ -68,6 +70,25 @@ pub struct Mirror {
     asked: Option<(u64, Option<(PickerRef, bool)>)>,
     /// The region the app sent last, by its command's number, until a reading includes it.
     sent: Option<(u64, Region)>,
+    /// Each picker's last point and area this session, as the session keeps them across
+    /// photos: where `Switch` goes, shown before its reading arrives.
+    places: BTreeMap<PickerRef, Places>,
+}
+
+/// A picker's last point and area.
+#[derive(Debug, Default, Clone, Copy)]
+struct Places {
+    point: Option<Region>,
+    area: Option<Region>,
+}
+
+impl Places {
+    fn keep(&mut self, region: Region) {
+        match region {
+            Region::Point(_) => self.point = Some(region),
+            Region::Area(_) => self.area = Some(region),
+        }
+    }
 }
 
 impl Mirror {
@@ -116,6 +137,20 @@ impl Mirror {
     /// The command numbered `number` moved the active picker to `region`.
     pub fn sent(&mut self, number: u64, region: Region) {
         self.sent = Some((number, region));
+        if let Some(picker) = self.active() {
+            self.places.entry(picker).or_default().keep(region);
+        }
+    }
+
+    /// Where `Switch` takes the active picker, at `region`: its other kind's last place
+    /// this session, else darktable's default for it.
+    pub fn switched(&self, region: Region) -> Region {
+        let places = (self.active()).and_then(|picker| self.places.get(&picker).copied());
+        let places = places.unwrap_or_default();
+        match region {
+            Region::Point(_) => places.area.unwrap_or(DEFAULT_AREA),
+            Region::Area(_) => places.point.unwrap_or(DEFAULT_POINT),
+        }
     }
 
     /// The session's `Event::Picker`, through the first `through` commands: what the app
@@ -128,6 +163,9 @@ impl Mirror {
         }
         if answered(self.sent.map(|(n, _)| n)) || reading.is_none() && self.asked.is_none() {
             self.sent = None;
+        }
+        if let Some(reading) = &reading {
+            (self.places.entry(reading.picker).or_default()).keep(reading.region);
         }
         self.reading = reading;
     }
@@ -142,9 +180,13 @@ impl Mirror {
         }
     }
 
-    /// The photo is left: its picker with it, as the session turns it off.
+    /// The photo is left: its picker with it, as the session turns it off; each picker's
+    /// places stay, as the session keeps them.
     pub fn forget(&mut self) {
-        *self = Mirror::default();
+        *self = Mirror {
+            places: std::mem::take(&mut self.places),
+            ..Mirror::default()
+        };
     }
 }
 
@@ -185,6 +227,8 @@ pub fn pressed(picker: PickerRef, action: PickerAction, keys: PickKeys) -> Picke
 pub struct Showing {
     asked: Option<Option<(PickerRef, bool)>>,
     moved: Option<Region>,
+    /// `Switch` or `Reset`, which move the picker where the mirror knows.
+    kind: Option<PickerCommand>,
     applies: bool,
 }
 
@@ -200,9 +244,11 @@ impl Showing {
             PickerCommand::Off => Some(None),
             _ => None,
         };
+        let kind = matches!(command, PickerCommand::Switch | PickerCommand::Reset);
         Showing {
             asked,
             moved: moved_to(command),
+            kind: kind.then(|| command.clone()),
             applies: applies(command),
         }
     }
@@ -223,14 +269,38 @@ impl Showing {
                 focus_photo(ctx);
             }
         }
-        if let Some(region) = self.moved {
+        let before = mirror.region();
+        let moved = match (&self.kind, before) {
+            (Some(command), Some(region)) => Some(follow(command, region, mirror.switched(region))),
+            _ => self.moved,
+        };
+        if let Some(region) = moved {
             mirror.sent(number, region);
         }
         if self.applies
             && let Some(picker) = mirror.active()
         {
-            said.moved(number, Instant::now(), picker, values);
+            // A move to where the picker is brings no reading: it rests the picker, its
+            // reading still the one the last move awaits.
+            if self.moved.is_some() && moved == before {
+                said.rested(Instant::now());
+            } else {
+                said.moved(number, Instant::now(), picker, values);
+            }
         }
+    }
+}
+
+/// Where `command` moves a picker at `region`, `switched` where `Switch` takes it: a move
+/// to its place, `Switch` to its other kind's, `Reset` to its kind's default.
+pub fn follow(command: &PickerCommand, region: Region, switched: Region) -> Region {
+    match command {
+        PickerCommand::Switch => switched,
+        PickerCommand::Reset => match region {
+            Region::Point(_) => DEFAULT_POINT,
+            Region::Area(_) => DEFAULT_AREA,
+        },
+        command => moved_to(command).unwrap_or(region),
     }
 }
 
@@ -410,6 +480,8 @@ pub struct OnPhoto<'a> {
     pub pixels: [u32; 2],
     /// Where the picker is, as shown ([`Mirror::region`]).
     pub region: Region,
+    /// Where `Switch` takes it ([`Mirror::switched`]).
+    pub switched: Region,
     /// What its point sampled, as the screen shows it.
     pub colour: Color32,
     /// Its name, as the central bar gives it ([`name`]).
@@ -466,13 +538,14 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
     // The pointer.
     let drag_id = id.with("drag");
     let mut drag: Option<Drag> = ctx.data(|d| d.get_temp(drag_id));
-    let (pressed, released, down, moved, pos, modifiers) = ui.input(|i| {
+    let (pressed, released, down, moved, pos, origin, modifiers) = ui.input(|i| {
         (
             i.pointer.primary_pressed(),
             i.pointer.primary_released(),
             i.pointer.primary_down(),
             i.pointer.delta() != Vec2::ZERO,
             i.pointer.latest_pos(),
+            i.pointer.press_origin(),
             i.modifiers,
         )
     });
@@ -482,12 +555,17 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
         drag = None;
     }
     let keys = pick_keys(modifiers);
-    let pressed_at = pos.filter(|_| pressed && response.contains_pointer());
-    if let Some(pos) = pressed_at {
+    // The press where it was, a move after it in the same frame then followed.
+    let pressed_at = origin
+        .or(pos)
+        .filter(|&at| pressed && on.photo.contains(at) && response.contains_pointer());
+    if let Some(origin) = pressed_at {
         response.request_focus();
         let mac = ctx.os() == egui::os::OperatingSystem::Mac;
-        drag = pressed_on(&mut commands, on, at(pos), pos, modifiers, mac);
-    } else if let (Some(now), Some(pos), true) = (drag, pos, moved) {
+        drag = pressed_on(&mut commands, on, at(origin), origin, modifiers, mac);
+    }
+    let moved = moved && pressed_at.is_none_or(|origin| pos != Some(origin));
+    if let (Some(now), Some(pos), true) = (drag, pos, moved) {
         let to = at(pos);
         drag = Some(match now {
             Drag::Point { .. } => {
@@ -547,11 +625,10 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
     });
 
     // The keys and screen readers' actions, while the node has the focus.
-    let mut region = commands
-        .iter()
-        .rev()
-        .find_map(moved_to)
-        .unwrap_or(on.region);
+    let (mut region, mut switched) = (on.region, on.switched);
+    for command in &commands {
+        (region, switched) = followed(command, region, switched);
+    }
     if response.has_focus() {
         let pressed = ui.input_mut(|i| {
             let mut taken = Vec::new();
@@ -576,9 +653,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
             if command == PickerCommand::Off {
                 give_back(&ctx, on.picker);
             }
-            if let Some(moved) = moved_to(&command) {
-                region = moved;
-            }
+            (region, switched) = followed(&command, region, switched);
             commands.push(command);
         }
     }
@@ -600,7 +675,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
         for _ in 0..count {
             let command = key_command(PickerKey::Move(step, 1.0), region, pixel);
             if let Some(command) = command {
-                region = moved_to(&command).unwrap_or(region);
+                (region, switched) = followed(&command, region, switched);
                 commands.push(command);
             }
         }
@@ -727,6 +802,17 @@ fn pressed_on(
         held: at,
         last: Some((from, to)),
     })
+}
+
+/// The picker's place after `command`, at `region` with `switched` its other kind's, and
+/// its other kind's then: a switch trades them.
+fn followed(command: &PickerCommand, region: Region, switched: Region) -> (Region, Region) {
+    let next = follow(command, region, switched);
+    if *command == PickerCommand::Switch {
+        (next, region)
+    } else {
+        (next, switched)
+    }
 }
 
 /// The custom actions' ids: Move up and Move down.
@@ -932,6 +1018,14 @@ impl Said {
             number,
             before,
         });
+    }
+
+    /// The picker rested again at `now` with nothing new to measure: the pick waiting, if
+    /// any, waits from then, for the reading it already awaits.
+    pub fn rested(&mut self, now: Instant) {
+        if let Some(rest) = &mut self.rest {
+            rest.at = now;
+        }
     }
 
     /// Reads the pick out where it is due at `now`, from `reading` and the values shown;
@@ -1259,6 +1353,7 @@ mod tests {
                         photo: PHOTO,
                         pixels: PIXELS,
                         region,
+                        switched: scene.mirror.switched(region),
                         colour: sampled(scene.mirror.reading()),
                         name: &name,
                     };
@@ -1767,6 +1862,115 @@ mod tests {
         give_back(&ctx, SPREAD);
         focus_photo(&ctx);
         assert!(!takes_back(&ctx, SPREAD));
+    }
+
+    /// A release to where the last move left the picker brings no reading of its own: the
+    /// live region reads the pick out from the move's reading once the picker has rested.
+    #[test]
+    fn a_release_where_the_move_left_it_waits_for_no_reading_of_its_own() {
+        let words = Translator::new(Locale::EnGb);
+        let ctx = egui::Context::default();
+        let values = values();
+        let (mut mirror, mut said) = (Mirror::default(), Said::default());
+        let send = |number, command: PickerCommand, mirror: &mut Mirror, said: &mut Said| {
+            Showing::of(&command, MODULES).sent(number, mirror, said, &values, &ctx);
+        };
+        send(
+            1,
+            on(SHOW, false, PickKeys::default()),
+            &mut mirror,
+            &mut said,
+        );
+        mirror.apply(1, Some(reading(SHOW, Region::Point([0.5, 0.5]), 1)));
+        let point = |done| PickerCommand::Point {
+            at: [0.3, 0.3],
+            done,
+            keys: PickKeys::default(),
+        };
+        send(2, point(false), &mut mirror, &mut said);
+        send(3, point(true), &mut mirror, &mut said);
+        // The session measures the move; the release, unchanged, brings nothing.
+        mirror.apply(2, Some(reading(SHOW, Region::Point([0.3, 0.3]), 2)));
+        let later = Instant::now() + RESTS + Duration::from_millis(100);
+        assert_eq!(
+            said.update(later, mirror.reading(), &values, MODULES, &words),
+            None
+        );
+        assert_eq!(said.text(), "mean RGB 153, 128, 102");
+    }
+
+    /// `Switch` and `Reset` show at once where they take the picker, so a move after them,
+    /// in the same frame or before their reading, moves that kind: Space then → on a
+    /// point moves the area `Switch` went to, and a reset area is darktable's default.
+    #[test]
+    fn a_switch_or_a_reset_shows_at_once_and_the_keys_after_it_follow() {
+        let mut harness = scene();
+        harness
+            .get_by_role_and_label(Role::Button, SPREAD_BUTTON)
+            .click();
+        harness.run();
+        answer(&mut harness, Region::Point([0.5, 0.5]));
+        sent(&mut harness);
+        harness.key_press(Key::Space);
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+        let x = 1.0 / 400.0_f32;
+        assert_eq!(
+            sent(&mut harness),
+            [
+                PickerCommand::Switch,
+                PickerCommand::Area {
+                    from: [0.02 + x, 0.02],
+                    to: [0.98 + x, 0.98],
+                    done: true,
+                    keys: PickKeys::default(),
+                }
+            ]
+        );
+        // Switched back before any reading: the point it left.
+        harness.key_press(Key::Space);
+        harness.run();
+        assert_eq!(sent(&mut harness), [PickerCommand::Switch]);
+        assert_eq!(
+            harness.state().mirror.region(),
+            Some(Region::Point([0.5, 0.5]))
+        );
+        harness.key_press(Key::Space);
+        harness.key_press(Key::Delete);
+        harness.run();
+        sent(&mut harness);
+        assert_eq!(harness.state().mirror.region(), Some(DEFAULT_AREA));
+    }
+
+    /// A press on an area's corner and a move in the same frame take the corner, from
+    /// where the press was, and follow the move.
+    #[test]
+    fn a_press_and_a_move_in_one_frame_take_the_corner_pressed() {
+        let mut harness = scene();
+        harness.get_by_role_and_label(Role::Button, QUAD).click();
+        harness.run();
+        answer(&mut harness, DEFAULT_AREA);
+        sent(&mut harness);
+        let corner = at(0.98, 0.98);
+        harness.hover_at(corner);
+        harness.run();
+        harness.event(egui::Event::PointerButton {
+            pos: corner,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        harness.event(egui::Event::PointerMoved(at(0.5, 0.5)));
+        harness.run();
+        assert_eq!(
+            sent(&mut harness),
+            [PickerCommand::Area {
+                from: [0.02, 0.02],
+                to: [0.5, 0.5],
+                done: false,
+                keys: PickKeys::default(),
+            }]
+        );
     }
 
     /// What the app asked shows until the session answers: a picker on or off, and the

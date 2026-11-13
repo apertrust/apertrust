@@ -4561,6 +4561,7 @@ mod tests {
                     photo,
                     pixels: [720, 440],
                     region: Region::Area([0.2, 0.3, 0.7, 0.65]),
+                    switched: Region::Point([0.5, 0.5]),
                     colour: egui::Color32::TRANSPARENT,
                     name: &name,
                 };

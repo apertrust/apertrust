@@ -490,8 +490,10 @@ pub enum Event {
         through: u64,
         reading: Option<PickerReading>,
     },
-    /// The edit was written to `path`, as it stood after the first `through` commands
-    /// ([`Session::send`] numbers them).
+    /// `path` holds the edit as it stood after the first `through` commands
+    /// ([`Session::send`] numbers them): written, or, where the file held it already,
+    /// reported with no write, as after a cancel or a module picker's completed command
+    /// whose pick wrote nothing; never proof of a new write.
     Saved {
         path: PathBuf,
         through: u64,
@@ -2372,10 +2374,10 @@ impl Engine {
         let needs_save = self.needs_save();
         if save && needs_save {
             self.save();
-        } else if (cancelled || answer) && !needs_save {
+        } else if cancelled && !needs_save || answer && !self.unsaved() {
             // The writer has the edit a cancel put back or left as it was, or a pick's
             // completed command left as it was, and reports it saved without writing it,
-            // unless its last write has failed by then.
+            // unless its last write has failed by then, when it writes it again.
             self.save_held();
         }
         // Whether the batch published a frame, which the colour picker measured as it did.
@@ -2661,6 +2663,12 @@ impl Engine {
         self.open.as_ref().is_some_and(|open| {
             open.view_only.is_none() && (open.unsaved || self.writer.failed(&open.sidecar))
         })
+    }
+
+    /// Whether the open photo's edit holds a change not yet handed to the writer, as a
+    /// gesture's under way: unlike [`Self::needs_save`], not an edit whose last write failed.
+    fn unsaved(&self) -> bool {
+        (self.open.as_ref()).is_some_and(|open| open.view_only.is_none() && open.unsaved)
     }
 
     /// Hands the open photo's edit to the writer, unless a newer Apertrust wrote it.

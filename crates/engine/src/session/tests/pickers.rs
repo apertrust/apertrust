@@ -1665,3 +1665,26 @@ fn a_pick_that_writes_nothing_is_answered_with_a_save() {
     assert!(!driven.engine.pickers.owed);
     remove(&path);
 }
+
+/// A pick that writes nothing, after the edit's last write failed, writes the edit again as
+/// it answers: held, as after a cancel, which writes only a failed write's edit.
+#[test]
+fn a_pick_that_writes_nothing_writes_again_after_a_failed_write() {
+    let folder = scratch("picker-missing").with_file_name("picker not yet");
+    let path = folder.join("synthetic.ARW");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.4), true)]);
+    let writes = driven.writes();
+    assert!(
+        matches!(&writes[..], [Event::Failed(SessionError::Save { .. })]),
+        "{writes:?}"
+    );
+    std::fs::create_dir_all(&folder).unwrap();
+    driven.run([on_module("show", true)]);
+    driven.picked();
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    assert!(sidecar.exists());
+    std::fs::remove_dir_all(folder.parent().unwrap()).unwrap();
+}
