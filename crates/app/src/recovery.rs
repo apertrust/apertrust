@@ -35,7 +35,10 @@
 //!   ([`Notice`]), with Keep Automatic, which resets the two settings, and Try again, which
 //!   restarts with them. Where the marker names Automatic itself, it opens the CPU, with
 //!   Keep CPU and Try again; where the API has no CPU adapter, wgpu's choice opens again,
-//!   and the notice says so.
+//!   and the notice says so. The API the marker names is left out where Automatic loads
+//!   another, as on Windows, so a driver that crashed as it loaded is not loaded again:
+//!   Automatic opens on the API left, and the CPU on Direct3D 12 alone, and Keep keeps
+//!   that API.
 //! - **`--safe-mode`** opens Automatic for this run with nothing said, as darktable's
 //!   `--disable-opencl` does for OpenCL, whatever a marker says.
 //!
@@ -57,7 +60,7 @@ use apertrust_ui::components::Button;
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, theme};
 use eframe::egui::{self, os::OperatingSystem};
-use eframe::egui_wgpu::{self, CallbackResources, CallbackTrait};
+use eframe::egui_wgpu::{self, CallbackResources, CallbackTrait, wgpu};
 use toml::Value;
 
 use crate::settings::Keeper;
@@ -265,10 +268,12 @@ pub enum Run {
     Settings,
     /// Automatic, by `--safe-mode`, saying nothing.
     SafeMode,
-    /// Automatic, the start that tried this having not finished.
-    Automatic(Tried),
-    /// The CPU, the start that tried Automatic having not finished.
-    Cpu,
+    /// Automatic, the start that tried this having not finished, on the API given: what
+    /// Automatic loads but the one it tried, where another is left ([`Backend::without`]).
+    Automatic(Tried, Backend),
+    /// The CPU, the start that tried Automatic having not finished, on the API given, the
+    /// software adapter's alone where Automatic loads another ([`Backend::software`]).
+    Cpu(Backend),
 }
 
 /// As the app starts, before anything loads a graphics driver: what this run opens, by the
@@ -286,27 +291,41 @@ pub fn begin(path: Option<PathBuf>, safe_mode: bool, graphics: Tried) -> (Run, O
     (run, marker)
 }
 
-/// What this run opens, the last start's marker `found` or none, `safe_mode` given or not:
-/// `--safe-mode` first, as it means Automatic already; then a marker, as it says what
-/// failed, Automatic failing too giving the CPU.
+/// What this run opens, the last start's marker `found` or none, `safe_mode` given or not,
+/// in this build ([`decide_in`]).
 pub fn decide(found: Option<Tried>, safe_mode: bool) -> Run {
+    decide_in(found, safe_mode, wgpu::Instance::enabled_backend_features())
+}
+
+/// What this run opens, the last start's marker `found` or none, `safe_mode` given or not,
+/// in a build of wgpu with `built`: `--safe-mode` first, as it means Automatic already;
+/// then a marker, as it says what failed, Automatic failing too giving the CPU. The API the
+/// marker names is left out where Automatic loads another, so a driver that crashed as it
+/// loaded is not loaded again, and where `WGPU_BACKEND` chose the API in its place, nothing.
+pub fn decide_in(found: Option<Tried>, safe_mode: bool, built: wgpu::Backends) -> Run {
     match found {
         _ if safe_mode => Run::SafeMode,
-        Some(tried) if tried.is_automatic() => Run::Cpu,
-        Some(tried) => Run::Automatic(tried),
+        Some(tried) if tried.is_automatic() => Run::Cpu(Backend::software_in(built)),
+        Some(tried) => {
+            let api = match tried.variable {
+                Some(_) => Backend::Auto,
+                None => tried.backend.without_in(built),
+            };
+            Run::Automatic(tried, api)
+        }
         None => Run::Settings,
     }
 }
 
 impl Run {
-    /// The card it opens in place of the settings, with Automatic's API, and why: none
-    /// where the settings decide.
-    pub fn instead(&self) -> Option<(&'static str, &'static str)> {
+    /// The card and the API it opens in place of the settings, and why: none where the
+    /// settings decide.
+    pub fn instead(&self) -> Option<(&'static str, Backend, &'static str)> {
         match self {
             Run::Settings => None,
-            Run::SafeMode => Some(("", crate::restart::SAFE_MODE_FLAG)),
-            Run::Automatic(_) => Some(("", UNFINISHED)),
-            Run::Cpu => Some((gpu::CPU, UNFINISHED)),
+            Run::SafeMode => Some(("", Backend::Auto, crate::restart::SAFE_MODE_FLAG)),
+            Run::Automatic(_, api) => Some(("", *api, UNFINISHED)),
+            Run::Cpu(api) => Some((gpu::CPU, *api, UNFINISHED)),
         }
     }
 
@@ -315,7 +334,7 @@ impl Run {
     pub fn tries(&self, graphics: Tried) -> Tried {
         match self.instead() {
             None => graphics,
-            Some((adapter, _)) => Tried::of(adapter.to_owned(), Backend::Auto),
+            Some((adapter, api, _)) => Tried::of(adapter.to_owned(), api),
         }
     }
 
@@ -324,9 +343,9 @@ impl Run {
     pub fn notice(&self, software: bool) -> Option<Notice> {
         match self {
             Run::Settings | Run::SafeMode => None,
-            Run::Automatic(tried) => Some(Notice::Automatic(tried.clone())),
-            Run::Cpu if software => Some(Notice::Cpu),
-            Run::Cpu => Some(Notice::AutomaticAgain),
+            Run::Automatic(tried, api) => Some(Notice::Automatic(tried.clone(), *api)),
+            Run::Cpu(api) if software => Some(Notice::Cpu(*api)),
+            Run::Cpu(_) => Some(Notice::AutomaticAgain),
         }
     }
 }
@@ -334,10 +353,10 @@ impl Run {
 /// What the window says after a start that did not finish.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Notice {
-    /// This did not start: Automatic runs.
-    Automatic(Tried),
-    /// Automatic did not start: the CPU runs.
-    Cpu,
+    /// This did not start: Automatic runs, on the API given, Automatic's or the one left.
+    Automatic(Tried, Backend),
+    /// Automatic did not start: the CPU runs, on the API given.
+    Cpu(Backend),
     /// Automatic did not start, and the API has no CPU adapter: Automatic runs again.
     AutomaticAgain,
 }
@@ -354,11 +373,12 @@ pub enum Pressed {
 }
 
 impl Notice {
-    /// Its words, the card and the API named as the Settings dialog names them on `os`.
+    /// Its words, the card and the APIs named as the Settings dialog names them on `os`:
+    /// what did not start, then the API Automatic runs on where one was left out.
     pub fn words(&self, words: &Translator, os: OperatingSystem) -> String {
-        let tried = match self {
-            Notice::Automatic(tried) => tried,
-            Notice::Cpu => return words.text("start-failed-automatic"),
+        let (tried, ran) = match self {
+            Notice::Automatic(tried, ran) => (tried, *ran),
+            Notice::Cpu(_) => return words.text("start-failed-automatic"),
             Notice::AutomaticAgain => return words.text("start-failed-automatic-again"),
         };
         let mut args = Args::new();
@@ -387,30 +407,54 @@ impl Notice {
                 "start-failed-api"
             }
         };
-        words.text_with(id, Some(&args))
+        // An API left out names the one Automatic runs on; the card alone leaves none out.
+        let id = match ran {
+            Backend::Auto => id.to_owned(),
+            _ if id == "start-failed-card" => id.to_owned(),
+            ran => {
+                args.set("other", crate::hardware::api_words(words, ran, os));
+                format!("{id}-on")
+            }
+        };
+        words.text_with(&id, Some(&args))
     }
 
-    /// Its buttons' words, each with what pressing it asks.
-    fn buttons(&self, words: &Translator) -> Vec<(String, Pressed)> {
+    /// Its buttons' words, each with what pressing it asks, on `os`.
+    fn buttons(&self, words: &Translator, os: OperatingSystem) -> Vec<(String, Pressed)> {
         let retry = (words.text("start-failed-retry"), Pressed::Retry);
         match self {
-            Notice::Automatic(_) => vec![
+            Notice::Automatic(_, Backend::Auto) => vec![
                 (words.text("start-failed-keep-automatic"), Pressed::Keep),
                 retry,
             ],
-            Notice::Cpu => vec![(words.text("start-failed-keep-cpu"), Pressed::Keep), retry],
+            Notice::Automatic(_, ran) => {
+                let mut args = Args::new();
+                args.set("api", crate::hardware::api_words(words, *ran, os));
+                let keep = words.text_with("start-failed-keep-automatic-on", Some(&args));
+                vec![(keep, Pressed::Keep), retry]
+            }
+            Notice::Cpu(_) => vec![(words.text("start-failed-keep-cpu"), Pressed::Keep), retry],
             Notice::AutomaticAgain => vec![(words.text("start-failed-close"), Pressed::Close)],
         }
     }
 
-    /// What Keep sets: the card and the API to what runs, Automatic's or the CPU's.
+    /// What Keep sets: the card and the API to what runs, Automatic's or the CPU's, on the
+    /// API it runs on: Automatic where none was left out, else the one left.
     pub fn kept(&self) -> Vec<Change> {
         use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
-        let card = match self {
-            Notice::Cpu => Change::Set(ENGINE_ADAPTER.id, Value::String(gpu::CPU.into())),
-            Notice::Automatic(_) | Notice::AutomaticAgain => Change::Reset(ENGINE_ADAPTER.id),
+        let (card, ran) = match self {
+            Notice::Cpu(ran) => (
+                Change::Set(ENGINE_ADAPTER.id, Value::String(gpu::CPU.into())),
+                *ran,
+            ),
+            Notice::Automatic(_, ran) => (Change::Reset(ENGINE_ADAPTER.id), *ran),
+            Notice::AutomaticAgain => (Change::Reset(ENGINE_ADAPTER.id), Backend::Auto),
         };
-        vec![card, Change::Reset(ENGINE_BACKEND.id)]
+        let api = match ran {
+            Backend::Auto => Change::Reset(ENGINE_BACKEND.id),
+            ran => Change::Set(ENGINE_BACKEND.id, Value::String(ran.name().into())),
+        };
+        vec![card, api]
     }
 
     /// Draws it over the window's top, `top` points down, under its top panel or strip, in
@@ -424,7 +468,7 @@ impl Notice {
         let mut args = Args::new();
         args.set("flag", CONF_FLAG);
         let why = held.then(|| words.text_with("start-failed-overridden", Some(&args)));
-        let buttons = self.buttons(&words);
+        let buttons = self.buttons(&words, ctx.os());
         let mut pressed = None;
         egui::Area::new(egui::Id::unique("start notice"))
             .order(egui::Order::Foreground)
@@ -677,32 +721,108 @@ mod tests {
     /// CPU did not open; else the settings decide.
     #[test]
     fn a_start_after_one_that_did_not_finish_takes_automatic_or_the_cpu() {
+        // On Linux, whose Automatic loads Vulkan alone, nothing is left out.
+        let linux = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+        let decide = |found, safe| decide_in(found, safe, linux);
         let radeon = tried(RADEON, Backend::Vulkan);
         let graphics = || tried(RADEON, Backend::Dx12);
         let run = decide(Some(radeon.clone()), false);
-        assert_eq!(run, Run::Automatic(radeon.clone()));
-        assert_eq!(run.instead(), Some(("", UNFINISHED)));
+        assert_eq!(run, Run::Automatic(radeon.clone(), Backend::Auto));
+        assert_eq!(run.instead(), Some(("", Backend::Auto, UNFINISHED)));
         assert_eq!(run.tries(graphics()), Tried::automatic());
-        assert_eq!(run.notice(false), Some(Notice::Automatic(radeon.clone())));
+        let automatic = Notice::Automatic(radeon.clone(), Backend::Auto);
+        assert_eq!(run.notice(false), Some(automatic));
         let run = decide(Some(Tried::automatic()), false);
-        assert_eq!(run, Run::Cpu);
-        assert_eq!(run.instead(), Some((gpu::CPU, UNFINISHED)));
+        assert_eq!(run, Run::Cpu(Backend::Auto));
+        assert_eq!(run.instead(), Some((gpu::CPU, Backend::Auto, UNFINISHED)));
         assert_eq!(run.tries(graphics()), tried("cpu", Backend::Auto));
-        assert_eq!(run.notice(true), Some(Notice::Cpu));
+        assert_eq!(run.notice(true), Some(Notice::Cpu(Backend::Auto)));
         assert_eq!(run.notice(false), Some(Notice::AutomaticAgain));
         // The API alone, or the card alone, is not Automatic.
-        let api = tried("", Backend::Dx12);
-        assert_eq!(decide(Some(api.clone()), false), Run::Automatic(api));
+        let api = tried("", Backend::Vulkan);
+        let run = decide(Some(api.clone()), false);
+        assert_eq!(run, Run::Automatic(api, Backend::Auto));
         for found in [None, Some(radeon), Some(Tried::automatic())] {
             let safe = decide(found, true);
             assert_eq!(safe, Run::SafeMode);
-            assert_eq!(safe.instead(), Some(("", "--safe-mode")));
+            assert_eq!(safe.instead(), Some(("", Backend::Auto, "--safe-mode")));
             assert_eq!(safe.notice(false), None);
             assert_eq!(safe.tries(graphics()), Tried::automatic());
         }
         let settings = decide(None, false);
         assert_eq!((settings.instead(), settings.notice(false)), (None, None));
         assert_eq!(settings.tries(graphics()), tried(RADEON, Backend::Dx12));
+    }
+
+    /// On Windows, whose Automatic loads Direct3D 12 and Vulkan both, the API a start that
+    /// did not finish tried is left out, so a driver that crashes as it loads is not loaded
+    /// again: Vulkan's crash opens Automatic on Direct3D 12, and Direct3D 12's on Vulkan,
+    /// each said and each kept by Keep; Automatic's opens the CPU on Direct3D 12 alone,
+    /// WARP's, Vulkan left out, kept so. A card alone, or `WGPU_BACKEND`'s API, leaves no
+    /// API out.
+    #[test]
+    fn on_windows_the_api_that_did_not_start_is_left_out() {
+        use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
+        let windows = wgpu::Backends::DX12 | wgpu::Backends::VULKAN | wgpu::Backends::GL;
+        let decide = |found| decide_in(Some(found), false, windows);
+        let words = Translator::new(Locale::EnGb);
+        let os = OperatingSystem::Windows;
+        let vulkan = tried("", Backend::Vulkan);
+        let run = decide(vulkan.clone());
+        assert_eq!(run, Run::Automatic(vulkan.clone(), Backend::Dx12));
+        assert_eq!(run.instead(), Some(("", Backend::Dx12, UNFINISHED)));
+        let graphics = tried(RADEON, Backend::Vulkan);
+        assert_eq!(run.tries(graphics.clone()), tried("", Backend::Dx12));
+        let notice = run.notice(false).expect("a notice");
+        assert_eq!(
+            notice.words(&words, os),
+            "Apertrust did not start last time on Vulkan, so it started with Automatic on \
+             Direct3D 12"
+        );
+        let keep: Vec<String> = notice
+            .buttons(&words, os)
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        assert_eq!(keep, ["Keep Automatic on Direct3D 12", "Try again"]);
+        let dx12 = Change::Set(ENGINE_BACKEND.id, "dx12".into());
+        assert_eq!(
+            notice.kept(),
+            [Change::Reset(ENGINE_ADAPTER.id), dx12.clone()]
+        );
+        // The card and Direct3D 12: Vulkan.
+        let radeon = tried(RADEON, Backend::Dx12);
+        let notice = decide(radeon.clone()).notice(false).expect("a notice");
+        assert_eq!(notice, Notice::Automatic(radeon, Backend::Vulkan));
+        assert_eq!(
+            notice.words(&words, os),
+            "Apertrust did not start last time with AMD Radeon 780M Graphics on Direct3D 12, \
+             so it started with Automatic on Vulkan"
+        );
+        let vulkan = Change::Set(ENGINE_BACKEND.id, "vulkan".into());
+        assert_eq!(notice.kept(), [Change::Reset(ENGINE_ADAPTER.id), vulkan]);
+        // Automatic: the CPU on Direct3D 12.
+        let run = decide(Tried::automatic());
+        assert_eq!(run, Run::Cpu(Backend::Dx12));
+        assert_eq!(run.tries(graphics), tried("cpu", Backend::Dx12));
+        let notice = run.notice(true).expect("a notice");
+        let cpu = Change::Set(ENGINE_ADAPTER.id, "cpu".into());
+        assert_eq!(notice.kept(), [cpu, dx12]);
+        // A card on Automatic's APIs leaves both in; so does an API `WGPU_BACKEND` chose.
+        let card = tried(RADEON, Backend::Auto);
+        assert_eq!(decide(card.clone()), Run::Automatic(card, Backend::Auto));
+        let variable = Tried {
+            variable: Some("vulkan".into()),
+            ..tried("", Backend::Vulkan)
+        };
+        let run = decide(variable.clone());
+        assert_eq!(run, Run::Automatic(variable, Backend::Auto));
+        let notice = run.notice(false).expect("a notice");
+        let reset = [
+            Change::Reset(ENGINE_ADAPTER.id),
+            Change::Reset(ENGINE_BACKEND.id),
+        ];
+        assert_eq!(notice.kept(), reset);
     }
 
     /// Start after start, as `main` begins each before the device opens: the settings'
@@ -713,17 +833,17 @@ mod tests {
     fn each_start_writes_what_it_tries_before_the_device_and_the_next_reads_it() {
         let folder = Folder::new("start-marker-starts");
         let path = folder.0.join("starting.toml");
-        let graphics = || tried(RADEON, Backend::Dx12);
+        let graphics = || tried(RADEON, Backend::Auto);
         let begin = |safe| begin(Some(path.clone()), safe, graphics());
         let (run, written) = begin(false);
         assert_eq!(run, Run::Settings);
         // It crashed: no frame drawn, the marker left, its lock gone with it.
         drop(written);
         let (run, written) = begin(false);
-        assert_eq!(run, Run::Automatic(tried(RADEON, Backend::Dx12)));
+        assert_eq!(run, Run::Automatic(graphics(), Backend::Auto));
         drop(written);
         let (run, written) = begin(false);
-        assert_eq!(run, Run::Cpu);
+        assert_eq!(run, Run::Cpu(Backend::software()));
         // That one drew its window.
         written.expect("written").remove();
         let (run, written) = begin(true);
@@ -744,7 +864,7 @@ mod tests {
         use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
         let words = Translator::new(Locale::EnGb);
         let os = OperatingSystem::Windows;
-        let said = |tried: Tried| Notice::Automatic(tried).words(&words, os);
+        let said = |tried: Tried| Notice::Automatic(tried, Backend::Auto).words(&words, os);
         assert_eq!(
             said(tried(RADEON, Backend::Dx12)),
             "Apertrust did not start last time with AMD Radeon 780M Graphics on Direct3D 12, \
@@ -765,7 +885,7 @@ mod tests {
             "Apertrust did not start last time on Vulkan, so it started with Automatic"
         );
         assert_eq!(
-            Notice::Cpu.words(&words, os),
+            Notice::Cpu(Backend::Auto).words(&words, os),
             "Apertrust did not start last time with Automatic, so it started on the CPU, \
              which is slower"
         );
@@ -779,11 +899,12 @@ mod tests {
             Change::Reset(ENGINE_BACKEND.id),
         ];
         assert_eq!(
-            Notice::Automatic(tried(RADEON, Backend::Dx12)).kept(),
+            Notice::Automatic(tried(RADEON, Backend::Dx12), Backend::Auto).kept(),
             reset
         );
         let cpu = Change::Set(ENGINE_ADAPTER.id, "cpu".into());
-        assert_eq!(Notice::Cpu.kept(), [cpu, Change::Reset(ENGINE_BACKEND.id)]);
+        let kept = Notice::Cpu(Backend::Auto).kept();
+        assert_eq!(kept, [cpu, Change::Reset(ENGINE_BACKEND.id)]);
         // In every language.
         for locale in [Locale::EnGb, Locale::EnUs, Locale::Uk, Locale::Pl] {
             let words = Translator::new(locale);
@@ -791,6 +912,9 @@ mod tests {
                 "start-failed",
                 "start-failed-card",
                 "start-failed-api",
+                "start-failed-on",
+                "start-failed-api-on",
+                "start-failed-keep-automatic-on",
                 "start-failed-automatic",
                 "start-failed-automatic-again",
                 "start-failed-keep-automatic",
@@ -840,7 +964,10 @@ mod tests {
     #[test]
     fn the_notice_is_read_then_its_buttons() {
         use egui_kittest::kittest::{NodeT as _, Queryable as _};
-        let mut harness = notice_in(Notice::Automatic(tried(RADEON, Backend::Dx12)));
+        let mut harness = notice_in(Notice::Automatic(
+            tried(RADEON, Backend::Dx12),
+            Backend::Auto,
+        ));
         harness.run();
         let said = "Apertrust did not start last time with AMD Radeon 780M Graphics on \
                     Direct3D 12, so it started with Automatic";
@@ -856,7 +983,7 @@ mod tests {
             .click();
         harness.run();
         assert_eq!(harness.state().1, [Pressed::Keep, Pressed::Retry]);
-        let harness = notice_in(Notice::Cpu);
+        let harness = notice_in(Notice::Cpu(Backend::Auto));
         harness.get_by_role_and_label(egui::Role::Button, "Keep CPU");
         let mut harness = notice_in(Notice::AutomaticAgain);
         harness.run();
@@ -883,7 +1010,10 @@ mod tests {
         assert!(!held(&conf(&["scale=1.5"])));
         assert!(held(&conf(&["engine.adapter=missing"])));
         assert!(held(&conf(&["engine.backend=vulkan"])));
-        let mut harness = notice_held(Notice::Automatic(tried(RADEON, Backend::Dx12)), true);
+        let mut harness = notice_held(
+            Notice::Automatic(tried(RADEON, Backend::Dx12), Backend::Auto),
+            true,
+        );
         harness.run();
         let why = "--conf sets the graphics card or API for this run, so nothing was kept. \
                    Start Apertrust without it to keep this.";
@@ -892,14 +1022,17 @@ mod tests {
         assert_eq!(label.accesskit_node().data().live(), Some(polite));
         harness.get_by_role_and_label(egui::Role::Button, "Keep Automatic");
         harness.get_by_role_and_label(egui::Role::Button, "Try again");
-        let harness = notice_in(Notice::Cpu);
+        let harness = notice_in(Notice::Cpu(Backend::Auto));
         assert!(harness.query_by_label_contains("--conf").is_none());
     }
 
     /// Over the window's top, under its 40-point strip.
     #[test]
     fn the_notice_in_the_dark_theme() {
-        let mut harness = notice_in(Notice::Automatic(tried(RADEON, Backend::Dx12)));
+        let mut harness = notice_in(Notice::Automatic(
+            tried(RADEON, Backend::Dx12),
+            Backend::Auto,
+        ));
         harness.run();
         harness.snapshot("start-failed-notice-dark");
     }

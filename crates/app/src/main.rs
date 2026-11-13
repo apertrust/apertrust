@@ -486,7 +486,8 @@ fn main() -> eframe::Result {
         settings.window
     };
     // A start that did not finish, or `--safe-mode`: Automatic, or the CPU, in place of the
-    // graphics settings for this run (decision 82). The marker, locked for this start, is
+    // graphics settings for this run, without the API that did not start where Automatic
+    // loads another (decision 82). The marker, locked for this start, is
     // written naming what it tries before anything loads a graphics driver, the engine's
     // settings included, then what they resolve to, and removed once the window has drawn
     // (`recovery`). One another start holds is that start's, under way at once.
@@ -498,7 +499,7 @@ fn main() -> eframe::Result {
     // The session takes the memory budget as it starts, so the settings read once here
     // give every photo of this run its budget: a change applies at the next start.
     let engine = match run.instead() {
-        Some((adapter, by)) => keeper.engine_instead(adapter, by),
+        Some((adapter, api, by)) => keeper.engine_instead(adapter, api, by),
         None => keeper.engine(),
     };
     if let Some(marker) = marker.as_mut() {

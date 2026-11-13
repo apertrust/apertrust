@@ -87,6 +87,45 @@ impl Backend {
     pub fn built_in(self, backends: wgpu::Backends) -> bool {
         self == Backend::Auto || backends.contains(self.backends())
     }
+
+    /// The API a start opens after one with this API that did not finish (decision 82),
+    /// in this build ([`Backend::without_in`]).
+    pub fn without(self) -> Backend {
+        self.without_in(wgpu::Instance::enabled_backend_features())
+    }
+
+    /// The API a start opens after one with this API that did not finish, in a build of
+    /// wgpu with `backends`: what Automatic loads but this one, the API left, so a driver
+    /// that crashed as it loaded is not loaded again; Automatic where nothing else is left,
+    /// as where this is the only API Automatic loads (Vulkan on Linux) or Automatic itself.
+    pub fn without_in(self, backends: wgpu::Backends) -> Backend {
+        if self == Backend::Auto {
+            return Backend::Auto;
+        }
+        let left = wgpu::Backends::PRIMARY & backends & !self.backends();
+        let found = [Backend::Dx12, Backend::Vulkan]
+            .into_iter()
+            .find(|api| left.contains(api.backends()));
+        found.unwrap_or(Backend::Auto)
+    }
+
+    /// The API a start opens the CPU on after one with Automatic that did not finish
+    /// (decision 82), in this build ([`Backend::software_in`]).
+    pub fn software() -> Backend {
+        Backend::software_in(wgpu::Instance::enabled_backend_features())
+    }
+
+    /// The API a start opens the CPU on after one with Automatic that did not finish, in a
+    /// build of wgpu with `backends`: Direct3D 12 alone where it is built, as WARP is its
+    /// software adapter on every Windows, Vulkan left out; else Automatic, the platform's
+    /// only API.
+    pub fn software_in(backends: wgpu::Backends) -> Backend {
+        if Backend::Dx12.built_in(backends) {
+            Backend::Dx12
+        } else {
+            Backend::Auto
+        }
+    }
 }
 
 /// The reserved name of the chosen API's software adapter, whatever the platform calls it
@@ -1074,6 +1113,29 @@ mod tests {
         );
         assert_eq!(refused.to_string(), named);
         assert!(usable(Some(wgpu::Backends::PRIMARY), lacking).is_ok());
+    }
+
+    /// After a start that did not finish (decision 82): on Windows, which builds Direct3D
+    /// 12 and Vulkan, the API that failed is left out and the other taken, and the CPU is
+    /// opened on Direct3D 12 alone, WARP's; on Linux Vulkan is the only API, and on macOS
+    /// Metal, so Automatic stays; Automatic itself leaves nothing out.
+    #[test]
+    fn a_start_after_one_that_did_not_finish_leaves_its_api_out() {
+        let windows = wgpu::Backends::DX12 | wgpu::Backends::VULKAN | wgpu::Backends::GL;
+        assert_eq!(Backend::Vulkan.without_in(windows), Backend::Dx12);
+        assert_eq!(Backend::Dx12.without_in(windows), Backend::Vulkan);
+        assert_eq!(Backend::Auto.without_in(windows), Backend::Auto);
+        assert_eq!(Backend::software_in(windows), Backend::Dx12);
+        let linux = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+        assert_eq!(Backend::Vulkan.without_in(linux), Backend::Auto);
+        assert_eq!(Backend::software_in(linux), Backend::Auto);
+        let mac = wgpu::Backends::METAL;
+        assert_eq!(Backend::Vulkan.without_in(mac), Backend::Auto);
+        assert_eq!(Backend::software_in(mac), Backend::Auto);
+        assert_eq!(
+            Backend::software(),
+            Backend::software_in(wgpu::Instance::enabled_backend_features())
+        );
     }
 
     /// Automatic finds an adapter wherever the tests run, hardware or software; one this

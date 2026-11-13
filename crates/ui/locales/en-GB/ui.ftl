@@ -567,11 +567,16 @@ start-tagline =
 start-failed = { app-name } did not start last time with { $card } on { $api }, so it started with Automatic
 start-failed-card = { app-name } did not start last time with { $card }, so it started with Automatic
 start-failed-api = { app-name } did not start last time on { $api }, so it started with Automatic
+# The same, where the graphics API it failed with was left out: $other is the API it
+# started with, never translated.
+start-failed-on = { app-name } did not start last time with { $card } on { $api }, so it started with Automatic on { $other }
+start-failed-api-on = { app-name } did not start last time on { $api }, so it started with Automatic on { $other }
 # After a start with Automatic that did not finish.
 start-failed-automatic = { app-name } did not start last time with Automatic, so it started on the CPU, which is slower
 start-failed-automatic-again = { app-name } did not start last time with Automatic, and this graphics API has no CPU adapter, so it started with Automatic again
 # Its buttons: the settings set to what runs, or the app restarted with them.
 start-failed-keep-automatic = Keep Automatic
+start-failed-keep-automatic-on = Keep Automatic on { $api }
 start-failed-keep-cpu = Keep CPU
 start-failed-retry = Try again
 start-failed-close = Close
