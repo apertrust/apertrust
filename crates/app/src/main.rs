@@ -1328,7 +1328,10 @@ struct App {
     restart: restart::Restart,
     /// What the window says after a start that did not finish, until a button is pressed.
     notice: Option<recovery::Notice>,
-    /// This run's start marker, removed once the first frame has been drawn.
+    /// Whether Keep was pressed while `--conf` sets the graphics card or API, which then
+    /// cannot change: the notice stays, saying why.
+    notice_held: bool,
+    /// This run's start marker, removed once a frame has been drawn into the window.
     marker: recovery::Pending,
     /// What was open last, while it reopens at the start ([`reopened`]).
     reopening: Option<Reopening>,
@@ -2878,6 +2881,7 @@ impl App {
             hardware,
             restart,
             notice,
+            notice_held: false,
             marker,
             reopening: None,
             remembered: Remembered::default(),
@@ -4239,8 +4243,9 @@ impl App {
 
     /// The notice of a start that did not finish, under the top panel or the start window's
     /// strip, until one of its buttons is pressed: Keep sets the graphics settings to what
-    /// runs, so nothing waits for a restart; Try again restarts with them, `--safe-mode`
-    /// left out (`recovery`).
+    /// runs, so nothing waits for a restart, but where `--conf` sets either, which then
+    /// cannot change, it changes nothing and the notice stays, saying so; Try again
+    /// restarts with them, `--safe-mode` left out (`recovery`).
     fn show_notice(&mut self, ctx: &egui::Context) {
         let Some(notice) = self.notice.clone() else {
             return;
@@ -4250,7 +4255,10 @@ impl App {
         } else {
             theme(ctx).sizes.top_bar
         };
-        match notice.show(ctx, top) {
+        match notice.show(ctx, top, self.notice_held) {
+            Some(recovery::Pressed::Keep) if recovery::held(&self.keeper) => {
+                self.notice_held = true;
+            }
             Some(recovery::Pressed::Keep) => {
                 apply_settings(&notice.kept(), &mut self.shell, &mut self.keeper, ctx);
                 for setting in recovery::graphics() {
@@ -4431,6 +4439,8 @@ impl eframe::App for App {
             self.tag_failed = true;
         }
         let ctx = ui.ctx().clone();
+        // What says when this frame reaches the window, while the start marker waits.
+        self.marker.mark(&ctx);
         // With nothing open the main window is the start window, and draws nothing else.
         self.follow_start(&ctx, frame);
         if self.start.shown {
@@ -4561,7 +4571,7 @@ impl eframe::App for App {
     /// and alone while the window is minimised or hidden, when it runs no frame, so a choice
     /// such as Quit never waits for the window to show.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // The start marker goes once the first frame has been drawn (decision 82).
+        // The start marker goes once a frame has been drawn into the window (decision 82).
         self.marker.frame(ctx);
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);

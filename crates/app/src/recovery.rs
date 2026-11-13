@@ -22,9 +22,9 @@
 //!   `starting.toml` in the user data folder and holds an exclusive lock on it for the
 //!   whole start, naming in it the card and the API it tries ([`Tried`]): the settings'
 //!   before anything loads a driver, then what the engine's settings resolve them to. Once
-//!   its first frame has been drawn it empties and removes it ([`Pending`]). A run that
-//!   opens no window (`--version`, `--help`, `--list-adapters`, a command line refused)
-//!   writes none, and a normal quit leaves none. Where the user data folder cannot be
+//!   a frame has been drawn into its window it empties and removes it ([`Pending`]). A run
+//!   that opens no window (`--version`, `--help`, `--list-adapters`, a command line
+//!   refused) writes none, and a normal quit leaves none. Where the user data folder cannot be
 //!   written, there is no marker, logged under `settings`.
 //! - **A marker another start holds locked** is a start under way at the same moment, as
 //!   Open With on several raws starts one process for each: it is neither read nor written,
@@ -46,17 +46,21 @@
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
-use apertrust_base::settings::{Choice as _, Declared};
+use apertrust_base::settings::{CONF_FLAG, Choice as _, Declared};
 use apertrust_engine::gpu::{self, AdapterChoice, Backend};
 use apertrust_engine::settings::{BACKEND_VARIABLE, Options, Source};
 use apertrust_ui::components::Button;
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, theme};
 use eframe::egui::{self, os::OperatingSystem};
+use eframe::egui_wgpu::{self, CallbackResources, CallbackTrait};
 use toml::Value;
 
+use crate::settings::Keeper;
 use crate::settings_dialog::Change;
 
 /// Why a run opens Automatic or the CPU in place of the settings, as `-d settings` says.
@@ -66,6 +70,15 @@ pub const UNFINISHED: &str = "a start that did not finish";
 pub fn graphics() -> [&'static dyn Declared; 2] {
     use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
     [&ENGINE_ADAPTER, &ENGINE_BACKEND]
+}
+
+/// Whether `--conf` sets the graphics card or API for this run in `keeper`: Keep then
+/// changes nothing, the store refusing a change to either, so the notice stays, saying
+/// why, and the file keeps what fails without it.
+pub fn held(keeper: &Keeper) -> bool {
+    graphics()
+        .into_iter()
+        .any(|setting| keeper.overridden(setting))
 }
 
 /// The graphics card and API a start tries: the card as `engine.adapter` writes it (empty
@@ -401,12 +414,16 @@ impl Notice {
     }
 
     /// Draws it over the window's top, `top` points down, under its top panel or strip, in
-    /// `ctx`: its words, announced once as they appear (a polite live region), then its
-    /// buttons. Returns the button pressed.
-    pub fn show(&self, ctx: &egui::Context, top: f32) -> Option<Pressed> {
+    /// `ctx`: its words, announced once as they appear (a polite live region), then, where
+    /// Keep was pressed while `--conf` `held` the card or the API, why nothing was kept, in
+    /// the warning colour and announced too, then its buttons. Returns the button pressed.
+    pub fn show(&self, ctx: &egui::Context, top: f32, held: bool) -> Option<Pressed> {
         let t = theme(ctx);
         let words = apertrust_ui::translator(ctx);
         let said = self.words(&words, ctx.os());
+        let mut args = Args::new();
+        args.set("flag", CONF_FLAG);
+        let why = held.then(|| words.text_with("start-failed-overridden", Some(&args)));
         let buttons = self.buttons(&words);
         let mut pressed = None;
         egui::Area::new(egui::Id::unique("start notice"))
@@ -422,20 +439,26 @@ impl Notice {
                         ui.spacing_mut().item_spacing = egui::vec2(t.spacing.m, t.spacing.m);
                         let width = WIDTH.min(ctx.content_rect().width() - 4.0 * t.spacing.l);
                         ui.set_max_width(width.max(0.0));
-                        let galley = ui.painter().layout(
-                            said.clone(),
-                            egui::FontId::proportional(t.text.body),
-                            t.colors.text,
-                            width.max(0.0),
-                        );
-                        let (rect, label) =
-                            ui.allocate_exact_size(galley.size(), egui::Sense::hover());
-                        ui.painter().galley(rect.min, galley, t.colors.text);
-                        label.widget_info(|| {
-                            egui::WidgetInfo::labeled(egui::Role::Label, true, &said)
-                        });
-                        let polite = egui::accesskit::Live::Polite;
-                        ctx.accesskit_node_builder(label.id, |node| node.set_live(polite));
+                        let lines = [
+                            Some((&said, t.colors.text)),
+                            why.as_ref().map(|why| (why, t.colors.warning)),
+                        ];
+                        for (text, color) in lines.into_iter().flatten() {
+                            let galley = ui.painter().layout(
+                                text.clone(),
+                                egui::FontId::proportional(t.text.body),
+                                color,
+                                width.max(0.0),
+                            );
+                            let (rect, label) =
+                                ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+                            ui.painter().galley(rect.min, galley, color);
+                            label.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::Role::Label, true, text)
+                            });
+                            let polite = egui::accesskit::Live::Polite;
+                            ctx.accesskit_node_builder(label.id, |node| node.set_live(polite));
+                        }
                         ui.horizontal(|ui| {
                             for (text, asks) in &buttons {
                                 if Button::new(text).show(ui).clicked() {
@@ -452,10 +475,29 @@ impl Notice {
 /// The notice's widest, in points.
 const WIDTH: f32 = 480.0;
 
-/// This run's marker until its first frame has been drawn, then its removal.
+/// A paint callback that draws nothing and sets its flag as egui's renderer runs it, which
+/// it does only in a render pass into the window's surface texture, once it has one (or a
+/// screenshot's, which the app never takes): a frame it skips, the surface lost or out of
+/// date, never sets it.
+struct Drawn(Arc<AtomicBool>);
+
+impl CallbackTrait for Drawn {
+    fn paint(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        _pass: &mut egui_wgpu::wgpu::RenderPass<'static>,
+        _resources: &CallbackResources,
+    ) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+/// This run's marker until a frame has reached the window, then its removal.
 #[derive(Debug, Default)]
 pub struct Pending {
     marker: Option<Marker>,
+    /// Set as the renderer draws a frame into the window's surface ([`Drawn`]).
+    drawn: Arc<AtomicBool>,
     removing: Option<JoinHandle<()>>,
 }
 
@@ -464,18 +506,20 @@ impl Pending {
     pub fn new(marker: Option<Marker>) -> Pending {
         Pending {
             marker,
+            drawn: Arc::default(),
             removing: None,
         }
     }
 
-    /// Before each frame in `ctx`: once one has been drawn, the marker is removed, on a
-    /// thread of its own, as no file is written on the interface's thread; until then a
-    /// frame is asked for, so one follows the first.
+    /// Before each frame in `ctx`: once one has reached the window ([`Pending::mark`]), the
+    /// marker is removed, on a thread of its own, as no file is written on the interface's
+    /// thread; until then a frame is asked for, so another follows one the renderer
+    /// skipped, as it does where the window's surface was lost.
     pub fn frame(&mut self, ctx: &egui::Context) {
         if self.marker.is_none() {
             return;
         }
-        if ctx.cumulative_frame_nr() == 0 {
+        if !self.drawn.load(Ordering::Acquire) {
             ctx.request_repaint();
             return;
         }
@@ -489,6 +533,20 @@ impl Pending {
             Ok(handle) => self.removing = Some(handle),
             Err(error) => tracing::warn!(target: "settings", "start marker not removed: {error}"),
         }
+    }
+
+    /// In each frame's drawing in `ctx` while the marker waits: [`Drawn`] at the window's
+    /// corner, a point's paint callback that draws nothing and says when the renderer has
+    /// drawn the frame into the window's surface. egui's `cumulative_frame_nr` counts a
+    /// frame the renderer skipped, finding no surface to draw into, as drawn.
+    pub fn mark(&self, ctx: &egui::Context) {
+        if self.marker.is_none() || self.drawn.load(Ordering::Acquire) {
+            return;
+        }
+        let corner = egui::Rect::from_min_size(ctx.content_rect().min, egui::Vec2::splat(1.0));
+        let drawn = Drawn(Arc::clone(&self.drawn));
+        let painter = ctx.layer_painter(egui::LayerId::background());
+        painter.add(egui_wgpu::Callback::new_paint_callback(corner, drawn));
     }
 
     /// The start ends before its window could open for a reason that is not the graphics
@@ -507,7 +565,7 @@ impl Pending {
         }
     }
 
-    /// Whether the marker waits for the first frame.
+    /// Whether the marker waits for a frame drawn into the window.
     #[cfg(test)]
     pub fn waiting(&self) -> bool {
         self.marker.is_some()
@@ -736,6 +794,7 @@ mod tests {
                 "start-failed-keep-cpu",
                 "start-failed-retry",
                 "start-failed-close",
+                "start-failed-overridden",
             ] {
                 assert!(words.has(id), "{locale:?}: {id}");
             }
@@ -744,6 +803,14 @@ mod tests {
 
     /// The notice in a window, as the app draws it, and what was pressed in it.
     fn notice_in(notice: Notice) -> egui_kittest::Harness<'static, (Notice, Vec<Pressed>)> {
+        notice_held(notice, false)
+    }
+
+    /// The same, after a Keep that `--conf` `held`, or not.
+    fn notice_held(
+        notice: Notice,
+        held: bool,
+    ) -> egui_kittest::Harness<'static, (Notice, Vec<Pressed>)> {
         egui_kittest::Harness::builder()
             .with_size(egui::vec2(820.0, 240.0))
             .with_os(OperatingSystem::Windows)
@@ -753,12 +820,12 @@ mod tests {
                 apertrust_ui::set_locale(ctx, Locale::EnGb);
             })
             .build_ui_state(
-                |ui, (notice, pressed): &mut (Notice, Vec<Pressed>)| {
+                move |ui, (notice, pressed): &mut (Notice, Vec<Pressed>)| {
                     // Over the photo's surround, as over the main window.
                     let t = theme(ui.ctx());
                     let all = ui.ctx().content_rect();
                     ui.painter().rect_filled(all, 0.0, t.colors.photo_surround);
-                    pressed.extend(notice.show(ui.ctx(), 40.0));
+                    pressed.extend(notice.show(ui.ctx(), 40.0, held));
                 },
                 (notice, Vec::new()),
             )
@@ -798,6 +865,34 @@ mod tests {
         assert_eq!(harness.state().1, [Pressed::Close]);
     }
 
+    /// Keep changes nothing while `--conf` sets the card or the API for the run, as the
+    /// store refuses it: the notice then stays, saying why under its words, in a polite
+    /// live region, its buttons as they were.
+    #[test]
+    fn keep_is_held_while_conf_sets_the_card_or_the_api() {
+        use egui_kittest::kittest::{NodeT as _, Queryable as _};
+        let conf = |given: &[&str]| {
+            let given: Vec<String> = given.iter().map(|&text| text.to_owned()).collect();
+            let overrides = crate::settings::overrides(&given).expect("read");
+            Keeper::open_in(None, &overrides).0
+        };
+        assert!(!held(&conf(&[])));
+        assert!(!held(&conf(&["scale=1.5"])));
+        assert!(held(&conf(&["engine.adapter=missing"])));
+        assert!(held(&conf(&["engine.backend=vulkan"])));
+        let mut harness = notice_held(Notice::Automatic(tried(RADEON, Backend::Dx12)), true);
+        harness.run();
+        let why = "--conf sets the graphics card or API for this run, so nothing was kept. \
+                   Start Apertrust without it to keep this.";
+        let label = harness.get_by_role_and_label(egui::Role::Label, why);
+        let polite = egui::accesskit::Live::Polite;
+        assert_eq!(label.accesskit_node().data().live(), Some(polite));
+        harness.get_by_role_and_label(egui::Role::Button, "Keep Automatic");
+        harness.get_by_role_and_label(egui::Role::Button, "Try again");
+        let harness = notice_in(Notice::Cpu);
+        assert!(harness.query_by_label_contains("--conf").is_none());
+    }
+
     /// Over the window's top, under its 40-point strip.
     #[test]
     fn the_notice_in_the_dark_theme() {
@@ -806,30 +901,35 @@ mod tests {
         harness.snapshot("start-failed-notice-dark");
     }
 
-    /// The marker is removed once the first frame has been drawn, not before: a frame is
-    /// asked for after the first, and the removal is waited for as the app ends.
+    /// The marker is removed once a frame has been drawn into the window, not before: not
+    /// after frames the renderer skipped, as it does where the window's surface was lost,
+    /// each asking for another; the removal is waited for as the app ends.
     #[test]
-    fn the_marker_goes_once_the_first_frame_is_drawn() {
+    fn the_marker_goes_once_a_frame_is_drawn() {
         let folder = Folder::new("start-marker-frame");
         let path = folder.0.join("starting.toml");
         let (mut marker, _) = mine(&path);
         assert!(marker.write(&tried(RADEON, Backend::Dx12)));
-        let mut pending = Pending::new(Some(marker));
-        let ctx = egui::Context::default();
-        let mut frames = 0;
-        let mut drawn = ctx.run_ui(egui::RawInput::default(), |ui| {
-            pending.frame(ui.ctx());
-            frames += 1;
-        });
-        drawn.textures_delta.clear();
-        assert!(pending.waiting(), "not before the first frame is drawn");
-        assert!(ctx.has_requested_repaint());
+        // `frame` as `logic` calls it before each frame, then `mark` in its drawing.
+        let mut harness = egui_kittest::Harness::builder().wgpu().build_ui_state(
+            |ui, pending: &mut Pending| {
+                pending.frame(ui.ctx());
+                pending.mark(ui.ctx());
+            },
+            Pending::new(Some(marker)),
+        );
+        // Frames run, none drawn: as many as egui counts, the renderer skipping each.
+        for _ in 0..3 {
+            harness.step();
+            assert!(harness.state().waiting(), "not before a frame is drawn");
+            assert!(harness.ctx.has_requested_repaint());
+        }
         assert!(matches!(Marker::open(path.clone()), Opened::Busy));
-        let mut drawn = ctx.run_ui(egui::RawInput::default(), |ui| pending.frame(ui.ctx()));
-        drawn.textures_delta.clear();
-        pending.finish();
-        assert!(!pending.waiting());
+        harness.render().expect("drawn");
+        assert!(harness.state().waiting(), "not until the next frame");
+        harness.step();
+        harness.state_mut().finish();
+        assert!(!harness.state().waiting());
         assert!(!path.exists());
-        assert_eq!(frames, 1);
     }
 }

@@ -230,6 +230,9 @@ pub struct Found {
     /// `APPIMAGE`, the AppImage the app runs from, and `APPDIR`, where it is mounted.
     pub appimage: Option<OsString>,
     pub appdir: Option<OsString>,
+    /// The executable's path with its links followed: on Linux `/proc/self/exe`'s target,
+    /// which may lie in `APPDIR`.
+    pub resolved: Option<PathBuf>,
     /// Whether the app runs from a terminal, its standard output one.
     pub terminal: bool,
 }
@@ -244,6 +247,7 @@ impl Launcher {
         let found = Found {
             appimage: std::env::var_os("APPIMAGE"),
             appdir: std::env::var_os("APPDIR"),
+            resolved: std::fs::canonicalize(&exe).ok(),
             terminal: std::io::stdout().is_terminal(),
         };
         let launcher = Launcher::of(&exe, OperatingSystem::from_target_os(), &found);
@@ -259,9 +263,9 @@ impl Launcher {
 
     /// The app as this process runs from `exe` on `os`, with what was `found`: on the Mac,
     /// where `exe` is in an app bundle and no terminal started it, `open -n -a` with the
-    /// bundle, a new instance though this one may not have gone yet; on Linux, where `exe`
-    /// lies in the AppImage's mount, `APPDIR`, the AppImage `APPIMAGE` names, since the
-    /// mount goes as the app ends; else `exe` itself.
+    /// bundle, a new instance though this one may not have gone yet; on Linux, where `exe`,
+    /// or the file it links to, lies in the AppImage's mount, `APPDIR`, the AppImage
+    /// `APPIMAGE` names, since the mount goes as the app ends; else `exe` itself.
     pub fn of(exe: &Path, os: OperatingSystem, found: &Found) -> Launcher {
         let alone = Launcher {
             program: exe.to_owned(),
@@ -282,7 +286,10 @@ impl Launcher {
                     .appdir
                     .as_deref()
                     .filter(|appdir| !appdir.is_empty())
-                    .is_some_and(|appdir| exe.starts_with(appdir));
+                    .is_some_and(|appdir| {
+                        let lies = found.resolved.as_deref().unwrap_or(exe);
+                        lies.starts_with(appdir)
+                    });
                 match found.appimage.as_deref() {
                     Some(appimage) if mounted && !appimage.is_empty() => Launcher {
                         program: PathBuf::from(appimage),
@@ -474,6 +481,7 @@ pub(crate) mod tests {
         let appimage = Found {
             appimage: Some("/home/me/apertrust_0.2.0_x86_64.AppImage".into()),
             appdir: Some("/tmp/.mount_aperXYZ".into()),
+            resolved: None,
             terminal: false,
         };
         let mounted = Path::new("/tmp/.mount_aperXYZ/usr/bin/apertrust");
@@ -483,6 +491,23 @@ pub(crate) mod tests {
             appimage.appimage.as_deref().expect("set")
         );
         assert!(launcher.first.is_empty());
+        // `/proc/self/exe`, as Linux runs it, by the file it links to in the mount.
+        let proc = Path::new("/proc/self/exe");
+        let linked = Found {
+            resolved: Some(mounted.to_owned()),
+            ..appimage.clone()
+        };
+        let launcher = Launcher::of(proc, OperatingSystem::Nix, &linked);
+        assert_eq!(
+            launcher.program.as_os_str(),
+            appimage.appimage.as_deref().expect("set")
+        );
+        let outside = Found {
+            resolved: Some("/usr/bin/apertrust".into()),
+            ..appimage.clone()
+        };
+        let launcher = Launcher::of(proc, OperatingSystem::Nix, &outside);
+        assert_eq!(launcher.program, proc);
         // An executable outside the mount, as one an AppImage's environment started.
         let other = Path::new("/usr/bin/apertrust");
         assert_eq!(

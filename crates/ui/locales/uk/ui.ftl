@@ -445,6 +445,7 @@ start-failed-keep-automatic = Залишити автоматичний вибі
 start-failed-keep-cpu = Залишити ЦП
 start-failed-retry = Спробувати знову
 start-failed-close = Закрити
+start-failed-overridden = { $flag } задає відеокарту або графічний API для цього запуску, тому нічого не збережено. Запустіть { app-name } без нього, щоб зберегти це.
 
 ## Налаштування
 

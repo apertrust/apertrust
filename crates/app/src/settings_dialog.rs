@@ -301,13 +301,15 @@ impl Settings {
     }
 
     /// Hands the Hardware acceleration group `running` again, as the app changed it, and
-    /// takes in `changes` the app made to the settings meanwhile, as Keep's: whether it
-    /// changed anything, so its window is drawn again.
+    /// takes in `changes` the app made to the settings meanwhile, as Keep's, but for a row
+    /// `--conf` sets, whose value the store refuses to change: whether it changed anything,
+    /// so its window is drawn again.
     pub fn set_hardware(&mut self, running: hardware::Running, changes: &[Change]) -> bool {
         let mut changed = false;
         for change in changes {
             let (id, value) = change.parts();
-            if let Some(row) = self.rows.iter_mut().find(|row| row.id == id) {
+            let row = self.rows.iter_mut().find(|row| row.id == id);
+            if let Some(row) = row.filter(|row| !row.overridden) {
                 let value = value.cloned().or_else(|| row.default.clone());
                 changed |= row.value != value;
                 row.value = value;
@@ -1324,6 +1326,32 @@ mod tests {
             );
         harness.run();
         harness
+    }
+
+    /// The app's changes handed to the dialog, as the start notice's Keep's, change the rows
+    /// they name, but for one `--conf` sets, which keeps its value, as the store does.
+    #[test]
+    fn the_apps_changes_leave_a_row_set_by_conf() {
+        use apertrust_engine::settings::registry::{ENGINE_ADAPTER, ENGINE_BACKEND};
+        let conf = ["engine.adapter=missing".to_owned()];
+        let (keeper, _) = Keeper::open_in(None, &settings::overrides(&conf).expect("read"));
+        let mut dialog = Settings::new(&keeper, false);
+        let running = crate::hardware::tests::running(OperatingSystem::Windows);
+        dialog.set_hardware(running.clone(), &[]);
+        let value = |dialog: &Settings, id: &str| {
+            let row = dialog.rows.iter().find(|row| row.id == id).expect("a row");
+            row.value.clone()
+        };
+        let missing = Some(Value::String("missing".into()));
+        assert_eq!(value(&dialog, ENGINE_ADAPTER.id), missing);
+        let keep = [
+            Change::Reset(ENGINE_ADAPTER.id),
+            Change::Set(ENGINE_BACKEND.id, Value::String("dx12".into())),
+        ];
+        assert!(dialog.set_hardware(running, &keep));
+        assert_eq!(value(&dialog, ENGINE_ADAPTER.id), missing);
+        let dx12 = Some(Value::String("dx12".into()));
+        assert_eq!(value(&dialog, ENGINE_BACKEND.id), dx12);
     }
 
     /// Shows Processing, its graphics cards listed, and forgets the page's change.

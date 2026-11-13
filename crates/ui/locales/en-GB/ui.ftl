@@ -575,6 +575,9 @@ start-failed-keep-automatic = Keep Automatic
 start-failed-keep-cpu = Keep CPU
 start-failed-retry = Try again
 start-failed-close = Close
+# Under it, after Keep, where the command line sets the graphics card or API for this run,
+# which then can't change. $flag is the flag, --conf, never translated.
+start-failed-overridden = { $flag } sets the graphics card or API for this run, so nothing was kept. Start { app-name } without it to keep this.
 
 ## Settings
 

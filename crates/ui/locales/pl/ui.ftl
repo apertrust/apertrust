@@ -447,6 +447,7 @@ start-failed-keep-automatic = Zachowaj wybór automatyczny
 start-failed-keep-cpu = Zachowaj CPU
 start-failed-retry = Spróbuj ponownie
 start-failed-close = Zamknij
+start-failed-overridden = { $flag } ustawia kartę graficzną lub API graficzne na to uruchomienie, więc nic nie zachowano. Uruchom { app-name } bez niego, aby to zachować.
 
 ## Ustawienia
 
