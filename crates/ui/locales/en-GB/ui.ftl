@@ -970,6 +970,30 @@ history-source-default = Default
 # A step's tooltip, a row a control, its label and its values before and after drawn
 # apart; for screen readers, a control changed: its label, its value before and after.
 history-said-change = { $control }, { $before } to { $after }
+
+# The same, the control being the module's own, its label left out.
+history-said-change-alone = { $before } to { $after }
+# What changed, after a step's module in its line: several controls, how many.
+history-line-controls =
+    { $count ->
+        [one] { $count } control
+       *[other] { $count } controls
+    }
+
+# A step's name for screen readers with what it changed.
+history-step-name-change = Step { $number }: { $name }, { $change }
+# Under the steps after the end, which the next edit drops.
+history-undone =
+    { $count ->
+        [one] ↑ { $count } undone · your next edit replaces it
+       *[other] ↑ { $count } undone · your next edit replaces them
+    }
+# The undone mark as screen readers hear it, with no arrow or dot.
+history-undone-said =
+    { $count ->
+        [one] { $count } undone: your next edit replaces it
+       *[other] { $count } undone: your next edit replaces them
+    }
 # A control whose value stayed, its marker changed.
 history-kept = { $control } kept
 history-released = { $control } released

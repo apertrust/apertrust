@@ -31,10 +31,10 @@ use crate::components::{
     FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
     PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
-    PickerPlace, Quad, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
-    ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
-    group_label,
+    PickerPlace, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope, ScopeView, Section,
+    SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar,
+    TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track,
+    VectorscopeBins, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -172,6 +172,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Pickers");
         pickers(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Timeline rail");
+        rails(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Jobs");
         jobs_section(ui, &t, &mut self.demo);
@@ -724,6 +727,57 @@ fn overlay_photo(ctx: &egui::Context, ground: Ground, zoomed: bool) -> OverlayPh
     };
     ctx.data_mut(|d| d.insert_temp(id, photo.clone()));
     photo
+}
+
+/// The rail History draws its steps on (`Rail`), as a list of rows with no space between
+/// them, so the rail runs through: two undone steps, hollow on a dashed rail; the end, the
+/// larger filled dot, on the chosen band; a step; Reset's glyph, then Reset at the end,
+/// ringed; and a step drawn disabled, where the rail ends.
+fn rails(ui: &mut Ui, t: &Theme) {
+    use RailLine::{Dashed, Solid};
+    let rows: [(&str, RailNode, RailLine, RailLine, bool); 7] = [
+        ("Undone", RailNode::Undone, RailLine::None, Dashed, true),
+        ("Undone", RailNode::Undone, Dashed, Dashed, true),
+        ("End", RailNode::End, Dashed, Solid, true),
+        ("Step", RailNode::Step, Solid, Solid, true),
+        ("Reset", RailNode::Reset { end: false }, Solid, Solid, true),
+        (
+            "Reset, the end",
+            RailNode::Reset { end: true },
+            Solid,
+            Solid,
+            true,
+        ),
+        ("Disabled", RailNode::End, Solid, RailLine::None, false),
+    ];
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for (name, node, above, below, enabled) in rows {
+            let (rect, _) = ui.allocate_exact_size(vec2(220.0, t.sizes.panel_line), Sense::hover());
+            let painter = ui.painter();
+            let end = matches!(node, RailNode::End | RailNode::Reset { end: true }) && enabled;
+            let ground = if end {
+                t.colors.list_chosen
+            } else {
+                t.colors.panel
+            };
+            painter.rect_filled(rect, if end { t.shape.radius } else { 0.0 }, ground);
+            let rail = Rail { node, above, below };
+            rail.paint(painter, rect, rect.left() + 12.0, ground, enabled, t);
+            let ink = match (end, enabled) {
+                (_, false) => t.colors.text_disabled,
+                (true, true) => t.colors.text_strong,
+                (false, true) => t.colors.text,
+            };
+            painter.text(
+                pos2(rect.left() + 28.0, rect.center().y),
+                Align2::LEFT_CENTER,
+                name,
+                FontId::proportional(t.text.body),
+                ink,
+            );
+        }
+    });
 }
 
 fn heading(ui: &mut Ui, text: &str) {
