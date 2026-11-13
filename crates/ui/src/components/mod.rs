@@ -48,6 +48,7 @@ mod marker;
 mod photo_frame;
 mod picker;
 mod plate;
+mod rail;
 mod section;
 mod segmented;
 mod side_panel;
@@ -94,6 +95,7 @@ pub use photo_frame::{
 };
 pub use picker::{PickerAction, PickerButton, PickerMarks, PickerPlace};
 pub use plate::ButtonState;
+pub use rail::{Rail, RailLine, RailNode};
 pub use section::{Section, SectionAction, SectionOutput, section_list};
 pub use segmented::Segmented;
 pub use side_panel::{

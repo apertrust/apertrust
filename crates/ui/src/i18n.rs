@@ -946,6 +946,8 @@ mod tests {
                 // History's tooltips: a control's value before and after.
                 args.set("before", "+0.70 EV");
                 args.set("after", "+1.20 EV");
+                // History's lines: what changed, as screen readers hear it.
+                args.set("change", "+0.70 EV to +1.20 EV");
                 // Browse's missing recent: its label, its open kind and its name.
                 args.set("label", "Folder: 2026-10 Lisbon");
                 // The start window's recent, to screen readers: its path.

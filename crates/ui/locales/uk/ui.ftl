@@ -757,6 +757,31 @@ history-source-style = Стиль
 history-source-assistant = Асистент
 history-source-default = Типово
 history-said-change = { $control }, з { $before } на { $after }
+history-said-change-alone = з { $before } на { $after }
+history-line-controls =
+    { $count ->
+        [one] { $count } параметр
+        [few] { $count } параметри
+        [many] { $count } параметрів
+       *[other] { $count } параметра
+    }
+history-step-name-change = Крок { $number }: { $name }, { $change }
+history-undone =
+    { $count ->
+        [1] ↑ 1 скасований · наступна зміна його замінить
+        [one] ↑ { $count } скасований · наступна зміна їх замінить
+        [few] ↑ { $count } скасовані · наступна зміна їх замінить
+        [many] ↑ { $count } скасованих · наступна зміна їх замінить
+       *[other] ↑ { $count } скасованого · наступна зміна їх замінить
+    }
+history-undone-said =
+    { $count ->
+        [1] 1 скасований: наступна зміна його замінить
+        [one] { $count } скасований: наступна зміна їх замінить
+        [few] { $count } скасовані: наступна зміна їх замінить
+        [many] { $count } скасованих: наступна зміна їх замінить
+       *[other] { $count } скасованого: наступна зміна їх замінить
+    }
 history-kept = { $control }: закріплено
 history-released = { $control }: відпущено
 history-auto = { $control }: встановлено Авто

@@ -2304,7 +2304,7 @@ pub(crate) mod tests {
     fn a_plain_click_on_a_step_takes_a_real_session_s_edit_back_to_it() {
         use apertrust_engine::session::Command;
         use egui_kittest::Harness;
-        use egui_kittest::kittest::Queryable as _;
+        use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
         let Some(mut live) = Live::start() else {
             return;
@@ -2351,9 +2351,17 @@ pub(crate) mod tests {
                 },
             );
         harness.run();
-        let item = |name| (eframe::egui::accesskit::Role::ListItem, name);
-        let (role, name) = item("Step 1: Exposure");
-        harness.get_by_role_and_label(role, name).click();
+        // A line by its number and module, whatever it says changed after them.
+        fn item<'a>(harness: &'a Harness<'_, Scene>, name: &str) -> egui_kittest::Node<'a> {
+            let named = |node: &egui_kittest::Node<'_>| {
+                let label = node.accesskit_node().label().unwrap_or_default();
+                label.starts_with(&format!("{name}, "))
+            };
+            (harness.query_all_by_role(eframe::egui::accesskit::Role::ListItem))
+                .find(named)
+                .unwrap_or_else(|| panic!("no line {name}"))
+        }
+        item(&harness, "Step 1: Exposure").click();
         harness.run();
         assert_eq!(
             harness.state().actions,
@@ -2368,10 +2376,7 @@ pub(crate) mod tests {
         // Shift-click: the module, and no step gone to.
         harness.state_mut().actions.clear();
         harness.run();
-        let (role, name) = item("Step 2: Exposure");
-        harness
-            .get_by_role_and_label(role, name)
-            .click_modifiers(eframe::egui::Modifiers::SHIFT);
+        item(&harness, "Step 2: Exposure").click_modifiers(eframe::egui::Modifiers::SHIFT);
         harness.run();
         assert_eq!(
             harness.state().actions,

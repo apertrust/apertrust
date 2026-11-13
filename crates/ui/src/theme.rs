@@ -662,6 +662,8 @@ impl Theme {
             ("text", c.text, "sunken", c.sunken, TEXT),
             ("text", c.text, "field_selection", c.field_selection, TEXT),
             ("text_strong", c.text_strong, "surface", c.surface, TEXT),
+            // The chosen line's lesser words, as History's end says what it changed.
+            ("text", c.text, "list_chosen", c.list_chosen, TEXT),
             (
                 "text_strong",
                 c.text_strong,

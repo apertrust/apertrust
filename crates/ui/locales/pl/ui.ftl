@@ -760,6 +760,29 @@ history-source-style = Styl
 history-source-assistant = Asystent
 history-source-default = Domyślnie
 history-said-change = { $control }, z { $before } na { $after }
+history-said-change-alone = z { $before } na { $after }
+history-line-controls =
+    { $count ->
+        [one] { $count } parametr
+        [few] { $count } parametry
+        [many] { $count } parametrów
+       *[other] { $count } parametru
+    }
+history-step-name-change = Krok { $number }: { $name }, { $change }
+history-undone =
+    { $count ->
+        [one] ↑ { $count } cofnięty · następna edycja go zastąpi
+        [few] ↑ { $count } cofnięte · następna edycja je zastąpi
+        [many] ↑ { $count } cofniętych · następna edycja je zastąpi
+       *[other] ↑ { $count } cofniętego · następna edycja je zastąpi
+    }
+history-undone-said =
+    { $count ->
+        [one] { $count } cofnięty: następna edycja go zastąpi
+        [few] { $count } cofnięte: następna edycja je zastąpi
+        [many] { $count } cofniętych: następna edycja je zastąpi
+       *[other] { $count } cofniętego: następna edycja je zastąpi
+    }
 history-kept = { $control }: zachowano
 history-released = { $control }: zwolniono
 history-auto = { $control }: ustawione przez Auto

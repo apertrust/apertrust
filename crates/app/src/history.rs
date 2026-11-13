@@ -27,11 +27,16 @@
 //! stack (`src/libs/history.c`, `gui_update`), the wireframe's History frame:
 //!
 //! - a line per step, newest at the top, numbered from 1, its module's name, as
-//!   darktable's history item reads, even with a note, Reset's reading Reset, and its
-//!   source's tag at its end (You, Auto, Style, Assistant); the end's line chosen, on `list_chosen`,
-//!   as darktable's active item, and the steps after it greyed, which darktable draws as
-//!   any other (`docs/history.md`, Against darktable);
-//! - then the Default lines, the modules every photo runs, unnumbered, tagged Default,
+//!   darktable's history item reads, even with a note, Reset's reading Reset, then what
+//!   changed in the small text, as the board "Photo · History tab: one line says what
+//!   changed" draws it, and its source's tag at its end only where it is not the
+//!   person's own (Auto, Style, Assistant); the end's line chosen, on `list_chosen`, as
+//!   darktable's active item, and the steps after it in the secondary text, which
+//!   darktable draws as any other (`docs/history.md`, Against darktable), the undone mark
+//!   under them;
+//! - the rail down the lines' start (`Rail`): a dot a step, Reset's glyph, the end a
+//!   larger filled dot, the undone steps hollow on a dashed rail;
+//! - then the Default lines, the modules every photo runs, unnumbered and with no tag,
 //!   and Original, 0, one block that always applies, never greyed; at end 0 the top
 //!   Default line chosen, or Original with none;
 //! - a step's tooltip: a small table, a row for each control it changed, its label, its
@@ -55,11 +60,12 @@ use apertrust_engine::session::{
     ControlChange, ControlValue, History, HistoryStep, Mark, Move, Note, StepId, StepSource,
 };
 use apertrust_modules::{ControlKind, Definition, Module, Row, Slider, messages};
-use apertrust_ui::components::{Section, SectionAction, focus_ring_centred};
+use apertrust_ui::components::{
+    Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred,
+};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, fonts, theme, translator};
-use eframe::egui::text::LayoutJob;
-use eframe::egui::{self, Align, FontId, Role, Sense, UiBuilder, WidgetInfo, pos2, vec2};
+use eframe::egui::{self, FontId, Role, Sense, UiBuilder, WidgetInfo, pos2, vec2};
 
 use crate::menus::Steps;
 
@@ -110,9 +116,18 @@ pub enum Place {
 pub struct Line {
     pub place: Place,
     pub name: String,
-    /// Its source's tag at its end; none on Original.
+    /// What changed, after the name in the small text, cut at its end where the line has no
+    /// room; none where there is nothing to say, as on a Default line.
+    pub change: Option<String>,
+    /// What changed as screen readers hear it in the step's name, its values before and
+    /// after, since they have no tooltip to rest on.
+    pub heard: Option<String>,
+    /// Its source's tag at its end, where it is not the person's own: Auto, Style or
+    /// Assistant.
     pub tag: Option<String>,
     pub tip: Tip,
+    /// Its piece of the rail.
+    pub rail: Rail,
     /// The module Shift-click opens; none where the app
     /// does not know it, as an operation's unowned parameters or a newer build's module.
     pub module: Option<&'static str>,
@@ -247,8 +262,20 @@ pub fn lines(history: Option<&History>, modules: &[&dyn Module], tr: &Translator
                     end: number == end,
                 },
                 name: line_name(step, modules, tr),
-                tag: Some(source(step.source, tr)),
+                change: summary(step, modules, tr),
+                heard: heard(step, modules, tr),
+                tag: tag(step.source, tr),
                 tip: tip(step, modules, tr),
+                rail: Rail {
+                    node: match () {
+                        () if is_reset(step) => RailNode::Reset { end: number == end },
+                        () if number == end => RailNode::End,
+                        () if number > end => RailNode::Undone,
+                        () => RailNode::Step,
+                    },
+                    above: RailLine::None,
+                    below: RailLine::None,
+                },
                 module: (step.changes.iter()).find_map(|change| known(modules, &change.module)),
             });
         }
@@ -261,27 +288,74 @@ pub fn lines(history: Option<&History>, modules: &[&dyn Module], tr: &Translator
                     there: end == 0,
                 },
                 name: title(modules, module, tr),
-                tag: Some(source(StepSource::Default, tr)),
+                change: None,
+                heard: None,
+                tag: None,
                 // Its source alone: the photo's own, with no change or time to show.
                 tip: Tip::Changes {
                     modules: Vec::new(),
                     by: vec![source(StepSource::Default, tr)],
                 },
                 module: known(modules, module),
+                rail: Rail {
+                    node: if end == 0 && index == 0 {
+                        RailNode::End
+                    } else {
+                        RailNode::Step
+                    },
+                    above: RailLine::None,
+                    below: RailLine::None,
+                },
             });
         }
     }
+    let original = end == 0 && history.is_none_or(|h| h.defaults.is_empty());
     lines.push(Line {
         place: Place::Original {
-            end: end == 0 && history.is_none_or(|h| h.defaults.is_empty()),
+            end: original,
             there: end == 0,
         },
         name: tr.text("history-original"),
+        change: None,
+        heard: None,
         tag: None,
         tip: Tip::Text(tr.text("history-original-tip")),
         module: None,
+        rail: Rail {
+            node: if original {
+                RailNode::End
+            } else {
+                RailNode::Step
+            },
+            above: RailLine::None,
+            below: RailLine::None,
+        },
     });
+    // The rail between the lines: dashed under an undone step, solid else.
+    let under = |line: &Line| {
+        if line.greyed() {
+            RailLine::Dashed
+        } else {
+            RailLine::Solid
+        }
+    };
+    for index in 0..lines.len() {
+        if index > 0 {
+            lines[index].rail.above = under(&lines[index - 1]);
+        }
+        if index + 1 < lines.len() {
+            lines[index].rail.below = under(&lines[index]);
+        }
+    }
     lines
+}
+
+/// The undone steps' count, and the index of the last of them, over which the undone mark
+/// goes; none where no step is undone.
+fn undone(lines: &[Line]) -> Option<(usize, usize)> {
+    let count = lines.iter().filter(|line| line.greyed()).count();
+    let last = lines.iter().rposition(Line::greyed)?;
+    Some((count, last))
 }
 
 /// Draws the section, open or closed as `open` says, its lines from `history`, the open
@@ -322,9 +396,19 @@ pub fn section(
                 list.disabled()
             };
             ui.scope_builder(list, |ui| {
-                let column = number_column(ui, &lines);
-                for line in lines.iter() {
-                    actions.extend(line_row(ui, line, column, editable));
+                // Rows stack with no space between, so the rail runs through.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let undone = undone(&lines);
+                // One numbers' column for the whole section, so the names stay put as it
+                // scrolls.
+                let columns = Columns::of(ui.ctx(), &lines);
+                for (index, line) in lines.iter().enumerate() {
+                    actions.extend(line_row(ui, line, columns, editable));
+                    if let Some((count, last)) = undone
+                        && last == index
+                    {
+                        undone_mark(ui, count, columns);
+                    }
                 }
             });
         });
@@ -370,21 +454,122 @@ fn kept_lines(
     worded
 }
 
-/// How wide the numbers' column is: the widest number's width, in the small text.
-fn number_column(ui: &egui::Ui, lines: &[Line]) -> f32 {
-    let t = theme(ui.ctx());
-    let widest = lines.iter().filter_map(Line::number).max().unwrap_or(0);
-    let text = translator(ui.ctx()).format_number(widest as f64, 0, false);
-    let font = FontId::proportional(t.text.small);
-    let galley = ui.painter().layout_no_wrap(text, font, t.colors.text);
-    galley.size().x
+/// The rail, from a line's start, as the board draws it.
+const RAIL: f32 = 4.0;
+
+/// Where the numbers' column starts, from a line's start, clear of the rail's nodes, and
+/// the gap between the column and the names.
+const NUMBERS: f32 = 14.0;
+const NAME_GAP: f32 = 8.0;
+
+/// The range the numbers' column is wide enough for by default: two-digit steps, as a
+/// group of them reads, so the names stand where they will once groups come.
+const DEFAULT_RANGE: (usize, usize) = (12, 16);
+
+/// The numbers' column of a section: as wide as its widest number, the highest step's, or
+/// a two-digit range, whichever is wider, in the caption size; each number centred in it,
+/// and the names after it. One for the whole section, so nothing moves as it scrolls.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Columns {
+    width: f32,
 }
 
-/// One line, `sizes.panel_line` high: its number right-aligned in a column `column`
-/// wide, its name cut at its end, and its tag at the row's end, as Browse's rows are
-/// drawn; the end's on `list_chosen`, a later step's greyed. Returns what a click, or
-/// Enter, asked for.
-fn line_row(ui: &mut egui::Ui, line: &Line, column: f32, editable: bool) -> Option<Action> {
+impl Columns {
+    /// The column for `lines`, measured in `ctx`'s caption font.
+    fn of(ctx: &egui::Context, lines: &[Line]) -> Columns {
+        let t = theme(ctx);
+        let tr = translator(ctx);
+        let font = FontId::proportional(t.text.caption);
+        let width_of = |text: String| {
+            ctx.fonts_mut(|fonts| fonts.layout_no_wrap(text, font.clone(), t.colors.text))
+                .size()
+                .x
+        };
+        let number = |n: usize| tr.format_number(n as f64, 0, false);
+        let (first, last) = DEFAULT_RANGE;
+        let range = format!("{}\u{2013}{}", number(first), number(last));
+        let highest = lines.iter().filter_map(Line::number).max().unwrap_or(0);
+        Columns {
+            width: width_of(range).max(width_of(number(highest))),
+        }
+    }
+
+    /// Where a number `width` wide starts, centred in the column.
+    fn number_at(self, width: f32) -> f32 {
+        NUMBERS + (self.width - width) / 2.0
+    }
+
+    /// Where the names start, after the column.
+    fn name(self) -> f32 {
+        NUMBERS + self.width + NAME_GAP
+    }
+}
+
+/// The mark under the undone steps, `count` of them: "↑ 2 undone · your next edit
+/// replaces them" in the caption's secondary text, cut at the row's end with its whole
+/// words in its tooltip, then a dashed line to the row's end, the rail dashed through it,
+/// as the board draws it. To screen readers a note, not one of the list's items, in words
+/// with no arrow or dot: "2 undone: your next edit replaces them".
+fn undone_mark(ui: &mut egui::Ui, count: usize, columns: Columns) {
+    let t = theme(ui.ctx());
+    let tr = translator(ui.ctx());
+    let mut args = Args::new();
+    args.set("count", count);
+    let words = tr.text_with("history-undone", Some(&args));
+    let said = tr.text_with("history-undone-said", Some(&args));
+    let size = vec2(ui.available_width(), UNDONE_MARK);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    let mut cut = false;
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let rail = Rail {
+            node: RailNode::None,
+            above: RailLine::Dashed,
+            below: RailLine::Dashed,
+        };
+        rail.paint(painter, rect, rect.left() + RAIL, t.colors.panel, true, &t);
+        let font = FontId::proportional(t.text.caption);
+        let middle = rect.center().y;
+        let start = rect.left() + columns.name();
+        let shown = cut_at(
+            painter,
+            &words,
+            font,
+            t.colors.text_secondary,
+            rect.right() - start,
+        );
+        let width = shown.as_ref().map_or(0.0, |galley| galley.size().x);
+        cut = shown.as_ref().is_none_or(|galley| galley.text() != words);
+        if let Some(galley) = shown {
+            let at = pos2(start, middle - galley.size().y / 2.0);
+            painter.galley(at, galley, t.colors.text_secondary);
+        }
+        let after = start + width + t.spacing.s;
+        if after < rect.right() {
+            let stroke = egui::Stroke::new(t.shape.hairline, t.colors.text_disabled);
+            painter.extend(egui::Shape::dashed_line(
+                &[pos2(after, middle), pos2(rect.right(), middle)],
+                stroke,
+                2.0,
+                2.0,
+            ));
+        }
+    }
+    response.widget_info(|| WidgetInfo::labeled(Role::Note, true, &said));
+    if cut {
+        response.on_hover_text(words);
+    }
+}
+
+/// The undone mark's row, its height.
+const UNDONE_MARK: f32 = 20.0;
+
+/// One line, `sizes.panel_line` high, as the board draws it: its piece of the rail, its
+/// number centred in the section's numbers' column, the name, then what changed in the small text,
+/// cut at its end where there is no room, and the tag at the row's end; the end's on
+/// `list_chosen`, an undone step's in `text_secondary`. Returns what a click, or Enter,
+/// asked for.
+fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) -> Option<Action> {
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
     let size = vec2(ui.available_width(), t.sizes.panel_line);
@@ -397,43 +582,72 @@ fn line_row(ui: &mut egui::Ui, line: &Line, column: f32, editable: bool) -> Opti
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let band = rect.expand2(vec2(t.spacing.xs, 0.0));
-        if chosen {
-            painter.rect_filled(band, t.shape.radius, t.colors.list_chosen);
+        let ground = if chosen {
+            t.colors.list_chosen
         } else if response.hovered() && line.takes(editable) {
-            painter.rect_filled(band, t.shape.radius, t.colors.hover);
-        }
-        let (ink, quiet) = if greyed || !ui.is_enabled() {
-            (t.colors.text_disabled, t.colors.text_disabled)
-        } else if chosen {
-            (t.colors.text_strong, t.colors.text_secondary)
+            t.colors.hover
         } else {
-            (t.colors.text, t.colors.text_secondary)
+            t.colors.panel
         };
-        let small = FontId::proportional(t.text.small);
+        if ground != t.colors.panel {
+            painter.rect_filled(band, t.shape.radius, ground);
+        }
+        let enabled = ui.is_enabled();
+        line.rail
+            .paint(painter, rect, rect.left() + RAIL, ground, enabled, &t);
+        // The end in the strong text, its change and number in the text; an undone step
+        // all in the secondary text, which still reads as a line that takes a click.
+        let (ink, quiet, number) = if !ui.is_enabled() {
+            let off = t.colors.text_disabled;
+            (off, off, off)
+        } else if chosen {
+            (t.colors.text_strong, t.colors.text, t.colors.text)
+        } else if greyed {
+            let secondary = t.colors.text_secondary;
+            (secondary, secondary, secondary)
+        } else {
+            (
+                t.colors.text,
+                t.colors.text_secondary,
+                t.colors.text_secondary,
+            )
+        };
+        let caption = FontId::proportional(t.text.caption);
         let middle = rect.center().y;
-        if let Some(number) = line.number() {
-            let number = words.format_number(number as f64, 0, false);
-            let galley = painter.layout_no_wrap(number, small.clone(), quiet);
-            let at = pos2(rect.left() + column - galley.size().x, middle);
-            painter.galley(at - vec2(0.0, galley.size().y / 2.0), galley, quiet);
+        let centred =
+            |galley: &std::sync::Arc<egui::Galley>, x: f32| pos2(x, middle - galley.size().y / 2.0);
+        if let Some(n) = line.number() {
+            let n = words.format_number(n as f64, 0, false);
+            let galley = painter.layout_no_wrap(n, caption.clone(), number);
+            let at = centred(&galley, rect.left() + columns.number_at(galley.size().x));
+            painter.galley(at, galley, number);
         }
         let mut end = rect.right();
         if let Some(tag) = &line.tag {
-            let caption = FontId::proportional(t.text.caption);
-            let galley = painter.layout_no_wrap(tag.clone(), caption, quiet);
+            let tagged = if chosen {
+                t.colors.text_secondary
+            } else {
+                quiet
+            };
+            let galley = painter.layout_no_wrap(tag.clone(), caption.clone(), tagged);
             end -= galley.size().x;
-            painter.galley(pos2(end, middle - galley.size().y / 2.0), galley, quiet);
+            painter.galley(centred(&galley, end), galley, tagged);
             end -= t.spacing.s;
         }
-        let start = rect.left() + column + t.spacing.s;
-        let font = FontId::proportional(t.text.body);
-        let mut job = LayoutJob::simple_singleline(line.name.clone(), font, ink);
-        job.wrap.max_width = (end - start).max(0.0);
-        job.wrap.max_rows = 1;
-        job.wrap.break_anywhere = true;
-        job.halign = Align::LEFT;
-        let galley = painter.layout_job(job);
-        painter.galley(pos2(start, middle - galley.size().y / 2.0), galley, ink);
+        let start = rect.left() + columns.name();
+        let body = FontId::proportional(t.text.body);
+        let name = cut_at(painter, &line.name, body, ink, end - start);
+        let after = start + name.as_ref().map_or(0.0, |name| name.size().x) + t.spacing.s;
+        if let Some(name) = name {
+            painter.galley(centred(&name, start), name, ink);
+        }
+        // What changed, cut at its end where the line has no room.
+        let small = FontId::proportional(t.text.small);
+        let change = (line.change.as_ref())
+            .and_then(|change| cut_at(painter, change, small, quiet, end - after));
+        if let Some(galley) = change {
+            painter.galley(centred(&galley, after), galley, quiet);
+        }
         if response.has_focus() {
             focus_ring_centred(painter, band, &t);
         }
@@ -441,14 +655,21 @@ fn line_row(ui: &mut egui::Ui, line: &Line, column: f32, editable: bool) -> Opti
     // Worded only when asked, by screen readers: a long history has many lines.
     let enabled = ui.is_enabled();
     response.widget_info(|| {
-        let name = match line.place {
-            Place::Step { number, .. } => {
+        let name = match (line.place, &line.heard) {
+            (Place::Step { number, .. }, change) => {
                 let mut args = Args::new();
                 args.set("number", number);
                 args.set("name", line.name.as_str());
-                words.text_with("history-step-name", Some(&args))
+                let id = match change {
+                    Some(change) => {
+                        args.set("change", change.as_str());
+                        "history-step-name-change"
+                    }
+                    None => "history-step-name",
+                };
+                words.text_with(id, Some(&args))
             }
-            Place::Default { .. } | Place::Original { .. } => line.name.clone(),
+            (Place::Default { .. } | Place::Original { .. }, _) => line.name.clone(),
         };
         WidgetInfo::labeled(Role::ListItem, enabled, name)
     });
@@ -631,6 +852,150 @@ fn source(source: StepSource, tr: &Translator) -> String {
 /// Whether `step` is Reset's, the one step touching every module it reset.
 fn is_reset(step: &HistoryStep) -> bool {
     matches!(&step.note, Some(Note::Message { id, .. }) if id == Note::RESET)
+}
+
+/// What of `text` a line shows in `room` points, `width_of` measuring a string: the whole
+/// where it fits, else its longest start that fits with … after it; nothing where not
+/// even one character and … fit, so a lone … never shows, as epaint would paint one at no
+/// width, over what comes after.
+fn fit(text: &str, room: f32, width_of: impl Fn(&str) -> f32) -> Option<String> {
+    if width_of(text) <= room {
+        return Some(text.to_owned());
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let cut = |count: usize| {
+        let start: String = chars[..count].iter().collect();
+        format!("{}{ELLIPSIS}", start.trim_end())
+    };
+    let fits = |count: usize| width_of(&cut(count)) <= room;
+    if chars.len() < 2 || !fits(1) {
+        return None;
+    }
+    // The longest start that fits: `fitting` does, `over` does not.
+    let (mut fitting, mut over) = (1, chars.len());
+    while over - fitting > 1 {
+        let middle = (fitting + over) / 2;
+        if fits(middle) {
+            fitting = middle;
+        } else {
+            over = middle;
+        }
+    }
+    Some(cut(fitting))
+}
+
+/// What a cut line ends in.
+const ELLIPSIS: char = '…';
+
+/// `text` on one line in `font`, cut at its end with … where it is wider than `width`
+/// ([`fit`]); none where nothing of it fits.
+fn cut_at(
+    painter: &egui::Painter,
+    text: &str,
+    font: FontId,
+    colour: egui::Color32,
+    width: f32,
+) -> Option<std::sync::Arc<egui::Galley>> {
+    let width_of = |text: &str| {
+        let galley = painter.layout_no_wrap(text.to_owned(), font.clone(), colour);
+        galley.size().x
+    };
+    let shown = fit(text, width, width_of)?;
+    Some(painter.layout_no_wrap(shown, font, colour))
+}
+
+/// A step's tag: its source where it is not the person's own, Auto, Style or Assistant;
+/// You only in the tooltip.
+fn tag(source_of: StepSource, tr: &Translator) -> Option<String> {
+    match source_of {
+        StepSource::You | StepSource::Default => None,
+        other => Some(source(other, tr)),
+    }
+}
+
+/// What a step changed, as its line says it after the module's name: one number its
+/// control's label and which way it went, "Shadows ↑" or "Strength ↓", the arrow alone
+/// where the control is the module's own, as Exposure's slider, and no arrow where it did
+/// not move; any other control, a curve, a choice, a toggle, or one kept, released or set
+/// by Auto, its label alone, none where it is the module's own; several controls how
+/// many. Nothing for Reset, a step of source Default or a module this build does not know.
+/// The before and after are the tooltip's.
+fn summary(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Option<String> {
+    if step.source == StepSource::Default || is_reset(step) {
+        return None;
+    }
+    let changed = step.changes.first()?;
+    let definition = definition(modules, &changed.module);
+    match changed.controls.as_slice() {
+        [] => None,
+        [one] => {
+            let label = Some(label(definition, one.control, tr))
+                .filter(|label| *label != title(modules, &changed.module, tr));
+            let arrow = match (&one.before, &one.after) {
+                (ControlValue::Number(before), ControlValue::Number(after)) if after > before => {
+                    Some(UP)
+                }
+                (ControlValue::Number(before), ControlValue::Number(after)) if after < before => {
+                    Some(DOWN)
+                }
+                _ => None,
+            };
+            match (label, arrow) {
+                (Some(label), Some(arrow)) => Some(format!("{label} {arrow}")),
+                (Some(label), None) => Some(label),
+                (None, arrow) => arrow.map(str::to_owned),
+            }
+        }
+        several => {
+            let mut args = Args::new();
+            args.set("count", several.len());
+            Some(tr.text_with("history-line-controls", Some(&args)))
+        }
+    }
+}
+
+/// The arrows of a number that went up or down: glyphs, the same in every language.
+const UP: &str = "↑";
+const DOWN: &str = "↓";
+
+/// What a step changed as screen readers hear it in its name: each control's label and its
+/// value before and after, as the tooltip has them, the label left out where it is the
+/// module's own; nothing where the line says nothing.
+fn heard(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Option<String> {
+    if step.source == StepSource::Default || is_reset(step) {
+        return None;
+    }
+    let changed = step.changes.first()?;
+    let definition = definition(modules, &changed.module);
+    let own = title(modules, &changed.module, tr);
+    let parts: Vec<String> = (changed.controls.iter())
+        .map(|control| match control_change(definition, control, tr) {
+            TipRow::Value {
+                label,
+                before,
+                after,
+            } => {
+                let mut args = Args::new();
+                args.set("before", before);
+                args.set("after", after);
+                if label == own {
+                    return tr.text_with("history-said-change-alone", Some(&args));
+                }
+                args.set("control", label);
+                tr.text_with("history-said-change", Some(&args))
+            }
+            TipRow::Said(said) => said,
+        })
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// A control's label, or an unowned parameter's name, with no definition.
+fn label(definition: Option<&'static Definition>, control: &str, tr: &Translator) -> String {
+    match definition {
+        Some(definition) => tr.text(&messages::label(definition.id, control)),
+        None => control.to_owned(),
+    }
 }
 
 /// A step's line: its module's title, as darktable's history item reads, even with a note,
@@ -1073,6 +1438,14 @@ pub(crate) mod tests {
         }
     }
 
+    fn change_of(module: &'static str, controls: Vec<ControlChange>) -> ModuleChange {
+        ModuleChange {
+            module: module.into(),
+            enabled: None,
+            controls,
+        }
+    }
+
     /// A photo's history of five steps, one module each, the end at the third, so the last
     /// two are greyed, with the Default lines the engine lists: Exposure, Grain turned on,
     /// an Auto step of Exposure, a reset of both, and an assistant's step of Exposure with
@@ -1151,23 +1524,24 @@ pub(crate) mod tests {
         assert_eq!(
             shown,
             [
-                // A note leaves the line its module's name, as darktable's.
+                // A note leaves the line its module's name, as darktable's; the source
+                // only where it is not the person's own.
                 (Some(5), "Exposure", Some("Assistant")),
-                (Some(4), "Reset", Some("You")),
+                (Some(4), "Reset", None),
                 (Some(3), "Exposure", Some("Auto")),
-                (Some(2), "Grain", Some("You")),
-                (Some(1), "Exposure", Some("You")),
+                (Some(2), "Grain", None),
+                (Some(1), "Exposure", None),
                 // The Default lines, the first darktable adds just over Original.
-                (None, "AgX", Some("Default")),
-                (None, "Tone curve", Some("Default")),
-                (None, "Colour calibration", Some("Default")),
-                (None, "Exposure", Some("Default")),
-                (None, "Orientation", Some("Default")),
-                (None, "Highlight reconstruction", Some("Default")),
-                (None, "White balance", Some("Default")),
-                (None, "Output colour profile", Some("Default")),
-                (None, "Demosaic", Some("Default")),
-                (None, "Raw black/white point", Some("Default")),
+                (None, "AgX", None),
+                (None, "Tone curve", None),
+                (None, "Colour calibration", None),
+                (None, "Exposure", None),
+                (None, "Orientation", None),
+                (None, "Highlight reconstruction", None),
+                (None, "White balance", None),
+                (None, "Output colour profile", None),
+                (None, "Demosaic", None),
+                (None, "Raw black/white point", None),
                 (Some(0), "Original", None),
             ]
         );
@@ -1237,7 +1611,7 @@ pub(crate) mod tests {
         let tip = |locale, number: usize| {
             let lines = lines_in(Some(&history), locale);
             let line = (lines.into_iter())
-                .find(|line| line.number() == Some(number) && line.tag.is_some())
+                .find(|line| matches!(line.place, Place::Step { number: n, .. } if n == number))
                 .expect("the step's line");
             line.tip
         };
@@ -1426,6 +1800,8 @@ pub(crate) mod tests {
         editable: bool,
         resettable: bool,
         actions: Vec<Action>,
+        /// The side panel's width; the theme's where none.
+        panel: Option<f32>,
     }
 
     fn scene(look: Theme, size: egui::Vec2, history: Option<History>) -> Harness<'static, Scene> {
@@ -1442,7 +1818,10 @@ pub(crate) mod tests {
                     let t = theme(ui.ctx());
                     let window = ui.max_rect();
                     let side = egui::Rect::from_min_max(
-                        pos2(window.right() - t.sizes.side_panel, window.top()),
+                        pos2(
+                            window.right() - scene.panel.unwrap_or(t.sizes.side_panel),
+                            window.top(),
+                        ),
                         window.max,
                     );
                     ui.painter()
@@ -1466,6 +1845,7 @@ pub(crate) mod tests {
                     editable: true,
                     resettable: true,
                     actions: Vec::new(),
+                    panel: None,
                 },
             )
     }
@@ -1478,8 +1858,15 @@ pub(crate) mod tests {
         )
     }
 
+    /// The list's line named `name`, or "`name`, what changed".
     fn item<'a>(harness: &'a Harness<'_, Scene>, name: &'a str) -> egui_kittest::Node<'a> {
-        harness.get_by_role_and_label(AccessRole::ListItem, name)
+        let named = |node: &egui_kittest::Node<'_>| {
+            let label = node.accesskit_node().label().unwrap_or_default();
+            label == name || label.starts_with(&format!("{name}, "))
+        };
+        (harness.query_all_by_role(AccessRole::ListItem))
+            .find(named)
+            .unwrap_or_else(|| panic!("no line {name}"))
     }
 
     #[test]
@@ -1644,7 +2031,8 @@ pub(crate) mod tests {
         let mut harness = photo_scene(3);
         harness.run();
         let list = harness.get_by_role_and_label(AccessRole::List, "History");
-        assert_eq!(list.children().count(), 16);
+        // Sixteen lines, and the undone mark under the two undone steps.
+        assert_eq!(list.children().count(), 17);
         let end = item(&harness, "Step 3: Exposure");
         assert_eq!(end.accesskit_node().is_selected(), Some(true));
         let first = item(&harness, "Step 1: Exposure");
@@ -1713,25 +2101,297 @@ pub(crate) mod tests {
         assert_eq!(ukrainian[4].name, "Експозиція");
     }
 
-    /// The section as the wireframe's History frame draws it, the end mid-list and the
-    /// fifth step's tooltip shown, its rows' columns lined up and its note beside who and when, in the dark and light themes.
+    /// The section as the board draws it: each line saying what changed, the rail, the
+    /// end mid-list with the undone mark under the two undone steps and the second step's
+    /// tooltip shown under it, in the dark and light themes; and at an older step, the
+    /// first, four undone over it.
     #[test]
     fn the_history_section_is_photographed() {
         let mut results = egui_kittest::SnapshotResults::new();
-        for (which, name) in [
-            (Builtin::Dark, "history-tab-dark"),
-            (Builtin::Light, "history-tab-light"),
+        for (which, name, end, hovered) in [
+            (Builtin::Dark, "history-tab-dark", 3, true),
+            (Builtin::Light, "history-tab-light", 3, true),
+            (Builtin::Dark, "history-tab-older", 1, false),
         ] {
             let mut harness = scene(
                 Theme::builtin(which),
-                egui::vec2(640.0, 460.0),
-                Some(photo_s(3)),
+                egui::vec2(640.0, 480.0),
+                Some(photo_s(end)),
             );
             harness.run();
-            item(&harness, "Step 5: Exposure").hover();
-            harness.run();
+            if hovered {
+                item(&harness, "Step 2: Grain").hover();
+                harness.run();
+            }
             harness.snapshot(name);
             results.extend(harness.take_snapshot_results());
         }
+    }
+
+    /// The numbers' column: wide enough for a two-digit range by default, wider once the
+    /// highest step's number needs it; each number centred in it, and the names starting
+    /// after the widest.
+    #[test]
+    fn the_numbers_are_centred_in_a_column_as_wide_as_the_widest() {
+        let base = photo_s(0);
+        let with = |count: usize| {
+            let steps = (0..count)
+                .map(|i| Arc::clone(&base.steps[i % base.steps.len()]))
+                .collect();
+            let history = History {
+                steps,
+                end: count,
+                ..base.clone()
+            };
+            lines_in(Some(&history), Locale::EnGb)
+        };
+        let lines = [with(9), with(99), with(150), with(12_345)];
+        let mut harness = Harness::builder()
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, measured: &mut Vec<(Columns, Vec<f32>)>| {
+                    if !measured.is_empty() {
+                        return;
+                    }
+                    let t = theme(ui.ctx());
+                    let font = FontId::proportional(t.text.caption);
+                    let width_of = |text: &str| {
+                        let galley = ui.painter().layout_no_wrap(
+                            text.to_owned(),
+                            font.clone(),
+                            t.colors.text,
+                        );
+                        galley.size().x
+                    };
+                    for lines in &lines {
+                        let columns = Columns::of(ui.ctx(), lines);
+                        let widths = ["9", "99", "150", "12345", "12\u{2013}16"]
+                            .map(width_of)
+                            .to_vec();
+                        measured.push((columns, widths));
+                    }
+                },
+                Vec::new(),
+            );
+        harness.run();
+        let measured = &harness.state()[..];
+        let (default, widths) = (measured[0].0, &measured[0].1);
+        // Up to 99, and here past it, the two-digit range sets the width.
+        assert_eq!(default.width, widths[4]);
+        assert_eq!(measured[1].0, default);
+        assert_eq!(measured[2].0, default);
+        // A number wider than it widens the column, and the names move by as much.
+        let wide = measured[3].0;
+        assert_eq!(wide.width, widths[3]);
+        assert!(wide.name() - default.name() == wide.width - default.width);
+        for (columns, widths) in [(default, &widths[..3]), (wide, &widths[..4])] {
+            let centre = NUMBERS + columns.width / 2.0;
+            for &width in widths {
+                let start = columns.number_at(width);
+                assert!(
+                    (start + width / 2.0 - centre).abs() < 1e-3,
+                    "{width} off centre"
+                );
+                assert!(start >= NUMBERS - 1e-3, "{width} starts before the column");
+                assert!(start + width + NAME_GAP <= columns.name() + 1e-3);
+            }
+        }
+    }
+
+    /// What a line shows in a given room: the whole where it fits, else its longest start
+    /// with … after it, the space before the … dropped, and nothing where not even one
+    /// character and … fit, so a lone … never paints over the tag.
+    #[test]
+    fn a_line_is_cut_at_its_end_and_never_to_a_lone_ellipsis() {
+        // A character a point.
+        let width_of = |text: &str| text.chars().count() as f32;
+        let shown = |text: &str, room: f32| fit(text, room, width_of);
+        assert_eq!(shown("Strength ↑", 10.0).as_deref(), Some("Strength ↑"));
+        assert_eq!(shown("Strength ↑", 9.0).as_deref(), Some("Strength…"));
+        assert_eq!(shown("Strength ↑", 5.0).as_deref(), Some("Stre…"));
+        assert_eq!(shown("Strength ↑", 2.0).as_deref(), Some("S…"));
+        assert_eq!(shown("Strength ↑", 1.0), None);
+        assert_eq!(shown("Strength ↑", 0.0), None);
+        assert_eq!(shown("Strength ↑", -3.0), None);
+        assert_eq!(shown("↑", 1.0).as_deref(), Some("↑"));
+        assert_eq!(shown("↑", 0.5), None);
+        // A space before the cut is dropped.
+        assert_eq!(shown("Two controls", 5.0).as_deref(), Some("Two…"));
+    }
+
+    /// The section at the side panel's narrowest, 240 points: a line's change cut, the
+    /// undone mark cut with its whole words in its tooltip, and a tag kept whole.
+    #[test]
+    fn at_the_narrowest_side_panel_the_lines_and_the_mark_are_cut() {
+        let mut harness = scene(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(480.0, 480.0),
+            Some(photo_s(3)),
+        );
+        harness.state_mut().panel = Some(240.0);
+        harness.run();
+        harness.snapshot("history-tab-narrow");
+        let note = (harness.query_all_by_role(AccessRole::Note).next()).expect("the mark");
+        assert_eq!(
+            note.accesskit_node().label().as_deref(),
+            Some("2 undone: your next edit replaces them")
+        );
+        note.hover();
+        harness.run();
+        harness.get_by_label("↑ 2 undone · your next edit replaces them");
+    }
+
+    /// Each line says what changed after its module's name, the control with a direction:
+    /// a number's label and ↑ or ↓, the arrow alone where it is the module's own control,
+    /// no arrow where it did not move; any other control its label; several how many;
+    /// Reset, a Default line and a Default step nothing. Screen readers hear the values
+    /// before and after in the step's name.
+    #[test]
+    fn a_line_says_what_changed_and_which_way() {
+        let tr = Translator::new(Locale::EnGb);
+        let said = |module, controls| {
+            let step = made(1, StepSource::You, None, vec![change_of(module, controls)]);
+            summary(&step, apertrust_modules::MODULES, &tr)
+        };
+        let shown = |text: &str| Some(text.to_owned());
+        // The module's own control: the arrow alone.
+        assert_eq!(
+            said("exposure", vec![number("exposure", 0.7, 1.2)]),
+            shown("↑")
+        );
+        assert_eq!(
+            said("exposure", vec![number("exposure", 1.2, 0.7)]),
+            shown("↓")
+        );
+        assert_eq!(
+            said("grain", vec![number("strength", 25.0, 12.0)]),
+            shown("Strength ↓")
+        );
+        // Kept at its value: the label, no arrow; the module's own, nothing.
+        assert_eq!(
+            said("grain", vec![number("strength", 25.0, 25.0)]),
+            shown("Strength")
+        );
+        assert_eq!(said("exposure", vec![number("exposure", 0.7, 0.7)]), None);
+        // A choice and a toggle: the label alone.
+        let choice = ControlChange {
+            control: "mode",
+            before: ControlValue::Choice(1),
+            after: ControlValue::Choice(0),
+            mark: [None, None],
+        };
+        assert_eq!(said("exposure", vec![choice]), shown("Mode"));
+        let curve = ControlChange {
+            control: "luma_points",
+            before: ControlValue::Points(Vec::new()),
+            after: ControlValue::Points(vec![[0.5, 0.6]]),
+            mark: [None, Some(Mark::Kept)],
+        };
+        let curved = said("tone_curve", vec![curve]).expect("its label");
+        assert!(!curved.contains(['↑', '↓']), "{curved}");
+        // Several: how many, in each language.
+        let two = vec![
+            number("exposure", 0.7, 1.2),
+            number("black_level", 0.0, 0.01),
+        ];
+        assert_eq!(said("exposure", two.clone()), shown("2 controls"));
+        let step = made(1, StepSource::You, None, vec![change_of("exposure", two)]);
+        let pl = Translator::new(Locale::Pl);
+        let uk = Translator::new(Locale::Uk);
+        let modules = apertrust_modules::MODULES;
+        assert_eq!(summary(&step, modules, &pl).as_deref(), Some("2 parametry"));
+        assert_eq!(summary(&step, modules, &uk).as_deref(), Some("2 параметри"));
+        // Reset, a Default step and a newer build's module: nothing.
+        let reset = made(
+            2,
+            StepSource::You,
+            Some(Note::reset()),
+            vec![
+                change_of("exposure", Vec::new()),
+                change_of("grain", Vec::new()),
+            ],
+        );
+        assert_eq!(summary(&reset, modules, &tr), None);
+        let applied = made(
+            3,
+            StepSource::Default,
+            None,
+            vec![change_of("exposure", vec![number("exposure", 0.0, 0.7)])],
+        );
+        assert_eq!(summary(&applied, modules, &tr), None);
+        assert_eq!(said("lens_2030", Vec::new()), None);
+        let lines = lines_in(Some(&photo_s(3)), Locale::EnGb);
+        assert!((lines.iter()).all(|line| line.number().is_some() || line.change.is_none()));
+        // Screen readers: the values before and after in the step's name.
+        let mut harness = photo_scene(3);
+        harness.run();
+        harness.get_by_role_and_label(
+            AccessRole::ListItem,
+            "Step 1: Exposure, +0.700 EV to +1.200 EV",
+        );
+        harness.get_by_role_and_label(
+            AccessRole::ListItem,
+            "Step 2: Grain, Strength, 25.00% to 30.00%",
+        );
+        harness.get_by_role_and_label(AccessRole::ListItem, "Step 4: Reset");
+    }
+
+    /// The rail as the board draws it: a dot a step, the end a larger dot, Reset its glyph,
+    /// undone steps hollow on a dashed rail; and the undone mark, its words in each
+    /// language, under the last undone step.
+    #[test]
+    fn the_rail_and_the_undone_mark_show_where_the_edit_stands() {
+        let lines = lines_in(Some(&photo_s(3)), Locale::EnGb);
+        let nodes: Vec<RailNode> = lines.iter().take(6).map(|line| line.rail.node).collect();
+        assert_eq!(
+            nodes,
+            [
+                RailNode::Undone,
+                RailNode::Reset { end: false },
+                RailNode::End,
+                RailNode::Step,
+                RailNode::Step,
+                RailNode::Step,
+            ]
+        );
+        assert_eq!(
+            (lines[0].rail.above, lines[0].rail.below),
+            (RailLine::None, RailLine::Dashed)
+        );
+        assert_eq!(lines[2].rail.above, RailLine::Dashed);
+        assert_eq!(lines[2].rail.below, RailLine::Solid);
+        assert_eq!(
+            lines.last().map(|line| line.rail.below),
+            Some(RailLine::None)
+        );
+        assert_eq!(undone(&lines), Some((2, 1)));
+        // At end 0 the top Default line is the end, and every step undone.
+        let at_0 = lines_in(Some(&photo_s(0)), Locale::EnGb);
+        assert_eq!(at_0[5].rail.node, RailNode::End);
+        assert_eq!(undone(&at_0), Some((5, 4)));
+        let mut harness = photo_scene(3);
+        harness.run();
+        // To screen readers a note, its words with no arrow or dot.
+        harness.get_by_role_and_label(AccessRole::Note, "2 undone: your next edit replaces them");
+        let words = |locale, count: usize| {
+            let mut args = Args::new();
+            args.set("count", count);
+            Translator::new(locale).text_with("history-undone", Some(&args))
+        };
+        assert_eq!(
+            words(Locale::EnGb, 1),
+            "↑ 1 undone · your next edit replaces it"
+        );
+        // Ukrainian's pronoun follows the number itself: "його" for 1 alone, not 21.
+        assert!(words(Locale::Uk, 1).ends_with("його замінить"));
+        assert!(words(Locale::Uk, 21).ends_with("їх замінить"));
+        assert_eq!(
+            words(Locale::Uk, 3),
+            "↑ 3 скасовані · наступна зміна їх замінить"
+        );
+        assert_eq!(
+            words(Locale::Pl, 5),
+            "↑ 5 cofniętych · następna edycja je zastąpi"
+        );
     }
 }
