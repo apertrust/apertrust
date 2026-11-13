@@ -12,7 +12,7 @@ Buttons with words show hover and press on a plate (`button`, `button_hover`, `b
 | --- | --- |
 | Rest | The outline icon in `text_secondary` |
 | Under the pointer | The same icon in `text_strong`; high contrast also draws its 1-point `button_edge` outline round the button, as its other controls do, and keeps it while the button is held down |
-| Held down | The icon in `accent_text` (dark #FFB833, grey #FFC766, light #8F5A00, high contrast #FFBF00), while pressed only: feedback, never a state |
+| Held down | The icon in `accent_text` (dark #E58A48, grey #F3BD8D, light #A15717, high contrast #E48A47), while pressed only: feedback, never a state |
 | On | The icon's filled form in `text_strong`: a toggle that is on, a picker while picking, a quad's picker, a button whose menu is open |
 | Focused by a key | As at rest, with the focus ring |
 | Disabled | `text_disabled` |

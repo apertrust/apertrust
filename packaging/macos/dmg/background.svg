@@ -25,7 +25,7 @@
   usvg (resvg's text feature) and replace the path.
 -->
 <rect width="660" height="400" fill="#2D2D2D"/>
-<image xlink:href="../../../crates/app/assets/icons/svg/apertrust-logo-dark.svg" x="238.26" y="46" width="183.47" height="20"/>
+<image xlink:href="../../../crates/app/assets/icons/svg/apertrust-logo-dark.svg" x="261.83" y="40" width="136.34" height="32"/>
 <g fill="none" stroke="#A0A0A0" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
 <path d="M260 196H400"/>
 <path d="M394 190L400 196L394 202"/>
