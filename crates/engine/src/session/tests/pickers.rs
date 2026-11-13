@@ -1559,9 +1559,17 @@ fn tools_save_a_drag_under_way_before_their_pick() {
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
     driven.picked();
     assert!(driven.writes().is_empty());
+    // Counted as handed to the writer, which writes the two as one where the second comes
+    // before it has taken the first.
+    let handed = driven.engine.handed;
     let events = driven.run([gain(2.0)]);
     assert!(failures(&events).is_empty(), "{events:?}");
-    assert_eq!(written(&driven.writes()).len(), 2);
+    assert_eq!(driven.engine.handed - handed, 2);
+    let writes = driven.writes();
+    assert!(
+        matches!(written(&writes)[..], [(_, true)] | [(_, true), (_, true)]),
+        "{writes:?}"
+    );
     // The release, where the step left it, has nothing left to save.
     driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
     driven.picked();

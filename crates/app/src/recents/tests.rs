@@ -89,6 +89,10 @@ fn a_folder_opened_after_the_clock_was_set_back_still_goes_to_the_top() {
     let (_dir, file) = state("clock");
     let (mut one, _) = Recents::open(file.clone(), none);
     let (mut two, _) = Recents::open(file.clone(), none);
+    // Each open writes the empty list it found, on its writer's thread: both done before
+    // the first writes its ten, which the second's would otherwise write over.
+    one.flush();
+    two.flush();
     for i in 0..10 {
         one.opened_at(OpenKind::Folder, folder(&format!("n{i}")), 1000 + i);
     }

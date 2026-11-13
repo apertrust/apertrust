@@ -1603,6 +1603,10 @@ struct Engine {
     /// How many kernels the session has compiled, for a test.
     #[cfg(test)]
     compiled: usize,
+    /// How many edits the session has handed the writer, for a test: the writer writes
+    /// only the latest of those still waiting, so its saves count fewer.
+    #[cfg(test)]
+    handed: usize,
     /// Holds the next Clear of the cache, for a test.
     #[cfg(test)]
     clear_hold: Option<export_job::testing::Hold>,
@@ -1988,6 +1992,8 @@ impl Engine {
             uploaded: Vec::new(),
             #[cfg(test)]
             compiled: 0,
+            #[cfg(test)]
+            handed: 0,
             #[cfg(test)]
             clear_hold: None,
             #[cfg(test)]
@@ -2671,6 +2677,10 @@ impl Engine {
             open.thumbnail_through = Some(self.applied);
             self.writer
                 .write(open.sidecar.clone(), xml, self.applied, held);
+            #[cfg(test)]
+            {
+                self.handed += 1;
+            }
             open.unsaved = false;
             // A batch that completes a change and begins a gesture hands over the gesture's
             // first change: the edit before the gesture is the writer's only where the two
@@ -7587,9 +7597,17 @@ mod tests {
         assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
         let xml = std::fs::read_to_string(&sidecar).unwrap();
         assert!(!xml.contains("apertrust:module="), "{xml}");
+        // Counted as handed to the writer, which writes the two as one where the second comes
+        // before it has taken the first.
+        let handed = driven.engine.handed;
         driven.run([set("brightness", ControlValue::Number(1.0), true)]);
         driven.run([reset("brightness")]);
-        assert_eq!(written(&driven.writes()).len(), 2);
+        assert_eq!(driven.engine.handed - handed, 2);
+        let writes = driven.writes();
+        assert!(
+            matches!(written(&writes)[..], [(_, true)] | [(_, true), (_, true)]),
+            "{writes:?}"
+        );
         remove(&path);
     }
 
@@ -9947,7 +9965,11 @@ mod tests {
                 let is = |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == closed);
                 events.extend(until(&session, &wakes, is));
             } else {
-                session.send(open_folder(&folder));
+                // Applied, which cancels the listing, before the hold lets it go: its
+                // reading added. The reading waits behind the held listing on its queue.
+                let opened = session.send(open_folder(&folder));
+                let is = |e: &Event| matches!(e, Event::Job { event: JobEvent::Added { .. }, command: Some(c) } if *c == opened);
+                events.extend(until(&session, &wakes, is));
             }
             drop(permit);
             // A reading after it, on the same queue, ends once the held job has run out.

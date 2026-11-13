@@ -13418,14 +13418,16 @@ mod tests {
         }
     }
 
-    /// `paths` dropped onto the bench's window, as winit drops them, then the frames that
-    /// take them and, once they have been looked at, open what they open.
+    /// `paths` dropped onto the bench's window, as winit drops them, then the frame that
+    /// takes them and, once they have been looked at, the frames that open what they open.
+    /// One frame takes them, never a run, whose frames would take the answer too as soon
+    /// as the drop's thread gave it, opening what it opens within the same run.
     fn drop_onto(harness: &mut Harness<'_, Bench>, paths: &[&Path]) {
         for path in paths {
             let file = dropped::tests::File(path.to_path_buf());
             harness.input_mut().dropped_files.push(Arc::new(file));
         }
-        harness.run();
+        harness.step();
         harness.state_mut().drops.wait();
         harness.run();
     }
