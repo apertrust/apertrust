@@ -1662,7 +1662,7 @@ fn a_pick_that_writes_nothing_is_answered_with_a_save() {
     driven.picked();
     let release = driven.engine.applied;
     assert!(saved(&driven.writes()).is_some_and(|t| t >= release));
-    assert!(!driven.engine.pickers.owed);
+    assert!(driven.engine.pickers.owed.is_empty());
     remove(&path);
 }
 
@@ -1687,4 +1687,34 @@ fn a_pick_that_writes_nothing_writes_again_after_a_failed_write() {
     assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
     assert!(sidecar.exists());
     std::fs::remove_dir_all(folder.parent().unwrap()).unwrap();
+}
+
+/// A write answering an earlier command never answers a picker's `On` whose first pick is
+/// still to come: `Tools` with no reading kept, answered held in the batch, then `On` for
+/// a module already on, the `Saved` through `Tools` alone until the pick arrives.
+#[test]
+fn a_write_never_answers_a_pick_still_to_come() {
+    let path = scratch("picker-pick-to-come");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.writes();
+    let saved = |writes: &[Event]| {
+        (writes.iter())
+            .filter_map(|e| match e {
+                Event::Saved { through, .. } => Some(*through),
+                _ => None,
+            })
+            .max()
+    };
+    let tools = picker(PickerCommand::Tools {
+        module: "sample",
+        tools: Vec::new(),
+    });
+    driven.run([tools, on_module("show", true)]);
+    let on = driven.engine.applied;
+    assert_eq!(saved(&driven.writes()), Some(on - 1));
+    driven.picked();
+    assert!(saved(&driven.writes()).is_some_and(|t| t >= on));
+    assert!(driven.engine.pickers.owed.is_empty());
+    remove(&path);
 }

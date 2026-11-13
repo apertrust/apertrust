@@ -2684,8 +2684,9 @@ impl Engine {
     }
 
     fn hand_over(&mut self, held: bool) {
-        // Every command before it is answered by this write.
-        self.pickers.owed = false;
+        // Every command before it is answered by this write, but one whose pick is still
+        // to come.
+        let through = self.pickers.owed_through(self.applied);
         if let Some(open) = &mut self.open
             && open.view_only.is_none()
         {
@@ -2700,8 +2701,7 @@ impl Engine {
                 open.thumbnail_saved_at = None;
             }
             open.thumbnail_through = Some(self.applied);
-            self.writer
-                .write(open.sidecar.clone(), xml, self.applied, held);
+            self.writer.write(open.sidecar.clone(), xml, through, held);
             #[cfg(test)]
             {
                 self.handed += 1;

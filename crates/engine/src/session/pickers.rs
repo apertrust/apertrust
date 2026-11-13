@@ -91,11 +91,13 @@ pub(super) struct Pickers {
     released: u64,
     /// The drag whose picks wrote changes the writer has yet to be handed.
     gesture: Option<u64>,
-    /// A module picker's command that completes a change, `On`, `Switch`, `Reset` or a
-    /// move's release, has had no answer yet: the next write handed over answers it, or,
-    /// once its drag is complete with nothing to write, the edit reported held, so a
-    /// client always gets a `Saved` through it ([`Engine::settle`]).
-    pub(super) owed: bool,
+    /// A module picker's commands that complete a change, `On`, `Switch`, `Reset` or a
+    /// move's release, with no answer yet, each by its number and its drag, oldest first.
+    /// One is answered by the first write handed over once its drag is complete, released
+    /// with no reading of it still to come, or then by the edit reported held where it has
+    /// nothing to write ([`Engine::settle`]), so a client always gets a `Saved` through it,
+    /// and never one before its pick reaches the edit ([`Pickers::owed_through`]).
+    pub(super) owed: Vec<(u64, u64)>,
 }
 
 /// The picker on, and whether it measures its area rather than its point.
@@ -353,10 +355,28 @@ impl Pickers {
             || (self.probe.iter()).any(|probe| probe.on_its_way().any(|p| of(p.due)))
     }
 
-    /// Whether the newest drag is complete, released with no reading of it still to come,
-    /// and has nothing left for the writer: a command owed an answer gets it then.
-    pub(super) fn quiet(&self) -> bool {
-        self.gesture.is_none() && self.released == self.drag && !self.of_drag_to_come(self.drag)
+    /// Whether `drag` is complete: released, with no reading of it still to come.
+    fn complete(&self, drag: u64) -> bool {
+        drag <= self.released && !self.of_drag_to_come(drag)
+    }
+
+    /// Whether a command owed an answer can have it: its drag complete.
+    pub(super) fn answerable(&self) -> bool {
+        (self.owed.iter()).any(|&(_, drag)| self.complete(drag))
+    }
+
+    /// What a write handed over now answers, as the commands it is through: every one
+    /// applied, `applied`, but for a command owed an answer whose pick is still to come,
+    /// which only a later write answers. Those it answers are owed no more.
+    pub(super) fn owed_through(&mut self, applied: u64) -> u64 {
+        let owed = std::mem::take(&mut self.owed);
+        self.owed = owed
+            .into_iter()
+            .filter(|&(_, drag)| !self.complete(drag))
+            .collect();
+        self.owed
+            .first()
+            .map_or(applied, |&(command, _)| command - 1)
     }
 
     /// Whether the drag whose picks the writer has yet to be handed is complete, released
@@ -640,7 +660,7 @@ impl Engine {
             }
             if done {
                 pickers.released = pickers.drag;
-                pickers.owed = true;
+                pickers.owed.push((self.applied, pickers.drag));
             }
         }
         self.pickers.active = Some(active);
@@ -648,7 +668,7 @@ impl Engine {
         // values already written; otherwise the drag's newest reading does, as it arrives.
         effect.save = self.pickers.settled();
         // One with nothing to write is answered all the same, the edit reported held.
-        effect.answer = self.pickers.owed && self.pickers.quiet();
+        effect.answer = self.pickers.answerable();
         Ok(effect)
     }
 
@@ -732,7 +752,7 @@ impl Engine {
             // reading is applied or dropped.
             self.pickers.drag += 1;
             self.pickers.released = self.pickers.drag;
-            self.pickers.owed = true;
+            self.pickers.owed.push((self.applied, self.pickers.drag));
             let area = match declared.kind {
                 PickerKind::Point => false,
                 PickerKind::Area => true,
@@ -863,7 +883,7 @@ impl Engine {
     pub(super) fn picker_off(&mut self, events: &mut Vec<Event>) {
         if self.pickers.active.is_some() {
             let gesture = self.pickers.gesture.is_some();
-            let owed = self.pickers.owed;
+            let owed = !self.pickers.owed.is_empty();
             self.pickers.clear();
             events.push(Event::Picker {
                 through: self.applied,
@@ -1158,7 +1178,7 @@ impl Engine {
         let settled = self.pickers.settled();
         if settled && self.needs_save() {
             self.save();
-        } else if self.pickers.owed && self.pickers.quiet() && !self.unsaved() {
+        } else if self.pickers.answerable() && !self.unsaved() {
             self.save_held();
         }
     }
@@ -1400,7 +1420,7 @@ impl Engine {
         tracing::error!(target: "pipe", "pickers off: {error}");
         let on = self.pickers.active.is_some();
         let gesture = self.pickers.gesture.is_some();
-        let owed = self.pickers.owed;
+        let owed = !self.pickers.owed.is_empty();
         self.pickers.clear();
         self.pickers.reducer = None;
         self.pickers.probe = None;
