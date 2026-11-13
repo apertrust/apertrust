@@ -3629,7 +3629,7 @@ impl App {
         // opening, read-only until it is live (decision 77); nor anything Undo and Redo
         // could, which the session refuses there.
         let takes = self.mirror.takes_edits();
-        let resettable = self.mirror.values.edited && takes;
+        let resettable = self.mirror.resettable() && takes;
         let state = self.shell.state(ctx, open, resettable);
         let history = self.mirror.history.as_ref().filter(|_| takes);
         State {
@@ -5813,7 +5813,7 @@ fn edit_tab(
         let open = shell.section_open(history::ID, history::OPEN);
         let takes = mirror.takes_edits();
         // As Reset Edit: while the edit holds anything the photo takes back.
-        let resettable = takes && mirror.values.edited;
+        let resettable = takes && mirror.resettable();
         let shown = mirror.history.as_ref();
         let today = history::today();
         let history = history::tab(ui, shown, modules, open, peek, takes, resettable, today);

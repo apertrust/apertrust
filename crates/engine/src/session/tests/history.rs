@@ -284,6 +284,12 @@ fn a_reset_among_the_default_steps_applies_them_as_one_step() {
     assert!(frame(&driven.gpu, &reset) == every);
     assert!(edit(&driven).unapplied.is_empty());
     assert_eq!(fold(&driven), edit(&driven));
+    // Saved, though it moved no value: the file holds the default steps and the Reset.
+    let sidecar = sidecar::path_for(&path);
+    driven.writes();
+    let read = sidecar::read(&sidecar, OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert_eq!((read.log.steps().len(), read.log.end()), (4, 4));
+    assert!(read.edit.unapplied.is_empty());
     // Undo takes it back to Original; a module's reset there is one step of that module.
     driven.run([Command::Undo]);
     assert!(!edit(&driven).unapplied.is_empty());
@@ -291,6 +297,26 @@ fn a_reset_among_the_default_steps_applies_them_as_one_step() {
         module: "temperature".to_owned(),
     }]);
     let after = history(&reset);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    assert_eq!(after.steps[3].changes[0].module, "temperature");
+    assert_eq!(planned(&driven), all);
+    assert_eq!(fold(&driven), edit(&driven));
+    // Saved too, though it moved no value.
+    driven.writes();
+    let read = sidecar::read(&sidecar, OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert_eq!((read.log.steps().len(), read.log.end()), (4, 4));
+    assert_eq!(read.log.steps()[3].change.entries().len(), 1);
+    // And inside a `Step`, its reset a write of its own though it moves no value.
+    driven.run([Command::Undo]);
+    assert!(!edit(&driven).unapplied.is_empty());
+    let stepped = driven.run([Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands: vec![Command::ResetModule {
+            module: "temperature".to_owned(),
+        }],
+    }]);
+    let after = history(&stepped);
     assert_eq!((after.steps.len(), after.end), (4, 4));
     assert_eq!(after.steps[3].changes[0].module, "temperature");
     assert_eq!(planned(&driven), all);
@@ -321,6 +347,65 @@ fn a_picker_turned_on_among_the_default_steps_applies_them() {
     assert!(failures(&events).is_empty(), "{events:?}");
     assert!(on(&events, "exposure"));
     assert_eq!(planned(&driven), all);
+    // A step of its module, as darktable's picker turning its module on is an item, after
+    // the default steps, saved: reopened, the photo shows them applied.
+    let after = history(&events);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    assert_eq!(after.steps[3].changes[0].module, "exposure");
+    assert_eq!(fold(&driven), edit(&driven));
+    driven.run([Command::Picker(PickerCommand::Off)]);
+    driven.writes();
+    let read = sidecar::read(&sidecar::path_for(&path), OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert_eq!((read.log.steps().len(), read.log.end()), (4, 4));
+    assert!(read.edit.unapplied.is_empty());
+    remove(&path);
+}
+
+/// A newer file another program wrote, taken in on a photo whose log is its default steps
+/// never written, as a move among them finds it: no move of the end is lost, since the
+/// file never held one.
+#[test]
+fn a_newer_file_taken_in_over_default_steps_never_written_loses_no_move() {
+    let path = scratch("history-default-newer-move");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(DEFAULTS);
+    let (_, ids) = opened_with_defaults(&mut driven, &path);
+    let clock = Clock::at(
+        driven.engine.open.as_ref().unwrap().history.log().steps()[0]
+            .clock
+            .when
+            + 60_000,
+        None,
+        "00000000".parse().unwrap(),
+    );
+    let mut theirs = crate::history::Log::default();
+    let mut blacker = Edit::default();
+    let black = ControlValue::Number(0.01);
+    (blacker.set_control(&Exposure, "black_level", black, &testing::image())).unwrap();
+    let changes = crate::history::Change::between(&Edit::default(), &blacker, &[]);
+    theirs.add_change(changes, StepSource::You, None, clock);
+    let file = sidecar::Edits::new("");
+    sidecar::write_log(
+        &sidecar,
+        &file,
+        &theirs,
+        &[clock],
+        (OPERATIONS, DEFAULTS),
+        "cli",
+    )
+    .unwrap();
+    // A move among the default steps, handed over as nothing to write, finds the file.
+    driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    driven.writes();
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        !taken
+            .iter()
+            .any(|e| matches!(e, Event::Failed(SessionError::MoveNotKept { .. }))),
+        "{taken:?}"
+    );
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (1, 1));
     remove(&path);
 }
 

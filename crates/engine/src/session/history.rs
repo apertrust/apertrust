@@ -95,9 +95,6 @@ pub(super) struct PhotoHistory {
     /// command on the edit since but changes not yet a step, of one target, source You or
     /// Auto, no note, and of one module, so in no batch.
     merge: Option<Merge>,
-    /// Whether a change the session made itself, not yet a step, applied the modules not
-    /// applied, as a module's picker turned on with the end among the default steps.
-    applying: bool,
     /// Whether the log was read from a file holding steps, taken in from one, or handed to
     /// the writer: until then a log of default steps alone is not written
     /// ([`Self::unwritten`]).
@@ -238,7 +235,6 @@ impl PhotoHistory {
             changed: true,
             written: None,
             merge: None,
-            applying: false,
             saved,
         }
     }
@@ -330,9 +326,12 @@ impl PhotoHistory {
             log.add(step);
             laid = true;
         }
-        let ours = self.log.steps()[..self.log.end()]
-            .last()
-            .map(|step| step.id);
+        // The end of a log of default steps never written is no move of the end: the file
+        // never held it.
+        let ours = match self.unwritten() {
+            true => base.end,
+            false => (self.log.steps()[..self.log.end()].last()).map(|step| step.id),
+        };
         let mut kept = true;
         let mut moved = false;
         if laid {
@@ -404,7 +403,6 @@ impl PhotoHistory {
         self.done.clear();
         self.undone.clear();
         self.merge = None;
-        self.applying = false;
         self.saved = true;
         self.changed = true;
         (std::mem::replace(&mut self.stepped, self.log.fold()), kept)
@@ -474,28 +472,19 @@ impl PhotoHistory {
         advance(&mut self.clocks, clock);
         self.stepped = edit.clone();
         self.stepped.unapplied = self.log.unapplied(self.log.end());
-        self.applying = false;
         self.changed = true;
         true
     }
 
     /// The modules not applied in `edit`, the edit as it stands: those the last step left
-    /// unapplied while its values are the last step's, and none once they move away, or
-    /// once the session applied them itself ([`Self::applied`]), as a change keeps the
-    /// default steps after the end and applies them ([`Log::add`]).
+    /// unapplied while its values are the last step's, and none once they move away, as a
+    /// change keeps the default steps after the end and applies them ([`Log::add`]).
     pub(super) fn unapplied(&self, edit: &Edit) -> BTreeSet<String> {
-        if !self.applying && Entry::between(&self.stepped, edit).is_empty() {
+        if Entry::between(&self.stepped, edit).is_empty() {
             self.stepped.unapplied.clone()
         } else {
             BTreeSet::new()
         }
-    }
-
-    /// The session applied the modules not applied by a change of its own, not yet a step:
-    /// a module's picker turned on with the end among the default steps, darktable's first
-    /// change. They stay applied until the end moves.
-    pub(super) fn applied(&mut self) {
-        self.applying = true;
     }
 
     /// A command on the edit, sent at `at`, wrote `target`, or, with `None`, wrote several
@@ -654,7 +643,6 @@ impl PhotoHistory {
         advance(&mut self.clocks, clock);
         self.stepped = self.log.fold();
         self.merge = None;
-        self.applying = false;
         self.changed = true;
         self.stepped.clone()
     }
@@ -759,13 +747,15 @@ fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
         .collect()
 }
 
-/// Whether `command` resets the edit or a module, or is a `Step` holding such a command:
-/// with the end among the default steps it applies the modules not applied (decision 78).
-fn resets(command: &Command) -> bool {
+/// What `command` resets, the edit or a module, or a `Step`'s commands in turn: with the end
+/// among the default steps it applies the modules not applied (decision 78), and is a step
+/// though it moves no value.
+fn resets(command: &Command) -> Vec<Wrote> {
     match command {
-        Command::Reset | Command::ResetModule { .. } => true,
-        Command::Step { commands, .. } => commands.iter().any(resets),
-        _ => false,
+        Command::Reset => vec![Wrote::All],
+        Command::ResetModule { module } => vec![Wrote::Module(module.clone())],
+        Command::Step { commands, .. } => commands.iter().flat_map(resets).collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -954,13 +944,19 @@ impl Engine {
         let before = self.open.as_ref().map(|open| open.edit.clone());
         let mut applied = self.edit_command(command);
         // A Reset or a module's reset applies the modules not applied, though it may move no
-        // value: the edit at the photo's defaults with every module applied.
-        if resets
+        // value: the edit at the photo's defaults with every module applied, a step to save.
+        // Inside a `Step` it is a write of its own, which its commands report only where a
+        // value moved.
+        if !resets.is_empty()
             && let (Ok(effect), Some(open)) = (&mut applied, &mut self.open)
             && !open.edit.unapplied.is_empty()
         {
             open.edit.unapplied.clear();
+            open.unsaved = true;
             effect.render = true;
+            if is_step {
+                effect.wrote.extend(resets);
+            }
         }
         if let Some(open) = &mut self.open {
             match (&applied, writes) {

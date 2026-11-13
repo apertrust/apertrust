@@ -43,7 +43,7 @@ use apertrust_plugin::{Format, ImageContext, ImageDesc};
 
 use crate::compute::ComputeError;
 use crate::edit::{self, EditError, panic_message};
-use crate::history::StepSource;
+use crate::history::{StepSource, Wrote};
 use crate::picker::{
     self, Cfa, DEFAULT_AREA, DEFAULT_POINT, FrameReading, Geometries, Group, Layout, ModuleReading,
     PickKeys, PickerCommand, PickerReading, PickerRef, Place, Reading, Recorded, Reducer, Region,
@@ -746,6 +746,7 @@ impl Engine {
             }
             // A slider's gesture under way ends as a step of its own source first.
             self.end_gesture();
+            let applies = (self.open.as_ref()).is_some_and(|open| !open.edit.unapplied.is_empty());
             let changed = self.change(|edit, _, _, _| {
                 edit.unapplied.clear();
                 edit.turn_on(found);
@@ -761,7 +762,17 @@ impl Engine {
             if changed {
                 if let Some(open) = &mut self.open {
                     open.gesture = None;
-                    open.history.applied();
+                }
+                // With the end among the default steps it applies them, darktable's first
+                // change: a step of its module, as darktable's picker turning its module on
+                // is a history item, saved with the log.
+                if applies {
+                    if let Some(open) = &mut self.open {
+                        let wrote = vec![Wrote::Module(found.definition().id.to_owned())];
+                        open.history.wrote(None, wrote, std::time::Instant::now());
+                        open.unsaved = true;
+                    }
+                    self.step(StepSource::You, None);
                 }
                 (effect.values, effect.render, effect.save) = (true, true, true);
             }
