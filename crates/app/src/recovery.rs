@@ -536,14 +536,17 @@ impl Pending {
     }
 
     /// In each frame's drawing in `ctx` while the marker waits: [`Drawn`] at the window's
-    /// corner, a point's paint callback that draws nothing and says when the renderer has
+    /// corner, a physical pixel's paint callback that draws nothing and says when the renderer has
     /// drawn the frame into the window's surface. egui's `cumulative_frame_nr` counts a
     /// frame the renderer skipped, finding no surface to draw into, as drawn.
     pub fn mark(&self, ctx: &egui::Context) {
         if self.marker.is_none() || self.drawn.load(Ordering::Acquire) {
             return;
         }
-        let corner = egui::Rect::from_min_size(ctx.content_rect().min, egui::Vec2::splat(1.0));
+        // A physical pixel, so the renderer, which skips one rounded to no pixel, runs it at
+        // any scale.
+        let pixel = egui::Vec2::splat(1.0 / ctx.pixels_per_point());
+        let corner = egui::Rect::from_min_size(ctx.content_rect().min, pixel);
         let drawn = Drawn(Arc::clone(&self.drawn));
         let painter = ctx.layer_painter(egui::LayerId::background());
         painter.add(egui_wgpu::Callback::new_paint_callback(corner, drawn));
@@ -930,6 +933,31 @@ mod tests {
         harness.step();
         harness.state_mut().finish();
         assert!(!harness.state().waiting());
+        assert!(!path.exists());
+    }
+
+    /// At the smallest interface size on a screen X11 scales below 1, under half a physical
+    /// pixel a point, the callback still covers a pixel, so the renderer runs it.
+    #[test]
+    fn the_marker_goes_at_the_smallest_scale() {
+        let folder = Folder::new("start-marker-small");
+        let path = folder.0.join("starting.toml");
+        let (mut marker, _) = mine(&path);
+        assert!(marker.write(&tried(RADEON, Backend::Dx12)));
+        let mut harness = egui_kittest::Harness::builder()
+            .wgpu()
+            .with_pixels_per_point(0.5 * 0.75)
+            .build_ui_state(
+                |ui, pending: &mut Pending| {
+                    pending.frame(ui.ctx());
+                    pending.mark(ui.ctx());
+                },
+                Pending::new(Some(marker)),
+            );
+        harness.render().expect("drawn");
+        harness.step();
+        harness.state_mut().finish();
+        assert!(!harness.state().waiting(), "a frame was drawn");
         assert!(!path.exists());
     }
 }
