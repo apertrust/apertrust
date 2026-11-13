@@ -17,8 +17,8 @@
 //! `apertrust-library`: the library's code, with no GPU and no engine (decisions 46, 47 and 52 to 55). The engine's session serves its operations to clients; the command line's
 //! `library scan` still reaches the index directly.
 //!
-//! Built so far: [`sidecar`], the `.apxmp` file's text layer (layer 1), [`clock`], the
-//! hybrid logical clock and the machine id that its version 2 is to write, [`listing`], one
+//! Built so far: [`sidecar`], the `.apxmp` file's text layer (layer 1), versions 1 and 2,
+//! [`clock`], the hybrid logical clock and the machine id that version 2 holds, [`listing`], one
 //! folder's raws and their sidecars, listed on a worker thread, [`index`], that listing
 //! with each sidecar read, in memory, [`walk`], the walk of a folder's whole tree for its
 //! folders' raw counts, and [`ops`], the commands and events clients see (layer 4),

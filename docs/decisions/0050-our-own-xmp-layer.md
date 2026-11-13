@@ -13,7 +13,7 @@ Who reads and writes XMP? The `.apxmp` is XMP ([0048](0048-the-apxmp-format.md))
 - **Writing:** `to_xml`, a canonical compact form with no wrapper for sidecars, so the same tree gives the same bytes; `to_packet`, with the wrapper, for embedding in files.
 - **Round trips** keep every unknown namespace, property and prefix in order; `get`, `set` and `remove` change one property.
 - **The standard schemas and darktable's namespace** are read as any other; the layer stays namespace-generic.
-- **Held by fixtures** in `crates/library/tests/fixtures/xmp`: darktable's `.xmp` files and hand-written forms, and a version 2 sidecar with a history, added by the library's step 8.2 ([0078](0078-undo-redo-and-the-edits-history.md), planned); ExifTool and exiv2 read what it writes without error. The `.apxmp` text layer goes through it.
+- **Held by fixtures** in `crates/library/tests/fixtures/xmp`: darktable's `.xmp` files and hand-written forms, and a version 2 sidecar with a history, added by the library's step 8.2 ([0078](0078-undo-redo-and-the-edits-history.md)); ExifTool and exiv2 read what it writes without error. An empty array is closed at once (`<rdf:Seq/>`), as the whitespace inside an open one reads as text to ExifTool. The `.apxmp` text layer goes through it.
 
 **EXIF** is read by `apertrust-raw` from rawler's metadata (`read_exif_file`, `read_exif`), never through this layer. EXIF and XMP written into exported files come with the export's metadata, through a pure-Rust writer chosen then (planned).
 

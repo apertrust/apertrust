@@ -229,6 +229,17 @@ fn round_trips(label: &str, xml: &str) {
     assert_eq!(again.to_xml(), written, "{label}");
 }
 
+/// An empty array is closed at once, so no reader takes the whitespace inside it for text.
+#[test]
+fn an_empty_array_is_closed_at_once() {
+    let xml = description(r#"<ex:a><rdf:Bag></rdf:Bag></ex:a><ex:b><rdf:Seq> </rdf:Seq></ex:b>"#);
+    let xmp = read(&xml);
+    let written = xmp.to_xml();
+    assert!(written.contains("<rdf:Bag/>"), "{written}");
+    assert!(written.contains("<rdf:Seq/>"), "{written}");
+    round_trips("empty arrays", &xml);
+}
+
 #[test]
 fn what_is_written_reads_back_to_the_same_tree_and_writes_the_same_bytes() {
     let fixtures = every_fixture();

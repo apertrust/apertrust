@@ -22,8 +22,8 @@
 //! an element, indented one space a level. A simple property that comes after one that
 //! cannot be an attribute is an element too, so the order of the properties is kept. A
 //! struct is a nested `rdf:Description`, an array an `rdf:Bag`, `rdf:Seq` or `rdf:Alt`
-//! of `rdf:li`, and a node with qualifiers other than `xml:lang` an `rdf:Description` with
-//! its `rdf:value`.
+//! of `rdf:li`, closed at once where it is empty (`<rdf:Seq/>`), and a node with
+//! qualifiers other than `xml:lang` an `rdf:Description` with its `rdf:value`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -303,6 +303,15 @@ impl Writer<'_> {
             Value::Struct(fields) => {
                 self.out.push_str(&format!("<{tag}>\n"));
                 self.description(depth + 1, None, &[], fields, &[]);
+                self.indent(depth);
+                self.out.push_str(&format!("</{tag}>\n"));
+            }
+            Value::Array(kind, items) if items.is_empty() => {
+                // Closed at once, as the whitespace an open container would hold reads as
+                // text to other readers, ExifTool among them.
+                self.out.push_str(&format!("<{tag}>\n"));
+                self.indent(depth + 1);
+                self.out.push_str(&format!("<rdf:{}/>\n", kind.local()));
                 self.indent(depth);
                 self.out.push_str(&format!("</{tag}>\n"));
             }

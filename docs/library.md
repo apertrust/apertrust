@@ -504,7 +504,7 @@ Decisions 28 and 48, built. `.apxmp` is XMP: attributes for values, one `rdf:Des
 
 - `sidecar::Document`, the file as text: its `version` (`sidecar::VERSION`, 1, for a document made to be written), the `build` that wrote it from `x:xmptk`, and its `entries`, each a `sidecar::Entry`: `Module` (its id, version as written, `kept` and `auto` marks and `control:` attributes) or `Operation` (its id, schema and `param:` attributes), every value as the text the file holds, in the file's order.
 - `Document::parse` reads one through the XMP layer, and `sidecar::read` reads a file; `Document::to_xml` writes one, the modules' entries first and then the operations', in a layout that never varies, so a file read and written back is the same bytes. A fixture folder (`crates/library/tests/fixtures/*.apxmp`) is written back byte for byte.
-- `SidecarError`: `Io`, `Xml` (not XMP), `NotAnEdit` (no `apertrust:version`) and `Version`, a version that is no whole number, which refuses to open.
+- `SidecarError`: `Io`, `Xml` (not XMP), `NotAnEdit` (no `apertrust:version`) and `Version`, a version that is no whole number, which refuses to open. In version 2, what cannot be read as written, a clock or a note, is a `sidecar::Problem` in `Edits::problems`, the rest of the file read.
 - The engine turns the entries into an `Edit` and back with the module definitions; this module never sees a number, a choice or a parameter's range.
 
 ### Newer edits
@@ -521,21 +521,21 @@ Decision 53. Every sidecar is written whole, through `sidecar::write_xml`, which
 
 ### The XMP layer
 
-Decision 50, built, `crates/library/src/xmp.rs`. Its target is conformance to ISO 16684-1:2019 (which revises ISO 16684-1:2012, whose text Adobe publishes free as the XMP Specification Part 1), held by its fixtures, to which step 8.2 adds a sidecar with a history that ExifTool and exiv2 read without error. Any valid XMP packet read into a tree of properties and written back in a canonical compact form, for the `.apxmp`, darktable's `.xmp` and, later, the files an export writes. It is XMP and nothing about what any property means, on quick-xml alone.
+Decision 50, built, `crates/library/src/xmp.rs`. Its target is conformance to ISO 16684-1:2019 (which revises ISO 16684-1:2012, whose text Adobe publishes free as the XMP Specification Part 1), held by its fixtures, among them a sidecar of version 2 with a history that ExifTool and exiv2 read without error (step 8.2). Any valid XMP packet read into a tree of properties and written back in a canonical compact form, for the `.apxmp`, darktable's `.xmp` and, later, the files an export writes. It is XMP and nothing about what any property means, on quick-xml alone.
 
 - **The tree:** `Xmp` (its toolkit, `about`, the declared prefixes, its properties in order); `Property`, a `Name` and a `Node`; a `Node`'s `Value` simple, a resource, a struct, or an array (`ArrayKind`: Bag, Seq or Alt), with its `Qualifier`s, `xml:lang` first.
 - **`Xmp::parse` and `Xmp::parse_bytes`** read what a packet can be: an `<?xpacket?>` wrapper, a byte order mark and UTF-16, `x:xmpmeta` or a bare `rdf:RDF`, several descriptions merged in order, attribute and element forms, `rdf:parseType="Resource"`, nested descriptions, `rdf:resource`, `rdf:value` qualifiers, CDATA. Every form gives the same `Node`; an error names the line, and RDF beyond XMP's subset is refused, not guessed.
 - **`Xmp::to_xml`** writes exiv2's compact form, the file a sidecar is, and **`Xmp::to_packet`** wraps it for embedding; the same tree gives the same bytes.
 - **Every unknown namespace, property and prefix is kept** in its place. A caller `Xmp::set`s and `Xmp::remove`s the properties it owns (`Xmp::get` reads one) and leaves the rest as read, as darktable's `dt_exif_xmp_write` does with `dt_xmp_keys`.
-- Fixtures in `crates/library/tests/fixtures/xmp`: four of darktable's `.xmp` and four hand-written forms; ExifTool and exiv2 read what it writes.
+- Fixtures in `crates/library/tests/fixtures/xmp`: four of darktable's `.xmp`, four hand-written forms and `version-2-history.apxmp`; ExifTool and exiv2 read what it writes.
 
 ### Version 2
 
-Decision 47, planned (steps 8, 9 and 11 to 17). Version 2 holds the parts below, in decision 48's style, written through the XMP layer.
+Decision 47. Version 2 holds the parts below, in decision 48's style, written through the XMP layer. Its text layer is built (step 8.2): `sidecar::Edits` reads and writes the photo's identity and its virtual copies, each with its clock vector, history and end, in the layout [history.md](history.md#in-the-sidecar) shows, and reads a version 1 or 0 file as one virtual copy of one step, or of none. The engine still writes version 1 until history is saved (step 9.5); snapshots, tombstones, groups and the steps' metadata are planned (steps 11 to 17).
 
 **The photo:** its name (`apertrust:photo`), its fingerprint (`apertrust:fingerprint`, [Fingerprints](#fingerprints)) and the build that wrote it (`x:xmptk`).
 
-**Its virtual copies** (`apertrust:copies`), one at first. Each has a random id of 8 hex digits, a number for its place (darktable's version number, 0 for the first), a name (darktable's version name), its history and the log's end, its snapshots and its clock vector.
+**Its virtual copies** (`apertrust:copies`), one at first. Each has a random id of 8 hex digits, a number for its place (darktable's version number, 0 for the first), a name (darktable's version name), its history and the log's end, its snapshots and its clock vector. The copy a version 1 file reads as has the id `00000000` (`sidecar::FIRST_COPY`), the same on every machine; a new copy's random id is never `00000000` (decision 47).
 
 - New Virtual Copy is darktable's duplicate; New Virtual Copy from Original is its "virgin" duplicate.
 - A deleted one leaves a tombstone, so a sync cannot bring it back.
@@ -547,14 +547,15 @@ Decision 47, planned (steps 8, 9 and 11 to 17). Version 2 holds the parts below,
 - **The end** (`apertrust:end`) is the last step applied, by its id, darktable's `history_end`. The edit is, for each module, its values at its last step up to the end, otherwise its defaults, off if it is switched.
 - **Undo and Redo** take back the session's undo records while the photo is open, otherwise they move the end; a change after Undo drops the later steps, which Undo brings back while the photo is open ([history.md](history.md#behaviour)).
 - **Compress History** drops the steps after the end, keeps for each module and field its last entry with its step id and clock, and advances the copy's clock vector with a clock of its own, so a copy still holding the folded steps is known to be older. Undo puts the log back while the photo is open. Each move of the end, Undo, Redo and going to a step, advances the clock vector likewise.
-- **Discard History** is a step that resets the edit.
+- **Reset** is a step that resets the edit, the log kept. **Discard History…** (decision 78, planned with 9.8) is darktable's discard, the session's `DiscardHistory`: it clears the history and resets the edit, as going to Original and then Compress, asking first, and is undone within the session. It is the one command allowed on an edit view-only because of a `sidecar::Problem`, where it writes a fresh log of one step, noted `history-discard`, holding the edit as far as it was read, and ends the view-only state.
 - **Only the log is stored,** never the edit's state beside it, which could disagree with it. A step is about 100 to 300 bytes, so 200 steps make about 40 kB.
 
 **Its snapshots,** per virtual copy, each with an id, a name, its clock and the edit it shows, whole, as one compressed step, so Compress cannot break one. Restore Snapshot is a step. The library's step 16 adds them to the history's API and its tab's Snapshots section ([history.md](history.md)). (darktable's are a point in the history, in memory, ten at most.)
 
-**Its clocks:** hybrid logical clocks, UTC milliseconds, a counter and the machine id (`2026-03-14T14:02:11.120Z 0 a1b2c3d4`), each written as three fields, the time an XMP Date (`apertrust:when`) beside `apertrust:counter` and `apertrust:machine`, so other tools read it as a date ([history.md](history.md#in-the-sidecar)). The clock and the machine id are built, `apertrust_library::clock` (the library's step 8.1); no file holds them yet.
+**Its clocks:** hybrid logical clocks, UTC milliseconds, a counter and the machine id (`2026-03-14T14:02:11.120Z 0 a1b2c3d4`), each written as three fields, the time an XMP Date (`apertrust:when`) beside `apertrust:counter` and `apertrust:machine`, so other tools read it as a date ([history.md](history.md#in-the-sidecar)). The clock and the machine id are built, `apertrust_library::clock` (the library's step 8.1), and version 2's text layer reads and writes them (step 8.2); no file the engine writes holds them yet.
 
-- **A new clock** (`Clock::now`) is the wall clock with counter 0 where the wall clock is past the last clock this machine made or read; else the last clock's time with its counter raised by one, so a wall clock set back never orders a new clock before an old one. The time stops at 9999-12-31T23:59:59.999Z, the latest an XMP Date holds, where only the counter rises. A machine that reads a later clock moves its own past it, passing the later of the two as the last.
+- **A new clock** (`Clock::now`) is the wall clock with counter 0 where the wall clock is past the last clock this machine made or read; else the last clock's time with its counter raised by one, so a wall clock set back never orders a new clock before an old one. The time stops at 9999-12-31T23:59:59.999Z, the latest an XMP Date holds, where only the counter rises. A machine that reads a later clock moves its own past it, passing `Clock::observe`'s result as the last.
+- **The drift bound** (decision 47): `Clock::observe(last, read, wall, me)` ignores another machine's clock read more than 5 minutes past this machine's wall clock (`clock::MAX_DRIFT`, Kerberos's default skew), keeping the last clock as it was; the file is still read and that clock kept as written. One sidecar dated 9999, or from a computer whose date or time zone is wrong, never pins every reader's clock, and no other machine's file moves a machine's clocks more than 5 minutes past its wall clock. A clock ignored still orders where it is, after the steps a reader makes meanwhile. This machine's own clocks (`read.machine == me`) are always followed, so after its wall clock is set back its next step still orders after its own earlier ones.
 - **Clocks order** by time, then counter, then machine, so every machine orders any two alike.
 - **Their text** (`Clock::fields`, `Clock::from_fields`): the time written in UTC with milliseconds and `Z`, and read from any XMP Date with seconds and a time zone, or RFC 3339's other forms, from 1970 to 9999; the counter in decimal; the machine id in eight hex digits, lowercase.
 - Each step, snapshot, tombstone and library-file entry has one, and each virtual copy keeps its clock vector, the latest clock of each machine that changed it.
@@ -563,7 +564,7 @@ Decision 47, planned (steps 8, 9 and 11 to 17). Version 2 holds the parts below,
 
 **Its photo groups,** by id, so they survive a rebuild.
 
-**The session's undo and history are this log** ([history.md](history.md); [engine.md](engine.md#history-and-undo)), first in the session's memory and saved here as soon as version 2 lands (the library's step 8.2), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. A version 1 sidecar is read as one virtual copy whose history is one step holding its modules; version 0 still opens. The text layer is to gain the comparison of two copies ([Comparing two copies](#comparing-two-copies)); the engine keeps the typed reading with the module definitions ([engine.md](engine.md#version-2)).
+**The session's undo and history are this log** ([history.md](history.md); [engine.md](engine.md#history-and-undo)), first in the session's memory and saved here with the library's step 9.5, on version 2's text layer (step 8.2), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. A version 1 sidecar is read as one virtual copy whose history is one step holding its modules; version 0 still opens. The text layer is to gain the comparison of two copies ([Comparing two copies](#comparing-two-copies)); the engine keeps the typed reading with the module definitions ([engine.md](engine.md#version-2)).
 
 **Never overwritten by an older build** (decisions 43 and 52): an edit holding anything a save would drop opens for viewing only, metadata included. That is a newer file or module version, a module this build neither knows nor has retired, or, at the edit's own versions, a control, value, operation, parameter or element it cannot keep.
 
@@ -590,7 +591,10 @@ Roots are folders Apertrust tracks as a unit, each carrying its id at its top: a
 
 ### Fingerprints
 
-The fingerprint is the file's size plus BLAKE3 over its first and last 64 KiB (`blake3` with pure Rust features only, no C, decision 5), in the sidecar and the cache. It re-pairs a sidecar with a raw renamed outside Apertrust, recognises a moved photo and photos already there on import, and keys the thumbnails. It is computed only when a photo is opened or thumbnailed, when its sidecar is first written, and for a lost sidecar's few candidates, never for a cloud file not on the disk: 35 ms a raw over SMB. A whole-file hash would cost 0.36 s for a 30 MB raw at the NAS's 84 MB/s. Not built yet; the index's `file_hash` is a sidecar's, not a raw's.
+The fingerprint is the file's size plus BLAKE3 over its first and last 64 KiB (`blake3` with pure Rust features only, no C, decision 5), in the sidecar and the cache. It re-pairs a sidecar with a raw renamed outside Apertrust, recognises a moved photo and photos already there on import, and keys the thumbnails. It is computed only when a photo is opened or thumbnailed, when its sidecar is first written, and for a lost sidecar's few candidates, never for a cloud file not on the disk: 35 ms a raw over SMB. A whole-file hash would cost 0.36 s for a 30 MB raw at the NAS's 84 MB/s.
+
+- **Its text,** `apertrust:fingerprint`, is the size in bytes, a colon and 64 hex digits, the BLAKE3 hash of the first 64 KiB then the last 64 KiB, each the whole file where it is shorter: `30482117:4d0ef789…`. Built with step 8.2: `sidecar::fingerprint` from those bytes, `sidecar::read_fingerprint` from a file, reading only them.
+- Its uses are not built yet; the index's `file_hash` is a sidecar's, not a raw's.
 
 ### Names
 
@@ -716,7 +720,7 @@ Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` to
 
 The library is built in steps, each delivering one thing and reviewed before the next starts: folder mode first, twenty steps in Phases 2 and 3 before any library exists, then the library and then the project in Phase 5, with spikes L1 to L4 along the way. The list, built and remaining, is [roadmap.md](roadmap.md#the-librarys-steps)'s.
 
-Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Browse's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part). The cache's thumbnails of the embedded pictures are built too; the live photo's own rendered thumbnails are built; rendering other photos and refreshing their stale thumbnails remain.
+Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Browse's Folders and the grid panel (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part); the clock and the machine id (step 8.1) and version 2's text layer (step 8.2). The cache's thumbnails of the embedded pictures are built too; the live photo's own rendered thumbnails are built; rendering other photos and refreshing their stale thumbnails remain.
 
 ## Open questions
 

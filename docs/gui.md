@@ -684,11 +684,13 @@ macOS only: the app menu, which macOS titles with the app's name.
 | Save Edit as Style… | `save-style` | — | New, Phase 3, with Styles |
 | — | | | |
 | Reset Edit | `reset` | None, as darktable's discard history has no default key | Built |
+| Discard History… | `discard-history` | None, as darktable's discard history has none | New, planned with the library's step 9.8 |
 | —, Windows and Linux | | | |
 | Settings…, Windows and Linux | `settings` | Ctrl+, | Built |
 
 - **The editing items follow focus** (decision 39): while a value field has focus, Undo, Redo, Cut, Copy, Paste and Select All act on it, and Undo and Redo read Undo and Redo alone. Otherwise Undo and Redo name the step as History names it ("Undo Exposure · Sky") and read Undo, disabled, when there is none; Select All selects the photos once photos can be selected; and Cut, Copy and Paste are disabled, since copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
 - **What the edit's items act on** (decision 37): Copy Edit copies the active photo's edit; Apply Edit and Copy or Apply Parts… apply to every selected photo, one step that one Undo takes back; Reset Edit resets the active photo alone.
+- **Reset Edit and Discard History…** (decision 78; [history.md](history.md#what-makes-a-step)): Reset Edit, like the top panel's Reset and the History header's ↺, is one step that resets the edit, the log kept. Discard History…, planned with the library's step 9.8, is darktable's discard: it clears the history and resets the edit, asking first with Don't ask again (darktable's `ask_before_discard`), and is undone within the session. It is in Edit, the photo's right-click menu and the History section's ⋯ options menu, never a button in the History header, and it is the one history command an edit view-only because part of its history cannot be read allows.
 - **What counts as edited,** for Reset Edit, the top panel's Reset and the grid cell's pencil: values off their defaults, and kept or Auto marks. Reset clears the marks too, and a photo with only marks shows the pencil. Planned: today only values count, so a kept mark alone leaves Reset unavailable.
 - macOS adds AutoFill, Start Dictation… and Emoji & Symbols at the end; they stay, since Dictation is an input method some people need.
 

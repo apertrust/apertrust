@@ -1,6 +1,7 @@
 # XMP fixtures
 
-Read by `tests/xmp_fixtures.rs` and the unit tests of `src/xmp`.
+Read by `tests/xmp_fixtures.rs` and the unit tests of `src/xmp`; the `.apxmp` by
+`tests/sidecar_fixtures.rs`.
 
 - `darktable-*.xmp`: darktable's own sidecars, copied unchanged from its integration tests
   (`src/tests/integration/0001-exposure`, `0011-gdnd-90`, `0095-highlight-opposed`,
@@ -14,3 +15,6 @@ Read by `tests/xmp_fixtures.rs` and the unit tests of `src/xmp`.
   `rdf:RDF` of several descriptions with struct and array items as attributes
   (`form-bare-rdf`), and an `xpacket` with a byte order mark, comments, CDATA, character
   references and padding (`form-packet`).
+- `version-2-history.apxmp`: an `.apxmp` of version 2 as the text layer writes it, one
+  virtual copy with a history of five steps, the end on the fourth. The text layer writes
+  it back byte for byte, and ExifTool and exiv2 read it without error or warning.

@@ -9,8 +9,8 @@ What does an edit file look like, and how is it read so that a photo is never lo
 **XMP beside the photo,** `IMG.ARW.apxmp`: one `rdf:Description` with `apertrust:version`, the build that wrote it in `x:xmptk`, and its entries: each module's values with the module's version and its marks, and the operation parameters the edit sets only where no module owns them ([0028](0028-modules-bound-to-operations.md)). Values left out keep their defaults for the photo.
 
 - **Numbers** are written in their shortest exact form and **choices by name**, so a reordered list changes no edit.
-- **The namespaces** are on the project's domain: `https://apertrust.org/ns/xmp/` for Apertrust's own properties (prefix `apertrust`), `https://apertrust.org/ns/xmp/control/` for module controls (`control`) and `https://apertrust.org/ns/xmp/param/` for operation parameters (`param`). A URI is an identifier, so nothing is hosted there; the schema's version is `apertrust:version`, not part of the URI. Nothing else is read: a file in another namespace is not an Apertrust edit (`SidecarError::NotAnEdit`).
-- **The current version is 1;** version 0 still opens. Version 2, with history and virtual copies, is planned ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md)).
+- **The namespaces** are on the project's domain: `https://apertrust.org/ns/xmp/` for Apertrust's own properties (prefix `apertrust`), `https://apertrust.org/ns/xmp/control/` for module controls (`control`), `https://apertrust.org/ns/xmp/param/` for operation parameters (`param`) and, from version 2, `https://apertrust.org/ns/xmp/arg/` for the arguments of a history step's note (`arg`), the fields of the step's `apertrust:noteArgs` struct, nested so that no argument's name meets a step's own field's. A URI is an identifier, so nothing is hosted there; the schema's version is `apertrust:version`, not part of the URI. Nothing else is read: a file in another namespace is not an Apertrust edit (`SidecarError::NotAnEdit`).
+- **The current version is 1;** version 0 still opens. Version 2, with history and virtual copies ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md)), has its text layer built; the engine writes it once history is saved, planned.
 
 **Reading never loses the photo.** An unreadable value or a number out of range is left out or clamped with a warning, and the photo opens. A file that is not an Apertrust edit is an error, never a silent default.
 
@@ -19,7 +19,8 @@ What does an edit file look like, and how is it read so that a photo is never lo
 - a newer file version, a newer module version, or a module this build neither knows nor has retired (`apertrust_modules::RETIRED`);
 - at a module's own version, a control it lacks, a mark on one, or a value it cannot read or keep;
 - an operation it lacks, a schema version above its own, or at its own a parameter it lacks;
-- an entry repeated, or any element or attribute it does not write.
+- an entry repeated, or any element or attribute it does not write;
+- in version 2, a clock or note it cannot read (`sidecar::Problem`), its caption saying some of the edit's history can't be read rather than naming a newer build.
 
 Left out with a warning, the photo still editable: a retired module, what an older module or schema version held that this one lacks, and a parameter a module owns.
 

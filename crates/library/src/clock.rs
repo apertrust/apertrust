@@ -20,7 +20,9 @@
 //! A [`Clock`] is UTC milliseconds, a counter and the [`MachineId`]. [`Clock::now`] never
 //! goes back, even when the wall clock does: where the last clock is not behind the wall
 //! clock, it keeps the last clock's time and raises the counter. A machine that reads a
-//! later clock moves its own past it by passing the later of the two as the last.
+//! later clock moves its own past it by passing [`Clock::observe`]'s result as the last,
+//! which ignores another machine's clock more than [`MAX_DRIFT`] past this machine's wall
+//! clock, so one sidecar dated far ahead never pins every reader's clock.
 //!
 //! Clocks order by time, then counter, then machine, so any two differ and every machine
 //! orders them alike.
@@ -49,6 +51,12 @@ pub const MACHINE: &str = "machine";
 
 /// The latest time an XMP Date holds, 9999-12-31T23:59:59.999Z, in milliseconds.
 pub const MAX_WHEN: u64 = 253_402_300_799_999;
+
+/// How far past this machine's wall clock a clock it reads may be and still move its own
+/// clock on ([`Clock::observe`]): 5 minutes, Kerberos's default clock skew. Computers that
+/// set their clocks from the network agree within seconds; a clock further ahead is wrong,
+/// as from a computer whose date or time zone is set wrongly, and is ignored.
+pub const MAX_DRIFT: u64 = 5 * 60 * 1000;
 
 /// The context of the machine id's hash, BLAKE3's key derivation, so it matches no other
 /// hash of the same inputs. Changing it changes every machine's id.
@@ -105,6 +113,23 @@ impl Clock {
                 counter: 0,
                 machine,
             },
+        }
+    }
+
+    /// The latest clock the machine `me` keeps after reading `read`, with `last` the latest
+    /// it had and its wall clock at `wall` milliseconds: the later of the two, but `last`
+    /// alone where `read` is another machine's more than [`MAX_DRIFT`] past `wall`. Passed
+    /// to [`Clock::at`] or [`Clock::now`] as the last, it orders the next clock after every
+    /// clock read within the bound and after every clock of `me`'s own, so a wall clock set
+    /// back never orders a new step before one this machine made; no other machine's file
+    /// moves its clocks more than the bound past its wall clock. A clock ignored is still
+    /// read and kept where it is.
+    pub fn observe(last: Option<&Clock>, read: &Clock, wall: u64, me: MachineId) -> Option<Clock> {
+        let honoured = read.machine == me || read.when <= wall.saturating_add(MAX_DRIFT);
+        match last {
+            Some(last) if !honoured || last >= read => Some(*last),
+            _ if honoured => Some(*read),
+            _ => None,
         }
     }
 

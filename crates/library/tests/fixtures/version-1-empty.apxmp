@@ -7,12 +7,10 @@
     xmlns:param="https://apertrust.org/ns/xmp/param/"
     apertrust:version="1">
    <apertrust:modules>
-    <rdf:Seq>
-    </rdf:Seq>
+    <rdf:Seq/>
    </apertrust:modules>
    <apertrust:operations>
-    <rdf:Seq>
-    </rdf:Seq>
+    <rdf:Seq/>
    </apertrust:operations>
   </rdf:Description>
  </rdf:RDF>
