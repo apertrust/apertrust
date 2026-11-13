@@ -86,12 +86,17 @@ pub fn held(keeper: &Keeper) -> bool {
 
 /// The graphics card and API a start tries: the card as `engine.adapter` writes it (empty
 /// for Automatic, `cpu` for the CPU), the API as `engine.backend` chooses it, and
-/// `WGPU_BACKEND`'s text where that chose the API in its place.
+/// `WGPU_BACKEND`'s text where that chose the API in its place, and whether the API is the
+/// one left after another did not start.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tried {
     pub adapter: String,
     pub backend: Backend,
     pub variable: Option<String>,
+    /// Whether this start is one after a start that did not finish, on the API left once
+    /// that one's was left out ([`Run::Automatic`]): one that does not finish either goes
+    /// to the CPU, never back to the API first left out.
+    pub alternate: bool,
 }
 
 impl Tried {
@@ -106,6 +111,7 @@ impl Tried {
             adapter,
             backend,
             variable: None,
+            alternate: false,
         }
     }
 
@@ -123,6 +129,7 @@ impl Tried {
             adapter,
             backend: options.gpu.backend,
             variable,
+            alternate: false,
         }
     }
 
@@ -137,6 +144,9 @@ impl Tried {
         table.insert("backend".into(), Value::String(self.backend.name().into()));
         if let Some(variable) = &self.variable {
             table.insert("variable".into(), Value::String(variable.clone()));
+        }
+        if self.alternate {
+            table.insert("alternate".into(), Value::Boolean(true));
         }
         format!(
             "# Apertrust is opening its graphics device with these; it removes this file once \
@@ -153,10 +163,12 @@ impl Tried {
             .get("variable")
             .and_then(Value::as_str)
             .map(str::to_owned);
+        let alternate = table.get("alternate").and_then(Value::as_bool);
         Some(Tried {
             adapter,
             backend,
             variable,
+            alternate: alternate.unwrap_or(false),
         })
     }
 }
@@ -301,11 +313,15 @@ pub fn decide(found: Option<Tried>, safe_mode: bool) -> Run {
 /// in a build of wgpu with `built`: `--safe-mode` first, as it means Automatic already;
 /// then a marker, as it says what failed, Automatic failing too giving the CPU. The API the
 /// marker names is left out where Automatic loads another, so a driver that crashed as it
-/// loaded is not loaded again, and where `WGPU_BACKEND` chose the API in its place, nothing.
+/// loaded is not loaded again, and where `WGPU_BACKEND` chose the API in its place, nothing;
+/// a start on the API so left that did not finish either gives the CPU, so two APIs that
+/// both fail are never tried in turn.
 pub fn decide_in(found: Option<Tried>, safe_mode: bool, built: wgpu::Backends) -> Run {
     match found {
         _ if safe_mode => Run::SafeMode,
-        Some(tried) if tried.is_automatic() => Run::Cpu(Backend::software_in(built)),
+        Some(tried) if tried.is_automatic() || tried.alternate => {
+            Run::Cpu(Backend::software_in(built))
+        }
         Some(tried) => {
             let api = match tried.variable {
                 Some(_) => Backend::Auto,
@@ -334,8 +350,25 @@ impl Run {
     pub fn tries(&self, graphics: Tried) -> Tried {
         match self.instead() {
             None => graphics,
-            Some((adapter, api, _)) => Tried::of(adapter.to_owned(), api),
+            Some((adapter, api, _)) => Tried {
+                alternate: self.alternate(),
+                ..Tried::of(adapter.to_owned(), api)
+            },
         }
+    }
+
+    /// What it opens once the engine's settings are read, as `options`: what they resolve
+    /// to, and whether that is the API left after another did not start.
+    pub fn opened(&self, options: &Options) -> Tried {
+        Tried {
+            alternate: self.alternate(),
+            ..Tried::opened(options)
+        }
+    }
+
+    /// Whether it opens the API left after the one a start that did not finish tried.
+    fn alternate(&self) -> bool {
+        matches!(self, Run::Automatic(_, api) if *api != Backend::Auto)
     }
 
     /// What it says in the window, `software` whether what opened is the CPU: the CPU
@@ -672,6 +705,17 @@ mod tests {
         assert!(marker.write(&variable));
         drop(marker);
         assert_eq!(mine(&path).1, Some(variable));
+        // So is a start on the API left after another did not start.
+        let alternate = Tried {
+            alternate: true,
+            ..tried("", Backend::Dx12)
+        };
+        let (mut marker, _) = mine(&path);
+        assert!(marker.write(&alternate));
+        drop(marker);
+        let text = std::fs::read_to_string(&path).expect("written");
+        assert!(text.contains("alternate = true"), "{text}");
+        assert_eq!(mine(&path).1, Some(alternate));
     }
 
     /// Two starts at once, as Open With on several raws starts: the second finds the
@@ -757,8 +801,9 @@ mod tests {
     /// On Windows, whose Automatic loads Direct3D 12 and Vulkan both, the API a start that
     /// did not finish tried is left out, so a driver that crashes as it loads is not loaded
     /// again: Vulkan's crash opens Automatic on Direct3D 12, and Direct3D 12's on Vulkan,
-    /// each said and each kept by Keep; Automatic's opens the CPU on Direct3D 12 alone,
-    /// WARP's, Vulkan left out, kept so. A card alone, or `WGPU_BACKEND`'s API, leaves no
+    /// each said and each kept by Keep, and the API left not starting either opens the
+    /// CPU; Automatic's opens the CPU on Direct3D 12 alone, WARP's, Vulkan left out, kept
+    /// so. A card alone, or `WGPU_BACKEND`'s API, leaves no
     /// API out.
     #[test]
     fn on_windows_the_api_that_did_not_start_is_left_out() {
@@ -772,7 +817,13 @@ mod tests {
         assert_eq!(run, Run::Automatic(vulkan.clone(), Backend::Dx12));
         assert_eq!(run.instead(), Some(("", Backend::Dx12, UNFINISHED)));
         let graphics = tried(RADEON, Backend::Vulkan);
-        assert_eq!(run.tries(graphics.clone()), tried("", Backend::Dx12));
+        let alternate = Tried {
+            alternate: true,
+            ..tried("", Backend::Dx12)
+        };
+        assert_eq!(run.tries(graphics.clone()), alternate);
+        // That start not finishing either: the CPU, never Vulkan again.
+        assert_eq!(decide(alternate), Run::Cpu(Backend::Dx12));
         let notice = run.notice(false).expect("a notice");
         assert_eq!(
             notice.words(&words, os),

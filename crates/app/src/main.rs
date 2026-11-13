@@ -503,7 +503,7 @@ fn main() -> eframe::Result {
         None => keeper.engine(),
     };
     if let Some(marker) = marker.as_mut() {
-        marker.write(&recovery::Tried::opened(&engine));
+        marker.write(&run.opened(&engine));
     }
     tracing::debug!(target: "settings", "engine.memory_budget: for this run, a change at the next start");
     // The disk cache, on the folder chosen with the user data folder (decision 76).

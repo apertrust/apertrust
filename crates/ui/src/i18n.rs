@@ -872,6 +872,8 @@ mod tests {
                 // Settings' Hardware acceleration: a graphics API and an adapter's names.
                 args.set("api", "Vulkan");
                 args.set("card", "AMD Radeon 780M Graphics");
+                // The start notice's: the graphics API it started on in place of another.
+                args.set("other", "Direct3D 12");
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }
