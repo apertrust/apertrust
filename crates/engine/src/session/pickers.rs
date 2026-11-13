@@ -733,6 +733,10 @@ impl Engine {
                     }
                 }
             }
+            // Owed an answer from here, its drag still to come: no write handed over
+            // while it turns on, the drag under way's or the picker it replaces', answers it.
+            let owed = (self.applied, self.pickers.drag + 1);
+            self.pickers.owed.push(owed);
             // A drag under way is saved before the module turns on, never with it.
             if self.pickers.gesture.take().is_some() && self.needs_save() {
                 self.save();
@@ -740,7 +744,14 @@ impl Engine {
             let changed = self.change(|edit, _, _, _| {
                 edit.turn_on(found);
                 Ok(())
-            })?;
+            });
+            let changed = match changed {
+                Ok(changed) => changed,
+                Err(error) => {
+                    self.pickers.owed.retain(|&o| o != owed);
+                    return Err(error);
+                }
+            };
             if changed {
                 if let Some(open) = &mut self.open {
                     open.gesture = None;
@@ -748,11 +759,14 @@ impl Engine {
                 (effect.values, effect.render, effect.save) = (true, true, true);
             }
             self.pickers.tools.insert(found.definition().id, tools);
-            // A drag of its own, complete as it begins, owed an answer once its first
-            // reading is applied or dropped.
+            // The picker it replaces off first, its own commands answered; then a drag of
+            // its own, complete as it begins, answered once its first reading is applied or
+            // dropped.
+            if self.pickers.active.is_some() {
+                self.picker_off(events);
+            }
             self.pickers.drag += 1;
             self.pickers.released = self.pickers.drag;
-            self.pickers.owed.push((self.applied, self.pickers.drag));
             let area = match declared.kind {
                 PickerKind::Point => false,
                 PickerKind::Area => true,

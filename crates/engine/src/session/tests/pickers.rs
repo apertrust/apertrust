@@ -1718,3 +1718,35 @@ fn a_write_never_answers_a_pick_still_to_come() {
     assert!(driven.engine.pickers.owed.is_empty());
     remove(&path);
 }
+
+/// A module picker's `On` replacing one with a drag under way is never answered by the
+/// writes that close the drag and turn the old picker off: those are through the command
+/// before it, and only its pick's answer covers it.
+#[test]
+fn replacing_a_picker_never_answers_the_new_one_early() {
+    let path = scratch("picker-replaced");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let saved = |writes: &[Event]| {
+        (writes.iter())
+            .filter_map(|e| match e {
+                Event::Saved { through, .. } => Some(*through),
+                _ => None,
+            })
+            .max()
+    };
+    driven.run([on_module("brightness", true)]);
+    driven.picked();
+    // A step written, unsaved: a drag under way.
+    driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
+    driven.picked();
+    assert!(driven.engine.unsaved());
+    driven.writes();
+    driven.run([on_module("show", true)]);
+    let on = driven.engine.applied;
+    assert_eq!(saved(&driven.writes()), Some(on - 1));
+    driven.picked();
+    assert!(saved(&driven.writes()).is_some_and(|t| t >= on));
+    assert!(driven.engine.pickers.owed.is_empty());
+    remove(&path);
+}

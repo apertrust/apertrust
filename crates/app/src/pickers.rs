@@ -75,18 +75,23 @@ pub struct Mirror {
     places: BTreeMap<PickerRef, Places>,
 }
 
-/// A picker's last point and area.
+/// A picker's last point and area, each with the command it is through.
 #[derive(Debug, Default, Clone, Copy)]
 struct Places {
-    point: Option<Region>,
-    area: Option<Region>,
+    point: Option<(u64, Region)>,
+    area: Option<(u64, Region)>,
 }
 
 impl Places {
-    fn keep(&mut self, region: Region) {
-        match region {
-            Region::Point(_) => self.point = Some(region),
-            Region::Area(_) => self.area = Some(region),
+    /// Keeps `region`, through the first `through` commands, unless its kind's place is
+    /// through a later one already: a reading measured before a move never replaces it.
+    fn keep(&mut self, through: u64, region: Region) {
+        let place = match region {
+            Region::Point(_) => &mut self.point,
+            Region::Area(_) => &mut self.area,
+        };
+        if place.is_none_or(|(kept, _)| kept <= through) {
+            *place = Some((through, region));
         }
     }
 }
@@ -138,7 +143,7 @@ impl Mirror {
     pub fn sent(&mut self, number: u64, region: Region) {
         self.sent = Some((number, region));
         if let Some(picker) = self.active() {
-            self.places.entry(picker).or_default().keep(region);
+            self.places.entry(picker).or_default().keep(number, region);
         }
     }
 
@@ -148,8 +153,8 @@ impl Mirror {
         let places = (self.active()).and_then(|picker| self.places.get(&picker).copied());
         let places = places.unwrap_or_default();
         match region {
-            Region::Point(_) => places.area.unwrap_or(DEFAULT_AREA),
-            Region::Area(_) => places.point.unwrap_or(DEFAULT_POINT),
+            Region::Point(_) => places.area.map_or(DEFAULT_AREA, |(_, area)| area),
+            Region::Area(_) => places.point.map_or(DEFAULT_POINT, |(_, point)| point),
         }
     }
 
@@ -165,7 +170,7 @@ impl Mirror {
             self.sent = None;
         }
         if let Some(reading) = &reading {
-            (self.places.entry(reading.picker).or_default()).keep(reading.region);
+            (self.places.entry(reading.picker).or_default()).keep(through, reading.region);
         }
         self.reading = reading;
     }
@@ -1970,6 +1975,24 @@ mod tests {
                 done: false,
                 keys: PickKeys::default(),
             }]
+        );
+    }
+
+    /// A reading measured before a move never replaces the place the move sent in the
+    /// mirror's memory of places: switching away and back before the move's reading comes
+    /// returns to the moved place.
+    #[test]
+    fn an_older_reading_keeps_the_place_a_later_move_sent() {
+        let mut mirror = Mirror::default();
+        mirror.asked(1, Some((BRIGHTNESS, true)));
+        let (old, new) = ([0.1, 0.1, 0.4, 0.4], [0.2, 0.2, 0.6, 0.6]);
+        mirror.apply(1, Some(reading(BRIGHTNESS, Region::Area(old), 1)));
+        mirror.sent(2, Region::Area(new));
+        // The frame before the move, measured late.
+        mirror.apply(1, Some(reading(BRIGHTNESS, Region::Area(old), 1)));
+        assert_eq!(
+            mirror.switched(Region::Point([0.5, 0.5])),
+            Region::Area(new)
         );
     }
 

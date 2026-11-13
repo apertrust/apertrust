@@ -2700,7 +2700,8 @@ impl Engine {
                 open.thumbnail_hash = Some(hash);
                 open.thumbnail_saved_at = None;
             }
-            open.thumbnail_through = Some(self.applied);
+            // The thumbnail waits for the write by the number the writer reports.
+            open.thumbnail_through = Some(through);
             self.writer.write(open.sidecar.clone(), xml, through, held);
             #[cfg(test)]
             {
