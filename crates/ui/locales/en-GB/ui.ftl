@@ -982,6 +982,33 @@ history-line-controls =
 
 # A step's name for screen readers with what it changed.
 history-step-name-change = Step { $number }: { $name }, { $change }
+# A change of several modules, a step each, shown as one line that opens: its name where
+# it has no note, how many modules it touched.
+history-group-modules =
+    { $count ->
+        [one] { $count } module
+       *[other] { $count } modules
+    }
+# That line's name for screen readers: its steps' first and last numbers, its name, then
+# its modules' titles.
+history-group-name = Steps { $first } to { $last }: { $name }, { $modules }
+# The modules every photo runs, shown as one line over Original that opens, and how many
+# they are.
+history-defaults = Defaults
+history-defaults-modules =
+    { $count ->
+        [one] { $count } module every photo runs
+       *[other] { $count } modules every photo runs
+    }
+# A line's name for screen readers with what it says after its name: the Defaults line's.
+history-line-name = { $name }, { $change }
+# Over each day's steps: today's, yesterday's with its date, then each earlier day's date
+# alone; $date as "12 November", with its year where it is another year's.
+history-day-today = Today
+history-day-yesterday = Yesterday, { $date }
+# Over steps whose time is unknown, as a version 1 edit's whose file's time was unknown,
+# under a day's steps.
+history-day-unknown = No date
 # Under the steps after the end, which the next edit drops.
 history-undone =
     { $count ->

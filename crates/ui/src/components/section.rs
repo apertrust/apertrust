@@ -90,6 +90,9 @@ impl Section<'_> {
     }
 }
 
+/// What a section draws inside it while open.
+type Body<'b> = Box<dyn FnOnce(&mut Ui) + 'b>;
+
 impl<'a> Section<'a> {
     /// A utility section: options only. `title` is translated.
     pub fn new(title: &'a str, open: bool) -> Self {
@@ -186,6 +189,19 @@ impl<'a> Section<'a> {
 
     /// Draws the section; `body` draws what is inside it while it is open.
     pub fn show(self, ui: &mut Ui, body: impl FnOnce(&mut Ui)) -> SectionOutput {
+        self.draw(ui, Some(Box::new(body)))
+    }
+
+    /// Draws the header alone, for a section whose header stays at the top of its tab's
+    /// scroll area while its body scrolls under it, as History's does: the caller draws the
+    /// body apart, while the section is open, with [`section_body`]. A section with tabs
+    /// keeps [`Section::show`], which draws them under its header.
+    pub fn show_header(self, ui: &mut Ui) -> SectionOutput {
+        self.draw(ui, None)
+    }
+
+    /// Draws the header, then `body` under it while open; none for a header alone.
+    fn draw(self, ui: &mut Ui, body: Option<Body<'_>>) -> SectionOutput {
         let t = theme(ui.ctx());
         let tr = translator(ui.ctx());
         let mut args = Args::new();
@@ -338,7 +354,12 @@ impl<'a> Section<'a> {
             });
         }
 
-        if self.open {
+        // A header drawn alone while open leaves the hairline to its body, drawn apart
+        // ([`section_body`]).
+        let apart = self.open && body.is_none();
+        if self.open
+            && let Some(body) = body
+        {
             let margin = Section::body_margin(&t);
             if !self.tabs.is_empty() {
                 // The tabs start on the header's bottom edge, whatever the item spacing,
@@ -385,11 +406,13 @@ impl<'a> Section<'a> {
         }
 
         let bottom = ui.cursor().top();
-        ui.painter().hline(
-            header.x_range(),
-            bottom - t.shape.hairline / 2.0,
-            Stroke::new(t.shape.hairline, t.colors.separator),
-        );
+        if !apart {
+            ui.painter().hline(
+                header.x_range(),
+                bottom - t.shape.hairline / 2.0,
+                Stroke::new(t.shape.hairline, t.colors.separator),
+            );
+        }
 
         // Holding H shows the photo without the section under the pointer, its header and
         // body only; the registry leaves typing alone.
@@ -409,6 +432,35 @@ impl<'a> Section<'a> {
         output.actions.append(&mut pressed);
         output
     }
+}
+
+/// The body of a section whose header is drawn apart ([`Section::show_header`]): its rows
+/// inside the body's margins, as [`Section::show`] lays them out under a header with no
+/// tabs, and the section's hairline after them.
+pub fn section_body<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
+    let t = theme(ui.ctx());
+    let margin = Section::body_margin(&t);
+    let width = ui.available_width();
+    let left = ui.cursor().left();
+    let inner = egui::Frame::new()
+        .inner_margin(Margin {
+            left: margin as i8,
+            right: margin as i8,
+            top: t.spacing.xs as i8,
+            bottom: t.spacing.m as i8,
+        })
+        .show(ui, |ui| {
+            ui.set_width(width - 2.0 * margin);
+            body(ui)
+        })
+        .inner;
+    let bottom = ui.cursor().top();
+    ui.painter().hline(
+        left..=left + width,
+        bottom - t.shape.hairline / 2.0,
+        Stroke::new(t.shape.hairline, t.colors.separator),
+    );
+    inner
 }
 
 /// A list scrolling inside a section's body: every scrolling area inside a module is one,

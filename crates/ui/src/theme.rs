@@ -620,6 +620,10 @@ const TEXT: f32 = 4.5;
 const CONTROL: f32 = 3.0;
 /// WCAG AAA for body text, which the high-contrast theme promises.
 const TEXT_AAA: f32 = 7.0;
+/// The chosen line's band apart from the band under the pointer, as History's end beside
+/// the line pointed at, and from the grounds a list is drawn on, the panel and, as
+/// Settings' pages, `sunken`.
+const BANDS: f32 = 1.08;
 
 impl Theme {
     /// A built-in theme. They are compiled in and tested, so this cannot fail.
@@ -664,6 +668,9 @@ impl Theme {
             ("text_strong", c.text_strong, "surface", c.surface, TEXT),
             // The chosen line's lesser words, as History's end says what it changed.
             ("text", c.text, "list_chosen", c.list_chosen, TEXT),
+            ("list_chosen", c.list_chosen, "hover", c.hover, BANDS),
+            ("list_chosen", c.list_chosen, "panel", c.panel, BANDS),
+            ("list_chosen", c.list_chosen, "sunken", c.sunken, BANDS),
             (
                 "text_strong",
                 c.text_strong,

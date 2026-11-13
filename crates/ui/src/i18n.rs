@@ -256,6 +256,14 @@ impl Translator {
         date_time(self.locale, at).unwrap_or_default()
     }
 
+    /// The local calendar day `day` ([`local_day`]) as the locale writes a date with no
+    /// time, CLDR's long month and day: "12 November" in English, "12 листопада" in
+    /// Ukrainian, "12 listopada" in Polish; with its year where it is not `today`'s year's:
+    /// "12 November 2025". Empty for a day the calendar cannot place.
+    pub fn format_day(&self, day: i32, today: i32) -> String {
+        calendar_day(self.locale, day, today).unwrap_or_default()
+    }
+
     /// The locale's decimal separator: `.` in English, `,` in Ukrainian and Polish.
     pub fn decimal_separator(&self) -> char {
         decimal_separator(self.locale)
@@ -438,6 +446,57 @@ fn date_time(locale: Locale, at: u64) -> Option<String> {
     Some(formatter.format(&at).to_string())
 }
 
+/// The local calendar day `at` falls on, milliseconds since 1970 in UTC on the local
+/// clock, counted in days from 1 January of the year 1: a day's number, the one before it
+/// one less; none where the local clock cannot place it.
+pub fn local_day(at: u64) -> Option<i32> {
+    use chrono::{Datelike as _, TimeZone as _};
+    let local = chrono::Local
+        .timestamp_millis_opt(i64::try_from(at).ok()?)
+        .single()?;
+    Some(local.date_naive().num_days_from_ce())
+}
+
+/// The CLDR month-and-day formatters, and the year-month-and-day ones, for British
+/// English, Ukrainian, Polish and American English, made when first used.
+static MONTH_DAYS: [OnceLock<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::MD>>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+static YEAR_DAYS: [OnceLock<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::YMD>>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+
+/// `day` in `locale`'s long date, its year left out where it is `today`'s.
+fn calendar_day(locale: Locale, day: i32, today: i32) -> Option<String> {
+    use chrono::{Datelike as _, NaiveDate};
+    let date = NaiveDate::from_num_days_from_ce_opt(day)?;
+    let this_year = NaiveDate::from_num_days_from_ce_opt(today)?.year() == date.year();
+    let at = Date::try_new_gregorian(date.year(), date.month() as u8, date.day() as u8).ok()?;
+    let language = || -> icu_locale_core::Locale {
+        (locale.language().parse()).expect("the locales' ids are valid; tested")
+    };
+    let words = if this_year {
+        let formatter = MONTH_DAYS[locale.numbers()].get_or_init(|| {
+            FixedCalendarDateTimeFormatter::try_new((&language()).into(), fieldsets::MD::long())
+                .expect("CLDR data for every locale's language is compiled in")
+        });
+        formatter.format(&at).to_string()
+    } else {
+        let formatter = YEAR_DAYS[locale.numbers()].get_or_init(|| {
+            FixedCalendarDateTimeFormatter::try_new((&language()).into(), fieldsets::YMD::long())
+                .expect("CLDR data for every locale's language is compiled in")
+        });
+        formatter.format(&at).to_string()
+    };
+    Some(words)
+}
+
 /// The locale's decimal separator: the character between 1 and 5 in "1.5".
 fn decimal_separator(locale: Locale) -> char {
     signed_number(locale, 1.5, 1, false, false)
@@ -500,6 +559,33 @@ mod tests {
         let mut args = Args::new();
         args.set("count", n);
         t.text_with("photo-count", Some(&args))
+    }
+
+    #[test]
+    fn days_follow_each_language_with_the_year_only_where_it_is_another() {
+        use chrono::{Datelike as _, NaiveDate};
+        let day = |y, m, d| {
+            NaiveDate::from_ymd_opt(y, m, d)
+                .expect("a day")
+                .num_days_from_ce()
+        };
+        let today = day(2026, 11, 13);
+        let written = |locale, at| Translator::new(locale).format_day(at, today);
+        assert_eq!(written(Locale::EnGb, day(2026, 11, 12)), "12 November");
+        assert_eq!(written(Locale::EnUs, day(2026, 11, 12)), "November 12");
+        assert_eq!(written(Locale::Uk, day(2026, 11, 12)), "12 листопада");
+        assert_eq!(written(Locale::Pl, day(2026, 11, 12)), "12 listopada");
+        assert_eq!(written(Locale::EnGb, day(2025, 3, 14)), "14 March 2025");
+        // Days count in the local calendar, the day before one less.
+        use chrono::TimeZone as _;
+        let noon = |d| {
+            let local = chrono::Local
+                .with_ymd_and_hms(2026, 11, d, 12, 0, 0)
+                .single();
+            u64::try_from(local.expect("a time").timestamp_millis()).expect("after 1970")
+        };
+        assert_eq!(local_day(noon(13)), Some(today));
+        assert_eq!(local_day(noon(12)), Some(today - 1));
     }
 
     #[test]
@@ -948,6 +1034,11 @@ mod tests {
                 args.set("after", "+1.20 EV");
                 // History's lines: what changed, as screen readers hear it.
                 args.set("change", "+0.70 EV to +1.20 EV");
+                // History's groups: their steps' numbers and their modules; a day's date.
+                args.set("first", 12);
+                args.set("last", 16);
+                args.set("modules", "Exposure, Grain");
+                args.set("date", "12 November");
                 // Browse's missing recent: its label, its open kind and its name.
                 args.set("label", "Folder: 2026-10 Lisbon");
                 // The start window's recent, to screen readers: its path.

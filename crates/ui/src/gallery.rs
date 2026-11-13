@@ -730,13 +730,21 @@ fn overlay_photo(ctx: &egui::Context, ground: Ground, zoomed: bool) -> OverlayPh
 }
 
 /// The rail History draws its steps on (`Rail`), as a list of rows with no space between
-/// them, so the rail runs through: two undone steps, hollow on a dashed rail; the end, the
-/// larger filled dot, on the chosen band; a step; Reset's glyph, then Reset at the end,
-/// ringed; and a step drawn disabled, where the rail ends.
+/// them, so the rail runs through: an undone group, hollow, and an undone step on a
+/// dashed rail; the end, the larger filled dot, on the chosen band; a step; Reset's glyph,
+/// then Reset at the end, ringed; a group at the end and a group, squares; and a step
+/// drawn disabled, where the rail ends.
 fn rails(ui: &mut Ui, t: &Theme) {
     use RailLine::{Dashed, Solid};
-    let rows: [(&str, RailNode, RailLine, RailLine, bool); 7] = [
-        ("Undone", RailNode::Undone, RailLine::None, Dashed, true),
+    let group = |end, undone| RailNode::Group { end, undone };
+    let rows: [(&str, RailNode, RailLine, RailLine, bool); 9] = [
+        (
+            "Group, undone",
+            group(false, true),
+            RailLine::None,
+            Dashed,
+            true,
+        ),
         ("Undone", RailNode::Undone, Dashed, Dashed, true),
         ("End", RailNode::End, Dashed, Solid, true),
         ("Step", RailNode::Step, Solid, Solid, true),
@@ -748,6 +756,8 @@ fn rails(ui: &mut Ui, t: &Theme) {
             Solid,
             true,
         ),
+        ("Group, the end", group(true, false), Solid, Solid, true),
+        ("Group", group(false, false), Solid, Solid, true),
         ("Disabled", RailNode::End, Solid, RailLine::None, false),
     ];
     ui.scope(|ui| {
@@ -755,7 +765,13 @@ fn rails(ui: &mut Ui, t: &Theme) {
         for (name, node, above, below, enabled) in rows {
             let (rect, _) = ui.allocate_exact_size(vec2(220.0, t.sizes.panel_line), Sense::hover());
             let painter = ui.painter();
-            let end = matches!(node, RailNode::End | RailNode::Reset { end: true }) && enabled;
+            let end = enabled
+                && matches!(
+                    node,
+                    RailNode::End
+                        | RailNode::Reset { end: true }
+                        | RailNode::Group { end: true, .. }
+                );
             let ground = if end {
                 t.colors.list_chosen
             } else {

@@ -546,9 +546,14 @@ impl<'a> PanelEdge<'a> {
 /// The side panel's body: the tab's pinned sections, a 4-point band, then the rest,
 /// scrolling with a quiet scroll bar, always there. Pinned sections take at most 70% of
 /// the height and scroll on their own beyond it; a tab with none pinned has no band.
+///
+/// A tab whose one section's list runs past the panel, as History's, keeps that section's
+/// header at the top of its scroll area ([`PanelBody::header`]): the list scrolls under
+/// it, a hairline and a soft shadow under the header while it does.
 #[derive(Default)]
 pub struct PanelBody<'a> {
     pinned: Option<Sections<'a>>,
+    header: Option<Sections<'a>>,
 }
 
 /// Draws sections into the panel.
@@ -562,6 +567,16 @@ impl<'a> PanelBody<'a> {
     /// The pinned sections.
     pub fn pinned(mut self, pinned: impl FnOnce(&mut Ui) + 'a) -> Self {
         self.pinned = Some(Box::new(pinned));
+        self
+    }
+
+    /// The header of the section the scrolling part holds, drawn over it, which stays at
+    /// the top while the section's body scrolls: a section's [`Section::show_header`], its
+    /// body drawn in `scrolling` with [`section_body`](super::section_body).
+    ///
+    /// [`Section::show_header`]: super::Section::show_header
+    pub fn header(mut self, header: impl FnOnce(&mut Ui) + 'a) -> Self {
+        self.header = Some(Box::new(header));
         self
     }
 
@@ -580,13 +595,48 @@ impl<'a> PanelBody<'a> {
             let (band, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), Sense::hover());
             ui.painter().rect_filled(band, 0.0, t.colors.separator);
         }
+        // As wide as the sections under it, clear of the scroll bar's column.
+        let header = self.header.map(|header| {
+            let width = ui.available_width() - ui.spacing().scroll.allocated_width();
+            let area = Rect::from_min_size(ui.cursor().min, vec2(width, 0.0));
+            let drawn = ui.scope_builder(UiBuilder::new().max_rect(area), header);
+            drawn.response.rect
+        });
+        let mut scrolled = false;
         scroll_area(ui, &t, |ui| {
-            ScrollArea::vertical()
+            let out = ScrollArea::vertical()
                 .id_salt("scrolling sections")
                 .auto_shrink([false, false])
                 .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
                 .show(ui, |ui| ui.scope(|ui| restore(ui, scrolling)));
+            scrolled = out.state.clamped_offset().y > 0.0;
         });
+        // Over what scrolls under it, painted after it.
+        if let Some(header) = header
+            && scrolled
+        {
+            stuck(ui.painter(), header, &t);
+        }
+    }
+}
+
+/// Under a header the list scrolls under: the separator's hairline at its foot, then a
+/// shadow a few points deep, fading, as the board draws it.
+fn stuck(painter: &egui::Painter, header: Rect, t: &crate::Theme) {
+    let foot = header.bottom();
+    let hairline = Rect::from_min_max(
+        pos2(header.left(), foot),
+        pos2(header.right(), foot + t.shape.hairline),
+    );
+    painter.rect_filled(hairline, 0.0, t.colors.separator);
+    for (row, alpha) in [0.16_f32, 0.09, 0.04].into_iter().enumerate() {
+        let top = hairline.bottom() + row as f32;
+        let band = Rect::from_min_max(pos2(header.left(), top), pos2(header.right(), top + 1.0));
+        painter.rect_filled(
+            band,
+            0.0,
+            egui::Color32::from_black_alpha((alpha * 255.0) as u8),
+        );
     }
 }
 
