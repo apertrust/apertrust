@@ -17,14 +17,17 @@
 //! The edit's history (decision 78, `docs/history.md`): a [`Log`] of [`Step`]s and its
 //! end, the edit folded from it, and what a client is told of it, [`History`].
 //!
-//! A step is one completed change: each module, and each operation whose unowned
-//! parameters it set, that it touched, with its whole state after it ([`Entry`]); an
-//! empty entry is the reset state, the module's defaults, or off for a switched one
-//! (decision 32). The edit is the fold of the log: each module's last entry among the
-//! steps up to the end, else its reset state, so nothing else stores it. The before of a
-//! step is derived, never stored: the module's entry at the previous step that touched it,
-//! else its reset state. A control's quick repeats merge into the step before them
-//! ([`Log::merge`]), as darktable's undo merges them; the session decides when.
+//! A step is one module's change, or one operation's unowned parameters', as darktable's
+//! history item is one module's: its whole state after it ([`Entry`]); an empty entry is
+//! the reset state, the module's defaults, or off for a switched one (decision 32). Reset
+//! is the one step of several, an empty entry for each module it reset ([`Change`]). A
+//! completed change that touches several modules makes a step for each, sharing a
+//! [`BatchId`], which Undo and Redo move whole, as darktable's undo group. The edit is the
+//! fold of the log: each module's last entry among the steps up to the end, else its reset
+//! state, so nothing else stores it. The before of a step is derived, never stored: the
+//! module's entry at the previous step that touched it, else its reset state. A control's
+//! quick repeats merge into the step before them ([`Log::merge`]), as darktable's undo
+//! merges them; the session decides when.
 //!
 //! Plain data, which the session keeps in memory for the photo open; the sidecar's
 //! version 2 saves it later.
@@ -52,8 +55,9 @@ impl fmt::Display for StepId {
     }
 }
 
-/// The session's id for the steps one command made on several photos (decision 37),
-/// never a client's. Written as 16 hex digits.
+/// The session's id for the steps one completed change made, one per module it touched,
+/// and later on several photos (decision 37); never a client's. Drawn at random, again on
+/// a clash within its log. Written as 16 hex digits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BatchId(pub u64);
 
@@ -135,13 +139,13 @@ pub enum Entry {
 /// What an entry is of: its module's or its operation's id. Layers add a layer and an
 /// instance to it (decision 34).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Key<'a> {
+pub(crate) enum Key<'a> {
     Module(&'a str),
     Operation(&'a str),
 }
 
 impl Entry {
-    /// The entries a step from `before` to `after` holds: each module and operation whose
+    /// The entries a change from `before` to `after` makes: each module and operation whose
     /// state differs, with its whole state in `after`, in id order, modules first. An
     /// entry holding nothing and none at all are the same reset state.
     pub fn between(before: &Edit, after: &Edit) -> Vec<Entry> {
@@ -183,7 +187,7 @@ impl Entry {
         }
     }
 
-    fn key(&self) -> Key<'_> {
+    pub(crate) fn key(&self) -> Key<'_> {
         match self {
             Entry::Module { module, .. } => Key::Module(module),
             Entry::Operation { operation, .. } => Key::Operation(operation),
@@ -219,7 +223,78 @@ fn params_state<'e>(edit: &'e Edit, operation: &str) -> Option<&'e ParamValues> 
     (edit.params.get(operation)).filter(|params| params.iter().next().is_some())
 }
 
-/// One completed change (decision 78).
+/// What one command on the edit wrote, in order, which orders the steps of the change it
+/// is part of ([`Change::between`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Wrote {
+    /// A module, by a control set or reset, a keep, a preset row or its reset.
+    Module(String),
+    /// An operation's unowned parameters, by `Set`.
+    Operation(String),
+    /// Every module and operation: `Reset`.
+    All,
+}
+
+impl Wrote {
+    fn key(&self) -> Option<Key<'_>> {
+        match self {
+            Wrote::Module(module) => Some(Key::Module(module)),
+            Wrote::Operation(operation) => Some(Key::Operation(operation)),
+            Wrote::All => None,
+        }
+    }
+}
+
+/// What a step holds: one module's or one operation's entry, as darktable's history item
+/// holds one module, or Reset's.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Change {
+    Entry(Entry),
+    /// Reset, noted `history-reset`: an empty entry for each module and operation it reset,
+    /// in [`Entry::between`]'s order.
+    Reset(Vec<Entry>),
+}
+
+impl Change {
+    /// The changes, one step each, that a completed change from `before` to `after` makes,
+    /// `wrote` what its commands wrote in order: one for each module and operation whose
+    /// state differs, in the order they were first written after the last `Reset`; one
+    /// Reset, in that `Reset`'s place, holding each empty entry no command wrote after it;
+    /// then each entry no command wrote, as a module's change of another's, in
+    /// [`Entry::between`]'s order. None where nothing differs.
+    pub fn between(before: &Edit, after: &Edit, wrote: &[Wrote]) -> Vec<Change> {
+        let reset = wrote.iter().rposition(|wrote| *wrote == Wrote::All);
+        let since = reset.map_or(0, |reset| reset + 1);
+        let mut placed: Vec<(usize, Change)> = Vec::new();
+        let mut resets = Vec::new();
+        for entry in Entry::between(before, after) {
+            let first = (wrote[since..].iter()).position(|wrote| wrote.key() == Some(entry.key()));
+            match first {
+                Some(first) => placed.push((since + first, Change::Entry(entry))),
+                None if reset.is_some() && entry.is_empty() => resets.push(entry),
+                None => placed.push((usize::MAX, Change::Entry(entry))),
+            }
+        }
+        if let Some(reset) = reset
+            && !resets.is_empty()
+        {
+            placed.push((reset, Change::Reset(resets)));
+        }
+        // Stable: those placed alike keep `Entry::between`'s order.
+        placed.sort_by_key(|(at, _)| *at);
+        placed.into_iter().map(|(_, change)| change).collect()
+    }
+
+    /// Its entries: one, or Reset's.
+    pub fn entries(&self) -> &[Entry] {
+        match self {
+            Change::Entry(entry) => std::slice::from_ref(entry),
+            Change::Reset(entries) => entries,
+        }
+    }
+}
+
+/// One module's change, or Reset (decision 78).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Step {
     pub id: StepId,
@@ -227,9 +302,11 @@ pub struct Step {
     pub clock: Clock,
     pub source: StepSource,
     pub note: Option<Note>,
+    /// Shared by the steps of one completed change that touched several modules, which
+    /// Undo and Redo move whole; `None` for a change of one.
     pub batch: Option<BatchId>,
-    /// Each module and operation it touched, with its whole state after it.
-    pub entries: Vec<Entry>,
+    /// The module it touched, with its whole state after it, or Reset's.
+    pub change: Change,
 }
 
 /// One virtual copy's history: its steps in order and its end, how many of them apply,
@@ -241,19 +318,19 @@ pub struct Log {
 }
 
 impl Log {
-    /// The log a version 1 edit reads as (`docs/history.md`, In the sidecar): one step,
-    /// source You with no note, holding each module and operation `edit` touches; its id
-    /// the first 64 bits of `hash`, the BLAKE3 hash of the file's bytes, so every machine
-    /// reading the same file gives the same step; its clock the file's modified time with
-    /// counter 0, of no known machine. An edit that touches nothing reads as no step.
+    /// The log a version 1 edit reads as (`docs/history.md`, In the sidecar): a step for
+    /// each module and operation `edit` touches, in [`Entry::between`]'s order, source You
+    /// with no note, sharing a batch where there are several, so one Undo takes the edit
+    /// read back whole. The ids come from `hash`, the BLAKE3 hash of the file's bytes, so
+    /// every machine reading the same file gives the same steps: the first step's its first
+    /// 64 bits, each next one more, and the batch's its next 64; their clock the file's
+    /// modified time with counter 0, of no known machine. An edit that touches nothing
+    /// reads as no step. The text layer's `Edits::parse` gives the same steps for every file
+    /// Apertrust writes, none holding an entry at its reset state.
     pub fn read(edit: &Edit, hash: Option<[u8; 32]>, modified: Option<SystemTime>) -> Log {
         let entries = Entry::between(&Edit::default(), edit);
-        if entries.is_empty() {
-            return Log::default();
-        }
-        let id = match hash {
-            Some(hash) => StepId(u64::from_be_bytes(hash[..8].try_into().expect("8 bytes"))),
-            None => StepId(random()),
+        let bits = |at: usize| {
+            hash.map(|hash| u64::from_be_bytes(hash[at..at + 8].try_into().expect("8 bytes")))
         };
         let when = modified
             .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
@@ -261,17 +338,23 @@ impl Log {
                 u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
             });
         let clock = Clock::at(when, None, MachineId::UNKNOWN);
-        Log {
-            steps: vec![Step {
+        let mut log = Log::default();
+        let batch = (entries.len() > 1).then(|| bits(8).map_or_else(|| log.new_batch(), BatchId));
+        for (index, entry) in entries.into_iter().enumerate() {
+            let id = match bits(0) {
+                Some(first) => StepId(first.wrapping_add(index as u64)),
+                None => log.new_id(),
+            };
+            log.add(Step {
                 id,
                 clock,
                 source: StepSource::You,
                 note: None,
-                batch: None,
-                entries,
-            }],
-            end: 1,
+                batch,
+                change: Change::Entry(entry),
+            });
         }
+        log
     }
 
     /// Every step, oldest first, those after the end among them.
@@ -295,7 +378,7 @@ impl Log {
     pub(crate) fn fold_to(&self, end: usize) -> Edit {
         let mut edit = Edit::default();
         for step in &self.steps[..end] {
-            for entry in &step.entries {
+            for entry in step.change.entries() {
                 entry.apply(&mut edit);
             }
         }
@@ -312,23 +395,23 @@ impl Log {
         dropped
     }
 
-    /// Merges a change into the last step applied, as darktable's undo merges a widget's
-    /// quick repeats (`docs/history.md`, Merging consecutive changes): the step keeps its id,
-    /// each of `entries`, the change's, takes the place of the step's entry of its module or
-    /// operation or joins them, and its clock becomes `clock`. With no step applied, nothing.
-    pub fn merge(&mut self, entries: Vec<Entry>, clock: Clock) {
+    /// Merges a change of one module into the last step applied, as darktable's undo merges
+    /// a widget's quick repeats (`docs/history.md`, Merging consecutive changes), where that
+    /// step holds one entry of the same module or operation and is in no batch: the step
+    /// keeps its id, `entry`, the change's, takes the place of its entry, and its clock
+    /// becomes `clock`. Whether it merged; with no such step, nothing.
+    pub fn merge(&mut self, entry: &Entry, clock: Clock) -> bool {
         let Some(step) = self.steps[..self.end].last_mut() else {
-            return;
+            return false;
         };
-        for entry in entries {
-            match (step.entries.iter_mut()).find(|kept| kept.key() == entry.key()) {
-                Some(kept) => *kept = entry,
-                None => step.entries.push(entry),
+        match &mut step.change {
+            Change::Entry(kept) if step.batch.is_none() && kept.key() == entry.key() => {
+                *kept = entry.clone();
+                step.clock = clock;
+                true
             }
+            _ => false,
         }
-        // In `Entry::between`'s order: modules first, each in id order.
-        step.entries.sort_by(|a, b| a.key().cmp(&b.key()));
-        step.clock = clock;
     }
 
     /// Keeps the first `at` steps, puts `after` after them, and returns the steps it took
@@ -351,12 +434,41 @@ impl Log {
         self.end = end.min(self.steps.len());
     }
 
+    /// Where the steps Undo would take back from `end` begin: the step before it, with the
+    /// steps of its batch before it; `None` at Original.
+    pub fn batch_start(&self, end: usize) -> Option<usize> {
+        let last = end.checked_sub(1)?;
+        let batch = self.steps.get(last)?.batch;
+        let other =
+            (self.steps[..last].iter()).rposition(|step| batch.is_none() || step.batch != batch);
+        Some(other.map_or(0, |other| other + 1))
+    }
+
+    /// Where the steps Redo would put back from `end` end: just after the step at it, and
+    /// the steps of its batch after it; `None` past the last step.
+    pub fn batch_end(&self, end: usize) -> Option<usize> {
+        let batch = self.steps.get(end)?.batch;
+        let other =
+            (self.steps[end + 1..].iter()).position(|step| batch.is_none() || step.batch != batch);
+        Some(other.map_or(self.steps.len(), |other| end + 1 + other))
+    }
+
     /// A random id no step of the log has.
     pub fn new_id(&self) -> StepId {
         loop {
             let id = StepId(random());
             if self.steps.iter().all(|step| step.id != id) {
                 return id;
+            }
+        }
+    }
+
+    /// A random batch id no step of the log has.
+    pub fn new_batch(&self) -> BatchId {
+        loop {
+            let batch = BatchId(random());
+            if self.steps.iter().all(|step| step.batch != Some(batch)) {
+                return batch;
             }
         }
     }
@@ -404,10 +516,12 @@ pub struct HistoryStep {
     pub clock: Clock,
     pub source: StepSource,
     pub note: Option<Note>,
+    /// Shared by the steps of one change that touched several modules, which Undo and Redo
+    /// move whole, as [`Move::Steps`] names them.
     pub batch: Option<BatchId>,
-    /// Each module the step touched, with what changed, in the step's order; an
-    /// operation's unowned parameters under the operation's id, its controls the
-    /// parameters. A module this build does not know is left out.
+    /// The module the step touched, with what changed: one, or for a reset each module it
+    /// reset, in the step's order; an operation's unowned parameters under the operation's
+    /// id, its controls the parameters. A module this build does not know is left out.
     pub changes: Vec<ModuleChange>,
 }
 
@@ -434,8 +548,10 @@ pub struct ControlChange {
 /// What Undo or Redo would do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Move {
-    /// Take back or put back this step: a step added, or the end moved over it.
-    Step(StepId),
+    /// Take back or put back the `count` steps from `first` on, one change's: its step, or
+    /// its batch's steps, added, or the end moved over them; a batch's part where `GoTo`
+    /// left the end inside it.
+    Steps { first: StepId, count: usize },
     /// Take back or put back a `GoTo`: the end back where it was, or where it put it.
     GoTo,
 }
@@ -519,11 +635,11 @@ impl Described {
         if kept < log.steps().len() {
             // Each key's last entry before the first step described anew: its before.
             let mut last: BTreeMap<Key<'_>, &Entry> = BTreeMap::new();
-            for entry in log.steps()[..kept].iter().flat_map(|step| &step.entries) {
+            for entry in (log.steps()[..kept].iter()).flat_map(|step| step.change.entries()) {
                 last.insert(entry.key(), entry);
             }
             for step in &log.steps()[kept..] {
-                let changes = (step.entries.iter())
+                let changes = (step.change.entries().iter())
                     .filter_map(|entry| {
                         let before = last.get(&entry.key()).copied();
                         self.change(before, entry, modules, operations, image)
@@ -537,7 +653,7 @@ impl Described {
                     batch: step.batch,
                     changes,
                 }));
-                for entry in &step.entries {
+                for entry in step.change.entries() {
                     last.insert(entry.key(), entry);
                 }
             }

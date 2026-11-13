@@ -423,12 +423,14 @@ fn an_empty_version_2_file_reads_back_empty() {
     assert_eq!(Edits::parse(&xml, 0).unwrap(), edits);
 }
 
-/// A version 1 file reads as one step: the same id on every read, from its bytes; its
-/// clock the file's modified time on no known machine; the end that step.
+/// A version 1 file reads as a step of each entry, modules first, each in id order, sharing
+/// a batch: the same ids on every read, from its bytes, the first the hash's first 64 bits
+/// and each next one more, the batch its next 64; their clock the file's modified time on
+/// no known machine; the end the last. One entry is one step in no batch.
 #[test]
-fn version_1_reads_as_one_step() {
+fn version_1_reads_as_a_step_of_each_module() {
     let mut document = Document::new("0.4.0");
-    document.entries = vec![module("look"), operation("fake")];
+    document.entries = vec![operation("fake"), module("look"), module("lens")];
     let xml = document.to_xml();
     let read = Edits::parse(&xml, PI_DAY).unwrap();
     assert_eq!(read, Edits::parse(&xml, PI_DAY).unwrap());
@@ -438,23 +440,44 @@ fn version_1_reads_as_one_step() {
         panic!("one copy, not {:?}", read.copies);
     };
     let hash = crate::index::hash(xml.as_bytes());
-    let id: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
+    let bits = |at: usize| u64::from_be_bytes(hash[at..at + 8].try_into().unwrap());
+    let id = |index: u64| format!("{:016x}", bits(0).wrapping_add(index));
     let made = clock(PI_DAY, 0, "00000000");
     assert_eq!(made.machine, MachineId::UNKNOWN);
+    let batched = |index: u64, entry: Entry| Step {
+        batch: Some(format!("{:016x}", bits(8))),
+        ..step(&id(index), made, None, vec![entry])
+    };
     assert_eq!(
         *copy,
         VirtualCopy {
             id: FIRST_COPY.to_owned(),
             number: "0".to_owned(),
             name: String::new(),
-            end: id.clone(),
+            end: id(2),
             clocks: vec![made],
-            history: vec![step(&id, made, None, document.entries.clone())],
+            history: vec![
+                batched(0, module("lens")),
+                batched(1, module("look")),
+                batched(2, operation("fake")),
+            ],
         }
     );
-    // Another file gives another step; it is written as version 2.
+    // One entry: one step, in no batch.
+    let mut one = Document::new("0.4.0");
+    one.entries = vec![module("look")];
+    let xml_one = one.to_xml();
+    let hash_one = crate::index::hash(xml_one.as_bytes());
+    let id_one: String = hash_one[..8].iter().map(|b| format!("{b:02x}")).collect();
+    let read_one = Edits::parse(&xml_one, PI_DAY).unwrap();
+    assert_eq!(
+        read_one.copies[0].history,
+        [step(&id_one, made, None, vec![module("look")])]
+    );
+    assert_eq!(read_one.copies[0].end, id_one);
+    // Another file gives other steps; it is written as version 2.
     let other = xml.replace("0.3", "0.4");
-    assert_ne!(Edits::parse(&other, PI_DAY).unwrap().copies[0].end, id);
+    assert_ne!(Edits::parse(&other, PI_DAY).unwrap().copies[0].end, id(2));
     let written = read.to_xml();
     assert!(written.contains(r#"apertrust:version="2""#), "{written}");
     let again = Edits::parse(&written, 0).unwrap();

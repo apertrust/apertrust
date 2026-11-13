@@ -699,10 +699,10 @@ menu-bring-all-to-front = Umieść wszystko na wierzchu
 history-reset = Resetowanie
 history-modules =
     { $count ->
-        [one] { $count } moduł
-        [few] { $count } moduły
-        [many] { $count } modułów
-       *[other] { $count } modułu
+        [one] { $module } i jeszcze { $count } moduł
+        [few] { $module } i jeszcze { $count } moduły
+        [many] { $module } i jeszcze { $count } modułów
+       *[other] { $module } i jeszcze { $count } modułu
     }
 history-go-to-step = Przejście do kroku
 

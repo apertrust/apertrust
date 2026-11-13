@@ -213,7 +213,7 @@ pub enum ClockError {
 pub struct MachineId(u32);
 
 impl MachineId {
-    /// The machine of a clock no machine made: version 1's edits read as one step.
+    /// The machine of a clock no machine made: the steps a version 1 edit reads as.
     pub const UNKNOWN: MachineId = MachineId(0);
 
     /// This machine's id, worked out once a run: the system's machine id, read through

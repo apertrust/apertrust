@@ -696,10 +696,10 @@ menu-bring-all-to-front = Усі вікна на передній план
 history-reset = Скидання
 history-modules =
     { $count ->
-        [one] { $count } модуль
-        [few] { $count } модулі
-        [many] { $count } модулів
-       *[other] { $count } модуля
+        [one] { $module } та ще { $count } модуль
+        [few] { $module } та ще { $count } модулі
+        [many] { $module } та ще { $count } модулів
+       *[other] { $module } та ще { $count } модуля
     }
 history-go-to-step = Перехід до кроку
 

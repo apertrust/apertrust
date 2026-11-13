@@ -873,12 +873,9 @@ menu-bring-all-to-front = Bring All to Front
 
 # A step that put the whole edit back to nothing: Reset Edit.
 history-reset = Reset
-# A step that changed several modules; $count is how many.
-history-modules =
-    { $count ->
-        [one] { $count } module
-       *[other] { $count } modules
-    }
+# The steps of one change that touched several modules, a step each, as Undo and Redo name
+# them: $module is the first's title, $count how many more there are.
+history-modules = { $module } and { $count } more
 # Going to a step in History, which Undo takes back and Redo puts back.
 history-go-to-step = Go to Step
 
