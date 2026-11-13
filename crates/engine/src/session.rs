@@ -1241,6 +1241,9 @@ enum Order {
         paths: Vec<PathBuf>,
         answer: mpsc::Sender<Vec<Snapshot>>,
     },
+    /// Write nothing more until the permit's sender drops, for a test.
+    #[cfg(test)]
+    Hold(mpsc::Receiver<()>),
 }
 
 /// One edit to write: its file, its XMP, and how many commands it includes.
@@ -1297,6 +1300,11 @@ impl Writer {
                                 continue;
                             }
                             Order::Read { paths, answer } => (paths, answer),
+                            #[cfg(test)]
+                            Order::Hold(permit) => {
+                                let _ = permit.recv();
+                                continue;
+                            }
                         };
                         // Every edit handed over before the read is on disk first (D12).
                         write_edits(std::mem::take(&mut writes), &shared, &outbox);
@@ -1345,6 +1353,17 @@ impl Writer {
             let _ = jobs.send(Order::Read { paths, answer });
         }
         answered
+    }
+
+    /// Holds the writer, for a test: no edit handed over after this is written until the
+    /// permit it returns drops.
+    #[cfg(test)]
+    fn hold(&self) -> mpsc::Sender<()> {
+        let (permit, permits) = mpsc::channel();
+        if let Some(jobs) = &self.jobs {
+            let _ = jobs.send(Order::Hold(permits));
+        }
+        permit
     }
 
     /// Waits until every edit of `path` handed over is written or has failed; or, with
@@ -10727,8 +10746,13 @@ mod tests {
             driven.engine.writer.on_saved(Arc::new(move || {
                 let _ = wake.send(());
             }));
+            // Held, so the retried write is still under way as the engine asks, however long
+            // the engine thread takes.
+            let permit = driven.engine.writer.hold();
             driven.run([Command::RetrySave]);
+            assert!(driven.engine.writer.lock().pending.contains_key(&sidecar));
             assert_eq!(driven.engine.thumbnail_wait(), None);
+            drop(permit);
             driven.engine.writer.flush(None);
             // The writer calls back after releasing its lock, which `flush` may see first.
             woken
