@@ -68,6 +68,7 @@ pub struct PickerButton<'a> {
     disabled: Option<&'a str>,
     shortcut: Option<&'a str>,
     state: Option<ButtonState>,
+    focus: bool,
 }
 
 impl<'a> PickerButton<'a> {
@@ -84,6 +85,7 @@ impl<'a> PickerButton<'a> {
             disabled: None,
             shortcut: None,
             state: None,
+            focus: false,
         }
     }
 
@@ -127,6 +129,13 @@ impl<'a> PickerButton<'a> {
         self
     }
 
+    /// Takes the keyboard's focus this frame, where `focus`: as Esc on the photo gives it
+    /// back to the picker's button (`docs/pickers.md`, On the photo).
+    pub fn focus(mut self, focus: bool) -> Self {
+        self.focus = focus;
+        self
+    }
+
     /// Draws it in `state` whatever the pointer and the keys do, as the gallery shows each
     /// state.
     pub fn state(mut self, state: ButtonState) -> Self {
@@ -156,6 +165,9 @@ impl<'a> PickerButton<'a> {
         }
         let response = button.show(ui);
         ctx.accesskit_node_builder(response.id, |node| node.set_description(tip.as_str()));
+        if self.focus && enabled {
+            response.request_focus();
+        }
 
         // The keyboard's right-click.
         let keyed = enabled

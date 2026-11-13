@@ -861,6 +861,15 @@ mod tests {
                 args.set("command", "Ctrl");
                 // A picker button's tooltip: the picker's own words.
                 args.set("tip", "Pick colour from the photo");
+                // The active picker: its module and name, its own sentence, where it is on
+                // the photo in percent, and what a pick changed.
+                args.set("module", "Exposure");
+                args.set("picker", "Exposure");
+                args.set("what", "Click or drag the point on a neutral grey.");
+                for share in ["x", "y", "left", "top", "right", "bottom"] {
+                    args.set(share, 50);
+                }
+                args.set("control", "Exposure");
                 // Open Recent's item for a name two recents share: the folder it is in.
                 args.set("parent", "Lisbon");
                 // Edit › Undo and Redo: the step they would take back or put back.

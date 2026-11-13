@@ -43,6 +43,12 @@
 //!   "N set" counts the controls it shows that are off their defaults. darktable's own
 //!   settings for a tool, which no edit stores, are drawn disabled until the tool comes.
 //! - A tab with no rows is drawn disabled: nothing is behind it yet.
+//! - A colour picker (decision 79; `docs/pickers.md`, The picker button) is the design
+//!   system's `PickerButton`: on a slider's quad in its quad mode, and in a row of pickers
+//!   as toggle buttons at the row's end, each on while its picker is the active one, and
+//!   disabled with the reason on a photo not yet live or open for viewing only. A press
+//!   comes back as [`Change::Picker`]. Only the modules whose pick is built draw theirs
+//!   ([`PICKING`]): a quad with nothing behind it is not drawn.
 //! - Values, defaults and marks come from the mirror, a control that can change nothing
 //!   on the photo, or that another control's value disables (decision 30), is drawn
 //!   disabled as the mirror reports it, keeping its value, and everything the user does
@@ -54,16 +60,19 @@
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use apertrust_engine::session::{ControlState, ControlValue, CoordinateState, Mark, ModuleState};
+use apertrust_engine::session::{
+    ControlState, ControlValue, CoordinateState, Mark, ModuleState, PickKeys, PickerRef,
+};
 use apertrust_modules::{
-    Button, ButtonIcon, ChoiceStyle, ControlKind, Controls, Definition, MAX_POINTS, Module, Row,
-    Slider, ToolSetting, Track, Unit, View, Widget, check, messages,
+    Button, ButtonIcon, ChoiceStyle, ControlKind, Controls, Definition, MAX_POINTS, Module,
+    PickerKind, Quad, Row, Slider, ToolSetting, Track, Unit, View, Widget, check, messages,
 };
 use apertrust_plugin::ImageContext;
 use apertrust_ui::components::{
-    self as parts, ActionRow, ButtonsAction, ButtonsRow, Choice, ChoiceAction, CollapsibleGroup,
-    Curve, CurveAction, Equalizer, EqualizerAction, IconButton, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, ToggleRow, group_label,
+    self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
+    CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
+    PickerButton, Section, SectionAction, Segmented, SliderAction, SliderRow, ToggleRow,
+    group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, translator};
@@ -119,6 +128,45 @@ pub enum Change {
         module: &'static str,
         group: &'static str,
     },
+    /// A colour picker's button pressed, with the keys held: `PickerCommand::On`, or `Off`
+    /// for the picker on, since `On` for it would start it again (`docs/pickers.md`,
+    /// Against darktable).
+    Picker {
+        module: &'static str,
+        picker: &'static str,
+        action: PickerAction,
+        keys: PickKeys,
+    },
+}
+
+/// The modules whose pickers the panel draws: those whose pick is built, each joining with
+/// it (`docs/pickers.md`, The plan; Exposure's is next). Until then a module's quad and
+/// picker rows are not drawn, as a quad with nothing behind it is not.
+pub const PICKING: &[&str] = &[];
+
+/// The colour pickers as a section draws them.
+#[derive(Debug, Clone, Copy)]
+pub struct Pickers<'a> {
+    /// The modules whose pickers are drawn ([`PICKING`]).
+    pub drawn: &'a [&'a str],
+    /// The picker on, as the app shows it.
+    pub on: Option<PickerRef>,
+    /// Whether they can be pressed: the photo live and not open for viewing only.
+    pub enabled: bool,
+    /// Why not, where there is a reason to tell: the photo opening, or open for viewing
+    /// only.
+    pub why: Option<&'a str>,
+}
+
+#[cfg(test)]
+impl Pickers<'static> {
+    /// No module's pickers drawn.
+    pub const NONE: Self = Pickers {
+        drawn: &[],
+        on: None,
+        enabled: true,
+        why: None,
+    };
 }
 
 /// Whether a module's section is open when settings have not kept it otherwise.
@@ -603,7 +651,8 @@ fn equalizer_curve(
 /// session reports unavailable, and for a switched module unless it is edited, as one off
 /// never is (decision 32), whose section screen readers describe as not applied. While
 /// `opening` holds the tooltip of a photo opening, read-only until it is live (decision
-/// 77), hovering its rows says why. Returns what the user did.
+/// 77), hovering its rows says why. Its colour pickers are drawn as `pickers` says.
+/// Returns what the user did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the section, each part apart"
@@ -618,6 +667,7 @@ pub fn section(
     peek: bool,
     editable: bool,
     opening: Option<&str>,
+    pickers: &Pickers,
 ) -> Vec<Change> {
     let definition = module.definition();
     let id = definition.id;
@@ -657,6 +707,7 @@ pub fn section(
         module,
         state,
         groups,
+        pickers,
         controls: Default::default(),
     };
     let out = section.show(ui, |ui| {
@@ -715,6 +766,7 @@ struct Page<'a> {
     module: &'a dyn Module,
     state: &'a ModuleState,
     groups: &'a dyn Fn(&str) -> bool,
+    pickers: &'a Pickers<'a>,
     /// Where each row of controls on the edit was drawn, which a photo opening says over
     /// (decision 77): not a group's header, a tool's setting nor the guides, which stay
     /// usable and keep their own tips.
@@ -786,7 +838,7 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
     let (words, module, state) = (page.words, page.module, page.state);
     let definition = module.definition();
     match row {
-        Row::Slider(slider) => slider_row(ui, words, definition, slider, state, changes),
+        Row::Slider(slider) => slider_row(ui, page, slider, changes),
         Row::Choice { control, style } => {
             choice_row(ui, words, definition, control, *style, state, changes);
         }
@@ -816,9 +868,7 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         Row::Preset { preset, .. } => preset_row(ui, words, definition, preset, state, changes),
         Row::ToolSetting(setting) => tool_setting_row(ui, words, definition.id, setting),
         Row::Action { id } => action_row(ui, words, definition.id, id),
-        // Picker buttons, and a slider's picker quad, are drawn with their state once the
-        // session runs module pickers (decision 79).
-        Row::Pickers { .. } => {}
+        Row::Pickers { label, pickers } => pickers_row(ui, page, *label, pickers, changes),
         Row::Buttons { control, buttons } => {
             buttons_row(ui, words, definition, control, buttons, state, changes);
         }
@@ -1184,14 +1234,9 @@ impl Shown {
     }
 }
 
-fn slider_row(
-    ui: &mut egui::Ui,
-    words: &Translator,
-    definition: &Definition,
-    slider: &Slider,
-    state: &ModuleState,
-    changes: &mut Vec<Change>,
-) {
+fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec<Change>) {
+    let (words, state) = (page.words, page.state);
+    let definition = page.module.definition();
     let (module, id) = (definition.id, slider.control);
     let Some(shown) = Shown::of(definition, state, id) else {
         return;
@@ -1223,8 +1268,16 @@ fn slider_row(
     if let Some(unit) = &unit {
         row = row.unit(unit);
     }
-    // A quad's tool (a picker, a line) comes with the first module whose quad runs; until
-    // then no row draws one, rather than one with nothing behind it.
+    // A picker's quad, where its module's pick is built; a line's comes with the first
+    // module whose quad runs, until then no row draws one, rather than one with nothing
+    // behind it.
+    let picker = match slider.quad {
+        Some(Quad::Picker(picker)) => page.button(ui.ctx(), picker),
+        _ => None,
+    };
+    if let Some((_, button)) = &picker {
+        row = row.picker(button.button());
+    }
     let control = id;
     match row.show(ui) {
         Some(SliderAction::Set { value, done }) => changes.push(Change::Set {
@@ -1239,8 +1292,121 @@ fn slider_row(
             control,
             kept: shown.mark != Some(Mark::Kept),
         }),
+        Some(SliderAction::Picker(action)) => {
+            if let Some((picker, _)) = picker {
+                changes.push(page.pressed(ui, picker, action));
+            }
+        }
         Some(SliderAction::Quad) | None => {}
     }
+}
+
+/// A picker's button as the panel draws it: its words and its state.
+struct PickerWords<'a> {
+    full: String,
+    promise: String,
+    on: bool,
+    both: bool,
+    focus: bool,
+    enabled: bool,
+    why: Option<&'a str>,
+}
+
+impl PickerWords<'_> {
+    fn button(&self) -> PickerButton<'_> {
+        let mut button = PickerButton::new(&self.full, self.on)
+            .tip(&self.promise)
+            .point_or_area(self.both)
+            .focus(self.focus);
+        if !self.enabled {
+            button = match self.why {
+                Some(why) => button.disabled(why),
+                None => button.state(ButtonState::Disabled),
+            };
+        }
+        button
+    }
+}
+
+impl<'a> Page<'a> {
+    /// The button of the module's picker `id`, if its module draws its pickers: its
+    /// words and whether it is on, enabled, and taking the focus back from the photo.
+    fn button(
+        &self,
+        ctx: &egui::Context,
+        id: &'static str,
+    ) -> Option<(&'static str, PickerWords<'a>)> {
+        let definition = self.module.definition();
+        let module = definition.id;
+        if !self.pickers.drawn.contains(&module) {
+            return None;
+        }
+        let picker = definition.picker(id)?;
+        let [_, full, promise, _] = messages::picker(module, id).map(|id| self.words.text(&id));
+        let this = PickerRef::Module { module, picker: id };
+        Some((
+            id,
+            PickerWords {
+                full,
+                promise,
+                on: self.pickers.on == Some(this),
+                both: picker.kind == PickerKind::PointArea,
+                focus: crate::pickers::takes_back(ctx, this),
+                enabled: self.pickers.enabled,
+                why: self.pickers.why,
+            },
+        ))
+    }
+
+    /// What a press on `picker`'s button asks, with the keys held.
+    fn pressed(&self, ui: &egui::Ui, picker: &'static str, action: PickerAction) -> Change {
+        let keys = crate::pickers::pick_keys(ui.input(|i| i.modifiers));
+        Change::Picker {
+            module: self.module.definition().id,
+            picker,
+            action,
+            keys,
+        }
+    }
+}
+
+/// A row of pickers, darktable's toggle buttons packed in a box: its label at the start,
+/// where it has one, and the buttons at the row's end, in order, where its module draws
+/// its pickers.
+fn pickers_row(
+    ui: &mut egui::Ui,
+    page: &Page,
+    label: Option<&str>,
+    ids: &[&'static str],
+    changes: &mut Vec<Change>,
+) {
+    let buttons: Vec<(&'static str, PickerWords)> = ids
+        .iter()
+        .filter_map(|&id| page.button(ui.ctx(), id))
+        .collect();
+    if buttons.is_empty() {
+        return;
+    }
+    let module = page.module.definition().id;
+    let label = label.map(|id| page.words.text(&messages::group(module, id)));
+    let t = apertrust_ui::theme(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.set_min_height(t.sizes.panel_line);
+        if let Some(label) = &label {
+            ui.add(egui::Label::new(label.as_str()).selectable(false));
+        }
+        // At the row's end, left to right, so readers and Tab meet them in order.
+        let count = buttons.len() as f32;
+        let width = count * t.sizes.field + (count - 1.0) * ui.spacing().item_spacing.x;
+        ui.add_space((ui.available_width() - width).max(0.0));
+        for (picker, words) in &buttons {
+            let (_, pressed) = words.button().show(ui);
+            if let Some(action) = pressed {
+                let picker: &'static str = picker;
+                changes.push(page.pressed(ui, picker, action));
+            }
+        }
+    });
 }
 
 /// An f32 as the decimal it was written as: a definition's 0.01 is f32's 0.0099999998,
@@ -1816,6 +1982,9 @@ mod tests {
         panels: Panels,
         groups: BTreeMap<&'static str, bool>,
         changes: Vec<Change>,
+        /// The picker on, and why the pickers cannot be pressed.
+        on: Option<PickerRef>,
+        why: Option<&'static str>,
     }
 
     fn panel(module: &'static dyn Module, state: ModuleState) -> Harness<'static, Panel> {
@@ -1829,6 +1998,12 @@ mod tests {
                     panel.state.presets = presets(panel.module, &panel.state);
                     let groups =
                         |group: &str| panel.groups.get(group).copied().unwrap_or(GROUP_OPEN);
+                    let pickers = Pickers {
+                        drawn: &["sample"],
+                        on: panel.on,
+                        enabled: panel.why.is_none(),
+                        why: panel.why,
+                    };
                     let changes = section(
                         ui,
                         panel.module,
@@ -1839,6 +2014,7 @@ mod tests {
                         false,
                         true,
                         None,
+                        &pickers,
                     );
                     for change in &changes {
                         panel.panels.apply(change);
@@ -1878,6 +2054,8 @@ mod tests {
                     panels: Panels::default(),
                     groups: BTreeMap::new(),
                     changes: Vec::new(),
+                    on: None,
+                    why: None,
                 },
             )
     }
@@ -4264,6 +4442,151 @@ mod tests {
         assert!(stored.rect().top() > last);
     }
 
+    /// A module's pickers are drawn only where its pick is built: Exposure's quad is not
+    /// yet, Sample's are. On a photo opening or open for viewing only each is disabled,
+    /// saying why, and sends nothing.
+    #[test]
+    fn pickers_are_drawn_where_their_pick_is_built_and_disabled_saying_why() {
+        let pickers = |harness: &Harness<'_, Panel>| {
+            harness
+                .query_all_by_role(Role::Button)
+                .filter_map(|node| node.accesskit_node().label())
+                .filter(|label| label.contains("-picker-"))
+                .collect::<Vec<_>>()
+        };
+        let mut harness = panel(&Exposure, untouched(&Exposure));
+        harness.run();
+        assert_eq!(pickers(&harness), Vec::<String>::new());
+
+        let mut harness = panel(&Sample, untouched(&Sample));
+        harness.run();
+        assert_eq!(
+            pickers(&harness),
+            [
+                "module-sample-picker-brightness-full",
+                "module-sample-picker-spread-full",
+                "module-sample-picker-show-full"
+            ]
+        );
+        // Each tooltip is its promise, a picker of both kinds ending with the area's hint.
+        let quad =
+            harness.get_by_role_and_label(Role::Button, "module-sample-picker-brightness-full");
+        assert_eq!(
+            quad.accesskit_node().description().as_deref(),
+            Some("module-sample-picker-brightness-promise")
+        );
+        let spread =
+            harness.get_by_role_and_label(Role::Button, "module-sample-picker-spread-full");
+        let tip = spread.accesskit_node().description().unwrap_or_default();
+        assert!(
+            tip.starts_with("module-sample-picker-spread-promise\n"),
+            "{tip}"
+        );
+
+        let why = "Opening IMG_2041…";
+        harness.state_mut().why = Some(why);
+        harness.run();
+        let quad =
+            harness.get_by_role_and_label(Role::Button, "module-sample-picker-brightness-full");
+        assert!(quad.accesskit_node().is_disabled());
+        assert_eq!(quad.accesskit_node().description().as_deref(), Some(why));
+        quad.click();
+        harness.run();
+        assert_eq!(harness.state().changes, []);
+    }
+
+    /// `testing::Sample`'s picker rows as the panel draws them, its brightness quad on,
+    /// beside a photo with the area's marks focused after a key, at twice the size: only the
+    /// rows with pickers, so the snapshot shows the pickers alone. Accepted with
+    /// `UPDATE_SNAPSHOTS=1`, reviewed like a golden image.
+    fn photograph_pickers(which: Builtin, name: &str) {
+        use crate::pickers::{OnPhoto, name as picker_name, on_photo};
+        use apertrust_engine::session::Region;
+
+        const BRIGHTNESS: PickerRef = PickerRef::Module {
+            module: "sample",
+            picker: "brightness",
+        };
+        let state = untouched(&Sample);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(720.0, 300.0))
+            .with_pixels_per_point(2.0)
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui(move |ui| {
+                let ctx = ui.ctx().clone();
+                let t = theme(&ctx);
+                let colours = &t.colors;
+                (ui.painter()).rect_filled(ctx.content_rect(), 0.0, colours.photo_surround);
+                let panel = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(300.0, 300.0));
+                ui.painter().rect_filled(panel, 0.0, colours.panel);
+                let words = translator(&ctx);
+                let groups = |_: &str| GROUP_OPEN;
+                let pickers = Pickers {
+                    drawn: &["sample"],
+                    on: Some(BRIGHTNESS),
+                    enabled: true,
+                    why: None,
+                };
+                let page = Page {
+                    words: &words,
+                    module: &Sample,
+                    state: &state,
+                    groups: &groups,
+                    pickers: &pickers,
+                    controls: Default::default(),
+                };
+                let inside = egui::UiBuilder::new().max_rect(panel.shrink(12.0));
+                ui.scope_builder(inside, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let rows = Sample.definition().rows();
+                    for row in rows.filter(|row| !row.pickers().is_empty()) {
+                        draw_row(ui, &page, row, &mut Vec::new());
+                    }
+                });
+                // A sky over a pale wall over earth, as the wireframe's photo.
+                let photo = egui::Rect::from_min_size(pos2(330.0, 40.0), egui::vec2(360.0, 220.0));
+                let bands = [(141, 162, 181), (217, 210, 196), (110, 91, 69)];
+                for (i, (r, g, b)) in bands.into_iter().enumerate() {
+                    let third = photo.height() / 3.0;
+                    let band = egui::Rect::from_min_size(
+                        photo.min + egui::vec2(0.0, i as f32 * third),
+                        egui::vec2(photo.width(), third),
+                    );
+                    let colour = egui::Color32::from_rgb(r, g, b);
+                    ui.painter().rect_filled(band, 0.0, colour);
+                }
+                let name = picker_name(&words, Sample.definition(), "brightness");
+                let on = OnPhoto {
+                    picker: BRIGHTNESS,
+                    photo,
+                    pixels: [720, 440],
+                    region: Region::Area([0.2, 0.3, 0.7, 0.65]),
+                    colour: egui::Color32::TRANSPARENT,
+                    name: &name,
+                };
+                on_photo(ui, &on);
+            });
+        harness.run();
+        // The focus ring shows after a key, as on any control.
+        harness
+            .get_by(|node| node.role() == Role::Group && node.value().is_some())
+            .focus();
+        harness.run();
+        harness.key_press(Key::ArrowDown);
+        harness.run();
+        harness.snapshot(name);
+    }
+
+    #[test]
+    fn pickers_in_the_dark_theme() {
+        photograph_pickers(Builtin::Dark, "pickers-dark");
+    }
+
+    #[test]
+    fn pickers_in_the_light_theme() {
+        photograph_pickers(Builtin::Light, "pickers-light");
+    }
+
     /// A button's writes, one gesture: one write ends it at once; several are every one
     /// but the last `done: false`; none on a photo open for viewing only, nor for a module
     /// or action there is not.
@@ -4566,10 +4889,19 @@ mod tests {
                         let words = translator(ui.ctx());
                         for (module, state) in &states {
                             let definition = module.definition();
+                            let groups = |_: &str| GROUP_OPEN;
+                            let page = Page {
+                                words: &words,
+                                module: *module,
+                                state,
+                                groups: &groups,
+                                pickers: &Pickers::NONE,
+                                controls: Default::default(),
+                            };
                             ui.push_id(definition.id, |ui| {
                                 for slider in sliders(definition) {
                                     let mut changes = Vec::new();
-                                    slider_row(ui, &words, definition, slider, state, &mut changes);
+                                    slider_row(ui, &page, slider, &mut changes);
                                 }
                             });
                         }
@@ -5191,7 +5523,16 @@ mod tests {
                     let groups = |_: &str| GROUP_OPEN;
                     ui.push_id(i, |ui| {
                         section(
-                            ui, &ToneCurve, state, true, panels, &groups, false, true, None,
+                            ui,
+                            &ToneCurve,
+                            state,
+                            true,
+                            panels,
+                            &groups,
+                            false,
+                            true,
+                            None,
+                            &Pickers::NONE,
                         )
                     });
                 }
@@ -5277,7 +5618,16 @@ mod tests {
                     let groups = |_: &str| mapping[i];
                     ui.push_id(i, |ui| {
                         section(
-                            ui, &Exposure, state, open, panels, &groups, false, true, None,
+                            ui,
+                            &Exposure,
+                            state,
+                            open,
+                            panels,
+                            &groups,
+                            false,
+                            true,
+                            None,
+                            &Pickers::NONE,
                         )
                     });
                 }

@@ -18,9 +18,10 @@
 //!
 //! On the left: the view toggles (every selected photo, the proof margin, before and
 //! after, the guides), then the layer being edited and + for a new one. In the middle: the
-//! values under the cursor. On the right: the zoom, one button showing the scale, which
-//! opens darktable's zoom menu (`src/libs/navigation.c`): Small, Fit and Fill, the stops
-//! from 50 to 1600%, then Zoom in and Zoom out.
+//! values under the cursor, or while a colour picker is on, which picker it is and how to
+//! use it (`docs/pickers.md`, On the photo). On the right: the zoom, one button showing
+//! the scale, which opens darktable's zoom menu (`src/libs/navigation.c`): Small, Fit and
+//! Fill, the stops from 50 to 1600%, then Zoom in and Zoom out.
 
 use std::ops::RangeInclusive;
 
@@ -88,6 +89,7 @@ pub struct CentralBar<'a> {
     layers: bool,
     values: Option<[u8; 3]>,
     status: Option<&'a str>,
+    picker: Option<(&'a str, &'a str)>,
     zoom: Zoom,
     zoom_enabled: bool,
     zoomable: bool,
@@ -136,6 +138,7 @@ impl<'a> CentralBar<'a> {
             layers: false,
             values: None,
             status: None,
+            picker: None,
             zoom,
             zoom_enabled: false,
             zoomable: false,
@@ -193,6 +196,17 @@ impl<'a> CentralBar<'a> {
     /// Rendering… while a photo opening is slow to go live (decision 77); `None` for none.
     pub fn status(mut self, status: Option<&'a str>) -> Self {
         self.status = status;
+        self
+    }
+
+    /// While a colour picker is on: its name ("Colour calibration · Illuminant") and how to
+    /// use it ("Drag an area on the photo. Ctrl-click switches to a point. Esc ends."),
+    /// each translated (`docs/pickers.md`, On the photo). They follow the layer's buttons,
+    /// the name in the text colour and how a step quieter, in place of the status and the
+    /// values under the cursor; how is left out where it does not fit, and both where the
+    /// name does not.
+    pub fn picker(mut self, name: &'a str, how: &'a str) -> Self {
+        self.picker = Some((name, how));
         self
     }
 
@@ -298,6 +312,13 @@ impl<'a> CentralBar<'a> {
             )
             .inner;
 
+        // A picker's words take the gap whole.
+        if let Some((name, how)) = self.picker {
+            if right_start > left_end {
+                picker_words(ui, left_end..=right_start, inner, name, how);
+            }
+            return action;
+        }
         // The status, quiet, at the gap's start, never over the photo.
         let mut left_end = left_end;
         if let Some(status) = self.status
@@ -526,6 +547,33 @@ fn status_label(ui: &mut Ui, span: RangeInclusive<f32>, inner: Rect, status: &st
     let response = ui.interact(rect, ui.scope_id().with("status"), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, status));
     rect.right()
+}
+
+/// Draws a picker's `name`, then `how` a step quieter, from `span`'s start in `inner`'s
+/// height: both where they fit, the name alone where only it does, else nothing. Each is a
+/// label to screen readers.
+fn picker_words(ui: &mut Ui, span: RangeInclusive<f32>, inner: Rect, name: &str, how: &str) {
+    let t = theme(ui.ctx());
+    let font = FontId::proportional(t.text.small);
+    let (start, end) = (*span.start() + t.spacing.l, *span.end() - t.spacing.l);
+    let mut x = start;
+    for (i, (text, colour)) in [(name, t.colors.text), (how, t.colors.text_secondary)]
+        .into_iter()
+        .enumerate()
+    {
+        let galley = ui
+            .painter()
+            .layout_no_wrap(text.to_owned(), font.clone(), colour);
+        if x + galley.size().x > end {
+            return;
+        }
+        let at = pos2(x, inner.center().y - galley.size().y / 2.0);
+        let rect = Rect::from_min_size(at, galley.size());
+        ui.painter().galley(at, galley, colour);
+        let response = ui.interact(rect, ui.scope_id().with(("picker", i)), Sense::hover());
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
+        x = rect.right() + t.spacing.m;
+    }
 }
 
 fn values(ui: &mut Ui, bar: Rect, [r, g, b]: [u8; 3]) {

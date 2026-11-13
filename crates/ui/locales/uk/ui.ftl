@@ -758,6 +758,24 @@ picker-tip-area-quad =
     { $tip }
     { $command }+клацання, щоб вибрати область
 
+## Активна піпетка на знімку (docs/pickers.md, On the photo, Accessibility). $module — назва
+## модуля, $picker — назва піпетки: мітка її керування на квадраті повзунка, інакше власна;
+## $command — модифікатор вказівника, як його пишуть скорочення, $what — власне речення
+## піпетки
+
+picker-bar-name = { $module } · { $picker }
+picker-bar-area = Перетягніть область на знімку. { $command }+клацання перемикає на точку. Esc завершує.
+picker-bar-point = { $what } { $command }+клацання перемикає на область. Esc завершує.
+picker-bar-point-what = Клацніть або перетягніть точку на знімку.
+picker-photo-area = Область піпетки, { $picker }
+picker-photo-point = Точка піпетки, { $picker }
+picker-photo-at-point = точка на { $x }%, { $y }%
+picker-photo-at-area = область від { $left }%, { $top }% до { $right }%, { $bottom }%
+picker-photo-up = Посунути вгору
+picker-photo-down = Посунути вниз
+picker-said-control = { $control } { $value }
+picker-said-rgb = середнє RGB { $red }, { $green }, { $blue }
+
 ## Вікно експорту (docs/gui.md, The Export dialog): модуль експорту darktable, назви
 ## з великої літери лише першого слова. $count — кількість знімків, один знімок — точне
 ## число 1. $file — назва знімка чи файлу, $source — вихідний raw, $folder — тека, $width

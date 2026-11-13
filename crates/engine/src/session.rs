@@ -483,8 +483,13 @@ pub enum Event {
     Scopes(Reading),
     /// The active colour picker's reading (decision 79), after the frame it measured, as
     /// it turns on and whenever its region or the frame's colour under it changes; `None`
-    /// as it turns off.
-    Picker(Option<PickerReading>),
+    /// as it turns off. `through` is the reading's, or with none every command the session
+    /// had applied as the picker turned off, so a client knows which of its commands the
+    /// picker's end answers.
+    Picker {
+        through: u64,
+        reading: Option<PickerReading>,
+    },
     /// The edit was written to `path`, as it stood after the first `through` commands
     /// ([`Session::send`] numbers them).
     Saved {
@@ -578,7 +583,7 @@ impl Event {
             Event::Values(_) => Fact::Values,
             Event::Frame(_) => Fact::Frame,
             Event::Scopes(_) => Fact::Scopes,
-            Event::Picker(_) => Fact::Picker,
+            Event::Picker { .. } => Fact::Picker,
             Event::ExportPreview { .. } => Fact::ExportPreview,
             Event::Cache(_) => Fact::Cache,
             Event::History(_) => Fact::History,
@@ -1147,11 +1152,15 @@ impl Session {
                             // without saving what may be half an edit, the colour picker
                             // off.
                             let picking = engine.pickers.on();
+                            let through = engine.applied;
                             engine.close();
                             let message = panic_message(panic.as_ref());
                             let mut events = vec![Event::Failed(SessionError::Panicked(message))];
                             if picking {
-                                events.push(Event::Picker(None));
+                                events.push(Event::Picker {
+                                    through,
+                                    reading: None,
+                                });
                             }
                             events
                         }
@@ -2205,6 +2214,8 @@ impl Engine {
         };
         let mut events = Vec::new();
         let (mut values, mut render, mut save, mut cancelled) = (false, false, false, false);
+        // Whether a module picker's command owed an answer has nothing to write.
+        let mut answer = false;
         // Whether the scopes now count a graph the published frame was not counted for.
         let mut recount = false;
         // Whether the active colour picker's region changed, to be measured on the frame.
@@ -2226,6 +2237,7 @@ impl Engine {
                     self.pickers.forget_photo();
                     self.open(path, self.applied, at);
                     (values, render, save, cancelled) = (false, false, false, false);
+                    answer = false;
                     resample = false;
                     Ok(())
                 }
@@ -2236,6 +2248,7 @@ impl Engine {
                     self.pickers.forget_photo();
                     self.close_saving();
                     (values, render, save, cancelled) = (false, false, false, false);
+                    answer = false;
                     resample = false;
                     Ok(())
                 }
@@ -2258,6 +2271,7 @@ impl Engine {
                     values |= effect.values;
                     render |= effect.render;
                     save |= effect.save;
+                    answer |= effect.answer;
                 }),
                 Command::CancelJob { job } => self.jobs.cancel(job),
                 Command::RetryJob { job } => self.retry(job),
@@ -2358,9 +2372,10 @@ impl Engine {
         let needs_save = self.needs_save();
         if save && needs_save {
             self.save();
-        } else if cancelled && !needs_save {
-            // The writer has the edit a cancel put back or left as it was, and reports it
-            // saved without writing it, unless its last write has failed by then.
+        } else if (cancelled || answer) && !needs_save {
+            // The writer has the edit a cancel put back or left as it was, or a pick's
+            // completed command left as it was, and reports it saved without writing it,
+            // unless its last write has failed by then.
             self.save_held();
         }
         // Whether the batch published a frame, which the colour picker measured as it did.
@@ -2661,6 +2676,8 @@ impl Engine {
     }
 
     fn hand_over(&mut self, held: bool) {
+        // Every command before it is answered by this write.
+        self.pickers.owed = false;
         if let Some(open) = &mut self.open
             && open.view_only.is_none()
         {
@@ -9321,7 +9338,7 @@ mod tests {
             Event::Values(_) => Topic::Fact(Fact::Values),
             Event::Frame(_) => Topic::Fact(Fact::Frame),
             Event::Scopes(_) => Topic::Fact(Fact::Scopes),
-            Event::Picker(_) => Topic::Fact(Fact::Picker),
+            Event::Picker { .. } => Topic::Fact(Fact::Picker),
             Event::Saved { .. } => Topic::Notice,
             Event::Job { event, .. } => match *event {
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => Topic::Notice,
@@ -9418,7 +9435,10 @@ mod tests {
                 }),
             },
             Event::Failed(SessionError::Stopped),
-            Event::Picker(None),
+            Event::Picker {
+                through: 3,
+                reading: None,
+            },
             Event::Cache(CacheEvent::NoCache),
             Event::Cache(CacheEvent::sizes(
                 Default::default(),

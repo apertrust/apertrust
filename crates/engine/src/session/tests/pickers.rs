@@ -75,12 +75,23 @@ fn area(from: [f32; 2], to: [f32; 2]) -> Command {
     })
 }
 
+/// The `through` of the picker's end in `events`: a `Picker` with no reading.
+fn end(events: &[Event]) -> Option<u64> {
+    events.iter().find_map(|e| match e {
+        Event::Picker {
+            through,
+            reading: None,
+        } => Some(*through),
+        _ => None,
+    })
+}
+
 /// The pickers' events in `events`.
 fn readings(events: &[Event]) -> Vec<&Option<PickerReading>> {
     events
         .iter()
         .filter_map(|e| match e {
-            Event::Picker(reading) => Some(reading),
+            Event::Picker { reading, .. } => Some(reading),
             _ => None,
         })
         .collect()
@@ -108,7 +119,12 @@ impl Driven {
         assert!(failures(&events).is_empty(), "{events:?}");
         let picked = self.picked();
         match &picked[..] {
-            [Event::Picker(Some(reading))] => reading.clone(),
+            [
+                Event::Picker {
+                    reading: Some(reading),
+                    ..
+                },
+            ] => reading.clone(),
             _ => panic!("{events:?} then {picked:?}"),
         }
     }
@@ -267,7 +283,13 @@ fn a_reading_follows_the_frame_it_measured() {
         );
         let (pixels_, _) = frame_pixels(&driven.gpu, &events);
         let picked = driven.picked();
-        let [Event::Picker(Some(reading))] = &picked[..] else {
+        let [
+            Event::Picker {
+                reading: Some(reading),
+                ..
+            },
+        ] = &picked[..]
+        else {
             panic!("{picked:?}");
         };
         assert_eq!(reading.through, through);
@@ -288,7 +310,8 @@ fn a_reading_follows_the_frame_it_measured() {
     open_live(&session, &wakes, &path);
     session.send(on(true));
     let sent = session.send(set("brightness", ControlValue::Number(0.3), true));
-    let measured = |e: &Event| matches!(e, Event::Picker(Some(r)) if r.through >= sent);
+    let measured =
+        |e: &Event| matches!(e, Event::Picker { reading: Some(r), .. } if r.through >= sent);
     let events = until(&session, &wakes, measured);
     let frame = events
         .iter()
@@ -390,9 +413,12 @@ fn the_picker_turns_off_as_another_photo_opens_and_its_readings_never_arrive() {
         },
     ]);
     assert!(
-        matches!(events.first(), Some(Event::Picker(None))),
+        matches!(events.first(), Some(Event::Picker { reading: None, .. })),
         "{events:?}"
     );
+    // Its end is through every command applied as it turned off: the open's own number,
+    // the resize after it in the batch.
+    assert_eq!(end(&events), Some(driven.engine.applied - 1));
     driven.settle();
     assert!(driven.picked().is_empty());
     // Its place is kept for the session, on the new photo too.
@@ -401,6 +427,7 @@ fn the_picker_turns_off_as_another_photo_opens_and_its_readings_never_arrive() {
     // And off again as the photo closes.
     let events = driven.run([Command::Close]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
     remove(&path);
     remove(&other);
 }
@@ -462,7 +489,12 @@ fn an_area_stays_on_its_part_of_the_scene_through_every_orientation() {
         let size = [frame.width, frame.height];
         let picked = driven.picked();
         let reading = match &picked[..] {
-            [Event::Picker(Some(reading))] => reading,
+            [
+                Event::Picker {
+                    reading: Some(reading),
+                    ..
+                },
+            ] => reading,
             _ => panic!("{picked:?}"),
         };
         assert_eq!(reading.through, through);
@@ -488,7 +520,13 @@ fn an_area_stays_on_its_part_of_the_scene_through_every_orientation() {
     );
     driven.run([orient(1)]);
     let picked = driven.picked();
-    let [Event::Picker(Some(reading))] = &picked[..] else {
+    let [
+        Event::Picker {
+            reading: Some(reading),
+            ..
+        },
+    ] = &picked[..]
+    else {
         panic!("{picked:?}");
     };
     assert!(
@@ -516,10 +554,14 @@ fn a_failure_of_the_pickers_is_reported_once_and_the_frames_go_on() {
     assert!(
         matches!(
             &events[..],
-            [Event::Failed(SessionError::Pickers(_)), Event::Picker(None)]
+            [
+                Event::Failed(SessionError::Pickers(_)),
+                Event::Picker { reading: None, .. }
+            ]
         ),
         "{events:?}"
     );
+    assert_eq!(end(&events), Some(driven.engine.applied));
     // The frames go on, with nothing measured or reported; `On` is refused from then on.
     let events = driven.run([set("brightness", ControlValue::Number(0.4), true)]);
     assert!(failures(&events).is_empty(), "{events:?}");
@@ -603,7 +645,7 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     let at = |which: &dyn Fn(&Event) -> bool| {
         (picked.iter().position(which)).unwrap_or_else(|| panic!("{picked:?}"))
     };
-    let carries = |e: &Event, part: &ModuleReading| matches!(e, Event::Picker(Some(r)) if r.module.as_ref() == Some(part));
+    let carries = |e: &Event, part: &ModuleReading| matches!(e, Event::Picker { reading: Some(r), .. } if r.module.as_ref() == Some(part));
     let order = [
         at(&|e| carries(e, part)),
         at(&|e| matches!(e, Event::Values(_))),
@@ -671,7 +713,14 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     assert!(driven.engine.pickers.on());
     let picked = driven.picked();
     assert!(
-        !picked.is_empty() && picked.iter().all(|e| matches!(e, Event::Picker(Some(_)))),
+        !picked.is_empty()
+            && picked.iter().all(|e| matches!(
+                e,
+                Event::Picker {
+                    reading: Some(_),
+                    ..
+                }
+            )),
         "{events:?} then {picked:?}"
     );
     assert_ne!(latest(&picked).output, part.output);
@@ -776,6 +825,8 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
         module: "colorbalancergb".to_owned(),
     }]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    // Its end is through the reset, so a client knows it answers its `On`.
+    assert_eq!(end(&events), Some(driven.engine.applied));
     // A change to another module leaves it on; Sample's `show`, darktable's keep-active,
     // stays on through its own module's.
     driven.run([on_module("show", true)]);
@@ -795,6 +846,12 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
     driven.picked();
     let events = driven.run([set("grain", ControlValue::Number(30.0), true)]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
+    // `Off` ends it through itself.
+    driven.run([on_module("show", true)]);
+    driven.picked();
+    let events = driven.run([picker(PickerCommand::Off)]);
+    assert_eq!(end(&events), Some(driven.engine.applied));
     remove(&path);
 }
 
@@ -1079,10 +1136,11 @@ fn a_release_while_a_drag_s_reading_is_on_its_way_completes_with_that_reading() 
     assert_eq!(changes.count(), 2, "{picked:?}");
     assert_eq!(written(&driven.writes()).len(), 1);
     assert!(!driven.engine.needs_save());
-    // Releasing again where the area is reads nothing, and writes nothing.
+    // Releasing again where the area is reads nothing and changes nothing: it is
+    // answered all the same, the edit reported held.
     let events = driven.run([moved([0.1, 0.1], [0.7, 0.8], true)]);
     assert!(driven.picked().is_empty(), "{events:?}");
-    assert!(driven.writes().is_empty());
+    assert_eq!(written(&driven.writes()).len(), 1);
     remove(&path);
 
     // A release while only a reading an edit caused is on its way, never applied:
@@ -1178,7 +1236,7 @@ fn a_picker_on_an_operation_in_the_viewport_s_tiles_reads_nothing_and_applies_no
     // Its reading has no module part, and nothing is applied.
     let picked = driven.picked();
     assert!(
-        matches!(&picked[..], [Event::Picker(Some(reading))] if reading.module.is_none()),
+        matches!(&picked[..], [Event::Picker { reading: Some(reading), .. }] if reading.module.is_none()),
         "{picked:?}"
     );
     remove(&path);
@@ -1570,10 +1628,40 @@ fn tools_save_a_drag_under_way_before_their_pick() {
         matches!(written(&writes)[..], [(_, true)] | [(_, true), (_, true)]),
         "{writes:?}"
     );
-    // The release, where the step left it, has nothing left to save.
+    // The release, where the step left it, has nothing left to save: it is answered, the
+    // edit reported held.
     driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
     driven.picked();
-    assert!(driven.writes().is_empty());
+    assert_eq!(written(&driven.writes()).len(), 1);
     assert!(!driven.engine.needs_save());
+    remove(&path);
+}
+
+/// Every completing command of a module's picker is answered with a `Saved` through it,
+/// a pick that wrote nothing included, the edit reported held (decision 79): `show`'s
+/// `On` and a release of its, neither of which writes.
+#[test]
+fn a_pick_that_writes_nothing_is_answered_with_a_save() {
+    let path = scratch("picker-answered");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.writes();
+    let saved = |writes: &[Event]| {
+        (writes.iter())
+            .filter_map(|e| match e {
+                Event::Saved { through, .. } => Some(*through),
+                _ => None,
+            })
+            .max()
+    };
+    driven.run([on_module("show", true)]);
+    driven.picked();
+    let on = driven.engine.applied;
+    assert!(saved(&driven.writes()).is_some_and(|t| t >= on));
+    driven.run([area([0.2, 0.2], [0.4, 0.4])]);
+    driven.picked();
+    let release = driven.engine.applied;
+    assert!(saved(&driven.writes()).is_some_and(|t| t >= release));
+    assert!(!driven.engine.pickers.owed);
     remove(&path);
 }

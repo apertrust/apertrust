@@ -1397,7 +1397,7 @@ fn whole_slider(
     match action {
         SliderAction::Set { value, .. } => Some(value.round() as u8),
         SliderAction::Reset => Some(default as u8),
-        SliderAction::ToggleKeep | SliderAction::Quad => None,
+        SliderAction::ToggleKeep | SliderAction::Quad | SliderAction::Picker(_) => None,
     }
 }
 

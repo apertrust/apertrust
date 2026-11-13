@@ -78,7 +78,7 @@ fn slider(
                                 Mark::Kept
                             };
                         }
-                        SliderAction::Quad => {}
+                        SliderAction::Quad | SliderAction::Picker(_) => {}
                     }
                     state.last = Some(action);
                 }
