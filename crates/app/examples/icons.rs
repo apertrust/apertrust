@@ -17,7 +17,8 @@
 //! Renders the app icon's platform files from its SVG sources in `assets/icons`
 //! (its README lists them): the macOS iconsets and `apertrust.icns`, the Windows sizes and
 //! `apertrust.ico`, the Linux hicolor tree named after the app id, and the mark's PNGs.
-//! Run by `tools/build-icons.sh`; the files it writes are committed.
+//! Each icon at 32 px and below is drawn from its `-small` SVG, the mark's simplified
+//! drawing. Run by `tools/build-icons.sh`; the files it writes are committed.
 //!
 //! Every PNG is rendered by resvg at its own size, never scaled from another, and written
 //! with no chunk but the image's own, so the files carry no metadata. The `.icns` and the
@@ -46,6 +47,8 @@ const WINDOWS: [u32; 10] = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256];
 const LINUX: [u32; 9] = [16, 22, 24, 32, 48, 64, 128, 256, 512];
 /// The mark's heights, for the web and documents.
 const MARK: [u32; 3] = [256, 512, 1024];
+/// The largest size, in pixels, drawn from an icon's `-small` SVG.
+const SMALL: u32 = 32;
 
 fn main() {
     let icons = std::env::args_os().nth(1).map_or_else(
@@ -53,15 +56,25 @@ fn main() {
         PathBuf::from,
     );
     let svg = |name: &str| load(&icons.join("svg").join(name));
+    // An icon's drawing at `size` pixels: its `-small` SVG at SMALL and below.
+    let icon = |name: &str| {
+        [
+            svg(&format!("{name}.svg")),
+            svg(&format!("{name}-small.svg")),
+        ]
+    };
+    let at = |[full, small]: &[usvg::Tree; 2], size: u32| {
+        render(if size <= SMALL { small } else { full }, size, size)
+    };
 
-    let light = svg("apertrust-macos.svg");
-    let dark = svg("apertrust-macos-dark.svg");
+    let light = icon("apertrust-macos");
+    let dark = icon("apertrust-macos-dark");
     let mut icns = Vec::new();
     for (size, one, two) in MACOS {
         for (tree, set) in [(&light, "AppIcon"), (&dark, "AppIcon-dark")] {
             let folder = icons.join(format!("png/macos/{set}.iconset"));
-            let at_1x = render(tree, size, size);
-            let at_2x = render(tree, size * 2, size * 2);
+            let at_1x = at(tree, size);
+            let at_2x = at(tree, size * 2);
             write(&folder.join(format!("icon_{size}x{size}.png")), &at_1x);
             write(&folder.join(format!("icon_{size}x{size}@2x.png")), &at_2x);
             // An `.icns` holds one appearance: the dark set waits for an asset catalog.
@@ -73,10 +86,10 @@ fn main() {
     }
     write(&icons.join("apertrust.icns"), &icns_file(&icns));
 
-    let square = svg("apertrust-square.svg");
+    let square = icon("apertrust-square");
     let mut ico = Vec::new();
     for size in WINDOWS {
-        let png = render(&square, size, size);
+        let png = at(&square, size);
         write(
             &icons.join(format!("png/windows/apertrust-{size}.png")),
             &png,
@@ -85,17 +98,15 @@ fn main() {
     }
     write(&icons.join("apertrust.ico"), &ico_file(&ico));
 
+    let linux = icon("apertrust-linux");
     let hicolor = icons.join("png/linux/hicolor");
     for size in LINUX {
         let path = hicolor.join(format!("{size}x{size}/apps/{APP_ID}.png"));
-        write(&path, &render(&square, size, size));
+        write(&path, &at(&linux, size));
     }
     let scalable = hicolor.join(format!("scalable/apps/{APP_ID}.svg"));
-    let source = icons.join("svg/apertrust-square.svg");
-    write(
-        &scalable,
-        &fs::read(&source).expect("the square icon's SVG"),
-    );
+    let source = icons.join("svg/apertrust-linux.svg");
+    write(&scalable, &fs::read(&source).expect("the Linux icon's SVG"));
 
     let mark = svg("apertrust-mark.svg");
     let ratio = mark.size().width() / mark.size().height();

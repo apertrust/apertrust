@@ -145,7 +145,7 @@ pub enum Icon {
     Close,
     /// The top panel's ☰ on Windows and Linux, which opens the menus.
     Menu,
-    /// The app's mark, the folded A with its cut, at the top panel's start: filled shapes,
+    /// The app's mark, the Slider A with its cut, at the top panel's start: filled shapes,
     /// not lines, the one icon drawn so (`assets/icons/README.md`).
     Mark,
     /// Filled forms, drawn only to show a state: the chosen side panel tab, an icon

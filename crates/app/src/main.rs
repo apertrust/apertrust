@@ -1124,11 +1124,14 @@ fn on_screen(
 }
 
 /// The window's icon, in place of egui's (`assets/icons`): on a Mac eframe makes it the
-/// Dock icon, so it is the macOS plate there and the free-standing A elsewhere.
+/// Dock icon, so it is the macOS plate there, the Windows icon on Windows and the Linux
+/// icon elsewhere.
 fn icon() -> egui::IconData {
     #[cfg(target_os = "macos")]
     let png = include_bytes!("../assets/icons/png/macos/AppIcon.iconset/icon_512x512.png");
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    let png = include_bytes!("../assets/icons/png/windows/apertrust-256.png");
+    #[cfg(not(any(target_os = "macos", windows)))]
     let png = include_bytes!(
         "../assets/icons/png/linux/hicolor/256x256/apps/org.apertrust.Apertrust.png"
     );
