@@ -1849,6 +1849,10 @@ struct Engine {
     /// only the latest of those still waiting, so its saves count fewer.
     #[cfg(test)]
     handed: usize,
+    /// Called as a newer sidecar is taken, for a test: another program's write landing
+    /// between the take and the write that follows it, at a set point, whatever the timing.
+    #[cfg(test)]
+    taking: Option<Box<dyn FnMut() + Send>>,
     /// Holds the next Clear of the cache, for a test.
     #[cfg(test)]
     clear_hold: Option<export_job::testing::Hold>,
@@ -2246,6 +2250,8 @@ impl Engine {
             compiled: 0,
             #[cfg(test)]
             handed: 0,
+            #[cfg(test)]
+            taking: None,
             #[cfg(test)]
             clear_hold: None,
             #[cfg(test)]
@@ -3050,6 +3056,10 @@ impl Engine {
         let Some(snapshot) = self.writer.take_newer(&open.sidecar) else {
             return events;
         };
+        #[cfg(test)]
+        if let Some(taking) = &mut self.taking {
+            taking();
+        }
         let name = sidecar::file_name(&open.sidecar).into_owned();
         let (modified, stamp) = (snapshot.changed(), snapshot.stamp());
         let existed = stamp.is_some();

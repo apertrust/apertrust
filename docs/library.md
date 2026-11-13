@@ -639,6 +639,7 @@ Decision 52, planned (steps 10 to 13).
 - **Convergence:** comparing the same copies gives the same bytes on every machine, so after one round nothing is written again; spike L4's harness of simulated machines and syncs holds it.
 - **A library's own files** combine entry by entry, the later clock winning each, so photos added to an album on two machines are all kept. A library or project file of a newer format opens view-only; an album or smart album file holding what this build does not know is shown and never written.
 - **No lock decides anything.** Locks fail across NFS and SMB and do not exist in cloud folders. A presence note may later warn that a library is open on another computer; it blocks nothing.
+- **A known limit:** reading before each write narrows the window to the rename that replaces the file, which no filesystem Apertrust supports makes conditional on the file it replaces; another program's write that lands inside it is lost, as with any two tools writing one file without a lock (decision 52).
 
 ## A server
 

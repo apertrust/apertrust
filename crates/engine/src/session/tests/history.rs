@@ -2197,10 +2197,11 @@ fn steps_laid_on_a_newer_file_advance_the_clock_vector() {
 }
 
 /// Another program that keeps changing the sidecar while the photo closes: each write the
-/// close makes finds it changed again, and after a few rounds the close tells it.
+/// close makes finds it changed again, and after a few rounds the close tells it. The other
+/// program writes as each newer file is taken, so its write always lands between the take
+/// and the write that follows it, whatever the timing.
 #[test]
 fn a_file_another_program_keeps_changing_as_the_photo_closes_is_told() {
-    use std::sync::atomic::{AtomicBool, Ordering};
     let path = scratch("history-still-changing");
     let sidecar = sidecar::path_for(&path);
     let mut driven = Driven::new(SAVING);
@@ -2214,30 +2215,22 @@ fn a_file_another_program_keeps_changing_as_the_photo_closes_is_told() {
     let two = std::fs::read_to_string(&sidecar).unwrap();
     // A drag never released, which the close makes a step and writes.
     driven.run([set("grain", ControlValue::Number(30.0), false)]);
-    let stop = Arc::new(AtomicBool::new(false));
-    let writer = {
-        let (stop, sidecar) = (Arc::clone(&stop), sidecar.clone());
-        std::thread::spawn(move || {
-            for turn in 0.. {
-                if stop.load(Ordering::Relaxed) {
-                    break;
-                }
-                // Whole, a temporary renamed into place, as fast as it can: never half a file.
-                let xml = if turn % 2 == 0 { &one } else { &two };
-                let temporary = sidecar.with_extension("other");
-                std::fs::write(&temporary, xml).unwrap();
-                std::fs::rename(&temporary, &sidecar).unwrap();
-            }
-        })
-    };
+    let turns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (taken, rewrites) = (Arc::clone(&turns), sidecar.clone());
+    driven.engine.taking = Some(Box::new(move || {
+        let turn = taken.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let xml = if turn % 2 == 0 { &one } else { &two };
+        apertrust_base::fs::write(&rewrites, xml.as_bytes()).unwrap();
+    }));
     let other = scratch("history-still-changing-other");
     let events = driven.run([Command::Open(other.clone())]);
-    stop.store(true, Ordering::Relaxed);
-    writer.join().unwrap();
     assert!(
         (failures(&events).iter()).any(|failure| matches!(failure, SessionError::NotSaved { error, .. } if matches!(**error, SessionError::StillChanging))),
         "{events:?}"
     );
+    // Taken three times: the close's take, then twice more.
+    assert_eq!(turns.load(std::sync::atomic::Ordering::Relaxed), 3);
+    driven.engine.taking = None;
     driven.settle();
     remove(&path);
     remove(&other);
