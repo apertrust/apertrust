@@ -425,24 +425,24 @@ What the migration brings over from darktable, one module each. "Processing" is 
 | colour calibration | [x] | [x] | 2 |
 | tone equalizer | [x] but the guided filters | [x] | 2 |
 | colour balance rgb | [x] | [x] | 2 |
-| rgb curve | [x] | [ ] its luma curve built as the Tone curve | 2 |
-| rgb levels | [x] | [ ] | 2 |
+| rgb curve | [x] | [ ] its luma curve built as the Tone curve | 3 |
+| rgb levels | [x] | [ ] | 3 |
 | grain | [x] | [x] | 2 |
 | vignetting | [x] without dithering | [x] | 2 |
 | haze removal | [x] | [x] | 3 |
 | rgb primaries | [x] | [x] | 3 |
 | soften | [x] | [x] | 3 |
 | local contrast | [x] | [ ] | 3 |
-| colour equalizer | [x] | [ ] | 3 |
+| colour equalizer | [x] | [ ] | 2 |
 | bloom | [x] | [ ] | 3 |
 | sigmoid | [x] | [ ] | 3 |
 | filmic rgb | [x] | [ ] | 3 |
 | lens correction | [ ] | [ ] | 3 |
 | chromatic aberrations | [ ] | [ ] | 3 |
-| rotate and perspective | [ ] | [ ] | 3 |
-| orientation | [x] | [x] | 3 |
+| rotate and perspective | [ ] | [ ] | 2 |
+| orientation | [x] | [x] | 2 |
 | crop | [ ] | [ ] | 3 |
-| denoise (profiled) | [ ] | [ ] | 3 |
+| denoise (profiled) | [ ] | [ ] | 2 |
 | diffuse or sharpen | [ ] | [ ] | 3 |
 | sharpen | [ ] | [ ] | 3 |
 
