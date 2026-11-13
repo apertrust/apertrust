@@ -133,7 +133,7 @@
 //! over the file and never writes it, so a change the user makes to it meanwhile, as the
 //! scale by its keys, leaves the file's value as it is.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -498,18 +498,25 @@ impl Settings {
 /// tool setting of [`tools::registry`], by its module and its id there, as the value its
 /// row (`Row::ToolSetting`) shows and the picker's commands carry. Kept by the app as
 /// darktable keeps its darktablerc, never in an edit, and sent with `PickerCommand::On`
-/// and `Tools`.
+/// and `Tools`. One `--conf` gives keeps its value for the run, as the store keeps it
+/// (decision 43): a set of it is refused, a measured value's too, and its row is drawn
+/// disabled.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Tools(BTreeMap<(&'static str, &'static str), ControlValue>);
+pub struct Tools {
+    values: BTreeMap<(&'static str, &'static str), ControlValue>,
+    /// Those `--conf` gives for this run.
+    overridden: BTreeSet<(&'static str, &'static str)>,
+}
 
 /// Each kept tool setting at its default, darktable's.
 impl Default for Tools {
     fn default() -> Tools {
-        Tools(
-            kept()
+        Tools {
+            values: kept()
                 .map(|(module, row, _)| ((module, row.id), row.default()))
                 .collect(),
-        )
+            overridden: BTreeSet::new(),
+        }
     }
 }
 
@@ -517,19 +524,35 @@ impl Tools {
     /// None kept.
     #[cfg(test)]
     pub const fn new() -> Tools {
-        Tools(BTreeMap::new())
+        Tools {
+            values: BTreeMap::new(),
+            overridden: BTreeSet::new(),
+        }
     }
 
     /// Every kept tool setting's value in `store`, read by its row's kind: a number, the
     /// option a choice's id names, or a boolean; one that cannot be read is its default.
+    /// Those `--conf` gives are marked so.
     pub fn read(store: &Store) -> Tools {
-        let mut tools = BTreeMap::new();
+        let mut tools = Tools {
+            values: BTreeMap::new(),
+            overridden: BTreeSet::new(),
+        };
         for (module, row, declared) in kept() {
             let value = store.value(declared);
             let value = value.as_ref().and_then(|value| control_value(row, value));
-            tools.insert((module, row.id), value.unwrap_or_else(|| row.default()));
+            let value = value.unwrap_or_else(|| row.default());
+            tools.values.insert((module, row.id), value);
+            if store.overridden(declared) {
+                tools.overridden.insert((module, row.id));
+            }
         }
-        Tools(tools)
+        tools
+    }
+
+    /// Whether `--conf` gives `module`'s tool setting `setting` for this run.
+    pub fn overridden(&self, module: &str, setting: &str) -> bool {
+        (self.overridden.iter()).any(|&(m, s)| m == module && s == setting)
     }
 
     /// Sets in `store` each value that differs from `was`.
@@ -546,16 +569,19 @@ impl Tools {
 
     /// `module`'s tool setting `setting`, if it is kept.
     pub fn get(&self, module: &str, setting: &str) -> Option<&ControlValue> {
-        self.0
+        self.values
             .iter()
             .find(|((m, s), _)| *m == module && *s == setting)
             .map(|(_, value)| value)
     }
 
-    /// Sets `module`'s tool setting `setting`, if it is kept.
+    /// Sets `module`'s tool setting `setting`, if it is kept and `--conf` does not give it.
     pub fn set(&mut self, module: &str, setting: &str, value: ControlValue) {
+        if self.overridden(module, setting) {
+            return;
+        }
         if let Some((_, kept)) = self
-            .0
+            .values
             .iter_mut()
             .find(|((m, s), _)| *m == module && *s == setting)
         {
@@ -565,7 +591,7 @@ impl Tools {
 
     /// `module`'s kept tool settings, as its picker's commands carry them.
     pub fn of(&self, module: &str) -> Vec<(&'static str, ControlValue)> {
-        (self.0.iter())
+        (self.values.iter())
             .filter(|((m, _), _)| *m == module)
             .map(|((_, setting), value)| (*setting, value.clone()))
             .collect()
@@ -1308,10 +1334,13 @@ mod tests {
                 keys: BTreeMap::new(),
                 export: Values::default(),
                 // Exposure's area exposure mapping at darktable's: correction, 50 %.
-                tools: Tools(BTreeMap::from([
-                    (("exposure", "area_mode"), ControlValue::Choice(0)),
-                    (("exposure", "lightness"), ControlValue::Number(50.0)),
-                ])),
+                tools: Tools {
+                    values: BTreeMap::from([
+                        (("exposure", "area_mode"), ControlValue::Choice(0)),
+                        (("exposure", "lightness"), ControlValue::Number(50.0)),
+                    ]),
+                    overridden: BTreeSet::new(),
+                },
                 ask_before_overwrite: true,
             }
         );
@@ -1865,6 +1894,36 @@ size = [1280, 800]
         assert_eq!(settings.central_panel.margin, 0.0);
         assert_eq!(settings.central_panel.proof_margin, 0.12);
         assert!(conf(&["central_panel.margin=wide"]).is_err());
+    }
+
+    /// A tool setting `--conf` gives keeps its value for the run: a change of its row and a
+    /// value a pick measured are refused, so the picker's commands carry `--conf`'s, and the
+    /// file keeps its own; the others change as ever.
+    #[test]
+    fn a_tool_setting_conf_gives_keeps_its_value_for_the_run() {
+        let folder = Folder::new("tools-conf");
+        let text = "version = 1\n[tools.exposure]\nlightness = 30.0\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let overrides = conf(&["tools.exposure.area_mode=measure"]).expect("read");
+        let (mut keeper, mut settings) = Keeper::open_with(folder.storage(), &overrides);
+        let tools = &mut settings.tools;
+        assert!(tools.overridden("exposure", "area_mode"));
+        assert!(!tools.overridden("exposure", "lightness"));
+        // Correction asked for from the row, and a measured lightness.
+        tools.set("exposure", "area_mode", ControlValue::Choice(0));
+        tools.set("exposure", "lightness", ControlValue::Number(42.0));
+        assert_eq!(
+            tools.of("exposure"),
+            [
+                ("area_mode", ControlValue::Choice(1)),
+                ("lightness", ControlValue::Number(42.0)),
+            ]
+        );
+        keeper.frame(Instant::now(), &settings);
+        keeper.flush();
+        let written = folder.text();
+        assert!(written.contains("lightness = 42.0"), "{written}");
+        assert!(!written.contains("area_mode"), "{written}");
     }
 
     #[test]
