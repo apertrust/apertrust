@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The `.apxmp` sidecar's text layer (decisions 28, 43, 47, 48 and 54, layer 1 of the
+//! The `.apxmp` sidecar's text layer (decisions 28, 43, 47, 48, 54 and 78, layer 1 of the
 //! library's API): `IMG.ARW.apxmp`, an XMP file beside the photo, as bytes in and values
 //! out, and back. It knows the file's structure and nothing of what the values mean, so it
 //! depends on no engine, GPU, module or operation crate.
@@ -53,6 +53,12 @@
 //! is off. The text layer keeps whatever the attribute holds, so the engine can tell a
 //! value it does not know.
 //!
+//! Version 2 (decisions 47 and 78) is [`Edits`]: the photo's name and [`fingerprint`], and
+//! its virtual copies, each with its clock vector, its history of steps, each step's
+//! entries written as version 1 writes them, and its end. [`Edits::parse`] reads version 1
+//! and 0 as one virtual copy whose history is one step, or none. The engine still writes
+//! version 1 through [`Document`].
+//!
 //! What the text layer tells of an edit a newer Apertrust wrote (decision 43), from the
 //! file alone, is a file version above [`VERSION`] ([`Document::newer`]). [`Newer`] also
 //! names the three things only the module definitions can tell, a module version above its
@@ -70,7 +76,8 @@ use thiserror::Error;
 
 use crate::xmp::{self, ArrayKind, Name, Namespace, Node, Property, Xmp};
 
-/// The version this build writes, and the newest whose layout it knows.
+/// The version the engine writes, whose edit [`Document`] reads; a file above it opens
+/// for viewing only. Version 2's layout, [`COPIES_VERSION`], is [`Edits`]'.
 pub const VERSION: u32 = 1;
 /// The namespace of Apertrust's own properties, on the project's domain (decision 48).
 pub const NAMESPACE: &str = "https://apertrust.org/ns/xmp/";
@@ -80,8 +87,14 @@ pub const CONTROL_NAMESPACE: &str = "https://apertrust.org/ns/xmp/control/";
 pub const PARAM_NAMESPACE: &str = "https://apertrust.org/ns/xmp/param/";
 /// The namespace of RDF, whose `Description` holds the entries.
 pub const RDF_NAMESPACE: &str = xmp::RDF;
+
+mod copies;
 #[cfg(test)]
 mod tests;
+
+pub use copies::{
+    ARG_NAMESPACE, COPIES_VERSION, Edits, FIRST_COPY, Note, Problem, Step, VirtualCopy, read_edits,
+};
 
 /// What `x:xmptk` says before the build.
 const TOOLKIT: &str = "Apertrust ";
@@ -199,6 +212,38 @@ pub fn read(path: &Path) -> Result<Document, SidecarError> {
     Document::parse(&std::fs::read_to_string(path)?)
 }
 
+/// How much of a photo's start, and of its end, its fingerprint hashes: 64 KiB.
+pub const FINGERPRINT_SPAN: u64 = 64 * 1024;
+
+/// A photo's fingerprint as `apertrust:fingerprint` holds it (decision 53): its size in
+/// bytes, a colon and 64 hex digits, the BLAKE3 hash of `head`, its first
+/// [`FINGERPRINT_SPAN`] bytes, then `tail`, its last, each the whole file where it is
+/// shorter.
+pub fn fingerprint(size: u64, head: &[u8], tail: &[u8]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(head);
+    hasher.update(tail);
+    format!("{size}:{}", hasher.finalize().to_hex())
+}
+
+/// The fingerprint of the photo at `path` ([`fingerprint`]), reading its first and last
+/// [`FINGERPRINT_SPAN`] bytes alone.
+pub fn read_fingerprint(path: &Path) -> io::Result<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let span = size.min(FINGERPRINT_SPAN);
+    let mut read = |from: u64| -> io::Result<Vec<u8>> {
+        let mut bytes = vec![0; usize::try_from(span).unwrap_or(usize::MAX)];
+        file.seek(SeekFrom::Start(from))?;
+        file.read_exact(&mut bytes)?;
+        Ok(bytes)
+    };
+    let head = read(0)?;
+    let tail = read(size - span)?;
+    Ok(fingerprint(size, &head, &tail))
+}
+
 /// One `rdf:Description` as the file has it: a module's or an operation's, every value
 /// as the text the file holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,115 +307,170 @@ impl Document {
     /// `param:` fields. An item that is neither is no entry.
     pub fn parse(xml: &str) -> Result<Document, SidecarError> {
         let xmp = Xmp::parse(xml)?;
-        let text = xmp
-            .properties
-            .iter()
-            .find(|p| p.name.local == "version" && p.name.namespace == NAMESPACE)
-            .and_then(|p| p.node.as_str())
-            .ok_or(SidecarError::NotAnEdit)?;
-        let version: u32 = text
-            .trim()
-            .parse()
-            .map_err(|_| SidecarError::Version(text.to_owned()))?;
-        let build = xmp
-            .toolkit
-            .as_deref()
-            .and_then(|toolkit| toolkit.strip_prefix(TOOLKIT))
-            .map(str::trim)
-            .filter(|build| !build.is_empty())
-            .map(str::to_owned);
+        Ok(Document::from_xmp(&xmp, version(&xmp)?))
+    }
+
+    /// The document an `.apxmp` file's XMP holds, read as version 1 lays it out.
+    fn from_xmp(xmp: &Xmp, version: u32) -> Document {
         let mut entries = Vec::new();
         for property in &xmp.properties {
             let listed = property.name.namespace == NAMESPACE
                 && matches!(property.name.local.as_str(), "modules" | "operations");
-            if !listed {
-                continue;
-            }
-            for item in property.node.items().unwrap_or_default() {
-                entries.extend(item.fields().and_then(entry));
+            if listed {
+                entries.extend(read_entries(&property.node));
             }
         }
-        Ok(Document {
+        Document {
             version,
-            build,
+            build: build(xmp),
             entries,
-        })
+        }
     }
 
     /// The document as XMP, the build recorded in `x:xmptk`: the module entries in their
     /// order, then the operation entries in theirs.
     pub fn to_xml(&self) -> String {
-        let field = |prefix: &str, namespace: &str, local: &str, text: &str| {
-            Property::simple(Name::new(prefix, namespace, local), text)
-        };
-        let own = |local: &str, text: &str| field("apertrust", NAMESPACE, local, text);
-        let mut modules = Vec::new();
-        let mut operations = Vec::new();
-        for entry in &self.entries {
-            match entry {
-                Entry::Module {
-                    module,
-                    version,
-                    kept,
-                    auto,
-                    enabled,
-                    controls,
-                } => {
-                    let mut fields = vec![own("module", module)];
-                    if let Some(version) = version {
-                        fields.push(own("moduleVersion", version));
-                    }
-                    if let Some(enabled) = enabled {
-                        fields.push(own("enabled", enabled));
-                    }
-                    for (id, ids) in [("kept", kept), ("auto", auto)] {
-                        if !ids.is_empty() {
-                            fields.push(own(id, &ids.join(" ")));
-                        }
-                    }
-                    for (id, text) in controls {
-                        fields.push(field("control", CONTROL_NAMESPACE, id, text));
-                    }
-                    modules.push(Node::structure(fields));
-                }
-                Entry::Operation {
-                    operation,
-                    schema,
-                    params,
-                } => {
-                    let mut fields = vec![own("operation", operation)];
-                    if let Some(schema) = schema {
-                        fields.push(own("schema", &schema.to_string()));
-                    }
-                    for (id, text) in params {
-                        fields.push(field("param", PARAM_NAMESPACE, id, text));
-                    }
-                    operations.push(Node::structure(fields));
-                }
-            }
-        }
-        let list = |local: &str, items| {
+        let (modules, operations): (Vec<&Entry>, Vec<&Entry>) = self
+            .entries
+            .iter()
+            .partition(|entry| matches!(entry, Entry::Module { .. }));
+        let list = |local: &str, entries: Vec<&Entry>| {
             Property::new(
                 Name::new("apertrust", NAMESPACE, local),
-                Node::array(ArrayKind::Seq, items),
+                entry_list(entries),
             )
         };
-        let build = self.build.as_deref().unwrap_or_default();
-        Xmp {
-            toolkit: Some(format!("{TOOLKIT}{build}")),
-            about: String::new(),
-            namespaces: vec![
-                Namespace::new("apertrust", NAMESPACE),
-                Namespace::new("control", CONTROL_NAMESPACE),
-                Namespace::new("param", PARAM_NAMESPACE),
-            ],
-            properties: vec![
+        xmp(
+            self.build.as_deref(),
+            Vec::new(),
+            vec![
                 own("version", &self.version.to_string()),
                 list("modules", modules),
                 list("operations", operations),
             ],
-        }
+        )
         .to_xml()
+    }
+}
+
+/// The file's `apertrust:version`, which every layout holds: [`SidecarError::NotAnEdit`]
+/// where there is none, [`SidecarError::Version`] where it is no whole number.
+fn version(xmp: &Xmp) -> Result<u32, SidecarError> {
+    let text = xmp
+        .properties
+        .iter()
+        .find(|p| p.name.local == "version" && p.name.namespace == NAMESPACE)
+        .and_then(|p| p.node.as_str())
+        .ok_or(SidecarError::NotAnEdit)?;
+    text.trim()
+        .parse()
+        .map_err(|_| SidecarError::Version(text.to_owned()))
+}
+
+/// The build `x:xmptk` records, `None` where it records no Apertrust build.
+fn build(xmp: &Xmp) -> Option<String> {
+    xmp.toolkit
+        .as_deref()
+        .and_then(|toolkit| toolkit.strip_prefix(TOOLKIT))
+        .map(str::trim)
+        .filter(|build| !build.is_empty())
+        .map(str::to_owned)
+}
+
+/// An `.apxmp` file's XMP: `build` recorded in `x:xmptk`, the namespaces every version
+/// declares, then `more`, and `properties`.
+fn xmp(build: Option<&str>, more: Vec<Namespace>, properties: Vec<Property>) -> Xmp {
+    let mut namespaces = vec![
+        Namespace::new("apertrust", NAMESPACE),
+        Namespace::new("control", CONTROL_NAMESPACE),
+        Namespace::new("param", PARAM_NAMESPACE),
+    ];
+    namespaces.extend(more);
+    Xmp {
+        toolkit: Some(format!("{TOOLKIT}{}", build.unwrap_or_default())),
+        about: String::new(),
+        namespaces,
+        properties,
+    }
+}
+
+/// One of Apertrust's own properties, simple, with its text.
+fn own(local: &str, text: &str) -> Property {
+    Property::simple(Name::new("apertrust", NAMESPACE, local), text)
+}
+
+/// The text of the simple field `local` of Apertrust's namespace among `fields`.
+fn own_field<'a>(fields: &'a [Property], local: &str) -> Option<&'a str> {
+    fields
+        .iter()
+        .find(|field| field.name.is(NAMESPACE, local))
+        .and_then(|field| field.node.as_str())
+}
+
+/// The entries an `rdf:Seq` holds; an item that is neither a module's nor an operation's
+/// is no entry.
+fn read_entries(node: &Node) -> Vec<Entry> {
+    node.items()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| item.fields().and_then(entry))
+        .collect()
+}
+
+/// `entries` as an `rdf:Seq` of structs, in their order.
+fn entry_list<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Node {
+    Node::array(
+        ArrayKind::Seq,
+        entries.into_iter().map(entry_node).collect(),
+    )
+}
+
+/// An entry as a struct: its id, version and marks in Apertrust's namespace, then its
+/// `control:` or `param:` fields in its order.
+fn entry_node(entry: &Entry) -> Node {
+    let field = |prefix: &str, namespace: &str, local: &str, text: &str| {
+        Property::simple(Name::new(prefix, namespace, local), text)
+    };
+    match entry {
+        Entry::Module {
+            module,
+            version,
+            kept,
+            auto,
+            enabled,
+            controls,
+        } => {
+            let mut fields = vec![own("module", module)];
+            if let Some(version) = version {
+                fields.push(own("moduleVersion", version));
+            }
+            if let Some(enabled) = enabled {
+                fields.push(own("enabled", enabled));
+            }
+            for (id, ids) in [("kept", kept), ("auto", auto)] {
+                if !ids.is_empty() {
+                    fields.push(own(id, &ids.join(" ")));
+                }
+            }
+            for (id, text) in controls {
+                fields.push(field("control", CONTROL_NAMESPACE, id, text));
+            }
+            Node::structure(fields)
+        }
+        Entry::Operation {
+            operation,
+            schema,
+            params,
+        } => {
+            let mut fields = vec![own("operation", operation)];
+            if let Some(schema) = schema {
+                fields.push(own("schema", &schema.to_string()));
+            }
+            for (id, text) in params {
+                fields.push(field("param", PARAM_NAMESPACE, id, text));
+            }
+            Node::structure(fields)
+        }
     }
 }
 

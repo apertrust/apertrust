@@ -1456,9 +1456,11 @@ The `.apxmp` format's text layer (decision 54's first layer):
 - A module entry's `apertrust:enabled="true"`, a switched module that is on (decision 32), as `Entry::Module`'s `enabled`.
 - `path_for`, with `SUFFIX`.
 - `write_xml`, the safe write of `apertrust-base`'s `fs`: a hidden temporary flushed and renamed into place, Windows' refused renames retried, nothing written when the file already holds the bytes.
-- The namespaces: `https://apertrust.org/ns/xmp/`, with `control/` and `param/` (decision 48).
+- The namespaces: `https://apertrust.org/ns/xmp/`, with `control/` and `param/`, and `arg/` from version 2 (decision 48).
+- Version 2 (step 8.2, decisions 47 and 78), `Edits` in `sidecar/copies.rs`: `COPIES_VERSION`, the photo's `apertrust:photo` and `apertrust:fingerprint`, and its `VirtualCopy`s, each with its id, number, name, end, clock vector (`Clock`s) and history; each `Step` with its id, clock, source, `Note` (words, or a message id with its arguments, the `arg:` fields of the struct `apertrust:noteArgs`), batch and entries, version 1's `Entry`s in the step's order. `Edits::parse` and `Edits::to_xml`, in one layout that never varies, each clock vector written in the order of its machine ids; `Edits::newer`, a version above `COPIES_VERSION`; `read_edits` with the file's modified time. A version 1 or 0 file reads as one copy, `FIRST_COPY`, of one step whose id is the first 16 hex digits of the file's BLAKE3 hash, its clock the modified time on `MachineId::UNKNOWN`, or of no step for a file holding nothing. What cannot be read as written is a `Problem` in `Edits::problems`, the rest read: a step's clock (the step kept, its `clock` `None`), a vector's clock (left out), a note beside a message, arguments without a message, and what `apertrust:noteArgs` holds that is not a text argument. The engine still writes version 1 (step 9.5).
+- `fingerprint` and `read_fingerprint` (decision 53): the size, a colon and the BLAKE3 hash of the first and last 64 KiB (`FINGERPRINT_SPAN`), 64 hex digits.
 - It knows no module, operation or number's meaning; the engine turns entries into an `Edit` and back.
-- A fixture folder (`tests/fixtures/*.apxmp`) is written back byte for byte.
+- A fixture folder (`tests/fixtures/*.apxmp`) is written back byte for byte, and so is version 2's with a history (`tests/fixtures/xmp/version-2-history.apxmp`), which a test has ExifTool and exiv2 read where they are installed.
 
 ### xmp
 
@@ -1466,17 +1468,18 @@ A conformant XMP layer on quick-xml with namespace resolution, with no dependenc
 
 - **The tree:** `Xmp` (toolkit, `about`, declared prefixes, and properties in order); `Property`; `Node`, with `Value` simple, resource, struct, or a Bag, Seq or Alt array, and qualifiers, `xml:lang` first.
 - **Reading:** `Xmp::parse` and `parse_bytes`: the xpacket wrapper, BOM and UTF-16, bare `rdf:RDF`, merged descriptions, attribute and element forms, `parseType="Resource"`, nested descriptions, `rdf:resource`, `rdf:value` qualifiers, CDATA. An error names the line, and RDF beyond XMP's subset is refused.
-- **Writing:** `to_xml`, exiv2's compact form, laid out as the `.apxmp` fixtures are (same tree, same bytes), and `to_packet`, with the wrapper, for embedding.
+- **Writing:** `to_xml`, exiv2's compact form, laid out as the `.apxmp` fixtures are (same tree, same bytes), an empty array closed at once (`<rdf:Seq/>`), and `to_packet`, with the wrapper, for embedding.
 - Every unknown namespace, property and prefix is kept, in order. `Xmp::get`, `set` and `remove`.
 - `Document::parse` and `to_xml` go through it; the version-1 fixtures still round-trip byte for byte.
-- Fixtures in `tests/fixtures/xmp`: four of darktable's `.xmp` and four hand-written forms. ExifTool and exiv2 read what it writes.
+- Fixtures in `tests/fixtures/xmp`: four of darktable's `.xmp`, four hand-written forms and version 2's sidecar with a history. ExifTool and exiv2 read what it writes.
 
 ### clock
 
-Hybrid logical clocks and the machine id (decision 47), plain data the engine's history uses (step 9.1); no file holds them yet (sidecar version 2, step 8.2).
+Hybrid logical clocks and the machine id (decision 47), plain data the engine's history uses (step 9.1) and version 2's text layer reads and writes (step 8.2); no file the engine writes holds them yet.
 
 - `Clock { when, counter, machine }`: UTC milliseconds since 1970, at most `MAX_WHEN` (9999-12-31T23:59:59.999Z), the counter and the `MachineId`, ordered by time, then counter, then machine.
 - `Clock::now(last, machine)`, and `Clock::at` with the wall clock given: the wall clock with counter 0 where it is past `last`, else `last`'s time with its counter raised, so it never goes back when the wall clock does; a full counter moves the time on 1 ms. The time stops at `MAX_WHEN`, a wall clock past it counting as it, where the counter alone rises, saturating.
+- `Clock::observe(last, read, wall, me)`, the last clock to keep after reading one: the later of the two, but another machine's clock more than `MAX_DRIFT` (5 minutes) past the wall clock ignored, so one file dated far ahead never pins a machine's clock; `me`'s own always followed, so a wall clock set back never orders a new step before its own earlier ones; never earlier than `last`.
 - `Clock::fields` and `Clock::from_fields`, the three fields' text under `WHEN`, `COUNTER` and `MACHINE`: `format_when` writes an XMP Date in UTC with milliseconds and `Z` (`2026-03-14T14:02:11.120Z`), and `parse_when` reads any with seconds and a time zone, or RFC 3339's other forms (chrono), from 1970 to `MAX_WHEN`; `ClockError` names the field that could not be read.
 - `MachineId`: eight hex digits, `MachineId::current()` once a run, the first 32 bits of BLAKE3's key derivation over the system's machine id (`machine-uid`: `/var/lib/dbus/machine-id` or `/etc/machine-id` on Linux, `gethostuuid` on macOS, the registry's `MachineGuid` on Windows) and the user's home folder (`std::env::home_dir`, its text as UTF-8); never stored. A system id that cannot be read, is empty or is `uninitialized` gives a random id for the run (getrandom), with a warning. `MachineId::from_system` and `from_parts` take their inputs, the random number as a closure, for tests; `UNKNOWN` is `00000000`, never drawn.
 
@@ -1504,7 +1507,7 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
 
 - Thumbnails' cache, keyed by fingerprint, edit hash, render version and size, then Apertrust's own rendered thumbnails; then bulk listing (with spike L1).
 - The comparison of two copies by their clock vectors.
-- Sidecar version 2: the photo's name and fingerprint, and its virtual copies, each with its history as a log of steps and its end, its snapshots and clocks (decisions 47 and 52).
+- Sidecar version 2's other parts: snapshots, tombstones and groups (decisions 47 and 52).
 - darktable's `.xmp`, read through the XMP layer.
 - The storage interface (decision 54), `storage`: every call into a root's files, the listing and the safe write among them, through one interface, local files first and the server's backend later (decision 71).
 

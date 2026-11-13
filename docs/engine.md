@@ -2134,7 +2134,7 @@ A value set by a command is rejected when out of its parameter's range (decision
 
 ### Version 2
 
-Decision 47, planned ([library.md](library.md#version-2)).
+Decision 47 ([library.md](library.md#version-2)). Its text layer is built, `apertrust_library::sidecar::Edits` (the library's step 8.2, layout in [history.md](history.md#in-the-sidecar)); the engine reading and writing it with the module definitions is planned (step 9.5), and until then it writes version 1.
 
 - The sidecar holds the photo's name, its fingerprint (decision 53) and the build, then its virtual copies, one at first, each with a random id, a number and a name, its **history** as a log of steps and the log's end (darktable's `history_end`), its snapshots and its clock vector.
 - A step is one completed change (a gesture ending with `done`, a reset, a preset, a `Step`), a control's quick repeats merged (decision 78): a random id, a hybrid logical clock, its source, note and batch ([history.md](history.md#a-step), decision 78), and each module it touched with the values version 1 writes for it, or `off` for a reset that turns a switched module off (decision 32), with the ratings, reject, labels, keywords and metadata it set.

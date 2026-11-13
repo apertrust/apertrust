@@ -81,6 +81,87 @@ fn a_later_clock_read_from_another_machine_moves_this_one_past_it() {
 }
 
 #[test]
+fn a_clock_read_within_the_drift_bound_is_honoured() {
+    let last = clock(PI_DAY, 3, 7);
+    // Just ahead, and exactly at the bound.
+    for ahead in [1, 60_000, MAX_DRIFT] {
+        let read = clock(PI_DAY + ahead, 4, 9);
+        let observed = Clock::observe(Some(&last), &read, PI_DAY, machine(7));
+        assert_eq!(observed, Some(read));
+        let next = Clock::at(PI_DAY, observed.as_ref(), machine(7));
+        assert_eq!(next, clock(PI_DAY + ahead, 5, 7));
+        assert!(next > read && next > last);
+    }
+    // With no clock of its own yet, too.
+    let read = clock(PI_DAY + 1, 0, 9);
+    assert_eq!(Clock::observe(None, &read, PI_DAY, machine(7)), Some(read));
+}
+
+/// This machine's own clocks are always honoured: written, then read again after its wall
+/// clock was set back an hour, the next clock still orders after its own step.
+#[test]
+fn this_machine_s_own_clocks_are_honoured_whatever_its_wall_clock() {
+    let me = machine(7);
+    let written = Clock::at(PI_DAY, None, me);
+    // The photo reopened, nothing kept in memory, the wall clock an hour back.
+    let wall = PI_DAY - 3_600_000;
+    let observed = Clock::observe(None, &written, wall, me);
+    assert_eq!(observed, Some(written));
+    let next = Clock::at(wall, observed.as_ref(), me);
+    assert!(next > written, "{next:?} after {written:?}");
+    // Its own clock dated far ahead, as after its wall clock was set wrongly forward, too.
+    let ahead = clock(PI_DAY + 3_600_000, 0, 7);
+    assert_eq!(Clock::observe(None, &ahead, PI_DAY, me), Some(ahead));
+    // Another machine's clock at the same time is still ignored.
+    let other = clock(PI_DAY, 0, 9);
+    assert_eq!(Clock::observe(None, &other, wall, me), None);
+}
+
+#[test]
+fn a_clock_read_past_the_drift_bound_is_ignored() {
+    let last = clock(PI_DAY, 3, 7);
+    for read in [
+        clock(PI_DAY + MAX_DRIFT + 1, 0, 9),
+        // A computer an hour ahead, as with its time zone set wrongly, and a file dated
+        // 9999.
+        clock(PI_DAY + 3_600_000, 0, 9),
+        clock(MAX_WHEN, u32::MAX, 9),
+    ] {
+        let observed = Clock::observe(Some(&last), &read, PI_DAY, machine(7));
+        assert_eq!(observed, Some(last), "{read:?}");
+        // The next clock is the wall clock's again, not pinned at the one read.
+        let next = Clock::at(PI_DAY + 1, observed.as_ref(), machine(7));
+        assert_eq!(next, clock(PI_DAY + 1, 0, 7));
+        assert_eq!(Clock::observe(None, &read, PI_DAY, machine(7)), None);
+    }
+}
+
+#[test]
+fn observing_never_moves_the_clock_back() {
+    // A read clock behind the last, or behind the wall clock, leaves the last as it is,
+    // and so does one ignored: monotonic either way.
+    let last = clock(PI_DAY, 3, 7);
+    let reads = [
+        clock(PI_DAY - 1, 9, 9),
+        clock(PI_DAY, 2, 9),
+        clock(PI_DAY + 2 * MAX_DRIFT, 0, 9),
+        clock(PI_DAY + 10, 0, 9),
+    ];
+    let mut kept = Some(last);
+    for read in reads {
+        let observed = Clock::observe(kept.as_ref(), &read, PI_DAY, machine(7));
+        assert!(observed >= kept, "{observed:?} after {kept:?}");
+        kept = observed;
+    }
+    assert_eq!(kept, Some(clock(PI_DAY + 10, 0, 9)));
+    // A wall clock set back below the last keeps the last, whatever is read.
+    assert_eq!(
+        Clock::observe(Some(&last), &clock(PI_DAY + 1, 0, 9), 0, machine(7)),
+        Some(last)
+    );
+}
+
+#[test]
 fn a_full_counter_moves_the_time_on() {
     let last = clock(PI_DAY, u32::MAX, 7);
     let next = Clock::at(PI_DAY, Some(&last), machine(7));
