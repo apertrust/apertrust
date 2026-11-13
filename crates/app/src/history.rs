@@ -636,13 +636,22 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
         }
         let start = rect.left() + columns.name();
         let body = FontId::proportional(t.text.body);
-        let name = cut_at(painter, &line.name, body, ink, end - start);
+        let small = FontId::proportional(t.text.small);
+        // The name first, but a name cut leaves part of what changed in sight.
+        let width_of = |text: &str, font: &FontId| {
+            painter
+                .layout_no_wrap(text.to_owned(), font.clone(), ink)
+                .size()
+                .x
+        };
+        let changed = (line.change.as_ref()).map(|change| width_of(change, &small) + t.spacing.s);
+        let room = name_room(end - start, width_of(&line.name, &body), changed);
+        let name = cut_at(painter, &line.name, body, ink, room);
         let after = start + name.as_ref().map_or(0.0, |name| name.size().x) + t.spacing.s;
         if let Some(name) = name {
             painter.galley(centred(&name, start), name, ink);
         }
         // What changed, cut at its end where the line has no room.
-        let small = FontId::proportional(t.text.small);
         let change = (line.change.as_ref())
             .and_then(|change| cut_at(painter, change, small, quiet, end - after));
         if let Some(galley) = change {
@@ -699,6 +708,19 @@ fn line_row(ui: &mut egui::Ui, line: &Line, columns: Columns, editable: bool) ->
         Place::Step { id, .. } => Some(Action::GoTo(Some(id))),
         // A Default line is Original: the modules every photo runs always run.
         Place::Default { .. } | Place::Original { .. } => Some(Action::GoTo(None)),
+    }
+}
+
+/// The room a line's name gets of `room`, the name `name` points wide and what changed
+/// after it `changed`, its gap included: all it needs where it fits beside what changed
+/// whole, or beside what changed's share, its width up to a third of the room; else the
+/// room less that share, so a name cut leaves part of what changed in sight.
+fn name_room(room: f32, name: f32, changed: Option<f32>) -> f32 {
+    let share = changed.map_or(0.0, |changed| changed.min(room / 3.0));
+    if name <= room - share {
+        room
+    } else {
+        room - share
     }
 }
 
@@ -918,8 +940,10 @@ fn tag(source_of: StepSource, tr: &Translator) -> Option<String> {
 /// where the control is the module's own, as Exposure's slider, and no arrow where it did
 /// not move; any other control, a curve, a choice, a toggle, or one kept, released or set
 /// by Auto, its label alone, none where it is the module's own; several controls how
-/// many. Nothing for Reset, a step of source Default or a module this build does not know.
-/// The before and after are the tooltip's.
+/// many. Nothing for Reset, a step of source Default or a module this build does not know,
+/// which has no control; an operation's unowned parameter, with no definition, by its
+/// name, as the tooltip and screen readers have it. The before and after are the
+/// tooltip's.
 fn summary(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
@@ -2201,6 +2225,21 @@ pub(crate) mod tests {
     /// What a line shows in a given room: the whole where it fits, else its longest start
     /// with … after it, the space before the … dropped, and nothing where not even one
     /// character and … fit, so a lone … never paints over the tag.
+    /// A name gets the room it needs where what changed fits beside it, or a third of the
+    /// room is left; else it is cut, leaving what changed up to a third of the room.
+    #[test]
+    fn a_name_cut_leaves_part_of_what_changed_in_sight() {
+        // Both fit.
+        assert_eq!(name_room(120.0, 60.0, Some(40.0)), 120.0);
+        // What changed is cut, the name whole, a third of the room left to it.
+        assert_eq!(name_room(120.0, 80.0, Some(60.0)), 120.0);
+        // The name too long: cut to leave a third, or what changed whole where less.
+        assert_eq!(name_room(120.0, 110.0, Some(60.0)), 80.0);
+        assert_eq!(name_room(120.0, 110.0, Some(20.0)), 100.0);
+        // Nothing changed to say: the name has the room.
+        assert_eq!(name_room(120.0, 200.0, None), 120.0);
+    }
+
     #[test]
     fn a_line_is_cut_at_its_end_and_never_to_a_lone_ellipsis() {
         // A character a point.
@@ -2320,6 +2359,11 @@ pub(crate) mod tests {
         );
         assert_eq!(summary(&applied, modules, &tr), None);
         assert_eq!(said("lens_2030", Vec::new()), None);
+        // An operation's unowned parameter, with no definition: its name, as the tooltip's.
+        assert_eq!(
+            said("colorin", vec![number("gamma", 1.0, 1.2)]),
+            shown("gamma ↑")
+        );
         let lines = lines_in(Some(&photo_s(3)), Locale::EnGb);
         assert!((lines.iter()).all(|line| line.number().is_some() || line.change.is_none()));
         // Screen readers: the values before and after in the step's name.
