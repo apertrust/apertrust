@@ -1945,6 +1945,8 @@ struct Effect {
     render: bool,
     save: bool,
     cancelled: bool,
+    /// A `Step`'s: what those of its commands that changed the edit wrote, in order.
+    wrote: Vec<crate::history::Wrote>,
 }
 
 impl Engine {
@@ -2535,6 +2537,7 @@ impl Engine {
                     render: false,
                     save: true,
                     cancelled: false,
+                    wrote: Vec::new(),
                 });
             }
             Command::CancelGesture { module } => {
@@ -2545,6 +2548,7 @@ impl Engine {
                         render: false,
                         save: false,
                         cancelled: true,
+                        wrote: Vec::new(),
                     });
                 };
                 // No history step: the edit is as it was before the gesture.
@@ -2552,6 +2556,7 @@ impl Engine {
                     render: changed,
                     save: true,
                     cancelled: true,
+                    wrote: Vec::new(),
                 });
             }
             Command::ApplyPreset {
@@ -2585,6 +2590,7 @@ impl Engine {
                     render: false,
                     save: failed,
                     cancelled: false,
+                    wrote: Vec::new(),
                 });
             }
             Command::Reset => {
@@ -2627,6 +2633,7 @@ impl Engine {
             render: changed,
             save: completes,
             cancelled: false,
+            wrote: Vec::new(),
         })
     }
 

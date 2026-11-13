@@ -17,7 +17,8 @@
 //! A section of the side panel: a module or a utility such as Scopes or History.
 //!
 //! The header holds the chevron and the title, then the buttons, in the wireframe's order:
-//! a module's reset, presets and options, a utility's options alone, each as narrow as its
+//! a module's reset, presets and options, a utility's options alone, or with a reset
+//! before them where it has one, as History's resets the edit, each as narrow as its
 //! icon and evenly spaced, the last one's ink ending where the rows do. A module's options
 //! are drawn disabled until what their menu holds is decided. A title that would run under
 //! the buttons is cut at its end with …, whole in the tooltip and for screen readers. A
@@ -70,6 +71,8 @@ pub struct Section<'a> {
     disabled_tabs: (&'a [usize], &'a str),
     module: bool,
     reset: bool,
+    /// A utility's reset button, by its name, where it has one.
+    utility_reset: Option<&'a str>,
     presets: bool,
     options: bool,
     /// What the options button opens, a pull-down of the popup service's, where the
@@ -98,6 +101,7 @@ impl<'a> Section<'a> {
             disabled_tabs: (&[], ""),
             module: false,
             reset: true,
+            utility_reset: None,
             presets: true,
             options: true,
             menu: None,
@@ -126,10 +130,19 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// Whether a module's reset button can run, as it can by default: drawn disabled
-    /// where nothing may change, as an action that cannot run is.
+    /// Whether a module's reset button, or a utility's ([`Self::utility_reset`]), can run,
+    /// as it can by default: drawn disabled where nothing may change, as an action that
+    /// cannot run is.
     pub fn reset(mut self, enabled: bool) -> Self {
         self.reset = enabled;
+        self
+    }
+
+    /// A utility with a reset button before its options, named `name`, translated, as
+    /// History's header has one, which resets the edit (`docs/history.md`). A module's
+    /// reset is its own, so this changes nothing on one.
+    pub fn utility_reset(mut self, name: &'a str) -> Self {
+        self.utility_reset = Some(name);
         self
     }
 
@@ -243,6 +256,15 @@ impl<'a> Section<'a> {
                             Some(entries) => chosen = pull_down(ui, &options, &name, || entries),
                             None if options.clicked() => pressed.push(SectionAction::Options),
                             None => {}
+                        }
+                        if let Some(reset) = self.utility_reset
+                            && IconButton::new(Icon::Reset, reset)
+                                .width(narrow)
+                                .enabled(self.reset)
+                                .show(ui)
+                                .clicked()
+                        {
+                            pressed.push(SectionAction::Reset);
                         }
                     }
                     (pressed, ui.min_rect().left())

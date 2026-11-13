@@ -391,7 +391,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
     assert_eq!(
         steps[0].changes,
         [ModuleChange {
-            module: "sample",
+            module: "sample".into(),
             enabled: None,
             controls: vec![brightness(0.0, 0.5, [None, kept])],
         }]
@@ -401,7 +401,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
     assert_eq!(
         steps[1].changes,
         [ModuleChange {
-            module: "grain",
+            module: "grain".into(),
             enabled: Some([false, true]),
             controls: vec![ControlChange {
                 control: "strength",
@@ -414,7 +414,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
     assert_eq!(
         steps[2].changes,
         [ModuleChange {
-            module: "sample",
+            module: "sample".into(),
             enabled: None,
             controls: vec![brightness(0.5, 1.0, [kept, kept])],
         }]
@@ -423,7 +423,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
     assert_eq!(
         steps[3].changes,
         [ModuleChange {
-            module: "exposure",
+            module: "exposure".into(),
             enabled: None,
             controls: vec![ControlChange {
                 control: "black",
@@ -452,6 +452,44 @@ fn a_step_is_described_control_by_control_before_and_after() {
         after[4].changes[0].controls,
         [brightness(1.0, 0.5, [kept, kept])]
     );
+}
+
+#[test]
+fn a_module_or_operation_this_build_does_not_know_is_listed_by_its_stored_name() {
+    let image = testing::image();
+    let mut values = ModuleValues::new();
+    values.set("radius", ControlValue::Number(3.0));
+    let mut params = ParamValues::new();
+    params.set("strength", Value::Float(0.5));
+    let mut log = Log::default();
+    log.add(step(
+        1,
+        Change::Entry(Entry::Module {
+            module: "lens_2030".to_owned(),
+            values,
+        }),
+    ));
+    log.add(step(
+        2,
+        Change::Entry(Entry::Operation {
+            operation: "glow".to_owned(),
+            params,
+        }),
+    ));
+    log.add(step(3, changed(&Edit::default(), &brightened(0.5))));
+    let steps = Described::default().steps(&log, MODULES, OPERATIONS, &image);
+    // As a newer build wrote them: their names, and nothing this build could describe.
+    let unknown = |name: &str| ModuleChange {
+        module: Cow::Owned(name.to_owned()),
+        enabled: None,
+        controls: Vec::new(),
+    };
+    assert_eq!(steps[0].changes, [unknown("lens_2030")]);
+    assert_eq!(steps[1].changes, [unknown("glow")]);
+    assert!(matches!(
+        steps[2].changes[0].module,
+        Cow::Borrowed("sample")
+    ));
 }
 
 /// The exposure operation's black level for the photo.

@@ -507,8 +507,9 @@ fn writes(command: &Command, module: &str) -> bool {
     }
 }
 
-/// What `command` writes, in order: the module it names, the operation a `Set` names, every
-/// module and operation for `Reset`, or a `Step`'s commands' in turn; nothing for any other.
+/// What `command` writes: the module it names, the operation a `Set` names, or every module
+/// and operation for `Reset`; nothing for any other, a `Step`'s left to
+/// [`Engine::apply_step`], which knows which of its commands changed the edit.
 fn wrote(command: &Command) -> Vec<Wrote> {
     match command {
         Command::SetControl { module, .. }
@@ -518,7 +519,6 @@ fn wrote(command: &Command) -> Vec<Wrote> {
         | Command::ApplyPreset { module, .. } => vec![Wrote::Module(module.clone())],
         Command::Set { operation, .. } => vec![Wrote::Operation(operation.clone())],
         Command::Reset => vec![Wrote::All],
-        Command::Step { commands, .. } => commands.iter().flat_map(wrote).collect(),
         _ => Vec::new(),
     }
 }
@@ -653,7 +653,9 @@ impl Engine {
         if let Some(open) = &mut self.open {
             match (&applied, writes) {
                 // A change that changes nothing counts as none.
-                (Ok(_), Some((target, wrote))) if before.as_ref() != Some(&open.edit) => {
+                (Ok(effect), Some((target, mut wrote))) if before.as_ref() != Some(&open.edit) => {
+                    // A `Step`'s, from its commands that changed the edit.
+                    wrote.extend_from_slice(&effect.wrote);
                     open.history.wrote(target, wrote, at);
                 }
                 (Ok(_), Some(_)) => {}
@@ -702,7 +704,9 @@ impl Engine {
     /// [`Command::Step`]'s commands applied in order to the open photo's edit, in place, all
     /// or none: the edit, the held coordinates and whether the writer has the edit are kept
     /// aside and put back should one be refused, which refuses the whole, naming its index.
-    /// Its source, its steps and its gesture are left to [`Self::apply_edit`].
+    /// Its source, its steps and its gesture are left to [`Self::apply_edit`]. What it wrote
+    /// is what its commands that changed the edit wrote, in order: one that changes nothing
+    /// counts as none, as on its own.
     pub(super) fn apply_step(&mut self, commands: Vec<Command>) -> Result<Effect, SessionError> {
         let Some(open) = &self.open else {
             return Ok(Effect::default());
@@ -710,14 +714,22 @@ impl Engine {
         let save = commands.iter().any(|command| !goes_on(command));
         let kept = (open.edit.clone(), open.held.clone(), open.unsaved);
         let mut render = false;
+        let mut written = Vec::new();
         for (index, command) in commands.into_iter().enumerate() {
+            let writes = wrote(&command);
+            let before = self.open.as_ref().map(|open| open.edit.clone());
             let applied = if in_step(&command) {
                 self.apply_command(command)
             } else {
                 Err(SessionError::NotInStep)
             };
             match applied {
-                Ok(effect) => render |= effect.render,
+                Ok(effect) => {
+                    render |= effect.render;
+                    if self.open.as_ref().map(|open| &open.edit) != before.as_ref() {
+                        written.extend(writes);
+                    }
+                }
                 Err(error) => {
                     if let Some(open) = &mut self.open {
                         (open.edit, open.held, open.unsaved) = kept;
@@ -731,6 +743,7 @@ impl Engine {
             render,
             save,
             cancelled: false,
+            wrote: written,
         })
     }
 
@@ -785,6 +798,7 @@ fn moved_to(open: &mut Open, moved: Option<Edit>) -> Effect {
         render: changed,
         save: true,
         cancelled: false,
+        wrote: Vec::new(),
     }
 }
 

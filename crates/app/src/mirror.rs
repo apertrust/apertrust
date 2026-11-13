@@ -2271,6 +2271,114 @@ pub(crate) mod tests {
                 }
             }
         }
+
+        /// Takes in the session's events until `done` holds of the mirror.
+        fn until(&mut self, done: impl Fn(&Mirror) -> bool) {
+            let deadline = Instant::now() + Duration::from_secs(600);
+            while !done(&self.mirror) {
+                assert!(
+                    Instant::now() < deadline,
+                    "in time: {:?}",
+                    self.mirror.history
+                );
+                let _ = self.wakes.recv_timeout(Duration::from_millis(50));
+                for event in self.session.events() {
+                    self.mirror.apply(event);
+                }
+            }
+        }
+
+        /// Exposure's `control` as the session last reported it.
+        fn exposure(&self, control: &str) -> Option<ControlValue> {
+            let state = (self.mirror.values.modules.iter()).find(|m| m.module == "exposure")?;
+            let shown = state.controls.iter().find(|c| c.control == control)?;
+            Some(shown.value.clone())
+        }
+    }
+
+    /// Through a real session: a plain click on a step in the History section, the app's
+    /// own drawing of the session's history, asks to go to it, and the session, sent that,
+    /// takes the edit back to that step; Shift-click asks to open its module and nothing
+    /// else.
+    #[test]
+    fn a_plain_click_on_a_step_takes_a_real_session_s_edit_back_to_it() {
+        use apertrust_engine::session::Command;
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
+
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("history-click");
+        let path = folder.join("steps.ARW");
+        live.open(&path);
+        live.until_live();
+        // Two steps, on two controls, so they never merge.
+        let set = |control: &str, value| Command::SetControl {
+            module: "exposure".to_owned(),
+            control: control.to_owned(),
+            value: ControlValue::Number(value),
+            done: true,
+        };
+        live.session.send(set("exposure", 1.0));
+        live.session.send(set("black_level", 0.01));
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == 2));
+        assert!(live.mirror.takes_edits());
+        let history = live.mirror.history.clone().expect("the photo's history");
+        let first = history.steps[0].id;
+        // Black level as the second step found it: its value at the first.
+        let before = history.steps[1].changes[0].controls[0].before.clone();
+
+        struct Scene {
+            live: Live,
+            actions: Vec<crate::history::Action>,
+        }
+        let mut harness = Harness::builder()
+            .with_size(eframe::egui::vec2(320.0, 600.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
+            .build_ui_state(
+                |ui, scene: &mut Scene| {
+                    let m = &scene.live.mirror;
+                    let (history, takes) = (m.history.as_ref(), m.takes_edits());
+                    let modules = m.modules();
+                    let asked =
+                        crate::history::section(ui, history, modules, true, false, takes, false);
+                    scene.actions.extend(asked);
+                },
+                Scene {
+                    live,
+                    actions: Vec::new(),
+                },
+            );
+        harness.run();
+        let item = |name| (eframe::egui::accesskit::Role::ListItem, name);
+        let (role, name) = item("Step 1: Exposure");
+        harness.get_by_role_and_label(role, name).click();
+        harness.run();
+        assert_eq!(
+            harness.state().actions,
+            [crate::history::Action::GoTo(Some(first))]
+        );
+        // The app sends it; the session goes there.
+        let live = &mut harness.state_mut().live;
+        live.session.send(Command::GoTo { step: Some(first) });
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.end == 1));
+        assert_eq!(live.exposure("exposure"), Some(ControlValue::Number(1.0)));
+        assert_eq!(live.exposure("black_level"), Some(before));
+        // Shift-click: the module, and no step gone to.
+        harness.state_mut().actions.clear();
+        harness.run();
+        let (role, name) = item("Step 2: Exposure");
+        harness
+            .get_by_role_and_label(role, name)
+            .click_modifiers(eframe::egui::Modifiers::SHIFT);
+        harness.run();
+        assert_eq!(
+            harness.state().actions,
+            [crate::history::Action::Open("exposure")]
+        );
+        drop(harness);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     /// A folder of the test's own, emptied first.

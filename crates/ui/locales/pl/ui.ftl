@@ -656,6 +656,7 @@ action-panel-tab-2 = Karta panelu bocznego 2
 action-panel-tab-3 = Karta panelu bocznego 3
 action-panel-tab-4 = Karta panelu bocznego 4
 action-panel-tab-5 = Karta panelu bocznego 5
+action-panel-tab-6 = Karta panelu bocznego 6
 action-scale-up = Powiększ interfejs
 action-scale-down = Pomniejsz interfejs
 action-scale-reset = Normalny rozmiar interfejsu
@@ -745,6 +746,32 @@ history-modules =
        *[other] { $module } i jeszcze { $count } modułu
     }
 history-go-to-step = Przejście do kroku
+
+## Sekcja Historia na karcie Historia panelu bocznego
+
+section-history = Historia
+history-reset-edit = Resetuj edycję
+history-step-name = Krok { $number }: { $name }
+history-original = Oryginał
+history-original-tip = Zdjęcie bez żadnego z tych kroków
+history-source-you = Ty
+history-source-auto = Auto
+history-source-style = Styl
+history-source-assistant = Asystent
+history-source-default = Domyślnie
+history-said-change = { $control }, z { $before } na { $after }
+history-kept = { $control }: zachowano
+history-released = { $control }: zwolniono
+history-auto = { $control }: ustawione przez Auto
+history-on = Wł.
+history-off = Wył.
+history-points =
+    { $count ->
+        [one] { $count } punkt
+        [few] { $count } punkty
+        [many] { $count } punktów
+       *[other] { $count } punktu
+    }
 
 ## Krzywa
 

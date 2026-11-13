@@ -1153,7 +1153,8 @@ fn system_locale() -> Locale {
 /// The side panel's tabs in Edit (decision 38): darktable's scene-referred module
 /// groups, base, color, correct and effect, between Apertrust's own Photos and History.
 /// Ctrl+1 to Ctrl+5 choose the first five by position ([`ActionId::PANEL_TABS`]); History,
-/// the sixth, has no key.
+/// the sixth, has its action and no default key, since Ctrl+6 is Ctrl+− on French AZERTY
+/// keyboards.
 const TABS: [(Icon, &str); 6] = [
     (Icon::Folder, "tab-photos"),
     (Icon::Base, "tab-base"),
@@ -1177,9 +1178,17 @@ const PHOTOS: usize = 0;
 /// until workspaces let the tabs be changed (`docs/gui.md`, Workspaces).
 const BROWSE: usize = PHOTOS;
 
-/// Whether each tab can be chosen: History has nothing behind it until it is built, so it
-/// is drawn disabled, its key unavailable.
-const TABS_ENABLED: [bool; TABS.len()] = [true, true, true, true, true, false];
+/// The History tab, last: the History section, Snapshots to come over it, with no Scopes
+/// (`docs/history.md`).
+const HISTORY: usize = 5;
+
+/// Whether each tab can be chosen: a tab with nothing behind it yet would be drawn
+/// disabled, its key unavailable. Every tab has something now.
+const TABS_ENABLED: [bool; TABS.len()] = [true; TABS.len()];
+
+// Each tab has its action, which its click, its key and Side Panel Tab's item run: a tab
+// with none could not be chosen.
+const _: () = assert!(ActionId::PANEL_TABS.len() == TABS.len());
 
 fn tab_id(tab: usize) -> Option<&'static str> {
     TAB_IDS.get(tab).copied()
@@ -1234,10 +1243,10 @@ const TAB_MODULES: [&[&str]; TABS.len()] = [
     &[],
 ];
 
-/// Whether each tab pins Scopes over its modules: every tab but the Photos tab, as
-/// darktable's histogram sits over its groups (`docs/gui.md`, The tabs: darktable's
-/// groups).
-const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, true];
+/// Whether each tab pins Scopes over its modules: darktable's four groups, as darktable's
+/// histogram sits over its groups (`docs/gui.md`, The tabs: darktable's groups); not the
+/// Photos tab, nor History, which holds Snapshots, once built, then History.
+const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, false];
 
 struct App {
     session: Session,
@@ -1345,6 +1354,17 @@ struct App {
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
+}
+
+/// What a History section's action asks of the app beyond the shell's own state
+/// ([`Shell::history_action`]).
+#[derive(Clone, Debug, PartialEq)]
+enum FromHistory {
+    /// A command on the edit, for the session, boxed: a `Command` is far larger than an
+    /// action id, most of all on Windows.
+    Send(Box<Command>),
+    /// A registry action, run as its button runs it.
+    Run(ActionId),
 }
 
 /// What the top panel asked for this frame.
@@ -1479,14 +1499,19 @@ fn release_after_drag(ctx: &egui::Context, input: &mut egui::RawInput) {
 
 /// Takes the main window's input away under a modal dialog, so nothing in it reacts: no
 /// key, click, scroll or text reaches it, and the pointer is gone, so nothing shows
-/// hovered. What the window itself reports, its focus, stays. The pointer goes only with
-/// what was taken, since an event each frame would ask for the next one, and the window
-/// would draw for ever under the dialog.
+/// hovered. What the window itself reports, its focus and the modifiers held, stays, as
+/// under an alert: a Shift released under the dialog would otherwise stay down for egui
+/// once it closes, and make the next click a Shift-click. The pointer goes only with what
+/// was taken, since an event each frame would ask for the next one, and the window would
+/// draw for ever under the dialog.
 fn under_modal(input: &mut egui::RawInput) {
     let events = input.events.len();
-    input
-        .events
-        .retain(|event| matches!(event, egui::Event::WindowFocused(_)));
+    input.events.retain(|event| {
+        matches!(
+            event,
+            egui::Event::WindowFocused(_) | egui::Event::ModifiersChanged(_)
+        )
+    });
     if input.events.len() < events {
         input.events.push(egui::Event::PointerGone);
     }
@@ -1764,6 +1789,9 @@ struct Shell {
     keymap: Keymap,
     /// The sections the user opened or closed in Edit, by id.
     sections: BTreeMap<String, bool>,
+    /// The module whose section a History line opened, scrolled to as its tab next shows
+    /// ([`Shell::reveal`]).
+    reveal: Option<&'static str>,
     /// The collapsible groups the user opened or closed, by module and group.
     groups: BTreeMap<String, BTreeMap<String, bool>>,
     /// What the Scopes section shows, as the user left it.
@@ -1847,6 +1875,7 @@ impl Shell {
             system_locale: system,
             keymap,
             sections: settings.edit.sections.clone(),
+            reveal: None,
             groups: settings.edit.groups.clone(),
             scopes: settings.scopes,
             grid: settings.grid,
@@ -2076,6 +2105,55 @@ impl Shell {
         if self.sections.get(id) != Some(&open) {
             self.sections.insert(id.to_owned(), open);
         }
+    }
+
+    /// Opens `module`'s section where a tab lists it, as Shift-click on a step's or a
+    /// Default line's History line asks, after darktable's Shift-click on a history item,
+    /// which switches to the module's group and expands it: the first tab that lists it is
+    /// chosen, the section opened, for this run and the next, and scrolled to as the tab
+    /// shows. A module no tab lists changes nothing.
+    fn reveal(&mut self, module: &'static str) {
+        let Some(tab) = TAB_MODULES.iter().position(|ids| ids.contains(&module)) else {
+            return;
+        };
+        self.choose_tab(tab);
+        self.set_section_open(module, true);
+        self.reveal = Some(module);
+    }
+
+    /// Carries out what the History section asked for (`history::Action`): opens or closes
+    /// it, or opens a module ([`Shell::reveal`]); returns the command a step's click sends,
+    /// `GoTo`, only while the photo `takes` edits, live and not open for viewing only, and
+    /// Reset Edit for the header's reset, run as the top panel's Reset runs it.
+    fn history_action(
+        &mut self,
+        action: history::Action,
+        takes: bool,
+        ctx: &egui::Context,
+    ) -> Option<FromHistory> {
+        match action {
+            history::Action::Toggle => {
+                let open = self.section_open(history::ID, history::OPEN);
+                self.set_section_open(history::ID, !open);
+                None
+            }
+            history::Action::GoTo(step) => {
+                takes.then_some(FromHistory::Send(Box::new(Command::GoTo { step })))
+            }
+            history::Action::Open(module) => {
+                self.reveal(module);
+                ctx.request_repaint();
+                None
+            }
+            history::Action::Reset => Some(FromHistory::Run(ActionId::RESET)),
+        }
+    }
+
+    /// Whether the tab shown lists the module a History line opened, which its sections
+    /// scroll to this frame ([`Shell::reveal`]).
+    fn revealing(&self) -> bool {
+        let shown = TAB_MODULES.get(self.panel_tab).copied().unwrap_or_default();
+        self.reveal.is_some_and(|module| shown.contains(&module))
     }
 
     /// Whether `module`'s collapsible group `group` is open: as the user left it, or
@@ -3659,14 +3737,31 @@ impl App {
             self.carry_out(actions, ui.ctx());
             return tab_clicked;
         }
-        let (scopes, changes) = edit_tab(ui, &self.shell, &self.mirror, &self.panels, peek);
+        // A module's section a History line asked for is scrolled to once its tab shows.
+        let revealed = self.shell.revealing();
+        let (scopes, changes, history) =
+            edit_tab(ui, &self.shell, &self.mirror, &self.panels, peek);
+        if revealed {
+            self.shell.reveal = None;
+        }
         for change in scopes {
             self.shell.scopes_change(change);
         }
         for change in changes {
             self.change(change, ui.ctx());
         }
-        tab_clicked
+        let mut run = tab_clicked;
+        for action in history {
+            let takes = self.mirror.takes_edits();
+            match self.shell.history_action(action, takes, ui.ctx()) {
+                Some(FromHistory::Send(command)) => {
+                    self.send_edit(*command);
+                }
+                Some(FromHistory::Run(id)) => run = Some(id),
+                None => {}
+            }
+        }
+        run
     }
 
     /// The Photos tab's body: its Browse section, as the mirror's folder and the recent
@@ -5649,14 +5744,15 @@ fn hold_close(ctx: &egui::Context, dialogs: &dialog_host::AppDialogs) -> bool {
 /// is asked for until its values arrive, every module at its defaults and Scopes with no
 /// graph, all drawn disabled and each open or closed as it was, never a blank panel. Only the open photo's sections send the session
 /// anything ([`Mirror::takes_edits`], which [`App::change`] asks); every section opens,
-/// closes and changes tab whatever it shows.
+/// closes and changes tab whatever it shows. The History tab holds the History section,
+/// drawn from the mirror's history, Original alone and disabled while it has none.
 fn edit_tab(
     ui: &mut egui::Ui,
     shell: &Shell,
     mirror: &Mirror,
     panels: &Panels,
     peek: bool,
-) -> (Vec<scopes::Change>, Vec<Change>) {
+) -> (Vec<scopes::Change>, Vec<Change>, Vec<history::Action>) {
     let shown = mirror.shown();
     // A photo opening shows Scopes as with no photo until it is live (decision 77).
     let photo = matches!(shown, Shown::Photo { .. });
@@ -5687,7 +5783,19 @@ fn edit_tab(
         enabled: shown.editable(),
         why: opening.as_deref().or(view_only.as_deref()),
     };
-    panel_body(
+    let mut history = Vec::new();
+    let utilities = |ui: &mut egui::Ui| {
+        if shell.panel_tab != HISTORY {
+            return;
+        }
+        let open = shell.section_open(history::ID, history::OPEN);
+        let takes = mirror.takes_edits();
+        // As Reset Edit: while the edit holds anything the photo takes back.
+        let resettable = takes && mirror.values.edited;
+        let shown = mirror.history.as_ref();
+        history = history::section(ui, shown, modules, open, peek, takes, resettable);
+    };
+    let (scopes, changes) = panel_body(
         ui,
         shell,
         scopes,
@@ -5698,16 +5806,19 @@ fn edit_tab(
         shown.editable(),
         opening.as_deref(),
         &pickers,
-    )
+        utilities,
+    );
+    (scopes, changes, history)
 }
 
 /// The side panel's sections under its tab bar: Scopes pinned over the band where the
 /// tab pins it, unless `scopes` is `None`, its graph from what it holds and drawn disabled
 /// unless its flag says a photo is shown, then the tab's
-/// modules among `modules`, drawn from their definitions with the mirror's `values`; each
-/// section open as the shell keeps it, peeking while `peek` holds, its reset disabled
-/// unless `editable`, and its colour pickers as `pickers` says. Returns what Scopes and the
-/// modules asked for.
+/// modules among `modules`, drawn from their definitions with the mirror's `values`, then
+/// the tab's utilities, which `utilities` draws; each section open as the shell keeps it,
+/// peeking while `peek` holds, its reset disabled unless `editable`, and its colour pickers
+/// as `pickers` says; the section a History line opened scrolled to. Returns what Scopes
+/// and the modules asked for.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the side panel, each part apart"
@@ -5723,6 +5834,7 @@ fn panel_body(
     editable: bool,
     opening: Option<&str>,
     pickers: &modules::Pickers,
+    utilities: impl FnOnce(&mut egui::Ui),
 ) -> (Vec<scopes::Change>, Vec<Change>) {
     let shown = TAB_MODULES
         .get(shell.panel_tab)
@@ -5752,9 +5864,14 @@ fn panel_body(
                         ui, *module, state, open, panels, &groups, peek, editable, opening, pickers,
                     )
                 });
+                // The section a History line opened, its header at the top.
+                if shell.revealing() && shell.reveal == Some(*id) {
+                    ui.scroll_to_rect(drawn.response.rect, Some(egui::Align::TOP));
+                }
                 changes.extend(drawn.inner);
             }
         }
+        utilities(ui);
     });
     (pinned, changes)
 }
@@ -8330,6 +8447,7 @@ mod tests {
                         true,
                         None,
                         &modules::Pickers::NONE,
+                        |_| {},
                     );
                     for change in scopes {
                         side.shell.scopes_change(change);
@@ -8376,6 +8494,10 @@ mod tests {
     struct Editing {
         shell: Shell,
         mirror: Mirror,
+        /// What the History section asked for, on the History tab.
+        history: Vec<history::Action>,
+        /// The commands it sent, where the test carries out its actions as the app does.
+        sent: Vec<Command>,
     }
 
     fn editing(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
@@ -8391,7 +8513,8 @@ mod tests {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let panels = modules::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
-                    let (_, changes) = edit_tab(ui, shell, mirror, &panels, false);
+                    let (_, changes, history) = edit_tab(ui, shell, mirror, &panels, false);
+                    editing.history.extend(history);
                     let own = |change: &Change| {
                         matches!(
                             change,
@@ -8406,6 +8529,8 @@ mod tests {
                 Editing {
                     shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
                     mirror: crate::mirror::tests::mirror(),
+                    history: Vec::new(),
+                    sent: Vec::new(),
                 },
             )
     }
@@ -8475,6 +8600,190 @@ mod tests {
         harness.state_mut().shell.panel_tab = BASE;
         harness.run();
         assert_eq!(exposure_slider(&harness), (String::from("+0.000 EV"), true));
+    }
+
+    /// The History tab holds the History section, with no Scopes, drawn from the mirror's
+    /// history: with no photo Original alone, disabled; with one, its steps, a click going
+    /// to one. The other tabs have no History section.
+    #[test]
+    fn the_history_tab_lists_the_photo_s_history() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-history");
+        let mut harness = editing(&folder);
+        harness.state_mut().shell.panel_tab = HISTORY;
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, "Scopes")
+                .is_none()
+        );
+        let original = harness.get_by_role_and_label(Role::ListItem, "Original");
+        assert!(original.accesskit_node().is_disabled());
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 2)));
+        let steps = vec![history::tests::step(7, &["exposure"], None)];
+        mirror.apply(Event::History(history::tests::history(
+            2, steps, None, None,
+        )));
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::ListItem, "Original")
+            .click();
+        harness.run();
+        harness.get_by_role_and_label(Role::ListItem, "Step 1: Exposure");
+        assert_eq!(harness.state().history, [history::Action::GoTo(None)]);
+        harness.state_mut().shell.panel_tab = BASE;
+        harness.run();
+        assert!(harness.query_by_role(Role::List).is_none());
+    }
+
+    /// The side panel as `App::side_panel` draws it, its tab bar with every tab in sight:
+    /// a tab clicked runs its action, and what the History section asks for is carried
+    /// out as the app does ([`Shell::history_action`]), the commands it sends kept in
+    /// `sent`.
+    fn side_panel(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
+        let (_, settings) = Keeper::open(folder.storage());
+        Harness::builder()
+            .with_size(egui::vec2(560.0, 3000.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, editing: &mut Editing| {
+                    let ctx = ui.ctx().clone();
+                    let state = editing.shell.state(&ctx, false, false);
+                    if let Some(id) = editing.shell.tab_bar(ui) {
+                        editing.shell.run(id, &state, &ctx, &[]);
+                    }
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let panels = modules::Panels::default();
+                    let (shell, mirror) = (&editing.shell, &editing.mirror);
+                    let revealed = shell.revealing();
+                    let (_, _, history) = edit_tab(ui, shell, mirror, &panels, false);
+                    if revealed {
+                        editing.shell.reveal = None;
+                    }
+                    let takes = editing.mirror.takes_edits();
+                    for action in history {
+                        editing.history.push(action);
+                        match editing.shell.history_action(action, takes, &ctx) {
+                            Some(FromHistory::Send(command)) => editing.sent.push(*command),
+                            Some(FromHistory::Run(_)) | None => {}
+                        }
+                    }
+                },
+                Editing {
+                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                    mirror: crate::mirror::tests::mirror(),
+                    history: Vec::new(),
+                    sent: Vec::new(),
+                },
+            )
+    }
+
+    /// A plain click on a step goes to it, as darktable's click on an item does: `GoTo`,
+    /// the tab staying History. Shift-click opens the step's module in its tab and sends
+    /// nothing. A Shift the window's input still holds, its release lost while a dialog
+    /// held it, does not make a plain click a Shift-click: the click's own event says.
+    #[test]
+    fn a_click_on_a_step_goes_to_it_and_only_shift_click_opens_its_module() {
+        use crate::mirror::tests::photo;
+        use apertrust_engine::session::StepId;
+        let folder = settings::testing::Folder::new("panel-history-steps");
+        let mut harness = side_panel(&folder);
+        harness.state_mut().shell.panel_tab = HISTORY;
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 3)));
+        let steps = vec![
+            history::tests::step(7, &["exposure"], None),
+            history::tests::step(8, &["grain"], None),
+        ];
+        mirror.apply(Event::History(history::tests::history(
+            3, steps, None, None,
+        )));
+        harness.run();
+        let item = |harness: &Harness<'_, Editing>, name: &str| {
+            harness
+                .get_by_role_and_label(Role::ListItem, name)
+                .rect()
+                .center()
+        };
+        harness
+            .get_by_role_and_label(Role::ListItem, "Step 1: Exposure")
+            .click();
+        harness.run();
+        let to_first = Command::GoTo {
+            step: Some(StepId(7)),
+        };
+        assert_eq!(harness.state().sent, std::slice::from_ref(&to_first));
+        assert_eq!(harness.state().shell.panel_tab, HISTORY);
+        // Shift still down for egui, its release lost: a plain click is still plain.
+        harness.event(egui::Event::ModifiersChanged(Modifiers::SHIFT));
+        harness.run();
+        let at = item(&harness, "Step 1: Exposure");
+        harness.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        }
+        harness.run();
+        harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+        harness.run();
+        assert_eq!(harness.state().sent, [to_first.clone(), to_first]);
+        assert_eq!(harness.state().shell.panel_tab, HISTORY);
+        // Shift-click: Grain's section, in Effect, open; no command.
+        harness.state_mut().sent.clear();
+        harness
+            .get_by_role_and_label(Role::ListItem, "Step 2: Grain")
+            .click_modifiers(Modifiers::SHIFT);
+        harness.run();
+        assert!(
+            harness.state().sent.is_empty(),
+            "{:?}",
+            harness.state().sent
+        );
+        assert_eq!(harness.state().shell.panel_tab, 4);
+        assert!(harness.state().shell.section_open("grain", false));
+    }
+
+    /// A click on the History tab in the tab bar runs its action and shows the History
+    /// section, as the side panel draws it.
+    #[test]
+    fn a_click_on_the_history_tab_shows_the_history_section() {
+        let folder = settings::testing::Folder::new("panel-history-click");
+        let mut harness = side_panel(&folder);
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::List, "History")
+                .is_none()
+        );
+        harness.get_by_role_and_label(Role::Tab, "History").click();
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, HISTORY);
+        harness.get_by_role_and_label(Role::List, "History");
+        harness.get_by_role_and_label(Role::ListItem, "Original");
+    }
+
+    /// Shift-click on a step's or a Default line's History line opens the module's
+    /// section in the first tab that lists it, to be scrolled to as that tab shows; a
+    /// module no tab lists, as an operation's unowned parameters, changes nothing.
+    #[test]
+    fn a_module_a_history_line_opens_is_shown_in_its_tab_open() {
+        let mut shell = opened_on("history");
+        shell.reveal("grain");
+        assert_eq!(shell.panel_tab, 4);
+        assert!(shell.section_open("grain", false));
+        assert!(shell.revealing());
+        shell.reveal = None;
+        shell.reveal("colorin");
+        assert_eq!(shell.panel_tab, 4);
+        assert_eq!(shell.reveal, None);
+        assert!(!shell.revealing());
     }
 
     /// Every module's values as the session reports them for a photo, every control live,
@@ -9889,17 +10198,16 @@ mod tests {
         }
     }
 
-    /// A tab kept in settings that cannot be chosen yet, History, opens Base, its id kept
-    /// until the user chooses another; the Photos tab's opens the Photos tab.
+    /// The History tab, drawn disabled before its section was built, is kept and opened
+    /// by its id as every tab is; the Photos tab's opens the Photos tab.
     #[test]
-    fn a_kept_tab_that_cannot_be_chosen_opens_base_and_stays_kept() {
+    fn the_history_tab_is_kept_and_opened_by_its_id() {
         let ctx = egui::Context::default();
         assert_eq!(opened_on("photos").panel_tab, PHOTOS);
-        let mut shell = opened_on("history");
-        assert_eq!(shell.panel_tab, BASE);
+        let shell = opened_on("history");
+        assert_eq!(shell.panel_tab, HISTORY);
         assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("history"));
-        shell.panel_tab = 4;
-        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("effect"));
+        assert_eq!(tab_id(HISTORY), Some("history"));
     }
 
     /// A folder opened joins the recents at the top, once; Browse's rows say why one cannot
@@ -10134,13 +10442,13 @@ mod tests {
         assert_eq!(kept.sections.get("browse"), Some(&false));
     }
 
-    /// The id settings had is forgotten once the user chooses a tab: one this build lacks
-    /// or cannot choose yet, after Colour and then Base, leaves Base in the file, read
-    /// as Base at the next start, never the id that warned.
+    /// The id settings had is forgotten once the user chooses a tab: one this build lacks,
+    /// after Colour and then Base, leaves Base in the file, read as Base at the next
+    /// start, never the id that warned.
     #[test]
     fn a_tab_read_at_the_start_is_forgotten_once_the_user_chooses_one() {
         let ctx = egui::Context::default();
-        for old in ["optics", "history"] {
+        for old in ["optics", "detail"] {
             let folder = settings::testing::Folder::new(&format!("forgotten-tab-{old}"));
             let text = format!("version = 1\n\n[edit]\ntab = \"{old}\"\n");
             std::fs::write(folder.settings(), text).expect("written");
@@ -11089,13 +11397,19 @@ mod tests {
                 click(true),
                 click(false),
                 egui::Event::Text("a".to_owned()),
+                // Shift released under the dialog: kept, so it is not down once it closes.
+                egui::Event::ModifiersChanged(Modifiers::NONE),
             ],
             ..Default::default()
         };
         under_modal(&mut input);
         assert_eq!(
             input.events,
-            vec![egui::Event::WindowFocused(false), egui::Event::PointerGone]
+            vec![
+                egui::Event::WindowFocused(false),
+                egui::Event::ModifiersChanged(Modifiers::NONE),
+                egui::Event::PointerGone
+            ]
         );
         // A frame with nothing taken gets nothing, so it asks for no other.
         let mut quiet = egui::RawInput::default();
@@ -13530,6 +13844,55 @@ mod tests {
         harness.get_by_role_and_label(Role::Tab, "Photos").click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, PHOTOS);
+    }
+
+    /// History, the sixth tab, has its action, `panel-tab-6`, with no default key: Ctrl+6
+    /// is Ctrl+− on French AZERTY keyboards, so the keymap refuses it as scale-down's. A key
+    /// Settings gives it chooses the tab, and a click on the tab does, where it has room
+    /// and from », where it folds.
+    #[test]
+    fn the_history_tab_is_chosen_by_its_action_its_click_and_a_key_given_it() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Num6);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, BASE);
+        assert!(harness.state().pressed.is_empty());
+        // At the panel's usual width History folds into », whose item chooses it.
+        harness.get_by_label("More tabs").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "History")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, HISTORY);
+        assert!(harness.state().pressed.is_empty());
+        // Wide enough for every tab, a click on it.
+        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_width = Some(560.0);
+        harness.run();
+        harness.get_by_role_and_label(Role::Tab, "History").click();
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, HISTORY);
+
+        let given = |key: &str| Settings {
+            keys: BTreeMap::from([("panel-tab-6".to_owned(), vec![key.to_owned()])]),
+            ..Settings::default()
+        };
+        let (_, warnings) = Keymap::load(OperatingSystem::Windows, &given("Ctrl+6").keys);
+        assert_eq!(
+            warnings,
+            ["keys.panel-tab-6: Ctrl+6 clashes with scale-down; default keys kept"]
+        );
+        let settings = given("Ctrl+Shift+Y");
+        let (_, warnings) = Keymap::load(OperatingSystem::Windows, &settings.keys);
+        assert_eq!(warnings, Vec::<String>::new());
+        let mut harness = bench_with(OperatingSystem::Windows, &settings);
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Y);
+        harness.run();
+        assert_eq!(harness.state().pressed, [ActionId::PANEL_TABS[5]]);
+        assert_eq!(harness.state().shell.panel_tab, HISTORY);
     }
 
     #[test]

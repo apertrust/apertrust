@@ -33,6 +33,11 @@ use std::sync::OnceLock;
 use apertrust_base::settings::Choice;
 use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::{FluentResource, FluentValue};
+use icu_calendar::Gregorian;
+use icu_datetime::FixedCalendarDateTimeFormatter;
+use icu_datetime::fieldsets;
+use icu_datetime::input::{Date, DateTime, Time};
+use icu_datetime::options::YearStyle;
 use icu_decimal::DecimalFormatter;
 use icu_decimal::input::Decimal;
 use icu_decimal::options::{DecimalFormatterOptions, GroupingStrategy};
@@ -242,6 +247,15 @@ impl Translator {
         signed_number(self.locale, value, decimals, signed, false)
     }
 
+    /// `at`, milliseconds since 1970 in UTC, on the local clock as the locale writes a
+    /// date and a time to the minute, through CLDR's short date with its year whole:
+    /// "21/10/2026, 17:52" in British English, "10/21/2026, 5:52 PM" in American,
+    /// "21.10.2026, 17:52" in Ukrainian and Polish. Empty for a time the local clock
+    /// cannot place.
+    pub fn format_date_time(&self, at: u64) -> String {
+        date_time(self.locale, at).unwrap_or_default()
+    }
+
     /// The locale's decimal separator: `.` in English, `,` in Ukrainian and Polish.
     pub fn decimal_separator(&self) -> char {
         decimal_separator(self.locale)
@@ -386,6 +400,44 @@ fn formatter(locale: Locale, grouping: bool) -> &'static DecimalFormatter {
     })
 }
 
+/// The CLDR date and time formatters for British English, Ukrainian, Polish and American
+/// English, made when first used.
+static DATE_TIMES: [OnceLock<DateTimes>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+
+type DateTimes = FixedCalendarDateTimeFormatter<Gregorian, fieldsets::YMDT>;
+
+/// `at`, milliseconds since 1970 in UTC, on the local clock in `locale`'s short date, its
+/// year whole, and its time to the minute; `None` where the local clock cannot place it.
+fn date_time(locale: Locale, at: u64) -> Option<String> {
+    use chrono::{Datelike as _, TimeZone as _, Timelike as _};
+    let local = chrono::Local
+        .timestamp_millis_opt(i64::try_from(at).ok()?)
+        .single()?;
+    let date = Date::try_new_gregorian(local.year(), local.month() as u8, local.day() as u8);
+    let time = Time::try_new(local.hour() as u8, local.minute() as u8, 0, 0);
+    let at = DateTime {
+        date: date.ok()?,
+        time: time.ok()?,
+    };
+    let formatter = DATE_TIMES[locale.numbers()].get_or_init(|| {
+        let language: icu_locale_core::Locale = locale
+            .language()
+            .parse()
+            .expect("the locales' ids are valid; tested");
+        let fields = fieldsets::YMD::short()
+            .with_year_style(YearStyle::Full)
+            .with_time_hm();
+        FixedCalendarDateTimeFormatter::try_new((&language).into(), fields)
+            .expect("CLDR data for every locale's language is compiled in")
+    });
+    Some(formatter.format(&at).to_string())
+}
+
 /// The locale's decimal separator: the character between 1 and 5 in "1.5".
 fn decimal_separator(locale: Locale) -> char {
     signed_number(locale, 1.5, 1, false, false)
@@ -448,6 +500,23 @@ mod tests {
         let mut args = Args::new();
         args.set("count", n);
         t.text_with("photo-count", Some(&args))
+    }
+
+    #[test]
+    fn dates_and_times_follow_each_language() {
+        use chrono::TimeZone as _;
+        // 21 October 2026, 17:52 on the local clock, whatever the machine's zone.
+        let local = chrono::Local
+            .with_ymd_and_hms(2026, 10, 21, 17, 52, 30)
+            .single()
+            .expect("a time the local clock has");
+        let at = u64::try_from(local.timestamp_millis()).expect("after 1970");
+        let written = |locale| Translator::new(locale).format_date_time(at);
+        assert_eq!(written(Locale::EnGb), "21/10/2026, 17:52");
+        assert_eq!(written(Locale::EnUs), "10/21/2026, 5:52\u{202f}PM");
+        assert_eq!(written(Locale::Uk), "21.10.2026, 17:52");
+        assert_eq!(written(Locale::Pl), "21.10.2026, 17:52");
+        assert_eq!(written(Locale::Pseudo), written(Locale::EnGb));
     }
 
     #[test]
@@ -874,6 +943,9 @@ mod tests {
                 args.set("parent", "Lisbon");
                 // Edit › Undo and Redo: the step they would take back or put back.
                 args.set("step", "Exposure");
+                // History's tooltips: a control's value before and after.
+                args.set("before", "+0.70 EV");
+                args.set("after", "+1.20 EV");
                 // Browse's missing recent: its label, its open kind and its name.
                 args.set("label", "Folder: 2026-10 Lisbon");
                 // The start window's recent, to screen readers: its path.

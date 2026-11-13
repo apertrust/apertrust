@@ -165,6 +165,49 @@ fn a_module_s_options_are_disabled_and_a_utility_s_run() {
     assert_eq!(*harness.state(), vec![SectionAction::Options]);
 }
 
+/// A utility given a reset, as History's header has, draws it before its options, the
+/// gap a module's buttons keep, reporting `Reset` while it can run and drawn disabled
+/// while it cannot.
+#[test]
+fn a_utility_s_reset_sits_before_its_options() {
+    let utility = |enabled: bool| {
+        Harness::builder()
+            .with_size(egui::vec2(400.0, 60.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, actions: &mut Vec<SectionAction>| {
+                    let out = Section::new("History", false)
+                        .utility_reset("Reset edit")
+                        .reset(enabled)
+                        .options(false)
+                        .show(ui, |_| {});
+                    actions.extend(out.actions);
+                },
+                Vec::new(),
+            )
+    };
+    let mut harness = utility(true);
+    harness.run();
+    let t = Theme::default();
+    let (reset, options) = (
+        harness.get_by_label("Reset edit").rect(),
+        harness.get_by_label("History options").rect(),
+    );
+    assert_eq!(reset.width(), t.sizes.section_button);
+    assert_eq!(options.left() - reset.right(), t.spacing.section_button_gap);
+    harness.get_by_label("Reset edit").click();
+    harness.run();
+    assert_eq!(*harness.state(), vec![SectionAction::Reset]);
+
+    let mut harness = utility(false);
+    harness.run();
+    let reset = harness.get_by_label("Reset edit");
+    assert!(reset.accesskit_node().is_disabled());
+    reset.click();
+    harness.run();
+    assert!(harness.state().is_empty());
+}
+
 /// The header's last button's ink, not its box, ends where the rows do, `body_margin` from
 /// the section's end: ⋯'s last dot ends 4 of its 24 units inside its box less half its
 /// line, which the icon's own test holds.

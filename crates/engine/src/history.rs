@@ -32,6 +32,7 @@
 //! Plain data, which the session keeps in memory for the photo open; the sidecar's
 //! version 2 saves it later.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -521,14 +522,17 @@ pub struct HistoryStep {
     pub batch: Option<BatchId>,
     /// The module the step touched, with what changed: one, or for a reset each module it
     /// reset, in the step's order; an operation's unowned parameters under the operation's
-    /// id, its controls the parameters. A module this build does not know is left out.
+    /// id, its controls the parameters. A module or an operation this build does not know,
+    /// as a newer build may have written, is listed by its stored name with no control.
     pub changes: Vec<ModuleChange>,
 }
 
 /// What a step changed of one module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleChange {
-    pub module: &'static str,
+    /// The module's id, or the operation's for its unowned parameters; borrowed for one
+    /// this build knows, owned for one it does not.
+    pub module: Cow<'static, str>,
     /// Before and after, where the step turned a switched module on or off.
     pub enabled: Option<[bool; 2]>,
     /// Each control whose value or mark changed, in the definition's order.
@@ -640,7 +644,7 @@ impl Described {
             }
             for step in &log.steps()[kept..] {
                 let changes = (step.change.entries().iter())
-                    .filter_map(|entry| {
+                    .map(|entry| {
                         let before = last.get(&entry.key()).copied();
                         self.change(before, entry, modules, operations, image)
                     })
@@ -662,8 +666,33 @@ impl Described {
     }
 
     /// What `entry` changed over `before`, the key's previous entry, none being its
-    /// reset state; `None` for a module or an operation this build does not know.
+    /// reset state; a module or an operation this build does not know, by its stored
+    /// name with no control, as nothing can describe its values.
     fn change(
+        &mut self,
+        before: Option<&Entry>,
+        entry: &Entry,
+        modules: &[&'static dyn Module],
+        operations: &[&'static dyn Operation],
+        image: &ImageContext,
+    ) -> ModuleChange {
+        self.known(before, entry, modules, operations, image)
+            .unwrap_or_else(|| {
+                let (Entry::Module { module: name, .. }
+                | Entry::Operation {
+                    operation: name, ..
+                }) = entry;
+                ModuleChange {
+                    module: Cow::Owned(name.clone()),
+                    enabled: None,
+                    controls: Vec::new(),
+                }
+            })
+    }
+
+    /// What `entry` changed over `before`, as [`Self::change`]; `None` for a module or an
+    /// operation this build does not know.
+    fn known(
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
@@ -706,7 +735,7 @@ impl Described {
                     })
                     .collect();
                 Some(ModuleChange {
-                    module: definition.id,
+                    module: Cow::Borrowed(definition.id),
                     enabled,
                     controls,
                 })
@@ -737,7 +766,7 @@ impl Described {
                     })
                     .collect();
                 Some(ModuleChange {
-                    module: id,
+                    module: Cow::Borrowed(id),
                     enabled: None,
                     controls,
                 })

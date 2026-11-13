@@ -95,13 +95,15 @@ impl ActionId {
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
     /// View › Browse: the first tab holding Browse.
     pub const SHOW_BROWSE: ActionId = ActionId("show-browse");
-    /// The side panel's tabs by position, whatever the user puts in them.
-    pub const PANEL_TABS: [ActionId; 5] = [
+    /// The side panel's tabs by position, whatever the user puts in them: one for each
+    /// of the app's tabs, which a compile-time assert beside the app's `TABS` holds them to.
+    pub const PANEL_TABS: [ActionId; 6] = [
         ActionId("panel-tab-1"),
         ActionId("panel-tab-2"),
         ActionId("panel-tab-3"),
         ActionId("panel-tab-4"),
         ActionId("panel-tab-5"),
+        ActionId("panel-tab-6"),
     ];
     pub const SCALE_UP: ActionId = ActionId("scale-up");
     pub const SCALE_DOWN: ActionId = ActionId("scale-down");
@@ -520,7 +522,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 71] = [
+pub static ACTIONS: [Action; 72] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -761,6 +763,17 @@ pub static ACTIONS: [Action; 71] = [
         trigger: Trigger::Press,
         available: tab_enabled::<4>,
         emits: Emit::Intent(Intent::PanelTab(4)),
+    },
+    // No default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, which would zoom out
+    // (`docs/gui.md`, The side panel). The settings file's `keys` table can give it one.
+    Action {
+        id: ActionId::PANEL_TABS[5],
+        message: "action-panel-tab-6",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tab_enabled::<5>,
+        emits: Emit::Intent(Intent::PanelTab(5)),
     },
     // Ctrl+= first: on most keyboards + needs Shift, and Ctrl++ matches with it held.
     Action {
@@ -1899,7 +1912,7 @@ mod tests {
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
-            tabs: &[true; 5],
+            tabs: &[true; 6],
             scale: 1.5,
             dialog: false,
             modal: false,

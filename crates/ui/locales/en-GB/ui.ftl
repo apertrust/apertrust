@@ -840,6 +840,7 @@ action-panel-tab-2 = Side-panel tab 2
 action-panel-tab-3 = Side-panel tab 3
 action-panel-tab-4 = Side-panel tab 4
 action-panel-tab-5 = Side-panel tab 5
+action-panel-tab-6 = Side-panel tab 6
 action-scale-up = Larger interface
 action-scale-down = Smaller interface
 action-scale-reset = Normal interface size
@@ -948,6 +949,39 @@ history-reset = Reset
 history-modules = { $module } and { $count } more
 # Going to a step in History, which Undo takes back and Redo puts back.
 history-go-to-step = Go to Step
+
+## The History section in the side panel's History tab (docs/history.md)
+
+section-history = History
+# Its header's reset button, which puts the whole edit back as one step, as Reset Edit.
+history-reset-edit = Reset edit
+# A step's name for screen readers, with its number: VoiceOver reads a list item's name
+# alone.
+history-step-name = Step { $number }: { $name }
+# The line at the bottom, 0: the photo with no step applied.
+history-original = Original
+history-original-tip = The photo with none of these steps
+# Each line's tag: who made the step.
+history-source-you = You
+history-source-auto = Auto
+history-source-style = Style
+history-source-assistant = Assistant
+history-source-default = Default
+# A step's tooltip, a row a control, its label and its values before and after drawn
+# apart; for screen readers, a control changed: its label, its value before and after.
+history-said-change = { $control }, { $before } to { $after }
+# A control whose value stayed, its marker changed.
+history-kept = { $control } kept
+history-released = { $control } released
+history-auto = { $control } set by Auto
+# A checkbox's value, and a curve's: how many points it has.
+history-on = On
+history-off = Off
+history-points =
+    { $count ->
+        [one] { $count } point
+       *[other] { $count } points
+    }
 
 ## The curve; $control is its full name
 

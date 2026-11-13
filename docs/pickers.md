@@ -541,7 +541,7 @@ Each press is a completed change, so a held arrow's repeats merge into one step,
 
 ## The Colour picker module
 
-darktable's color picker utility (`src/libs/colorpicker.c`, in the darkroom's left panel with its history and snapshots, position 800), as the wireframe's Pickers frame has it: a section of the History tab, under the Scopes pinned there as in every editing tab, closed by default and kept open or closed with the other sections (decision 38). Its rows, darktable's (`:696-865`) in the frame's order and words, top to bottom:
+darktable's color picker utility (`src/libs/colorpicker.c`, in the darkroom's left panel with its history and snapshots, position 800), as the wireframe's Pickers frame has it: a section of the side panel, hidden by default, its place to be decided, closed when shown and kept open or closed with the other sections (decision 38). Its rows, darktable's (`:696-865`) in the frame's order and words, top to bottom:
 
 1. **The header,** the section's, with the picker button in it: darktable's picker button, its kind chosen as darktable's is, a click for a point, right-click or Ctrl-click (Cmd-click on the Mac) for an area (`:775-779`), its tooltip darktable's: "Turn on colour picker / Ctrl+click or right-click to select an area / Ctrl+click on the photo to switch between point and area".
 2. **One row of two choices:** the statistic, Mean, Min or Max, then the colour mode, darktable's eight: RGB, RGB %, Lab, LCh, HSL, HSV, Hex and None (`:754-773`).
@@ -568,7 +568,7 @@ darktable's color picker utility (`src/libs/colorpicker.c`, in the darkroom's le
 | A picker's reading applied by the GUI's callback | Applied by the session through `Module::pick`, the same for every client | Every client through the session protocol (decision 58) |
 | Each applied reading its own undo record (`dt_dev_add_history_item` with no target) | A drag's readings one gesture, one step of source Auto, merged as a control's | Decision 78 |
 | No keys on the photo for a picker | With its point or area focused: arrows move it, Alt+arrows resize an area, Space switches point and area, Delete resets it, Esc turns it off; the region a node for screen readers | The quality bar: everything can be reached by keyboard |
-| The utility in the darkroom's left panel, with the history | A section of the History tab, under its Scopes | One side panel (decision 38), the History tab holding what darktable's left panel holds |
+| The utility in the darkroom's left panel, with the history | A section of the side panel, hidden by default, its place to be decided | One side panel (decision 38) |
 | A picked value stored as its module's rule gives it, past a parameter's `$MIN` or `$MAX` where the rule has no bound | Held at the nearer hard limit | Every stored value within its parameter's range (decisions 21 and 30) |
 | Colour balance RGB's picked hue stored from −150° to 390° | Wrapped onto 0° to 360°, the same angle | Within the hue's hard limits, the render unchanged |
 | A reading applied only where the point or box differs from the last applied (`_record_point_area`, `color_picker_proxy.c:76-104`), so a Ctrl-click to the same box applies nothing | `Switch` always applies the reading of the kind it switches to | Point and area are each kept in the original image's coordinates, so the other kind's place is always another region; a client never needs to know which differs |
@@ -640,6 +640,6 @@ Phase 2 ([roadmap.md](roadmap.md#pickers)), one pull request each, each reviewed
 | 79.13 | RGB levels' three pickers, with RGB levels (Phase 3) | modules, app | Auto region |
 | 79.14 | `SamplesCommand` and `Event::Samples`: stored samples measured on the frame, locked, loaded, stored into, removed and cleared | engine | the app |
 | 79.15 | Restrict the scopes to the selection: `Command::Scopes` gaining the Colour picker's point or area, the scopes' kernel counting within it | engine | the app |
-| 79.16 | The Colour picker section in the History tab: the header's picker button, the statistic and colour mode, the live sample with its 52-point patch, Add sample, numbered stored samples, Show samples on the photo with the vectorscope's and RGB curve's marks, Restrict the scopes, its settings and actions | ui, app, settings schema | blending |
+| 79.16 | The Colour picker section, hidden by default, its place to be decided: the header's picker button, the statistic and colour mode, the live sample with its 52-point patch, Add sample, numbered stored samples, Show samples on the photo with the vectorscope's and RGB curve's marks, Restrict the scopes, its settings and actions | ui, app, settings schema | blending |
 
 **Later, with their modules:** Filmic RGB's pickers and a quad on a choice row (Phase 3); the colour equalizer's, with `Space::Jzczhz`, after its module (Phase 3); Colour calibration's colour checker, many boxes in one reading (Phase 3); masks' overlays on 79.4's primitives and blending's pickers, with `Space::Lch` and `Space::Hsl` and a layer's instance in `PickerRef` (Phase 4); picking by coordinates through MCP (Phase 6).

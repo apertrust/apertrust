@@ -654,6 +654,7 @@ action-panel-tab-2 = Вкладка бічної панелі 2
 action-panel-tab-3 = Вкладка бічної панелі 3
 action-panel-tab-4 = Вкладка бічної панелі 4
 action-panel-tab-5 = Вкладка бічної панелі 5
+action-panel-tab-6 = Вкладка бічної панелі 6
 action-scale-up = Збільшити інтерфейс
 action-scale-down = Зменшити інтерфейс
 action-scale-reset = Звичайний розмір інтерфейсу
@@ -742,6 +743,32 @@ history-modules =
        *[other] { $module } та ще { $count } модуля
     }
 history-go-to-step = Перехід до кроку
+
+## Розділ «Історія» на вкладці «Історія» бічної панелі
+
+section-history = Історія
+history-reset-edit = Скинути обробку
+history-step-name = Крок { $number }: { $name }
+history-original = Оригінал
+history-original-tip = Знімок без жодного з цих кроків
+history-source-you = Ви
+history-source-auto = Авто
+history-source-style = Стиль
+history-source-assistant = Асистент
+history-source-default = Типово
+history-said-change = { $control }, з { $before } на { $after }
+history-kept = { $control }: закріплено
+history-released = { $control }: відпущено
+history-auto = { $control }: встановлено Авто
+history-on = Увімк.
+history-off = Вимк.
+history-points =
+    { $count ->
+        [one] { $count } точка
+        [few] { $count } точки
+        [many] { $count } точок
+       *[other] { $count } точки
+    }
 
 ## Крива
 
