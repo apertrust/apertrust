@@ -40,6 +40,12 @@
 //! vector, which each step and each move advances. A newer file found before a write is
 //! taken in ([`PhotoHistory::take_in`]): the steps not in it laid on its log after its end.
 //!
+//! A photo opened with no history is given its default steps, darktable's default modules,
+//! as darktable's new raw is given its default modules and auto-applied presets
+//! (`dt_dev_read_history_ext`, `src/develop/develop.c:2301-2352`); a log holding only them
+//! is not written, so they go into the file with the first change. Undo's fallback stops
+//! above them, as darktable's auto-applied items are no undo records; `GoTo` reaches each.
+//!
 //! A change merges into the step before it as darktable's undo merges a widget's quick
 //! repeats (`_dev_undo_start_record_target`, `src/develop/develop.c:1351-1370`): the same
 //! target, a control or a preset row, of the same source, You or Auto, with no note, made
@@ -50,18 +56,18 @@
 //! one Undo takes the merged step back whole. The times are the commands' own, as the
 //! client sent them, and the frames' publications, both handed in, so a test sets them.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId};
-use apertrust_modules::Module;
+use apertrust_modules::{Module, ModuleValues};
 use apertrust_plugin::{ImageContext, Operation};
 
 use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
 use crate::history::{
     Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource, Wrote, advance,
-    default_lines, latest,
+    latest,
 };
 
 /// The open photo's log, its undo records and what its next step is measured from.
@@ -89,6 +95,13 @@ pub(super) struct PhotoHistory {
     /// command on the edit since but changes not yet a step, of one target, source You or
     /// Auto, no note, and of one module, so in no batch.
     merge: Option<Merge>,
+    /// Whether a change the session made itself, not yet a step, applied the modules not
+    /// applied, as a module's picker turned on with the end among the default steps.
+    applying: bool,
+    /// Whether the log was read from a file holding steps, taken in from one, or handed to
+    /// the writer: until then a log of default steps alone is not written
+    /// ([`Self::unwritten`]).
+    saved: bool,
 }
 
 /// What the sidecar holds of the log as the session last read it or the writer last wrote
@@ -175,10 +188,15 @@ struct Merge {
 /// What one command on the history changed, which Undo takes back and Redo puts back.
 #[derive(Debug)]
 enum Record {
-    /// One change's steps added at `at`, the end before them: one, or a batch's. `held` is
-    /// what the log does not hold: while the record is done, the steps after the end that
-    /// they dropped; while it is undone, the steps themselves.
-    Added { at: usize, held: Vec<Step> },
+    /// One change's steps added at `at`, the end before them: one, or a batch's, after the
+    /// `kept` default steps they moved below the end ([`Log::add`]). `held` is what the log
+    /// does not hold: while the record is done, the steps that were after the end; while it
+    /// is undone, the kept and the change's steps.
+    Added {
+        at: usize,
+        kept: usize,
+        held: Vec<Step>,
+    },
     /// The end moved over the steps from `start` to `end`, one change's or the part of one
     /// that applied, by Undo's or Redo's fallback: Undo puts it at `start`, Redo at `end`.
     Moved { start: usize, end: usize },
@@ -189,12 +207,27 @@ enum Record {
 impl PhotoHistory {
     /// The history of a photo whose sidecar holds `log`, with its copy's clock vector
     /// `clocks`, both empty for a photo never edited: the next step's clock follows the
-    /// latest of them ([`latest`]).
-    pub(super) fn read(log: Log, clocks: Vec<Clock>) -> Self {
+    /// latest of them ([`latest`]). A log with no step is given a default step of each of
+    /// `defaults`, the end after them, none written until the first change; a log with steps
+    /// is given none, so its steps keep their numbers and a default module a later build
+    /// adds runs at its defaults with no step.
+    pub(super) fn read(log: Log, clocks: Vec<Clock>, defaults: &[&str]) -> Self {
         let machine = MachineId::current();
+        let mut log = log;
         let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
+        let mut clock = latest(read, machine);
+        let mut clocks = clocks;
+        let saved = !log.steps().is_empty();
+        if !saved && !defaults.is_empty() {
+            // Their clock is the vector's too, so the file they go into holds no step past
+            // it.
+            let made = Clock::now(clock.as_ref(), machine);
+            log.add_defaults(defaults, made);
+            advance(&mut clocks, made);
+            clock = Some(made);
+        }
         PhotoHistory {
-            clock: latest(read, machine),
+            clock,
             stepped: log.fold(),
             log,
             done: Vec::new(),
@@ -205,7 +238,24 @@ impl PhotoHistory {
             changed: true,
             written: None,
             merge: None,
+            applying: false,
+            saved,
         }
+    }
+
+    /// Whether the log holds default steps alone and was never in the file: written with
+    /// the first change, not before, whatever its end, so opening a photo or moving among
+    /// its default steps writes nothing.
+    pub(super) fn unwritten(&self) -> bool {
+        let steps = self.log.steps();
+        !self.saved
+            && !steps.is_empty()
+            && steps.iter().all(|step| step.source == StepSource::Default)
+    }
+
+    /// The log was handed to the writer.
+    pub(super) fn handed(&mut self) {
+        self.saved = true;
     }
 
     /// Its steps described anew, as the decode's image context differs from the one they
@@ -266,6 +316,11 @@ impl PhotoHistory {
         for step in &self.log.steps()[..self.log.end()] {
             let key = (step.id, step.clock);
             if theirs.contains(&key) || base.steps.contains(&key) {
+                continue;
+            }
+            // Default steps never written are not laid on the newer log: no default step
+            // is added to a log with steps.
+            if step.source == StepSource::Default {
                 continue;
             }
             let mut step = step.clone();
@@ -349,6 +404,8 @@ impl PhotoHistory {
         self.done.clear();
         self.undone.clear();
         self.merge = None;
+        self.applying = false;
+        self.saved = true;
         self.changed = true;
         (std::mem::replace(&mut self.stepped, self.log.fold()), kept)
     }
@@ -365,7 +422,12 @@ impl PhotoHistory {
         let wrote = written
             .as_ref()
             .map_or(&[][..], |written| &written.wrote[..]);
-        let changes = Change::between(&self.stepped, edit, wrote);
+        let mut changes = Change::between(&self.stepped, edit, wrote);
+        // A Reset or a module's reset with the end among the default steps moves no value,
+        // but applies the modules not applied: a step of what it reset.
+        if changes.is_empty() && edit.unapplied.is_empty() && !self.stepped.unapplied.is_empty() {
+            changes = applied_by(wrote, &self.stepped.unapplied);
+        }
         if changes.is_empty() {
             return false;
         }
@@ -389,9 +451,15 @@ impl PhotoHistory {
             merge.published = written.published;
         } else {
             let one = changes.len() == 1;
+            let count = changes.len();
             let at = self.log.end();
             let dropped = self.log.add_change(changes, source, note, clock);
-            self.done.push(Record::Added { at, held: dropped });
+            let kept = self.log.end() - at - count;
+            self.done.push(Record::Added {
+                at,
+                kept,
+                held: dropped,
+            });
             self.undone.clear();
             self.merge = (target.zip(written))
                 .filter(|_| one)
@@ -405,8 +473,29 @@ impl PhotoHistory {
         self.clock = Some(clock);
         advance(&mut self.clocks, clock);
         self.stepped = edit.clone();
+        self.stepped.unapplied = self.log.unapplied(self.log.end());
+        self.applying = false;
         self.changed = true;
         true
+    }
+
+    /// The modules not applied in `edit`, the edit as it stands: those the last step left
+    /// unapplied while its values are the last step's, and none once they move away, or
+    /// once the session applied them itself ([`Self::applied`]), as a change keeps the
+    /// default steps after the end and applies them ([`Log::add`]).
+    pub(super) fn unapplied(&self, edit: &Edit) -> BTreeSet<String> {
+        if !self.applying && Entry::between(&self.stepped, edit).is_empty() {
+            self.stepped.unapplied.clone()
+        } else {
+            BTreeSet::new()
+        }
+    }
+
+    /// The session applied the modules not applied by a change of its own, not yet a step:
+    /// a module's picker turned on with the end among the default steps, darktable's first
+    /// change. They stay applied until the end moves.
+    pub(super) fn applied(&mut self) {
+        self.applying = true;
     }
 
     /// A command on the edit, sent at `at`, wrote `target`, or, with `None`, wrote several
@@ -459,10 +548,14 @@ impl PhotoHistory {
     pub(super) fn undo(&mut self, edit: &Edit) -> Option<Edit> {
         self.complete(edit, StepSource::You, None);
         let record = match self.done.pop() {
-            Some(Record::Added { at, held }) => {
+            Some(Record::Added { at, kept, held }) => {
                 // The change's steps leave the log, and the steps they dropped come back.
                 let steps = self.log.replace_after(at, held, at);
-                Record::Added { at, held: steps }
+                Record::Added {
+                    at,
+                    kept,
+                    held: steps,
+                }
             }
             Some(Record::Moved { start, end }) => {
                 self.log.set_end(start);
@@ -473,9 +566,13 @@ impl PhotoHistory {
                 Record::GoTo { from, to }
             }
             // The fallback: the end back over the step before it and its batch, which Redo
-            // reverses.
+            // reverses; never over a default step, as darktable's auto-applied items are no
+            // undo records.
             None => {
                 let end = self.log.end();
+                if end <= self.log.defaults() {
+                    return None;
+                }
                 let start = self.log.batch_start(end)?;
                 self.log.set_end(start);
                 Record::Moved { start, end }
@@ -490,11 +587,15 @@ impl PhotoHistory {
     pub(super) fn redo(&mut self, edit: &Edit) -> Option<Edit> {
         self.complete(edit, StepSource::You, None);
         let record = match self.undone.pop() {
-            Some(Record::Added { at, held }) => {
+            Some(Record::Added { at, kept, held }) => {
                 // The change's steps again, and the steps after the end dropped again.
                 let end = at + held.len();
                 let dropped = self.log.replace_after(at, held, end);
-                Record::Added { at, held: dropped }
+                Record::Added {
+                    at,
+                    kept,
+                    held: dropped,
+                }
             }
             Some(Record::Moved { start, end }) => {
                 self.log.set_end(end);
@@ -553,6 +654,7 @@ impl PhotoHistory {
         advance(&mut self.clocks, clock);
         self.stepped = self.log.fold();
         self.merge = None;
+        self.applying = false;
         self.changed = true;
         self.stepped.clone()
     }
@@ -569,15 +671,17 @@ impl PhotoHistory {
         let (steps, end) = (self.log.steps(), self.log.end());
         let (start, end) = match records.last() {
             Some(Record::GoTo { .. }) => return Some(Move::GoTo),
-            Some(Record::Added { held, .. }) if !undo => {
-                let first = held.first()?;
+            // The change's own steps, after the default steps it kept.
+            Some(Record::Added { kept, held, .. }) if !undo => {
+                let first = held.get(*kept)?;
                 return Some(Move::Steps {
                     first: first.id,
-                    count: held.len(),
+                    count: held.len() - kept,
                 });
             }
-            Some(Record::Added { at, .. }) => (*at, steps.len()),
+            Some(Record::Added { at, kept, .. }) => (at + kept, steps.len()),
             Some(Record::Moved { start, end }) => (*start, *end),
+            None if undo && end <= self.log.defaults() => return None,
             None if undo => (self.log.batch_start(end)?, end),
             None => (end, self.log.batch_end(end)?),
         };
@@ -602,7 +706,6 @@ impl PhotoHistory {
             through,
             steps: (self.described).steps(&self.log, modules, operations, image),
             end: self.log.end(),
-            defaults: default_lines(modules, operations),
             undo: self.next(true),
             redo: self.next(false),
         }
@@ -628,6 +731,41 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
             commands,
         } if commands.iter().any(|command| !goes_on(command)) => Some((*source, note.clone())),
         _ => None,
+    }
+}
+
+/// The step of a change that moved no value but applied the modules `unapplied`, a Reset or
+/// a module's reset with the end among the default steps, by what it wrote: a Reset holding
+/// an empty entry for each, where it was a `Reset`, else the first module it reset, empty.
+fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
+    if wrote.contains(&Wrote::All) {
+        let entries = (unapplied.iter())
+            .map(|module| Entry::Module {
+                module: module.clone(),
+                values: ModuleValues::new(),
+            })
+            .collect();
+        return vec![Change::Reset(entries)];
+    }
+    (wrote.iter())
+        .find_map(|wrote| match wrote {
+            Wrote::Module(module) => Some(Change::Entry(Entry::Module {
+                module: module.clone(),
+                values: ModuleValues::new(),
+            })),
+            _ => None,
+        })
+        .into_iter()
+        .collect()
+}
+
+/// Whether `command` resets the edit or a module, or is a `Step` holding such a command:
+/// with the end among the default steps it applies the modules not applied (decision 78).
+fn resets(command: &Command) -> bool {
+    match command {
+        Command::Reset | Command::ResetModule { .. } => true,
+        Command::Step { commands, .. } => commands.iter().any(resets),
+        _ => false,
     }
 }
 
@@ -812,8 +950,18 @@ impl Engine {
         let is_step = matches!(command, Command::Step { .. });
         let writes = (in_step(&command) || is_step).then(|| (target(&command), wrote(&command)));
         let retry = matches!(command, Command::RetrySave);
+        let resets = resets(&command);
         let before = self.open.as_ref().map(|open| open.edit.clone());
-        let applied = self.edit_command(command);
+        let mut applied = self.edit_command(command);
+        // A Reset or a module's reset applies the modules not applied, though it may move no
+        // value: the edit at the photo's defaults with every module applied.
+        if resets
+            && let (Ok(effect), Some(open)) = (&mut applied, &mut self.open)
+            && !open.edit.unapplied.is_empty()
+        {
+            open.edit.unapplied.clear();
+            effect.render = true;
+        }
         if let Some(open) = &mut self.open {
             match (&applied, writes) {
                 // A change that changes nothing counts as none.
@@ -840,6 +988,17 @@ impl Engine {
             && let Some(open) = &mut self.open
         {
             open.gesture = None;
+        }
+        // The modules not applied: the end's while the values are its, none once they move,
+        // rendered where that changed them.
+        if let Some(open) = &mut self.open {
+            let unapplied = open.history.unapplied(&open.edit);
+            if unapplied != open.edit.unapplied {
+                open.edit.unapplied = unapplied;
+                if let Ok(effect) = &mut applied {
+                    effect.render = true;
+                }
+            }
         }
         applied
     }
@@ -1002,6 +1161,7 @@ fn moved_to(open: &mut Open, moved: Option<Edit>, modules: &[&dyn Module]) -> Ef
     let changed = edit != open.edit;
     open.edit = edit;
     open.held.prune(&open.edit);
+    // The end is saved; a log of default steps never written is not ([`PhotoHistory::unwritten`]).
     open.unsaved = true;
     Effect {
         render: changed,

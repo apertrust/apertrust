@@ -321,9 +321,11 @@ impl Engine {
         self.start_thumbnail(path, hash);
     }
 
-    /// The plan of the live photo's thumbnail, from its edit as it stands.
+    /// The plan of the live photo's thumbnail, from its edit as its file holds it, the
+    /// modules not applied at the file's end among it ([`Open::saved_edit`]).
     pub(in crate::session) fn thumbnail_plan(&self, open: &Open) -> Result<ThumbnailPlan, String> {
-        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        let saved = open.saved_edit();
+        let bound = edit::instances(&saved, self.operations, &self.modules, &open.image);
         if let Some((module, error)) = bound.failed.first() {
             return Err(format!("module {module} left out: {error}"));
         }

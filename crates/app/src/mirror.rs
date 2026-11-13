@@ -2419,9 +2419,15 @@ pub(crate) mod tests {
             value: ControlValue::Number(value),
             done: true,
         };
+        // A new photo's default steps, then the two changes'.
+        let n = apertrust_engine::history::default_modules(
+            apertrust_modules::MODULES,
+            apertrust_operations::OPERATIONS,
+        )
+        .len();
         live.session.send(set("exposure", 1.0));
         live.session.send(set("black_level", 0.01));
-        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == 2));
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == n + 2));
         let ids: Vec<_> = (live.mirror.history.as_ref().unwrap().steps.iter())
             .map(|step| step.id)
             .collect();
@@ -2429,17 +2435,37 @@ pub(crate) mod tests {
         live.until_live();
         live.open(&path);
         live.until_live();
-        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == 2));
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == n + 2));
         let history = live.mirror.history.clone().expect("the photo's history");
         let read: Vec<_> = history.steps.iter().map(|step| step.id).collect();
-        assert_eq!((read, history.end), (ids, 2));
+        assert_eq!((read, history.end), (ids, n + 2));
         let words = apertrust_ui::Translator::new(apertrust_ui::Locale::EnGb);
         let today = crate::history::today();
         let listed = crate::history::listed(Some(&history), live.mirror.modules(), &words, today);
         let steps = (listed.lines())
             .filter(|line| matches!(line.place, crate::history::Place::Step { .. }))
             .count();
-        assert_eq!(steps, 2, "{listed:?}");
+        assert_eq!(steps, n + 2, "{listed:?}");
+        // The default steps read back numbered 1 to n, the Defaults group's, the changes'
+        // after them.
+        let defaults: Vec<usize> = (listed.entries.iter())
+            .find_map(|entry| match entry {
+                crate::history::Entry::Group {
+                    key: crate::history::GroupKey::Defaults,
+                    lines,
+                    ..
+                } => Some(
+                    (lines.iter())
+                        .filter_map(|line| match line.place {
+                            crate::history::Place::Step { number, .. } => Some(number),
+                            _ => None,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .expect("the Defaults group");
+        assert_eq!(defaults, (1..=n).rev().collect::<Vec<_>>(), "{listed:?}");
         drop(live);
         let _ = std::fs::remove_dir_all(&folder);
     }
@@ -2468,14 +2494,24 @@ pub(crate) mod tests {
             value: ControlValue::Number(value),
             done: true,
         };
+        // After a new photo's default steps.
+        let n = apertrust_engine::history::default_modules(
+            apertrust_modules::MODULES,
+            apertrust_operations::OPERATIONS,
+        )
+        .len();
         live.session.send(set("exposure", 1.0));
         live.session.send(set("black_level", 0.01));
-        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == 2));
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == n + 2));
         assert!(live.mirror.takes_edits());
         let history = live.mirror.history.clone().expect("the photo's history");
-        let first = history.steps[0].id;
+        let first = history.steps[n].id;
         // Black level as the second step found it: its value at the first.
-        let before = history.steps[1].changes[0].controls[0].before.clone();
+        let before = history.steps[n + 1].changes[0].controls[0].before.clone();
+        let (first_name, second_name) = (
+            format!("Step {}: Exposure", n + 1),
+            format!("Step {}: Exposure", n + 2),
+        );
 
         struct Scene {
             live: Live,
@@ -2510,7 +2546,7 @@ pub(crate) mod tests {
                 .find(named)
                 .unwrap_or_else(|| panic!("no line {name}"))
         }
-        item(&harness, "Step 1: Exposure").click();
+        item(&harness, &first_name).click();
         harness.run();
         assert_eq!(
             harness.state().actions,
@@ -2519,13 +2555,13 @@ pub(crate) mod tests {
         // The app sends it; the session goes there.
         let live = &mut harness.state_mut().live;
         live.session.send(Command::GoTo { step: Some(first) });
-        live.until(|m| m.history.as_ref().is_some_and(|h| h.end == 1));
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.end == n + 1));
         assert_eq!(live.exposure("exposure"), Some(ControlValue::Number(1.0)));
         assert_eq!(live.exposure("black_level"), Some(before));
         // Shift-click: the module, and no step gone to.
         harness.state_mut().actions.clear();
         harness.run();
-        item(&harness, "Step 2: Exposure").click_modifiers(eframe::egui::Modifiers::SHIFT);
+        item(&harness, &second_name).click_modifiers(eframe::egui::Modifiers::SHIFT);
         harness.run();
         assert_eq!(
             harness.state().actions,

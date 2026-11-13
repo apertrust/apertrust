@@ -2115,8 +2115,8 @@ impl Shell {
         }
     }
 
-    /// Opens `module`'s section where a tab lists it, as Shift-click on a step's or a
-    /// Default line's History line asks, after darktable's Shift-click on a history item,
+    /// Opens `module`'s section where a tab lists it, as Shift-click on a step's History
+    /// line asks, after darktable's Shift-click on a history item,
     /// which switches to the module's group and expands it: the first tab that lists it is
     /// chosen, the section opened, for this run and the next, and scrolled to as the tab
     /// shows. A module no tab lists changes nothing.
@@ -8927,7 +8927,7 @@ mod tests {
         harness.get_by_role_and_label(Role::TreeItem, "Original");
     }
 
-    /// Shift-click on a step's or a Default line's History line opens the module's
+    /// Shift-click on a step's History line, a default step's among them, opens the module's
     /// section in the first tab that lists it, to be scrolled to as that tab shows; a
     /// module no tab lists, as an operation's unowned parameters, changes nothing.
     #[test]

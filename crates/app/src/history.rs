@@ -46,19 +46,18 @@
 //! - the rail down the lines' start (`Rail`): a dot a step, a square a group, Reset's
 //!   glyph, the end a larger filled dot, or square, the undone steps hollow on a dashed
 //!   rail;
-//! - then the Default lines, the modules every photo runs, one closed group, Defaults,
-//!   which opens as a batch does, unnumbered and with no tag, and Original, 0: one block
-//!   that always applies, never greyed; at end 0 the Defaults line chosen, or the top
-//!   Default line while it is open, or Original with none;
+//! - then a new photo's default steps, 1 to n, one closed group, Defaults, which opens as
+//!   a batch does, its steps numbered and with no tag, and Original, 0, chosen at end 0;
 //! - a step's tooltip: a small table, a row for each control it changed, its label, its
 //!   value before, an arrow and its value after as its row writes them, in lined-up
 //!   columns, then its note, who made it and when apart, on the local clock in the
 //!   interface's language; a group's, its steps' rows under each module's title; a
-//!   Default line's who alone;
-//! - a click on a step goes to it ([`Action::GoTo`]), and on the Defaults or a Default
-//!   line or Original to Original, but on where the end is, which changes nothing, as
-//!   darktable's click on its active item; Shift-click on a step or a Default line opens
-//!   its module's section ([`Action::Open`]), as darktable's Shift-click focuses it;
+//!   default step's who and when alone;
+//! - a click on a step goes to it ([`Action::GoTo`]), a default step among them, on a
+//!   group's line, the Defaults' among them, to its last step, and on Original to
+//!   Original, but on where the end is, which changes nothing, as darktable's click on its
+//!   active item; Shift-click on a step opens its module's section ([`Action::Open`]), as
+//!   darktable's Shift-click focuses it;
 //! - the keys, a tree's: ↑ and ↓ move between the lines, → opens a group, or goes into
 //!   one open, ← closes it, or goes from a line inside it to it, Home to the newest line
 //!   and End to Original, a key with nothing to do keeping the focus; Enter does what a
@@ -124,9 +123,10 @@ pub enum Place {
         applied: bool,
         end: bool,
     },
-    /// A batch's line, its group's: its steps numbered `first` to `last`, the last's id
-    /// `last_id`, which a click goes to; `applied` while its first is at or under the end,
-    /// and `end` where the end is its last, which it shows while closed.
+    /// A batch's line, its group's, or the Defaults', the default steps': its steps
+    /// numbered `first` to `last`, the last's id `last_id`, which a click goes to; `applied`
+    /// while its first is at or under the end, and `end` where the end is its last, which
+    /// it shows while closed.
     Batch {
         last_id: StepId,
         first: usize,
@@ -134,15 +134,7 @@ pub enum Place {
         applied: bool,
         end: bool,
     },
-    /// The Defaults' line, the group of the Default lines: `there` at end 0, which it
-    /// shows while closed.
-    Defaults { there: bool },
-    /// A Default line: a module every photo runs, never greyed. With Original it is one
-    /// block under the steps, which a click goes to, end 0: `there` while the end is
-    /// there, and `end` for the top Default line then, the boundary between what is undone
-    /// and what always applies, which is chosen.
-    Default { end: bool, there: bool },
-    /// Original, 0: `there` at end 0, and `end` then where no Default line is over it.
+    /// Original, 0: `there` and `end` at end 0.
     Original { end: bool, there: bool },
 }
 
@@ -151,7 +143,7 @@ pub enum Place {
 pub enum GroupKey {
     /// A batch's steps.
     Batch(BatchId),
-    /// The Default lines.
+    /// A new photo's default steps.
     Defaults,
 }
 
@@ -161,8 +153,6 @@ pub enum GroupKey {
 pub enum LineKey {
     Step(StepId),
     Group(GroupKey),
-    /// The Default line of a module.
-    Default(&'static str),
     Original,
 }
 
@@ -173,7 +163,7 @@ pub struct Line {
     pub key: LineKey,
     pub name: String,
     /// What changed, after the name in the small text, cut at its end where the line has no
-    /// room; none where there is nothing to say, as on a Default line. A group's, its
+    /// room; none where there is nothing to say, as on a default step. A group's, its
     /// modules or how many.
     pub change: Option<String>,
     /// What changed as screen readers hear it in the step's name, its values before and
@@ -296,12 +286,12 @@ impl Tip {
 }
 
 impl Line {
-    /// Its number: a step's, and Original's 0; a group's line and a Default line have none.
+    /// Its number: a step's, and Original's 0; a group's line has none.
     fn number(&self) -> Option<usize> {
         match self.place {
             Place::Step { number, .. } => Some(number),
             Place::Original { .. } => Some(0),
-            Place::Batch { .. } | Place::Defaults { .. } | Place::Default { .. } => None,
+            Place::Batch { .. } => None,
         }
     }
 
@@ -315,41 +305,36 @@ impl Line {
         }
     }
 
-    /// Whether it is the end's line: at end 0, the Defaults line, or the top Default line
-    /// while they show, else Original; a batch's line where the end is its last. A group's
-    /// line is drawn chosen only while it is closed.
+    /// Whether it is the end's line: Original at end 0; a group's line where the end is its
+    /// last. A group's line is drawn chosen only while it is closed.
     fn end(&self) -> bool {
         matches!(
             self.place,
             Place::Step { end: true, .. }
                 | Place::Batch { end: true, .. }
-                | Place::Defaults { there: true }
-                | Place::Default { end: true, .. }
                 | Place::Original { end: true, .. }
         )
     }
 
     /// Whether it is a group's line, which opens.
     fn group(&self) -> bool {
-        matches!(self.place, Place::Batch { .. } | Place::Defaults { .. })
+        matches!(self.place, Place::Batch { .. })
     }
 
     /// Whether it takes a click or a Shift-click, which its hover band says: a click going
     /// somewhere while the photo takes edits (`editable`), or a Shift-click opening its
-    /// module, as on a Default line, whatever the photo. A group's line always takes one,
+    /// module, whatever the photo. A group's line always takes one,
     /// on its chevron. Original, the end already there, takes neither.
     fn takes(&self, editable: bool) -> bool {
         (editable && !self.there()) || self.module.is_some() || self.group()
     }
 
-    /// Whether a click goes nowhere: on the end's line, or on the block of Default lines
-    /// and Original while the end is there.
+    /// Whether a click goes nowhere: on the end's line, or on Original while the end is
+    /// there.
     fn there(&self) -> bool {
         match self.place {
             Place::Step { end, .. } | Place::Batch { end, .. } => end,
-            Place::Defaults { there }
-            | Place::Default { there, .. }
-            | Place::Original { there, .. } => there,
+            Place::Original { there, .. } => there,
         }
     }
 
@@ -365,17 +350,14 @@ impl Line {
     /// (`editable`).
     fn clicked(&self, shift: bool, editable: bool) -> Option<Action> {
         match self.place {
-            Place::Step { .. } | Place::Default { .. } if shift => self.module.map(Action::Open),
+            Place::Step { .. } if shift => self.module.map(Action::Open),
             _ if shift => None,
             // The end where it is changes nothing, as darktable's click on its active item.
             _ if self.there() || !editable => None,
             Place::Step { id, .. } => Some(Action::GoTo(Some(id))),
-            // A batch's line goes to its last step, as Undo and Redo move it whole.
+            // A group's line goes to its last step, as Undo and Redo move a batch whole.
             Place::Batch { last_id, .. } => Some(Action::GoTo(Some(last_id))),
-            // A Default line is Original: the modules every photo runs always run.
-            Place::Defaults { .. } | Place::Default { .. } | Place::Original { .. } => {
-                Some(Action::GoTo(None))
-            }
+            Place::Original { .. } => Some(Action::GoTo(None)),
         }
     }
 }
@@ -386,8 +368,9 @@ fn range(first: &str, last: &str) -> String {
 }
 
 /// The list from `history`, the open photo's, in `tr`'s words: its steps newest first, a
-/// batch's as a group, with a heading over each day's, then the Defaults group, its lines
-/// also last added first, then Original; Original alone with no history. `today` is the
+/// batch's as a group, with a heading over each day's, then the Defaults group, a new
+/// photo's default steps, also newest first, then Original; Original alone with no
+/// history. `today` is the
 /// local calendar's day now ([`local_day`]), which the headings count back from. `modules`
 /// are the session's, whose titles, controls and rows word the lines.
 pub fn listed(
@@ -401,13 +384,17 @@ pub fn listed(
     let mut day = None;
     if let Some(history) = history {
         let steps = &history.steps;
+        // The default steps, which the log begins with, are the Defaults group.
+        let defaults = (steps.iter())
+            .take_while(|step| step.source == StepSource::Default)
+            .count();
         // Newest first: the steps from `first` to `last`, one change's, each pass.
         let mut next = steps.len();
-        while next > 0 {
+        while next > defaults {
             let last = next - 1;
             let mut first = last;
             if let Some(batch) = steps[last].batch {
-                while first > 0 && steps[first - 1].batch == Some(batch) {
+                while first > defaults && steps[first - 1].batch == Some(batch) {
                     first -= 1;
                 }
             }
@@ -442,11 +429,11 @@ pub fn listed(
                 _ => entries.extend(lines.map(Entry::Line)),
             }
         }
-        if !history.defaults.is_empty() {
-            entries.push(defaults(&history.defaults, end, modules, tr));
+        if defaults > 0 {
+            entries.push(defaults_group(&steps[..defaults], end, modules, tr));
         }
     }
-    let original = end == 0 && history.is_none_or(|h| h.defaults.is_empty());
+    let original = end == 0;
     entries.push(Entry::Line(Line {
         place: Place::Original {
             end: original,
@@ -568,45 +555,38 @@ fn batch_line(
     }
 }
 
-/// The Defaults group: its line, "Defaults", how many modules every photo runs, and the
-/// Default lines of `defaults`, newest first, as the steps: the first darktable adds, Raw
-/// black/white point, just over Original.
-fn defaults(
-    defaults: &[&'static str],
+/// The Defaults group, a new photo's default `steps`, numbered from 1, with the end at
+/// `end`: its line, "Defaults", how many modules, its numbers' range, which a click goes to
+/// the last of as a batch's does, and the default steps' lines, newest first, as the steps:
+/// the first darktable adds, Raw black/white point, just over Original.
+fn defaults_group(
+    steps: &[Arc<HistoryStep>],
     end: usize,
     modules: &[&dyn Module],
     tr: &Translator,
 ) -> Entry {
-    let by = || vec![source(StepSource::Default, tr)];
-    let lines = (defaults.iter().rev().enumerate())
-        .map(|(index, &module)| {
-            let top = end == 0 && index == 0;
-            Line {
-                place: Place::Default {
-                    end: top,
-                    there: end == 0,
-                },
-                key: LineKey::Default(module),
-                name: title(modules, module, tr),
-                change: None,
-                heard: None,
-                tag: None,
-                // Its source alone: the photo's own, with no change or time to show.
-                tip: Tip::Changes {
-                    modules: Vec::new(),
-                    by: by(),
-                },
-                node: if top { RailNode::End } else { RailNode::Step },
-                module: known(modules, module),
-            }
-        })
+    let lines = (1..=steps.len())
+        .rev()
+        .map(|number| step_line(&steps[number - 1], number, end, modules, tr))
         .collect();
+    let newest = &steps[steps.len() - 1];
+    let last = steps.len();
+    let Tip::Changes { by, .. } = tip(newest, modules, tr) else {
+        unreachable!("a step's tooltip has its changes")
+    };
     let mut args = Args::new();
-    args.set("count", defaults.len());
+    args.set("count", steps.len());
+    let applied = end >= 1;
     Entry::Group {
         key: GroupKey::Defaults,
         line: Line {
-            place: Place::Defaults { there: end == 0 },
+            place: Place::Batch {
+                last_id: newest.id,
+                first: 1,
+                last,
+                applied,
+                end: last == end,
+            },
             key: LineKey::Group(GroupKey::Defaults),
             name: tr.text("history-defaults"),
             change: Some(tr.text_with("history-defaults-modules", Some(&args))),
@@ -614,16 +594,16 @@ fn defaults(
             tag: None,
             tip: Tip::Changes {
                 modules: Vec::new(),
-                by: by(),
+                by,
             },
             node: RailNode::Group {
-                end: end == 0,
-                undone: false,
+                end: last == end,
+                undone: !applied,
             },
             module: None,
         },
         lines,
-        holds_end: false,
+        holds_end: (1..last).contains(&end),
     }
 }
 
@@ -1090,7 +1070,7 @@ fn keyed(
 
 /// [`listed`], worded once for each history, language and day and kept in egui's memory:
 /// a history of hundreds of steps would otherwise be worded again each frame. A history is
-/// told from another by its `through`, its end, its Default lines and its steps, each
+/// told from another by its `through`, its end and its steps, each
 /// behind the `Arc` the session shares while the step stays as it is.
 fn kept(
     ctx: &egui::Context,
@@ -1101,7 +1081,7 @@ fn kept(
 ) -> Arc<Listed> {
     let steps = history.map(|h| {
         let shared = h.steps.iter().map(|step| Arc::as_ptr(step) as usize);
-        (h.through, h.end, &h.defaults, shared.collect::<Vec<_>>())
+        (h.through, h.end, shared.collect::<Vec<_>>())
     });
     let key = {
         use std::hash::{BuildHasher as _, BuildHasherDefault, DefaultHasher};
@@ -1522,8 +1502,8 @@ fn line_row(
 }
 
 /// A line's name as screen readers hear it: a step's number, name and what changed, its
-/// values before and after; a batch's numbers, name and modules; the Defaults' name and
-/// how many; a Default line's and Original's name.
+/// values before and after; a group's numbers, name and modules, the Defaults' how many;
+/// Original's name.
 fn said(line: &Line, words: &Translator) -> String {
     let mut args = Args::new();
     args.set("name", line.name.as_str());
@@ -1545,11 +1525,7 @@ fn said(line: &Line, words: &Translator) -> String {
             args.set("modules", line.change.clone().unwrap_or_default());
             words.text_with("history-group-name", Some(&args))
         }
-        Place::Defaults { .. } => {
-            args.set("change", line.change.clone().unwrap_or_default());
-            words.text_with("history-line-name", Some(&args))
-        }
-        Place::Default { .. } | Place::Original { .. } => line.name.clone(),
+        Place::Original { .. } => line.name.clone(),
     }
 }
 
@@ -1642,7 +1618,7 @@ fn tip_ui(ui: &mut egui::Ui, tip: &Tip) {
             painter.galley(at(after_end - after.size().x), after, ink);
         }
     }
-    // Apart from the rows; a Default line's and a Default step's alone.
+    // Apart from the rows; a default step's alone.
     if !modules.is_empty() {
         ui.add_space(t.spacing.xs);
     }
@@ -1880,8 +1856,8 @@ fn line_name(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> St
 
 /// A step's tooltip: its module's changes, then its note, who made it and when, on the
 /// local clock. Reset's, the one step of several modules, has a heading over each
-/// module's rows, and its note is its line's name. A step of source Default, the photo's
-/// own as a Default line is, has who and when alone.
+/// module's rows, and its note is its line's name. A default step, the photo's own, has
+/// who and when alone.
 fn tip(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Tip {
     let several = step.changes.len() > 1;
     let mut changed = Vec::new();
@@ -2133,7 +2109,6 @@ pub(crate) mod tests {
             through,
             end: steps.len(),
             steps,
-            defaults: Vec::new(),
             undo,
             redo,
         }
@@ -2312,9 +2287,9 @@ pub(crate) mod tests {
     }
 
     /// A photo's history of five steps, one module each, the end at the third, so the last
-    /// two are greyed, with the Default lines the engine lists: Exposure, Grain turned on,
-    /// an Auto step of Exposure, a reset of both, and an assistant's step of Exposure with
-    /// its note.
+    /// two are greyed: Exposure, Grain turned on, an Auto step of Exposure, a reset of both,
+    /// and an assistant's step of Exposure with its note. [`with_defaults`] gives it a new
+    /// photo's default steps under them.
     fn photo_s(end: usize) -> History {
         let exposure =
             |before, after| change("exposure", None, vec![number("exposure", before, after)]);
@@ -2362,12 +2337,37 @@ pub(crate) mod tests {
             through: 12,
             steps,
             end,
-            defaults: apertrust_engine::history::default_lines(
-                apertrust_modules::MODULES,
-                apertrust_operations::OPERATIONS,
-            ),
             undo: None,
             redo: None,
+        }
+    }
+
+    /// How many default steps a new photo is given, of the modules the app runs.
+    const DEFAULT_STEPS: usize = 9;
+
+    /// `history`'s steps after a new photo's default steps, one of each of darktable's
+    /// default modules, numbered 1 to [`DEFAULT_STEPS`], the end at `end`.
+    fn with_defaults(history: History, end: usize) -> History {
+        let defaults = apertrust_engine::history::default_modules(
+            apertrust_modules::MODULES,
+            apertrust_operations::OPERATIONS,
+        );
+        assert_eq!(defaults.len(), DEFAULT_STEPS);
+        let mut steps: Vec<_> = (defaults.iter().enumerate())
+            .map(|(index, module)| {
+                made(
+                    0xd0 + index as u64,
+                    StepSource::Default,
+                    None,
+                    vec![change(module, None, Vec::new())],
+                )
+            })
+            .collect();
+        steps.extend(history.steps.iter().cloned());
+        History {
+            steps,
+            end,
+            ..history
         }
     }
 
@@ -2391,7 +2391,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_lines_are_the_steps_newest_first_the_default_lines_then_original() {
+    fn the_lines_are_the_steps_newest_first_then_original() {
         let history = photo_s(3);
         let lines = lines_in(Some(&history), Locale::EnGb);
         let shown: Vec<(Option<usize>, &str, Option<&str>)> = (lines.iter())
@@ -2407,29 +2407,15 @@ pub(crate) mod tests {
                 (Some(3), "Exposure", Some("Auto")),
                 (Some(2), "Grain", None),
                 (Some(1), "Exposure", None),
-                // The Defaults' line, then the Default lines it holds, the first darktable
-                // adds just over Original.
-                (None, "Defaults", None),
-                (None, "AgX", None),
-                (None, "Tone curve", None),
-                (None, "Colour calibration", None),
-                (None, "Exposure", None),
-                (None, "Orientation", None),
-                (None, "Highlight reconstruction", None),
-                (None, "White balance", None),
-                (None, "Output colour profile", None),
-                (None, "Demosaic", None),
-                (None, "Raw black/white point", None),
                 (Some(0), "Original", None),
             ]
         );
-        // The end at the third step: it is chosen, the two after it greyed, the Default
-        // lines never either.
+        // The end at the third step: it is chosen, the two after it greyed.
         let state: Vec<(bool, bool)> = (lines.iter())
             .map(|line| (line.end(), line.greyed()))
             .collect();
         assert_eq!(
-            state[..6],
+            state,
             [
                 (false, true),
                 (false, true),
@@ -2439,36 +2425,18 @@ pub(crate) mod tests {
                 (false, false)
             ]
         );
-        assert!(state[5..].iter().all(|s| *s == (false, false)));
-        // Each opens its first module the app knows; the Defaults' line and Original none.
+        // Each opens its first module the app knows; Original none.
         assert_eq!(lines[2].module, Some("exposure"));
         assert_eq!(lines[3].module, Some("grain"));
         assert_eq!(lines[5].module, None);
-        assert_eq!(lines[6].module, Some("agx"));
-        assert_eq!(lines[16].module, None);
-        // The Defaults' line says how many modules every photo runs.
-        assert_eq!(
-            lines[5].change.as_deref(),
-            Some("10 modules every photo runs")
-        );
-        // At end 0 every step is greyed, the Default lines and Original none, and the
-        // Defaults' line is chosen while closed, the top Default line while it is open: the
-        // boundary between what is undone and what always applies.
+        // At end 0 every step is greyed, and Original is chosen.
         let lines = lines_in(Some(&photo_s(0)), Locale::EnGb);
         let chosen: Vec<&str> = (lines.iter())
             .filter(|line| line.end())
             .map(|line| line.name.as_str())
             .collect();
-        assert_eq!(chosen, ["Defaults", "AgX"]);
+        assert_eq!(chosen, ["Original"]);
         assert!(lines[..5].iter().all(Line::greyed));
-        assert!(!lines[5..].iter().any(Line::greyed));
-        // With no Default line, Original is.
-        let bare = History {
-            defaults: Vec::new(),
-            ..photo_s(0)
-        };
-        let lines = lines_in(Some(&bare), Locale::EnGb);
-        assert!(lines.last().is_some_and(Line::end));
         // No history: Original alone.
         let alone = lines_in(None, Locale::EnGb);
         assert_eq!(alone.len(), 1);
@@ -2480,6 +2448,67 @@ pub(crate) mod tests {
                 there: true
             }
         );
+    }
+
+    /// A new photo's default steps are one closed group, Defaults, over Original: its
+    /// numbers' range 1 to n, how many modules, and inside it the default steps numbered,
+    /// with no tag, each opening its module; the photo's own steps numbered after them.
+    #[test]
+    fn the_default_steps_are_the_defaults_group_numbered_from_1() {
+        let n = DEFAULT_STEPS;
+        let history = with_defaults(photo_s(5), n + 3);
+        let tr = Translator::new(Locale::EnGb);
+        let listed = listed_in(Some(&history), Locale::EnGb);
+        let (line, lines) = (listed.entries.iter())
+            .find_map(|entry| match entry {
+                Entry::Group {
+                    key: GroupKey::Defaults,
+                    line,
+                    lines,
+                    ..
+                } => Some((line, lines)),
+                _ => None,
+            })
+            .expect("the Defaults group");
+        assert_eq!(line.name, "Defaults");
+        assert_eq!(line.numbers(&tr).as_deref(), Some("1\u{2013}9"));
+        assert_eq!(line.change.as_deref(), Some("9 modules every photo runs"));
+        assert!(line.group() && !line.greyed());
+        let shown: Vec<(Option<usize>, &str, Option<&str>)> = (lines.iter())
+            .map(|line| (line.number(), line.name.as_str(), line.tag.as_deref()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (Some(9), "AgX", None),
+                (Some(8), "Colour calibration", None),
+                (Some(7), "Exposure", None),
+                (Some(6), "Orientation", None),
+                (Some(5), "Highlight reconstruction", None),
+                (Some(4), "White balance", None),
+                (Some(3), "Output colour profile", None),
+                (Some(2), "Demosaic", None),
+                (Some(1), "Raw black/white point", None),
+            ]
+        );
+        assert_eq!(lines[0].module, Some("agx"));
+        let all = lines_in(Some(&history), Locale::EnGb);
+        assert_eq!(all[0].number(), Some(n + 5));
+        // At end 0 the group is undone, greyed, and Original chosen; with the end inside it
+        // the group holds the end.
+        let at_0 = lines_in(Some(&with_defaults(photo_s(5), 0)), Locale::EnGb);
+        let defaults = (at_0.iter()).find(|line| line.name == "Defaults").unwrap();
+        assert!(defaults.greyed() && !defaults.end());
+        assert!(at_0.last().is_some_and(Line::end));
+        let inside = listed_in(Some(&with_defaults(photo_s(5), 4)), Locale::EnGb);
+        assert!(inside.entries.iter().any(|entry| matches!(
+            entry,
+            Entry::Group {
+                key: GroupKey::Defaults,
+                holds_end: true,
+                ..
+            }
+        )));
     }
 
     fn value(label: &str, before: &str, after: &str) -> TipRow {
@@ -2548,15 +2577,7 @@ pub(crate) mod tests {
                 by: vec!["You".to_owned(), when()],
             }
         );
-        // A Default line, and a step of source Default: who and when alone, the line
-        // having no time.
-        let lines = lines_in(Some(&history), Locale::EnGb);
-        let default = (lines.iter()).find(|line| matches!(line.place, Place::Default { .. }));
-        let default_tip = Tip::Changes {
-            modules: Vec::new(),
-            by: vec!["Default".to_owned()],
-        };
-        assert_eq!(default.map(|line| &line.tip), Some(&default_tip));
+        // A default step: who and when alone.
         let applied = made(
             12,
             StepSource::Default,
@@ -2571,7 +2592,6 @@ pub(crate) mod tests {
                 by: vec!["Default".to_owned(), when()],
             }
         );
-        assert_eq!(default_tip.said(&tr), "Default");
         // For screen readers, plain text in the same order, in each language.
         let said = |locale, number| tip(locale, number).said(&Translator::new(locale));
         assert_eq!(
@@ -2652,7 +2672,6 @@ pub(crate) mod tests {
         };
         let history = History {
             steps: vec![newer],
-            defaults: Vec::new(),
             ..history
         };
         let lines = lines_in(Some(&history), Locale::EnGb);
@@ -2778,7 +2797,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_click_goes_to_a_step_and_shift_click_or_a_default_line_opens_its_module() {
+    fn a_click_goes_to_a_step_and_shift_click_opens_its_module() {
         let mut harness = photo_scene(3);
         harness.run();
         item(&harness, "Step 1: Exposure").click();
@@ -2799,12 +2818,7 @@ pub(crate) mod tests {
             ]
         );
         harness.state_mut().actions.clear();
-        // The Default lines are inside the Defaults' group, closed at first.
-        assert!(!shows(&harness, "Raw black/white point"));
-        chevron(&mut harness, "Defaults");
-        assert!(harness.state().actions.is_empty());
-        // Shift-click opens the module, of a step, the end's too, and of a Default line;
-        // Original has none.
+        // Shift-click opens the module, of a step, the end's too; Original has none.
         let shift_click = |harness: &mut Harness<'_, Scene>, name: &str| {
             item(harness, name).click_modifiers(egui::Modifiers::SHIFT);
             harness.run();
@@ -2812,36 +2826,55 @@ pub(crate) mod tests {
         shift_click(&mut harness, "Step 2: Grain");
         shift_click(&mut harness, "Step 3: Exposure");
         shift_click(&mut harness, "Original");
-        shift_click(&mut harness, "Raw black/white point");
         assert_eq!(
             harness.state().actions,
-            [
-                Action::Open("grain"),
-                Action::Open("exposure"),
-                Action::Open("rawprepare"),
-            ]
+            [Action::Open("grain"), Action::Open("exposure")]
         );
-        // A plain click on a Default line goes to Original, as darktable's click on one of
-        // its first items ends the history there, and opens nothing.
-        harness.state_mut().actions.clear();
-        item(&harness, "Raw black/white point").click();
-        harness.run();
-        assert_eq!(harness.state().actions, [Action::GoTo(None)]);
         // On a photo that takes no edit, a click goes nowhere; Shift-click still opens.
         harness.state_mut().actions.clear();
         harness.state_mut().editable = false;
         harness.run();
         item(&harness, "Step 1: Exposure").click();
         harness.run();
-        item(&harness, "Demosaic").click();
+        item(&harness, "Step 2: Grain").click();
         harness.run();
-        shift_click(&mut harness, "Demosaic");
-        assert_eq!(harness.state().actions, [Action::Open("demosaic")]);
+        shift_click(&mut harness, "Step 2: Grain");
+        assert_eq!(harness.state().actions, [Action::Open("grain")]);
     }
 
-    /// A line's hover band says it takes a click or a Shift-click: a Default line always,
-    /// its Shift-click opening its module; Original only while a click on it goes
-    /// somewhere, not at end 0 nor on a photo that takes no edit.
+    /// The default steps are inside the Defaults' group, closed at first: a click on the
+    /// group goes to its last step, as a batch's does, a click on one inside it to it, and
+    /// Shift-click opens its module.
+    #[test]
+    fn a_click_on_the_defaults_goes_to_their_last_step() {
+        let mut harness = scene(
+            Theme::default(),
+            egui::vec2(320.0, 640.0),
+            Some(with_defaults(photo_s(5), DEFAULT_STEPS + 3)),
+        );
+        harness.run();
+        let group = "Steps 1 to 9: Defaults";
+        assert!(!shows(&harness, "Step 1: Raw black/white point"));
+        item(&harness, group).click();
+        harness.run();
+        chevron(&mut harness, group);
+        item(&harness, "Step 1: Raw black/white point").click();
+        harness.run();
+        item(&harness, "Step 2: Demosaic").click_modifiers(egui::Modifiers::SHIFT);
+        harness.run();
+        assert_eq!(
+            harness.state().actions,
+            [
+                Action::GoTo(Some(StepId(0xd8))),
+                Action::GoTo(Some(StepId(0xd0))),
+                Action::Open("demosaic"),
+            ]
+        );
+    }
+
+    /// A line's hover band says it takes a click or a Shift-click: a step always, its
+    /// Shift-click opening its module; Original only while a click on it goes somewhere,
+    /// not at end 0 nor on a photo that takes no edit.
     #[test]
     fn the_hover_band_marks_a_line_that_takes_a_click_or_a_shift_click() {
         let lines = |end| lines_in(Some(&photo_s(end)), Locale::EnGb);
@@ -2850,36 +2883,32 @@ pub(crate) mod tests {
         };
         let at_0 = lines(0);
         assert!(!named(&at_0, "Original").takes(true));
-        assert!(named(&at_0, "Demosaic").takes(true));
-        assert!(named(&at_0, "Demosaic").takes(false));
+        assert!(named(&at_0, "Grain").takes(true));
+        assert!(named(&at_0, "Grain").takes(false));
         let at_3 = lines(3);
         assert!(named(&at_3, "Original").takes(true));
         assert!(!named(&at_3, "Original").takes(false));
-        assert!(named(&at_3, "Demosaic").takes(false));
+        assert!(named(&at_3, "Grain").takes(false));
     }
 
-    /// At end 0, a click on any of the Default lines or Original changes nothing: the end
-    /// is there already, the top Default line chosen.
+    /// At end 0, a click on Original changes nothing: the end is there already, Original
+    /// chosen, the default steps' group undone with the photo's steps.
     #[test]
-    fn at_end_0_a_click_below_the_steps_goes_nowhere() {
-        let mut harness = photo_scene(0);
+    fn at_end_0_a_click_on_original_goes_nowhere() {
+        let mut harness = scene(
+            Theme::default(),
+            egui::vec2(320.0, 640.0),
+            Some(with_defaults(photo_s(5), 0)),
+        );
         harness.run();
-        // The Defaults' line chosen while it is closed, the top Default line while open.
         let selected =
             |harness: &Harness<'_, Scene>, name| item(harness, name).accesskit_node().is_selected();
-        assert_eq!(selected(&harness, "Defaults"), Some(true));
-        assert_eq!(selected(&harness, "Original"), Some(false));
-        item(&harness, "Defaults").click();
+        assert_eq!(selected(&harness, "Original"), Some(true));
+        assert_eq!(selected(&harness, "Steps 1 to 9: Defaults"), Some(false));
+        item(&harness, "Original").click();
         harness.run();
-        chevron(&mut harness, "Defaults");
-        assert_eq!(selected(&harness, "Defaults"), Some(false));
-        assert_eq!(selected(&harness, "AgX"), Some(true));
-        for name in ["AgX", "Demosaic", "Original"] {
-            item(&harness, name).click();
-            harness.run();
-        }
         assert!(harness.state().actions.is_empty());
-        item(&harness, "Step 1: Exposure").click();
+        item(&harness, "Step 10: Exposure").click();
         harness.run();
         assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xa1)))]);
     }
@@ -2952,35 +2981,44 @@ pub(crate) mod tests {
         harness.key_press(egui::Key::ArrowUp);
         harness.run();
         assert!(focused(&harness, "Step 5: Exposure"));
-        // → opens the Defaults, and goes into them open; ← goes back to their line and
-        // closes them.
+        // → opens the Defaults, the default steps' group, and goes into them open; ← goes
+        // back to their line and closes them.
+        let mut harness = scene(
+            Theme::default(),
+            egui::vec2(320.0, 640.0),
+            Some(with_defaults(photo_s(5), DEFAULT_STEPS + 5)),
+        );
+        harness.run();
+        let group = "Steps 1 to 9: Defaults";
+        item(&harness, "Step 14: Exposure").focus();
+        harness.run();
         harness.key_press(egui::Key::End);
         harness.run();
         harness.key_press(egui::Key::ArrowUp);
         harness.run();
-        assert!(focused(&harness, "Defaults"));
+        assert!(focused(&harness, group));
         harness.key_press(egui::Key::ArrowRight);
         harness.run();
-        assert!(shows(&harness, "AgX"));
-        assert!(focused(&harness, "Defaults"));
+        assert!(shows(&harness, "Step 9: AgX"));
+        assert!(focused(&harness, group));
         harness.key_press(egui::Key::ArrowRight);
         harness.run();
-        assert!(focused(&harness, "AgX"));
+        assert!(focused(&harness, "Step 9: AgX"));
         harness.key_press(egui::Key::ArrowDown);
         harness.run();
-        assert!(focused(&harness, "Tone curve"));
+        assert!(focused(&harness, "Step 8: Colour calibration"));
         // Shift+Enter opens the line's module.
         harness.state_mut().actions.clear();
         harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
         harness.run();
-        assert_eq!(harness.state().actions, [Action::Open("tone_curve")]);
+        assert_eq!(harness.state().actions, [Action::Open("channelmixerrgb")]);
         harness.key_press(egui::Key::ArrowLeft);
         harness.run();
-        assert!(focused(&harness, "Defaults"));
+        assert!(focused(&harness, group));
         harness.key_press(egui::Key::ArrowLeft);
         harness.run();
-        assert!(!shows(&harness, "AgX"));
-        assert!(focused(&harness, "Defaults"));
+        assert!(!shows(&harness, "Step 9: AgX"));
+        assert!(focused(&harness, group));
     }
 
     #[test]
@@ -2988,9 +3026,9 @@ pub(crate) mod tests {
         let mut harness = photo_scene(3);
         harness.run();
         let list = harness.get_by_role_and_label(AccessRole::Tree, "History");
-        // Today's heading, the five steps, the undone mark under the two undone, the
-        // Defaults' line and Original.
-        assert_eq!(list.children().count(), 9);
+        // Today's heading, the five steps, the undone mark under the two undone, and
+        // Original.
+        assert_eq!(list.children().count(), 8);
         harness.get_by_role_and_label(AccessRole::Heading, "Today");
         let end = item(&harness, "Step 3: Exposure");
         assert_eq!(end.accesskit_node().is_selected(), Some(true));
@@ -3004,22 +3042,33 @@ pub(crate) mod tests {
         let later = item(&harness, "Step 5: Exposure");
         let said = later.accesskit_node().description().unwrap_or_default();
         assert!(said.starts_with("Not applied\n"), "{said}");
-        // The Defaults' line: a top item, level 0, expanded or not, its lines a level down.
-        let defaults = item(&harness, "Defaults, 10 modules every photo runs");
+        // The Defaults' line, the default steps' group: a top item, level 0, expanded or
+        // not, its numbers, name and how many, its default steps a level down.
+        let mut harness = scene(
+            Theme::default(),
+            egui::vec2(320.0, 640.0),
+            Some(with_defaults(photo_s(5), DEFAULT_STEPS + 3)),
+        );
+        harness.run();
+        let group = "Steps 1 to 9: Defaults";
+        let defaults = item(
+            &harness,
+            "Steps 1 to 9: Defaults, 9 modules every photo runs",
+        );
         assert_eq!(defaults.accesskit_node().level(), Some(0));
         assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(false));
         assert_eq!(
             defaults.accesskit_node().description().as_deref(),
-            Some("Default")
+            Some("Default, 21/10/2026, 17:52")
         );
-        chevron(&mut harness, "Defaults");
-        let defaults = item(&harness, "Defaults");
+        chevron(&mut harness, group);
+        let defaults = item(&harness, group);
         assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(true));
-        let default = item(&harness, "Exposure");
+        let default = item(&harness, "Step 7: Exposure");
         assert_eq!(default.accesskit_node().level(), Some(1));
         assert_eq!(
             default.accesskit_node().description().as_deref(),
-            Some("Default")
+            Some("Default, 21/10/2026, 17:52")
         );
     }
 
@@ -3261,7 +3310,7 @@ pub(crate) mod tests {
     /// Each line says what changed after its module's name, the control with a direction:
     /// a number's label and ↑ or ↓, the arrow alone where it is the module's own control,
     /// no arrow where it did not move; any other control its label; several how many;
-    /// Reset, a Default line and a Default step nothing. Screen readers hear the values
+    /// Reset and a default step nothing. Screen readers hear the values
     /// before and after in the step's name.
     #[test]
     fn a_line_says_what_changed_and_which_way() {
@@ -3366,7 +3415,8 @@ pub(crate) mod tests {
     /// language, under the last undone step.
     #[test]
     fn the_rail_and_the_undone_mark_show_where_the_edit_stands() {
-        let listed = listed_in(Some(&photo_s(3)), Locale::EnGb);
+        let n = DEFAULT_STEPS;
+        let listed = listed_in(Some(&with_defaults(photo_s(5), n + 3)), Locale::EnGb);
         let closed = HashSet::new();
         let rows = drawn(&listed, &closed);
         let rails: Vec<Rail> = (rows.iter())
@@ -3404,9 +3454,9 @@ pub(crate) mod tests {
         assert_eq!(listed.undone, 2);
         let gap = (rows.iter().position(|row| matches!(row, Drawn::Gap))).expect("the gap");
         assert_eq!(through(&rows, gap), RailLine::Solid);
-        // At end 0 the Defaults' line is the end while closed, the top Default line while
-        // open, and every step undone.
-        let at_0 = listed_in(Some(&photo_s(0)), Locale::EnGb);
+        // At end 0 every step is undone, the default steps among them, and Original is
+        // the end.
+        let at_0 = listed_in(Some(&with_defaults(photo_s(5), 0)), Locale::EnGb);
         let node_of = |open: &HashSet<GroupKey>, name: &str| {
             (drawn(&at_0, open).into_iter())
                 .find_map(|row| match row {
@@ -3415,11 +3465,11 @@ pub(crate) mod tests {
                 })
                 .expect(name)
         };
-        assert_eq!(node_of(&closed, "Defaults"), group(true, false));
+        assert_eq!(node_of(&closed, "Defaults"), group(false, true));
         let defaults = HashSet::from([GroupKey::Defaults]);
-        assert_eq!(node_of(&defaults, "Defaults"), group(false, false));
-        assert_eq!(node_of(&defaults, "AgX"), RailNode::End);
-        assert_eq!(at_0.undone, 5);
+        assert_eq!(node_of(&defaults, "AgX"), RailNode::Undone);
+        assert_eq!(node_of(&defaults, "Original"), RailNode::End);
+        assert_eq!(at_0.undone, n + 5);
         let mut harness = photo_scene(3);
         harness.run();
         // To screen readers a note, its words with no arrow or dot.
@@ -3534,10 +3584,6 @@ pub(crate) mod tests {
             through: 9,
             steps,
             end,
-            defaults: apertrust_engine::history::default_lines(
-                apertrust_modules::MODULES,
-                apertrust_operations::OPERATIONS,
-            ),
             undo: None,
             redo: None,
         }
@@ -3798,8 +3844,8 @@ pub(crate) mod tests {
         harness.run();
         chevron(&mut harness, "Steps 3 to 5: Warm film");
         let tree = harness.get_by_role_and_label(AccessRole::Tree, "History");
-        // Step 6, the batch, steps 2 and 1, the Defaults and Original.
-        assert_eq!(tree.accesskit_node().data().size_of_set(), Some(6));
+        // Step 6, the batch, steps 2 and 1, and Original.
+        assert_eq!(tree.accesskit_node().data().size_of_set(), Some(5));
         let position = |name| {
             item(&harness, name)
                 .accesskit_node()
@@ -3809,7 +3855,7 @@ pub(crate) mod tests {
         assert_eq!(position("Step 6: Exposure"), Some(0));
         assert_eq!(position("Steps 3 to 5: Warm film"), Some(1));
         assert_eq!(position("Step 2: Grain"), Some(2));
-        assert_eq!(position("Original"), Some(5));
+        assert_eq!(position("Original"), Some(4));
         // The batch's three lines, in a group of their own.
         let group = harness.get_by_role(AccessRole::Group);
         assert_eq!(group.accesskit_node().data().size_of_set(), Some(3));
@@ -3870,7 +3916,7 @@ pub(crate) mod tests {
     }
 
     /// A batch, closed and open, under today's heading and over yesterday's, and the
-    /// Defaults open at end 0, as the board draws them.
+    /// Defaults open with the end on the fourth default step, as the board draws them.
     #[test]
     fn the_groups_and_the_days_are_photographed() {
         let mut results = egui_kittest::SnapshotResults::new();
@@ -3883,9 +3929,13 @@ pub(crate) mod tests {
         harness.run();
         harness.snapshot("history-tab-group-open");
         results.extend(harness.take_snapshot_results());
-        let mut harness = styled_scene(0);
+        let mut harness = scene(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(640.0, 480.0),
+            Some(with_defaults(styled(6), 4)),
+        );
         harness.run();
-        chevron(&mut harness, "Defaults");
+        // Open of itself, the end inside it.
         harness.remove_cursor();
         harness.run();
         harness.snapshot("history-tab-defaults");

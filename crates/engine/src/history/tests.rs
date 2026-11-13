@@ -544,8 +544,8 @@ fn base_black(image: &ImageContext) -> f32 {
 }
 
 #[test]
-fn the_default_lines_are_the_modules_every_photo_runs_in_darktable_s_history_order() {
-    let lines = default_lines(apertrust_modules::MODULES, OPERATIONS);
+fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
+    let lines = default_modules(apertrust_modules::MODULES, OPERATIONS);
     // darktable's modules with no on/off button first, then those with one, each in the
     // pipe's order.
     assert_eq!(
@@ -559,20 +559,133 @@ fn the_default_lines_are_the_modules_every_photo_runs_in_darktable_s_history_ord
             "flip"
         ]
     );
-    // Then every other module every photo runs, in the pipe's order; no switched one.
+    // Then those darktable's workflow auto-applies, in the pipe's order; Tone curve, which
+    // no preset applies, has none, nor has any switched module.
     let rest = &lines[6..];
-    assert_eq!(
-        rest,
-        ["exposure", "channelmixerrgb", "tone_curve", "agx"],
-        "{lines:?}"
-    );
+    assert_eq!(rest, ["exposure", "channelmixerrgb", "agx"], "{lines:?}");
     let switched = |id: &&str| {
         apertrust_modules::MODULES
             .iter()
             .any(|m| m.definition().id == *id && m.definition().switched)
     };
     assert!(!lines.iter().any(switched), "{lines:?}");
-    let every = apertrust_modules::MODULES.iter();
-    let unswitched = every.filter(|m| !m.definition().switched).count();
-    assert_eq!(lines.len(), unswitched);
+}
+
+/// The modules every photo runs, as the default steps hold them.
+fn defaults() -> Vec<&'static str> {
+    default_modules(apertrust_modules::MODULES, OPERATIONS)
+}
+
+/// The modules and operations of `log`'s steps' entries, in order.
+fn modules_of(log: &Log) -> Vec<&str> {
+    (log.steps().iter())
+        .flat_map(|step| step.change.entries())
+        .map(|entry| match entry {
+            Entry::Module { module, .. } => module.as_str(),
+            Entry::Operation { operation, .. } => operation.as_str(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_new_photo_s_log_is_given_a_default_step_of_each_module_every_photo_runs() {
+    let defaults = defaults();
+    let mut log = Log::default();
+    log.add_defaults(&defaults, Clock::at(1, None, MachineId::UNKNOWN));
+    // Steps 1 to n, source Default, each at its module's reset state, the end after them.
+    assert_eq!(modules_of(&log), defaults);
+    assert_eq!(
+        (log.end(), log.defaults()),
+        (defaults.len(), defaults.len())
+    );
+    assert!((log.steps().iter()).all(|step| {
+        step.source == StepSource::Default
+            && step.note.is_none()
+            && step.batch.is_none()
+            && step.change.entries().iter().all(Entry::is_empty)
+    }));
+    // The edit they fold to is the photo untouched, every module applied.
+    assert_eq!(log.fold(), Edit::default());
+}
+
+/// A later build that runs one more module on every photo gives a log that has steps no
+/// step of it: the steps keep their numbers, and the module runs at its defaults.
+#[test]
+fn a_later_build_s_new_default_module_adds_no_step() {
+    let defaults = defaults();
+    let (earlier, added) = defaults.split_at(defaults.len() - 1);
+    let mut log = Log::default();
+    log.add_defaults(earlier, Clock::at(1, None, MachineId::UNKNOWN));
+    let ids: Vec<StepId> = log.steps().iter().map(|step| step.id).collect();
+    log.add_defaults(&defaults, Clock::at(2, None, MachineId::UNKNOWN));
+    let again: Vec<StepId> = log.steps().iter().map(|step| step.id).collect();
+    assert_eq!(again, ids);
+    // Applied wherever the end is, having no default step to lie before.
+    for end in 0..=log.steps().len() {
+        assert!(!log.unapplied(end).contains(added[0]), "{end}");
+    }
+    // A log of a person's steps, as an older build's version 2 file or a version 1 file
+    // holding an edit reads, is given none either.
+    let mut read = Log::default();
+    add(&mut read, 7, &Edit::default(), &brightened(0.5), &[]);
+    read.add_defaults(&defaults, Clock::at(3, None, MachineId::UNKNOWN));
+    assert_eq!((read.steps().len(), read.defaults()), (1, 0));
+}
+
+/// Below its default step, a module darktable leaves off until its workflow applies it is
+/// not applied; one darktable has on by default always is.
+#[test]
+fn the_end_within_the_default_steps_applies_the_first_k() {
+    let defaults = defaults();
+    let mut log = Log::default();
+    log.add_defaults(&defaults, Clock::at(1, None, MachineId::UNKNOWN));
+    let on = [
+        "rawprepare",
+        "demosaic",
+        "colorout",
+        "temperature",
+        "highlights",
+        "flip",
+    ];
+    for end in 0..=defaults.len() {
+        let expected: BTreeSet<String> = (defaults[end..].iter())
+            .filter(|module| !on.contains(module))
+            .map(|module| (*module).to_owned())
+            .collect();
+        assert_eq!(log.fold_to(end).unapplied, expected, "{end}");
+    }
+    let original: BTreeSet<String> = ["agx", "channelmixerrgb", "exposure"]
+        .map(str::to_owned)
+        .into();
+    assert_eq!(log.fold_to(0).unapplied, original);
+    assert!(log.fold().unapplied.is_empty());
+}
+
+/// A change made with the end within the default steps keeps those after it, moved below
+/// it, as darktable keeps an always-on module's item, so every module is applied again;
+/// the steps after the end that are not default steps are dropped.
+#[test]
+fn a_change_within_the_default_steps_keeps_the_later_ones() {
+    let mut log = Log::default();
+    log.add_defaults(
+        &["temperature", "exposure", "agx"],
+        Clock::at(1, None, MachineId::UNKNOWN),
+    );
+    add(&mut log, 10, &Edit::default(), &brightened(0.5), &[]);
+    log.set_end(1);
+    let after: Vec<StepId> = log.steps()[1..].iter().map(|step| step.id).collect();
+    let folded = log.fold();
+    assert_eq!(
+        folded.unapplied,
+        ["agx", "exposure"].map(str::to_owned).into()
+    );
+    let back = log.add(step(11, changed(&folded, &grained(&folded, 5.0))));
+    // Every step that was after the end, which Undo puts back.
+    assert_eq!(back.iter().map(|step| step.id).collect::<Vec<_>>(), after);
+    assert_eq!(
+        modules_of(&log),
+        ["temperature", "exposure", "agx", "grain"]
+    );
+    assert_eq!((log.end(), log.defaults()), (4, 3));
+    assert!(log.fold().unapplied.is_empty());
 }

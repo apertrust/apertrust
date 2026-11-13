@@ -21,7 +21,7 @@
 //! whole-pipeline test, the engine's tests of the default pipeline), so the viewport and
 //! the export never differ and no optional operation slips into a default pipeline.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use apertrust_modules::check::{self, ModuleError};
@@ -43,6 +43,11 @@ pub struct Edit {
     pub(crate) modules: BTreeMap<String, ModuleValues>,
     /// Parameters no module owns, of operations an unedited photo runs, by operation id.
     pub(crate) params: BTreeMap<String, ParamValues>,
+    /// The default modules not applied: the history's end lies before
+    /// their default step, and darktable leaves them off until its workflow applies them
+    /// (decision 78). Left out of the plan and reported off; derived from the log, never
+    /// stored, and none once the edit's values move away from the end's.
+    pub(crate) unapplied: BTreeSet<String>,
 }
 
 /// A change an edit refuses, or a binding that sets what it may not.
@@ -250,14 +255,14 @@ impl Edit {
     }
 
     /// Whether the module renders: a switched module while it is on (decision 32), every
-    /// other always.
+    /// other but while the history's end lies before its default step (decision 78).
     pub fn is_on(&self, module: &dyn Module) -> bool {
         let definition = module.definition();
-        !definition.switched
-            || self
-                .modules
-                .get(definition.id)
-                .is_some_and(ModuleValues::enabled)
+        if definition.switched {
+            (self.modules.get(definition.id)).is_some_and(ModuleValues::enabled)
+        } else {
+            !self.unapplied.contains(definition.id)
+        }
     }
 
     /// Takes a control back to its default for the photo, no longer kept. A switched
@@ -1204,8 +1209,16 @@ pub fn instances<'a>(
             Err(error) => failed.push((module.definition().id, error)),
         }
     }
+    // A module not applied leaves out each operation it owns a parameter of (decision 78).
+    let unapplied: BTreeSet<&str> = (modules.iter())
+        .filter(|module| edit.unapplied.contains(module.definition().id))
+        .flat_map(|module| module.owns().iter().map(|owned| owned.operation))
+        .collect();
     let instances = operations.iter().filter_map(|&operation| {
         let manifest = operation.manifest();
+        if unapplied.contains(manifest.id) {
+            return None;
+        }
         let set = bound.remove(manifest.id);
         if !manifest.default_enabled && set.is_none() {
             return None;

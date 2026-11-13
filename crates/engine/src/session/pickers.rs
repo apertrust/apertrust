@@ -710,8 +710,10 @@ impl Engine {
                 .ok_or(SessionError::UnknownPicker)?;
             check_tools(found.definition().pickers, &tools)?;
             // Its module on, as darktable turns it on with its picker: its operation must
-            // then be in the plan.
+            // then be in the plan. With the history's end among the default steps it is the
+            // first change, which applies the modules not applied (decision 78).
             let mut edit = open.edit.clone();
+            edit.unapplied.clear();
             edit.turn_on(found);
             let bound = edit::instances(&edit, self.operations, &self.modules, &open.image);
             let planned = bound
@@ -745,6 +747,7 @@ impl Engine {
             // A slider's gesture under way ends as a step of its own source first.
             self.end_gesture();
             let changed = self.change(|edit, _, _, _| {
+                edit.unapplied.clear();
                 edit.turn_on(found);
                 Ok(())
             });
@@ -758,6 +761,7 @@ impl Engine {
             if changed {
                 if let Some(open) = &mut self.open {
                     open.gesture = None;
+                    open.history.applied();
                 }
                 (effect.values, effect.render, effect.save) = (true, true, true);
             }
