@@ -2235,3 +2235,22 @@ fn a_file_another_program_keeps_changing_as_the_photo_closes_is_told() {
     remove(&path);
     remove(&other);
 }
+
+/// Another program dropped a step the base applied and added its own, and the session made
+/// a change with no move of the end: the step is the other side's change, so nothing is
+/// told.
+#[test]
+fn a_step_another_program_dropped_under_a_change_is_no_move_not_kept() {
+    let path = scratch("history-dropped-applied");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    // The other program's: the first step, then its own, the second dropped.
+    rewrite_elsewhere(&path, &[0], 1);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(history(&taken).steps.len(), 3);
+    remove(&path);
+}

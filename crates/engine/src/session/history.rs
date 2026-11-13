@@ -101,6 +101,8 @@ pub(super) struct Base {
     pub(super) clocks: Vec<Clock>,
     /// The last step applied, `None` at Original.
     pub(super) end: Option<StepId>,
+    /// The steps applied, up to the end.
+    pub(super) applied: HashSet<(StepId, Clock)>,
 }
 
 impl Base {
@@ -112,6 +114,9 @@ impl Base {
                 .collect(),
             clocks: clocks.to_vec(),
             end: log.steps()[..log.end()].last().map(|step| step.id),
+            applied: (log.steps()[..log.end()].iter())
+                .map(|step| (step.id, step.clock))
+                .collect(),
         }
     }
 
@@ -284,11 +289,17 @@ impl PhotoHistory {
                 .collect();
             let again =
                 (base.steps.iter()).any(|key| applied.contains(key) && !held.contains(&key.0));
-            // And a step of the base this log applies, as a Redo made before the step laid,
-            // that the joined log does not.
+            // And a step of the base this log applies that the base did not, as a Redo made
+            // before the step laid, which the joined log does not apply: a step the base
+            // applied already that the other side dropped is its change, no move of this
+            // session's.
             let lost = (self.log.steps()[..self.log.end()].iter())
                 .map(|step| (step.id, step.clock))
-                .any(|key| base.steps.contains(&key) && !applied.contains(&key));
+                .any(|key| {
+                    base.steps.contains(&key)
+                        && !base.applied.contains(&key)
+                        && !applied.contains(&key)
+                });
             kept = !again && !lost;
         } else if ours != base.end {
             // Where the base's end is in the newer log: the other side only added after it

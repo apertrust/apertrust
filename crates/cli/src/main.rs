@@ -912,21 +912,28 @@ fn edit(
 /// set the time back among them.
 type Stamp = Option<(u64, Option<std::time::SystemTime>, [u8; 32])>;
 
-fn stamp(path: &Path) -> Stamp {
-    let metadata = std::fs::metadata(path).ok()?;
-    let bytes = std::fs::read(path).ok()?;
+fn stamp(path: &Path) -> Result<Stamp> {
+    // No file is a stamp of its own; one that is there but cannot be read stops `edit`,
+    // which never writes over what it could not read.
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
+    };
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let hash = apertrust_library::index::hash(&bytes);
-    Some((metadata.len(), metadata.modified().ok(), hash))
+    Ok(Some((metadata.len(), metadata.modified().ok(), hash)))
 }
 
 /// Runs `write` where the file at `path` still has the stamp `read`, as it was read: whether
-/// it wrote, `false` where another program changed the file meanwhile.
+/// it wrote, `false` where another program changed the file meanwhile, and an error, writing
+/// nothing, where a file is there that cannot be read.
 fn write_if_unchanged(
     path: &Path,
     read: Stamp,
     write: impl FnOnce() -> Result<()>,
 ) -> Result<bool> {
-    if stamp(path) != read {
+    if stamp(path)? != read {
         return Ok(false);
     }
     write().map(|()| true)
@@ -941,7 +948,7 @@ fn edit_once(
     modules: &[&dyn Module],
 ) -> Result<Option<Edit>> {
     let path = sidecar::path_for(photo);
-    let read_stamp = stamp(&path);
+    let read_stamp = stamp(&path)?;
     let saved = saved(photo, operations, modules)?;
     if let Some(view_only) = saved.as_ref().and_then(sidecar::Loaded::view_only) {
         return Err(view_only).with_context(|| format!("not changing {}", path.display()));
@@ -2873,17 +2880,17 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("IMG.ARW.apxmp");
         std::fs::write(&path, "read").unwrap();
-        let read = stamp(&path);
+        let read = stamp(&path).unwrap();
         std::fs::write(&path, "another program's").unwrap();
         let written = write_if_unchanged(&path, read, || unreachable!("no write"));
         assert!(!written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "another program's");
-        let read = stamp(&path);
+        let read = stamp(&path).unwrap();
         let written = write_if_unchanged(&path, read, || Ok(std::fs::write(&path, "ours")?));
         assert!(written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "ours");
         // Another program's bytes of the same size, the modified time set back as it was.
-        let read = stamp(&path);
+        let read = stamp(&path).unwrap();
         let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
         std::fs::write(&path, "them").unwrap();
         let file = std::fs::File::options().write(true).open(&path).unwrap();
@@ -2892,6 +2899,15 @@ mod tests {
         let written = write_if_unchanged(&path, read, || unreachable!("no write"));
         assert!(!written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "them");
+        // No file as it was read, then one that is there but cannot be read, here a folder
+        // in its place: refused, nothing written over it.
+        std::fs::remove_file(&path).unwrap();
+        let read = stamp(&path).unwrap();
+        assert_eq!(read, None);
+        std::fs::create_dir(&path).unwrap();
+        let written = write_if_unchanged(&path, read, || unreachable!("no write"));
+        assert!(written.is_err());
+        assert!(path.is_dir());
         std::fs::remove_dir_all(&directory).unwrap();
     }
 
