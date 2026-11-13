@@ -1,5 +1,6 @@
 // Apertrust, a free, non-destructive, cross-platform raw photo editor
 // Copyright (C) 2026  Apertrust developers
+// Copyright (C) 2009-2026  darktable developers (ported from src/iop/exposure.c)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

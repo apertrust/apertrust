@@ -3532,12 +3532,7 @@ impl App {
         // A module's pick is a change on the edit, which the session answers with a
         // write, or the edit reported held where it wrote nothing; the Colour picker's
         // writes nothing.
-        let picker = match &command {
-            PickerCommand::On { picker, .. } => Some(*picker),
-            _ => self.mirror.pickers.active(),
-        };
-        let module = matches!(picker, Some(PickerRef::Module { .. }));
-        let completes = module && pickers::completes(&command);
+        let completes = pickers::completes_edit(&command, self.mirror.pickers.active());
         let number = self.session.send(Command::Picker(command));
         let mirror = &mut self.mirror;
         if completes {
@@ -3556,8 +3551,9 @@ impl App {
     /// session to report a write that includes it, one that completes a change at once.
     fn send_edit(&mut self, command: Command) -> u64 {
         let completes = completes(&command);
-        self.mirror.picked.sent(&command);
+        let clears = pickers::Picked::clears(&command);
         let number = self.session.send(command);
+        self.mirror.picked.sent(number, clears);
         self.mirror.saving.sent(number, completes, Instant::now());
         number
     }

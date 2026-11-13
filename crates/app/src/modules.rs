@@ -1097,7 +1097,9 @@ fn tool_setting_row(
     let (words, module) = (page.words, page.module.definition().id);
     let [label, full, promise] = messages::setting(module, setting.id).map(|id| words.text(&id));
     let kept = page.pickers.tools.get(module, setting.id);
-    let live = kept.is_some();
+    // One `--conf` gives keeps its value for the run, its row disabled as the Settings
+    // dialog draws an overridden row (decision 43).
+    let live = kept.is_some() && !page.pickers.tools.overridden(module, setting.id);
     let value = kept.cloned().unwrap_or_else(|| setting.default());
     let mut set = |value: ControlValue, done: bool| {
         changes.push(Change::Tool {
@@ -5846,6 +5848,11 @@ mod tests {
 
     /// The section in the theme `which`, on its panel's colour.
     fn mapping_in(picked: Picked, which: Builtin) -> Harness<'static, Mapping> {
+        mapping_with(picked, which, Tools::default())
+    }
+
+    /// The section in `which` with these tool settings.
+    fn mapping_with(picked: Picked, which: Builtin, tools: Tools) -> Harness<'static, Mapping> {
         let mut harness = Harness::builder()
             .with_size(egui::vec2(400.0, 600.0))
             .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
@@ -5891,7 +5898,7 @@ mod tests {
                     }
                 },
                 Mapping {
-                    tools: Tools::default(),
+                    tools,
                     picked,
                     changes: Vec::new(),
                 },
@@ -5989,6 +5996,21 @@ mod tests {
         assert_eq!(lightness.accesskit_node().value().as_deref(), Some("50.0%"));
     }
 
+    /// A tool setting `--conf` gives is drawn disabled, keeping its value for the run; the
+    /// others stay live.
+    #[test]
+    fn a_tool_setting_conf_gives_is_drawn_disabled() {
+        let given = vec!["tools.exposure.area_mode=measure".to_owned()];
+        let overrides = crate::settings::overrides(&given).expect("read");
+        let folder = crate::settings::testing::Folder::new("mapping-conf");
+        let (_, settings) = crate::settings::Keeper::open_with(folder.storage(), &overrides);
+        let harness = mapping_with(Picked::default(), Builtin::Dark, settings.tools);
+        let mode = harness.get_by_label("Area mode");
+        assert!(mode.accesskit_node().is_disabled());
+        let lightness = harness.get_by_role_and_label(Role::Slider, "Target lightness");
+        assert!(!lightness.accesskit_node().is_disabled());
+    }
+
     /// The input patch goes as darktable's `gui_update` zeroes it (`exposure.c:707-710`):
     /// at undo, redo, a move through history and the edit's reset, and at the module's own
     /// reset, never another's, nor an edit of a control.
@@ -6024,9 +6046,77 @@ mod tests {
             (set, true),
         ] {
             let mut picked = picked();
-            picked.sent(&command);
+            picked.sent(5, Picked::clears(&command));
             assert_eq!(picked.patch("exposure").is_some(), kept, "{command:?}");
         }
+    }
+
+    /// The patch an undo took away stays away: the readings after it carry the same pick
+    /// again, and a pick measured before the undo, still on its way as it was sent, shows
+    /// none; the next pick measured after it does.
+    #[test]
+    fn a_patch_taken_away_is_not_brought_back_by_a_pick_from_before() {
+        use apertrust_engine::session::Command;
+        let mut picked = Picked::default();
+        let first = exposure_reading();
+        picked.apply(Some(&first));
+        picked.sent(5, Picked::clears(&Command::Undo));
+        // The same pick, carried by every reading after it.
+        let again = apertrust_engine::session::PickerReading {
+            through: 6,
+            ..first.clone()
+        };
+        picked.apply(Some(&again));
+        assert!(picked.patch("exposure").is_none());
+        // Another pick, measured before the undo.
+        let picked_as = |through: u64, lightness: f32| {
+            let mut reading = first.clone();
+            reading.through = through;
+            let module = reading.module.as_mut().unwrap();
+            let shown = module.picked.as_mut().unwrap();
+            shown.patch.as_mut().unwrap().lch[0] = lightness;
+            reading
+        };
+        picked.apply(Some(&picked_as(4, 30.0)));
+        assert!(picked.patch("exposure").is_none());
+        // One measured after it.
+        picked.apply(Some(&picked_as(7, 60.0)));
+        assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(60.0));
+        // A module's reset takes only its own.
+        picked.sent(
+            8,
+            Picked::clears(&Command::ResetModule {
+                module: "agx".to_owned(),
+            }),
+        );
+        picked.apply(Some(&picked_as(7, 61.0)));
+        assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(61.0));
+    }
+
+    /// `Tools` completes a change on the edit, whose write Quit waits for, whatever picker
+    /// is on or none; a module picker's completing commands do, the Colour picker's never.
+    #[test]
+    fn tools_and_a_module_pick_complete_a_change_on_the_edit() {
+        use crate::pickers::completes_edit;
+        use apertrust_engine::session::PickerCommand;
+        let tools = PickerCommand::Tools {
+            module: "exposure",
+            tools: Vec::new(),
+        };
+        let exposure = PickerRef::Module {
+            module: "exposure",
+            picker: "exposure",
+        };
+        for active in [None, Some(exposure), Some(PickerRef::ColourPicker)] {
+            assert!(completes_edit(&tools, active), "{active:?}");
+        }
+        assert!(completes_edit(&PickerCommand::Reset, Some(exposure)));
+        assert!(!completes_edit(
+            &PickerCommand::Reset,
+            Some(PickerRef::ColourPicker)
+        ));
+        assert!(!completes_edit(&PickerCommand::Reset, None));
+        assert!(!completes_edit(&PickerCommand::Off, Some(exposure)));
     }
 
     /// The area exposure mapping after a pick, in `which`: Area mode, the input's grey

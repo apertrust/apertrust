@@ -204,9 +204,13 @@ impl Mirror {
 #[derive(Debug, Default)]
 pub struct Picked {
     patches: BTreeMap<&'static str, Patch>,
-    /// The latest pick shown of the module whose picker is on, so the tool settings it
-    /// measured are taken once: every reading after it carries it again.
+    /// The latest pick shown of the module whose picker is on: every reading after it
+    /// carries it again, so its patch and the tool settings it measured are taken once.
     seen: Option<(&'static str, Shown)>,
+    /// The last command that took every module's patch away, by its number.
+    cleared: u64,
+    /// The last command that took one module's patch away, by its number, by module.
+    cleared_module: BTreeMap<String, u64>,
 }
 
 impl Picked {
@@ -214,11 +218,16 @@ impl Picked {
         Picked {
             patches: BTreeMap::new(),
             seen: None,
+            cleared: 0,
+            cleared_module: BTreeMap::new(),
         }
     }
 
     /// The session's `Event::Picker`: the module's patch kept, and the module with the tool
-    /// settings its pick measured where they come for the first time.
+    /// settings its pick measured, where the pick comes for the first time. A pick measured
+    /// before a command that took the module's patch away, still on its way as that command
+    /// was sent, shows no patch, as darktable's `gui_update` leaves it zeroed until the next
+    /// pick.
     pub fn apply(
         &mut self,
         reading: Option<&PickerReading>,
@@ -232,14 +241,18 @@ impl Picked {
             return None;
         };
         let shown = reading.module.as_ref()?.picked.as_ref()?;
-        if let Some(patch) = shown.patch {
-            self.patches.insert(module, patch);
-        }
         let seen = (module, shown.clone());
         if self.seen.as_ref() == Some(&seen) {
             return None;
         }
         self.seen = Some(seen);
+        let cleared = (self.cleared_module.get(module).copied())
+            .map_or(self.cleared, |n| n.max(self.cleared));
+        if let Some(patch) = shown.patch
+            && reading.through >= cleared
+        {
+            self.patches.insert(module, patch);
+        }
         (!shown.tools.is_empty()).then(|| (module, shown.tools.clone()))
     }
 
@@ -253,19 +266,32 @@ impl Picked {
         *self = Picked::new();
     }
 
-    /// `command` is sent: one that changes a module's values from outside a pick takes its
-    /// input patch away, as darktable's `gui_update` zeroes `spot_RGB` and so the L shown
-    /// with it (`exposure.c:707-710`): undo, redo and a move through history, every
-    /// module's; the edit's reset, every module's; a module's reset, its own.
-    pub fn sent(&mut self, command: &Command) {
+    /// The patches `command` takes away as it changes modules' values from outside a pick,
+    /// as darktable's `gui_update` zeroes `spot_RGB` and so the L shown with it
+    /// (`exposure.c:707-710`): `Some(None)` every module's, for undo, redo, a move through
+    /// history and the edit's reset; `Some(Some(module))` one module's, for its reset;
+    /// `None` for any other command.
+    pub fn clears(command: &Command) -> Option<Option<String>> {
         match command {
-            Command::Undo | Command::Redo | Command::GoTo { .. } | Command::Reset => {
+            Command::Undo | Command::Redo | Command::GoTo { .. } | Command::Reset => Some(None),
+            Command::ResetModule { module } => Some(Some(module.clone())),
+            _ => None,
+        }
+    }
+
+    /// The command numbered `number` was sent, taking away the patches `clears` says
+    /// ([`Picked::clears`]): a pick measured before it shows none ([`Picked::apply`]).
+    pub fn sent(&mut self, number: u64, clears: Option<Option<String>>) {
+        match clears {
+            Some(None) => {
                 self.patches.clear();
+                self.cleared = number;
             }
-            Command::ResetModule { module } => {
+            Some(Some(module)) => {
                 self.patches.remove(module.as_str());
+                self.cleared_module.insert(module, number);
             }
-            _ => {}
+            None => {}
         }
     }
 }
@@ -414,6 +440,19 @@ pub fn completes(command: &PickerCommand) -> bool {
             | PickerCommand::Point { done: true, .. }
             | PickerCommand::Area { done: true, .. }
     )
+}
+
+/// Whether `command`, sent while `active` is the picker on, completes a change on the edit,
+/// which the session answers with a write or the edit reported held: a module picker's
+/// command that [`completes`] one, and `Tools`, which applies its module's latest reading
+/// again whether its picker is on or not; never the Colour picker's, which writes nothing.
+pub fn completes_edit(command: &PickerCommand, active: Option<PickerRef>) -> bool {
+    let picker = match command {
+        PickerCommand::Tools { .. } => return true,
+        PickerCommand::On { picker, .. } => Some(*picker),
+        _ => active,
+    };
+    matches!(picker, Some(PickerRef::Module { .. })) && completes(command)
 }
 
 /// Whether a picker of `kind` turned on with `area` measures an area: one kind, that
