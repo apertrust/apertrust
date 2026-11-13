@@ -542,13 +542,19 @@ fn a_clear_that_cannot_remove_some_fails_and_still_tells_the_sizes() {
     let session = Session::start("clear-failed", 10, Limit::Bytes(20 * ENTRY));
     session.settle();
     let thumbnails_folder = session.cache.kind_folder(THUMBNAILS);
-    let subfolder = fs::read_dir(&thumbnails_folder)
+    // A subfolder holding entries, whichever the listing, in the file system's order,
+    // gives first: the stale temporary's, which the start's tidy emptied, holds none.
+    let (subfolder, kept) = fs::read_dir(&thumbnails_folder)
         .unwrap()
         .flatten()
         .map(|item| item.path())
-        .find(|path| !path.file_name().unwrap().to_string_lossy().starts_with('.'))
-        .expect("a subfolder");
-    let kept = fs::read_dir(&subfolder).unwrap().count() as u64;
+        .filter(|path| !path.file_name().unwrap().to_string_lossy().starts_with('.'))
+        .map(|path| {
+            let kept = fs::read_dir(&path).unwrap().count() as u64;
+            (path, kept)
+        })
+        .find(|&(_, kept)| kept > 0)
+        .expect("a subfolder with entries");
     let mode = |mode| fs::set_permissions(&subfolder, fs::Permissions::from_mode(mode)).unwrap();
     mode(0o555);
     let probe = subfolder.join("probe");

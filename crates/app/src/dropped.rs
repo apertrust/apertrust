@@ -217,12 +217,15 @@ impl Drops {
         self.looking.is_some()
     }
 
-    /// Waits until the drop being looked at has been, so the next frame takes it.
+    /// Waits until the drop being looked at has been, and its thread has asked for its
+    /// frame, so the next frame takes it and no ask comes in the middle of a test's run.
     #[cfg(test)]
     pub fn wait(&mut self) {
         if let Some(looking) = self.looking.take() {
             let (answer, again) = mpsc::channel();
             let _ = answer.send(looking.recv().ok().flatten());
+            // The thread's end, its sender dropped, comes after its ask.
+            let _ = looking.recv();
             self.looking = Some(again);
         }
     }
