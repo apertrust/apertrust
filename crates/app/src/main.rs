@@ -3973,7 +3973,6 @@ impl App {
         ui: &mut egui::Ui,
         panel_resized: bool,
     ) -> (egui::Rect, Option<ActionId>) {
-        let t = theme(ui.ctx());
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
         // The photo's slot, everything under the central bar, first. The photo and its
         // caption are one block in it, inside the margin (`PhotoFrame`, `docs/gui.md`, The
@@ -4145,18 +4144,7 @@ impl App {
         .into_iter()
         .flatten()
         .collect();
-        if !said.is_empty() {
-            let painter = ui.painter_at(slot);
-            let galley = painter.layout(
-                said.join("\n\n"),
-                egui::FontId::proportional(t.text.body),
-                t.colors.text,
-                (slot.width() - 2.0 * t.spacing.xl).max(t.spacing.xl),
-            );
-            let text = egui::Rect::from_center_size(slot.center(), galley.size());
-            painter.rect_filled(text.expand(t.spacing.m), t.shape.radius, t.colors.raised);
-            painter.galley(text.min, galley, t.colors.text);
-        }
+        central_words(ui, slot, &said);
         ui.allocate_rect(slot, egui::Sense::hover());
 
         // With no photo open the folder says what to do: where to start, what is being
@@ -6020,12 +6008,43 @@ fn focusable(ctx: &egui::Context) -> Vec<(egui::Id, egui::Rect)> {
     })
 }
 
+/// What the central panel says over the photo, `said`, each apart: on a raised plate at its
+/// centre, and to screen readers as a polite status, which they hear as it changes, as a
+/// failed save's words or another program's change to the history.
+fn central_words(ui: &mut egui::Ui, slot: egui::Rect, said: &[&str]) {
+    if said.is_empty() {
+        return;
+    }
+    let t = theme(ui.ctx());
+    let words = said.join("\n\n");
+    let painter = ui.painter_at(slot);
+    let galley = painter.layout(
+        words.clone(),
+        egui::FontId::proportional(t.text.body),
+        t.colors.text,
+        (slot.width() - 2.0 * t.spacing.xl).max(t.spacing.xl),
+    );
+    let text = egui::Rect::from_center_size(slot.center(), galley.size());
+    painter.rect_filled(text.expand(t.spacing.m), t.shape.radius, t.colors.raised);
+    painter.galley(text.min, galley, t.colors.text);
+    let status = ui.interact(
+        text,
+        ui.scope_id().with("central words"),
+        egui::Sense::hover(),
+    );
+    status.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Status, true, &words));
+    (ui.ctx()).accesskit_node_builder(status.id, |node| {
+        node.set_live(egui::accesskit::Live::Polite);
+    });
+}
+
 /// Why the session could not write an edit over another program's file
 /// (`SessionError::NotSaved`), as `edit-not-saved` and the save state say it: that file now
 /// opens for viewing only, or it cannot be read.
 fn not_saved_words(words: &Translator, error: &SessionError) -> String {
     match error {
         SessionError::ViewOnly(_) => words.text("edit-not-saved-view-only"),
+        SessionError::StillChanging => words.text("edit-not-saved-still-changing"),
         _ => words.text("edit-not-saved-unreadable"),
     }
 }
@@ -6242,6 +6261,27 @@ mod tests {
             not_saved_words(&words, &SessionError::NotLive),
             "another program changed its file, and this Apertrust can’t read it"
         );
+        assert_eq!(
+            not_saved_words(&words, &SessionError::StillChanging),
+            "another program kept changing its file as the photo closed"
+        );
+    }
+
+    /// What the central panel says over the photo, as another program's change to the
+    /// history, is a status screen readers hear, its words the panel's.
+    #[test]
+    fn the_central_panel_s_words_are_a_status_screen_readers_hear() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
+        let said = "Another program changed the history of IMG.ARW";
+        let harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 300.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(|ui| {
+                let slot = ui.max_rect();
+                central_words(ui, slot, &[said]);
+            });
+        harness.get_by_role_and_label(egui::accesskit::Role::Status, said);
     }
 
     /// A section's changes of several commands, the tone equalizer's release of its bands and

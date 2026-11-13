@@ -177,6 +177,15 @@ pub enum Problem {
     /// build does not know, or any field in a copy or a step that it does not write.
     #[error("{place} has a field {field} this build does not know")]
     UnknownField { place: String, field: String },
+    /// A step whose id another step of its copy has too: the end, and the steps after it,
+    /// could not be told apart.
+    #[error("copy {copy} holds step {step} more than once")]
+    DuplicateStep { copy: String, step: String },
+    /// A step whose clock is past its machine's clock in its copy's vector, or of a machine
+    /// the vector lacks: the vector would say the file holds nothing past a clock that one
+    /// of its steps is past, and a save could be taken for holding all the file does.
+    #[error("the clock of step {step} of copy {copy} is past its copy's clock vector")]
+    ClockPastVector { copy: String, step: String },
 }
 
 /// Whether `text` is an id or a batch as Apertrust writes one: 16 lowercase hex digits.
@@ -496,13 +505,18 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
     let known = ["id", "number", "name", "end", "clocks", "history"];
     unknown_fields(fields, &known, || format!("copy {id}"), problems);
     let mut clocks = Vec::new();
+    // Whether every clock of the vector reads, so the steps' clocks can be held to it.
+    let mut whole = true;
     for item in items("clocks") {
         match read_clock(item.fields().unwrap_or_default()) {
             Ok(clock) => clocks.push(clock),
-            Err(error) => problems.push(Problem::VectorClock {
-                copy: id.clone(),
-                error,
-            }),
+            Err(error) => {
+                whole = false;
+                problems.push(Problem::VectorClock {
+                    copy: id.clone(),
+                    error,
+                });
+            }
         }
     }
     let history = items("history")
@@ -522,6 +536,24 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
             copy: copy.id.clone(),
             end: copy.end.clone(),
         });
+    }
+    let mut seen = std::collections::HashSet::new();
+    for step in &copy.history {
+        if !seen.insert(step.id.as_str()) {
+            problems.push(Problem::DuplicateStep {
+                copy: copy.id.clone(),
+                step: step.id.clone(),
+            });
+        }
+        let covered = |clock: &Clock| {
+            (copy.clocks.iter()).any(|kept| kept.machine == clock.machine && kept >= clock)
+        };
+        if whole && step.clock.as_ref().is_some_and(|clock| !covered(clock)) {
+            problems.push(Problem::ClockPastVector {
+                copy: copy.id.clone(),
+                step: step.id.clone(),
+            });
+        }
     }
     copy
 }
@@ -654,6 +686,15 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
         batch,
         entries: own_node(fields, "entries")
             .map(|node| {
+                // An `rdf:Seq` alone, as written: anything else, as text or a struct, reads as
+                // no entry, which a save would drop.
+                let seq = matches!(node.value, Value::Array(ArrayKind::Seq, _));
+                if !seq || !node.qualifiers.is_empty() {
+                    problems.push(Problem::UnknownField {
+                        place: place.clone(),
+                        field: "apertrust:entries".to_owned(),
+                    });
+                }
                 entry_problems(node, &place, problems);
                 read_entries(node)
             })

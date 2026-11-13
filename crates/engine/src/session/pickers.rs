@@ -1418,6 +1418,9 @@ impl Engine {
                 self.applied,
             )));
         }
+        // The step the drag's picks made, as it settled, after the values, as a batch sends
+        // it.
+        events.extend(self.history_event());
         if changed {
             match self.render(started, events) {
                 Ok(Some(frame)) => events.push(Event::Frame(frame)),

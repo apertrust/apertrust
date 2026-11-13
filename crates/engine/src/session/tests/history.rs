@@ -1541,6 +1541,15 @@ fn every_problem_opens_the_photo_for_viewing_only() {
         ("batch", fields(r#"apertrust:batch="0f1e""#)),
         ("source", set_after(&id, "apertrust:source", "robot")),
         ("unknown field", fields(r#"apertrust:rating="2""#)),
+        ("duplicate step", {
+            // The first step's id the second's, the end's, so the end still names a step.
+            let second = format!(r#"apertrust:id="{}""#, saved(&path).log.steps()[1].id);
+            xml.replacen(&id, &second, 1)
+        }),
+        (
+            "clock past vector",
+            set_after("<rdf:Bag>", "apertrust:when", "2020-01-01T00:00:00.000Z"),
+        ),
         (
             "end",
             set_after("<apertrust:copies>", "apertrust:end", "00000000000000ff"),
@@ -2099,4 +2108,137 @@ fn an_undo_both_sides_made_is_no_move_not_kept() {
     assert!(failures(&taken).is_empty(), "{taken:?}");
     assert_eq!(brightness(&taken), ControlValue::Number(0.5));
     remove(&path);
+}
+
+/// A file holding nothing newer of the first copy's history but another program's change
+/// to another virtual copy: written over with that copy kept as the other program left it.
+#[test]
+fn another_program_s_change_to_another_copy_is_kept() {
+    let path = scratch("history-other-copy");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let mut file = sidecar::Edits::parse(&std::fs::read_to_string(&sidecar).unwrap(), 0).unwrap();
+    let mut other = file.copies[0].clone();
+    other.id = "7c0e9a14".to_owned();
+    other.number = "1".to_owned();
+    other.name = "Warm".to_owned();
+    file.copies.push(other.clone());
+    std::fs::write(&sidecar, file.to_xml()).unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    assert!(driven.engine.newer_file(false).is_empty());
+    driven.writes();
+    let written = sidecar::Edits::parse(&std::fs::read_to_string(&sidecar).unwrap(), 0).unwrap();
+    assert_eq!(written.copies.len(), 2);
+    assert_eq!(written.copies[1], other);
+    assert_eq!(
+        saved(&path).edit.modules["sample"].get("grain"),
+        Some(&ControlValue::Number(30.0))
+    );
+    remove(&path);
+}
+
+/// A Redo not yet saved of a step another program dropped, then a change laid on its file:
+/// the redone step applies nowhere in the joined log, so the person is told.
+#[test]
+fn a_redo_of_a_step_another_program_dropped_is_told() {
+    let path = scratch("history-redo-dropped");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let first = saved(&path).log.steps()[0].id;
+    driven.run([Command::GoTo { step: Some(first) }]);
+    driven.writes();
+    // The other program's: the first step, then its own, the second dropped.
+    rewrite_elsewhere(&path, &[0], 1);
+    driven.run([Command::Redo]);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    remove(&path);
+}
+
+/// Steps laid on a newer file get a clock of their own in the copy's vector, later than
+/// every clock the file and the steps had, so another program of this machine, whose base
+/// held the file before, finds the written file newer, never written over by it.
+#[test]
+fn steps_laid_on_a_newer_file_advance_the_clock_vector() {
+    let path = scratch("history-laid-clock");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    let read = saved(&path);
+    let changed = driven.run([set("size", ControlValue::Choice(2), true)]);
+    let laid = history(&changed).steps.last().unwrap().clock;
+    assert!(driven.writes().is_empty());
+    driven.engine.newer_file(false);
+    driven.writes();
+    let written = saved(&path);
+    let ours = (written.clocks().iter())
+        .find(|clock| clock.machine == laid.machine)
+        .copied()
+        .unwrap();
+    assert!(ours > laid, "{ours:?} after {laid:?}");
+    assert!(
+        read.clocks()
+            .iter()
+            .all(|theirs| ours > *theirs || theirs.machine != ours.machine)
+    );
+    remove(&path);
+}
+
+/// Another program that keeps changing the sidecar while the photo closes: each write the
+/// close makes finds it changed again, and after a few rounds the close tells it.
+#[test]
+fn a_file_another_program_keeps_changing_as_the_photo_closes_is_told() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let path = scratch("history-still-changing");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    // Two of the other program's files, of different sizes, written in turn.
+    add_elsewhere(&path, 40.0);
+    let one = std::fs::read_to_string(&sidecar).unwrap();
+    add_elsewhere(&path, 60.0);
+    let two = std::fs::read_to_string(&sidecar).unwrap();
+    // A drag never released, which the close makes a step and writes.
+    driven.run([set("grain", ControlValue::Number(30.0), false)]);
+    let stop = Arc::new(AtomicBool::new(false));
+    let writer = {
+        let (stop, sidecar) = (Arc::clone(&stop), sidecar.clone());
+        std::thread::spawn(move || {
+            for turn in 0.. {
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                // Whole, a temporary renamed into place, as fast as it can: never half a file.
+                let xml = if turn % 2 == 0 { &one } else { &two };
+                let temporary = sidecar.with_extension("other");
+                std::fs::write(&temporary, xml).unwrap();
+                std::fs::rename(&temporary, &sidecar).unwrap();
+            }
+        })
+    };
+    let other = scratch("history-still-changing-other");
+    let events = driven.run([Command::Open(other.clone())]);
+    stop.store(true, Ordering::Relaxed);
+    writer.join().unwrap();
+    assert!(
+        (failures(&events).iter()).any(|failure| matches!(failure, SessionError::NotSaved { error, .. } if matches!(**error, SessionError::StillChanging))),
+        "{events:?}"
+    );
+    driven.settle();
+    remove(&path);
+    remove(&other);
 }

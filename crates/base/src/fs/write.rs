@@ -111,9 +111,9 @@ pub fn write(path: &Path, bytes: &[u8]) -> io::Result<Written> {
     write_metadata(path, bytes).map(|(written, _)| written)
 }
 
-/// [`write`], with the metadata of the file it wrote, read from the file itself once it
-/// is renamed into place, so another program's file at `path` after it is never taken for
-/// it; `None` where the file held the bytes already ([`Written::Unchanged`]).
+/// [`write`](fn@write), with the metadata of the file it wrote, read from the file itself
+/// once it is renamed into place, so another program's file at `path` after it is never
+/// taken for it; `None` where the file held the bytes already ([`Written::Unchanged`]).
 pub fn write_metadata(path: &Path, bytes: &[u8]) -> io::Result<(Written, Option<fs::Metadata>)> {
     let (written, file) = write_with(
         path,

@@ -1673,6 +1673,8 @@ pub(crate) mod tests {
             Problem::Source { .. } => "source",
             Problem::End { .. } => "end",
             Problem::UnknownField { .. } => "unknown field",
+            Problem::DuplicateStep { .. } => "duplicate step",
+            Problem::ClockPastVector { .. } => "clock past vector",
         }
     }
 
@@ -1743,6 +1745,20 @@ pub(crate) mod tests {
                     r#"apertrust:id="00000000000000a1" apertrust:rating="2""#,
                 ),
             ),
+            (
+                "duplicate step",
+                replaced(
+                    r#"apertrust:id="00000000000000a2""#,
+                    r#"apertrust:id="00000000000000a1""#,
+                ),
+            ),
+            (
+                "clock past vector",
+                replaced(
+                    r#"apertrust:when="2026-03-14T14:02:20.120Z""#,
+                    r#"apertrust:when="2026-03-14T14:00:00.000Z""#,
+                ),
+            ),
         ]
     }
 
@@ -1751,7 +1767,7 @@ pub(crate) mod tests {
     #[test]
     fn every_problem_opens_the_edit_for_viewing_only() {
         let cases = damaged();
-        assert_eq!(cases.len(), 11, "one case of each kind of problem");
+        assert_eq!(cases.len(), 13, "one case of each kind of problem");
         for (name, xml) in cases {
             let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
             assert_eq!(loaded.newer, None, "{name}");

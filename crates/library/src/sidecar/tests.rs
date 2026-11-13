@@ -1018,6 +1018,62 @@ fn an_entry_s_unknown_field_is_a_problem() {
     }
 }
 
+/// A step's id twice in its copy, a step's clock past its copy's vector, and `entries` that
+/// is no `rdf:Seq`, each a problem, as a save would lose or misplace what the file holds.
+#[test]
+fn a_duplicate_step_a_clock_past_the_vector_and_entries_no_seq_are_problems() {
+    let xml = edits().to_xml();
+    let copy = "7c0e9a14".to_owned();
+    let twice = xml.replacen(
+        r#"apertrust:id="00000000000000a1""#,
+        r#"apertrust:id="00000000000000b2""#,
+        1,
+    );
+    let read = Edits::parse(&twice, 0).unwrap();
+    let duplicate = Problem::DuplicateStep {
+        copy: copy.clone(),
+        step: "00000000000000b2".to_owned(),
+    };
+    assert!(read.problems.contains(&duplicate), "{:?}", read.problems);
+    // The vector's clock of machine 5e1f22c9, the later of its steps', moved before them.
+    let mut past = edits();
+    past.copies[0].clocks[1] = clock(PI_DAY - 1_000, 0, "5e1f22c9");
+    let read = Edits::parse(&past.to_xml(), 0).unwrap();
+    let steps: Vec<_> = (read.problems.iter())
+        .map(|problem| match problem {
+            Problem::ClockPastVector { step, .. } => step.as_str(),
+            other => panic!("{other}"),
+        })
+        .collect();
+    assert_eq!(steps, ["00000000000000a1", "00000000000000b2"]);
+    // A machine the vector lacks.
+    let mut lacking = edits();
+    lacking.copies[0].clocks.remove(0);
+    let read = Edits::parse(&lacking.to_xml(), 0).unwrap();
+    assert!(
+        matches!(&read.problems[..], [Problem::ClockPastVector { step, .. }] if step == "00000000000000c3"),
+        "{:?}",
+        read.problems
+    );
+    // Entries as text: no entry read, and a problem.
+    let at = xml.find(r#"apertrust:id="00000000000000a1""#).unwrap();
+    let start = at + xml[at..].find("<apertrust:entries>").unwrap();
+    let end = start + xml[start..].find("</apertrust:entries>").unwrap();
+    let text = format!(
+        "{}<apertrust:entries>lens</apertrust:entries>{}",
+        &xml[..start],
+        &xml[end + "</apertrust:entries>".len()..]
+    );
+    let read = Edits::parse(&text, 0).unwrap();
+    assert_eq!(
+        read.problems,
+        [Problem::UnknownField {
+            place: format!("step 00000000000000a1 of copy {copy}"),
+            field: "apertrust:entries".to_owned(),
+        }]
+    );
+}
+
 #[test]
 fn an_edit_s_file_is_read_with_its_modified_time() {
     let directory = tempfile::tempdir().unwrap();

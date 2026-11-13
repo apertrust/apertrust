@@ -374,6 +374,9 @@ photo-view-only-unkept = Some of this edit’s history can’t be kept: open for
 edit-not-saved-unreadable = another program changed its file, and this Apertrust can’t read it
 # The same where the file another program wrote opens for viewing only now.
 edit-not-saved-view-only = another program changed its file, which opens for viewing only now
+# The same where another program kept changing it while the photo closed, each write finding
+# it changed again.
+edit-not-saved-still-changing = another program kept changing its file as the photo closed
 # Over the photo, until another is opened, when another program changed the history in its
 # edit's file so that the last Undo, Redo or Go to made here could not be kept. $name is the
 # photo's file name.

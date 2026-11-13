@@ -292,6 +292,7 @@ photo-view-only-unreadable = Części historii tej edycji nie można odczytać: 
 photo-view-only-unkept = Części historii tej edycji nie można zachować: otwarte tylko do podglądu
 edit-not-saved-unreadable = inny program zmienił jej plik, a ten Apertrust nie może go odczytać
 edit-not-saved-view-only = inny program zmienił jej plik, który teraz jest otwarty tylko do podglądu
+edit-not-saved-still-changing = inny program zmieniał jej plik podczas zamykania zdjęcia
 edit-move-not-kept = Inny program zmienił historię { $name }: ostatnie cofnięcie, ponowienie lub przejście nie zostało zachowane
 photo-shutter = { $value } s
 photo-aperture = f/{ $value }

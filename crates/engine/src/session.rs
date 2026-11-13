@@ -897,6 +897,11 @@ pub enum SessionError {
     /// not kept: the other's end stands (`docs/history.md`, Behaviour).
     #[error("another program changed the history in {}: the last Undo, Redo or Go to was not kept", path.display())]
     MoveNotKept { path: PathBuf },
+    /// Another program kept changing the live photo's sidecar while the photo closed, each
+    /// write the session made finding it changed again: the edit's steps since its last save
+    /// are not written, as [`SessionError::NotSaved`] tells.
+    #[error("another program kept changing the file")]
+    StillChanging,
     #[error(transparent)]
     Plan(#[from] PlanError),
     #[error(transparent)]
@@ -1496,6 +1501,12 @@ impl Writer {
     /// What the writer knows of the live photo's sidecar.
     fn files(&self) -> std::sync::MutexGuard<'_, Files> {
         self.files.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether a write found the live photo's sidecar at `path` changed and left it for the
+    /// engine, not yet taken.
+    fn has_newer(&self, path: &Path) -> bool {
+        (self.files().newer.as_ref()).is_some_and(|(at, _)| at == path)
     }
 
     /// Calls `newer` when a write finds the live photo's sidecar changed.
@@ -2990,8 +3001,25 @@ impl Engine {
         }
         // A newer file a write found is taken in and its log written; one it cannot write
         // over is told, as the photo's last word.
-        let events = self.newer_file(true);
+        let mut events = self.newer_file(true);
         self.writer.flush(Some(&sidecar));
+        // Another program may write again between the take-in and its write: taken in again,
+        // twice more, then told, so the photo never closes on a conflict left unread.
+        for _ in 0..2 {
+            if !self.writer.has_newer(&sidecar) {
+                break;
+            }
+            events.extend(self.newer_file(true));
+            self.writer.flush(Some(&sidecar));
+        }
+        if self.writer.has_newer(&sidecar) {
+            tracing::warn!(target: "pipe", "{} kept changing as the photo closed: not saved", sidecar.display());
+            events.push(Event::Failed(SessionError::NotSaved {
+                path: sidecar.clone(),
+                through: self.applied,
+                error: Box::new(SessionError::StillChanging),
+            }));
+        }
         events
             .into_iter()
             .filter(|event| matches!(event, Event::Failed(_)))
@@ -3076,9 +3104,13 @@ impl Engine {
         if base.covers(loaded.clocks()) && loaded.view_only().is_none() {
             tracing::debug!(target: "pipe", "{name} changed, holding nothing newer: written over");
             self.writer.adopt(&path, stamp, (*base).clone());
-            // What other tools wrote beside the edit meanwhile, as a rating, is kept.
+            // What else the file holds is kept: other tools' properties, as a rating, and
+            // the other virtual copies, whatever another program changed of them.
             if existed {
-                open.file.other = loaded.file.other;
+                let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
+                open.file = loaded.file;
+                open.file.photo = photo;
+                open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
             }
             open.unsaved = true;
             self.save();

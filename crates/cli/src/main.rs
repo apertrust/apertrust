@@ -907,14 +907,16 @@ fn edit(
     Ok(())
 }
 
-/// A file's size and modified time, `None` where there is none: what tells `edit` another
-/// program wrote it after it was read.
-type Stamp = Option<(u64, Option<std::time::SystemTime>)>;
+/// A file's size, modified time and the BLAKE3 hash of its bytes, `None` where there is none:
+/// what tells `edit` another program wrote it after it was read, one that kept the size and
+/// set the time back among them.
+type Stamp = Option<(u64, Option<std::time::SystemTime>, [u8; 32])>;
 
 fn stamp(path: &Path) -> Stamp {
-    std::fs::metadata(path)
-        .ok()
-        .map(|metadata| (metadata.len(), metadata.modified().ok()))
+    let metadata = std::fs::metadata(path).ok()?;
+    let bytes = std::fs::read(path).ok()?;
+    let hash = apertrust_library::index::hash(&bytes);
+    Some((metadata.len(), metadata.modified().ok(), hash))
 }
 
 /// Runs `write` where the file at `path` still has the stamp `read`, as it was read: whether
@@ -930,8 +932,8 @@ fn write_if_unchanged(
     write().map(|()| true)
 }
 
-/// One try of [`edit`]: the edit the change leaves, or `None` where the file changed between
-/// its read and the write, which writes nothing.
+/// One try of [`edit`](fn@edit): the edit the change leaves, or `None` where the file
+/// changed between its read and the write, which writes nothing.
 fn edit_once(
     photo: &Path,
     args: &EditArgs,
@@ -2880,6 +2882,16 @@ mod tests {
         let written = write_if_unchanged(&path, read, || Ok(std::fs::write(&path, "ours")?));
         assert!(written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "ours");
+        // Another program's bytes of the same size, the modified time set back as it was.
+        let read = stamp(&path);
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, "them").unwrap();
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(modified).unwrap();
+        drop(file);
+        let written = write_if_unchanged(&path, read, || unreachable!("no write"));
+        assert!(!written.unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "them");
         std::fs::remove_dir_all(&directory).unwrap();
     }
 

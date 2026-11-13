@@ -282,7 +282,14 @@ impl PhotoHistory {
             let applied: HashSet<(StepId, Clock)> = (log.steps()[..log.end()].iter())
                 .map(|step| (step.id, step.clock))
                 .collect();
-            kept = !(base.steps.iter()).any(|key| applied.contains(key) && !held.contains(&key.0));
+            let again =
+                (base.steps.iter()).any(|key| applied.contains(key) && !held.contains(&key.0));
+            // And a step of the base this log applies, as a Redo made before the step laid,
+            // that the joined log does not.
+            let lost = (self.log.steps()[..self.log.end()].iter())
+                .map(|step| (step.id, step.clock))
+                .any(|key| base.steps.contains(&key) && !applied.contains(&key));
+            kept = !again && !lost;
         } else if ours != base.end {
             // Where the base's end is in the newer log: the other side only added after it
             // where every step of the base is there and its end is no earlier.
@@ -304,6 +311,14 @@ impl PhotoHistory {
             self.clock = self.clock.max(Some(read));
         }
         for clock in clocks {
+            advance(&mut self.clocks, clock);
+        }
+        // Steps laid are this machine's change to the newer file: a clock of its own, so the
+        // file it writes is newer than the one it read for every reader, this machine's other
+        // programs among them, as a move of the end's clock is.
+        if laid {
+            let clock = Clock::now(self.clock.as_ref(), self.machine);
+            self.clock = Some(clock);
             advance(&mut self.clocks, clock);
         }
         self.log = log;

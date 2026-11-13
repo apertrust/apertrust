@@ -1848,3 +1848,25 @@ fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
     assert_eq!(of("sample"), Some(StepSource::Auto));
     remove(&path);
 }
+
+/// A drag's picks settling as their reading arrives, with no batch after it, send the
+/// step they made as `History`, after their `Values`, so Undo is named at once.
+#[test]
+fn a_settled_pick_sends_its_history() {
+    let path = scratch("picker-history");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([on_module("brightness", true)]);
+    driven.picked();
+    driven.writes();
+    driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
+    let picked = driven.picked();
+    let at = |kind: fn(&Event) -> bool| picked.iter().rposition(kind);
+    let history = at(|e| matches!(e, Event::History(_)));
+    let values = at(|e| matches!(e, Event::Values(_)));
+    assert!(
+        history.is_some_and(|h| values.is_some_and(|v| v < h)),
+        "{picked:?}"
+    );
+    remove(&path);
+}
