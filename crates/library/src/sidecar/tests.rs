@@ -628,6 +628,77 @@ fn note_arguments_that_cannot_be_read_are_a_problem() {
     assert!(Edits::parse(&xml, 0).unwrap().problems.is_empty());
 }
 
+/// A note or a message that is no plain text, which a save would drop or change, is a
+/// problem, and is read as absent.
+#[test]
+fn a_note_that_is_not_plain_text_is_a_problem() {
+    let xml = edits().to_xml();
+    // The step's own fields, then `element` in place of its attribute `attribute`.
+    let replaced = |step: &str, attribute: &str, element: &str| {
+        let without = xml.replacen(attribute, "", 1);
+        assert_ne!(without, xml, "{attribute}");
+        let at = without.find(&format!(r#"apertrust:id="{step}""#)).unwrap();
+        let entries = at + without[at..].find("<apertrust:").unwrap();
+        format!("{}{element}{}", &without[..entries], &without[entries..])
+    };
+    let words = r#" apertrust:note="Warmer, as asked: &quot;a bit&quot; &amp; &lt;more&gt;""#;
+    let message = r#" apertrust:noteMessage="history-applied""#;
+    let cases = [
+        // A note in words as an array, as a struct, as a resource and with a language.
+        (
+            "00000000000000b2",
+            words,
+            "<apertrust:note><rdf:Bag><rdf:li>Warmer</rdf:li></rdf:Bag></apertrust:note>",
+            "note",
+        ),
+        (
+            "00000000000000b2",
+            words,
+            r#"<apertrust:note rdf:parseType="Resource"><apertrust:x>1</apertrust:x></apertrust:note>"#,
+            "note",
+        ),
+        (
+            "00000000000000b2",
+            words,
+            r#"<apertrust:note rdf:resource="https://example.org/note"/>"#,
+            "note",
+        ),
+        (
+            "00000000000000b2",
+            words,
+            r#"<apertrust:note xml:lang="en">Warmer</apertrust:note>"#,
+            "note",
+        ),
+        // A message as an array.
+        (
+            "00000000000000c3",
+            message,
+            "<apertrust:noteMessage><rdf:Seq><rdf:li>history-applied</rdf:li></rdf:Seq></apertrust:noteMessage>",
+            "noteMessage",
+        ),
+    ];
+    for (step, attribute, element, field) in cases {
+        let odd = replaced(step, attribute, element);
+        let read = Edits::parse(&odd, 0).unwrap_or_else(|e| panic!("{e}: {odd}"));
+        let unreadable = Problem::UnreadableNote {
+            copy: "7c0e9a14".to_owned(),
+            step: step.to_owned(),
+            field: field.to_owned(),
+        };
+        assert!(
+            read.problems.contains(&unreadable),
+            "{:?} in {odd}",
+            read.problems
+        );
+        let read_step = read.copies[0]
+            .history
+            .iter()
+            .find(|s| s.id == step)
+            .unwrap();
+        assert_eq!(read_step.note, None, "{element}");
+    }
+}
+
 #[test]
 fn an_edit_s_file_is_read_with_its_modified_time() {
     let directory = tempfile::tempdir().unwrap();
