@@ -206,7 +206,7 @@ A theme is a full set of token values, stored as TOML in `crates/ui/themes`.
 - **One grey, parted by separators:** the top panel, the bars, the side panel and, in the dark theme, the photo's surround share one tone (#2D2D2D), and regions and sections part by `separator`, a line or band darker than the surfaces (#191919), not by lighter rules or steps of tone. Wells and the side panel's tab strip are a step darker (`sunken`), menus and popovers a step lighter (`raised`); dialog windows, the jobs window and Linux's alert among them, sit on `panel`. The light theme follows the same structure with its own greys; high contrast keeps black with grey separators. The grey theme parts the top panel and the bars from the side panel by a step of tone as well as by separators.
 - **The grey theme,** after darktable's `darktable-elegant-grey`, keeps neutral greys only, R = G = B: the photo's surround middle grey, L\* 50 (#777777), its caption black (4.7:1); the panels a step darker, L\* 35 (#525252), with soft light text (#D8D8D8, 5.5:1), the top panel and the bars a little darker again (#4C4C4C), menus darker than the panel (#4A4A4A), as darktable's grey tooltips are; a text button's plate #5E5E5E, lifting to #666666 under the pointer with its words in `text_strong` (5.0:1). The status colours and the accent's text are lighter than the dark theme's, to pass on grey.
 - **Why a middle-grey surround:** ISO 3664 and ISO 12646 ask for a neutral surround, ISO 12646 at most 20% of white's luminance (#777777 is 18%); darktable's darkroom is middle grey in every theme.
-- **The accent is amber** in every theme, and rare ([Product choices](#product-choices)).
+- **The accent is Rust amber** in every theme, and rare ([Product choices](#product-choices)): `accent` #DC7028 in the dark theme, #E69255 in grey, #D66A20 in light and #E48A47 in high contrast; each theme tunes `accent_text`, `focus_ring` and the accent's states to pass its checks.
 - **Every theme is checked when it loads:**
   - text against its background, for WCAG AA contrast (4.5:1, and 3:1 for large text and controls), a button's words on its plate in each state, a primary button's on `accent`, `accent_hover` and `accent_pressed`, and `text_secondary` on `hover` and `list_chosen`, and `text` on `list_chosen`, among them;
   - the chosen line's band, `list_chosen`, apart from the band under the pointer, `hover`, and from the grounds lists are drawn on, `panel` and `sunken` (Settings' pages), by at least 1.08:1, so a list's chosen line is told from the one pointed at and seen on any of them: in the dark and grey themes the chosen band is darker than the panel and `sunken`, and `hover` a step lighter than the panel, in the light theme both are darker, the chosen band more, and in the high-contrast theme both are lighter, the chosen band more;
@@ -3351,7 +3351,7 @@ Phase 3 adds, for the interface:
 ## Product choices
 
 - **The default theme is a neutral dark grey.** The wireframe is drawn light so that it is easy to read; its colours show roles, not the theme.
-- **The accent is amber** in every theme, and rare. It marks only:
+- **The accent is Rust amber** in every theme (#DC7028 in the dark theme), and rare. It marks only:
   - keyboard focus;
   - the active photo, its cell outlined in Photo;
   - what is being changed right now (a slider being dragged, a curve's chosen point, Match's proposal, a section peeked with H);
