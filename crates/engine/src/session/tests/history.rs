@@ -445,6 +445,31 @@ fn a_step_of_two_modules_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     remove(&path);
 }
 
+/// A `Step`'s steps follow the first of its commands that changed each module: one that
+/// changes nothing counts as none, as on its own.
+#[test]
+fn a_step_s_command_that_changes_nothing_orders_none_of_its_steps() {
+    let path = scratch("history-step-order");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    driven.open(&path);
+    driven.run([amount(30.0, true)]);
+    let events = driven.run([Command::Step {
+        source: StepSource::You,
+        note: None,
+        commands: vec![
+            amount(30.0, true),
+            set("brightness", ControlValue::Number(0.5), true),
+            amount(40.0, true),
+        ],
+    }]);
+    let made = history(&events);
+    let modules: Vec<_> = (made.steps[1..].iter())
+        .map(|step| &*step.changes[0].module)
+        .collect();
+    assert_eq!(modules, ["sample", "soften"]);
+    remove(&path);
+}
+
 /// One command of a `Step` refused refuses the whole, naming its index: nothing changes, and
 /// no step is made. A command that is not a change to the edit's values is refused so.
 #[test]
