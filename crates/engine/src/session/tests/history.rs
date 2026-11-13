@@ -18,7 +18,10 @@
 //! touched, Undo and Redo, Reset a step, a control's quick repeats merged, and the `History`
 //! fact.
 
+use apertrust_modules::colour_calibration::ColourCalibration;
+use apertrust_modules::exposure::Exposure;
 use apertrust_modules::soften::Soften;
+use apertrust_modules::white_balance::WhiteBalance;
 
 use super::*;
 use crate::session::history::{MERGE_WITHIN, REVIEW};
@@ -116,11 +119,363 @@ fn a_photo_opens_with_its_history_after_its_values_not_yet_live() {
     let opened = driven.open(&path);
     // Its values not yet live, its history, then its values live and the first frame.
     assert_eq!(kinds(&opened), ["values", "history", "values", "frame"]);
+    // Neither Sample nor Soften is one of darktable's default modules: no default step.
     let history = history(&opened);
     assert_eq!((history.steps.len(), history.end), (0, 0));
     assert_eq!((history.undo, history.redo), (None, None));
-    // The modules every photo runs; Soften, switched, is no Default line.
-    assert_eq!(history.defaults, ["sample"]);
+    remove(&path);
+}
+
+/// White balance, Exposure and Colour calibration: darktable has the first on by default and
+/// applies the other two to a new raw as its workflow's presets.
+const DEFAULTS: &[&dyn Module] = &[&WhiteBalance, &Exposure, &ColourCalibration];
+
+/// The operations the open photo's edit plans, in order.
+fn planned(driven: &Driven) -> Vec<&'static str> {
+    let open = driven.engine.open.as_ref().unwrap();
+    let bound = crate::edit::instances(&open.edit, OPERATIONS, DEFAULTS, &open.image);
+    (bound.instances.iter())
+        .map(|instance| instance.operation.manifest().id)
+        .collect()
+}
+
+/// Whether the module `id` is on, as the values report it.
+fn on(events: &[Event], id: &str) -> bool {
+    (values(events).modules.iter())
+        .find(|state| state.module == id)
+        .unwrap()
+        .enabled
+}
+
+/// A photo of [`DEFAULTS`] opened, its frame and its default steps' ids.
+fn opened_with_defaults(driven: &mut Driven, path: &Path) -> (Vec<u8>, Vec<StepId>) {
+    let opened = driven.open(path);
+    let ids = (history(&opened).steps.iter())
+        .map(|step| step.id)
+        .collect();
+    (frame(&driven.gpu, &opened), ids)
+}
+
+/// A new photo is given a default step of each of darktable's default modules, writing
+/// nothing. `GoTo` one renders the photo with the default steps up to it applied: those
+/// after it darktable applies as its workflow's presets are left out of the plan, and
+/// reported off. Undo stops above them, and an edit with the end among them applies the
+/// rest, keeping their steps; Undo and Redo take it back and put it back.
+#[test]
+fn go_to_a_default_step_renders_the_first_k_and_undo_stops_above_them() {
+    let path = scratch("history-default-steps");
+    let mut driven = Driven::new(DEFAULTS);
+    let opened = driven.open(&path);
+    let made = history(&opened);
+    let steps: Vec<_> = (made.steps.iter())
+        .map(|step| (step.source, step.changes[0].module.as_ref()))
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            (StepSource::Default, "temperature"),
+            (StepSource::Default, "exposure"),
+            (StepSource::Default, "channelmixerrgb"),
+        ]
+    );
+    assert_eq!((made.end, made.undo, made.redo), (3, None, None));
+    assert!(written(&driven.writes()).is_empty());
+    assert!(!sidecar::path_for(&path).exists());
+    let ids: Vec<StepId> = made.steps.iter().map(|step| step.id).collect();
+    let every = frame(&driven.gpu, &opened);
+    let all = planned(&driven);
+    assert!(all.contains(&"exposure") && all.contains(&"channelmixerrgb"));
+    // Each default step: the first k applied, White balance always, as darktable's.
+    let without = |left: &[&str]| -> Vec<&str> {
+        (all.iter().copied())
+            .filter(|id| !left.contains(id))
+            .collect()
+    };
+    let exposed = driven.run([Command::GoTo { step: Some(ids[1]) }]);
+    assert_eq!(history(&exposed).end, 2);
+    assert_eq!(planned(&driven), without(&["channelmixerrgb"]));
+    assert!(on(&exposed, "exposure") && !on(&exposed, "channelmixerrgb"));
+    let balanced = driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    assert_eq!(planned(&driven), without(&["exposure", "channelmixerrgb"]));
+    assert!(on(&balanced, "temperature") && !on(&balanced, "exposure"));
+    let balanced = frame(&driven.gpu, &balanced);
+    assert!(balanced != every);
+    // Original renders as White balance's step did, which renders nothing anew.
+    let original = driven.run([Command::GoTo { step: None }]);
+    assert_eq!(kinds(&original), ["values", "history"]);
+    assert_eq!(history(&original).end, 0);
+    assert_eq!(planned(&driven), without(&["exposure", "channelmixerrgb"]));
+    // Going there writes nothing on a photo never edited.
+    driven.writes();
+    assert!(!sidecar::path_for(&path).exists());
+    // Undo takes each `GoTo` back; then, with no record, it stops above the default steps.
+    for end in [1, 2] {
+        assert_eq!(history(&driven.run([Command::Undo])).end, end);
+    }
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(history(&undone).end, 3);
+    assert!(frame(&driven.gpu, &undone) == every);
+    let nothing = driven.run([Command::Undo]);
+    assert_eq!(kinds(&nothing), ["values"]);
+    // An edit at Original keeps the default steps, applied below it; Undo takes it back to
+    // Original and Redo puts it back.
+    driven.run([Command::GoTo { step: None }]);
+    let edited = driven.run([Command::SetControl {
+        module: "exposure".to_owned(),
+        control: "exposure".to_owned(),
+        value: ControlValue::Number(1.0),
+        done: true,
+    }]);
+    let after = history(&edited);
+    let edited_ids: Vec<StepId> = after.steps.iter().map(|step| step.id).collect();
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    assert_eq!(edited_ids[..3], ids);
+    assert_eq!(after.steps[3].source, StepSource::You);
+    assert_eq!(after.undo, Some(single(edited_ids[3])));
+    assert_eq!(planned(&driven), all);
+    assert!(on(&edited, "channelmixerrgb"));
+    assert_eq!(fold(&driven), edit(&driven));
+    let edited = frame(&driven.gpu, &edited);
+    let undone = driven.run([Command::Undo]);
+    let back = history(&undone);
+    assert_eq!((back.steps.len(), back.end), (3, 0));
+    assert_eq!(back.redo, Some(single(edited_ids[3])));
+    assert!(frame(&driven.gpu, &undone) == balanced);
+    let redone = driven.run([Command::Redo]);
+    let again = history(&redone);
+    let sources: Vec<StepSource> = again.steps.iter().map(|step| step.source).collect();
+    assert_eq!(
+        sources,
+        [
+            StepSource::Default,
+            StepSource::Default,
+            StepSource::Default,
+            StepSource::You
+        ]
+    );
+    let again_ids: Vec<StepId> = again.steps.iter().map(|step| step.id).collect();
+    assert_eq!((again_ids, again.end), (edited_ids, 4));
+    assert_eq!(planned(&driven), all);
+    assert!(frame(&driven.gpu, &redone) == edited);
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// Reset, or a module's reset, with the end among the default steps moves no value but
+/// applies the default steps after the end: one step, every module applied.
+#[test]
+fn a_reset_among_the_default_steps_applies_them_as_one_step() {
+    let path = scratch("history-default-reset");
+    let mut driven = Driven::new(DEFAULTS);
+    let (every, ids) = opened_with_defaults(&mut driven, &path);
+    let all = planned(&driven);
+    driven.run([Command::GoTo { step: None }]);
+    let reset = driven.run([Command::Reset]);
+    let after = history(&reset);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    let kept: Vec<StepId> = after.steps[..3].iter().map(|step| step.id).collect();
+    assert_eq!(kept, ids);
+    let step = &after.steps[3];
+    assert_eq!(
+        (step.source, &step.note),
+        (StepSource::You, &Some(Note::reset()))
+    );
+    assert_eq!(planned(&driven), all);
+    assert!(frame(&driven.gpu, &reset) == every);
+    assert!(edit(&driven).unapplied.is_empty());
+    assert_eq!(fold(&driven), edit(&driven));
+    // Undo takes it back to Original; a module's reset there is one step of that module.
+    driven.run([Command::Undo]);
+    assert!(!edit(&driven).unapplied.is_empty());
+    let reset = driven.run([Command::ResetModule {
+        module: "temperature".to_owned(),
+    }]);
+    let after = history(&reset);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    assert_eq!(after.steps[3].changes[0].module, "temperature");
+    assert_eq!(planned(&driven), all);
+    assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+/// A module's picker turned on with the end among the default steps is the first change:
+/// the modules not applied are applied, so its operation is planned and it is on.
+#[test]
+fn a_picker_turned_on_among_the_default_steps_applies_them() {
+    let path = scratch("history-default-picker");
+    let mut driven = Driven::new(DEFAULTS);
+    let (_, _) = opened_with_defaults(&mut driven, &path);
+    let all = planned(&driven);
+    driven.run([Command::GoTo { step: None }]);
+    assert!(!planned(&driven).contains(&"exposure"));
+    let events = driven.run([Command::Picker(PickerCommand::On {
+        picker: PickerRef::Module {
+            module: "exposure",
+            picker: "exposure",
+        },
+        area: true,
+        keys: PickKeys::default(),
+        tools: Vec::new(),
+        channel: None,
+    })]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(on(&events, "exposure"));
+    assert_eq!(planned(&driven), all);
+    remove(&path);
+}
+
+/// Thumbnails and the live export render the edit its file holds: before the first change
+/// the file holds nothing, so every module is applied, whatever default step the end is at.
+#[test]
+fn thumbnails_and_the_live_export_render_the_file_s_edit_before_the_first_change() {
+    let path = scratch("history-default-unwritten");
+    let mut driven = Driven::new(DEFAULTS);
+    opened_with_defaults(&mut driven, &path);
+    driven.run([Command::GoTo { step: None }]);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(!open.edit.unapplied.is_empty());
+    let thumbnail = driven.engine.thumbnail_plan(open).unwrap();
+    assert!(thumbnail.unaltered);
+    let live = driven
+        .engine
+        .live_among(std::slice::from_ref(&path))
+        .unwrap();
+    assert_eq!(live.edit, Edit::default());
+    remove(&path);
+}
+
+/// The default steps go into the file with the first change, never before, wherever the
+/// end goes among them. Then a move among them is saved like any move of the end: the file
+/// read folds the modules not applied from its end, as the session and the live export
+/// do, and reopening the photo lists the same steps, numbered as they were, none added.
+#[test]
+fn the_default_steps_are_saved_with_the_first_change_and_read_again() {
+    let path = scratch("history-default-written");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(DEFAULTS);
+    let (_, ids) = opened_with_defaults(&mut driven, &path);
+    let all = planned(&driven);
+    driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    driven.run([Command::GoTo { step: Some(ids[2]) }]);
+    driven.writes();
+    assert!(!sidecar.exists());
+    // The first change writes them with it.
+    driven.run([Command::SetControl {
+        module: "exposure".to_owned(),
+        control: "exposure".to_owned(),
+        value: ControlValue::Number(1.0),
+        done: true,
+    }]);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    // The file reads with no problem: each step's id once, no clock past the copy's vector.
+    let first = sidecar::read(&sidecar, OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert!(first.problems.is_empty(), "{:?}", first.problems);
+    assert_eq!(first.log.steps().len(), 4);
+    // A move among them is saved now.
+    driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    let read = sidecar::read(&sidecar, OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    assert_eq!(read.edit, edit(&driven));
+    let unapplied: std::collections::BTreeSet<String> =
+        ["channelmixerrgb", "exposure"].map(str::to_owned).into();
+    assert_eq!(read.edit.unapplied, unapplied);
+    let live = driven
+        .engine
+        .live_among(std::slice::from_ref(&path))
+        .unwrap();
+    assert_eq!(live.edit, read.edit);
+    // Reopened: the same steps, the default ones numbered 1 to 3, the end on the first.
+    let reopened = driven.open(&path);
+    let again = history(&reopened);
+    let steps: Vec<(StepId, StepSource)> = (again.steps.iter())
+        .map(|step| (step.id, step.source))
+        .collect();
+    assert_eq!(steps.len(), 4);
+    assert_eq!(
+        steps[..3].iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        ids
+    );
+    assert!(
+        steps[..3]
+            .iter()
+            .all(|(_, source)| *source == StepSource::Default)
+    );
+    assert_eq!((steps[3].1, again.end), (StepSource::You, 1));
+    let without: Vec<&str> = (all.iter().copied())
+        .filter(|id| !["exposure", "channelmixerrgb"].contains(id))
+        .collect();
+    assert_eq!(planned(&driven), without);
+    // Undo's fallback, with no record after reopening, stops above them; Redo goes on.
+    let nothing = driven.run([Command::Undo]);
+    assert_eq!(kinds(&nothing), ["values"]);
+    let redone = driven.run([Command::Redo]);
+    assert_eq!(history(&redone).end, 2);
+    remove(&path);
+}
+
+/// Default steps never written are not laid on a newer file another program wrote meanwhile:
+/// the session's change is, after the file's own step, and the joined log reads with no
+/// problem, no default step added to a log that has steps.
+#[test]
+fn a_newer_file_taken_in_gets_no_default_step_never_written() {
+    let path = scratch("history-default-newer");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(DEFAULTS);
+    opened_with_defaults(&mut driven, &path);
+    // Another program's step, as `apertrust-cli edit` writes one, a minute on.
+    let clock = Clock::at(
+        driven.engine.open.as_ref().unwrap().history.log().steps()[0]
+            .clock
+            .when
+            + 60_000,
+        None,
+        "00000000".parse().unwrap(),
+    );
+    let mut theirs = crate::history::Log::default();
+    let mut blacker = Edit::default();
+    let black = ControlValue::Number(0.01);
+    (blacker.set_control(&Exposure, "black_level", black, &testing::image())).unwrap();
+    let changes = crate::history::Change::between(&Edit::default(), &blacker, &[]);
+    theirs.add_change(changes, StepSource::You, None, clock);
+    let file = sidecar::Edits::new("");
+    let modules = (OPERATIONS, DEFAULTS);
+    sidecar::write_log(&sidecar, &file, &theirs, &[clock], modules, "cli").unwrap();
+    // The session's first change finds it, and takes it in.
+    driven.run([Command::SetControl {
+        module: "exposure".to_owned(),
+        control: "exposure".to_owned(),
+        value: ControlValue::Number(1.0),
+        done: true,
+    }]);
+    driven.writes();
+    let taken = driven.engine.newer_file(false);
+    let after = history(&taken);
+    let sources: Vec<StepSource> = after.steps.iter().map(|step| step.source).collect();
+    assert_eq!(sources, [StepSource::You, StepSource::You]);
+    assert_eq!(after.steps[0].id, theirs.steps()[0].id);
+    driven.writes();
+    let read = sidecar::read(&sidecar, OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    assert_eq!(read.log.steps().len(), 2);
+    assert_eq!(read.edit, edit(&driven));
+    remove(&path);
+}
+
+/// A file a newer build wrote holding nothing opens for viewing only with no step: a photo
+/// open for viewing only is given no default step.
+#[test]
+fn a_view_only_file_holding_nothing_opens_with_no_step() {
+    let path = scratch("history-default-view-only");
+    let sidecar = sidecar::path_for(&path);
+    let xml = sidecar::to_xml(&Edit::default(), OPERATIONS, DEFAULTS, "0.9.0")
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+    std::fs::write(&sidecar, &xml).unwrap();
+    let mut driven = Driven::new(DEFAULTS);
+    let opened = driven.open(&path);
+    assert!(values(&opened).modules.iter().all(|module| module.enabled));
+    let read = history(&opened);
+    assert_eq!((read.steps.len(), read.end), (0, 0));
     remove(&path);
 }
 

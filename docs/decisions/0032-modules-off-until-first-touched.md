@@ -20,7 +20,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 - `ResetControl` and `Keep` never turn one on, and leave an on module on.
 - `ResetModule` clears its values and marks and turns it off; `Reset` turns every module off.
 
-**Reported:** `ModuleState::enabled`, true for a module not switched and for a switched one while on; `ModuleState::edited`, whether its reset would change the render; `Values::edited` counting an on switched module.
+**Reported:** `ModuleState::enabled`, true for a module not switched, but while the history's end lies before its default step and darktable leaves it off until its workflow applies it ([0078](0078-undo-redo-and-the-edits-history.md)), and for a switched one while on; `ModuleState::edited`, whether its reset would change the render; `Values::edited` counting an on switched module.
 
 **The panel shows nothing more:** no dimming and no power button. The section looks as usual at darktable's defaults; the kept marker beside a changed control and the header's reset, available only while the module is edited or a change is pending, are the only cues. Screen readers hear "Not applied" in the section's description while it is off (`section-not-applied`).
 
@@ -28,7 +28,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 **Old edits:** a module that becomes switched raises its version, and its migration turns an old edit's module on where a value was off the old defaults, writing those defaults where darktable's differ, and drops the values of one that rendered nothing, so each edit binds what it bound.
 
-**Differences from darktable that remain:** a reset turns a module off, where darktable's leaves it on; no module is off with its values kept, or on at its defaults from the panel alone; the modules every photo runs cannot be turned off.
+**Differences from darktable that remain:** a reset turns a module off, where darktable's leaves it on; no module is off with its values kept, or on at its defaults from the panel alone; the modules every photo runs cannot be turned off, the history's end before a default step leaving one not applied only as darktable's history shows it (0078).
 
 ## Options considered
 

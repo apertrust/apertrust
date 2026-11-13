@@ -719,9 +719,11 @@ impl Values {
 pub struct ModuleState {
     pub module: &'static str,
     /// Whether the module renders (decision 32): true for a module that is not switched,
-    /// and for a switched one while it is on; a switched module off renders nothing, its
-    /// controls at darktable's defaults. A panel shows nothing more for it than its reset
-    /// unavailable, and screen readers hear "Not applied".
+    /// but while the history's end lies before its default step and darktable leaves it off
+    /// until its workflow applies it (decision 78), and for a switched one while it is on;
+    /// a switched module off renders nothing, its controls at darktable's defaults. A panel
+    /// shows nothing more for it than its reset unavailable, and screen readers hear "Not
+    /// applied".
     pub enabled: bool,
     /// Whether its reset would change the render: a control differs from its default for
     /// the photo, or a switched module is on.
@@ -2958,6 +2960,15 @@ impl Engine {
         if let Some(open) = &mut self.open
             && open.view_only.is_none()
         {
+            // A log of default steps alone, never in the file, waits for the first change
+            // (decision 78): handed over as one the file holds, answered and not written,
+            // wherever its end.
+            let held = if open.history.unwritten() {
+                true
+            } else {
+                open.history.handed();
+                held
+            };
             let xml = open.xml(self.operations, &self.modules, &self.build);
             if !held || self.writer.failed(&open.sidecar) {
                 let hash = apertrust_library::index::hash(xml.as_bytes());
@@ -3129,7 +3140,8 @@ impl Engine {
         let before = open.edit.clone();
         if let Some(view_only) = loaded.view_only() {
             tracing::warn!(target: "pipe", "{name} changed, now for viewing only: {view_only}");
-            let unsaved = open.history.base() != *base || !history::clamp_only(open, &self.modules);
+            let unsaved = (open.history.base() != *base && !open.history.unwritten())
+                || !history::clamp_only(open, &self.modules);
             if unsaved {
                 events.push(Event::Failed(SessionError::NotSaved {
                     path: path.clone(),
@@ -3138,7 +3150,7 @@ impl Engine {
                 }));
             }
             let clocks = loaded.clocks().to_vec();
-            open.history = history::PhotoHistory::read(loaded.log, clocks);
+            open.history = history::PhotoHistory::read(loaded.log, clocks, &[]);
             open.edit = loaded.edit;
             open.view_only = Some(view_only.clone());
             open.gesture = None;
@@ -3336,7 +3348,15 @@ impl Engine {
             file,
             stamp,
         } = read;
-        let history = history::PhotoHistory::read(log, clocks);
+        // What the file holds, which the first write compares: the default steps a photo
+        // with no history is given are not in it until the first change writes them.
+        let base = history::Base::of(&log, &clocks);
+        // A photo open for viewing only takes no change, so it is given no default steps.
+        let defaults = match view_only {
+            None => crate::history::default_modules(&self.modules, self.operations),
+            Some(_) => Vec::new(),
+        };
+        let history = history::PhotoHistory::read(log, clocks, &defaults);
         let path = (self.opening.as_ref())
             .map(|opening| opening.path.clone())
             .unwrap_or_default();
@@ -3358,7 +3378,7 @@ impl Engine {
         // Its saves are the ones its thumbnail waits for, and the file as read is what the
         // first compares.
         self.writer
-            .watch(Some((&sidecar::path_for(&path), stamp, history.base())));
+            .watch(Some((&sidecar::path_for(&path), stamp, base)));
         self.open = Some(Open {
             sidecar: sidecar::path_for(&path),
             file,
@@ -3559,7 +3579,7 @@ impl Engine {
         let exported = photos.iter().any(|p| sidecar::path_for(p) == open.sidecar);
         exported.then(|| Live {
             sidecar: open.sidecar.clone(),
-            edit: open.edit.clone(),
+            edit: open.saved_edit(),
             newer: open.view_only.is_some(),
             image: open.image.clone(),
             input,
@@ -4042,6 +4062,18 @@ impl Engine {
 }
 
 impl Open {
+    /// The edit as its file holds it, which thumbnails and exports render, as every reader
+    /// of the file folds it from the log at its saved end, the modules not applied among
+    /// it: the edit, but for a log of default steps never written, which the file lacks,
+    /// every module applied (decision 78).
+    fn saved_edit(&self) -> Edit {
+        let mut edit = self.edit.clone();
+        if self.history.unwritten() {
+            edit.unapplied.clear();
+        }
+        edit
+    }
+
     /// The sidecar as `build` writes it: the log and its end, with the copy's clock vector,
     /// laid on the file as read ([`sidecar::log_xml`]).
     fn xml(

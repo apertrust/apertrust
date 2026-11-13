@@ -29,6 +29,13 @@
 //! quick repeats merge into the step before them ([`Log::merge`]), as darktable's undo
 //! merges them; the session decides when.
 //!
+//! A photo opened with no history is given its default steps ([`Log::add_defaults`]): a
+//! step of source Default of each of darktable's default modules, at its reset state, as
+//! darktable adds its default modules and auto-applied presets to a new raw's history.
+//! They are steps 1 to n; Undo's fallback stops at them ([`Log::defaults`]). Below its
+//! default step a module darktable leaves off until its workflow applies it is not applied
+//! ([`Log::unapplied`]), so the end within them shows the photo with the first k applied.
+//!
 //! Plain data, which the session keeps in memory for the photo open and the engine's
 //! `sidecar` reads and writes in version 2, with the copy's clock vector ([`advance`]).
 
@@ -355,7 +362,8 @@ impl Log {
         self.fold_to(self.end)
     }
 
-    /// The edit with the first `end` steps applied.
+    /// The edit with the first `end` steps applied, and the modules whose default step lies
+    /// after them not applied where darktable leaves them off ([`Log::unapplied`]).
     pub(crate) fn fold_to(&self, end: usize) -> Edit {
         let mut edit = Edit::default();
         for step in &self.steps[..end] {
@@ -363,17 +371,100 @@ impl Log {
                 entry.apply(&mut edit);
             }
         }
+        edit.unapplied = self.unapplied(end);
         edit
     }
 
-    /// Adds `step` at the end, dropping the steps after the end first, as darktable's
-    /// `_dev_add_history_item_ext` removes the items above `history_end`; returns the
-    /// steps it dropped.
+    /// The modules whose default step lies after the first `end` steps, with no entry among
+    /// them, of those darktable leaves off until its workflow's auto-applied preset turns
+    /// them on (`_dev_auto_apply_presets`, `src/develop/develop.c:1856`): Exposure, Colour
+    /// calibration and the tone mapper. darktable's modules on by default run at
+    /// their defaults below their item, as its `dt_dev_pop_history_items_ext` resets each
+    /// module to `default_enabled` (`:1614-1636`), so they are applied.
+    pub fn unapplied(&self, end: usize) -> BTreeSet<String> {
+        let end = end.min(self.steps.len());
+        let before: BTreeSet<Key<'_>> = (self.steps[..end].iter())
+            .flat_map(|step| step.change.entries())
+            .map(Entry::key)
+            .collect();
+        (self.steps[end..].iter())
+            .filter(|step| step.source == StepSource::Default)
+            .flat_map(|step| step.change.entries())
+            .filter_map(|entry| match entry {
+                Entry::Module { module, .. }
+                    if !on_by_default(module) && !before.contains(&entry.key()) =>
+                {
+                    Some(module.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Gives a log with no step its default steps: one of each of `modules`, in order,
+    /// source Default with no note and no batch, its entry empty, the module's reset state,
+    /// at `clock`; the end after the last. A log that has steps is left as it is, so a
+    /// module a later build adds to `modules` runs at its defaults with no step, and the
+    /// steps keep their numbers.
+    pub fn add_defaults(&mut self, modules: &[&str], clock: Clock) {
+        if !self.steps.is_empty() {
+            return;
+        }
+        for module in modules {
+            let id = self.new_id();
+            self.add(Step {
+                id,
+                clock,
+                source: StepSource::Default,
+                note: None,
+                batch: None,
+                change: Change::Entry(Entry::Module {
+                    module: (*module).to_owned(),
+                    values: ModuleValues::new(),
+                }),
+            });
+        }
+    }
+
+    /// How many default steps the log begins with: those of source Default before any
+    /// other, n of them, 1 to n. Undo's fallback stops at them, as darktable's auto-applied
+    /// items are no undo records.
+    pub fn defaults(&self) -> usize {
+        (self.steps.iter())
+            .take_while(|step| step.source == StepSource::Default)
+            .count()
+    }
+
+    /// Adds `step` at the end, the steps after the end dropped first, as darktable's
+    /// `_dev_add_history_item_ext` removes the items above `history_end`, but for a
+    /// default step of a module with no entry up to the end, which is kept and moved below
+    /// it, before `step`, as darktable keeps an always-on module's item
+    /// (`src/develop/develop.c:1191-1229`). darktable drops its auto-applied items there;
+    /// Apertrust keeps every default step on purpose, the modules every photo runs never
+    /// being off (decision 32). Returns the steps that were after the end, the kept among them, which
+    /// Undo puts back in their place.
     pub fn add(&mut self, step: Step) -> Vec<Step> {
-        let dropped = self.steps.split_off(self.end);
+        let after = self.steps.split_off(self.end);
+        if !after.iter().any(|step| step.source == StepSource::Default) {
+            self.steps.push(step);
+            self.end = self.steps.len();
+            return after;
+        }
+        let before: BTreeSet<Key<'_>> = (self.steps.iter())
+            .flat_map(|step| step.change.entries())
+            .map(Entry::key)
+            .collect();
+        let kept: Vec<Step> = (after.iter())
+            .filter(|step| {
+                step.source == StepSource::Default
+                    && (step.change.entries().iter()).all(|entry| !before.contains(&entry.key()))
+            })
+            .cloned()
+            .collect();
+        self.steps.extend(kept);
         self.steps.push(step);
         self.end = self.steps.len();
-        dropped
+        after
     }
 
     /// Adds the steps of one completed change, `changes` ([`Change::between`]), of `source`
@@ -548,10 +639,6 @@ pub struct History {
     /// How many steps apply, darktable's `history_end`: 0 is Original, and the step
     /// numbered `end`, counting from 1, is the last applied.
     pub end: usize,
-    /// The Default lines' modules, those every photo runs, in darktable's history order
-    /// for a new photo ([`default_lines`]); their values are each control's default in
-    /// `Values`.
-    pub defaults: Vec<&'static str>,
     /// What Undo and Redo would do now, so a menu names it; `None` when nothing.
     pub undo: Option<Move>,
     pub redo: Option<Move>,
@@ -619,11 +706,24 @@ const NO_BUTTON: &[&str] = &["rawprepare", "demosaic", "colorout"];
 /// (`_dev_auto_apply_presets`, `:2343`).
 const WITH_BUTTON: &[&str] = &["temperature", "highlights", "flip"];
 
-/// The Default lines' modules (`docs/history.md`, Original and the Default lines): those
-/// every photo runs, not switched, in darktable's history order for a new photo, its
-/// three groups: darktable's modules with no on/off button, those with one, and every
-/// other, each in the pipe's order, by the first operation each module owns.
-pub fn default_lines(
+/// The modules darktable's default workflow, scene-referred, applies to a new raw as
+/// auto-applied presets after those (`_dev_auto_apply_presets`, `:1856`): Exposure, Colour
+/// calibration and the tone mapper, Apertrust's AgX. No other module has a default step:
+/// Tone curve, which no preset applies, runs at its defaults with none.
+const AUTO_APPLIED: &[&str] = &["exposure", "channelmixerrgb", "agx"];
+
+/// Whether darktable has the module on by default (`default_enabled`), with an on/off
+/// button or none, so it runs at its defaults below its default step.
+fn on_by_default(module: &str) -> bool {
+    NO_BUTTON.contains(&module) || WITH_BUTTON.contains(&module)
+}
+
+/// The modules a new photo's default steps hold (`docs/history.md`, Original and the default
+/// steps): darktable's for a new raw, among `modules`, in its history order, its three
+/// groups: the modules on by default with no on/off button, those with one, and those its
+/// workflow auto-applies, each in the pipe's order, by the first operation each module
+/// owns.
+pub fn default_modules(
     modules: &[&'static dyn Module],
     operations: &[&'static dyn Operation],
 ) -> Vec<&'static str> {
@@ -640,16 +740,18 @@ pub fn default_lines(
             0
         } else if WITH_BUTTON.contains(&id) {
             1
-        } else {
+        } else if AUTO_APPLIED.contains(&id) {
             2
+        } else {
+            3
         }
     };
     let mut lines: Vec<(u8, usize, &'static str)> = (modules.iter())
-        .filter(|module| !module.definition().switched)
         .map(|module| {
             let id = module.definition().id;
             (group(id), position(*module), id)
         })
+        .filter(|&(group, _, _)| group < 3)
         .collect();
     lines.sort_by_key(|&(group, position, _)| (group, position));
     lines.into_iter().map(|(_, _, id)| id).collect()

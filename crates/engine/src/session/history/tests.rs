@@ -117,7 +117,9 @@ fn write(history: &mut PhotoHistory, wrote: Wrote, at: &mut Instant, random: &mu
 /// a `GoTo` back, and a merged step whole, and a merged change adds no record; a `GoTo`
 /// inside a batch lands on the batch's steps up to it. A change not yet a step goes on
 /// over several rounds, so it may touch several modules, a batch. Half the runs start from
-/// an edit read from a file, a step of each module.
+/// an edit read from a file, a step of each module. Seeds above 40 give a new photo three
+/// default steps, which `GoTo` lands among and Undo's fallback stops above; the edit's
+/// modules not applied follow it as the session keeps them.
 #[test]
 fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
     // How many times Undo and Redo fell back to moving the end, a `GoTo` moved it, and a
@@ -128,16 +130,23 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
     // How many times Undo took back a batch, and a `GoTo` went inside one.
     let mut batches = 0;
     let mut inside = 0;
-    for seed in 1..=40 {
+    // How many times a `GoTo` landed among the default steps.
+    let mut among = 0;
+    for seed in 1..=60 {
         let mut random = Random(0x9e37_79b9_7f4a_7c15 ^ seed);
         let mut at = Instant::now();
         let mut edit = Edit::default();
-        if seed % 2 == 1 {
+        let defaults = if seed > 40 {
+            DEFAULTS.to_vec()
+        } else {
+            Vec::new()
+        };
+        if seed % 2 == 1 && defaults.is_empty() {
             for _ in 0..4 {
                 change(&mut edit, &mut random);
             }
         }
-        let mut history = reopened(&edit);
+        let mut history = reopened_with(&edit, &defaults);
         // The edit each step left, by id, with the step's clock then.
         let mut left: BTreeMap<StepId, (Clock, Edit)> = BTreeMap::new();
         record(&history, &tidy(&edit), &mut left);
@@ -176,6 +185,9 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                         Ok(Some(gone)) => {
                             gone_to += 1;
                             let at = history.log.end();
+                            if at < history.log.defaults() {
+                                among += 1;
+                            }
                             if !last_of_change(&history.log, at) {
                                 inside += 1;
                             }
@@ -213,7 +225,7 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                         batches += 1;
                     }
                     let Some(undone) = checked(&mut history, &edit, false, &context) else {
-                        assert_eq!(history.log.end(), 0, "{context}");
+                        assert!(history.log.end() <= history.log.defaults(), "{context}");
                         assert_eq!(history.log.fold(), before, "{context}");
                         continue;
                     };
@@ -244,6 +256,8 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                     }
                 }
             }
+            // The modules not applied, as the session keeps them after each command.
+            edit.unapplied = history.unapplied(&edit);
             record(&history, &tidy(&edit), &mut left);
             assert_eq!(history.log.fold(), tidy(&history.stepped), "{context}");
             for at in 1..=history.log.steps().len() {
@@ -254,8 +268,9 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
     }
     assert!(fallbacks.iter().all(|&count| count > 0), "{fallbacks:?}");
     assert!(
-        gone_to > 0 && merged > 0 && batches > 0 && inside > 0,
-        "{gone_to} gone to, {merged} merged, {batches} batches undone, {inside} inside one"
+        gone_to > 0 && merged > 0 && batches > 0 && inside > 0 && among > 0,
+        "{gone_to} gone to, {merged} merged, {batches} batches undone, {inside} inside one, \
+         {among} among the default steps"
     );
 }
 
@@ -268,9 +283,9 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
     history.complete(edit, StepSource::You, None);
     let next = history.next(!redo);
     let records = if redo { &history.undone } else { &history.done };
-    let held = match records.last() {
-        Some(Record::Added { held, .. }) => Some(held.len()),
-        _ => None,
+    let (held, kept) = match records.last() {
+        Some(Record::Added { held, kept, .. }) => (Some(held.len()), *kept),
+        _ => (None, 0),
     };
     let (end, before) = (history.log.end(), ids(history));
     let moved = if redo {
@@ -284,22 +299,24 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
         Some(Move::GoTo) => assert!(moved.is_some(), "{context}"),
         Some(Move::Steps { first, count }) => {
             assert!(moved.is_some() && count > 0, "{context}");
+            // Steps added put back or taken out move the default steps they kept with them.
             if redo {
-                assert_eq!(history.log.end(), end + count, "{context}");
-                assert_eq!(after[end], first, "{context}");
+                assert_eq!(history.log.end(), end + kept + count, "{context}");
+                assert_eq!(after[end + kept], first, "{context}");
                 match held {
                     // The steps after the end the change dropped, dropped again.
-                    Some(_) => assert_eq!(after.len(), end + count, "{context}"),
+                    Some(_) => assert_eq!(after.len(), end + kept + count, "{context}"),
                     None => assert_eq!(after, before, "{context}"),
                 }
             } else {
-                let start = end - count;
+                let start = end - count - kept;
                 assert_eq!(history.log.end(), start, "{context}");
-                assert_eq!(before[start], first, "{context}");
+                assert_eq!(before[start + kept], first, "{context}");
                 match held {
                     // The change's steps out, the steps they dropped back.
                     Some(dropped) => {
-                        assert_eq!(after.len(), before.len() - count + dropped, "{context}");
+                        let left = before.len() - count - kept + dropped;
+                        assert_eq!(after.len(), left, "{context}");
                         assert_eq!(after[..start], before[..start], "{context}");
                     }
                     None => assert_eq!(after, before, "{context}"),
@@ -332,6 +349,12 @@ fn assert_left(
     context: &str,
 ) {
     let steps = log.steps();
+    // Among the default steps: the photo's defaults, the later ones not applied.
+    if end <= log.defaults() {
+        assert!(edit.is_empty(), "{context}");
+        assert_eq!(edit.unapplied, log.unapplied(end), "{context}");
+        return;
+    }
     let Some(step) = end.checked_sub(1).map(|at| &steps[at]) else {
         assert_eq!(*edit, Edit::default(), "{context}");
         return;
@@ -367,6 +390,10 @@ fn record(history: &PhotoHistory, edit: &Edit, left: &mut BTreeMap<StepId, (Cloc
     }
 }
 
+/// The default steps the random sequences above seed 40 begin with: modules the changes
+/// touch and one they do not, none of which darktable has on by default.
+const DEFAULTS: &[&str] = &["d", "a", "e"];
+
 /// An edit with Exposure's exposure at `ev`, kept.
 fn exposed(ev: f32) -> Edit {
     let mut edit = Edit::default();
@@ -379,11 +406,17 @@ fn exposed(ev: f32) -> Edit {
 /// holds, sharing a batch, as a version 1 file reads (the sidecar's tests hold that
 /// reading), of the unknown machine's clock, which is the copy's vector.
 fn reopened(edit: &Edit) -> PhotoHistory {
+    reopened_with(edit, &[])
+}
+
+/// A history read from a file holding `edit`, as [`reopened`], given a default step of each
+/// of `defaults` where it holds nothing.
+fn reopened_with(edit: &Edit, defaults: &[&str]) -> PhotoHistory {
     let clock = Clock::at(1_773_497_331_120, None, MachineId::UNKNOWN);
     let mut log = Log::default();
     let changes = Change::between(&Edit::default(), edit, &[]);
     log.add_change(changes, StepSource::You, None, clock);
-    PhotoHistory::read(log, vec![clock])
+    PhotoHistory::read(log, vec![clock], defaults)
 }
 
 /// The steps of `history`'s log.
@@ -959,13 +992,9 @@ fn json(history: &History) -> String {
     };
     write!(
         out,
-        r#"{{"through":{},"end":{},"defaults":[{}],"undo":{},"redo":{},"steps":["#,
+        r#"{{"through":{},"end":{},"undo":{},"redo":{},"steps":["#,
         history.through,
         history.end,
-        (history.defaults.iter())
-            .map(|id| format!("{id:?}"))
-            .collect::<Vec<_>>()
-            .join(","),
         moves(&history.undo),
         moves(&history.redo),
     )
