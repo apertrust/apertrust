@@ -40,7 +40,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::sidecar::{Document, Newer};
+use crate::sidecar::{Edits, Newer};
 
 use crate::listing::{Error, Event, FileStat, Folder, Listing, Options, Orphan, Photo, Summary};
 
@@ -73,8 +73,9 @@ pub struct Edit {
     /// the key of a thumbnail (planned), which hashes the edit the file holds, so that
     /// another build rewriting the same edit differently does not invalidate them.
     pub file_hash: [u8; 32],
-    /// Whether the photo has an edit: the sidecar holds entries, or is a newer
-    /// Apertrust's, whose layout this build may not read and so may not call empty.
+    /// Whether the photo has an edit: some module's last entry up to a copy's end is not
+    /// empty, a fold of its log as text (`docs/history.md`, In the sidecar), or the file is a
+    /// newer Apertrust's, whose layout this build may not read and so may not call empty.
     pub edited: bool,
     /// Why the photo opens for viewing only, where it does (decision 43).
     pub view_only: Option<Newer>,
@@ -300,13 +301,14 @@ fn read_sidecar(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> 
     let Ok(text) = std::str::from_utf8(&bytes) else {
         return Sidecar::Unreadable("not text".to_owned());
     };
-    match Document::parse(text) {
-        Ok(document) => {
-            let view_only = document.newer();
+    // The modified time names a version 1 file's steps alone, which the index never shows.
+    match Edits::parse(text, 0) {
+        Ok(edits) => {
+            let view_only = edits.newer();
             Sidecar::Read(Edit {
-                version: document.version,
+                version: edits.version,
                 file_hash: hash(&bytes),
-                edited: !document.entries.is_empty() || view_only.is_some(),
+                edited: edits.edited() || view_only.is_some(),
                 view_only,
             })
         }

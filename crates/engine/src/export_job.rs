@@ -366,18 +366,67 @@ pub(crate) struct Live {
 pub(crate) struct Snapshot {
     xml: io::Result<Option<String>>,
     changed: Option<SystemTime>,
+    stamp: Option<Stamp>,
+}
+
+/// A file's size and modified time, which tell the edit writer that a sidecar changed since
+/// the session last read or wrote it (`docs/history.md`, Behaviour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Stamp {
+    pub len: u64,
+    pub modified: Option<SystemTime>,
+}
+
+impl Stamp {
+    /// The file at `path`'s, `None` where there is none, it is no file, as a folder in its
+    /// place, or it cannot be looked at.
+    pub(crate) fn of(path: &Path) -> Option<Stamp> {
+        let metadata = std::fs::metadata(path)
+            .ok()
+            .filter(std::fs::Metadata::is_file)?;
+        Some(Stamp::from_metadata(&metadata))
+    }
+
+    /// A file's, from `metadata` read of it.
+    pub(crate) fn from_metadata(metadata: &std::fs::Metadata) -> Stamp {
+        Stamp {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+        }
+    }
 }
 
 impl Snapshot {
     /// The sidecar at `path` as it is now.
+    /// Its text and its stamp come from the one file opened, so another program's write
+    /// between the two is never taken for the text read.
     pub(crate) fn read(path: &Path) -> Self {
-        let xml = match std::fs::read_to_string(path) {
-            Ok(xml) => Ok(Some(xml)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+        use std::io::Read;
+        let opened = std::fs::File::open(path).and_then(|mut file| {
+            let metadata = file.metadata()?;
+            let mut xml = String::new();
+            file.read_to_string(&mut xml)?;
+            Ok((xml, metadata))
+        });
+        let (xml, stamp) = match opened {
+            Ok((xml, metadata)) => {
+                let stamp = metadata.is_file().then(|| Stamp::from_metadata(&metadata));
+                (Ok(Some(xml)), stamp)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (Ok(None), None),
+            Err(error) => (Err(error), Stamp::of(path)),
         };
-        let changed = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-        Self { xml, changed }
+        let changed = stamp.and_then(|stamp| stamp.modified);
+        Self {
+            xml,
+            changed,
+            stamp,
+        }
+    }
+
+    /// Its file's size and modified time as it was read, `None` where there was no file.
+    pub(crate) fn stamp(&self) -> Option<Stamp> {
+        self.stamp
     }
 
     /// Its text, none where there is no file: what an opening photo reads its edit from

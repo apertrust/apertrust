@@ -362,6 +362,22 @@ edit-not-saved = The edit of { $name } was not saved: { $error }
 photo-view-only = Edited in a newer Apertrust, { $version }: open for viewing only
 # The same where the edit does not say which version wrote it.
 photo-view-only-unknown = Edited in a newer Apertrust: open for viewing only
+# In the same tooltip when part of the edit's history cannot be read, as a damaged or hand-edited
+# file's: saving would change what could not be read, so the photo opens for viewing only.
+photo-view-only-unreadable = Some of this edit’s history can’t be read: open for viewing only
+# The same where part of the history holds what this build would drop by saving it, as a
+# newer build's field.
+photo-view-only-unkept = Some of this edit’s history can’t be kept: open for viewing only
+# Why an edit was not saved, after "The edit of … was not saved:" and in the save state's
+# tooltip: another program changed its file, which this one can't read, so it is not written
+# over.
+edit-not-saved-unreadable = another program changed its file, and this Apertrust can’t read it
+# The same where the file another program wrote opens for viewing only now.
+edit-not-saved-view-only = another program changed its file, which opens for viewing only now
+# Over the photo, until another is opened, when another program changed the history in its
+# edit's file so that the last Undo, Redo or Go to made here could not be kept. $name is the
+# photo's file name.
+edit-move-not-kept = Another program changed the history of { $name }: your last Undo, Redo or Go to wasn’t kept
 # The exposure values at the end of the caption under the photo, from its EXIF. $value is
 # written in the language's numbers: the shutter as "1/250" or "2.5", the aperture "8.0",
 # the focal length "35", the ISO "200".

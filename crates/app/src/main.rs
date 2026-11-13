@@ -94,9 +94,10 @@ use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
-    CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand,
-    PickerCommand, PickerRef, Places, Session, StepSource, Values, ViewOnly,
+    CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, LibraryCommand,
+    PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
 };
+use apertrust_engine::sidecar::Reason;
 use apertrust_modules::Module;
 use apertrust_ui::components::{
     ActivityAction, Available, CellRating, CentralBar, CentralBarAction, GridEdge, GridEdgeAction,
@@ -3345,6 +3346,27 @@ impl App {
     fn drain(&mut self, ctx: &egui::Context) {
         let mut show = jobs::Show::Nothing;
         for event in self.session.events() {
+            // An edit not saved over another program's file, in the person's words.
+            let event = match event {
+                Event::Failed(SessionError::NotSaved {
+                    path,
+                    through,
+                    error,
+                }) => {
+                    let why = not_saved_words(&translator(ctx), &error);
+                    self.mirror.not_saved(&path, through, &why);
+                    continue;
+                }
+                Event::Failed(SessionError::MoveNotKept { path }) => {
+                    let mut args = apertrust_ui::i18n::Args::new();
+                    // The edit's file is the photo's name with `.apxmp` after it.
+                    args.set("name", file_name(&path.with_extension("")));
+                    let words = translator(ctx).text_with("edit-move-not-kept", Some(&args));
+                    self.mirror.notice = Some(words);
+                    continue;
+                }
+                event => event,
+            };
             for reaction in self.mirror.apply(event) {
                 match reaction {
                     Reaction::Jobs(asked) => show = show.max(asked),
@@ -4117,6 +4139,7 @@ impl App {
         });
         let said: Vec<&str> = [
             left.as_deref(),
+            self.mirror.notice.as_deref(),
             message.as_ref().or(failure).map(String::as_str),
         ]
         .into_iter()
@@ -5997,9 +6020,27 @@ fn focusable(ctx: &egui::Context) -> Vec<(egui::Id, egui::Rect)> {
     })
 }
 
-/// What the line under the photo says of a photo whose edit a newer Apertrust wrote: the
-/// version that wrote it, where the edit records one, and that it is open for viewing only.
+/// Why the session could not write an edit over another program's file
+/// (`SessionError::NotSaved`), as `edit-not-saved` and the save state say it: that file now
+/// opens for viewing only, or it cannot be read.
+fn not_saved_words(words: &Translator, error: &SessionError) -> String {
+    match error {
+        SessionError::ViewOnly(_) => words.text("edit-not-saved-view-only"),
+        _ => words.text("edit-not-saved-unreadable"),
+    }
+}
+
+/// What the line under the photo says of a photo open for viewing only: that part of its
+/// edit's history cannot be read, or the newer version that wrote it, where the edit records
+/// one; and that it is open for viewing only.
 fn view_only_notice(words: &Translator, view_only: &ViewOnly) -> String {
+    match &view_only.reason {
+        Reason::Unreadable(apertrust_engine::sidecar::Problem::UnknownField { .. }) => {
+            return words.text("photo-view-only-unkept");
+        }
+        Reason::Unreadable(_) => return words.text("photo-view-only-unreadable"),
+        Reason::Newer(_) => {}
+    }
     match &view_only.build {
         Some(build) => {
             let mut args = apertrust_ui::i18n::Args::new();
@@ -6137,7 +6178,7 @@ mod tests {
         let words = Translator::new(Locale::EnGb);
         let view_only = |build: Option<&str>| ViewOnly {
             build: build.map(str::to_owned),
-            newer: Newer::Module("lens".to_owned()),
+            reason: Reason::Newer(Newer::Module("lens".to_owned())),
         };
         assert_eq!(
             view_only_notice(&words, &view_only(Some("0.9.0+3~gabcdef0"))),
@@ -6146,6 +6187,60 @@ mod tests {
         assert_eq!(
             view_only_notice(&words, &view_only(None)),
             "Edited in a newer Apertrust: open for viewing only"
+        );
+    }
+
+    /// An edit part of whose history cannot be read says so, not that a newer build wrote
+    /// it, whichever build did, in each language.
+    #[test]
+    fn an_edit_whose_history_cannot_be_read_says_so() {
+        use apertrust_engine::sidecar::Problem;
+        let view_only = ViewOnly {
+            build: Some("0.9.0".to_owned()),
+            reason: Reason::Unreadable(Problem::End {
+                copy: "00000000".to_owned(),
+                end: "00000000000000ff".to_owned(),
+            }),
+        };
+        for (locale, words) in [
+            (
+                Locale::EnGb,
+                "Some of this edit’s history can’t be read: open for viewing only",
+            ),
+            (
+                Locale::Uk,
+                "Частину історії цієї обробки неможливо прочитати: відкрито лише для перегляду",
+            ),
+            (
+                Locale::Pl,
+                "Części historii tej edycji nie można odczytać: otwarte tylko do podglądu",
+            ),
+        ] {
+            let notice = view_only_notice(&Translator::new(locale), &view_only);
+            assert_eq!(notice, words, "{locale:?}");
+        }
+        // A field this build would drop: history it can't keep.
+        let unkept = ViewOnly {
+            build: None,
+            reason: Reason::Unreadable(Problem::UnknownField {
+                place: "the file".to_owned(),
+                field: "apertrust:groups".to_owned(),
+            }),
+        };
+        assert_eq!(
+            view_only_notice(&Translator::new(Locale::EnGb), &unkept),
+            "Some of this edit’s history can’t be kept: open for viewing only"
+        );
+        // Why an edit was not saved over another program's file, in the person's words.
+        let words = Translator::new(Locale::EnGb);
+        let view_only = SessionError::ViewOnly(unkept);
+        assert_eq!(
+            not_saved_words(&words, &view_only),
+            "another program changed its file, which opens for viewing only now"
+        );
+        assert_eq!(
+            not_saved_words(&words, &SessionError::NotLive),
+            "another program changed its file, and this Apertrust can’t read it"
         );
     }
 

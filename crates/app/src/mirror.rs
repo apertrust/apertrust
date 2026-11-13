@@ -134,6 +134,10 @@ pub struct Mirror {
     pub pending: Vec<(u64, Pending)>,
     /// What failed since the last frame, shown in the central panel until the next one.
     pub failure: Option<String>,
+    /// What the session said of the photo's history that lasts until another photo is asked
+    /// for, which no frame clears: another program's change to its file that kept no move
+    /// of the session's (`SessionError::MoveNotKept`).
+    pub notice: Option<String>,
     /// The latest frame, which the viewport draws.
     pub frame: Option<Frame>,
     /// What the central panel shows of the photo until its first live frame (decision 77):
@@ -192,6 +196,7 @@ impl Mirror {
             untouched,
             pending: Vec::new(),
             failure: None,
+            notice: None,
             frame: None,
             picture: None,
             picture_generation: 0,
@@ -234,6 +239,7 @@ impl Mirror {
         self.saving.leaving();
         self.frame = None;
         self.failure = None;
+        self.notice = None;
         self.no_photo();
         self.live = false;
         self.asked_at = Some(now);
@@ -253,6 +259,7 @@ impl Mirror {
         self.saving.leaving();
         self.frame = None;
         self.failure = None;
+        self.notice = None;
         self.no_photo();
         self.live = false;
         self.asked_at = None;
@@ -462,12 +469,31 @@ impl Mirror {
                 self.saving
                     .write_failed(&path, through, &source.to_string());
             }
+            // The app hands it over in its own words ([`Mirror::not_saved`]); else the
+            // session's.
+            Event::Failed(SessionError::NotSaved {
+                path,
+                through,
+                error,
+            }) => self.not_saved(&path, through, &error.to_string()),
+            // The app hands it over in its own words too; else the session's.
+            Event::Failed(error @ SessionError::MoveNotKept { .. }) => {
+                self.notice = Some(error.to_string());
+            }
             Event::Failed(error) => self.failed(error, &mut reactions),
         }
         if moves {
             self.folder.locate(self.photo.path());
         }
         reactions
+    }
+
+    /// The session could not write the edit to `path`, as `why` says, after the first
+    /// `through` commands: another program changed the file, and it cannot be written over
+    /// (`SessionError::NotSaved`). Told as a failed write is, the open photo's or, as it
+    /// closes, the photo left's: Quit asks rather than waits, and no frame clears it.
+    pub fn not_saved(&mut self, path: &Path, through: u64, why: &str) {
+        self.saving.write_failed(path, through, why);
     }
 
     fn failed(&mut self, error: SessionError, reactions: &mut Vec<Reaction>) {
@@ -1351,7 +1377,12 @@ pub(crate) mod tests {
         };
         let mut m = mirror();
         m.apply(Event::Opened(photo(1)));
-        // A failure stays until the next frame, which is the photo drawn again.
+        // A failure stays until the next frame, which is the photo drawn again; a notice of
+        // the history, until another photo is asked for.
+        let moved = SessionError::MoveNotKept {
+            path: sidecar::path_for(&photo(1).path),
+        };
+        m.apply(Event::Failed(moved));
         m.apply(Event::Failed(SessionError::Gpu("out of memory".to_owned())));
         assert_eq!(m.failure.as_deref(), Some("the GPU: out of memory"));
         assert!(m.frame.is_none());
@@ -1360,6 +1391,9 @@ pub(crate) mod tests {
         assert_eq!(m.failure, None);
         m.apply(Event::Frame(frame(5)));
         assert_eq!(m.frame.as_ref().map(|f| f.through), Some(5));
+        assert!(m.notice.as_deref().is_some_and(|n| n.contains("Undo")));
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
+        assert_eq!(m.notice, None);
     }
 
     #[test]
@@ -1421,6 +1455,60 @@ pub(crate) mod tests {
         });
         let saving = (m.saving.state(Instant::now()), m.saving.failure.as_ref());
         assert_eq!(saving, (SaveState::Saved, None));
+    }
+
+    /// An edit the session could not write over another program's file is told as a failed
+    /// write: no longer awaited, so Quit asks rather than waits; the save state's, not the
+    /// central panel's, so no frame clears it; and kept as the photo left's as it closes.
+    #[test]
+    fn an_edit_not_saved_over_another_program_s_file_is_a_failed_write() {
+        let mut m = mirror();
+        let edit = sidecar::path_for(&photo(1).path);
+        m.apply(Event::Opened(photo(1)));
+        m.apply(Event::Values(report(0.0, 1)));
+        send(&mut m, 2, 1.0);
+        assert!(m.saving.writing());
+        let unreadable = SessionError::NotSaved {
+            path: edit.clone(),
+            through: 2,
+            error: Box::new(SessionError::NotLive),
+        };
+        assert_eq!(m.apply(Event::Failed(unreadable)), []);
+        assert!(!m.saving.writing());
+        assert!(m.saving.failed().is_some());
+        assert!(matches!(
+            m.saving.state(Instant::now()),
+            SaveState::Failed(_)
+        ));
+        assert_eq!(m.failure, None);
+        // In the app's words where it hands it over.
+        m.not_saved(&edit, 2, "can't read it");
+        assert_eq!(
+            m.saving.state(Instant::now()),
+            SaveState::Failed("can't read it")
+        );
+        // A completed change after it, whose write the session drops as well: answered by
+        // the next report, so it is no longer awaited either.
+        m.saving.sent(3, true, Instant::now());
+        assert!(m.saving.writing());
+        m.not_saved(&edit, 3, "can't read it");
+        assert!(!m.saving.writing());
+        // The photo turned view-only: `Opened` again, then what was not saved, which Quit
+        // asks about though the save state says nothing of a photo it never writes.
+        send(&mut m, 4, 2.0);
+        let mut view_only = photo(1);
+        view_only.view_only = Some(sidecar::ViewOnly {
+            build: None,
+            reason: sidecar::Reason::Newer(sidecar::Newer::Version(3)),
+        });
+        m.apply(Event::Opened(view_only));
+        m.not_saved(&edit, 4, "view only now");
+        assert!(!m.saving.writing());
+        assert_eq!(m.saving.failed(), Some("view only now"));
+        // As the photo closes, another photo asked for: the photo left's.
+        m.opening(PathBuf::from("/photos/b.ARW"), 4, Instant::now());
+        m.not_saved(&edit, 3, "can't read it");
+        assert_eq!(m.saving.left, Some((edit, "can't read it".to_owned())));
     }
 
     #[test]
@@ -1741,7 +1829,7 @@ pub(crate) mod tests {
         let mut view_only = photo(1);
         view_only.view_only = Some(sidecar::ViewOnly {
             build: None,
-            newer: sidecar::Newer::Version(9),
+            reason: sidecar::Reason::Newer(sidecar::Newer::Version(9)),
         });
         m.apply(Event::Opened(view_only));
         m.apply(Event::Values(report(0.0, 1)));
@@ -2311,6 +2399,51 @@ pub(crate) mod tests {
         }
     }
 
+    /// Through a real session: a photo's steps, saved in its sidecar (step 9.5), are in the
+    /// History tab again once it is opened again, after another photo, each a line of its
+    /// own, the end on the last.
+    #[test]
+    fn a_real_session_s_reopened_photo_shows_its_steps_in_the_history_tab() {
+        use apertrust_engine::session::Command;
+
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("history-reopened");
+        let (path, other) = (folder.join("steps.ARW"), folder.join("other.ARW"));
+        live.open(&path);
+        live.until_live();
+        let set = |control: &str, value| Command::SetControl {
+            module: "exposure".to_owned(),
+            control: control.to_owned(),
+            value: ControlValue::Number(value),
+            done: true,
+        };
+        live.session.send(set("exposure", 1.0));
+        live.session.send(set("black_level", 0.01));
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == 2));
+        let ids: Vec<_> = (live.mirror.history.as_ref().unwrap().steps.iter())
+            .map(|step| step.id)
+            .collect();
+        live.open(&other);
+        live.until_live();
+        live.open(&path);
+        live.until_live();
+        live.until(|m| m.history.as_ref().is_some_and(|h| h.steps.len() == 2));
+        let history = live.mirror.history.clone().expect("the photo's history");
+        let read: Vec<_> = history.steps.iter().map(|step| step.id).collect();
+        assert_eq!((read, history.end), (ids, 2));
+        let words = apertrust_ui::Translator::new(apertrust_ui::Locale::EnGb);
+        let today = crate::history::today();
+        let listed = crate::history::listed(Some(&history), live.mirror.modules(), &words, today);
+        let steps = (listed.lines())
+            .filter(|line| matches!(line.place, crate::history::Place::Step { .. }))
+            .count();
+        assert_eq!(steps, 2, "{listed:?}");
+        drop(live);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     /// Through a real session: a plain click on a step in the History section, the app's
     /// own drawing of the session's history, asks to go to it, and the session, sent that,
     /// takes the edit back to that step; Shift-click asks to open its module and nothing
@@ -2454,7 +2587,7 @@ pub(crate) mod tests {
             apertrust_modules::MODULES,
             "9.0.0",
         )
-        .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
         std::fs::write(sidecar::path_for(&path), xml).unwrap();
         live.open(&path);
         live.until_live();

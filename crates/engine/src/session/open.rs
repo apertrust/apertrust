@@ -43,7 +43,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_base::jobs::{Context, Interrupted};
@@ -56,11 +56,12 @@ use super::cache::Upkeep;
 use super::{Decoded, Event, Inbox, OpenPreview, Outbox, PreviewSource, SessionError};
 use crate::compute::GpuImage;
 use crate::edit::Edit;
-use crate::export_job::Snapshot;
+use crate::export_job::{Snapshot, Stamp};
 use crate::gpu::GpuContext;
+use crate::history::{Clock, Log};
 use crate::jobs;
 use crate::names::Shot;
-use crate::sidecar::{self, ViewOnly};
+use crate::sidecar::{self, Edits, ViewOnly};
 
 /// What a photo's raw says of it without its pixels: what the engine thread shows the
 /// photo's values with before its decode, and the decode gives again.
@@ -335,9 +336,16 @@ pub(crate) struct Read {
     pub metadata: Metadata,
     pub edit: Edit,
     pub hash: Option<[u8; 32]>,
-    /// When the edit's file was last modified, which the step it reads as carries.
-    pub modified: Option<SystemTime>,
     pub view_only: Option<ViewOnly>,
+    /// The edit's history ([`sidecar::Loaded::log`]) and its copy's clock vector.
+    pub log: Log,
+    pub clocks: Vec<Clock>,
+    /// The sidecar as text, which a write lays the log on, with the photo's name and
+    /// fingerprint.
+    pub file: Edits,
+    /// The sidecar's size and modified time as read, `None` where there was none, which
+    /// the edit writer compares before it writes.
+    pub stamp: Option<Stamp>,
 }
 
 /// What an open's job runs with, owned, so its body borrows nothing of the engine
@@ -487,14 +495,7 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let read = file.metadata().and_then(|metadata| {
         raw = (metadata.sensor.width, metadata.sensor.height);
         phase_one = library::RawFacts::phase_one(&metadata.camera);
-        let (edit, view_only, hash, modified) = edit(run, context, &metadata.image)?;
-        Ok(Box::new(Read {
-            metadata,
-            hash,
-            modified,
-            edit,
-            view_only,
-        }))
+        edit(run, context, metadata).map(Box::new)
     });
     if cancelled() {
         return;
@@ -604,28 +605,56 @@ fn rendered(cache: &Upkeep, path: &Path) -> Option<(Vec<u8>, Thumbnail)> {
 }
 
 /// The photo's edit, from its sidecar as the edit writer reads it once it has written what
-/// it was handed of it, clamped as an opened edit is, and whether a newer Apertrust wrote
-/// it, its bytes' hash and when its file was last modified: none for a photo never edited.
-type ReadEdit = (Edit, Option<ViewOnly>, Option<[u8; 32]>, Option<SystemTime>);
-
-fn edit(run: &Run, context: &Context<'_>, image: &ImageContext) -> Result<ReadEdit, SessionError> {
+/// it was handed of it, clamped as an opened edit is, with its history, whether it opens for
+/// viewing only, its bytes' hash and the file's stamp, and the photo's name and fingerprint
+/// for the file: no edit, history, hash or stamp for a photo never edited. `metadata`, the
+/// raw's, is what the edit is clamped on.
+fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, SessionError> {
     let sidecar = sidecar::path_for(&run.path);
     let snapshot = context
         .wait(&run.snapshot)
         .map_err(|_| SessionError::Stopped)?
         .pop();
     let modified = snapshot.as_ref().and_then(Snapshot::changed);
+    let stamp = snapshot.as_ref().and_then(Snapshot::stamp);
+    let mut read = Read {
+        metadata,
+        edit: Edit::default(),
+        hash: None,
+        view_only: None,
+        log: Log::default(),
+        clocks: Vec::new(),
+        file: Edits::new(""),
+        stamp,
+    };
+    // What the file names the photo by: its name, and its fingerprint (decision 53).
+    let identify = |file: &mut Edits| {
+        file.photo = Some(sidecar::file_name(&run.path).into_owned());
+        if let Ok(fingerprint) = sidecar::read_fingerprint(&run.path) {
+            file.fingerprint = Some(fingerprint);
+        }
+    };
     let xml = match snapshot.map(Snapshot::xml) {
         Some(Ok(Some(xml))) => xml,
-        Some(Ok(None)) | None => return Ok((Edit::default(), None, None, None)),
+        Some(Ok(None)) | None => {
+            identify(&mut read.file);
+            return Ok(read);
+        }
         Some(Err(error)) => {
             return Err(SessionError::Sidecar(sidecar::SidecarError::from(error)));
         }
     };
     tracing::debug!(target: "pipe", "read {}", sidecar::file_name(&sidecar));
-    let loaded = sidecar::from_xml(&xml, run.operations, &run.modules, run.retired)?;
+    let start = std::time::Instant::now();
+    let loaded = sidecar::from_xml_at(&xml, modified, run.operations, &run.modules, run.retired)?;
+    let ms = start.elapsed().as_secs_f64() * 1e3;
+    let steps = loaded.log.steps().len();
+    tracing::debug!(target: "perf", "read {}: {steps} steps in {ms:.1} ms", sidecar::file_name(&sidecar));
     for warning in &loaded.warnings {
         tracing::warn!(target: "pipe", "{}: {warning}", sidecar.display());
+    }
+    for problem in &loaded.problems {
+        tracing::warn!(target: "pipe", "{}: {problem}", sidecar.display());
     }
     let view_only = loaded.view_only();
     if let Some(view_only) = &view_only {
@@ -635,21 +664,30 @@ fn edit(run: &Run, context: &Context<'_>, image: &ImageContext) -> Result<ReadEd
         );
         tracing::warn!(target: "pipe", "view only: {name}, by {by}");
     }
-    let mut edit = loaded.edit;
+    read.clocks = loaded.clocks().to_vec();
+    let sidecar::Loaded {
+        mut edit,
+        log,
+        mut file,
+        ..
+    } = loaded;
     // A number outside the range its module's values give, as only a hand-written file
-    // holds, is clamped as it is read (decisions 21 and 30); an edit a newer Apertrust
-    // wrote is shown as it was.
+    // holds, is clamped as it is read (decisions 21 and 30); an edit open for viewing only
+    // is shown as it was. The clamp is a change not yet a step.
     if view_only.is_none() {
-        for warning in edit.clamp_read(&run.modules, image) {
+        for warning in edit.clamp_read(&run.modules, &read.metadata.image) {
             tracing::warn!(target: "pipe", "{warning}");
         }
+        identify(&mut file);
     }
-    Ok((
+    Ok(Read {
         edit,
+        hash: Some(apertrust_library::index::hash(xml.as_bytes())),
         view_only,
-        Some(apertrust_library::index::hash(xml.as_bytes())),
-        modified,
-    ))
+        log,
+        file,
+        ..read
+    })
 }
 
 /// A test's synthetic raws, read as files are: the engine's tests', and its clients' through

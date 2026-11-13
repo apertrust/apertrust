@@ -41,6 +41,7 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{Tiling, export_at};
 use apertrust_engine::export_job;
 use apertrust_engine::gpu::{self, GpuContext};
+use apertrust_engine::history::{self, Change, Clock, Log, MachineId, StepSource, Wrote};
 use apertrust_engine::jobs::JobEvent;
 use apertrust_engine::names::{self, Shot};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline};
@@ -64,7 +65,7 @@ use apertrust_export::{Format, Places, png, variables};
 use apertrust_modules::{Control, ControlKind, ControlValue, Mark, Module};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_raw::{CfaColor, Pixels, Rect};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 mod beside;
 mod cache;
@@ -395,7 +396,9 @@ fn main() -> Result<()> {
         apertrust_base::log::print_version(program, &build(&program));
         return Ok(());
     }
-    let cli = Cli::parse();
+    // The matches as well as the flags, for where each of `edit`'s came on the command line.
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     let _logging = apertrust_base::log::init(&cli.debug)?;
     apertrust_base::log::starting(apertrust_base::program!(), build);
     // `--conf`'s values for this run, checked against the engine's and the export settings
@@ -451,6 +454,9 @@ fn main() -> Result<()> {
                 resets: &resets,
                 param_resets: &param_resets,
                 clear,
+                order: (matches.subcommand_matches("edit"))
+                    .map(FlagOrder::of)
+                    .unwrap_or_default(),
             },
             OPERATIONS,
             MODULES,
@@ -829,10 +835,44 @@ struct EditArgs<'a> {
     resets: &'a [String],
     param_resets: &'a [String],
     clear: bool,
+    /// Where each flag came on the command line, which orders the change's steps.
+    order: FlagOrder,
 }
 
-/// Changes the edit saved beside `photo`, then shows it. An edit a newer Apertrust wrote
-/// is refused whatever the flags, `--clear` included, and left as it is (decision 43).
+/// Where each of `edit`'s flags came on the command line, clap's index of each value, which
+/// orders the change's steps; empty where it is not known, as in a test, and then the flags
+/// are taken kind by kind: resets, parameter resets, sets, then parameters.
+#[derive(Debug, Default)]
+struct FlagOrder {
+    resets: Vec<usize>,
+    param_resets: Vec<usize>,
+    sets: Vec<usize>,
+    params: Vec<usize>,
+}
+
+impl FlagOrder {
+    /// The order of `edit`'s flags in its subcommand's `matches`.
+    fn of(matches: &clap::ArgMatches) -> Self {
+        let at = |id: &str| {
+            (matches.indices_of(id))
+                .map(Iterator::collect)
+                .unwrap_or_default()
+        };
+        FlagOrder {
+            resets: at("resets"),
+            param_resets: at("param_resets"),
+            sets: at("sets"),
+            params: at("params"),
+        }
+    }
+}
+
+/// Changes the edit saved beside `photo`, then shows it. The change is a step of each module
+/// and operation it writes, in the order of the flags, `--clear` first, sharing a batch
+/// where there are several, source You, added to the log after its end, as the session's
+/// change is (`docs/history.md`, The CLI); the file is written as version 2. An edit open
+/// for viewing only, a newer Apertrust's or one part of whose history cannot be read, is
+/// refused whatever the flags, `--clear` included, and left as it is (decisions 43 and 48).
 fn edit(
     photo: &Path,
     args: EditArgs,
@@ -843,13 +883,79 @@ fn edit(
         bail!("no file {}", photo.display());
     }
     let path = sidecar::path_for(photo);
+    // Another program's write between the read and the write, as the app's, is read again
+    // and the change made on it, once; a second is refused.
+    let edit = match edit_once(photo, &args, operations, modules)? {
+        Some(edit) => edit,
+        None => {
+            tracing::debug!(target: "pipe", "{} changed while it was edited: read again", path.display());
+            edit_once(photo, &args, operations, modules)?.with_context(|| {
+                format!(
+                    "{} changed while it was edited, twice: not written; run edit again",
+                    path.display()
+                )
+            })?
+        }
+    };
+    let lines = describe(&edit, operations, modules);
+    if lines.is_empty() {
+        println!("No settings: every module and operation keeps its defaults for the image.");
+    }
+    for line in lines {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// A file's size and modified time, `None` where there is none: what tells `edit` another
+/// program wrote it after it was read.
+type Stamp = Option<(u64, Option<std::time::SystemTime>)>;
+
+fn stamp(path: &Path) -> Stamp {
+    std::fs::metadata(path)
+        .ok()
+        .map(|metadata| (metadata.len(), metadata.modified().ok()))
+}
+
+/// Runs `write` where the file at `path` still has the stamp `read`, as it was read: whether
+/// it wrote, `false` where another program changed the file meanwhile.
+fn write_if_unchanged(
+    path: &Path,
+    read: Stamp,
+    write: impl FnOnce() -> Result<()>,
+) -> Result<bool> {
+    if stamp(path) != read {
+        return Ok(false);
+    }
+    write().map(|()| true)
+}
+
+/// One try of [`edit`]: the edit the change leaves, or `None` where the file changed between
+/// its read and the write, which writes nothing.
+fn edit_once(
+    photo: &Path,
+    args: &EditArgs,
+    operations: &[&dyn Operation],
+    modules: &[&dyn Module],
+) -> Result<Option<Edit>> {
+    let path = sidecar::path_for(photo);
+    let read_stamp = stamp(&path);
     let saved = saved(photo, operations, modules)?;
     if let Some(view_only) = saved.as_ref().and_then(sidecar::Loaded::view_only) {
         return Err(view_only).with_context(|| format!("not changing {}", path.display()));
     }
-    let mut edit = match saved {
-        Some(loaded) if !args.clear => loaded.edit,
-        _ => Edit::default(),
+    let (file, mut log, mut clocks) = match saved {
+        Some(loaded) => {
+            let clocks = loaded.clocks().to_vec();
+            (loaded.file, loaded.log, clocks)
+        }
+        None => (sidecar::Edits::new(""), Log::default(), Vec::new()),
+    };
+    let before = log.fold();
+    let mut edit = if args.clear {
+        Edit::default()
+    } else {
+        before.clone()
     };
     let sets = read_sets(&args.flags.sets, modules)?;
     // Only a choice reads the photo, for the options it lists (decision 30), so the raw
@@ -863,11 +969,11 @@ fn edit(
         ImageContext::full(0, 0)
     };
     clamp_read(&mut edit, modules, &image);
-    for reset in args.resets {
+    for reset in args.resets.iter() {
         reset_control(&mut edit, modules, reset, &image)
             .with_context(|| format!("--reset {reset}"))?;
     }
-    for reset in args.param_resets {
+    for reset in args.param_resets.iter() {
         reset_param(&mut edit, operations, modules, reset)
             .with_context(|| format!("--reset-param {reset}"))?;
     }
@@ -878,24 +984,79 @@ fn edit(
         || !args.resets.is_empty()
         || !args.param_resets.is_empty()
     {
-        sidecar::write(
-            &path,
-            &edit,
-            operations,
-            modules,
-            apertrust_base::program!().version,
-        )
-        .with_context(|| format!("writing {}", path.display()))?;
-        println!("Wrote {}", path.display());
+        let wrote = wrote(args, &sets);
+        let changes = Change::between(&before, &edit, &wrote);
+        if !changes.is_empty() {
+            let machine = MachineId::current();
+            let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
+            let clock = Clock::now(history::latest(read, machine).as_ref(), machine);
+            log.add_change(changes, StepSource::You, None, clock);
+            history::advance(&mut clocks, clock);
+            let mut file = file;
+            file.photo = Some(apertrust_base::log::file_name(photo).into_owned());
+            if let Ok(fingerprint) = sidecar::read_fingerprint(photo) {
+                file.fingerprint = Some(fingerprint);
+            }
+            let build = apertrust_base::program!().version;
+            let written = write_if_unchanged(&path, read_stamp, || {
+                sidecar::write_log(&path, &file, &log, &clocks, (operations, modules), build)
+                    .with_context(|| format!("writing {}", path.display()))
+            })?;
+            if !written {
+                return Ok(None);
+            }
+            println!("Wrote {}", path.display());
+        }
     }
-    let lines = describe(&edit, operations, modules);
-    if lines.is_empty() {
-        println!("No settings: every module and operation keeps its defaults for the image.");
-    }
-    for line in lines {
-        println!("{line}");
-    }
-    Ok(())
+    Ok(Some(edit))
+}
+
+/// What `edit`'s flags write, which orders its steps: `--clear`, every module and operation,
+/// first, as the change starts from no settings, then each reset, `--set` and `--param` in
+/// the order it came on the command line ([`FlagOrder`]).
+fn wrote(args: &EditArgs, sets: &[ControlSet]) -> Vec<Wrote> {
+    let id = |flag: &str| flag.split('.').next().unwrap_or_default().to_owned();
+    // Each flag at its place on the command line, else after every flag of the kinds
+    // before its own.
+    let mut placed: Vec<(usize, Wrote)> = Vec::new();
+    let mut place = |at: &[usize], wrote: Vec<Wrote>| {
+        let after = placed.len();
+        for (index, wrote) in wrote.into_iter().enumerate() {
+            let at = at
+                .get(index)
+                .copied()
+                .unwrap_or(usize::MAX / 2 + after + index);
+            placed.push((at, wrote));
+        }
+    };
+    let order = &args.order;
+    place(
+        &order.resets,
+        (args.resets.iter()).map(|r| Wrote::Module(id(r))).collect(),
+    );
+    place(
+        &order.param_resets,
+        (args.param_resets.iter())
+            .map(|r| Wrote::Operation(id(r)))
+            .collect(),
+    );
+    let modules = sets
+        .iter()
+        .map(|set| Wrote::Module(set.module.definition().id.to_owned()));
+    place(&order.sets, modules.collect());
+    place(
+        &order.params,
+        (args.flags.params.iter())
+            .map(|p| Wrote::Operation(id(p)))
+            .collect(),
+    );
+    // Stable, so flags of unknown place keep the kinds' order.
+    placed.sort_by_key(|(at, _)| *at);
+    let clear = args.clear.then_some(Wrote::All);
+    clear
+        .into_iter()
+        .chain(placed.into_iter().map(|(_, wrote)| wrote))
+        .collect()
 }
 
 /// What `export` does for every photo of its run.
@@ -2544,6 +2705,7 @@ mod tests {
                     resets: &resets,
                     param_resets: &[],
                     clear,
+                    order: FlagOrder::default(),
                 },
                 OPERATIONS,
                 WITH_SAMPLE,
@@ -2569,7 +2731,8 @@ mod tests {
             Some(Value::Float(0.01))
         );
         let xml = std::fs::read_to_string(sidecar::path_for(&photo)).unwrap();
-        assert!(xml.contains(r#"apertrust:version="1""#), "{xml}");
+        assert!(xml.contains(r#"apertrust:version="2""#), "{xml}");
+        assert!(xml.contains(r#"apertrust:photo="IMG.ARW""#), "{xml}");
         // The build that wrote it: this one's version (decision 44).
         let build = format!(
             r#"x:xmptk="Apertrust {}""#,
@@ -2608,6 +2771,115 @@ mod tests {
                 .0
                 .is_empty()
         );
+        // Each run a change of its own, a step of each module and operation it wrote, in
+        // the order of its flags, sharing a batch where there are several, after the steps
+        // before it; --clear one Reset, the log kept. A run that changes nothing adds none.
+        run(&[], &[], &["sample.grain"], false).unwrap();
+        let path = sidecar::path_for(&photo);
+        let log = sidecar::read(&path, OPERATIONS, WITH_SAMPLE, &[])
+            .unwrap()
+            .log;
+        let steps = log.steps();
+        assert_eq!((steps.len(), log.end()), (5, 5));
+        assert!(steps[0].batch.is_some() && steps[0].batch == steps[1].batch);
+        let names: Vec<_> = (steps.iter())
+            .map(|step| match step.change.entries() {
+                [history::Entry::Module { module, .. }] => module.clone(),
+                [history::Entry::Operation { operation, .. }] => operation.clone(),
+                _ => "reset".to_owned(),
+            })
+            .collect();
+        assert_eq!(names, ["sample", "exposure", "sample", "sample", "reset"]);
+        assert!(steps.iter().all(|step| step.source == StepSource::You));
+        assert_eq!(steps[4].note, Some(history::Note::reset()));
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    /// `edit`'s steps follow the command line: each flag at its place, `--clear` first
+    /// wherever it came.
+    #[test]
+    fn the_edit_command_s_steps_follow_the_command_line() {
+        let argv = [
+            "apertrust-cli",
+            "edit",
+            "IMG.ARW",
+            "--param",
+            "exposure.black=0.01",
+            "--set",
+            "sample.grain=40",
+            "--reset-param",
+            "colorin.type",
+            "--clear",
+            "--reset",
+            "grain.strength",
+        ];
+        let matches = Cli::command().try_get_matches_from(argv).unwrap();
+        let cli = Cli::from_arg_matches(&matches).unwrap();
+        let Command::Edit {
+            flags,
+            resets,
+            param_resets,
+            clear,
+            ..
+        } = cli.command
+        else {
+            panic!("edit");
+        };
+        let args = EditArgs {
+            flags: &flags,
+            resets: &resets,
+            param_resets: &param_resets,
+            clear,
+            order: FlagOrder::of(matches.subcommand_matches("edit").unwrap()),
+        };
+        let sets = read_sets(&flags.sets, WITH_SAMPLE).unwrap();
+        let module = |id: &str| Wrote::Module(id.to_owned());
+        let operation = |id: &str| Wrote::Operation(id.to_owned());
+        assert_eq!(
+            wrote(&args, &sets),
+            [
+                Wrote::All,
+                operation("exposure"),
+                module("sample"),
+                operation("colorin"),
+                module("grain"),
+            ]
+        );
+        // With no command line, kind by kind.
+        let args = EditArgs {
+            order: FlagOrder::default(),
+            ..args
+        };
+        assert_eq!(
+            wrote(&args, &sets),
+            [
+                Wrote::All,
+                module("grain"),
+                operation("colorin"),
+                module("sample"),
+                operation("exposure"),
+            ]
+        );
+    }
+
+    /// `edit` writes only over the file it read: one another program changed meanwhile is
+    /// left as it is, for `edit` to read again.
+    #[test]
+    fn the_edit_command_writes_only_over_the_file_it_read() {
+        let directory =
+            std::env::temp_dir().join(format!("apertrust-cli-stamp-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("IMG.ARW.apxmp");
+        std::fs::write(&path, "read").unwrap();
+        let read = stamp(&path);
+        std::fs::write(&path, "another program's").unwrap();
+        let written = write_if_unchanged(&path, read, || unreachable!("no write"));
+        assert!(!written.unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "another program's");
+        let read = stamp(&path);
+        let written = write_if_unchanged(&path, read, || Ok(std::fs::write(&path, "ours")?));
+        assert!(written.unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "ours");
         std::fs::remove_dir_all(&directory).unwrap();
     }
 
@@ -2643,6 +2915,7 @@ mod tests {
                     resets: &[],
                     param_resets: &[],
                     clear,
+                    order: FlagOrder::default(),
                 },
                 OPERATIONS,
                 WITH_SAMPLE,

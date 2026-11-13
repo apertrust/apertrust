@@ -108,13 +108,22 @@ pub enum Written {
 ///
 /// A link at `path` is replaced by the file, not written through. The folder must exist.
 pub fn write(path: &Path, bytes: &[u8]) -> io::Result<Written> {
-    write_with(
+    write_metadata(path, bytes).map(|(written, _)| written)
+}
+
+/// [`write`], with the metadata of the file it wrote, read from the file itself once it
+/// is renamed into place, so another program's file at `path` after it is never taken for
+/// it; `None` where the file held the bytes already ([`Written::Unchanged`]).
+pub fn write_metadata(path: &Path, bytes: &[u8]) -> io::Result<(Written, Option<fs::Metadata>)> {
+    let (written, file) = write_with(
         path,
         bytes,
         Retry::platform(),
         |file, bytes| file.write_all(bytes),
         |temp, path| temp.persist(path),
-    )
+    )?;
+    let metadata = file.map(|file| file.metadata()).transpose()?;
+    Ok((written, metadata))
 }
 
 /// [`write()`] with its two steps given, so that a test can fail the one and refuse the
@@ -125,9 +134,9 @@ fn write_with(
     retry: Retry,
     put: impl FnOnce(&mut File, &[u8]) -> io::Result<()>,
     rename: impl FnMut(NamedTempFile, &Path) -> Result<File, PersistError>,
-) -> io::Result<Written> {
+) -> io::Result<(Written, Option<File>)> {
     if holds(path, bytes) {
-        return Ok(Written::Unchanged);
+        return Ok((Written::Unchanged, None));
     }
     let name = path
         .file_name()
@@ -141,8 +150,8 @@ fn write_with(
     put(temp.as_file_mut(), bytes)?;
     temp.as_file_mut().flush()?;
     temp.as_file().sync_all()?;
-    persist_retrying(temp, path, retry, rename).map_err(|failed| failed.error)?;
-    Ok(Written::Replaced)
+    let file = persist_retrying(temp, path, retry, rename).map_err(|failed| failed.error)?;
+    Ok((Written::Replaced, Some(file)))
 }
 
 /// Whether the file at `path` is there and holds exactly `bytes`.
@@ -185,7 +194,7 @@ mod tests {
         retry: Retry,
         rename: impl FnMut(NamedTempFile, &Path) -> Result<File, PersistError>,
     ) -> io::Result<Written> {
-        write_with(path, bytes, retry, |f, b| f.write_all(b), rename)
+        write_with(path, bytes, retry, |f, b| f.write_all(b), rename).map(|(written, _)| written)
     }
 
     fn refused(kind: io::ErrorKind) -> impl Fn(NamedTempFile, &Path) -> Result<File, PersistError> {

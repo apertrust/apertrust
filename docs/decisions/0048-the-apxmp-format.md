@@ -10,7 +10,7 @@ What does an edit file look like, and how is it read so that a photo is never lo
 
 - **Numbers** are written in their shortest exact form and **choices by name**, so a reordered list changes no edit.
 - **The namespaces** are on the project's domain: `https://apertrust.org/ns/xmp/` for Apertrust's own properties (prefix `apertrust`), `https://apertrust.org/ns/xmp/control/` for module controls (`control`), `https://apertrust.org/ns/xmp/param/` for operation parameters (`param`) and, from version 2, `https://apertrust.org/ns/xmp/arg/` for the arguments of a history step's note (`arg`), the fields of the step's `apertrust:noteArgs` struct, nested so that no argument's name meets a step's own field's. A URI is an identifier, so nothing is hosted there; the schema's version is `apertrust:version`, not part of the URI. Nothing else is read: a file in another namespace is not an Apertrust edit (`SidecarError::NotAnEdit`).
-- **The current version is 1;** version 0 still opens. Version 2, with history and virtual copies ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md)), has its text layer built; the engine writes it once history is saved, planned.
+- **The current version is 2,** with history and virtual copies ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md)), which the engine writes; versions 1 and 0 still open.
 
 **Reading never loses the photo.** An unreadable value or a number out of range is left out or clamped with a warning, and the photo opens. A file that is not an Apertrust edit is an error, never a silent default.
 
@@ -20,7 +20,9 @@ What does an edit file look like, and how is it read so that a photo is never lo
 - at a module's own version, a control it lacks, a mark on one, or a value it cannot read or keep;
 - an operation it lacks, a schema version above its own, or at its own a parameter it lacks;
 - an entry repeated, or any element or attribute it does not write;
-- in version 2, a clock or note it cannot read (`sidecar::Problem`), its caption saying some of the edit's history can't be read rather than naming a newer build.
+- in version 2, a clock, note, id, batch, source or end it cannot read (`sidecar::Problem`), its caption saying some of the edit's history can't be read rather than naming a newer build; and a field it does not write, of Apertrust's own at the file's top level, or of any namespace in a virtual copy, a step or a step's entry, or an entries item that is no entry (`Problem::UnknownField`), its caption saying some of the history can't be kept.
+
+**Other tools' properties are kept as read:** what another namespace holds at the file's top level, as ExifTool's `dc:subject` or `xmp:Rating` written beside an edit, is read as it is (`sidecar::Edits::other`), never interpreted, and written back after Apertrust's own properties, so a save drops nothing of theirs; it makes no photo view-only.
 
 Left out with a warning, the photo still editable: a retired module, what an older module or schema version held that this one lacks, and a parameter a module owns.
 
@@ -28,7 +30,7 @@ Left out with a warning, the photo still editable: a retired module, what an old
 
 **Writing** has one fixed layout, so a file read and written back is the same bytes; it goes through the XMP layer ([0050](0050-our-own-xmp-layer.md)) and the safe write: a hidden temporary beside the file, flushed, synced and renamed, nothing written when the file already holds the bytes ([0053](0053-finding-folders-and-photos.md)).
 
-**Where the code is:** the text layer, `apertrust_library::sidecar` (`Document`, its version, build and entries as strings in the file's order, `Newer`, `ViewOnly`, `path_for`, `write_xml`), knows no module or number's meaning; the engine's `sidecar` turns entries into an `Edit` and back with the module definitions.
+**Where the code is:** the text layer, `apertrust_library::sidecar` (`Document`, version 1's version, build and entries as strings in the file's order; `Edits`, version 2's, with other tools' properties; `Newer`, `Problem`, `ViewOnly`, `path_for`, `write_xml`), knows no module or number's meaning; the engine's `sidecar` turns entries into an `Edit` and back with the module definitions.
 
 ## Options considered
 

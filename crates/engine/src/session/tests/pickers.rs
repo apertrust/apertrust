@@ -380,7 +380,7 @@ fn on_is_refused_before_the_photo_is_live_and_a_move_with_no_picker_on() {
 
     // On a photo open for viewing only, the Colour picker's picker measures.
     let path = scratch("picker-view-only");
-    let newer = brightened("0.9.0").replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+    let newer = brightened("0.9.0").replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
     std::fs::write(sidecar::path_for(&path), newer).unwrap();
     let mut driven = Driven::new(&[&Sample]);
     let opened = driven.open(&path);
@@ -1815,5 +1815,36 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
         after.is_finite() && after != before,
         "{after} after {before}"
     );
+    remove(&path);
+}
+
+/// A pick that ends a person's slider gesture under way, on another module, makes the
+/// gesture a step of its own source first, You, never the pick's Auto.
+#[test]
+fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
+    use crate::history::{Change, Entry, StepSource};
+    let path = scratch("picker-ends-gesture");
+    let mut driven = Driven::new(&[&Sample, &apertrust_modules::soften::Soften]);
+    driven.open(&path);
+    driven.run([on_module("brightness", true)]);
+    driven.picked();
+    driven.writes();
+    driven.run([Command::SetControl {
+        module: "soften".to_owned(),
+        control: "amount".to_owned(),
+        value: ControlValue::Number(70.0),
+        done: false,
+    }]);
+    driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
+    driven.picked();
+    let open = driven.engine.open.as_ref().unwrap();
+    let of = |module: &str| {
+        let entry = |step: &&crate::history::Step| matches!(&step.change, Change::Entry(Entry::Module { module: m, .. }) if m == module);
+        (open.history.log().steps().iter())
+            .rfind(entry)
+            .map(|step| step.source)
+    };
+    assert_eq!(of("soften"), Some(StepSource::You));
+    assert_eq!(of("sample"), Some(StepSource::Auto));
     remove(&path);
 }

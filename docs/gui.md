@@ -3121,7 +3121,7 @@ A setting the user never changed is not written, so a missing one is its default
 
 **Edits never go in settings,** nor the last photo. Edits live in sidecars beside the photos (decision 48), or in a library's own folder as each root's id file says, never decided by the user data folder (decision 47): `--user-data-dir` separates settings only. The library itself is a folder of its own wherever the person puts it, next to the images (decisions 43 and 46; [library.md](library.md#a-library)). No setting says where edits are kept: a library's file does.
 
-**An edit a newer Apertrust wrote** is never overwritten: it opens for viewing only, its controls disabled, saying which version wrote it, and every edit records the build that wrote it (decision 43).
+**An edit a newer Apertrust wrote** is never overwritten: it opens for viewing only, its controls disabled, saying which version wrote it, and every edit records the build that wrote it (decision 43). So does one part of whose history cannot be read, its caption's tooltip saying so instead (`photo-view-only-unreadable`, decision 48).
 
 ### Declared once, in the settings schema
 

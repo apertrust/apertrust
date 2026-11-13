@@ -35,6 +35,11 @@
 //! makes several commands one change of its source and note, all or none, taking in the
 //! gesture under way on a module it writes, of its source and note.
 //!
+//! The log is the sidecar's (version 2, [`crate::sidecar`]), read as the photo opens and
+//! saved after each completed change and each move of the end, with the copy's clock
+//! vector, which each step and each move advances. A newer file found before a write is
+//! taken in ([`PhotoHistory::take_in`]): the steps not in it laid on its log after its end.
+//!
 //! A change merges into the step before it as darktable's undo merges a widget's quick
 //! repeats (`_dev_undo_start_record_target`, `src/develop/develop.c:1351-1370`): the same
 //! target, a control or a preset row, of the same source, You or Auto, with no note, made
@@ -45,7 +50,8 @@
 //! one Undo takes the merged step back whole. The times are the commands' own, as the
 //! client sent them, and the frames' publications, both handed in, so a test sets them.
 
-use std::time::{Duration, Instant, SystemTime};
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId};
 use apertrust_modules::Module;
@@ -54,8 +60,8 @@ use apertrust_plugin::{ImageContext, Operation};
 use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
 use crate::history::{
-    Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource, Wrote,
-    default_lines,
+    Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource, Wrote, advance,
+    default_lines, latest,
 };
 
 /// The open photo's log, its undo records and what its next step is measured from.
@@ -70,8 +76,9 @@ pub(super) struct PhotoHistory {
     machine: MachineId,
     /// The latest clock the photo's history has made or read, which the next follows.
     clock: Option<Clock>,
-    /// The file the edit was read from: its bytes' hash and when it was last modified.
-    file: (Option<[u8; 32]>, Option<SystemTime>),
+    /// The copy's clock vector (decision 47): the latest clock of each machine that changed
+    /// it, its steps and its moves of the end, which the sidecar saves.
+    clocks: Vec<Clock>,
     described: Described,
     /// Whether the log, its end or the records changed since the last `History` sent.
     changed: bool,
@@ -82,6 +89,39 @@ pub(super) struct PhotoHistory {
     /// command on the edit since but changes not yet a step, of one target, source You or
     /// Auto, no note, and of one module, so in no batch.
     merge: Option<Merge>,
+}
+
+/// What the sidecar holds of the log as the session last read it or the writer last wrote
+/// it: its steps, by id and clock, and its copy's clock vector. A newer file is compared
+/// with it, not with the session's own vector, which this machine's other programs, as
+/// `apertrust-cli edit`, share (`docs/history.md`, Behaviour).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(super) struct Base {
+    pub(super) steps: HashSet<(StepId, Clock)>,
+    pub(super) clocks: Vec<Clock>,
+    /// The last step applied, `None` at Original.
+    pub(super) end: Option<StepId>,
+}
+
+impl Base {
+    /// What a file holding `log` with the clock vector `clocks` holds.
+    pub(super) fn of(log: &Log, clocks: &[Clock]) -> Base {
+        Base {
+            steps: (log.steps().iter())
+                .map(|step| (step.id, step.clock))
+                .collect(),
+            clocks: clocks.to_vec(),
+            end: log.steps()[..log.end()].last().map(|step| step.id),
+        }
+    }
+
+    /// Whether a file whose copy's clock vector is `clocks` holds nothing past this: every
+    /// machine's clock at or below this one's.
+    pub(super) fn covers(&self, clocks: &[Clock]) -> bool {
+        clocks.iter().all(|theirs| {
+            (self.clocks.iter()).any(|ours| ours.machine == theirs.machine && ours >= theirs)
+        })
+    }
 }
 
 /// darktable's `darkroom/undo/merge_same_secs`: a change merges into the step before it
@@ -142,20 +182,20 @@ enum Record {
 }
 
 impl PhotoHistory {
-    /// The history of a photo whose edit was read as `edit` from a file whose bytes hash
-    /// to `hash` and which was last modified at `modified`, none for a photo never
-    /// edited: the file is version 1, read as a step of each module ([`Log::read`]).
-    pub(super) fn read(edit: &Edit, hash: Option<[u8; 32]>, modified: Option<SystemTime>) -> Self {
-        let log = Log::read(edit, hash, modified);
-        let clock = log.steps().last().map(|step| step.clock);
+    /// The history of a photo whose sidecar holds `log`, with its copy's clock vector
+    /// `clocks`, both empty for a photo never edited: the next step's clock follows the
+    /// latest of them ([`latest`]).
+    pub(super) fn read(log: Log, clocks: Vec<Clock>) -> Self {
+        let machine = MachineId::current();
+        let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
         PhotoHistory {
+            clock: latest(read, machine),
             stepped: log.fold(),
             log,
             done: Vec::new(),
             undone: Vec::new(),
-            machine: MachineId::current(),
-            clock,
-            file: (hash, modified),
+            machine,
+            clocks,
             described: Described::default(),
             changed: true,
             written: None,
@@ -163,18 +203,115 @@ impl PhotoHistory {
         }
     }
 
-    /// The same file read again as `edit`, as the decode's image context clamps it before
-    /// any command can change it: its steps hold that, and every step is described anew
-    /// on the new context.
-    pub(super) fn read_again(&mut self, edit: &Edit) {
-        let (hash, modified) = self.file;
-        *self = PhotoHistory::read(edit, hash, modified);
+    /// Its steps described anew, as the decode's image context differs from the one they
+    /// were described on.
+    pub(super) fn describe_anew(&mut self) {
+        self.described = Described::default();
+        self.changed = true;
     }
 
-    /// The log, for a test.
-    #[cfg(test)]
+    /// The log, which the sidecar saves.
     pub(super) fn log(&self) -> &Log {
         &self.log
+    }
+
+    /// The copy's clock vector, which the sidecar saves with the log.
+    pub(super) fn clocks(&self) -> &[Clock] {
+        &self.clocks
+    }
+
+    /// The edit as the log's last step left it, which the next step is measured from.
+    pub(super) fn stepped(&self) -> &Edit {
+        &self.stepped
+    }
+
+    /// What the sidecar would hold of this history once written: its steps and its copy's
+    /// clock vector.
+    pub(super) fn base(&self) -> Base {
+        Base::of(&self.log, &self.clocks)
+    }
+
+    /// Takes in a newer file's `log`, with its copy's clock vector `clocks`
+    /// (`docs/history.md`, Behaviour), `base` what the file held as the session last read it
+    /// or the writer last wrote it: the steps up to this log's end that are in neither,
+    /// by id and clock, the steps not yet saved, laid on it after its end, as an edit after
+    /// Undo would, each with a new id where the newer log holds its id already; a step the
+    /// other side dropped stays dropped. The vectors join, and the undo records and the
+    /// merge state are cleared, as they describe a log that is gone.
+    ///
+    /// A move of the end not yet saved, an Undo, a Redo or a `GoTo` with no step to lay, is
+    /// made again on the newer log where the other side only added steps after the base's
+    /// end: the end goes back to the step this log's end is on, the steps added after it.
+    /// Where the other side moved its end or dropped steps of the base, or this log's end
+    /// is on a step the newer one lacks, the newer log's end stands, as `false` in the
+    /// second place of what this returns, unless it is on this log's end's step already.
+    /// An Undo that took steps out of this log does not take them out of the newer one:
+    /// with no step to lay, they come after the end, as Redo's fallback reaches them; with
+    /// a step laid after them, as an edit after that Undo, they apply again beneath it,
+    /// which is a move not kept too. Returns the edit the old log's last step left, which a change not yet a step
+    /// is moved from onto the new [`Self::stepped`], and whether every move not yet saved
+    /// was kept.
+    pub(super) fn take_in(&mut self, log: Log, clocks: Vec<Clock>, base: &Base) -> (Edit, bool) {
+        let theirs: HashSet<(StepId, Clock)> = (log.steps().iter())
+            .map(|step| (step.id, step.clock))
+            .collect();
+        let mut log = log;
+        let mut laid = false;
+        for step in &self.log.steps()[..self.log.end()] {
+            let key = (step.id, step.clock);
+            if theirs.contains(&key) || base.steps.contains(&key) {
+                continue;
+            }
+            let mut step = step.clone();
+            if log.position(step.id).is_some() {
+                step.id = log.new_id();
+            }
+            log.add(step);
+            laid = true;
+        }
+        let ours = self.log.steps()[..self.log.end()]
+            .last()
+            .map(|step| step.id);
+        let mut kept = true;
+        if laid {
+            // A step of the base this log took out, by its id, by an Undo before the step
+            // laid, that applies again in the joined log. A step this log still holds by id
+            // with a new clock, as a quick repeat merged into it, was not taken out; nor
+            // was one the other side took out too, which applies nowhere.
+            let held: HashSet<StepId> = self.log.steps().iter().map(|step| step.id).collect();
+            let applied: HashSet<(StepId, Clock)> = (log.steps()[..log.end()].iter())
+                .map(|step| (step.id, step.clock))
+                .collect();
+            kept = !(base.steps.iter()).any(|key| applied.contains(key) && !held.contains(&key.0));
+        } else if ours != base.end {
+            // Where the base's end is in the newer log: the other side only added after it
+            // where every step of the base is there and its end is no earlier.
+            let at = |end: Option<StepId>, log: &Log| match end {
+                None => Some(0),
+                Some(id) => log.position(id).map(|at| at + 1),
+            };
+            let appended = base.steps.iter().all(|key| theirs.contains(key))
+                && at(base.end, &log).is_some_and(|at| at <= log.end());
+            match at(ours, &log) {
+                // On this log's end's step already: nothing to make again.
+                Some(end) if end == log.end() => {}
+                Some(end) if appended => log.set_end(end),
+                _ => kept = false,
+            }
+        }
+        let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
+        if let Some(read) = latest(read, self.machine) {
+            self.clock = self.clock.max(Some(read));
+        }
+        for clock in clocks {
+            advance(&mut self.clocks, clock);
+        }
+        self.log = log;
+        self.done.clear();
+        self.undone.clear();
+        self.merge = None;
+        self.changed = true;
+        (std::mem::replace(&mut self.stepped, self.log.fold()), kept)
     }
 
     /// Makes what changed since the last step a step of each module it touched, of `source`
@@ -213,25 +350,8 @@ impl PhotoHistory {
             merge.published = written.published;
         } else {
             let one = changes.len() == 1;
-            let batch = (!one).then(|| self.log.new_batch());
             let at = self.log.end();
-            let mut dropped = Vec::new();
-            for change in changes {
-                let note = match change {
-                    Change::Reset(_) => Some(Note::reset()),
-                    Change::Entry(_) => note.clone(),
-                };
-                let step = Step {
-                    id: self.log.new_id(),
-                    clock,
-                    source,
-                    note,
-                    batch,
-                    change,
-                };
-                // Only the first drops any: the rest go on at the end.
-                dropped.extend(self.log.add(step));
-            }
+            let dropped = self.log.add_change(changes, source, note, clock);
             self.done.push(Record::Added { at, held: dropped });
             self.undone.clear();
             self.merge = (target.zip(written))
@@ -244,6 +364,7 @@ impl PhotoHistory {
                 });
         }
         self.clock = Some(clock);
+        advance(&mut self.clocks, clock);
         self.stepped = edit.clone();
         self.changed = true;
         true
@@ -385,8 +506,12 @@ impl PhotoHistory {
     }
 
     /// After Undo, Redo or `GoTo`: the edit the log folds to, which the next step is
-    /// measured from; nothing before merges with what follows.
+    /// measured from; nothing before merges with what follows. The move advances the
+    /// copy's clock vector with a clock of its own (decision 78).
     fn moved(&mut self) -> Edit {
+        let clock = Clock::now(self.clock.as_ref(), self.machine);
+        self.clock = Some(clock);
+        advance(&mut self.clocks, clock);
         self.stepped = self.log.fold();
         self.merge = None;
         self.changed = true;
@@ -690,10 +815,28 @@ impl Engine {
         }
     }
 
+    /// Ends the gesture under way as a step of its own, of the source and note of the change
+    /// that began it, as a command on the edit ends it (decision 42): before a change the
+    /// session makes itself, as a pick, so the person's gesture is never a step of the
+    /// session's source.
+    pub(super) fn end_gesture(&mut self) {
+        let gesture = (self.open.as_mut()).and_then(|open| open.gesture.take());
+        if let Some(gesture) = gesture {
+            self.step(gesture.source, gesture.note);
+        }
+    }
+
     /// Makes what changed of the open photo's edit since its last step one step: of the
     /// source and note of the change that began the gesture under way, else of source You
     /// with no note.
     pub(super) fn step_pending(&mut self) {
+        if self
+            .open
+            .as_ref()
+            .is_some_and(|open| clamp_only(open, &self.modules))
+        {
+            return;
+        }
         let gesture = (self.open.as_ref()).and_then(|open| open.gesture.as_ref());
         let (source, note) = gesture.map_or((StepSource::You, None), |gesture| {
             (gesture.source, gesture.note.clone())
@@ -753,12 +896,13 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
+        let edit = pending(open, &self.modules);
         let moved = if redo {
-            open.history.redo(&open.edit)
+            open.history.redo(&edit)
         } else {
-            open.history.undo(&open.edit)
+            open.history.undo(&edit)
         };
-        Ok(moved_to(open, moved))
+        Ok(moved_to(open, moved, &self.modules))
     }
 
     /// [`Command::GoTo`]: the edit becomes the log's fold, a completed change, which saves
@@ -767,9 +911,10 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
-        let moved = (open.history.go_to(&open.edit, step))
-            .map_err(|step| SessionError::UnknownStep { step })?;
-        Ok(moved_to(open, moved))
+        let edit = pending(open, &self.modules);
+        let moved =
+            (open.history.go_to(&edit, step)).map_err(|step| SessionError::UnknownStep { step })?;
+        Ok(moved_to(open, moved, &self.modules))
     }
 
     /// The open photo's `History`, where it changed since it was last sent.
@@ -780,20 +925,45 @@ impl Engine {
     }
 }
 
+/// Whether the only change of `open`'s edit not yet a step is the clamp a move of the end or
+/// the photo's open made of the log's fold, which never becomes a step of its own: else an
+/// Undo would take back that clamp's step and land where it began, never past it.
+pub(super) fn clamp_only(open: &Open, modules: &[&dyn Module]) -> bool {
+    let mut clamped = open.history.stepped().clone();
+    clamped.clamp_read(modules, &open.image);
+    clamped == open.edit
+}
+
+/// The edit a move of the end makes a step of first, as a change not yet a step: `open`'s,
+/// or the log's fold where its only change is a clamp ([`clamp_only`]).
+fn pending(open: &Open, modules: &[&dyn Module]) -> Edit {
+    if clamp_only(open, modules) {
+        open.history.stepped().clone()
+    } else {
+        open.edit.clone()
+    }
+}
+
 /// The open photo's edit after Undo, Redo or `GoTo` moved the end: `moved`, the log's fold,
-/// rendered where it differs, and saved as a completed change. With nothing moved, `None`,
-/// a change made a step first saves alike.
-fn moved_to(open: &mut Open, moved: Option<Edit>) -> Effect {
-    let Some(edit) = moved else {
+/// rendered where it differs, and saved as a completed change, the end with it even where
+/// the edit is as it was. With nothing moved, `None`, a change made a step first saves
+/// alike.
+fn moved_to(open: &mut Open, moved: Option<Edit>, modules: &[&dyn Module]) -> Effect {
+    let Some(mut edit) = moved else {
         return Effect {
             save: true,
             ..Effect::default()
         };
     };
+    // Held to the ranges its modules' values give on the photo, as an opened edit is: the
+    // clamp is a change not yet a step.
+    for warning in edit.clamp_read(modules, &open.image) {
+        tracing::warn!(target: "pipe", "{warning}");
+    }
     let changed = edit != open.edit;
     open.edit = edit;
     open.held.prune(&open.edit);
-    open.unsaved |= changed;
+    open.unsaved = true;
     Effect {
         render: changed,
         save: true,

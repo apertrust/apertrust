@@ -1428,7 +1428,7 @@ mod tests {
 
     #[test]
     fn capture_times_take_the_modified_times_place_and_a_photo_open_for_viewing_is_edited() {
-        let newer = apertrust_engine::sidecar::Newer::Version(2);
+        let newer = apertrust_engine::sidecar::Newer::Version(3);
         let photos = [
             dated("A.ARW", Some(1), EditState::None),
             dated("B.ARW", Some(2), EditState::ViewOnly(newer)),

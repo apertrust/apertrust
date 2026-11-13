@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use apertrust_library::sidecar::{COPIES_VERSION, Document, Edits, Note, VERSION, VirtualCopy};
+use apertrust_library::sidecar::{COPIES_VERSION, Document, Edits, Note, VirtualCopy};
 
 fn fixtures() -> Vec<(String, String)> {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -45,7 +45,7 @@ fn every_fixture_writes_back_byte_for_byte() {
     assert!(!fixtures.is_empty(), "no fixture in tests/fixtures");
     for (name, text) in fixtures {
         let document = Document::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(document.version, VERSION, "{name}");
+        assert_eq!(document.version, 1, "{name}");
         assert_eq!(document.newer(), None, "{name}");
         assert_eq!(document.to_xml(), text, "{name} written back");
     }
@@ -86,8 +86,10 @@ fn the_version_2_fixture_writes_back_byte_for_byte() {
             .as_deref()
             .is_some_and(|f| f.starts_with("30482117:"))
     );
-    // The engine still reads version 1 alone: this file opens for viewing only.
-    assert!(Document::parse(&text).unwrap().newer().is_some());
+    // This build's version, and nothing in it this build cannot read.
+    assert_eq!(edits.newer(), None);
+    assert!(edits.problems.is_empty(), "{:?}", edits.problems);
+    assert!(edits.edited());
     let [copy] = edits.copies.as_slice() else {
         panic!("one copy, not {:?}", edits.copies);
     };

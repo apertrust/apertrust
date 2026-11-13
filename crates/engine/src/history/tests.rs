@@ -268,14 +268,23 @@ fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
     assert!(!log.merge(&sample(&brightened(1.0)), clock));
 }
 
+/// A version 1 file reads as a step of each module and operation, modules first and each
+/// in id order, sharing a batch, the ids from the hash of the file's bytes, so every read
+/// gives the same steps (`docs/history.md`, In the sidecar).
 #[test]
-fn a_version_1_edit_reads_as_a_step_of_each_module_with_the_same_ids_every_time() {
-    let edit = grained(&brightened(0.5), 30.0);
-    let hash = apertrust_library::index::hash(b"<x:xmpmeta/>");
+fn a_version_1_file_reads_as_a_step_of_each_module_with_the_same_ids_every_time() {
+    let mut edit = grained(&brightened(0.5), 30.0);
+    (edit.set_param(OPERATIONS, MODULES, "exposure", "black", Value::Float(0.01))).unwrap();
+    let xml = crate::sidecar::to_xml(&edit, OPERATIONS, MODULES, "test");
+    let hash = apertrust_library::index::hash(xml.as_bytes());
     let modified = UNIX_EPOCH + Duration::from_millis(1_773_497_331_120);
-    let log = Log::read(&edit, Some(hash), Some(modified));
-    assert_eq!(log, Log::read(&edit, Some(hash), Some(modified)));
-    assert_eq!((log.steps().len(), log.end()), (2, 2));
+    let read = |xml: &str| {
+        let loaded = crate::sidecar::from_xml_at(xml, Some(modified), OPERATIONS, MODULES, &[]);
+        loaded.unwrap().log
+    };
+    let log = read(&xml);
+    assert_eq!(log, read(&xml));
+    assert_eq!((log.steps().len(), log.end()), (3, 3));
     let hex = |bytes: &[u8]| -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() };
     let first = log.steps()[0].id;
     assert_eq!(first.to_string(), hex(&hash[..8]));
@@ -297,53 +306,87 @@ fn a_version_1_edit_reads_as_a_step_of_each_module_with_the_same_ids_every_time(
             (StepSource::You, &None, Some(batch))
         );
     }
-    assert_eq!(names(&[log.steps()[0].change.clone()]), ["grain"]);
+    let changes: Vec<Change> = (log.steps().iter()).map(|s| s.change.clone()).collect();
+    assert_eq!(names(&changes), ["grain", "sample", "exposure params"]);
     assert_eq!(log.fold(), edit);
+    // Other bytes, other ids.
+    let other = read(&xml.replace("test", "other"));
+    assert_ne!(other.steps()[0].id, first);
     // One module: one step, in no batch.
-    let one = Log::read(&brightened(0.5), Some(hash), None);
+    let one = crate::sidecar::to_xml(&brightened(0.5), OPERATIONS, MODULES, "test");
+    let one = read(&one);
     assert_eq!(one.steps().len(), 1);
-    assert_eq!((one.steps()[0].id, one.steps()[0].batch), (first, None));
+    assert_eq!(one.steps()[0].batch, None);
     // A file holding nothing is no step.
-    assert_eq!(
-        Log::read(&Edit::default(), Some(hash), None),
-        Log::default()
-    );
+    let none = crate::sidecar::to_xml(&Edit::default(), OPERATIONS, MODULES, "test");
+    assert_eq!(read(&none), Log::default());
 }
 
-/// The two readers of a version 1 file, the engine's from the typed edit and the text
-/// layer's, give the same steps: the same ids, batch and modules in the same order, though
-/// the file holds its modules in the definitions' order.
+/// A completed change's steps: a step of each, sharing a new batch, a Reset's noted
+/// `history-reset`, the first dropping the steps after the end, which it returns.
 #[test]
-fn both_version_1_readers_give_the_same_steps() {
-    use apertrust_library::sidecar::{self as text, Edits};
+fn a_change_is_added_as_a_step_of_each_sharing_a_batch() {
+    let clock = Clock::at(7, None, MachineId::UNKNOWN);
+    let mut log = Log::default();
+    let one = Change::between(&Edit::default(), &brightened(0.5), &[]);
+    assert!(
+        log.add_change(one, StepSource::Auto, None, clock)
+            .is_empty()
+    );
+    assert_eq!(log.steps()[0].batch, None);
+    assert_eq!(log.steps()[0].source, StepSource::Auto);
+    let two = Change::between(&brightened(0.5), &grained(&brightened(1.0), 30.0), &[]);
+    let note = Note::Text("warmer".to_owned());
+    assert!(
+        log.add_change(two, StepSource::Assistant, Some(note.clone()), clock)
+            .is_empty()
+    );
+    let [_, first, second] = log.steps() else {
+        panic!("three steps: {:?}", log.steps());
+    };
+    assert!(first.batch.is_some() && first.batch == second.batch);
+    assert_eq!(
+        (&first.note, &second.note),
+        (&Some(note.clone()), &Some(note))
+    );
+    assert_eq!(log.end(), 3);
+    // Below the end, the steps after it dropped and returned; a Reset noted as one.
+    log.set_end(1);
+    let reset = Change::between(&brightened(0.5), &Edit::default(), &[Wrote::All]);
+    let dropped = log.add_change(reset, StepSource::You, None, clock);
+    assert_eq!(dropped.len(), 2);
+    assert_eq!(log.steps()[1].note, Some(Note::reset()));
+    assert_eq!(log.fold(), Edit::default());
+}
 
-    let mut edit = grained(&brightened(0.5), 30.0);
-    (edit.set_param(OPERATIONS, MODULES, "exposure", "black", Value::Float(0.01))).unwrap();
-    let xml = crate::sidecar::to_xml(&edit, OPERATIONS, MODULES, "test");
-    let hash = apertrust_library::index::hash(xml.as_bytes());
-    let ours: Vec<_> = (Log::read(&edit, Some(hash), None).steps().iter())
-        .map(|step| {
-            let name = match step.change.entries() {
-                [Entry::Module { module, .. }] => module.clone(),
-                [Entry::Operation { operation, .. }] => operation.clone(),
-                other => panic!("one entry, not {other:?}"),
-            };
-            (step.id.to_string(), step.batch.map(|b| b.to_string()), name)
-        })
-        .collect();
-    let read = Edits::parse(&xml, 0).unwrap();
-    let theirs: Vec<_> = (read.copies[0].history.iter())
-        .map(|step| {
-            let name = match step.entries.as_slice() {
-                [text::Entry::Module { module, .. }] => module.clone(),
-                [text::Entry::Operation { operation, .. }] => operation.clone(),
-                other => panic!("one entry, not {other:?}"),
-            };
-            (step.id.clone(), step.batch.clone(), name)
-        })
-        .collect();
-    assert_eq!(ours.len(), 3);
-    assert_eq!(ours, theirs);
+/// A copy's clock vector keeps the latest clock of each machine; the latest clock read
+/// ignores another machine's far past the wall clock, never this machine's own.
+#[test]
+fn the_clock_vector_keeps_each_machine_s_latest() {
+    let machine = |id: &str| id.parse::<MachineId>().unwrap();
+    let (a, b) = (machine("0000000a"), machine("0000000b"));
+    let mut vector = Vec::new();
+    advance(&mut vector, Clock::at(10, None, a));
+    advance(&mut vector, Clock::at(20, None, b));
+    advance(&mut vector, Clock::at(5, None, a));
+    advance(&mut vector, Clock::at(30, None, a));
+    assert_eq!(vector, [Clock::at(30, None, a), Clock::at(20, None, b)]);
+    let far = Clock::at(apertrust_library::clock::MAX_WHEN, None, b);
+    let near = Clock::at(1_000, None, b);
+    assert_eq!(latest([&near, &far], a), Some(near));
+    assert_eq!(latest([&near, &far], b), Some(far));
+    assert_eq!(latest([], a), None);
+}
+
+/// A change not yet a step moves onto another log's edit: each module it changed at its
+/// state, the rest the other's.
+#[test]
+fn a_change_not_yet_a_step_is_rebased() {
+    let from = brightened(0.5);
+    let edit = grained(&from, 30.0);
+    let onto = brightened(1.0);
+    assert_eq!(rebase(&edit, &from, &onto), grained(&brightened(1.0), 30.0));
+    assert_eq!(rebase(&from, &from, &onto), onto);
 }
 
 #[test]

@@ -29,8 +29,8 @@
 //! quick repeats merge into the step before them ([`Log::merge`]), as darktable's undo
 //! merges them; the session decides when.
 //!
-//! Plain data, which the session keeps in memory for the photo open; the sidecar's
-//! version 2 saves it later.
+//! Plain data, which the session keeps in memory for the photo open and the engine's
+//! `sidecar` reads and writes in version 2, with the copy's clock vector ([`advance`]).
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -93,6 +93,19 @@ impl StepSource {
             StepSource::Assistant => "assistant",
             StepSource::Default => "default",
         }
+    }
+
+    /// The source a sidecar names, `None` for a name this build does not know.
+    pub fn from_name(name: &str) -> Option<StepSource> {
+        [
+            StepSource::You,
+            StepSource::Auto,
+            StepSource::Style,
+            StepSource::Assistant,
+            StepSource::Default,
+        ]
+        .into_iter()
+        .find(|source| source.name() == name)
     }
 }
 
@@ -319,43 +332,10 @@ pub struct Log {
 }
 
 impl Log {
-    /// The log a version 1 edit reads as (`docs/history.md`, In the sidecar): a step for
-    /// each module and operation `edit` touches, in [`Entry::between`]'s order, source You
-    /// with no note, sharing a batch where there are several, so one Undo takes the edit
-    /// read back whole. The ids come from `hash`, the BLAKE3 hash of the file's bytes, so
-    /// every machine reading the same file gives the same steps: the first step's its first
-    /// 64 bits, each next one more, and the batch's its next 64; their clock the file's
-    /// modified time with counter 0, of no known machine. An edit that touches nothing
-    /// reads as no step. The text layer's `Edits::parse` gives the same steps for every file
-    /// Apertrust writes, none holding an entry at its reset state.
-    pub fn read(edit: &Edit, hash: Option<[u8; 32]>, modified: Option<SystemTime>) -> Log {
-        let entries = Entry::between(&Edit::default(), edit);
-        let bits = |at: usize| {
-            hash.map(|hash| u64::from_be_bytes(hash[at..at + 8].try_into().expect("8 bytes")))
-        };
-        let when = modified
-            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-            .map_or(0, |since| {
-                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-            });
-        let clock = Clock::at(when, None, MachineId::UNKNOWN);
-        let mut log = Log::default();
-        let batch = (entries.len() > 1).then(|| bits(8).map_or_else(|| log.new_batch(), BatchId));
-        for (index, entry) in entries.into_iter().enumerate() {
-            let id = match bits(0) {
-                Some(first) => StepId(first.wrapping_add(index as u64)),
-                None => log.new_id(),
-            };
-            log.add(Step {
-                id,
-                clock,
-                source: StepSource::You,
-                note: None,
-                batch,
-                change: Change::Entry(entry),
-            });
-        }
-        log
+    /// The log of `steps`, oldest first, the first `end` of them applied, at most all.
+    pub fn from_steps(steps: Vec<Step>, end: usize) -> Log {
+        let end = end.min(steps.len());
+        Log { steps, end }
     }
 
     /// Every step, oldest first, those after the end among them.
@@ -393,6 +373,38 @@ impl Log {
         let dropped = self.steps.split_off(self.end);
         self.steps.push(step);
         self.end = self.steps.len();
+        dropped
+    }
+
+    /// Adds the steps of one completed change, `changes` ([`Change::between`]), of `source`
+    /// with `note`, at `clock`: a step of each, sharing a new batch where there are several,
+    /// a Reset's noted `history-reset`. The first drops the steps after the end, which it
+    /// returns, as [`Log::add`] does.
+    pub fn add_change(
+        &mut self,
+        changes: Vec<Change>,
+        source: StepSource,
+        note: Option<Note>,
+        clock: Clock,
+    ) -> Vec<Step> {
+        let batch = (changes.len() > 1).then(|| self.new_batch());
+        let mut dropped = Vec::new();
+        for change in changes {
+            let note = match change {
+                Change::Reset(_) => Some(Note::reset()),
+                Change::Entry(_) => note.clone(),
+            };
+            let step = Step {
+                id: self.new_id(),
+                clock,
+                source,
+                note,
+                batch,
+                change,
+            };
+            // Only the first drops any: the rest go on at the end.
+            dropped.extend(self.add(step));
+        }
         dropped
     }
 
@@ -473,6 +485,41 @@ impl Log {
             }
         }
     }
+}
+
+/// Advances a copy's clock vector, the latest clock of each machine that changed it
+/// (decision 47), with `clock`: its machine's clock where it is later, or a clock of a
+/// machine it did not hold.
+pub fn advance(vector: &mut Vec<Clock>, clock: Clock) {
+    match vector.iter_mut().find(|kept| kept.machine == clock.machine) {
+        Some(kept) => *kept = (*kept).max(clock),
+        None => vector.push(clock),
+    }
+}
+
+/// The latest clock the machine `me` keeps after reading `clocks`, a log's and its copy's
+/// vector, with its wall clock now: each observed in turn ([`Clock::observe`]), so another
+/// machine's clock far past the wall clock is ignored. What the next step's clock follows.
+pub fn latest<'c>(clocks: impl IntoIterator<Item = &'c Clock>, me: MachineId) -> Option<Clock> {
+    let wall = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        });
+    (clocks.into_iter()).fold(None, |last, read| {
+        Clock::observe(last.as_ref(), read, wall, me)
+    })
+}
+
+/// `edit` moved from `from` onto `onto`: `onto` with each module and operation whose state
+/// differs between `from` and `edit` at its state in `edit`, as a change not yet a step is
+/// laid on a newer log.
+pub(crate) fn rebase(edit: &Edit, from: &Edit, onto: &Edit) -> Edit {
+    let mut rebased = onto.clone();
+    for entry in Entry::between(from, edit) {
+        entry.apply(&mut rebased);
+    }
+    rebased
 }
 
 /// 64 random bits from the system, else from std's randomly keyed hasher.
