@@ -32,8 +32,8 @@ use crate::components::{
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
     PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
     PickerMarks, PickerPlace, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope, ScopeView,
-    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar,
-    TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track,
+    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
+    TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track,
     VectorscopeBins, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
