@@ -66,7 +66,7 @@ fn an_edited_photo_has_its_version_and_hash() {
 
     assert!(!index.cancelled);
     let edit = read(&index, "DSCF0001.RAF");
-    assert_eq!(edit.version, sidecar::VERSION);
+    assert_eq!(edit.version, 1);
     assert!(edit.edited);
     assert_eq!(edit.view_only, None);
     let bytes = fs::read(dir.path().join("DSCF0001.RAF.apxmp")).unwrap();
@@ -97,15 +97,18 @@ fn a_sidecar_without_entries_is_no_edit() {
 fn a_newer_sidecar_is_counted_view_only() {
     let dir = TempDir::new().unwrap();
     let mut newer = document("0.5");
-    newer.version = sidecar::VERSION + 1;
+    newer.version = sidecar::COPIES_VERSION + 1;
     edited(dir.path(), "DSCF0001.RAF", &newer);
     edited(dir.path(), "DSCF0002.RAF", &document("0.5"));
 
     let index = build(dir.path());
 
     let edit = read(&index, "DSCF0001.RAF");
-    assert_eq!(edit.version, sidecar::VERSION + 1);
-    assert_eq!(edit.view_only, Some(Newer::Version(sidecar::VERSION + 1)));
+    assert_eq!(edit.version, sidecar::COPIES_VERSION + 1);
+    assert_eq!(
+        edit.view_only,
+        Some(Newer::Version(sidecar::COPIES_VERSION + 1))
+    );
     assert_eq!(read(&index, "DSCF0002.RAF").view_only, None);
     let counts = index.counts();
     assert_eq!(
@@ -118,7 +121,7 @@ fn a_newer_sidecar_is_counted_view_only() {
 fn a_newer_sidecar_with_no_entries_is_edited_and_view_only() {
     let dir = TempDir::new().unwrap();
     let mut newer = Document::new("test");
-    newer.version = sidecar::VERSION + 1;
+    newer.version = sidecar::COPIES_VERSION + 1;
     edited(dir.path(), "DSCF0001.RAF", &newer);
 
     let index = build(dir.path());
@@ -131,6 +134,39 @@ fn a_newer_sidecar_with_no_entries_is_edited_and_view_only() {
         (counts.edited, counts.view_only, counts.unreadable),
         (1, 1, 0)
     );
+}
+
+/// Version 2, the engine's: a photo is edited where some entry is not empty at the end, its
+/// log folded as text, and not at Original or where its last entries are empty.
+#[test]
+fn a_version_2_sidecar_is_edited_by_its_log_up_to_the_end() {
+    let dir = TempDir::new().unwrap();
+    let text = sidecar::Edits::parse(&document("0.5").to_xml(), 0).unwrap();
+    let mut at_original = text.clone();
+    at_original.copies[0].end.clear();
+    let mut reset = text.clone();
+    let mut empty = reset.copies[0].history[0].clone();
+    empty.id = "00000000000000ff".to_owned();
+    if let Entry::Operation { params, .. } = &mut empty.entries[0] {
+        params.clear();
+    }
+    reset.copies[0].end = empty.id.clone();
+    reset.copies[0].history.push(empty);
+    for (name, edits) in [("A.RAF", &text), ("B.RAF", &at_original), ("C.RAF", &reset)] {
+        raw(dir.path(), name);
+        let path = sidecar::path_for(&dir.path().join(name));
+        sidecar::write_xml(&path, &edits.to_xml()).unwrap();
+    }
+
+    let index = build(dir.path());
+
+    let edited = |name| read(&index, name).edited;
+    assert_eq!(
+        (edited("A.RAF"), edited("B.RAF"), edited("C.RAF")),
+        (true, false, false)
+    );
+    assert_eq!(read(&index, "A.RAF").version, sidecar::COPIES_VERSION);
+    assert_eq!(read(&index, "A.RAF").view_only, None);
 }
 
 #[test]

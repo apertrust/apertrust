@@ -834,7 +834,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::sidecar::{self, Document, Entry, VERSION};
+    use crate::sidecar::{self, COPIES_VERSION, Document, Entry};
 
     /// The events an open sent, and how it ended.
     fn run(
@@ -875,7 +875,7 @@ mod tests {
         }
         write_sidecar(dir.path(), "B.CR3", &edited());
         let mut newer = edited();
-        newer.version = VERSION + 1;
+        newer.version = COPIES_VERSION + 1;
         write_sidecar(dir.path(), "C.NEF", &newer);
         fs::write(sidecar::path_for(&dir.path().join("D.ARW")), "not xml").unwrap();
         write_sidecar(dir.path(), "E.DNG", &Document::new("test"));
@@ -1036,7 +1036,10 @@ mod tests {
         let edits: Vec<&EditState> = photos.iter().map(|p| &p.edit).collect();
         assert_eq!(edits[0], &EditState::None);
         assert_eq!(edits[1], &EditState::Edited);
-        assert_eq!(edits[2], &EditState::ViewOnly(Newer::Version(VERSION + 1)));
+        assert_eq!(
+            edits[2],
+            &EditState::ViewOnly(Newer::Version(COPIES_VERSION + 1))
+        );
         assert!(matches!(edits[3], EditState::Unreadable(reason) if !reason.is_empty()));
         // A sidecar with nothing in it is no edit.
         assert_eq!(edits[4], &EditState::None);

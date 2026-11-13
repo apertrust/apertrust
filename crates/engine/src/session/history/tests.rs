@@ -375,10 +375,15 @@ fn exposed(ev: f32) -> Edit {
     edit
 }
 
-/// A history read from a file holding `edit`.
+/// A history read from a file holding `edit`: a step of each module and operation it
+/// holds, sharing a batch, as a version 1 file reads (the sidecar's tests hold that
+/// reading), of the unknown machine's clock, which is the copy's vector.
 fn reopened(edit: &Edit) -> PhotoHistory {
-    let hash = apertrust_library::index::hash(b"the file");
-    PhotoHistory::read(edit, Some(hash), None)
+    let clock = Clock::at(1_773_497_331_120, None, MachineId::UNKNOWN);
+    let mut log = Log::default();
+    let changes = Change::between(&Edit::default(), edit, &[]);
+    log.add_change(changes, StepSource::You, None, clock);
+    PhotoHistory::read(log, vec![clock])
 }
 
 /// The steps of `history`'s log.

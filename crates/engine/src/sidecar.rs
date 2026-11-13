@@ -15,60 +15,74 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Edits saved beside the photo (`docs/library.md`, Sidecars): `IMG.ARW.apxmp`,
-//! an XMP file. Version 1 (decision 28) holds the [`Edit`]: each module it touches, in
-//! the modules' order, with its version, the controls set and its marks, then the
-//! operation parameters no module owns, only of operations an unedited photo runs, each
-//! operation with its schema version as version 0 had them (decision 48).
+//! an XMP file. Version 2 (decisions 47 and 78), which the engine writes, holds the edit's
+//! history ([`crate::history`]): its virtual copies, the first the one a photo opens, each
+//! with its clock vector, its log of steps and its end, each step one module's whole state
+//! after it written as version 1 writes a module. The edit is the log's fold. Version 1
+//! (decision 28) held the [`Edit`] alone: each module it touches, in the modules' order,
+//! with its version, the controls set and its marks, then the operation parameters no
+//! module owns, only of operations an unedited photo runs, each operation with its schema
+//! version as version 0 had them (decision 48). It reads as one copy, a step of each of
+//! its entries sharing a batch, and is written as version 2 at the next change.
 //!
 //! The file's text layer, its XMP, structure, versions and build record, is
-//! `apertrust_library::sidecar`'s (decision 54), which knows no module or operation: this module
-//! is the typed reading and writing on top of it. It turns a [`Document`]'s entries, which
-//! hold their values as text, into an [`Edit`] with the module definitions, and an
-//! [`Edit`] into entries. See that crate for the file's layout.
+//! `apertrust_library::sidecar`'s (decision 54), which knows no module or operation: this
+//! module is the typed reading and writing on top of it. It turns the entries of the
+//! first copy's steps ([`Edits`]), which hold their values as text, into the steps of a
+//! [`Log`] with the module definitions, and a log into entries. See that crate for the
+//! file's layout.
 //!
 //! Numbers are written in their shortest exact form, choices by option id, points as
 //! `x,y` pairs separated by spaces, and the marks (`apertrust:kept`, `apertrust:auto`)
-//! as lists of control ids. An untouched control or module is left out. A switched
-//! module that is on has `apertrust:enabled="true"`; one off writes no values, and only
-//! its marks, where it has any (decision 32).
+//! as lists of control ids. An untouched control is left out. A switched module that is on
+//! has `apertrust:enabled="true"`; one off writes no values, and only its marks, where it
+//! has any (decision 32).
 //!
 //! A saved edit always opens (decision 21): a module, control, operation or parameter
 //! the engine does not know, or a value it cannot read, is left out, a number outside
 //! its range is clamped, an older module version is migrated, and a newer module or
-//! another schema version is read by name, each with a warning. A parameter a module
-//! owns, or one of an operation an unedited photo does not run, is left out with a
-//! warning too. Version 0, which held only operation parameters, still opens that way,
-//! and is saved as version 1.
+//! another schema version is read by name, each with a warning, in every entry of every
+//! step. A parameter a module owns, or one of an operation an unedited photo does not
+//! run, is left out with a warning too, and a step left with no entry is left out. Version
+//! 0, which held only operation parameters, still opens that way.
 //!
 //! The file records the build that wrote it, in `x:xmptk` (decision 44's version, which
 //! the binaries hand the engine). An edit a newer Apertrust wrote is told by what it holds
-//! ([`Newer`], decision 43): a file version above [`VERSION`], read as this version lays
-//! it out, a module version above its definition's or no whole number, or a module this
-//! build neither has nor has retired (`apertrust_modules::RETIRED`), whose values a save
-//! would lose, or a module turned on that this build does not switch (decision 32). Such
-//! an edit opens for viewing only ([`ViewOnly`]); a retired module's values are left out
-//! with a warning, as an older build wrote them. A switched module off that holds a value
-//! off its defaults, which no build writes, is read as on, with a warning.
+//! ([`Newer`], decision 43): a file version above [`COPIES_VERSION`], read as this version
+//! lays it out, a module version above its definition's or no whole number, or a module
+//! this build neither has nor has retired (`apertrust_modules::RETIRED`), whose values a
+//! save would lose, or a module turned on that this build does not switch (decision 32).
+//! So is one of whose history the text layer cannot read part ([`Problem`]). Such an edit
+//! opens for viewing only ([`ViewOnly`]); a retired module's values are left out with a
+//! warning, as an older build wrote them. A switched module off that holds a value off its
+//! defaults, which no build writes, is read as on, with a warning.
 
+use std::collections::HashSet;
 use std::io;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use apertrust_library::clock::{Clock, MachineId};
 use apertrust_modules::{ControlValue, Definition, Mark, Module, ModuleValues, check};
-use apertrust_plugin::Operation;
+use apertrust_plugin::{Operation, ParamValues};
 
+use apertrust_library::sidecar::{self as text, Document, Entry, FIRST_COPY, VirtualCopy};
 pub use apertrust_library::sidecar::{
-    CONTROL_NAMESPACE, NAMESPACE, Newer, PARAM_NAMESPACE, SidecarError, VERSION, ViewOnly,
-    path_for, write_xml,
+    CONTROL_NAMESPACE, COPIES_VERSION, Edits, NAMESPACE, Newer, PARAM_NAMESPACE, Problem, Reason,
+    SidecarError, ViewOnly, path_for, read_fingerprint, write_xml,
 };
-use apertrust_library::sidecar::{Document, Entry};
 pub(crate) use apertrust_library::sidecar::{file_name, writer};
 
 use crate::edit::Edit;
+use crate::history::{self, BatchId, Change, Log, Note, Step, StepId, StepSource};
 
-/// An edit read back, the version it was saved as, the build that wrote it, and what
-/// could not be used.
+/// An edit read back: its log and the edit it folds to, the version it was saved as, the
+/// build that wrote it, what could not be used, and the file as text, which a write keeps.
 pub struct Loaded {
+    /// The log's fold, each module's last entry up to the end.
     pub edit: Edit,
+    /// The first virtual copy's history: a version 1 file's a step of each entry.
+    pub log: Log,
     pub version: u32,
     /// The build that wrote it, as its `x:xmptk` records it; `None` for a file that
     /// records no Apertrust build.
@@ -76,22 +90,38 @@ pub struct Loaded {
     /// The first thing it holds that tells a newer Apertrust wrote it, or `None` where a
     /// save would keep everything it holds.
     pub newer: Option<Newer>,
+    /// What of its history the text layer could not read as written ([`Edits::problems`]).
+    pub problems: Vec<Problem>,
     pub warnings: Vec<String>,
+    /// The file as text: the photo's name and fingerprint, and its copies, the first the
+    /// log's, with its id, number, name and clock vector, which [`log_xml`] writes the log
+    /// into, the others kept as read.
+    pub file: Edits,
 }
 
 impl Loaded {
-    /// The edit as a newer Apertrust's, open for viewing only, or `None` where this build
-    /// may save it.
+    /// The edit as one this build opens for viewing only, a newer Apertrust's first, then
+    /// one with a problem; or `None` where this build may save it.
     pub fn view_only(&self) -> Option<ViewOnly> {
-        let newer = self.newer.clone()?;
+        let reason = match (&self.newer, self.problems.first()) {
+            (Some(newer), _) => Reason::Newer(newer.clone()),
+            (None, Some(problem)) => Reason::Unreadable(problem.clone()),
+            (None, None) => return None,
+        };
         Some(ViewOnly {
             build: self.build.clone(),
-            newer,
+            reason,
         })
+    }
+
+    /// The log's copy's clock vector: the latest clock of each machine that changed it.
+    pub fn clocks(&self) -> &[Clock] {
+        self.file.copies.first().map_or(&[], |copy| &copy.clocks)
     }
 }
 
-/// Writes `edit` to `path` as `build` writes it ([`to_xml`], [`write_xml`]).
+/// Writes `edit` to `path` as `build` writes version 1 ([`to_xml`], [`write_xml`]): a file
+/// every build reads, as tests and fixtures make one; the engine saves with [`write_log`].
 pub fn write(
     path: &Path,
     edit: &Edit,
@@ -102,29 +132,42 @@ pub fn write(
     write_xml(path, &to_xml(edit, operations, modules, build))
 }
 
+/// Writes `log` to `path` as `build` writes it ([`log_xml`], [`write_xml`]), through the
+/// safe write, so a write cut off midway leaves the file as it was.
+pub fn write_log(
+    path: &Path,
+    file: &Edits,
+    log: &Log,
+    clocks: &[Clock],
+    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    build: &str,
+) -> io::Result<()> {
+    write_xml(
+        path,
+        &log_xml(file, log, clocks, (operations, modules), build),
+    )
+}
+
 /// Reads the edit at `path` for `operations` and `modules`, with `retired` the ids of the
-/// modules Apertrust has retired ([`from_xml`]), logging what is left out.
+/// modules Apertrust has retired ([`from_xml_at`]), its modified time naming a version 1
+/// file's steps, logging what is left out.
 pub fn read(
     path: &Path,
     operations: &[&dyn Operation],
     modules: &[&dyn Module],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
-    let loaded = from_document(
-        apertrust_library::sidecar::read(path)?,
-        operations,
-        modules,
-        retired,
-    );
+    let loaded = from_edits(text::read_edits(path)?, operations, modules, retired);
     for warning in &loaded.warnings {
         tracing::warn!(target: "pipe", "{}: {warning}", path.display());
     }
     Ok(loaded)
 }
 
-/// The XMP of an edit as `build` writes it, the build recorded in `x:xmptk`: every module
-/// it touches in the order of `modules`, then every operation it sets a parameter of in
-/// the order of `operations`.
+/// The XMP of an edit as `build` writes version 1, the build recorded in `x:xmptk`: every
+/// module it touches in the order of `modules`, then every operation it sets a parameter
+/// of in the order of `operations`. Every build reads it; the engine writes version 2
+/// ([`log_xml`]).
 pub fn to_xml(
     edit: &Edit,
     operations: &[&dyn Operation],
@@ -134,138 +177,319 @@ pub fn to_xml(
     let mut document = Document::new(build);
     for module in modules {
         let definition = module.definition();
-        let Some(values) = edit.modules.get(definition.id).filter(|v| !v.is_empty()) else {
-            continue;
-        };
-        let marked = |mark| {
-            definition
-                .controls
-                .iter()
-                .map(|control| control.id)
-                .filter(|id| values.mark(id) == Some(mark))
-                .map(str::to_owned)
-                .collect()
-        };
-        document.entries.push(Entry::Module {
-            module: definition.id.to_owned(),
-            version: Some(definition.version.to_string()),
-            kept: marked(Mark::Kept),
-            auto: marked(Mark::Auto),
-            enabled: values.enabled().then(|| "true".to_owned()),
-            controls: definition
-                .controls
-                .iter()
-                .filter_map(|control| {
-                    let value = values.get(control.id)?;
-                    Some((control.id.to_owned(), control.text(value).to_owned()))
-                })
-                .collect(),
-        });
+        if let Some(values) = edit.modules.get(definition.id).filter(|v| !v.is_empty()) {
+            document.entries.push(module_entry(definition, values));
+        }
     }
     for operation in operations {
         let manifest = operation.manifest();
-        let Some(params) = edit
-            .params
-            .get(manifest.id)
-            .filter(|p| p.iter().next().is_some())
-        else {
-            continue;
-        };
-        let schema = operation.schema();
-        document.entries.push(Entry::Operation {
-            operation: manifest.id.to_owned(),
-            schema: Some(schema.version),
-            params: params
-                .iter()
-                .map(|(name, value)| {
-                    let text = schema
-                        .param(name)
-                        .map_or_else(|| value.to_string(), |param| param.text(value));
-                    (name.to_owned(), text)
-                })
-                .collect(),
-        });
+        if let Some(params) = (edit.params.get(manifest.id)).filter(|p| p.iter().next().is_some()) {
+            document.entries.push(operation_entry(*operation, params));
+        }
     }
     document.to_xml()
 }
 
-/// Reads an edit's XMP for `operations` and `modules`. A module none of them is, but one
-/// of `retired`, the ids of the modules Apertrust has retired, is an older build's: left
-/// out with a warning, as any unknown module is, but not [`Newer`].
+/// The XMP of `log` as `build` writes it, version 2, the build recorded in `x:xmptk`:
+/// `file`'s photo, fingerprint and copies as read, but the first copy's log, end and clock
+/// vector, which are `log`'s and `clocks`; for a file with no copy, the first copy,
+/// [`FIRST_COPY`]. Each step's entries in its order, each written as version 1 writes it.
+pub fn log_xml(
+    file: &Edits,
+    log: &Log,
+    clocks: &[Clock],
+    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    build: &str,
+) -> String {
+    let first = file.copies.first();
+    let copy = VirtualCopy {
+        id: first.map_or_else(|| FIRST_COPY.to_owned(), |copy| copy.id.clone()),
+        number: first.map_or_else(|| "0".to_owned(), |copy| copy.number.clone()),
+        name: first.map(|copy| copy.name.clone()).unwrap_or_default(),
+        end: (log.steps()[..log.end()].last()).map_or_else(String::new, |step| step.id.to_string()),
+        clocks: clocks.to_vec(),
+        history: (log.steps().iter())
+            .map(|step| step_text(step, operations, modules))
+            .collect(),
+    };
+    let others = file.copies.iter().skip(1).cloned();
+    Edits {
+        version: COPIES_VERSION,
+        build: Some(build.to_owned()),
+        photo: file.photo.clone(),
+        fingerprint: file.fingerprint.clone(),
+        copies: std::iter::once(copy).chain(others).collect(),
+        other: file.other.clone(),
+        problems: Vec::new(),
+    }
+    .to_xml()
+}
+
+/// Reads an edit's XMP for `operations` and `modules` ([`from_xml_at`]), as a file with no
+/// modified time.
 pub fn from_xml(
     xml: &str,
     operations: &[&dyn Operation],
     modules: &[&dyn Module],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
-    Ok(from_document(
-        Document::parse(xml)?,
-        operations,
-        modules,
-        retired,
-    ))
+    from_xml_at(xml, None, operations, modules, retired)
 }
 
-/// The edit a [`Document`]'s entries hold, for `operations` and `modules`.
-fn from_document(
-    document: Document,
+/// Reads an edit's XMP for `operations` and `modules`, its file last modified at
+/// `modified`, which a version 1 file's steps take as their time. A module none of them
+/// is, but one of `retired`, the ids of the modules Apertrust has retired, is an older
+/// build's: left out with a warning, as any unknown module is, but not [`Newer`].
+pub fn from_xml_at(
+    xml: &str,
+    modified: Option<SystemTime>,
+    operations: &[&dyn Operation],
+    modules: &[&dyn Module],
+    retired: &[&str],
+) -> Result<Loaded, SidecarError> {
+    let modified = (modified.and_then(|modified| modified.duration_since(UNIX_EPOCH).ok()))
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        });
+    let file = Edits::parse(xml, modified)?;
+    Ok(from_edits(file, operations, modules, retired))
+}
+
+/// The log the first copy of `file` holds, and the edit it folds to, for `operations` and
+/// `modules`: every entry of every step read as version 1's entry is, a step none of whose
+/// entries this build keeps left out, its place in the end with it.
+fn from_edits(
+    file: Edits,
     operations: &[&dyn Operation],
     modules: &[&dyn Module],
     retired: &[&str],
 ) -> Loaded {
-    let mut newer = document.newer();
-    let Document {
-        version,
-        build,
-        entries,
-    } = document;
-    let mut edit = Edit::default();
+    let mut newer = file.newer();
     let mut warnings = Vec::new();
     if newer.is_some() {
+        let version = file.version;
         warnings.push(format!(
-            "file version {version}, newer than this build's {VERSION}; read as version {VERSION}"
+            "file version {version}, newer than this build's {COPIES_VERSION}; read as version {COPIES_VERSION}"
         ));
     }
-    for entry in entries {
-        match entry {
-            Entry::Module {
-                module,
-                version,
-                kept,
-                auto,
-                enabled,
-                controls,
-            } => {
-                let found = read_module(
-                    &mut edit,
-                    &mut warnings,
-                    (modules, retired),
-                    (&module, version.as_deref()),
-                    [(kept, Mark::Kept), (auto, Mark::Auto)],
-                    (enabled, controls),
-                );
+    let (mut steps, mut end) = (Vec::new(), 0);
+    if let Some(copy) = file.copies.first() {
+        let applied = copy.applied();
+        for (at, step) in copy.history.iter().enumerate() {
+            let mut entries = Vec::new();
+            for entry in &step.entries {
+                let (read, found) =
+                    read_entry(entry.clone(), &mut warnings, (operations, modules), retired);
                 newer = newer.or(found);
+                entries.extend(read);
             }
-            Entry::Operation {
-                operation,
-                schema,
-                params,
-            } => read_operation(
-                &mut edit,
-                &mut warnings,
+            if entries.is_empty() && !step.entries.is_empty() {
+                continue;
+            }
+            end += usize::from(at < applied);
+            steps.push(typed_step(step, entries));
+        }
+    }
+    // A warning once, however many steps hold the same entry.
+    let mut seen = HashSet::new();
+    warnings.retain(|warning| seen.insert(warning.clone()));
+    let log = Log::from_steps(steps, end);
+    Loaded {
+        edit: log.fold(),
+        log,
+        version: file.version,
+        build: file.build.clone(),
+        newer,
+        problems: file.problems.clone(),
+        warnings,
+        file,
+    }
+}
+
+/// A step of the text layer's with `entries`, its entries read: Reset's where it is noted
+/// `history-reset` or holds other than one entry, else its one module's. What cannot be
+/// read, which the text layer told as a [`Problem`], is read as nothing: an id or a batch
+/// as 0, a source as You, a clock as the unknown machine's at 1970.
+fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
+    let hex = |text: &str| u64::from_str_radix(text, 16).unwrap_or(0);
+    let note = step.note.clone().map(|note| match note {
+        text::Note::Message { id, args } => Note::Message { id, args },
+        text::Note::Text(words) => Note::Text(words),
+    });
+    let reset = matches!(&note, Some(Note::Message { id, .. }) if id == Note::RESET);
+    let change = match entries.len() {
+        1 if !reset => Change::Entry(entries.remove(0)),
+        _ => Change::Reset(entries),
+    };
+    Step {
+        id: StepId(hex(&step.id)),
+        clock: (step.clock).unwrap_or_else(|| Clock::at(0, None, MachineId::UNKNOWN)),
+        source: StepSource::from_name(&step.source).unwrap_or(StepSource::You),
+        note,
+        batch: step.batch.as_deref().map(|batch| BatchId(hex(batch))),
+        change,
+    }
+}
+
+/// One entry of a step read for `operations` and `modules`: a module's whole state, or an
+/// operation's unowned parameters; a newer build's module, which this build does not have,
+/// by its stored name with no value, so the History tab lists it in an edit open for
+/// viewing only, never written; or nothing where this build keeps none of it, a retired
+/// module or an operation it does not run unedited. And what in it tells a newer Apertrust
+/// wrote it, if anything does.
+fn read_entry(
+    entry: Entry,
+    warnings: &mut Vec<String>,
+    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    retired: &[&str],
+) -> (Option<history::Entry>, Option<Newer>) {
+    let mut read = Edit::default();
+    match entry {
+        Entry::Module {
+            module,
+            version,
+            kept,
+            auto,
+            enabled,
+            controls,
+        } => {
+            let newer = read_module(
+                &mut read,
+                warnings,
+                (modules, retired),
+                (&module, version.as_deref()),
+                [(kept, Mark::Kept), (auto, Mark::Auto)],
+                (enabled, controls),
+            );
+            let known = modules.iter().any(|m| m.definition().id == module);
+            let entry = (known || newer.is_some()).then(|| history::Entry::Module {
+                values: read.modules.remove(&module).unwrap_or_default(),
+                module,
+            });
+            (entry, newer)
+        }
+        Entry::Operation {
+            operation,
+            schema,
+            params,
+        } => {
+            let kept = operations
+                .iter()
+                .any(|op| op.manifest().id == operation && op.manifest().default_enabled);
+            read_operation(
+                &mut read,
+                warnings,
                 operations,
                 modules,
                 (&operation, schema),
                 params,
-            ),
+            );
+            let entry = kept.then(|| history::Entry::Operation {
+                params: read.params.remove(&operation).unwrap_or_default(),
+                operation,
+            });
+            (entry, None)
         }
     }
-    Loaded {
-        edit,
-        version,
-        build,
-        newer,
-        warnings,
+}
+
+/// A step as the text layer holds it: its id, clock, source, note and batch as text, and
+/// its entries each as version 1 writes one.
+fn step_text(step: &Step, operations: &[&dyn Operation], modules: &[&dyn Module]) -> text::Step {
+    text::Step {
+        id: step.id.to_string(),
+        clock: Some(step.clock),
+        source: step.source.name().to_owned(),
+        note: step.note.clone().map(|note| match note {
+            Note::Message { id, args } => text::Note::Message { id, args },
+            Note::Text(words) => text::Note::Text(words),
+        }),
+        batch: step.batch.map(|batch| batch.to_string()),
+        entries: (step.change.entries().iter())
+            .map(|entry| entry_text(entry, operations, modules))
+            .collect(),
+    }
+}
+
+/// An entry as version 1 writes it; one of a module or an operation this build does not
+/// have, which only an edit open for viewing only holds and which is never written, by its
+/// id alone.
+fn entry_text(
+    entry: &history::Entry,
+    operations: &[&dyn Operation],
+    modules: &[&dyn Module],
+) -> Entry {
+    match entry {
+        history::Entry::Module { module, values } => {
+            match modules.iter().find(|m| m.definition().id == module) {
+                Some(found) => module_entry(found.definition(), values),
+                None => Entry::Module {
+                    module: module.clone(),
+                    version: None,
+                    kept: Vec::new(),
+                    auto: Vec::new(),
+                    enabled: None,
+                    controls: Vec::new(),
+                },
+            }
+        }
+        history::Entry::Operation { operation, params } => {
+            match operations.iter().find(|op| op.manifest().id == operation) {
+                Some(found) => operation_entry(*found, params),
+                None => Entry::Operation {
+                    operation: operation.clone(),
+                    schema: None,
+                    params: Vec::new(),
+                },
+            }
+        }
+    }
+}
+
+/// A module's state as its entry: its version, its marks, `enabled` where a switched module
+/// is on, and each control set, in the definition's order.
+fn module_entry(definition: &Definition, values: &ModuleValues) -> Entry {
+    let marked = |mark| {
+        definition
+            .controls
+            .iter()
+            .map(|control| control.id)
+            .filter(|id| values.mark(id) == Some(mark))
+            .map(str::to_owned)
+            .collect()
+    };
+    Entry::Module {
+        module: definition.id.to_owned(),
+        version: Some(definition.version.to_string()),
+        kept: marked(Mark::Kept),
+        auto: marked(Mark::Auto),
+        enabled: values.enabled().then(|| "true".to_owned()),
+        controls: definition
+            .controls
+            .iter()
+            .filter_map(|control| {
+                let value = values.get(control.id)?;
+                Some((control.id.to_owned(), control.text(value).to_owned()))
+            })
+            .collect(),
+    }
+}
+
+/// An operation's unowned parameters as its entry, with its schema's version.
+fn operation_entry(operation: &dyn Operation, params: &ParamValues) -> Entry {
+    let schema = operation.schema();
+    Entry::Operation {
+        operation: operation.manifest().id.to_owned(),
+        schema: Some(schema.version),
+        params: params
+            .iter()
+            .map(|(name, value)| {
+                let text = schema
+                    .param(name)
+                    .map_or_else(|| value.to_string(), |param| param.text(value));
+                (name.to_owned(), text)
+            })
+            .collect(),
     }
 }
 
@@ -508,7 +732,9 @@ fn read_operation(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use std::time::Duration;
+
     use apertrust_library::sidecar::RDF_NAMESPACE as RDF;
     use apertrust_modules::{
         ChoiceStyle, Control, ControlKind, ControlValue, Definition, Owned, Row, Setting, Slider,
@@ -1084,24 +1310,6 @@ mod tests {
         assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
     }
 
-    /// A newer file version is read as this version lays it out, for viewing only.
-    #[test]
-    fn a_newer_file_version_reads_as_this_one_and_is_newer() {
-        let xml = to_xml(&edited(), OPERATIONS, MODULES, "0.9.0")
-            .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
-        assert_eq!(loaded.version, 2);
-        assert_eq!(loaded.edit, edited());
-        assert_eq!(loaded.newer, Some(Newer::Version(2)));
-        assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
-        let view_only = loaded.view_only().expect("viewing only");
-        assert_eq!(view_only.build.as_deref(), Some("0.9.0"));
-        assert_eq!(
-            view_only.to_string(),
-            "the edit Apertrust 0.9.0 wrote is version 2, newer than this build's 1: open for viewing only"
-        );
-    }
-
     /// The file round trip through the text layer, which `apertrust_library::sidecar` tests alone.
     #[test]
     fn an_edit_is_written_to_a_file_and_read_back() {
@@ -1246,5 +1454,566 @@ mod tests {
             assert!(!loaded.edit.is_on(&Grain), "{text}");
             assert_eq!(loaded.warnings.len(), 1, "{text}: {:?}", loaded.warnings);
         }
+    }
+
+    // -- Version 2: the log -------------------------------------------------------------------
+
+    /// A clock of the machine `machine`, 8 hex digits, at `when`, with `counter`.
+    fn clock(when: u64, counter: u32, machine: &str) -> Clock {
+        Clock {
+            when,
+            counter,
+            machine: machine.parse().unwrap(),
+        }
+    }
+
+    /// 2026-03-14T14:02:11.120Z.
+    const PI_DAY: u64 = 1_773_496_931_120;
+
+    /// Look's values in `edit`.
+    fn look(edit: &Edit) -> history::Entry {
+        history::Entry::Module {
+            module: "look".to_owned(),
+            values: edit.modules["look"].clone(),
+        }
+    }
+
+    /// A log of five steps, the end on the fourth: the person's Look; an assistant's batch
+    /// of the fake's parameters and Look, in words; a style's Look, a message with an
+    /// argument; and a Reset after the end. Each step's clock has a counter of its own, the
+    /// vector's another.
+    fn logged() -> (Log, Vec<Clock>) {
+        let edit = edited();
+        let mut softer = edit.clone();
+        (softer.set_control(
+            &Look,
+            "strength",
+            ControlValue::Number(0.75),
+            &apertrust_modules::testing::image(),
+        ))
+        .unwrap();
+        let step = |id: u64, counter: u32, change| Step {
+            id: StepId(0xa0 + id),
+            clock: clock(PI_DAY + id * 1_000, counter, "5e1f22c9"),
+            source: StepSource::You,
+            note: None,
+            batch: None,
+            change,
+        };
+        let words = Some(Note::Text("warmer".to_owned()));
+        let batch = Some(BatchId(0x0f1e_2d3c_4b5a_6978));
+        let fake = history::Entry::Operation {
+            operation: "fake".to_owned(),
+            params: edit.params["fake"].clone(),
+        };
+        let steps = vec![
+            step(1, 7, Change::Entry(look(&edit))),
+            Step {
+                source: StepSource::Assistant,
+                note: words.clone(),
+                batch,
+                ..step(2, 2, Change::Entry(fake))
+            },
+            Step {
+                source: StepSource::Assistant,
+                note: words,
+                batch,
+                ..step(3, 3, Change::Entry(look(&softer)))
+            },
+            Step {
+                source: StepSource::Style,
+                note: Some(Note::Message {
+                    id: "history-style".to_owned(),
+                    args: vec![("style".to_owned(), "Film".to_owned())],
+                }),
+                ..step(4, 4, Change::Entry(look(&edit)))
+            },
+            Step {
+                note: Some(Note::reset()),
+                ..step(
+                    5,
+                    5,
+                    Change::Reset(vec![
+                        history::Entry::Module {
+                            module: "look".to_owned(),
+                            values: ModuleValues::new(),
+                        },
+                        history::Entry::Operation {
+                            operation: "fake".to_owned(),
+                            params: ParamValues::new(),
+                        },
+                    ]),
+                )
+            },
+        ];
+        let clocks = vec![clock(PI_DAY + 9_000, 9, "5e1f22c9")];
+        (Log::from_steps(steps, 4), clocks)
+    }
+
+    /// The file of [`logged`]'s log, with the photo's name.
+    fn logged_xml() -> String {
+        let (log, clocks) = logged();
+        let mut file = Edits::new("");
+        file.photo = Some("IMG.ARW".to_owned());
+        log_xml(&file, &log, &clocks, (OPERATIONS, MODULES), BUILD)
+    }
+
+    /// A log written as version 2 reads back as it was, its steps, their ids, clocks,
+    /// sources, notes, batch and entries, the end and the clock vector, and writes back as
+    /// the same bytes; the edit is its fold up to the end.
+    #[test]
+    fn a_log_is_written_as_version_2_and_reads_back_exactly() {
+        let (log, clocks) = logged();
+        let xml = logged_xml();
+        for written in [
+            r#"apertrust:version="2""#,
+            r#"apertrust:photo="IMG.ARW""#,
+            r#"apertrust:id="00000000""#,
+            r#"apertrust:end="00000000000000a4""#,
+            r#"apertrust:source="assistant""#,
+            r#"apertrust:batch="0f1e2d3c4b5a6978""#,
+            r#"apertrust:noteMessage="history-reset""#,
+            r#"arg:style="Film""#,
+            r#"control:strength="0.75""#,
+            r#"param:mode="hard""#,
+        ] {
+            assert!(xml.contains(written), "{written} in {xml}");
+        }
+        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert!(loaded.problems.is_empty(), "{:?}", loaded.problems);
+        assert_eq!(loaded.view_only(), None);
+        assert_eq!(loaded.version, COPIES_VERSION);
+        assert_eq!(loaded.build.as_deref(), Some(BUILD));
+        assert_eq!(loaded.log, log);
+        assert_eq!(loaded.clocks(), clocks);
+        assert_eq!(loaded.edit, edited());
+        assert_eq!(loaded.edit, log.fold());
+        let again = log_xml(
+            &loaded.file,
+            &loaded.log,
+            loaded.clocks(),
+            (OPERATIONS, MODULES),
+            BUILD,
+        );
+        assert_eq!(again, xml);
+        // At Original, the end empty.
+        let mut original = log.clone();
+        original.set_end(0);
+        let xml = log_xml(
+            &Edits::new(""),
+            &original,
+            &[],
+            (OPERATIONS, MODULES),
+            BUILD,
+        );
+        assert!(xml.contains(r#"apertrust:end="""#), "{xml}");
+        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        assert_eq!((loaded.log.end(), loaded.edit.is_empty()), (0, true));
+    }
+
+    /// A copy the file holds beside the first, and what other tools wrote beside the edit,
+    /// as ExifTool's `xmp:Rating`, are written back as they were read: a save never drops
+    /// what the file holds.
+    #[test]
+    fn another_virtual_copy_and_other_tools_properties_are_kept_as_read() {
+        use apertrust_library::xmp::{Name, Property};
+        let mut file = Edits::parse(&logged_xml(), 0).unwrap();
+        let mut other = file.copies[0].clone();
+        other.id = "7c0e9a14".to_owned();
+        other.number = "1".to_owned();
+        other.name = "Warm".to_owned();
+        file.copies.push(other.clone());
+        let rating = Name::new("xmp", "http://ns.adobe.com/xap/1.0/", "Rating");
+        file.other.push(Property::simple(rating, "3"));
+        let xml = file.to_xml();
+        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let (mut log, clocks) = logged();
+        log.set_end(1);
+        let written = log_xml(&loaded.file, &log, &clocks, (OPERATIONS, MODULES), BUILD);
+        let read = Edits::parse(&written, 0).unwrap();
+        assert_eq!(read.copies.len(), 2);
+        assert_eq!(read.copies[0].end, "00000000000000a1");
+        assert_eq!(read.copies[1], other);
+        assert_eq!(read.other, file.other);
+        assert!(read.problems.is_empty(), "{:?}", read.problems);
+    }
+
+    /// A newer file version is read as this version lays it out, for viewing only.
+    #[test]
+    fn a_newer_file_version_reads_as_this_one_and_is_newer() {
+        let xml = logged_xml().replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#);
+        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        assert_eq!(loaded.version, 3);
+        assert_eq!(loaded.edit, edited());
+        assert_eq!(loaded.newer, Some(Newer::Version(3)));
+        assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
+        let view_only = loaded.view_only().expect("viewing only");
+        assert_eq!(view_only.build.as_deref(), Some(BUILD));
+        assert_eq!(
+            view_only.to_string(),
+            format!(
+                "the edit Apertrust {BUILD} wrote is version 3, newer than this build's 2: open for viewing only"
+            )
+        );
+    }
+
+    /// What each [`Problem`] is, by name: a new kind of problem fails to compile here, so it
+    /// is added to [`every_problem_opens_the_edit_for_viewing_only`].
+    pub(crate) fn kind(problem: &Problem) -> &'static str {
+        match problem {
+            Problem::StepClock { .. } => "step clock",
+            Problem::VectorClock { .. } => "vector clock",
+            Problem::TwoNotes { .. } => "two notes",
+            Problem::ArgumentsWithoutMessage { .. } => "arguments without a message",
+            Problem::NoteArguments { .. } => "note arguments",
+            Problem::UnreadableNote { .. } => "unreadable note",
+            Problem::StepId { .. } => "step id",
+            Problem::Batch { .. } => "batch",
+            Problem::Source { .. } => "source",
+            Problem::End { .. } => "end",
+            Problem::UnknownField { .. } => "unknown field",
+            Problem::DuplicateStep { .. } => "duplicate step",
+            Problem::ClockPastVector { .. } => "clock past vector",
+        }
+    }
+
+    /// [`logged_xml`] with each kind of [`Problem`], by its [`kind`].
+    fn damaged() -> Vec<(&'static str, String)> {
+        let xml = logged_xml();
+        let replaced = |from: &str, to: &str| {
+            let damaged = xml.replacen(from, to, 1);
+            assert_ne!(damaged, xml, "{from}");
+            damaged
+        };
+        // Step a2's note in words as a text with a language, an element of its own.
+        let words = r#" apertrust:note="warmer""#;
+        let without = xml.replacen(words, "", 1);
+        let at = without.find(r#"apertrust:id="00000000000000a2""#).unwrap();
+        let entries = at + without[at..].find("<apertrust:").unwrap();
+        let qualified = format!(
+            r#"{}<apertrust:note xml:lang="en">warmer</apertrust:note>{}"#,
+            &without[..entries],
+            &without[entries..]
+        );
+        let message = r#"apertrust:noteMessage="history-style""#;
+        vec![
+            (
+                "step clock",
+                replaced(r#"apertrust:counter="7""#, r#"apertrust:counter="x""#),
+            ),
+            (
+                "vector clock",
+                replaced(r#"apertrust:counter="9""#, r#"apertrust:counter="x""#),
+            ),
+            (
+                "two notes",
+                replaced(message, &format!(r#"apertrust:note="Words" {message}"#)),
+            ),
+            ("arguments without a message", replaced(message, "")),
+            ("note arguments", replaced("arg:style=", "param:style=")),
+            ("unreadable note", qualified),
+            (
+                "step id",
+                replaced(
+                    r#"apertrust:id="00000000000000a1""#,
+                    r#"apertrust:id="00000000000000A1""#,
+                ),
+            ),
+            (
+                "batch",
+                replaced(
+                    r#"apertrust:batch="0f1e2d3c4b5a6978""#,
+                    r#"apertrust:batch="0f1e""#,
+                ),
+            ),
+            (
+                "source",
+                replaced(r#"apertrust:source="style""#, r#"apertrust:source="robot""#),
+            ),
+            (
+                "end",
+                replaced(
+                    r#"apertrust:end="00000000000000a4""#,
+                    r#"apertrust:end="00000000000000ff""#,
+                ),
+            ),
+            (
+                "unknown field",
+                replaced(
+                    r#"apertrust:id="00000000000000a1""#,
+                    r#"apertrust:id="00000000000000a1" apertrust:rating="2""#,
+                ),
+            ),
+            (
+                "duplicate step",
+                replaced(
+                    r#"apertrust:id="00000000000000a2""#,
+                    r#"apertrust:id="00000000000000a1""#,
+                ),
+            ),
+            (
+                "clock past vector",
+                replaced(
+                    r#"apertrust:when="2026-03-14T14:02:20.120Z""#,
+                    r#"apertrust:when="2026-03-14T14:00:00.000Z""#,
+                ),
+            ),
+        ]
+    }
+
+    /// Every [`Problem`] the text layer tells opens the edit for viewing only, its reason
+    /// that problem, not a newer build's; the rest of the log reads.
+    #[test]
+    fn every_problem_opens_the_edit_for_viewing_only() {
+        let cases = damaged();
+        assert_eq!(cases.len(), 13, "one case of each kind of problem");
+        for (name, xml) in cases {
+            let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+            assert_eq!(loaded.newer, None, "{name}");
+            let view_only = loaded.view_only().unwrap_or_else(|| panic!("{name}"));
+            let Reason::Unreadable(problem) = &view_only.reason else {
+                panic!("{name}: {view_only:?}");
+            };
+            assert_eq!(kind(problem), name, "{name}: {problem}");
+            // A field a save would drop is history this build cannot keep, the rest history
+            // it cannot read.
+            let said = if name == "unknown field" {
+                "cannot keep"
+            } else {
+                "cannot read"
+            };
+            assert!(view_only.to_string().contains(said), "{name}");
+            assert_eq!(loaded.log.steps().len(), 5, "{name}");
+        }
+    }
+
+    /// Every entry of every step follows decision 48: a newer module version in an old step
+    /// makes the edit view-only, an older one is migrated entry by entry, and a step whose
+    /// only entry this build leaves out goes with its place in the end.
+    #[test]
+    fn every_entry_of_every_step_is_read_as_version_1_s() {
+        let xml = logged_xml();
+        let first = r#"apertrust:moduleVersion="2""#;
+        let newer = xml.replacen(first, r#"apertrust:moduleVersion="3""#, 1);
+        let loaded = from_xml(&newer, OPERATIONS, MODULES, &[]).unwrap();
+        assert!(
+            matches!(&loaded.newer, Some(Newer::ModuleVersion { version, .. }) if version == "3"),
+            "{:?}",
+            loaded.newer
+        );
+        assert!(loaded.view_only().is_some());
+        // Look's version 1 called strength amount: the first step's entry migrates.
+        let older = xml
+            .replacen(first, r#"apertrust:moduleVersion="1""#, 1)
+            .replacen("control:strength=", "control:amount=", 1);
+        let loaded = from_xml(&older, OPERATIONS, MODULES, &[]).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert_eq!(loaded.view_only(), None);
+        assert_eq!(loaded.log, logged().0);
+        // The second step's only entry, an operation this build does not run: the step is
+        // left out with a warning, and the end, on the fourth, is now on the third.
+        let unknown = xml.replacen(
+            r#"apertrust:operation="fake""#,
+            r#"apertrust:operation="lens""#,
+            1,
+        );
+        let loaded = from_xml(&unknown, OPERATIONS, MODULES, &[]).unwrap();
+        assert_eq!(loaded.view_only(), None);
+        assert_eq!(loaded.warnings, ["no operation lens; left out"]);
+        let ids: Vec<u64> = loaded.log.steps().iter().map(|step| step.id.0).collect();
+        assert_eq!(ids, [0xa1, 0xa3, 0xa4, 0xa5]);
+        assert_eq!(loaded.log.end(), 3);
+    }
+
+    /// A version 1 file reads as a step of each entry and is written as version 2, which
+    /// reads back as the same log.
+    #[test]
+    fn a_version_1_file_is_written_back_as_version_2() {
+        let xml = to_xml(&edited(), OPERATIONS, MODULES, BUILD);
+        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.log.steps().len(), 2);
+        let written = log_xml(
+            &loaded.file,
+            &loaded.log,
+            loaded.clocks(),
+            (OPERATIONS, MODULES),
+            BUILD,
+        );
+        assert!(written.contains(r#"apertrust:version="2""#), "{written}");
+        let again = from_xml(&written, OPERATIONS, MODULES, &[]).unwrap();
+        assert_eq!(again.log, loaded.log);
+        assert_eq!(again.edit, edited());
+        assert_eq!(again.clocks(), loaded.clocks());
+    }
+
+    /// The environment variable that makes [`a_write_cut_off_midway_never_loses_the_previous_file`]
+    /// the writer, killed midway, rather than the test.
+    const CRASH_WRITER: &str = "APERTRUST_SIDECAR_CRASH_WRITER";
+
+    /// Two logs of `steps` steps, Look's strength at a different value in each, and the
+    /// edit each folds to.
+    fn two_logs(steps: usize) -> [(String, Edit); 2] {
+        [0.25, 0.75].map(|last| {
+            let image = apertrust_modules::testing::image();
+            let mut log = Log::default();
+            let mut edit = Edit::default();
+            for step in 0..steps {
+                let before = edit.clone();
+                let value = if step + 1 == steps {
+                    last
+                } else {
+                    (step % 100) as f32 / 100.0
+                };
+                let value = ControlValue::Number(value);
+                edit.set_control(&Look, "strength", value, &image).unwrap();
+                let changes = Change::between(&before, &edit, &[]);
+                let clock = clock(PI_DAY + step as u64, 0, "5e1f22c9");
+                log.add_change(changes, StepSource::You, None, clock);
+            }
+            // Ids of their own, so the child's logs are the parent's, byte for byte.
+            let steps = (log.steps().iter().enumerate())
+                .map(|(at, step)| Step {
+                    id: StepId(at as u64 + 1),
+                    ..step.clone()
+                })
+                .collect();
+            let log = Log::from_steps(steps, usize::MAX);
+            let xml = log_xml(&Edits::new(""), &log, &[], (OPERATIONS, MODULES), BUILD);
+            (xml, edit)
+        })
+    }
+
+    /// A crash test (`docs/history.md`, Tests): a child process writes two 1,000-step logs
+    /// over the sidecar in turn through the safe write and is killed at once, after a
+    /// while, many times; after each kill, the sidecar reads whole as one of the two, never
+    /// half of one, so a write cut off midway never loses the previous file.
+    #[test]
+    fn a_write_cut_off_midway_never_loses_the_previous_file() {
+        let logs = two_logs(1000);
+        // The file beside the sidecar the child makes once it has written a log over it.
+        let ready = |path: &Path| path.with_extension("ready");
+        if let Some(path) = std::env::var_os(CRASH_WRITER) {
+            let path = std::path::PathBuf::from(path);
+            // The second log first, as the file holds the first; then each in turn, until
+            // it is killed.
+            for (turn, (xml, _)) in logs.iter().cycle().skip(1).enumerate() {
+                write_xml(&path, xml).unwrap();
+                if turn == 0 {
+                    std::fs::write(ready(&path), b"").unwrap();
+                }
+            }
+        }
+        let folder = std::env::temp_dir().join(format!("apertrust-crash-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = path_for(&folder.join("IMG.ARW"));
+        write_xml(&path, &logs[0].0).unwrap();
+        let test = "sidecar::tests::a_write_cut_off_midway_never_loses_the_previous_file";
+        let mut seen = [false; 2];
+        for round in 0..24u64 {
+            let _ = std::fs::remove_file(ready(&path));
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([test, "--exact", "--test-threads=1", "--nocapture"])
+                .env(CRASH_WRITER, &path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            // Once it has written, which in a debug build takes the longest, then after a
+            // while longer each round, so the kills land at different points of a write.
+            let began = std::time::Instant::now();
+            while !ready(&path).exists() {
+                assert!(began.elapsed() < Duration::from_secs(120), "round {round}");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            std::thread::sleep(Duration::from_millis(round * 3));
+            child.kill().unwrap();
+            child.wait().unwrap();
+            let xml = std::fs::read_to_string(&path).unwrap();
+            let loaded = from_xml(&xml, OPERATIONS, MODULES, &[])
+                .unwrap_or_else(|error| panic!("round {round}: {error}"));
+            let which = (logs.iter())
+                .position(|(written, _)| *written == xml)
+                .unwrap_or_else(|| panic!("round {round}: the file is neither log"));
+            assert_eq!(loaded.edit, logs[which].1, "round {round}");
+            seen[which] = true;
+        }
+        assert_eq!(seen, [true, true], "the kills fell on both logs");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// The median of `runs` timings of `work`, in milliseconds.
+    fn median_ms(runs: usize, mut work: impl FnMut()) -> f64 {
+        let mut times: Vec<f64> = (0..runs)
+            .map(|_| {
+                let start = std::time::Instant::now();
+                work();
+                start.elapsed().as_secs_f64() * 1e3
+            })
+            .collect();
+        times.sort_by(f64::total_cmp);
+        times[runs / 2]
+    }
+
+    /// The 1,000-step measurements (`docs/history.md`, In the sidecar): a log of 1,000
+    /// steps of Exposure, each two controls set and kept, read from a file on this machine's
+    /// disk and written to it, within 20 ms and 50 ms. A measurement, run on its own:
+    /// `cargo test --release -p apertrust-engine a_1000_step_log -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a measurement, run on its own in release"]
+    fn a_1000_step_log_reads_within_20_ms_and_writes_within_50_ms() {
+        use apertrust_modules::exposure::Exposure;
+        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_modules::MODULES);
+        let image = apertrust_modules::testing::image();
+        let mut log = Log::default();
+        let mut edit = Edit::default();
+        let mut clocks = Vec::new();
+        let machine = MachineId::current();
+        let mut last = None;
+        for step in 0..1000 {
+            let before = edit.clone();
+            let ev = -2.0 + (step % 400) as f32 * 0.01;
+            let black = (step % 50) as f32 * 0.001;
+            (edit.set_control(&Exposure, "exposure", ControlValue::Number(ev), &image)).unwrap();
+            let black = ControlValue::Number(black);
+            (edit.set_control(&Exposure, "black_level", black, &image)).unwrap();
+            let changes = Change::between(&before, &edit, &[]);
+            let clock = Clock::now(last.as_ref(), machine);
+            last = Some(clock);
+            log.add_change(changes, StepSource::You, None, clock);
+            history::advance(&mut clocks, clock);
+        }
+        let mut file = Edits::new("");
+        file.photo = Some("DSCF0001.RAF".to_owned());
+        file.fingerprint = Some(apertrust_library::sidecar::fingerprint(1, b"raw", b"raw"));
+        let folder = std::env::temp_dir().join(format!("apertrust-1000-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = path_for(&folder.join("DSCF0001.RAF"));
+        let xml = log_xml(&file, &log, &clocks, (operations, modules), BUILD);
+        let serialise = median_ms(9, || {
+            log_xml(&file, &log, &clocks, (operations, modules), BUILD);
+        });
+        // A write of new bytes each time, as each change makes, through the safe write.
+        let mut turn = 0;
+        let write = median_ms(9, || {
+            turn += 1;
+            let build = format!("{BUILD}.{turn}");
+            write_log(&path, &file, &log, &clocks, (operations, modules), &build).unwrap();
+        });
+        let mut read_back = None;
+        let read = median_ms(9, || {
+            read_back = Some(super::read(&path, operations, modules, &[]).unwrap());
+        });
+        let loaded = read_back.unwrap();
+        assert_eq!(loaded.log.steps().len(), 1000);
+        assert_eq!(loaded.edit, edit);
+        println!(
+            "1,000 steps, {} kB: written in {write:.2} ms ({serialise:.2} ms of it the XML), read in {read:.2} ms",
+            xml.len() / 1000
+        );
+        std::fs::remove_dir_all(&folder).unwrap();
+        assert!(read < 20.0, "read in {read:.2} ms, over 20 ms");
+        assert!(write < 50.0, "written in {write:.2} ms, over 50 ms");
     }
 }

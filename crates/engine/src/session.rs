@@ -50,12 +50,17 @@
 //! [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`] move through,
 //! darktable's undo records first, a batch whole, and [`Command::GoTo`] moves the end of;
 //! [`Command::Step`] makes several commands one change of its source and note. The client is
-//! told it as [`Event::History`]. What is saved is the edit at the end.
+//! told it as [`Event::History`]. What is saved is the log, in the sidecar's version 2, with
+//! its end, so reopening the photo brings Undo and Redo back. Before each write the writer
+//! compares the file's size and modified time with those the session last read or wrote:
+//! where another program wrote it meanwhile, it writes nothing, and the session takes the
+//! newer file in, laying its steps not yet saved on it, and writes that.
 //!
-//! A photo whose edit a newer Apertrust wrote opens for viewing only (decision 43,
-//! [`sidecar::ViewOnly`]): it renders what this build reads, [`Photo::view_only`] says
-//! which build wrote the edit, no control is reported available, every command that would
-//! change the edit is refused, and its file is never written.
+//! A photo whose edit a newer Apertrust wrote, or part of whose history this build cannot
+//! read, opens for viewing only (decisions 43 and 48, [`sidecar::ViewOnly`]): it renders
+//! what this build reads, [`Photo::view_only`] says why and which build wrote the edit, no
+//! control is reported available, every command that would change the edit is refused,
+//! and its file is never written.
 //!
 //! Once a client asks for the scopes ([`Command::Scopes`], decision 19), each frame is
 //! counted on the GPU ([`crate::scopes`]) right after its copy into the display buffer,
@@ -125,7 +130,7 @@ use thiserror::Error;
 
 use crate::compute::{ComputeError, GpuImage, POLL_INTERVAL, Timings};
 use crate::edit::{self, Edit, EditError, Held, panic_message};
-use crate::export_job::{self, Live, Numbering, Snapshot};
+use crate::export_job::{self, Live, Numbering, Snapshot, Stamp};
 pub use crate::export_job::{Cause, ExportStatus, Failure, PhotoResult, Summary, Why};
 use crate::export_preview;
 pub use crate::export_preview::ExportPreview;
@@ -461,6 +466,9 @@ pub(crate) enum Inbox {
     /// The edit writer saved a file: the live photo's thumbnail may now wait for its
     /// settle.
     Saved,
+    /// The edit writer found the live photo's sidecar changed by another program and wrote
+    /// nothing: the session takes the newer file in ([`Engine::newer_file`]).
+    Newer,
     Stop,
 }
 
@@ -477,7 +485,9 @@ pub enum Event {
     /// open's job, so only its number orders it against the engine thread's events.
     OpenPreview(OpenPreview),
     /// The photo an open opened, from its raw's metadata and its sidecar, before the
-    /// decode (decision 77); its values follow, not yet live.
+    /// decode (decision 77); its values follow, not yet live. Sent again, with the same
+    /// open's number, where the photo turns view-only as a newer sidecar is taken in
+    /// (`docs/history.md`, Behaviour), its values following.
     Opened(Photo),
     /// Every module's controls and the unowned parameters, after an open or a change.
     Values(Values),
@@ -870,6 +880,28 @@ pub enum SessionError {
         through: u64,
         source: io::Error,
     },
+    /// Another program changed the live photo's sidecar at `path`, and the session cannot
+    /// write over it, as `error` says: a file it cannot read, which it reads again at the
+    /// next write, or one now open for viewing only, whose steps not yet saved are not
+    /// written (`docs/history.md`, Behaviour).
+    /// `through` counts the commands sent when it was found, which the client's save
+    /// state, waiting for a write, takes as that write's failure.
+    #[error("the edit was not saved to {}: {error}", path.display())]
+    NotSaved {
+        path: PathBuf,
+        through: u64,
+        error: Box<SessionError>,
+    },
+    /// Another program moved the end of the history of the live photo's sidecar at `path`
+    /// or dropped part of it, so the session's Undo, Redo or Go to since its last save is
+    /// not kept: the other's end stands (`docs/history.md`, Behaviour).
+    #[error("another program changed the history in {}: the last Undo, Redo or Go to was not kept", path.display())]
+    MoveNotKept { path: PathBuf },
+    /// Another program kept changing the live photo's sidecar while the photo closed, each
+    /// write the session made finding it changed again: the edit's steps since its last save
+    /// are not written, as [`SessionError::NotSaved`] tells.
+    #[error("another program kept changing the file")]
+    StillChanging,
     #[error(transparent)]
     Plan(#[from] PlanError),
     #[error(transparent)]
@@ -1038,6 +1070,11 @@ impl Session {
         let saved: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = saves.send(Inbox::Saved);
         });
+        // And as it finds the live photo's sidecar changed by another program.
+        let newer_files = commands.clone();
+        let newer: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = newer_files.send(Inbox::Newer);
+        });
         let (outbox, events) = outbox::channel(wake);
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
@@ -1060,6 +1097,7 @@ impl Session {
                 let received = received;
                 engine.load = load;
                 engine.writer.on_saved(saved);
+                engine.writer.on_newer(newer);
                 engine.cache = cache.map(|options| {
                     let stop = Arc::clone(&stopping);
                     Upkeep::start(options, &engine.jobs.control, ask, stop)
@@ -1112,7 +1150,7 @@ impl Session {
                                 break;
                             }
                             Inbox::Evict => engine.evict_cache(),
-                            Inbox::Saved => {}
+                            Inbox::Saved | Inbox::Newer => {}
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
                                 stop = true;
@@ -1146,6 +1184,8 @@ impl Session {
                         if let Some(stage) = staged {
                             events.extend(engine.stage(*stage));
                         }
+                        // A newer sidecar the writer found, taken in.
+                        events.extend(engine.newer_file(false));
                         // What arrived meanwhile, during the batch's render included.
                         events.extend(engine.scopes());
                         events.extend(engine.picked());
@@ -1238,9 +1278,17 @@ impl Drop for Session {
 /// engine can wait for one file and write a failed one again. It also reads sidecars for an
 /// export's snapshot (D12), in order with the writes: every edit handed over before the
 /// read is written first.
+///
+/// Before it writes the live photo's sidecar, it compares the file's size and modified
+/// time with those the session last read or it last wrote (`docs/history.md`, Behaviour):
+/// where they differ, another program wrote it, so it writes nothing, keeps the newer file
+/// as it reads it for the engine ([`Writer::take_newer`]) and wakes it.
 struct Writer {
     jobs: Option<mpsc::Sender<Order>>,
     state: Arc<(Mutex<Writes>, Condvar)>,
+    /// The live photo's sidecar as last read or written, apart from `state`, which a write
+    /// takes only once it is done.
+    files: Arc<Mutex<Files>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -1265,6 +1313,11 @@ struct Job {
     /// Whether the file holds it already, as the edit a cancelled gesture puts back
     /// (decision 42): reported saved, and written only after a failed write.
     held: bool,
+    /// The [`Files::generation`] it was handed over in: one handed before a newer file was
+    /// taken in, or before another photo, is dropped unwritten.
+    generation: u64,
+    /// What the file holds once it is written, which a newer file is then compared with.
+    base: Arc<history::Base>,
 }
 
 #[derive(Default)]
@@ -1282,11 +1335,32 @@ struct Writes {
     on_saved: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
+/// What the writer knows of the live photo's sidecar, which it compares before it writes.
+#[derive(Default)]
+struct Files {
+    /// Its size and modified time as the session last read it or the writer last wrote it,
+    /// `None` where there was no file: a write finding another first writes nothing. Held
+    /// as it was until the session takes a newer file in, so a newer file it could not read
+    /// is never written over.
+    known: Option<(PathBuf, Option<Stamp>)>,
+    /// What it holds as the session last read it or the writer last wrote it.
+    base: Arc<history::Base>,
+    /// Raised as another photo is watched and as a newer file is taken: a write handed over
+    /// before is dropped unwritten.
+    generation: u64,
+    /// The file as read where a write found it changed, for the engine.
+    newer: Option<(PathBuf, Snapshot)>,
+    /// Told when a write finds it changed.
+    on_newer: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
 impl Writer {
     fn start(outbox: Outbox) -> Writer {
         let (jobs, received) = mpsc::channel::<Order>();
         let state = Arc::new((Mutex::new(Writes::default()), Condvar::new()));
         let shared = Arc::clone(&state);
+        let files = Arc::new(Mutex::new(Files::default()));
+        let known = Arc::clone(&files);
         let thread = std::thread::Builder::new()
             .name("edit writer".to_owned())
             .spawn(move || {
@@ -1318,18 +1392,19 @@ impl Writer {
                             }
                         };
                         // Every edit handed over before the read is on disk first (D12).
-                        write_edits(std::mem::take(&mut writes), &shared, &outbox);
+                        write_edits(std::mem::take(&mut writes), &shared, &known, &outbox);
                         let read = paths.iter().map(|path| Snapshot::read(path)).collect();
                         // A job that has gone hears nothing.
                         let _ = answer.send(read);
                     }
-                    write_edits(writes, &shared, &outbox);
+                    write_edits(writes, &shared, &known, &outbox);
                 }
             })
             .expect("the edit writer starts");
         Writer {
             jobs: Some(jobs),
             state,
+            files,
             thread: Some(thread),
         }
     }
@@ -1342,16 +1417,19 @@ impl Writer {
     /// first `through` commands; `held` where the file holds it already, as the edit a
     /// cancelled gesture puts back, reported saved and written only should the last write
     /// of `path` have failed by then.
-    fn write(&self, path: PathBuf, xml: String, through: u64, held: bool) {
+    fn write(&self, path: PathBuf, xml: String, through: u64, held: bool, base: history::Base) {
         let Some(jobs) = &self.jobs else {
             return;
         };
+        let generation = self.files().generation;
         *self.lock().pending.entry(path.clone()).or_default() += 1;
         let _ = jobs.send(Order::Write(Job {
             path,
             xml,
             through,
             held,
+            generation,
+            base: Arc::new(base),
         }));
     }
 
@@ -1420,30 +1498,121 @@ impl Writer {
         self.lock().on_saved = Some(saved);
     }
 
+    /// What the writer knows of the live photo's sidecar.
+    fn files(&self) -> std::sync::MutexGuard<'_, Files> {
+        self.files.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether a write found the live photo's sidecar at `path` changed and left it for the
+    /// engine, not yet taken.
+    fn has_newer(&self, path: &Path) -> bool {
+        (self.files().newer.as_ref()).is_some_and(|(at, _)| at == path)
+    }
+
+    /// Calls `newer` when a write finds the live photo's sidecar changed.
+    fn on_newer(&self, newer: Arc<dyn Fn() + Send + Sync>) {
+        self.files().on_newer = Some(newer);
+    }
+
     /// Keeps the saved hash of `live`'s writes alone from now on, the live photo's sidecar,
-    /// or of none as a photo closes.
-    fn watch(&self, live: Option<&Path>) {
+    /// or of none as a photo closes; `stamp` is its size and modified time as the session
+    /// read it, which the next write compares, and `base` what it holds.
+    fn watch(&self, live: Option<(&Path, Option<Stamp>, history::Base)>) {
+        let path = live.as_ref().map(|(path, ..)| path.to_path_buf());
+        {
+            let mut files = self.files();
+            files.generation += 1;
+            files.newer = None;
+            files.known = None;
+            files.base = Arc::default();
+            if let Some((path, stamp, base)) = live {
+                files.known = Some((path.to_owned(), stamp));
+                files.base = Arc::new(base);
+            }
+        }
         let mut writes = self.lock();
-        writes.live = live.map(Path::to_owned);
+        writes.live = path;
         let Writes { saved, live, .. } = &mut *writes;
         saved.retain(|path, _| live.as_ref() == Some(path));
+    }
+
+    /// The live photo's sidecar, at `path`, as a write that found it changed read it, once.
+    /// Every write handed over before is dropped unwritten; the stamp the writer compares
+    /// stays as it was until the session takes the file in ([`Writer::adopt`]).
+    fn take_newer(&self, path: &Path) -> Option<Snapshot> {
+        let mut files = self.files();
+        if files.newer.as_ref().is_none_or(|(at, _)| at != path) {
+            return None;
+        }
+        files.generation += 1;
+        files.newer.take().map(|(_, snapshot)| snapshot)
+    }
+
+    /// The live photo's sidecar at `path` as the session took it in: its `stamp`, which
+    /// the next write compares, and `base`, what it holds.
+    fn adopt(&self, path: &Path, stamp: Option<Stamp>, base: history::Base) {
+        let mut files = self.files();
+        files.known = Some((path.to_owned(), stamp));
+        files.base = Arc::new(base);
+    }
+
+    /// What the live photo's sidecar holds as the session last read it or the writer last
+    /// wrote it.
+    fn base(&self) -> Arc<history::Base> {
+        Arc::clone(&self.files().base)
     }
 }
 
 /// Writes the latest edit of each file in `writes`, with how many edits each stands for,
-/// telling the client of each and the engine, which may wait for one, once it is done.
-fn write_edits(writes: Vec<(Job, usize)>, shared: &(Mutex<Writes>, Condvar), outbox: &Outbox) {
+/// telling the client of each and the engine, which may wait for one, once it is done. A
+/// job handed over before the live photo's sidecar was taken in, or another photo watched,
+/// is dropped; one that finds the file changed since the session read it or this wrote it,
+/// held or not, writes nothing and leaves the file for the engine. No file is read, looked
+/// at or written while a lock is held.
+fn write_edits(
+    writes: Vec<(Job, usize)>,
+    shared: &(Mutex<Writes>, Condvar),
+    files: &Mutex<Files>,
+    outbox: &Outbox,
+) {
+    let lock_files = || files.lock().unwrap_or_else(PoisonError::into_inner);
+    // Counts the edits as done, and tells the engine, which may wait for them.
+    let done = |path: &Path, count: usize| {
+        let (lock, written) = shared;
+        let mut state = lock.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(left) = state.pending.get_mut(path) {
+            *left = left.saturating_sub(count);
+            if *left == 0 {
+                state.pending.remove(path);
+            }
+        }
+        written.notify_all();
+    };
     for (
         Job {
             path,
             xml,
             through,
             held,
+            generation,
+            base,
         },
         count,
     ) in writes
     {
         let start = Instant::now();
+        let name = sidecar::file_name(&path);
+        let (current, known) = {
+            let files = lock_files();
+            let known =
+                (files.known.as_ref()).and_then(|(at, stamp)| (*at == path).then_some(*stamp));
+            (files.generation, known)
+        };
+        if generation < current {
+            tracing::debug!(target: "pipe", "{name}: a write handed over before the file was taken in, dropped");
+            done(&path, count);
+            continue;
+        }
         // An edit the file holds already is written only after a failure.
         let write = !held
             || shared
@@ -1452,10 +1621,33 @@ fn write_edits(writes: Vec<(Job, usize)>, shared: &(Mutex<Writes>, Condvar), out
                 .unwrap_or_else(PoisonError::into_inner)
                 .failed
                 .contains(&path);
+        // The live photo's sidecar changed since the session read it or this wrote it:
+        // another program's write, which the engine takes in. Nothing is written or told.
+        if let Some(known) = known
+            && Stamp::of(&path) != known
+        {
+            tracing::debug!(target: "pipe", "{name} changed since it was read: taken in first");
+            let snapshot = Snapshot::read(&path);
+            let told = {
+                let mut files = lock_files();
+                (files.generation == generation).then(|| {
+                    files.newer = Some((path.clone(), snapshot));
+                    files.on_newer.clone()
+                })
+            };
+            done(&path, count);
+            if let Some(newer) = told.flatten() {
+                newer();
+            }
+            continue;
+        }
+        // The stamp of the file this wrote, from the file itself after its rename, so no
+        // other program's write after it is taken for it; `None` where nothing was written.
         let result = if write {
-            sidecar::write_xml(&path, &xml)
+            apertrust_base::fs::write_metadata(&path, xml.as_bytes())
+                .map(|(_, metadata)| metadata.map(|metadata| Stamp::from_metadata(&metadata)))
         } else {
-            Ok(())
+            Ok(None)
         };
         let failed = result.is_err();
         // A held acknowledgement preserves the original packet, including its build
@@ -1469,29 +1661,44 @@ fn write_edits(writes: Vec<(Job, usize)>, shared: &(Mutex<Writes>, Condvar), out
                 .ok()
                 .map(|bytes| apertrust_library::index::hash(&bytes))
         };
-        let event = match result {
-            Ok(()) => {
-                let name = sidecar::file_name(&path);
+        let (event, stamp) = match result {
+            Ok(stamp) => {
                 if write {
                     let ms = start.elapsed().as_secs_f64() * 1e3;
                     tracing::debug!(target: "pipe", "saved {name} in {ms:.1} ms");
                 } else {
                     tracing::debug!(target: "pipe", "{name} holds the edit");
                 }
-                Event::Saved {
+                let event = Event::Saved {
                     path: path.clone(),
                     through,
-                }
+                };
+                (event, stamp)
             }
             Err(source) => {
                 tracing::warn!(target: "pipe", "cannot save {}: {source}", path.display());
-                Event::Failed(SessionError::Save {
+                let event = Event::Failed(SessionError::Save {
                     path: path.clone(),
                     through,
                     source,
-                })
+                });
+                (event, None)
             }
         };
+        // What this wrote is what the next write compares, and what a newer file is
+        // compared with; a file that held the bytes or the edit already is as it was.
+        if write && !failed {
+            let mut files = lock_files();
+            if files.generation == generation
+                && let Some((at, known)) = &mut files.known
+                && *at == path
+            {
+                if let Some(stamp) = stamp {
+                    *known = Some(stamp);
+                }
+                files.base = base;
+            }
+        }
         // Told before the engine stops waiting, so what it waited for has been reported.
         outbox.send(event);
         let (lock, written) = shared;
@@ -1642,6 +1849,10 @@ struct Engine {
     /// only the latest of those still waiting, so its saves count fewer.
     #[cfg(test)]
     handed: usize,
+    /// Called as a newer sidecar is taken, for a test: another program's write landing
+    /// between the take and the write that follows it, at a set point, whatever the timing.
+    #[cfg(test)]
+    taking: Option<Box<dyn FnMut() + Send>>,
     /// Holds the next Clear of the cache, for a test.
     #[cfg(test)]
     clear_hold: Option<export_job::testing::Hold>,
@@ -1860,6 +2071,9 @@ struct Opening {
 struct Open {
     /// The edit's file, beside the photo.
     sidecar: PathBuf,
+    /// The file as text, which a write lays the log on: the photo's name and fingerprint,
+    /// and its copies, the first the log's (version 2, decision 47).
+    file: sidecar::Edits,
     thumbnail_hash: Option<[u8; 32]>,
     thumbnail_saved_at: Option<Instant>,
     thumbnail_through: Option<u64>,
@@ -1880,9 +2094,14 @@ struct Open {
     /// What an export's variables read of the raw, so that its export needs no decode.
     shot: Shot,
     edit: Edit,
-    /// Set when a newer Apertrust wrote the edit: no change applies, and nothing is ever
-    /// written.
+    /// Set when a newer Apertrust wrote the edit, or part of its history cannot be read: no
+    /// change applies, and nothing is ever written.
     view_only: Option<ViewOnly>,
+    /// What `Opened` said of it, sent again should it turn view-only.
+    photo: Photo,
+    /// The stamp of a newer sidecar that could not be read, logged once; each write it
+    /// drops is told.
+    unreadable: Option<Option<Stamp>>,
     /// Whether the edit has changed since it was last handed to the writer.
     unsaved: bool,
     /// The modules whose binding failed at the last render, each reported once.
@@ -2032,6 +2251,8 @@ impl Engine {
             #[cfg(test)]
             handed: 0,
             #[cfg(test)]
+            taking: None,
+            #[cfg(test)]
             clear_hold: None,
             #[cfg(test)]
             poison: None,
@@ -2170,6 +2391,9 @@ impl Engine {
     /// frames still on their way, and cancels the open under way, whose events from then
     /// on are dropped. The kernels its pipeline compiled are kept for the next photo.
     fn close(&mut self) {
+        // What was handed over is written, after a panic too, before the writer forgets the
+        // photo's file.
+        self.writer.flush(None);
         if let Some(opening) = self.opening.take() {
             self.jobs.control.cancel(opening.job);
         }
@@ -2208,11 +2432,13 @@ impl Engine {
         }
     }
 
-    /// Saves what the photo's edit still needs, then drops the photo.
-    fn close_saving(&mut self) {
-        self.save_unsaved();
+    /// Saves what the photo's edit still needs, then drops the photo; what its last save
+    /// found, a newer sidecar it cannot write over, is told in what this returns.
+    fn close_saving(&mut self) -> Vec<Event> {
+        let events = self.save_unsaved();
         self.thumbnail_tick(true);
         self.close();
+        events
     }
 
     /// The session's end: saves a change never completed, then ends the jobs, stepping
@@ -2263,7 +2489,7 @@ impl Engine {
                     // off.
                     self.picker_off(&mut events);
                     self.pickers.forget_photo();
-                    self.open(path, self.applied, at);
+                    events.extend(self.open(path, self.applied, at));
                     (values, render, save, cancelled) = (false, false, false, false);
                     answer = false;
                     resample = false;
@@ -2274,7 +2500,7 @@ impl Engine {
                 Command::Close => {
                     self.picker_off(&mut events);
                     self.pickers.forget_photo();
-                    self.close_saving();
+                    events.extend(self.close_saving());
                     (values, render, save, cancelled) = (false, false, false, false);
                     answer = false;
                     resample = false;
@@ -2300,6 +2526,11 @@ impl Engine {
                     render |= effect.render;
                     save |= effect.save;
                     answer |= effect.answer;
+                    // What a picker wrote, saved: a step of source Auto, as the log the
+                    // writer is handed holds only steps.
+                    if effect.save {
+                        self.step(StepSource::Auto, None);
+                    }
                 }),
                 Command::CancelJob { job } => self.jobs.cancel(job),
                 Command::RetryJob { job } => self.retry(job),
@@ -2638,7 +2869,8 @@ impl Engine {
     }
 
     /// Changes the open photo's edit, given its image context, and says whether it
-    /// changed; `false`, changing nothing, when no photo is open.
+    /// changed; `false`, changing nothing, when no photo is open; refused on a photo open
+    /// for viewing only.
     fn change(
         &mut self,
         change: impl FnOnce(
@@ -2648,6 +2880,9 @@ impl Engine {
             &ImageContext,
         ) -> Result<(), EditError>,
     ) -> Result<bool, SessionError> {
+        if let Some(view_only) = self.open.as_ref().and_then(|open| open.view_only.as_ref()) {
+            return Err(SessionError::ViewOnly(view_only.clone()));
+        }
         self.change_holding(|edit, _, modules, operations, image| {
             change(edit, modules, operations, image)
         })
@@ -2688,11 +2923,13 @@ impl Engine {
     }
 
     /// Whether the open photo's edit differs from what was last written: changed since,
-    /// or its last write failed. Never for an edit a newer Apertrust wrote, whose file
-    /// stays as it was.
+    /// its last write failed, or its file was found changed and could not be read, so a
+    /// write finds it again and takes it in once it reads. Never for an edit a newer
+    /// Apertrust wrote, whose file stays as it was.
     fn needs_save(&self) -> bool {
         self.open.as_ref().is_some_and(|open| {
-            open.view_only.is_none() && (open.unsaved || self.writer.failed(&open.sidecar))
+            let again = open.unreadable.is_some() || self.writer.failed(&open.sidecar);
+            open.view_only.is_none() && (open.unsaved || again)
         })
     }
 
@@ -2721,7 +2958,7 @@ impl Engine {
         if let Some(open) = &mut self.open
             && open.view_only.is_none()
         {
-            let xml = sidecar::to_xml(&open.edit, self.operations, &self.modules, &self.build);
+            let xml = open.xml(self.operations, &self.modules, &self.build);
             if !held || self.writer.failed(&open.sidecar) {
                 let hash = apertrust_library::index::hash(xml.as_bytes());
                 if open.thumbnail_hash != Some(hash) {
@@ -2733,17 +2970,21 @@ impl Engine {
             }
             // The thumbnail waits for the write by the number the writer reports.
             open.thumbnail_through = Some(through);
-            self.writer.write(open.sidecar.clone(), xml, through, held);
+            let base = open.history.base();
+            self.writer
+                .write(open.sidecar.clone(), xml, through, held, base);
             #[cfg(test)]
             {
                 self.handed += 1;
             }
-            open.unsaved = false;
-            // A batch that completes a change and begins a gesture hands over the gesture's
-            // first change: the edit before the gesture is the writer's only where the two
-            // are the same.
+            // The file holds the log, whose fold is the edit but for a change not yet a
+            // step, as a gesture a batch began after completing a change: that is still to
+            // write, and so is the edit before a gesture where it is not the log's fold. A
+            // clamp of the fold alone is never a step, and nothing to write.
+            open.unsaved = !history::clamp_only(open, &self.modules);
+            let stepped = open.history.stepped();
             if let Some(gesture) = &mut open.gesture {
-                gesture.unsaved = gesture.edit != open.edit;
+                gesture.unsaved = gesture.edit != *stepped;
             }
         }
     }
@@ -2751,24 +2992,223 @@ impl Engine {
     /// Before the photo closes: saves a change never completed, which becomes a history
     /// step, and writes again an edit whose last write failed, once any write still under
     /// way is done.
-    fn save_unsaved(&mut self) {
+    fn save_unsaved(&mut self) -> Vec<Event> {
         self.step_pending();
         let Some(open) = &self.open else {
-            return;
+            return Vec::new();
         };
-        self.writer.flush(Some(&open.sidecar));
+        let sidecar = open.sidecar.clone();
+        self.writer.flush(Some(&sidecar));
+        if self.needs_save() {
+            self.save();
+            // Written before the photo goes, as the next photo's open would wait for it
+            // anyway, so a newer file the write finds is taken in.
+            self.writer.flush(Some(&sidecar));
+        }
+        // A newer file a write found is taken in and its log written; one it cannot write
+        // over is told, as the photo's last word.
+        let mut events = self.newer_file(true);
+        self.writer.flush(Some(&sidecar));
+        // Another program may write again between the take-in and its write: taken in again,
+        // twice more, then told, so the photo never closes on a conflict left unread.
+        for _ in 0..2 {
+            if !self.writer.has_newer(&sidecar) {
+                break;
+            }
+            events.extend(self.newer_file(true));
+            self.writer.flush(Some(&sidecar));
+        }
+        if self.writer.has_newer(&sidecar) {
+            tracing::warn!(target: "pipe", "{} kept changing as the photo closed: not saved", sidecar.display());
+            events.push(Event::Failed(SessionError::NotSaved {
+                path: sidecar.clone(),
+                through: self.applied,
+                error: Box::new(SessionError::StillChanging),
+            }));
+        }
+        events
+            .into_iter()
+            .filter(|event| matches!(event, Event::Failed(_)))
+            .collect()
+    }
+
+    /// The live photo's sidecar as the writer found it, changed by another program, taken
+    /// in (`docs/history.md`, Behaviour), compared with what the session last read or the
+    /// writer last wrote ([`history::Base`]):
+    ///
+    /// - one holding nothing newer by its clock vector, every machine's clock at or below
+    ///   the base's, as an older copy put back or one removed, is not taken in: the
+    ///   session's log is written over it, with nothing to tell;
+    /// - one a newer Apertrust wrote, or with a [`sidecar::Problem`], is shown as it reads,
+    ///   for viewing only: `Opened` again with its reason, its values and history, the
+    ///   steps not yet saved reported unwritten, and a module's picker turned off;
+    /// - one that cannot be read is reported once, and nothing is written over it: each
+    ///   later write finds it again, until it reads;
+    /// - any other is taken in: the steps not yet saved laid on its log after its end, the
+    ///   change not yet a step, a gesture under way among them, kept on top, then written,
+    ///   with `Values`, `History` and a frame where the edit changed, none of it rendered
+    ///   while the photo `closing`.
+    fn newer_file(&mut self, closing: bool) -> Vec<Event> {
+        let mut events = Vec::new();
+        let Some(open) = &mut self.open else {
+            return events;
+        };
+        let Some(snapshot) = self.writer.take_newer(&open.sidecar) else {
+            return events;
+        };
+        #[cfg(test)]
+        if let Some(taking) = &mut self.taking {
+            taking();
+        }
+        let name = sidecar::file_name(&open.sidecar).into_owned();
+        let (modified, stamp) = (snapshot.changed(), snapshot.stamp());
+        let existed = stamp.is_some();
+        let loaded = match snapshot.xml() {
+            Ok(Some(xml)) => {
+                let loaded = sidecar::from_xml_at(
+                    &xml,
+                    modified,
+                    self.operations,
+                    &self.modules,
+                    self.retired,
+                );
+                loaded.map_err(SessionError::Sidecar)
+            }
+            // Removed: no clock past the base's, so the session's log is written over it.
+            Ok(None) => Ok(sidecar::Loaded {
+                edit: Edit::default(),
+                log: crate::history::Log::default(),
+                version: sidecar::COPIES_VERSION,
+                build: None,
+                newer: None,
+                problems: Vec::new(),
+                warnings: Vec::new(),
+                file: sidecar::Edits::new(""),
+            }),
+            Err(error) => Err(SessionError::Sidecar(sidecar::SidecarError::Io(error))),
+        };
+        let loaded = match loaded {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                // The writer keeps the stamp it had, so it never writes over this file. Each
+                // write it dropped is answered, so a client waiting for one stops waiting;
+                // the log says it once a file.
+                if open.unreadable != Some(stamp) {
+                    tracing::warn!(target: "pipe", "{name} changed and cannot be read, so it is not written over: {error}");
+                    open.unreadable = Some(stamp);
+                }
+                // Through what a write handed over now answers: a command whose pick is
+                // still to come is answered by a later one (decision 79).
+                let through = self.pickers.owed_through(self.applied);
+                events.push(Event::Failed(SessionError::NotSaved {
+                    path: open.sidecar.clone(),
+                    through,
+                    error: Box::new(error),
+                }));
+                return events;
+            }
+        };
+        open.unreadable = None;
+        let base = self.writer.base();
+        let path = open.sidecar.clone();
+        if base.covers(loaded.clocks()) && loaded.view_only().is_none() {
+            tracing::debug!(target: "pipe", "{name} changed, holding nothing newer: written over");
+            self.writer.adopt(&path, stamp, (*base).clone());
+            // What else the file holds is kept: other tools' properties, as a rating, and
+            // the other virtual copies, whatever another program changed of them.
+            if existed {
+                let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
+                open.file = loaded.file;
+                open.file.photo = photo;
+                open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+            }
+            open.unsaved = true;
+            self.save();
+            return events;
+        }
+        let before = open.edit.clone();
+        if let Some(view_only) = loaded.view_only() {
+            tracing::warn!(target: "pipe", "{name} changed, now for viewing only: {view_only}");
+            let unsaved = open.history.base() != *base || !history::clamp_only(open, &self.modules);
+            if unsaved {
+                events.push(Event::Failed(SessionError::NotSaved {
+                    path: path.clone(),
+                    through: self.applied,
+                    error: Box::new(SessionError::ViewOnly(view_only.clone())),
+                }));
+            }
+            let clocks = loaded.clocks().to_vec();
+            open.history = history::PhotoHistory::read(loaded.log, clocks);
+            open.edit = loaded.edit;
+            open.view_only = Some(view_only.clone());
+            open.gesture = None;
+            open.unsaved = false;
+            open.photo.view_only = Some(view_only);
+            *open.photo.image = open.image.clone();
+            let photo = open.photo.clone();
+            events.insert(0, Event::Opened(photo));
+            // A module's picker writes the edit, which no longer takes a change.
+            self.module_picker_off(&mut events);
+        } else {
+            tracing::debug!(target: "pipe", "{name} changed: its steps taken in");
+            for warning in &loaded.warnings {
+                tracing::warn!(target: "pipe", "{name}: {warning}");
+            }
+            let clocks = loaded.clocks().to_vec();
+            self.writer
+                .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
+            let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
+            open.file = loaded.file;
+            open.file.photo = photo;
+            open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+            let (was, kept) = open.history.take_in(loaded.log, clocks, &base);
+            if !kept {
+                tracing::warn!(target: "pipe", "{name}: another program moved the end of its history, so the session's move since its last save is not kept");
+                events.push(Event::Failed(SessionError::MoveNotKept {
+                    path: path.clone(),
+                }));
+            }
+            let now = open.history.stepped().clone();
+            if let Some(gesture) = &mut open.gesture {
+                gesture.edit = crate::history::rebase(&gesture.edit, &was, &now);
+            }
+            open.edit = crate::history::rebase(&open.edit, &was, &now);
+            for warning in open.edit.clamp_read(&self.modules, &open.image) {
+                tracing::warn!(target: "pipe", "{warning}");
+            }
+            open.held.prune(&open.edit);
+            open.unsaved = true;
+        }
+        let Some(open) = &mut self.open else {
+            return events;
+        };
+        let changed = open.edit != before;
+        events.push(Event::Values(open.values(
+            self.operations,
+            &self.modules,
+            self.applied,
+        )));
+        events.extend(self.history_event());
         if self.needs_save() {
             self.save();
         }
+        if changed && !closing && self.open.as_ref().is_some_and(|open| open.input.is_some()) {
+            match self.render(Instant::now(), &mut events) {
+                Ok(Some(frame)) => events.push(Event::Frame(frame)),
+                Ok(None) => {}
+                Err(error) => events.push(Event::Failed(error)),
+            }
+        }
+        events
     }
 
     /// [`Command::Open`], numbered `open`, which reached the session `at` (decision 77): the
     /// photo before it saved and closed, the open before it cancelled, and this one's job
     /// added, which reads the photo on a worker and hands the engine thread what it read
     /// ([`Self::take_stage`]).
-    fn open(&mut self, path: PathBuf, open: u64, at: Instant) {
+    fn open(&mut self, path: PathBuf, open: u64, at: Instant) -> Vec<Event> {
         // The old photo's edit is saved, and its buffers go before the new one's arrive.
-        self.close_saving();
+        let events = self.close_saving();
         let job = self.open_job(&path, open, at);
         self.opening = Some(Opening {
             open,
@@ -2777,6 +3217,7 @@ impl Engine {
             started: at,
         });
         self.tell_live_frame();
+        events
     }
 
     /// Adds the job that opens `path` for the open numbered `open`, which reached the
@@ -2888,11 +3329,14 @@ impl Engine {
         let open::Read {
             metadata,
             hash,
-            modified,
             edit,
             view_only,
+            log,
+            clocks,
+            file,
+            stamp,
         } = read;
-        let history = history::PhotoHistory::read(&edit, hash, modified);
+        let history = history::PhotoHistory::read(log, clocks);
         let path = (self.opening.as_ref())
             .map(|opening| opening.path.clone())
             .unwrap_or_default();
@@ -2911,10 +3355,13 @@ impl Engine {
             image: Box::new(image.clone()),
         };
         let options = listed_options(&self.modules, &image);
-        // Its saves are the ones its thumbnail waits for.
-        self.writer.watch(Some(&sidecar::path_for(&path)));
+        // Its saves are the ones its thumbnail waits for, and the file as read is what the
+        // first compares.
+        self.writer
+            .watch(Some((&sidecar::path_for(&path), stamp, history.base())));
         self.open = Some(Open {
             sidecar: sidecar::path_for(&path),
+            file,
             thumbnail_hash: hash,
             thumbnail_saved_at: Some(Instant::now()),
             thumbnail_through: None,
@@ -2927,6 +3374,8 @@ impl Engine {
             shot: metadata.shot,
             edit,
             view_only,
+            photo: photo.clone(),
+            unreadable: None,
             unsaved: false,
             failing: BTreeSet::new(),
             presets_failed: BTreeSet::new(),
@@ -3006,8 +3455,9 @@ impl Engine {
                     tracing::warn!(target: "pipe", "{warning}");
                 }
             }
-            // Its steps, read as the edit now stands and described on the new context.
-            photo.history.read_again(&photo.edit);
+            // Its steps described on the new context; a value clamped is a change not yet a
+            // step.
+            photo.history.describe_anew();
         }
         photo.sensor = input.desc();
         photo.shot = metadata.shot;
@@ -3592,6 +4042,18 @@ impl Engine {
 }
 
 impl Open {
+    /// The sidecar as `build` writes it: the log and its end, with the copy's clock vector,
+    /// laid on the file as read ([`sidecar::log_xml`]).
+    fn xml(
+        &self,
+        operations: &[&'static dyn Operation],
+        modules: &[&'static dyn Module],
+        build: &str,
+    ) -> String {
+        let (log, clocks) = (self.history.log(), self.history.clocks());
+        sidecar::log_xml(&self.file, log, clocks, (operations, modules), build)
+    }
+
     /// Follows the gesture under way through `command`, a change to the edit about to
     /// apply (decision 42): a `SetControl { done: false }`, or a `Step` of such changes
     /// alone, goes on with the gesture on its module of its source and note, or begins one
@@ -5099,7 +5561,11 @@ mod tests {
                 {
                     Inbox::Open(stage) => events.extend(self.engine.stage(*stage)),
                     Inbox::Task(waiting) => self.engine.jobs.background.add(waiting),
-                    Inbox::Command(..) | Inbox::Evict | Inbox::Saved | Inbox::Stop => {}
+                    Inbox::Command(..)
+                    | Inbox::Evict
+                    | Inbox::Saved
+                    | Inbox::Newer
+                    | Inbox::Stop => {}
                 }
             }
             events
@@ -6850,8 +7316,9 @@ mod tests {
         let shown = frame(&driven.gpu, &events);
         let edit = edit_of(&driven);
         driven.writes();
-        // Taken away, the file shows whether anything writes it again.
-        std::fs::remove_file(&sidecar).unwrap();
+        // The file's bytes and modified time show whether anything writes it again; taken
+        // away, it would be another program's change, which the session takes in.
+        let file = written_file(&sidecar);
 
         // Brightness, then the difference up, the sum held: grain over 50 %, which makes
         // the size coarse, and bias down to 35 %, which clamps coarseness to 135 %.
@@ -6898,20 +7365,21 @@ mod tests {
             matches!(&writes[..], [Event::Saved { path, through: t }] if *path == sidecar && *t == through),
             "{writes:?}"
         );
-        assert!(!sidecar.exists(), "the edit was written");
+        assert_eq!(written_file(&sidecar), file, "the edit was written");
         driven.open(&other);
         assert!(driven.writes().is_empty());
-        assert!(
-            !sidecar.exists(),
+        assert_eq!(
+            written_file(&sidecar),
+            file,
             "the edit was written as the photo closed"
         );
         remove(&path);
         remove(&other);
     }
 
-    /// Where the batch that completed a change began the gesture too, the writer was handed
-    /// its first change, whether that completed change changed the edit or not: the cancel
-    /// writes the edit it puts back.
+    /// Where the batch that completed a change began the gesture too, the writer is handed
+    /// the log, which holds no change of the gesture, whether that completed change changed
+    /// the edit or not: the cancel puts back the edit the file holds, reported saved.
     #[test]
     fn a_cancel_writes_back_the_edit_where_the_writer_was_handed_part_of_its_gesture() {
         let path = scratch("cancel-handed");
@@ -6929,7 +7397,7 @@ mod tests {
                 set("grain", ControlValue::Number(60.0), false),
             ]);
             driven.writes();
-            assert_eq!(grain(&sidecar), Some(60.0));
+            assert_eq!(grain(&sidecar), Some(30.0));
             driven.run([cancel()]);
             assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
             assert_eq!(grain(&sidecar), Some(30.0));
@@ -6969,9 +7437,10 @@ mod tests {
         assert!(!sidecar.exists());
         let events = driven.run([set("grain", ControlValue::Number(30.0), true)]);
         driven.writes();
-        std::fs::remove_file(&sidecar).unwrap();
+        let file = written_file(&sidecar);
         let writes = nothing(&mut driven, cancel(), values(&events));
         assert!(saved(&driven, &writes), "{writes:?}");
+        assert_eq!(written_file(&sidecar), file);
         // Another module named, while a gesture is under way on this one.
         let events = driven.run([set("grain", ControlValue::Number(60.0), false)]);
         let elsewhere = Command::CancelGesture {
@@ -6986,7 +7455,7 @@ mod tests {
         );
         let writes = driven.writes();
         assert!(saved(&driven, &writes), "{writes:?}");
-        assert!(!sidecar.exists());
+        assert_eq!(written_file(&sidecar), file);
         // After a `Set`, which only a completed change or the photo's closing saves.
         let events = driven.run([Command::Set {
             operation: "exposure".to_owned(),
@@ -7006,8 +7475,8 @@ mod tests {
 
     /// A gesture that begins with a change no write includes yet, the end of a gesture on
     /// another module or an unowned parameter's `Set`, starts unsaved: its cancel writes
-    /// the edit it puts back, which the file then holds, and holds still once another
-    /// photo opens.
+    /// the log, which holds the other gesture's step but not the `Set`, a change not yet a
+    /// step; once another photo opens, the `Set` is a step, and the file holds both.
     #[test]
     fn a_cancel_writes_back_a_change_before_its_gesture_that_no_write_included() {
         let level = Command::SetControl {
@@ -7028,10 +7497,15 @@ mod tests {
             (level, black, grain)
         };
         let cases = [
-            ("level", level, (Some(10.0), None, None)),
-            ("black", black, (None, Some(Value::Float(0.01)), None)),
+            ("level", level, (Some(10.0), None, None), true),
+            (
+                "black",
+                black,
+                (None, Some(Value::Float(0.01)), None),
+                false,
+            ),
         ];
-        for (name, first, expected) in cases {
+        for (name, first, expected, stepped) in cases {
             let path = scratch(&format!("cancel-unsaved-{name}"));
             let other = scratch(&format!("cancel-unsaved-{name}-other"));
             let sidecar = sidecar::path_for(&path);
@@ -7046,7 +7520,12 @@ mod tests {
             driven.run([cancel()]);
             assert_eq!(held(&edit_of(&driven)), expected, "{name}");
             driven.writes();
-            assert_eq!(held(&read()), expected, "{name}");
+            let written = if stepped {
+                expected
+            } else {
+                (None, None, None)
+            };
+            assert_eq!(held(&read()), written, "{name}");
             driven.open(&other);
             driven.writes();
             assert_eq!(held(&read()), expected, "{name}");
@@ -7467,6 +7946,14 @@ mod tests {
         sidecar::to_xml(&edit, OPERATIONS, &[&Sample], build)
     }
 
+    /// [`brightened`] as version 2 writes it, a log of its one step.
+    fn brightened_log(build: &str) -> String {
+        let modules: &[&dyn Module] = &[&Sample];
+        let loaded = sidecar::from_xml(&brightened(build), OPERATIONS, modules, &[]).unwrap();
+        let (log, clocks) = (&loaded.log, loaded.clocks());
+        sidecar::log_xml(&loaded.file, log, clocks, (OPERATIONS, modules), build)
+    }
+
     /// `xml` with a module entry for `lens`, which no build here has, before the others.
     fn with_lens(xml: &str) -> String {
         xml.replacen(
@@ -7507,8 +7994,9 @@ mod tests {
         let cases = [
             (
                 "file",
-                brightened_by.replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#),
-                sidecar::Newer::Version(2),
+                brightened_log("0.9.0")
+                    .replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#),
+                sidecar::Newer::Version(3),
             ),
             (
                 "module",
@@ -7553,7 +8041,7 @@ mod tests {
                 photo.view_only,
                 Some(ViewOnly {
                     build: Some("0.9.0".to_owned()),
-                    newer
+                    reason: sidecar::Reason::Newer(newer),
                 }),
                 "{name}"
             );
@@ -7652,8 +8140,10 @@ mod tests {
         // A reset writes.
         driven.run([Command::Reset]);
         assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
-        let xml = std::fs::read_to_string(&sidecar).unwrap();
-        assert!(!xml.contains("apertrust:module="), "{xml}");
+        // The log kept, its Reset last: the edit it folds to holds nothing.
+        let read = sidecar::read(&sidecar, OPERATIONS, &[&Sample], &[]).unwrap();
+        assert!(read.edit.is_empty());
+        assert_eq!(read.log.steps().len(), 2);
         // Counted as handed to the writer, which writes the two as one where the second comes
         // before it has taken the first.
         let handed = driven.engine.handed;
@@ -7817,6 +8307,12 @@ mod tests {
         std::fs::remove_dir_all(folder.parent().unwrap()).unwrap();
     }
 
+    /// The file at `path`'s bytes and modified time, which tell whether it was written.
+    fn written_file(path: &Path) -> (Vec<u8>, std::time::SystemTime) {
+        let metadata = std::fs::metadata(path).unwrap();
+        (std::fs::read(path).unwrap(), metadata.modified().unwrap())
+    }
+
     /// What the writer tests write: the writer writes whatever it is given.
     const XML: &str = "<x:xmpmeta/>";
 
@@ -7826,7 +8322,80 @@ mod tests {
             xml: XML.to_owned(),
             through,
             held,
+            generation: 0,
+            base: Arc::default(),
         }
+    }
+
+    /// A write handed over before the live photo's newer sidecar was taken in, or another
+    /// photo watched, is dropped unwritten: here held up by the writer's knowledge of the
+    /// file, which the test holds while the file is taken.
+    #[test]
+    fn a_write_handed_over_before_a_newer_file_was_taken_is_dropped() {
+        let photo = scratch("stale-generation");
+        let path = sidecar::path_for(&photo);
+        std::fs::write(&path, b"another program's").unwrap();
+        let (sent, _saved) = outbox::channel(Arc::new(|| {}));
+        let writer = Writer::start(sent);
+        writer.watch(Some((
+            &path,
+            Stamp::of(&path),
+            crate::session::history::Base::default(),
+        )));
+        let jobs = writer.jobs.as_ref().expect("the writer runs");
+        {
+            let mut files = writer.files();
+            writer.lock().pending.insert(path.clone(), 1);
+            let stale = Job {
+                generation: files.generation,
+                ..job(&path, 1, false)
+            };
+            jobs.send(Order::Write(stale)).unwrap();
+            // Taken in before the writer reaches the write.
+            files.generation += 1;
+        }
+        writer.flush(Some(&path));
+        assert_eq!(std::fs::read(&path).unwrap(), b"another program's");
+        assert!(!writer.failed(&path));
+        remove(&photo);
+    }
+
+    /// A held write, as a cancel's (decision 42), is compared with the file too: one another
+    /// program changed is left for the engine, never taken as the file the writer knows.
+    #[test]
+    fn a_held_write_finds_another_program_s_file() {
+        let photo = scratch("held-newer");
+        let path = sidecar::path_for(&photo);
+        std::fs::write(&path, XML).unwrap();
+        let (sent, _saved) = outbox::channel(Arc::new(|| {}));
+        let writer = Writer::start(sent);
+        writer.watch(Some((
+            &path,
+            Stamp::of(&path),
+            crate::session::history::Base::default(),
+        )));
+        std::fs::write(&path, b"another program's, longer").unwrap();
+        writer.write(
+            path.clone(),
+            XML.to_owned(),
+            1,
+            true,
+            crate::session::history::Base::default(),
+        );
+        writer.flush(None);
+        assert!(writer.take_newer(&path).is_some());
+        // Still compared with what the session read, so the next write finds it again.
+        writer.write(
+            path.clone(),
+            XML.to_owned(),
+            2,
+            false,
+            crate::session::history::Base::default(),
+        );
+        writer.flush(None);
+        assert_eq!(std::fs::read(&path).unwrap(), b"another program's, longer");
+        assert!(writer.take_newer(&path).is_some());
+        remove(&photo);
     }
 
     /// An edit the file is to hold already, as a cancel hands over (decision 42), is
@@ -7837,11 +8406,23 @@ mod tests {
         let path = folder.join("synthetic.ARW.apxmp");
         let (sent, _saved) = outbox::channel(Arc::new(|| {}));
         let writer = Writer::start(sent);
-        writer.write(path.clone(), XML.to_owned(), 1, false);
+        writer.write(
+            path.clone(),
+            XML.to_owned(),
+            1,
+            false,
+            crate::session::history::Base::default(),
+        );
         writer.flush(None);
         assert!(writer.failed(&path));
         std::fs::create_dir_all(&folder).unwrap();
-        writer.write(path.clone(), XML.to_owned(), 2, true);
+        writer.write(
+            path.clone(),
+            XML.to_owned(),
+            2,
+            true,
+            crate::session::history::Base::default(),
+        );
         writer.flush(None);
         assert!(path.exists());
         assert!(!writer.failed(&path));
@@ -7856,8 +8437,18 @@ mod tests {
         std::fs::write(&path, original).unwrap();
         let (sent, _saved) = outbox::channel(Arc::new(|| {}));
         let writer = Writer::start(sent);
-        writer.watch(Some(&path));
-        writer.write(path.clone(), XML.to_owned(), 1, true);
+        writer.watch(Some((
+            &path,
+            Stamp::of(&path),
+            crate::session::history::Base::default(),
+        )));
+        writer.write(
+            path.clone(),
+            XML.to_owned(),
+            1,
+            true,
+            crate::session::history::Base::default(),
+        );
         writer.flush(None);
         assert_eq!(std::fs::read(&path).unwrap(), original);
         assert_eq!(

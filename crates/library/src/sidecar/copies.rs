@@ -62,8 +62,8 @@
 //! clock vector is written in the order of its machine ids, so two machines writing the
 //! same copy write the same bytes (decision 52).
 //!
-//! A version 1 or 0 file reads as one virtual copy ([`Edits::parse`]): its history one
-//! step holding the file's entries, or none, end empty, for a file holding nothing.
+//! A version 1 or 0 file reads as one virtual copy ([`Edits::parse`]): its history a step
+//! of each of the file's entries, or none, end empty, for a file holding nothing.
 
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -74,8 +74,8 @@ use crate::clock::{self, Clock, ClockError, MachineId};
 use crate::xmp::{ArrayKind, Name, Namespace, Node, Property, Value, Xmp};
 
 use super::{
-    Document, Entry, NAMESPACE, Newer, SidecarError, build, entry_list, own, own_field,
-    read_entries, version, xmp,
+    CONTROL_NAMESPACE, Document, Entry, NAMESPACE, Newer, PARAM_NAMESPACE, SidecarError, build,
+    entry_list, own, own_field, read_entries, version, xmp,
 };
 
 /// The version whose layout holds the photo's identity and its virtual copies, which
@@ -89,6 +89,8 @@ pub const ARG_NAMESPACE: &str = "https://apertrust.org/ns/xmp/arg/";
 pub const FIRST_COPY: &str = "00000000";
 /// What a version 1 file's step's source is: the person's.
 const YOU: &str = "you";
+/// Every step source by its name, as `apertrust:source` holds it (decision 78).
+pub const SOURCES: [&str; 5] = [YOU, "auto", "style", "assistant", "default"];
 
 /// A photo's `.apxmp` of version 2 as text: the photo it belongs to and its virtual copies.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +108,10 @@ pub struct Edits {
     pub fingerprint: Option<String>,
     /// `apertrust:copies`, in the file's order.
     pub copies: Vec<VirtualCopy>,
+    /// The top-level properties of other namespaces, as other tools write them beside an
+    /// edit (ExifTool's `dc:subject` or `xmp:Rating`), kept as read in the file's order and
+    /// written back after Apertrust's own, so a save drops nothing of theirs.
+    pub other: Vec<Property>,
     /// What [`Edits::parse`] could not read as written, in the file's order; none for a
     /// file made to be written. An edit with any is opened for viewing only, so nothing is
     /// written over what was not read (`docs/history.md`).
@@ -147,6 +153,44 @@ pub enum Problem {
         step: String,
         field: String,
     },
+    /// A step's `apertrust:id`, as written, that is not 16 lowercase hex digits.
+    #[error("step {step} of copy {copy} has an id that is not 16 hex digits")]
+    StepId { copy: String, step: String },
+    /// A step's `apertrust:batch`, as written, that is not 16 lowercase hex digits.
+    #[error("step {step} of copy {copy} has a batch {batch} that is not 16 hex digits")]
+    Batch {
+        copy: String,
+        step: String,
+        batch: String,
+    },
+    /// A step's `apertrust:source` that names none of [`SOURCES`].
+    #[error("step {step} of copy {copy} has a source {name} this build does not know")]
+    Source {
+        copy: String,
+        step: String,
+        name: String,
+    },
+    /// A copy's `apertrust:end` that names none of its steps: every step is taken as applied.
+    #[error("copy {copy}'s end {end} names none of its steps")]
+    End { copy: String, end: String },
+    /// A field a save would drop: one of Apertrust's own at the file's top level that this
+    /// build does not know, or any field in a copy or a step that it does not write.
+    #[error("{place} has a field {field} this build does not know")]
+    UnknownField { place: String, field: String },
+    /// A step whose id another step of its copy has too: the end, and the steps after it,
+    /// could not be told apart.
+    #[error("copy {copy} holds step {step} more than once")]
+    DuplicateStep { copy: String, step: String },
+    /// A step whose clock is past its machine's clock in its copy's vector, or of a machine
+    /// the vector lacks: the vector would say the file holds nothing past a clock that one
+    /// of its steps is past, and a save could be taken for holding all the file does.
+    #[error("the clock of step {step} of copy {copy} is past its copy's clock vector")]
+    ClockPastVector { copy: String, step: String },
+}
+
+/// Whether `text` is an id or a batch as Apertrust writes one: 16 lowercase hex digits.
+fn is_hex_id(text: &str) -> bool {
+    text.len() == 16 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// One virtual copy (decision 47): its id, place and name, its clock vector, its history
@@ -199,12 +243,29 @@ pub enum Note {
     Text(String),
 }
 
-/// What orders a version 1 file's entries as steps: modules first, then operations, each
-/// by its id.
-fn entry_key(entry: &Entry) -> (u8, &str) {
-    match entry {
-        Entry::Module { module, .. } => (0, module),
-        Entry::Operation { operation, .. } => (1, operation),
+impl VirtualCopy {
+    /// How many of its steps apply: up to the step its end names, none for an empty end,
+    /// every step for an end that names none ([`Problem::End`]).
+    pub fn applied(&self) -> usize {
+        if self.end.is_empty() {
+            return 0;
+        }
+        (self.history.iter())
+            .position(|step| step.id == self.end)
+            .map_or(self.history.len(), |at| at + 1)
+    }
+
+    /// Whether its edit holds anything, folded as text (`docs/history.md`, In the sidecar):
+    /// some module's or operation's last entry among the steps up to the end is not empty.
+    pub fn edited(&self) -> bool {
+        let mut last = std::collections::BTreeMap::new();
+        for entry in self.history[..self.applied()]
+            .iter()
+            .flat_map(|step| &step.entries)
+        {
+            last.insert(entry.key(), entry.is_empty());
+        }
+        last.values().any(|empty| !empty)
     }
 }
 
@@ -217,6 +278,7 @@ impl Edits {
             photo: None,
             fingerprint: None,
             copies: Vec::new(),
+            other: Vec::new(),
             problems: Vec::new(),
         }
     }
@@ -225,6 +287,12 @@ impl Edits {
     /// lays it out, for viewing only (decision 43).
     pub fn newer(&self) -> Option<Newer> {
         (self.version > COPIES_VERSION).then_some(Newer::Version(self.version))
+    }
+
+    /// Whether any virtual copy's edit holds anything ([`VirtualCopy::edited`]), as the
+    /// index counts a photo edited.
+    pub fn edited(&self) -> bool {
+        self.copies.iter().any(VirtualCopy::edited)
     }
 
     /// Reads an `.apxmp` file's XMP through the XMP layer, `modified` its modified time in
@@ -242,16 +310,20 @@ impl Edits {
     ///
     /// What cannot be read as written, a clock or a note, is read as far as it can be and
     /// told in [`Edits::problems`] (decision 48); a value missing elsewhere reads as empty
-    /// text.
+    /// text. The properties of other namespaces are kept ([`Edits::other`]); a property or
+    /// field of Apertrust's own that this build does not know, or any field in a copy or a
+    /// step that it does not write, is a [`Problem::UnknownField`].
     pub fn parse(xml: &str, modified: u64) -> Result<Edits, SidecarError> {
         let xmp = Xmp::parse(xml)?;
         let version = version(&xmp)?;
+        let (other, mut problems) = top_level(&xmp, version);
         if version < COPIES_VERSION {
             let document = Document::from_xmp(&xmp, version);
-            return Ok(Edits::from_version_1(document, xml.as_bytes(), modified));
+            let mut edits = Edits::from_version_1(document, xml.as_bytes(), modified);
+            (edits.other, edits.problems) = (other, problems);
+            return Ok(edits);
         }
         let mut copies = Vec::new();
-        let mut problems = Vec::new();
         if let Some(listed) = xmp.get(NAMESPACE, "copies") {
             for item in listed.items().unwrap_or_default() {
                 copies.push(read_copy(item.fields().unwrap_or_default(), &mut problems));
@@ -268,6 +340,7 @@ impl Edits {
             photo: text("photo"),
             fingerprint: text("fingerprint"),
             copies,
+            other,
             problems,
         })
     }
@@ -291,7 +364,7 @@ impl Edits {
             let clock = Clock::at(modified, None, MachineId::UNKNOWN);
             let mut entries = document.entries;
             // Stable, so a module written twice keeps its order, the later one folding last.
-            entries.sort_by(|a, b| entry_key(a).cmp(&entry_key(b)));
+            entries.sort_by(|a, b| a.key().cmp(&b.key()));
             let batch = (entries.len() > 1).then(|| format!("{:016x}", bits(8)));
             for (index, entry) in entries.into_iter().enumerate() {
                 copy.history.push(Step {
@@ -316,6 +389,7 @@ impl Edits {
             photo: None,
             fingerprint: None,
             copies: vec![copy],
+            other: Vec::new(),
             problems: Vec::new(),
         }
     }
@@ -340,12 +414,60 @@ impl Edits {
             Name::new("apertrust", NAMESPACE, "copies"),
             Node::array(ArrayKind::Seq, self.copies.iter().map(copy_node).collect()),
         ));
+        properties.extend(self.other.iter().cloned());
         xmp(
             self.build.as_deref(),
             vec![Namespace::new("arg", ARG_NAMESPACE)],
             properties,
         )
         .to_xml()
+    }
+}
+
+/// The top-level properties of other namespaces, kept, and a problem for each of
+/// Apertrust's own that a file of `version` does not hold.
+fn top_level(xmp: &Xmp, version: u32) -> (Vec<Property>, Vec<Problem>) {
+    let own: &[&str] = if version < COPIES_VERSION {
+        &["version", "modules", "operations"]
+    } else {
+        &["version", "photo", "fingerprint", "copies"]
+    };
+    let mut other = Vec::new();
+    let mut problems = Vec::new();
+    for property in &xmp.properties {
+        if property.name.namespace != NAMESPACE {
+            other.push(property.clone());
+        } else if !own.contains(&property.name.local.as_str()) {
+            problems.push(Problem::UnknownField {
+                place: "the file".to_owned(),
+                field: field_name(property),
+            });
+        }
+    }
+    (other, problems)
+}
+
+/// A field's name as a problem tells it: its prefix and local name.
+fn field_name(field: &Property) -> String {
+    format!("{}:{}", field.name.prefix, field.name.local)
+}
+
+/// A problem for each of `fields` that is not one of Apertrust's own `known` fields, at
+/// `place`: a save would drop it.
+fn unknown_fields(
+    fields: &[Property],
+    known: &[&str],
+    place: impl Fn() -> String,
+    problems: &mut Vec<Problem>,
+) {
+    for field in fields {
+        let own = field.name.namespace == NAMESPACE;
+        if !own || !known.contains(&field.name.local.as_str()) {
+            problems.push(Problem::UnknownField {
+                place: place(),
+                field: field_name(field),
+            });
+        }
     }
 }
 
@@ -380,28 +502,60 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
             .unwrap_or_default()
     };
     let id = text("id");
+    let known = ["id", "number", "name", "end", "clocks", "history"];
+    unknown_fields(fields, &known, || format!("copy {id}"), problems);
     let mut clocks = Vec::new();
+    // Whether every clock of the vector reads, so the steps' clocks can be held to it.
+    let mut whole = true;
     for item in items("clocks") {
         match read_clock(item.fields().unwrap_or_default()) {
             Ok(clock) => clocks.push(clock),
-            Err(error) => problems.push(Problem::VectorClock {
-                copy: id.clone(),
-                error,
-            }),
+            Err(error) => {
+                whole = false;
+                problems.push(Problem::VectorClock {
+                    copy: id.clone(),
+                    error,
+                });
+            }
         }
     }
     let history = items("history")
         .iter()
         .map(|item| read_step(item.fields().unwrap_or_default(), &id, problems))
         .collect();
-    VirtualCopy {
+    let copy = VirtualCopy {
         number: text("number"),
         name: text("name"),
         end: text("end"),
         id,
         clocks,
         history,
+    };
+    if !copy.end.is_empty() && copy.history.iter().all(|step| step.id != copy.end) {
+        problems.push(Problem::End {
+            copy: copy.id.clone(),
+            end: copy.end.clone(),
+        });
     }
+    let mut seen = std::collections::HashSet::new();
+    for step in &copy.history {
+        if !seen.insert(step.id.as_str()) {
+            problems.push(Problem::DuplicateStep {
+                copy: copy.id.clone(),
+                step: step.id.clone(),
+            });
+        }
+        let covered = |clock: &Clock| {
+            (copy.clocks.iter()).any(|kept| kept.machine == clock.machine && kept >= clock)
+        };
+        if whole && step.clock.as_ref().is_some_and(|clock| !covered(clock)) {
+            problems.push(Problem::ClockPastVector {
+                copy: copy.id.clone(),
+                step: step.id.clone(),
+            });
+        }
+    }
+    copy
 }
 
 /// A clock from the three fields of a struct ([`Clock::from_fields`]).
@@ -420,6 +574,42 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
     let text = |local: &str| own_field(fields, local).map(str::to_owned);
     let id = text("id").unwrap_or_default();
     let (copy, step) = (copy.to_owned(), id.clone());
+    let known = [
+        "id",
+        clock::WHEN,
+        clock::COUNTER,
+        clock::MACHINE,
+        "source",
+        "note",
+        "noteMessage",
+        "batch",
+        "noteArgs",
+        "entries",
+    ];
+    let place = format!("step {step} of copy {copy}");
+    unknown_fields(fields, &known, || place.clone(), problems);
+    let (source, batch) = (text("source").unwrap_or_default(), text("batch"));
+    // What the engine reads as numbers and names, which it could not write back as read.
+    if !is_hex_id(&id) {
+        problems.push(Problem::StepId {
+            copy: copy.clone(),
+            step: step.clone(),
+        });
+    }
+    if let Some(batch) = batch.as_ref().filter(|batch| !is_hex_id(batch)) {
+        problems.push(Problem::Batch {
+            copy: copy.clone(),
+            step: step.clone(),
+            batch: batch.clone(),
+        });
+    }
+    if !SOURCES.contains(&source.as_str()) {
+        problems.push(Problem::Source {
+            copy: copy.clone(),
+            step: step.clone(),
+            name: source.clone(),
+        });
+    }
     // The text fields of `arg:`; anything else, which a save would drop, is a problem.
     let args = own_node(fields, "noteArgs").map(|node| {
         let mut args = Vec::new();
@@ -491,12 +681,67 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
     Step {
         id,
         clock,
-        source: text("source").unwrap_or_default(),
+        source,
         note,
-        batch: text("batch"),
+        batch,
         entries: own_node(fields, "entries")
-            .map(read_entries)
+            .map(|node| {
+                // An `rdf:Seq` alone, as written: anything else, as text or a struct, reads as
+                // no entry, which a save would drop.
+                let seq = matches!(node.value, Value::Array(ArrayKind::Seq, _));
+                if !seq || !node.qualifiers.is_empty() {
+                    problems.push(Problem::UnknownField {
+                        place: place.clone(),
+                        field: "apertrust:entries".to_owned(),
+                    });
+                }
+                entry_problems(node, &place, problems);
+                read_entries(node)
+            })
             .unwrap_or_default(),
+    }
+}
+
+/// A problem for what in a step's `apertrust:entries`, at `place`, a save would drop, by the
+/// kind of entry the text layer reads each as ([`Entry`]): an item that is no entry, with
+/// no module's or operation's name, or both; and in a module's entry a field other than its
+/// `module`, `moduleVersion`, `enabled`, `kept`, `auto` and `control:` fields, in an
+/// operation's a field other than its `operation`, `schema` and `param:` fields, of
+/// Apertrust's namespace or any other, as a newer build's, or one that is no plain text.
+fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
+    const MODULE: [&str; 5] = ["module", "moduleVersion", "enabled", "kept", "auto"];
+    const OPERATION: [&str; 2] = ["operation", "schema"];
+    let unknown = |field: &str| Problem::UnknownField {
+        place: place.to_owned(),
+        field: field.to_owned(),
+    };
+    for item in node.items().unwrap_or_default() {
+        let Some(fields) = item.fields() else {
+            problems.push(unknown("an item that is no entry"));
+            continue;
+        };
+        let named = |local: &str| own_field(fields, local).is_some_and(|name| !name.is_empty());
+        let (known, values): (&[&str], &str) = match (named("module"), named("operation")) {
+            (true, false) => (&MODULE, CONTROL_NAMESPACE),
+            (false, true) => (&OPERATION, PARAM_NAMESPACE),
+            (true, true) => {
+                problems.push(unknown("an entry naming both a module and an operation"));
+                continue;
+            }
+            (false, false) => {
+                problems.push(unknown("an item that is no entry"));
+                continue;
+            }
+        };
+        for field in fields {
+            let plain =
+                matches!(field.node.value, Value::Simple(_)) && field.node.qualifiers.is_empty();
+            let namespace = field.name.namespace.as_str();
+            let own = namespace == NAMESPACE && known.contains(&field.name.local.as_str());
+            if !plain || !(own || namespace == values) {
+                problems.push(unknown(&field_name(field)));
+            }
+        }
     }
 }
 

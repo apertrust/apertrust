@@ -507,7 +507,7 @@ impl Engine {
         let generation = state.generations.entry(path.clone()).or_default().clone();
         let at = generation.fetch_add(1, Ordering::Relaxed) + 1;
         let canonical = apertrust_library::index::hash(
-            crate::sidecar::to_xml(&open.edit, self.operations, &self.modules, &self.build)
+            open.xml(self.operations, &self.modules, &self.build)
                 .as_bytes(),
         );
         // A person editing goes first.

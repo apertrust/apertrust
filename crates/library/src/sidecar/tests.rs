@@ -116,7 +116,7 @@ fn an_empty_document_has_no_entries() {
     assert!(!xml.contains("apertrust:module="), "{xml}");
     let read = Document::parse(&xml).unwrap();
     assert!(read.entries.is_empty());
-    assert_eq!(read.version, VERSION);
+    assert_eq!(read.version, 1);
     assert_eq!(read.newer(), None);
 }
 
@@ -163,26 +163,42 @@ fn entries_are_read_as_text_in_the_file_s_order() {
 fn a_newer_file_version_is_newer() {
     let xml = Document::new("0.9.0")
         .to_xml()
-        .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
     let read = Document::parse(&xml).unwrap();
-    assert_eq!(read.version, 2);
+    assert_eq!(read.version, 3);
     assert_eq!(read.build.as_deref(), Some("0.9.0"));
-    assert_eq!(read.newer(), Some(Newer::Version(2)));
+    assert_eq!(read.newer(), Some(Newer::Version(3)));
     let view_only = ViewOnly {
         build: read.build,
-        newer: Newer::Version(2),
+        reason: Reason::Newer(Newer::Version(3)),
     };
     assert_eq!(
         view_only.to_string(),
-        "the edit Apertrust 0.9.0 wrote is version 2, newer than this build's 1: open for viewing only"
+        "the edit Apertrust 0.9.0 wrote is version 3, newer than this build's 2: open for viewing only"
     );
     let view_only = ViewOnly {
         build: None,
-        newer: Newer::Module("lens".to_owned()),
+        reason: Reason::Newer(Newer::Module("lens".to_owned())),
     };
     assert_eq!(
         view_only.to_string(),
         "the edit a newer Apertrust wrote holds the module lens, which this build does not have: open for viewing only"
+    );
+    // Version 2, this build's, is not newer, whatever layout a document reads.
+    let xml = Document::new("0.9.0")
+        .to_xml()
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+    assert_eq!(Document::parse(&xml).unwrap().newer(), None);
+    let view_only = ViewOnly {
+        build: Some("0.9.0".to_owned()),
+        reason: Reason::Unreadable(Problem::End {
+            copy: "7c0e9a14".to_owned(),
+            end: "a1".to_owned(),
+        }),
+    };
+    assert_eq!(
+        view_only.to_string(),
+        "the edit Apertrust 0.9.0 wrote holds history this build cannot read (copy 7c0e9a14's end a1 names none of its steps): open for viewing only"
     );
     // Version 0 still reads, as an older file.
     let xml = Document::new("0.1.0")
@@ -720,6 +736,342 @@ fn a_note_that_is_not_plain_text_is_a_problem() {
             .unwrap();
         assert_eq!(read_step.note, None, "{element}");
     }
+}
+
+/// What the engine reads as numbers and names, a step's id and batch, its source and the
+/// copy's end, is a problem where it is not as Apertrust writes it: the text is kept as
+/// read, and written back as it was.
+#[test]
+fn an_id_batch_source_or_end_that_cannot_be_read_is_a_problem() {
+    let xml = edits().to_xml();
+    let copy = || "7c0e9a14".to_owned();
+    let cases = [
+        (
+            r#"apertrust:id="00000000000000a1""#,
+            r#"apertrust:id="00000000000000A1""#,
+            Problem::StepId {
+                copy: copy(),
+                step: "00000000000000A1".to_owned(),
+            },
+        ),
+        (
+            r#"apertrust:batch="0f1e2d3c4b5a6978""#,
+            r#"apertrust:batch="0f1e""#,
+            Problem::Batch {
+                copy: copy(),
+                step: "00000000000000b2".to_owned(),
+                batch: "0f1e".to_owned(),
+            },
+        ),
+        (
+            r#"apertrust:source="assistant""#,
+            r#"apertrust:source="robot""#,
+            Problem::Source {
+                copy: copy(),
+                step: "00000000000000b2".to_owned(),
+                name: "robot".to_owned(),
+            },
+        ),
+        (
+            r#"apertrust:end="00000000000000b2""#,
+            r#"apertrust:end="00000000000000ff""#,
+            Problem::End {
+                copy: copy(),
+                end: "00000000000000ff".to_owned(),
+            },
+        ),
+    ];
+    for (written, damaged, problem) in cases {
+        let changed = xml.replacen(written, damaged, 1);
+        assert_ne!(changed, xml, "{damaged}");
+        let read = Edits::parse(&changed, 0).unwrap();
+        assert_eq!(read.problems, [problem], "{damaged}");
+        assert_eq!(read.to_xml(), changed, "{damaged}");
+    }
+    // An end naming no step takes every step as applied.
+    let read = Edits::parse(&end_on_no_step(&xml), 0).unwrap();
+    assert_eq!(read.copies[0].applied(), 3);
+}
+
+/// `xml` with its copy's end on no step.
+fn end_on_no_step(xml: &str) -> String {
+    xml.replacen(
+        r#"apertrust:end="00000000000000b2""#,
+        r#"apertrust:end="00000000000000ff""#,
+        1,
+    )
+}
+
+/// A copy is edited where some module's or operation's last entry up to the end is not
+/// empty, as the index folds a log as text; the steps after the end count for nothing.
+#[test]
+fn a_copy_is_edited_where_a_last_entry_up_to_the_end_is_not_empty() {
+    let mut edits = edits();
+    assert_eq!(edits.copies[0].applied(), 2);
+    assert!(edits.edited());
+    // At Original, nothing applies.
+    edits.copies[0].end.clear();
+    assert_eq!(edits.copies[0].applied(), 0);
+    assert!(!edits.edited());
+    // Each entry of the steps up to the end emptied: the last of each is empty.
+    let mut edits = self::edits();
+    for step in &mut edits.copies[0].history[..2] {
+        for entry in &mut step.entries {
+            match entry {
+                Entry::Module {
+                    kept,
+                    auto,
+                    enabled,
+                    controls,
+                    ..
+                } => {
+                    kept.clear();
+                    auto.clear();
+                    controls.clear();
+                    *enabled = None;
+                }
+                Entry::Operation { params, .. } => params.clear(),
+            }
+            assert!(entry.is_empty());
+        }
+    }
+    assert!(!edits.edited());
+    // A later entry of a module reset over an earlier one's values.
+    let mut edits = self::edits();
+    let reset = edits.copies[0].history[2].clone();
+    edits.copies[0].history.insert(2, reset);
+    edits.copies[0].history[2].id = "00000000000000d4".to_owned();
+    edits.copies[0].end = "00000000000000d4".to_owned();
+    edits.copies[0].history[0].entries.clear();
+    edits.copies[0].history[1]
+        .entries
+        .retain(|e| matches!(e, Entry::Module { .. }));
+    assert!(!edits.edited());
+}
+
+/// What other tools write beside an edit, as ExifTool's `dc:subject` and `xmp:Rating`, is
+/// kept as read and written back after Apertrust's own properties, byte for byte from then
+/// on, with no problem; a field of Apertrust's own this build does not know, or any field
+/// in a copy or a step it does not write, is a problem a save would otherwise drop.
+#[test]
+fn other_tools_properties_are_kept_and_unknown_fields_are_problems() {
+    let xml = edits().to_xml();
+    let tagged = xml
+        .replacen(
+            r#"xmlns:arg="https://apertrust.org/ns/xmp/arg/""#,
+            r#"xmlns:arg="https://apertrust.org/ns/xmp/arg/"
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmp:Rating="3""#,
+            1,
+        )
+        .replacen(
+            "   <apertrust:copies>",
+            "   <dc:subject>\n    <rdf:Bag>\n     <rdf:li>sky</rdf:li>\n     <rdf:li>sea</rdf:li>\n    </rdf:Bag>\n   </dc:subject>\n   <apertrust:copies>",
+            1,
+        );
+    assert_ne!(tagged, xml);
+    let read = Edits::parse(&tagged, 0).unwrap();
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    let names: Vec<_> = (read.other.iter()).map(|p| p.name.local.as_str()).collect();
+    assert_eq!(names, ["Rating", "subject"]);
+    assert_eq!(read.copies, edits().copies);
+    let written = read.to_xml();
+    // After Apertrust's own, each simple one as an element, as the XMP layer writes one after
+    // an element.
+    for kept in [
+        "<xmp:Rating>3</xmp:Rating>",
+        "<rdf:li>sky</rdf:li>",
+        "<rdf:li>sea</rdf:li>",
+    ] {
+        assert!(written.contains(kept), "{kept} in {written}");
+    }
+    let again = Edits::parse(&written, 0).unwrap();
+    assert_eq!(again.other, read.other);
+    assert_eq!(again.to_xml(), written);
+    // Apertrust's own unknown at the top, in a copy and in a step; another tool's in a
+    // step.
+    let first = r#"apertrust:id="00000000000000a1""#;
+    let cases = [
+        (
+            xml.replacen(
+                r#"apertrust:version="2""#,
+                r#"apertrust:version="2" apertrust:groups="a""#,
+                1,
+            ),
+            "the file",
+            "apertrust:groups",
+        ),
+        (
+            xml.replacen(
+                r#"apertrust:number="0""#,
+                r#"apertrust:number="0" apertrust:snapshot="1""#,
+                1,
+            ),
+            "copy 7c0e9a14",
+            "apertrust:snapshot",
+        ),
+        (
+            xml.replacen(first, &format!(r#"{first} apertrust:rating="2""#), 1),
+            "step 00000000000000a1 of copy 7c0e9a14",
+            "apertrust:rating",
+        ),
+        (
+            xml.replacen(
+                first,
+                &format!(r#"{first} xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="x""#),
+                1,
+            ),
+            "step 00000000000000a1 of copy 7c0e9a14",
+            "dc:title",
+        ),
+    ];
+    for (damaged, place, field) in cases {
+        assert_ne!(damaged, xml, "{field}");
+        let read = Edits::parse(&damaged, 0).unwrap();
+        let expected = Problem::UnknownField {
+            place: place.to_owned(),
+            field: field.to_owned(),
+        };
+        assert_eq!(read.problems, [expected], "{field}");
+    }
+}
+
+/// In a step's entries, a field a newer build may write that this one would drop is a
+/// problem, by the kind of entry: one of Apertrust's own it does not write, another
+/// namespace's, an operation's control or a module's parameter, an item that is no entry,
+/// and an entry naming both a module and an operation.
+#[test]
+fn an_entry_s_unknown_field_is_a_problem() {
+    let xml = edits().to_xml();
+    let lens = r#"apertrust:module="lens""#;
+    let place = "step 00000000000000a1 of copy 7c0e9a14";
+    let cases = [
+        (
+            xml.replacen(lens, &format!(r#"{lens} apertrust:layer="1""#), 1),
+            "apertrust:layer",
+        ),
+        (
+            xml.replacen(
+                lens,
+                &format!(r#"{lens} xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="x""#),
+                1,
+            ),
+            "dc:title",
+        ),
+        (
+            xml.replacen(
+                "<apertrust:entries>\n            <rdf:Seq>",
+                "<apertrust:entries>\n            <rdf:Seq>\n             <rdf:li>a word</rdf:li>",
+                1,
+            ),
+            "an item that is no entry",
+        ),
+    ];
+    for (damaged, field) in cases {
+        assert_ne!(damaged, xml, "{field}");
+        let read = Edits::parse(&damaged, 0).unwrap();
+        let expected = Problem::UnknownField {
+            place: place.to_owned(),
+            field: field.to_owned(),
+        };
+        assert_eq!(read.problems, [expected], "{field}");
+    }
+    // By the kind of entry: an operation's control, a module's parameter or schema, a
+    // module named by nothing, and an entry naming both.
+    let fake = r#"apertrust:operation="fake""#;
+    let cases = [
+        (
+            xml.replacen(fake, &format!(r#"{fake} control:x="1""#), 1),
+            "step 00000000000000b2 of copy 7c0e9a14",
+            "control:x",
+        ),
+        (
+            xml.replacen(lens, &format!(r#"{lens} param:y="1""#), 1),
+            place,
+            "param:y",
+        ),
+        (
+            xml.replacen(lens, &format!(r#"{lens} apertrust:schema="1""#), 1),
+            place,
+            "apertrust:schema",
+        ),
+        (
+            xml.replacen(lens, r#"apertrust:module="""#, 1),
+            place,
+            "an item that is no entry",
+        ),
+        (
+            xml.replacen(lens, &format!(r#"{lens} {fake}"#), 1),
+            place,
+            "an entry naming both a module and an operation",
+        ),
+    ];
+    for (damaged, at, field) in cases {
+        assert_ne!(damaged, xml, "{field}");
+        let read = Edits::parse(&damaged, 0).unwrap();
+        let expected = Problem::UnknownField {
+            place: at.to_owned(),
+            field: field.to_owned(),
+        };
+        assert_eq!(read.problems, [expected], "{field}");
+    }
+}
+
+/// A step's id twice in its copy, a step's clock past its copy's vector, and `entries` that
+/// is no `rdf:Seq`, each a problem, as a save would lose or misplace what the file holds.
+#[test]
+fn a_duplicate_step_a_clock_past_the_vector_and_entries_no_seq_are_problems() {
+    let xml = edits().to_xml();
+    let copy = "7c0e9a14".to_owned();
+    let twice = xml.replacen(
+        r#"apertrust:id="00000000000000a1""#,
+        r#"apertrust:id="00000000000000b2""#,
+        1,
+    );
+    let read = Edits::parse(&twice, 0).unwrap();
+    let duplicate = Problem::DuplicateStep {
+        copy: copy.clone(),
+        step: "00000000000000b2".to_owned(),
+    };
+    assert!(read.problems.contains(&duplicate), "{:?}", read.problems);
+    // The vector's clock of machine 5e1f22c9, the later of its steps', moved before them.
+    let mut past = edits();
+    past.copies[0].clocks[1] = clock(PI_DAY - 1_000, 0, "5e1f22c9");
+    let read = Edits::parse(&past.to_xml(), 0).unwrap();
+    let steps: Vec<_> = (read.problems.iter())
+        .map(|problem| match problem {
+            Problem::ClockPastVector { step, .. } => step.as_str(),
+            other => panic!("{other}"),
+        })
+        .collect();
+    assert_eq!(steps, ["00000000000000a1", "00000000000000b2"]);
+    // A machine the vector lacks.
+    let mut lacking = edits();
+    lacking.copies[0].clocks.remove(0);
+    let read = Edits::parse(&lacking.to_xml(), 0).unwrap();
+    assert!(
+        matches!(&read.problems[..], [Problem::ClockPastVector { step, .. }] if step == "00000000000000c3"),
+        "{:?}",
+        read.problems
+    );
+    // Entries as text: no entry read, and a problem.
+    let at = xml.find(r#"apertrust:id="00000000000000a1""#).unwrap();
+    let start = at + xml[at..].find("<apertrust:entries>").unwrap();
+    let end = start + xml[start..].find("</apertrust:entries>").unwrap();
+    let text = format!(
+        "{}<apertrust:entries>lens</apertrust:entries>{}",
+        &xml[..start],
+        &xml[end + "</apertrust:entries>".len()..]
+    );
+    let read = Edits::parse(&text, 0).unwrap();
+    assert_eq!(
+        read.problems,
+        [Problem::UnknownField {
+            place: format!("step 00000000000000a1 of copy {copy}"),
+            field: "apertrust:entries".to_owned(),
+        }]
+    );
 }
 
 #[test]

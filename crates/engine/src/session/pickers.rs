@@ -43,6 +43,7 @@ use apertrust_plugin::{Format, ImageContext, ImageDesc};
 
 use crate::compute::ComputeError;
 use crate::edit::{self, EditError, panic_message};
+use crate::history::StepSource;
 use crate::picker::{
     self, Cfa, DEFAULT_AREA, DEFAULT_POINT, FrameReading, Geometries, Group, Layout, ModuleReading,
     PickKeys, PickerCommand, PickerReading, PickerRef, Place, Reading, Recorded, Reducer, Region,
@@ -738,9 +739,11 @@ impl Engine {
             let owed = (self.applied, self.pickers.drag + 1);
             self.pickers.owed.push(owed);
             // A drag under way is saved before the module turns on, never with it.
-            if self.pickers.gesture.take().is_some() && self.needs_save() {
-                self.save();
+            if self.pickers.gesture.take().is_some() {
+                self.save_picks();
             }
+            // A slider's gesture under way ends as a step of its own source first.
+            self.end_gesture();
             let changed = self.change(|edit, _, _, _| {
                 edit.turn_on(found);
                 Ok(())
@@ -849,8 +852,8 @@ impl Engine {
             })
         };
         // A drag under way is saved before the pick, never with it.
-        if self.pickers.gesture.take().is_some() && self.needs_save() {
-            self.save();
+        if self.pickers.gesture.take().is_some() {
+            self.save_picks();
         }
         let picked = self
             .pick(id, latest.picker, &latest.reading, due)
@@ -912,13 +915,29 @@ impl Engine {
         }
     }
 
-    /// After a picker turned off or failed: a drag under way is saved, and a command still
-    /// owed an answer with nothing to write gets the edit reported held.
+    /// After a picker turned off or failed: a drag under way is saved, what it wrote one
+    /// step of source Auto, and a command still owed an answer with nothing to write gets
+    /// the edit reported held.
     fn answer(&mut self, gesture: bool, owed: bool) {
+        if gesture {
+            self.step(StepSource::Auto, None);
+        }
         if gesture && self.needs_save() {
             self.save();
         } else if owed && !self.unsaved() {
             self.save_held();
+        }
+    }
+
+    /// Turns the active picker off where it is a module's, which writes the edit, as a
+    /// photo turns view-only; the Colour picker's stays on.
+    pub(super) fn module_picker_off(&mut self, events: &mut Vec<Event>) {
+        if self
+            .pickers
+            .active
+            .is_some_and(|active| active.module.is_some())
+        {
+            self.picker_off(events);
         }
     }
 
@@ -1195,10 +1214,26 @@ impl Engine {
     /// a slider's gesture under way, waits for that change's save, which answers it.
     fn settle(&mut self) {
         let settled = self.pickers.settled();
+        // What the drag's picks changed, one step of source Auto, as the log the writer is
+        // handed holds only steps.
+        if settled {
+            self.step(StepSource::Auto, None);
+        }
         if settled && self.needs_save() {
             self.save();
         } else if self.pickers.answerable() && !self.unsaved() {
             self.save_held();
+        }
+    }
+
+    /// Saves a drag's picks: what they changed one step of source Auto (`docs/history.md`,
+    /// What makes a step), as the log the writer is handed holds only steps, then the log
+    /// written where it changed. Merging a drag's steps by its picker comes with the
+    /// pickers' own steps.
+    fn save_picks(&mut self) {
+        self.step(StepSource::Auto, None);
+        if self.needs_save() {
+            self.save();
         }
     }
 
@@ -1329,13 +1364,15 @@ impl Engine {
     }
 
     /// Writes what the module's picker picked as one change, and says whether the edit
-    /// changed: a change on the edit, so a slider's gesture under way ends.
+    /// changed: a change on the edit, so a slider's gesture under way ends, a step of its
+    /// own source first, never the pick's.
     fn write_pick(
         &mut self,
         id: &'static str,
         picker: &'static Picker,
         picked: Picked,
     ) -> Result<bool, SessionError> {
+        self.end_gesture();
         let changed = self.change(|edit, modules, _, image| {
             edit.pick(edit::module(modules, id)?, picker, &picked.writes, image)
         })?;
@@ -1361,9 +1398,7 @@ impl Engine {
         // An earlier drag's picks are saved before a later one's, never merged with them.
         if self.pickers.gesture.is_some_and(|drag| drag < due.drag) {
             self.pickers.gesture = None;
-            if self.needs_save() {
-                self.save();
-            }
+            self.save_picks();
         }
         let changed = self.write_pick(on.module, on.picker, made)?;
         let last = Last {
@@ -1383,6 +1418,9 @@ impl Engine {
                 self.applied,
             )));
         }
+        // The step the drag's picks made, as it settled, after the values, as a batch sends
+        // it.
+        events.extend(self.history_event());
         if changed {
             match self.render(started, events) {
                 Ok(Some(frame)) => events.push(Event::Frame(frame)),

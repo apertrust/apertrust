@@ -39,7 +39,7 @@ mod temporary;
 mod write;
 
 pub use temporary::{STALE_AFTER, create, is_temporary_name, remove_if_stale};
-pub use write::{Retry, Written, persist_retrying, write};
+pub use write::{Retry, Written, persist_retrying, write, write_metadata};
 
 /// `path` as `tempfile` must be given it to reach any length: on Windows absolute, with
 /// `\\?\` before it, since `tempfile` hands its paths to Windows as they are, where a path

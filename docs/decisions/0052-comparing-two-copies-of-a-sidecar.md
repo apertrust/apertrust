@@ -30,6 +30,8 @@ People edit on more than one computer, through a share, a sync service or a driv
 
 **No lock decides anything.** A presence note may later warn that a library is open on another computer; it blocks nothing.
 
+**A known limit of reading before each write:** the check finds a write another program made before it, and narrows the window to the rename that replaces the file, but no rename can be made conditional on the file it replaces on every filesystem Apertrust supports. Another program's write that lands between the check and the rename is lost, as it is with any two tools writing one file without a lock.
+
 ## Options considered
 
 - A module-by-module merge first: more work than the first build needs; kept as a later setting.

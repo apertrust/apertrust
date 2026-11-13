@@ -94,9 +94,10 @@ use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
-    CacheCommand, CacheOptions, Command, ControlValue, Frame, Graphs, LibraryCommand,
-    PickerCommand, PickerRef, Places, Session, StepSource, Values, ViewOnly,
+    CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, LibraryCommand,
+    PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
 };
+use apertrust_engine::sidecar::Reason;
 use apertrust_modules::Module;
 use apertrust_ui::components::{
     ActivityAction, Available, CellRating, CentralBar, CentralBarAction, GridEdge, GridEdgeAction,
@@ -3345,6 +3346,27 @@ impl App {
     fn drain(&mut self, ctx: &egui::Context) {
         let mut show = jobs::Show::Nothing;
         for event in self.session.events() {
+            // An edit not saved over another program's file, in the person's words.
+            let event = match event {
+                Event::Failed(SessionError::NotSaved {
+                    path,
+                    through,
+                    error,
+                }) => {
+                    let why = not_saved_words(&translator(ctx), &error);
+                    self.mirror.not_saved(&path, through, &why);
+                    continue;
+                }
+                Event::Failed(SessionError::MoveNotKept { path }) => {
+                    let mut args = apertrust_ui::i18n::Args::new();
+                    // The edit's file is the photo's name with `.apxmp` after it.
+                    args.set("name", file_name(&path.with_extension("")));
+                    let words = translator(ctx).text_with("edit-move-not-kept", Some(&args));
+                    self.mirror.notice = Some(words);
+                    continue;
+                }
+                event => event,
+            };
             for reaction in self.mirror.apply(event) {
                 match reaction {
                     Reaction::Jobs(asked) => show = show.max(asked),
@@ -3951,7 +3973,6 @@ impl App {
         ui: &mut egui::Ui,
         panel_resized: bool,
     ) -> (egui::Rect, Option<ActionId>) {
-        let t = theme(ui.ctx());
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
         // The photo's slot, everything under the central bar, first. The photo and its
         // caption are one block in it, inside the margin (`PhotoFrame`, `docs/gui.md`, The
@@ -4117,23 +4138,13 @@ impl App {
         });
         let said: Vec<&str> = [
             left.as_deref(),
+            self.mirror.notice.as_deref(),
             message.as_ref().or(failure).map(String::as_str),
         ]
         .into_iter()
         .flatten()
         .collect();
-        if !said.is_empty() {
-            let painter = ui.painter_at(slot);
-            let galley = painter.layout(
-                said.join("\n\n"),
-                egui::FontId::proportional(t.text.body),
-                t.colors.text,
-                (slot.width() - 2.0 * t.spacing.xl).max(t.spacing.xl),
-            );
-            let text = egui::Rect::from_center_size(slot.center(), galley.size());
-            painter.rect_filled(text.expand(t.spacing.m), t.shape.radius, t.colors.raised);
-            painter.galley(text.min, galley, t.colors.text);
-        }
+        central_words(ui, slot, &said);
         ui.allocate_rect(slot, egui::Sense::hover());
 
         // With no photo open the folder says what to do: where to start, what is being
@@ -5997,9 +6008,58 @@ fn focusable(ctx: &egui::Context) -> Vec<(egui::Id, egui::Rect)> {
     })
 }
 
-/// What the line under the photo says of a photo whose edit a newer Apertrust wrote: the
-/// version that wrote it, where the edit records one, and that it is open for viewing only.
+/// What the central panel says over the photo, `said`, each apart: on a raised plate at its
+/// centre, and to screen readers as a polite status, which they hear as it changes, as a
+/// failed save's words or another program's change to the history.
+fn central_words(ui: &mut egui::Ui, slot: egui::Rect, said: &[&str]) {
+    if said.is_empty() {
+        return;
+    }
+    let t = theme(ui.ctx());
+    let words = said.join("\n\n");
+    let painter = ui.painter_at(slot);
+    let galley = painter.layout(
+        words.clone(),
+        egui::FontId::proportional(t.text.body),
+        t.colors.text,
+        (slot.width() - 2.0 * t.spacing.xl).max(t.spacing.xl),
+    );
+    let text = egui::Rect::from_center_size(slot.center(), galley.size());
+    painter.rect_filled(text.expand(t.spacing.m), t.shape.radius, t.colors.raised);
+    painter.galley(text.min, galley, t.colors.text);
+    let status = ui.interact(
+        text,
+        ui.scope_id().with("central words"),
+        egui::Sense::hover(),
+    );
+    status.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Status, true, &words));
+    (ui.ctx()).accesskit_node_builder(status.id, |node| {
+        node.set_live(egui::accesskit::Live::Polite);
+    });
+}
+
+/// Why the session could not write an edit over another program's file
+/// (`SessionError::NotSaved`), as `edit-not-saved` and the save state say it: that file now
+/// opens for viewing only, or it cannot be read.
+fn not_saved_words(words: &Translator, error: &SessionError) -> String {
+    match error {
+        SessionError::ViewOnly(_) => words.text("edit-not-saved-view-only"),
+        SessionError::StillChanging => words.text("edit-not-saved-still-changing"),
+        _ => words.text("edit-not-saved-unreadable"),
+    }
+}
+
+/// What the line under the photo says of a photo open for viewing only: that part of its
+/// edit's history cannot be read, or the newer version that wrote it, where the edit records
+/// one; and that it is open for viewing only.
 fn view_only_notice(words: &Translator, view_only: &ViewOnly) -> String {
+    match &view_only.reason {
+        Reason::Unreadable(apertrust_engine::sidecar::Problem::UnknownField { .. }) => {
+            return words.text("photo-view-only-unkept");
+        }
+        Reason::Unreadable(_) => return words.text("photo-view-only-unreadable"),
+        Reason::Newer(_) => {}
+    }
     match &view_only.build {
         Some(build) => {
             let mut args = apertrust_ui::i18n::Args::new();
@@ -6137,7 +6197,7 @@ mod tests {
         let words = Translator::new(Locale::EnGb);
         let view_only = |build: Option<&str>| ViewOnly {
             build: build.map(str::to_owned),
-            newer: Newer::Module("lens".to_owned()),
+            reason: Reason::Newer(Newer::Module("lens".to_owned())),
         };
         assert_eq!(
             view_only_notice(&words, &view_only(Some("0.9.0+3~gabcdef0"))),
@@ -6147,6 +6207,81 @@ mod tests {
             view_only_notice(&words, &view_only(None)),
             "Edited in a newer Apertrust: open for viewing only"
         );
+    }
+
+    /// An edit part of whose history cannot be read says so, not that a newer build wrote
+    /// it, whichever build did, in each language.
+    #[test]
+    fn an_edit_whose_history_cannot_be_read_says_so() {
+        use apertrust_engine::sidecar::Problem;
+        let view_only = ViewOnly {
+            build: Some("0.9.0".to_owned()),
+            reason: Reason::Unreadable(Problem::End {
+                copy: "00000000".to_owned(),
+                end: "00000000000000ff".to_owned(),
+            }),
+        };
+        for (locale, words) in [
+            (
+                Locale::EnGb,
+                "Some of this edit’s history can’t be read: open for viewing only",
+            ),
+            (
+                Locale::Uk,
+                "Частину історії цієї обробки неможливо прочитати: відкрито лише для перегляду",
+            ),
+            (
+                Locale::Pl,
+                "Części historii tej edycji nie można odczytać: otwarte tylko do podglądu",
+            ),
+        ] {
+            let notice = view_only_notice(&Translator::new(locale), &view_only);
+            assert_eq!(notice, words, "{locale:?}");
+        }
+        // A field this build would drop: history it can't keep.
+        let unkept = ViewOnly {
+            build: None,
+            reason: Reason::Unreadable(Problem::UnknownField {
+                place: "the file".to_owned(),
+                field: "apertrust:groups".to_owned(),
+            }),
+        };
+        assert_eq!(
+            view_only_notice(&Translator::new(Locale::EnGb), &unkept),
+            "Some of this edit’s history can’t be kept: open for viewing only"
+        );
+        // Why an edit was not saved over another program's file, in the person's words.
+        let words = Translator::new(Locale::EnGb);
+        let view_only = SessionError::ViewOnly(unkept);
+        assert_eq!(
+            not_saved_words(&words, &view_only),
+            "another program changed its file, which opens for viewing only now"
+        );
+        assert_eq!(
+            not_saved_words(&words, &SessionError::NotLive),
+            "another program changed its file, and this Apertrust can’t read it"
+        );
+        assert_eq!(
+            not_saved_words(&words, &SessionError::StillChanging),
+            "another program kept changing its file as the photo closed"
+        );
+    }
+
+    /// What the central panel says over the photo, as another program's change to the
+    /// history, is a status screen readers hear, its words the panel's.
+    #[test]
+    fn the_central_panel_s_words_are_a_status_screen_readers_hear() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
+        let said = "Another program changed the history of IMG.ARW";
+        let harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 300.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(|ui| {
+                let slot = ui.max_rect();
+                central_words(ui, slot, &[said]);
+            });
+        harness.get_by_role_and_label(egui::accesskit::Role::Status, said);
     }
 
     /// A section's changes of several commands, the tone equalizer's release of its bands and

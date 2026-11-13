@@ -56,15 +56,17 @@
 //! Version 2 (decisions 47 and 78) is [`Edits`]: the photo's name and [`fingerprint`], and
 //! its virtual copies, each with its clock vector, its history of steps, each step's
 //! entries written as version 1 writes them, and its end. [`Edits::parse`] reads version 1
-//! and 0 as one virtual copy whose history is one step, or none. The engine still writes
-//! version 1 through [`Document`].
+//! and 0 as one virtual copy whose history is a step of each entry, or none. The engine
+//! writes version 2, [`COPIES_VERSION`]; [`Document`] is version 1's layout, which every
+//! build still reads.
 //!
 //! What the text layer tells of an edit a newer Apertrust wrote (decision 43), from the
-//! file alone, is a file version above [`VERSION`] ([`Document::newer`]). [`Newer`] also
-//! names the three things only the module definitions can tell, a module version above its
-//! definition's, a module the build neither has nor has retired, and a module turned on
-//! that the build does not switch, which the engine finds.
-//! [`ViewOnly`] is the error an edit opened for viewing only carries.
+//! file alone, is a file version above [`COPIES_VERSION`] ([`Edits::newer`]). [`Newer`]
+//! also names the three things only the module definitions can tell, a module version above
+//! its definition's, a module the build neither has nor has retired, and a module turned on
+//! that the build does not switch, which the engine finds. [`ViewOnly`] is the error an
+//! edit opened for viewing only carries, its [`Reason`] what a newer build wrote or a
+//! [`Problem`], what of a version 2 file cannot be read.
 //!
 //! The namespaces are on `apertrust.org` (decision 48).
 
@@ -76,9 +78,9 @@ use thiserror::Error;
 
 use crate::xmp::{self, ArrayKind, Name, Namespace, Node, Property, Xmp};
 
-/// The version the engine writes, whose edit [`Document`] reads; a file above it opens
-/// for viewing only. Version 2's layout, [`COPIES_VERSION`], is [`Edits`]'.
-pub const VERSION: u32 = 1;
+/// Version 1's layout, [`Document`]'s, which every build reads; the engine writes
+/// [`COPIES_VERSION`], and a file above that opens for viewing only.
+const DOCUMENT_VERSION: u32 = 1;
 /// The namespace of Apertrust's own properties, on the project's domain (decision 48).
 pub const NAMESPACE: &str = "https://apertrust.org/ns/xmp/";
 /// The namespace of module controls, by their ids.
@@ -93,7 +95,8 @@ mod copies;
 mod tests;
 
 pub use copies::{
-    ARG_NAMESPACE, COPIES_VERSION, Edits, FIRST_COPY, Note, Problem, Step, VirtualCopy, read_edits,
+    ARG_NAMESPACE, COPIES_VERSION, Edits, FIRST_COPY, Note, Problem, SOURCES, Step, VirtualCopy,
+    read_edits,
 };
 
 /// What `x:xmptk` says before the build.
@@ -117,7 +120,7 @@ pub enum SidecarError {
 /// development builds on different branches do not order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Newer {
-    /// A file version above [`VERSION`], read as [`VERSION`] lays it out.
+    /// A file version above [`COPIES_VERSION`], read as [`COPIES_VERSION`] lays it out.
     Version(u32),
     /// A module version above its definition's, or one that is no whole number, as
     /// written; its controls read by name.
@@ -137,7 +140,10 @@ impl fmt::Display for Newer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Newer::Version(version) => {
-                write!(f, "is version {version}, newer than this build's {VERSION}")
+                write!(
+                    f,
+                    "is version {version}, newer than this build's {COPIES_VERSION}"
+                )
             }
             Newer::ModuleVersion {
                 module,
@@ -163,15 +169,39 @@ impl fmt::Display for Newer {
     }
 }
 
-/// An edit a newer Apertrust wrote, which this build opens for viewing only (decision
-/// 43): it renders what it reads, refuses every change and never writes the file, so
-/// nothing the newer build wrote is lost.
+/// An edit this build opens for viewing only (decisions 43 and 48): one a newer Apertrust
+/// wrote, or one part of whose history this build cannot read. It renders what it reads,
+/// refuses every change and never writes the file, so nothing the file holds is lost.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("the edit {} wrote {newer}: open for viewing only", writer(build))]
+#[error("the edit {} wrote {reason}: open for viewing only", writer(build))]
 pub struct ViewOnly {
     /// The build that wrote it, as the file records it; `None` where it records none.
     pub build: Option<String>,
-    pub newer: Newer,
+    pub reason: Reason,
+}
+
+/// Why an edit opens for viewing only: the first thing that tells it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reason {
+    /// What a newer Apertrust wrote.
+    Newer(Newer),
+    /// What of a version 2 file cannot be read as written, so a save would change it: the
+    /// first of [`Edits::problems`].
+    Unreadable(Problem),
+}
+
+impl fmt::Display for Reason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Reason::Newer(newer) => newer.fmt(f),
+            Reason::Unreadable(problem @ Problem::UnknownField { .. }) => {
+                write!(f, "holds history this build cannot keep ({problem})")
+            }
+            Reason::Unreadable(problem) => {
+                write!(f, "holds history this build cannot read ({problem})")
+            }
+        }
+    }
 }
 
 /// Who wrote an edit: `Apertrust` and its build, or a newer Apertrust where it names none.
@@ -271,10 +301,36 @@ pub enum Entry {
     },
 }
 
+impl Entry {
+    /// Whether it holds nothing, as the text says: no control, mark or `enabled` of a
+    /// module, no parameter of an operation; a step's empty entry, the reset state.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Entry::Module {
+                kept,
+                auto,
+                enabled,
+                controls,
+                ..
+            } => kept.is_empty() && auto.is_empty() && enabled.is_none() && controls.is_empty(),
+            Entry::Operation { params, .. } => params.is_empty(),
+        }
+    }
+
+    /// What it is of, which orders a version 1 file's entries as steps and folds a log as
+    /// text: modules first, then operations, each by its id.
+    fn key(&self) -> (u8, &str) {
+        match self {
+            Entry::Module { module, .. } => (0, module),
+            Entry::Operation { operation, .. } => (1, operation),
+        }
+    }
+}
+
 /// An `.apxmp` file as text: its version, the build that wrote it and its entries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
-    /// The file's `apertrust:version`; [`VERSION`] for a document made to be written.
+    /// The file's `apertrust:version`; 1 for a document made to be written.
     pub version: u32,
     /// The build that wrote it, as its `x:xmptk` records it; `None` for a file that
     /// records no Apertrust build.
@@ -285,20 +341,20 @@ pub struct Document {
 }
 
 impl Document {
-    /// An empty document of version [`VERSION`] for `build` to write.
+    /// An empty document of version 1 for `build` to write: a version 1 file, which every
+    /// build reads, as tests and fixtures make one.
     pub fn new(build: &str) -> Self {
         Document {
-            version: VERSION,
+            version: DOCUMENT_VERSION,
             build: Some(build.to_owned()),
             entries: Vec::new(),
         }
     }
 
     /// The first thing in the file itself that tells a newer Apertrust wrote it: a version
-    /// above [`VERSION`]. Such a file is read as this version lays it out, for viewing
-    /// only.
+    /// above [`COPIES_VERSION`], as [`Edits::newer`] tells it.
     pub fn newer(&self) -> Option<Newer> {
-        (self.version > VERSION).then_some(Newer::Version(self.version))
+        (self.version > COPIES_VERSION).then_some(Newer::Version(self.version))
     }
 
     /// Reads an `.apxmp` file's XMP through the XMP layer ([`Xmp::parse`]): the version, the

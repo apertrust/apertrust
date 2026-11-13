@@ -355,7 +355,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
   - [x] 9.2: `GoTo` and `Step`, and the app's changes of several commands, the tone equalizer's release and band reset, as one `Step`;
   - [x] 9.3: consecutive changes merged as darktable's undo merges them;
   - [x] 9.4: Edit › Undo and Redo and their keys, naming what they would do;
-  - 9.5, after 8.2: history saved in version 2, Undo back after reopening, a newer file taken in before a write;
+  - [x] 9.5: history saved in version 2 with its end and clock vector, Undo and Redo back after reopening, a newer file taken in before a write, an edit with an unreadable history open for viewing only with its own caption, `apertrust-cli edit` adding a step of each module, the crash test and the 1,000-step measurements on the M4's SSD (read in 6 to 16 ms, written in 12 to 22 ms; over SMB still to measure);
   - [x] 9.6: the History tab: its lines, numbers, tags and tooltips, a click going to a step, a click on a Default line or Original going to Original, Shift-click on a step or a Default line opening its module, Reset in its header, and a module this build does not know listed by its stored name; what each line changed, the control with a direction, on a rail with the undone steps marked; a batch and the Default lines each one closed group, opened by its chevron or →, a batch's line going to its last step; a heading over each day's steps; the keys of a tree; the header staying at the tab's top as the list scrolls;
   - 9.7: its eye, `Hide`; 9.8: Compress History and Truncate (Ctrl-click or Cmd-click on Compress);
   - 9.9: `apertrust-cli edit` adding a step, and `apertrust-cli history` with `--compress` and `--truncate`.

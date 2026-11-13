@@ -985,7 +985,11 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
 
     let path = scratch("history-view-only");
     let sidecar = sidecar::path_for(&path);
-    let xml = brightened("0.9.0").replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
+    // A module version above Sample's: newer, and its step still read.
+    let xml = brightened("0.9.0").replace(
+        r#"apertrust:moduleVersion="1""#,
+        r#"apertrust:moduleVersion="2""#,
+    );
     std::fs::write(&sidecar, &xml).unwrap();
     let mut driven = Driven::new(&[&Sample]);
     let opened = driven.open(&path);
@@ -1165,5 +1169,1200 @@ fn a_change_that_changes_nothing_counts_as_none() {
     driven.run_at(times.after(quick), [brightness(1.0)]);
     assert_eq!(steps(&driven), 4);
     assert_eq!(fold(&driven), edit(&driven));
+    remove(&path);
+}
+
+// -- Saved in the sidecar (9.5) -----------------------------------------------------------
+
+/// The modules of the tests that save: Sample, and Soften, which another program changes.
+const SAVING: &[&dyn apertrust_modules::Module] = &[&Sample, &Soften];
+
+/// The sidecar of `path` as this build reads it.
+fn saved(path: &Path) -> sidecar::Loaded {
+    sidecar::read(&sidecar::path_for(path), OPERATIONS, SAVING, &[]).unwrap()
+}
+
+/// The log is saved in the sidecar's version 2 with its end: reopening the photo shows
+/// every step, those after the end too, and Undo and Redo move the end through them, a
+/// step at a time, as their fallback does.
+#[test]
+fn reopened_the_history_shows_every_step_and_undo_and_redo_go_on() {
+    let path = scratch("history-saved");
+    let mut times = Times::new();
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    for value in [0.25, 0.5, 0.75] {
+        let at = times.apart();
+        driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
+    }
+    // The end on the second step, the third kept after it, as Undo would not keep it.
+    let second = fold_ids(&driven)[1];
+    driven.run([Command::GoTo { step: Some(second) }]);
+    assert_eq!(
+        written(&driven.writes()).last(),
+        Some(&(sidecar::path_for(&path).as_path(), true))
+    );
+    let file = std::fs::read_to_string(sidecar::path_for(&path)).unwrap();
+    assert!(file.contains(r#"apertrust:version="2""#), "{file}");
+    let ids: Vec<StepId> = fold_ids(&driven);
+    assert_eq!(saved(&path).log.end(), 2);
+
+    let reopened = driven.open(&path);
+    let read = history(&reopened);
+    let read_ids: Vec<StepId> = read.steps.iter().map(|step| step.id).collect();
+    assert_eq!((read_ids, read.end), (ids.clone(), 2));
+    assert_eq!(brightness(&reopened), ControlValue::Number(0.5));
+    // No undo record survives: Undo and Redo move the end, one step each.
+    assert_eq!(
+        (read.undo, read.redo),
+        (Some(single(ids[1])), Some(single(ids[2])))
+    );
+    let redone = driven.run([Command::Redo]);
+    assert_eq!(brightness(&redone), ControlValue::Number(0.75));
+    for (end, value) in [(2, 0.5), (1, 0.25), (0, 0.0)] {
+        let undone = driven.run([Command::Undo]);
+        assert_eq!(history(&undone).end, end);
+        assert_eq!(brightness(&undone), ControlValue::Number(value));
+    }
+    // Each move saved: reopened again, at Original with every step kept.
+    driven.writes();
+    assert_eq!(saved(&path).log.end(), 0);
+    let again = driven.open(&path);
+    assert_eq!((history(&again).steps.len(), history(&again).end), (3, 0));
+    remove(&path);
+}
+
+/// The ids of the open photo's steps.
+fn fold_ids(driven: &Driven) -> Vec<StepId> {
+    let open = driven.engine.open.as_ref().unwrap();
+    open.history
+        .log()
+        .steps()
+        .iter()
+        .map(|step| step.id)
+        .collect()
+}
+
+/// Each step and each move of the end advances the copy's clock vector with this machine's
+/// clock, which the file saves (decision 78).
+#[test]
+fn each_step_and_each_move_advances_the_clock_vector() {
+    let path = scratch("history-clocks");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let after_step = saved(&path);
+    let step = after_step.log.steps()[0].clock;
+    assert_eq!(after_step.clocks(), [step]);
+    driven.run([Command::Undo]);
+    driven.writes();
+    let after_undo = saved(&path);
+    let [moved] = after_undo.clocks() else {
+        panic!("one machine: {:?}", after_undo.clocks());
+    };
+    assert_eq!(moved.machine, step.machine);
+    assert!(*moved > step);
+    remove(&path);
+}
+
+/// A version 1 file is read as a step of each module and written as version 2 at the next
+/// change, its steps kept under the new one.
+#[test]
+fn a_version_1_file_is_written_as_version_2_at_the_next_change() {
+    let path = scratch("history-version-1");
+    let sidecar = sidecar::path_for(&path);
+    std::fs::write(&sidecar, brightened("0.3.0")).unwrap();
+    let mut driven = Driven::new(&[&Sample]);
+    let opened = driven.open(&path);
+    assert_eq!(history(&opened).steps.len(), 1);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    let file = std::fs::read_to_string(&sidecar).unwrap();
+    assert!(file.contains(r#"apertrust:version="2""#), "{file}");
+    let read = saved(&path);
+    assert_eq!((read.log.steps().len(), read.log.end()), (2, 2));
+    assert_eq!(read.edit, edit(&driven));
+    remove(&path);
+}
+
+/// What `apertrust-cli edit` does: a step setting Soften's amount added to the file's log
+/// after its end, written by another program, here at the unknown machine's clock a minute
+/// after the session's.
+fn add_elsewhere(path: &Path, value: f32) {
+    let last = (saved(path).log.steps().iter().map(|step| step.clock)).max();
+    let clock = Clock::at(
+        last.unwrap().when + 60_000,
+        None,
+        "00000000".parse().unwrap(),
+    );
+    add_at(path, value, clock);
+}
+
+/// [`add_elsewhere`] at `clock`.
+fn add_at(path: &Path, value: f32, clock: Clock) {
+    let read = saved(path);
+    let mut log = read.log.clone();
+    let mut edit = log.fold();
+    let amount = ControlValue::Number(value);
+    (edit.set_control(&Soften, "amount", amount, &testing::image())).unwrap();
+    let changes = crate::history::Change::between(&log.fold(), &edit, &[]);
+    log.add_change(changes, StepSource::You, None, clock);
+    let mut clocks = read.clocks().to_vec();
+    crate::history::advance(&mut clocks, clock);
+    let path = sidecar::path_for(path);
+    sidecar::write_log(
+        &path,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, SAVING),
+        "cli",
+    )
+    .unwrap();
+}
+
+/// Soften's amount in `values`.
+fn softened(values: &Values) -> ControlValue {
+    control(values, "soften", "amount").value.clone()
+}
+
+/// A newer file on disk, as `apertrust-cli edit` writes: the writer finds it changed and
+/// writes nothing; the session takes it in, lays its step not yet saved on the newer log
+/// after its end, sends `Values` and `History` again and writes the joined log. The undo
+/// records are gone with the log they describe: Undo moves the end.
+#[test]
+fn a_newer_file_is_taken_in_before_a_write_and_the_step_laid_on_it() {
+    let path = scratch("history-newer-file");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    add_elsewhere(&path, 40.0);
+    // The session's next change: not written over the newer file.
+    let changed = driven.run([set("size", ControlValue::Choice(2), true)]);
+    let ours = history(&changed).steps.last().unwrap().id;
+    assert!(driven.writes().is_empty());
+    assert_eq!(saved(&path).build.as_deref(), Some("cli"));
+    // Taken in: its step, then the session's, the edit holding both.
+    let taken = driven.engine.newer_file(false);
+    assert_eq!(kinds(&taken), ["values", "history", "frame"]);
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (3, 3));
+    assert_eq!(after.steps[2].id, ours);
+    let values = values(&taken);
+    assert_eq!(softened(values), ControlValue::Number(40.0));
+    assert_eq!(
+        control(values, "sample", "size").value,
+        ControlValue::Choice(2)
+    );
+    assert_eq!(
+        control(values, "sample", "brightness").value,
+        ControlValue::Number(0.5)
+    );
+    // And written, the joined log.
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    let read = saved(&path);
+    assert_eq!(read.log.steps().len(), 3);
+    assert_eq!(read.edit, edit(&driven));
+    assert_eq!(read.clocks().len(), 2, "this machine's and the other's");
+    // No undo record: Undo moves the end over the session's step, and the next change is
+    // written at once, the file as the session wrote it.
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(history(&undone).end, 2);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    assert!(driven.engine.newer_file(false).is_empty());
+    remove(&path);
+}
+
+/// A newer file that holds nothing newer by its clock vector, every machine's clock at or
+/// below the session's, as a copy of an older version of the file put back, is written over.
+#[test]
+fn a_file_holding_nothing_newer_is_written_over() {
+    let path = scratch("history-older-file");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let older = std::fs::read(&sidecar).unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    driven.writes();
+    // Put back, a little longer, so its size tells it changed whatever the clock's
+    // resolution.
+    let mut put_back = older.clone();
+    put_back.extend_from_slice(b"\n");
+    std::fs::write(&sidecar, &put_back).unwrap();
+    driven.run([set("size", ControlValue::Choice(2), true)]);
+    assert!(driven.writes().is_empty());
+    // Nothing taken in, nothing to tell: the session's log written over it.
+    assert!(driven.engine.newer_file(false).is_empty());
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    assert_eq!(saved(&path).log.steps().len(), 3);
+    assert_eq!(saved(&path).edit, edit(&driven));
+    remove(&path);
+}
+
+/// As the photo closes, a newer file the last write found is taken in and the joined log
+/// written, so the step it was to save is not lost.
+#[test]
+fn a_newer_file_found_as_the_photo_closes_is_taken_in() {
+    let path = scratch("history-newer-close");
+    let other = scratch("history-newer-close-other");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    // A drag never released, made a step as the photo closes.
+    driven.run([set("size", ControlValue::Choice(2), false)]);
+    driven.open(&other);
+    driven.writes();
+    let read = saved(&path);
+    assert_eq!(read.log.steps().len(), 3);
+    let soften = &read.edit.modules["soften"];
+    assert_eq!(soften.get("amount"), Some(&ControlValue::Number(40.0)));
+    let sample = &read.edit.modules["sample"];
+    assert_eq!(sample.get("size"), Some(&ControlValue::Choice(2)));
+    remove(&path);
+    remove(&other);
+}
+
+/// A newer file a newer Apertrust wrote, found before a write: shown as it reads, for
+/// viewing only, and never written over.
+#[test]
+fn a_newer_build_s_file_found_before_a_write_makes_the_photo_view_only() {
+    let path = scratch("history-newer-build");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let newer = brightened("9.0.0").replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
+    std::fs::write(&sidecar, &newer).unwrap();
+    // Two changes, the second's write handed over before the first's finds the file.
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    driven.run([set("size", ControlValue::Choice(2), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    // `Opened` again, now for viewing only, then what was not saved, then the values.
+    let Some(Event::Opened(photo)) = taken.first() else {
+        panic!("{taken:?}");
+    };
+    assert!(photo.view_only.is_some());
+    assert!(
+        matches!(
+            failures(&taken)[..],
+            [SessionError::NotSaved { error, .. }] if matches!(**error, SessionError::ViewOnly(_))
+        ),
+        "{taken:?}"
+    );
+    let values = values(&taken);
+    assert!(values.modules[0].controls.iter().all(|c| !c.available));
+    // Nothing handed over before it is written over the newer build's file.
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), newer);
+    let refused = driven.run([set("grain", ControlValue::Number(10.0), true)]);
+    assert!(matches!(
+        failures(&refused)[..],
+        [SessionError::ViewOnly(_)]
+    ));
+    driven.open(&scratch("history-newer-build-other"));
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), newer);
+    remove(&path);
+}
+
+/// Every [`sidecar::Problem`] opens the photo for viewing only, saying so, not as a newer
+/// build's: its history sent, every change refused and the file never written.
+#[test]
+fn every_problem_opens_the_photo_for_viewing_only() {
+    let mut driven = Driven::new(&[&Sample]);
+    let path = scratch("history-problem-source");
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    driven.writes();
+    let xml = std::fs::read_to_string(sidecar::path_for(&path)).unwrap();
+    let id = format!(r#"apertrust:id="{}""#, saved(&path).log.steps()[0].id);
+    // The value of the first `name` after `from` in place of its own.
+    let set_after = |from: &str, name: &str, value: &str| {
+        let at = xml.find(from).unwrap_or_else(|| panic!("{from}"));
+        let field = format!(r#"{name}=""#);
+        let start = at + xml[at..].find(&field).unwrap() + field.len();
+        let end = start + xml[start..].find('"').unwrap();
+        format!("{}{value}{}", &xml[..start], &xml[end..])
+    };
+    // `text` among the first step's attributes, after its id.
+    let fields = |text: &str| xml.replacen(&id, &format!("{id} {text}"), 1);
+    // `text` among the first step's elements, before its entries.
+    let elements = |xml: &str, text: &str| {
+        let at = xml.find(&id).unwrap();
+        let entries = at + xml[at..].find("<apertrust:entries>").unwrap();
+        format!("{}{text}{}", &xml[..entries], &xml[entries..])
+    };
+    let message = r#"apertrust:noteMessage="history-style""#;
+    let cases = [
+        ("step clock", set_after(&id, "apertrust:when", "never")),
+        (
+            "vector clock",
+            set_after("<rdf:Bag>", "apertrust:machine", "zz"),
+        ),
+        (
+            "two notes",
+            fields(&format!(r#"apertrust:note="Words" {message}"#)),
+        ),
+        (
+            "arguments without a message",
+            elements(
+                &xml,
+                r#"<apertrust:noteArgs><rdf:Description arg:style="Film"/></apertrust:noteArgs>"#,
+            ),
+        ),
+        (
+            "note arguments",
+            elements(
+                &fields(message),
+                r#"<apertrust:noteArgs><rdf:Description param:style="Film"/></apertrust:noteArgs>"#,
+            ),
+        ),
+        (
+            "unreadable note",
+            elements(
+                &xml,
+                r#"<apertrust:note xml:lang="en">Words</apertrust:note>"#,
+            ),
+        ),
+        (
+            "step id",
+            set_after("<apertrust:history>", "apertrust:id", "1"),
+        ),
+        ("batch", fields(r#"apertrust:batch="0f1e""#)),
+        ("source", set_after(&id, "apertrust:source", "robot")),
+        ("unknown field", fields(r#"apertrust:rating="2""#)),
+        ("duplicate step", {
+            // The first step's id the second's, the end's, so the end still names a step.
+            let second = format!(r#"apertrust:id="{}""#, saved(&path).log.steps()[1].id);
+            xml.replacen(&id, &second, 1)
+        }),
+        (
+            "clock past vector",
+            set_after("<rdf:Bag>", "apertrust:when", "2020-01-01T00:00:00.000Z"),
+        ),
+        (
+            "end",
+            set_after("<apertrust:copies>", "apertrust:end", "00000000000000ff"),
+        ),
+    ];
+    for (name, damaged) in cases {
+        let path = scratch(&format!("history-problem-{}", name.replace(' ', "-")));
+        let sidecar = sidecar::path_for(&path);
+        std::fs::write(&sidecar, &damaged).unwrap();
+        let opened = driven.open(&path);
+        let Some(Event::Opened(photo)) = opened.first() else {
+            unreachable!()
+        };
+        let view_only = photo.view_only.as_ref().unwrap_or_else(|| panic!("{name}"));
+        let sidecar::Reason::Unreadable(problem) = &view_only.reason else {
+            panic!("{name}: {view_only:?}");
+        };
+        assert_eq!(
+            crate::sidecar::tests::kind(problem),
+            name,
+            "{name}: {problem}"
+        );
+        assert!(!history(&opened).steps.is_empty(), "{name}");
+        let refused = driven.run([
+            set("brightness", ControlValue::Number(1.0), true),
+            Command::Undo,
+        ]);
+        assert_eq!(failures(&refused).len(), 2, "{name}: {refused:?}");
+        assert!(driven.writes().is_empty(), "{name}");
+        driven.open(&scratch("history-problem-other"));
+        assert!(driven.writes().is_empty(), "{name}");
+        assert_eq!(
+            std::fs::read_to_string(&sidecar).unwrap(),
+            damaged,
+            "{name}"
+        );
+        remove(&path);
+    }
+    remove(&path);
+}
+
+/// Another program on this machine, as `apertrust-cli edit`, shares its machine id: its
+/// step is newer than what the session last read or wrote, though not than the session's
+/// own next step, so it is taken in, never written over.
+#[test]
+fn this_machine_s_other_program_s_step_is_taken_in() {
+    let path = scratch("history-same-machine");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let machine = apertrust_library::clock::MachineId::current();
+    let last = (saved(&path).log.steps().iter().map(|step| step.clock)).max();
+    add_at(&path, 40.0, Clock::now(last.as_ref(), machine));
+    // The session's step, after the other program's, on the same machine.
+    let changed = driven.run([set("size", ControlValue::Choice(2), true)]);
+    assert!(history(&changed).steps.last().unwrap().clock.machine == machine);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert_eq!(softened(values(&taken)), ControlValue::Number(40.0));
+    driven.writes();
+    let read = saved(&path);
+    assert_eq!(read.log.steps().len(), 3);
+    assert_eq!(
+        read.edit.modules["soften"].get("amount"),
+        Some(&ControlValue::Number(40.0))
+    );
+    remove(&path);
+}
+
+/// Another program's write during a drag, then the drag cancelled: the cancel's held write
+/// finds the file changed and writes nothing, and the next change is laid on the file
+/// taken in, so the other program's step survives.
+#[test]
+fn a_cancel_after_another_program_s_write_takes_its_file_in() {
+    let path = scratch("history-held-newer");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    driven.run([set("grain", ControlValue::Number(30.0), false)]);
+    add_elsewhere(&path, 40.0);
+    driven.run([cancel()]);
+    assert!(
+        driven.writes().is_empty(),
+        "nothing written or reported saved"
+    );
+    driven.engine.newer_file(false);
+    driven.run([set("size", ControlValue::Choice(2), true)]);
+    driven.writes();
+    let read = saved(&path);
+    assert_eq!(
+        read.edit.modules["soften"].get("amount"),
+        Some(&ControlValue::Number(40.0))
+    );
+    assert_eq!(
+        read.edit.modules["sample"].get("size"),
+        Some(&ControlValue::Choice(2))
+    );
+    remove(&path);
+}
+
+/// A newer file that cannot be read is never written over: reported once, each later write
+/// finds it again and writes nothing, and once it reads, it is taken in.
+#[test]
+fn an_unreadable_newer_file_is_never_written_over() {
+    let path = scratch("history-unreadable");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let readable = std::fs::read_to_string(&sidecar).unwrap();
+    std::fs::write(&sidecar, "half a file <x:xmp").unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::NotSaved { .. }]),
+        "{taken:?}"
+    );
+    // Found again at the next write, which is answered too, the grain at 40 % included,
+    // so a client waiting for that write stops waiting.
+    driven.run([set("grain", ControlValue::Number(40.0), true)]);
+    assert!(driven.writes().is_empty());
+    let again = driven.engine.newer_file(false);
+    let through = driven.engine.applied;
+    assert!(
+        matches!(failures(&again)[..], [SessionError::NotSaved { through: t, .. }] if *t == through),
+        "{again:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&sidecar).unwrap(),
+        "half a file <x:xmp"
+    );
+    // Readable again, with another program's step: taken in at the next write.
+    std::fs::write(&sidecar, readable).unwrap();
+    add_elsewhere(&path, 40.0);
+    driven.run([set("size", ControlValue::Choice(2), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    driven.writes();
+    let read = saved(&path);
+    let sample = &read.edit.modules["sample"];
+    assert_eq!(sample.get("grain"), Some(&ControlValue::Number(40.0)));
+    assert_eq!(
+        read.edit.modules["soften"].get("amount"),
+        Some(&ControlValue::Number(40.0))
+    );
+    remove(&path);
+}
+
+/// Undo, Redo and `GoTo` hold the edit they move to to the ranges its modules' values
+/// give, as the photo's open does, the clamp a change not yet a step, which never becomes a
+/// step of its own: here a hand-written log of coarseness at 150 %, then the bias at 20 %,
+/// which allows 120 %. Two Undos reach Original, two Redos come back, each clamped.
+#[test]
+fn a_move_of_the_end_clamps_what_it_moves_to() {
+    let path = scratch("history-move-clamp");
+    let value = |bias: Option<f32>| {
+        let mut sample = apertrust_modules::ModuleValues::new();
+        sample.set("coarseness", ControlValue::Number(150.0));
+        if let Some(bias) = bias {
+            sample.set("bias", ControlValue::Number(bias));
+        }
+        let mut edit = Edit::default();
+        edit.modules.insert("sample".to_owned(), sample);
+        edit
+    };
+    let mut log = crate::history::Log::default();
+    let clock = Clock::at(1_773_496_931_120, None, "00000000".parse().unwrap());
+    let (coarse, biased) = (value(None), value(Some(20.0)));
+    for (before, after) in [(&Edit::default(), &coarse), (&coarse, &biased)] {
+        let changes = crate::history::Change::between(before, after, &[]);
+        log.add_change(changes, StepSource::You, None, clock);
+    }
+    let xml = sidecar::log_xml(
+        &sidecar::Edits::new(""),
+        &log,
+        &[clock],
+        (OPERATIONS, &[&Sample]),
+        "hand",
+    );
+    std::fs::write(sidecar::path_for(&path), xml).unwrap();
+    let mut driven = Driven::new(&[&Sample]);
+    let opened = driven.open(&path);
+    let coarseness = |events: &[Event]| {
+        control(values(events), "sample", "coarseness")
+            .value
+            .clone()
+    };
+    assert_eq!(coarseness(&opened), ControlValue::Number(120.0));
+    for (command, end, expected) in [
+        (Command::Undo, 1, 150.0),
+        (Command::Undo, 0, 100.0),
+        (Command::Redo, 1, 150.0),
+        (Command::Redo, 2, 120.0),
+    ] {
+        let moved = driven.run([command.clone()]);
+        let history = history(&moved);
+        assert_eq!((history.steps.len(), history.end), (2, end), "{command:?}");
+        assert_eq!(
+            coarseness(&moved),
+            ControlValue::Number(expected),
+            "{command:?}"
+        );
+    }
+    // The clamp no step: none as the photo closes either.
+    driven.open(&scratch("history-move-clamp-other"));
+    driven.writes();
+    assert_eq!(saved(&path).log.steps().len(), 2);
+    remove(&path);
+}
+
+/// Steps kept while the file could not be read reach it as the photo closes once it reads:
+/// the close hands over a write, which finds the file and takes it in.
+#[test]
+fn steps_kept_for_an_unreadable_file_are_saved_as_the_photo_closes() {
+    let path = scratch("history-unreadable-close");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let readable = std::fs::read_to_string(&sidecar).unwrap();
+    std::fs::write(&sidecar, "half a file <x:xmp").unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    driven.writes();
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::NotSaved { through, .. }] if *through == driven.engine.applied),
+        "{taken:?}"
+    );
+    std::fs::write(&sidecar, readable).unwrap();
+    driven.open(&scratch("history-unreadable-close-other"));
+    driven.writes();
+    let read = saved(&path);
+    assert_eq!(
+        read.edit.modules["sample"].get("grain"),
+        Some(&ControlValue::Number(30.0))
+    );
+    remove(&path);
+}
+
+/// A file still unreadable as the photo closes: the close tells it, as the photo's last
+/// word, which `Open` passes on.
+#[test]
+fn an_unreadable_file_as_the_photo_closes_is_told() {
+    let path = scratch("history-unreadable-closed");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    std::fs::write(&sidecar, "half a file <x:xmp").unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), false)]);
+    let other = scratch("history-unreadable-closed-other");
+    let events = driven.run([Command::Open(other.clone())]);
+    assert!(
+        matches!(failures(&events)[..], [SessionError::NotSaved { path: p, .. }] if *p == sidecar),
+        "{events:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&sidecar).unwrap(),
+        "half a file <x:xmp"
+    );
+    driven.settle();
+    remove(&path);
+    remove(&other);
+}
+
+/// What another tool wrote beside the edit after the session's last write, as a rating
+/// added by hand, is kept when the file holds nothing newer of the history.
+#[test]
+fn a_rating_added_by_hand_survives_the_next_save() {
+    let path = scratch("history-rating");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let xml = std::fs::read_to_string(&sidecar).unwrap();
+    let rated = xml.replacen(
+        r#"xmlns:arg="https://apertrust.org/ns/xmp/arg/""#,
+        r#"xmlns:arg="https://apertrust.org/ns/xmp/arg/"
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmp:Rating="4""#,
+        1,
+    );
+    assert_ne!(rated, xml);
+    std::fs::write(&sidecar, rated).unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    driven.writes();
+    driven.engine.newer_file(false);
+    driven.writes();
+    let written = std::fs::read_to_string(&sidecar).unwrap();
+    assert!(written.contains("<xmp:Rating>4</xmp:Rating>"), "{written}");
+    assert_eq!(
+        saved(&path).edit.modules["sample"].get("grain"),
+        Some(&ControlValue::Number(30.0))
+    );
+    remove(&path);
+}
+
+/// An Undo handed over just after another program added a step is made again on the file
+/// taken in: the end goes back to the step the session's end is on, so the Undo stays
+/// undone, the other program's step after it.
+#[test]
+fn an_undo_not_yet_saved_stays_undone_over_another_program_s_step() {
+    let path = scratch("history-undo-newer");
+    let mut times = Times::new();
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(0.5), true)],
+    );
+    driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(1.0), true)],
+    );
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(brightness(&undone), ControlValue::Number(0.5));
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (3, 1));
+    assert_eq!(
+        control(values(&taken), "sample", "brightness").value,
+        ControlValue::Number(0.5)
+    );
+    driven.writes();
+    let read = saved(&path);
+    assert_eq!((read.log.steps().len(), read.log.end()), (3, 1));
+    remove(&path);
+}
+
+/// Reported once while the photo is edited, the unreadable file is told again as the photo
+/// closes after a completed change: that change's write is answered too.
+#[test]
+fn an_unreadable_file_reported_while_editing_is_told_again_as_the_photo_closes() {
+    let path = scratch("history-unreadable-again");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    std::fs::write(&sidecar, "half a file <x:xmp").unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    driven.writes();
+    let first = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&first)[..], [SessionError::NotSaved { .. }]),
+        "{first:?}"
+    );
+    driven.run([set("size", ControlValue::Choice(2), true)]);
+    let other = scratch("history-unreadable-again-other");
+    let events = driven.run([Command::Open(other.clone())]);
+    assert!(
+        matches!(failures(&events)[..], [SessionError::NotSaved { path: p, .. }] if *p == sidecar),
+        "{events:?}"
+    );
+    driven.settle();
+    remove(&path);
+    remove(&other);
+}
+
+/// Another program's history written over the file: `steps` of the file's log as it reads,
+/// ending after `end` of them, then its own step setting Soften's amount, at the unknown
+/// machine's clock a minute after the file's latest.
+fn rewrite_elsewhere(path: &Path, steps: &[usize], end: usize) {
+    let read = saved(path);
+    let kept: Vec<_> = steps
+        .iter()
+        .map(|at| read.log.steps()[*at].clone())
+        .collect();
+    let mut log = crate::history::Log::from_steps(kept, end);
+    let mut edit = log.fold();
+    let amount = ControlValue::Number(40.0);
+    (edit.set_control(&Soften, "amount", amount, &testing::image())).unwrap();
+    let changes = crate::history::Change::between(&log.fold(), &edit, &[]);
+    let last = (read.log.steps().iter().map(|step| step.clock))
+        .max()
+        .unwrap();
+    let clock = Clock::at(last.when + 60_000, None, "00000000".parse().unwrap());
+    log.add_change(changes, StepSource::You, None, clock);
+    let mut clocks = read.clocks().to_vec();
+    crate::history::advance(&mut clocks, clock);
+    let path = sidecar::path_for(path);
+    sidecar::write_log(
+        &path,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, SAVING),
+        "cli",
+    )
+    .unwrap();
+}
+
+/// The session's two steps, a merge window apart, saved.
+fn two_steps(driven: &mut Driven) {
+    let mut times = Times::new();
+    driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(0.5), true)],
+    );
+    driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(1.0), true)],
+    );
+    driven.writes();
+}
+
+/// An Undo not yet saved, where another program dropped the step it undid and added its
+/// own: the move cannot be made again, so the newer end stands, and the person is told.
+#[test]
+fn an_undo_over_a_step_another_program_dropped_is_not_kept_and_told() {
+    let path = scratch("history-move-not-kept");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    // The other program's log: the first step, then its own, the second dropped.
+    rewrite_elsewhere(&path, &[0], 1);
+    driven.run([Command::Undo]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (2, 2));
+    assert_eq!(softened(values(&taken)), ControlValue::Number(40.0));
+    remove(&path);
+}
+
+/// The same Undo where the other program's end is on the session's end's step already, as
+/// after an Undo of its own: kept, nothing to tell.
+#[test]
+fn an_undo_the_other_program_made_too_is_kept() {
+    let path = scratch("history-move-same");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    // The other program's: both steps, its end moved back on the first, as its own Undo
+    // leaves it.
+    let read = saved(&path);
+    let mut log = read.log.clone();
+    log.set_end(1);
+    let last = (log.steps().iter().map(|step| step.clock)).max().unwrap();
+    let mut clocks = read.clocks().to_vec();
+    crate::history::advance(
+        &mut clocks,
+        Clock::at(last.when + 60_000, None, "00000000".parse().unwrap()),
+    );
+    let file = sidecar::path_for(&path);
+    sidecar::write_log(
+        &file,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, SAVING),
+        "cli",
+    )
+    .unwrap();
+    driven.run([Command::Undo]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(history(&taken).end, 1);
+    remove(&path);
+}
+
+/// An Undo then an edit before the file is taken in: the edit's step is laid on the newer
+/// log, under which the step the Undo took out applies again, and the person is told.
+#[test]
+fn an_undo_then_an_edit_over_another_program_s_step_is_told() {
+    let path = scratch("history-undo-edit");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    add_elsewhere(&path, 40.0);
+    driven.run([Command::Undo]);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    remove(&path);
+}
+
+/// A quick repeat of a control merged into its step, which keeps the step's id with a new
+/// clock, after another program wrote the file: the merged step is laid on the newer log,
+/// and nothing the session took out applies again, so nothing is told.
+#[test]
+fn a_merged_repeat_over_another_program_s_step_is_no_move_not_kept() {
+    let path = scratch("history-merged-newer");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    let at = Instant::now();
+    driven.run_at(at, [set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    let merged = driven.run_at(
+        at + Duration::from_millis(100),
+        [set("brightness", ControlValue::Number(0.6), true)],
+    );
+    assert_eq!(history(&merged).steps.len(), 1, "merged into the step");
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(brightness(&taken), ControlValue::Number(0.6));
+    assert_eq!(softened(values(&taken)), ControlValue::Number(40.0));
+    remove(&path);
+}
+
+/// Both sides undid the same step of the base, then the session made a change: the step
+/// applies nowhere, so nothing is told.
+#[test]
+fn an_undo_both_sides_made_is_no_move_not_kept() {
+    let path = scratch("history-both-undid");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    // The other program's: its end back on the first step, the second after it.
+    let read = saved(&path);
+    let mut log = read.log.clone();
+    log.set_end(1);
+    let last = (log.steps().iter().map(|step| step.clock)).max().unwrap();
+    let mut clocks = read.clocks().to_vec();
+    let clock = Clock::at(last.when + 60_000, None, "00000000".parse().unwrap());
+    crate::history::advance(&mut clocks, clock);
+    let file = sidecar::path_for(&path);
+    sidecar::write_log(
+        &file,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, SAVING),
+        "cli",
+    )
+    .unwrap();
+    driven.run([Command::Undo]);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(brightness(&taken), ControlValue::Number(0.5));
+    remove(&path);
+}
+
+/// A file holding nothing newer of the first copy's history but another program's change
+/// to another virtual copy: written over with that copy kept as the other program left it.
+#[test]
+fn another_program_s_change_to_another_copy_is_kept() {
+    let path = scratch("history-other-copy");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    let mut file = sidecar::Edits::parse(&std::fs::read_to_string(&sidecar).unwrap(), 0).unwrap();
+    let mut other = file.copies[0].clone();
+    other.id = "7c0e9a14".to_owned();
+    other.number = "1".to_owned();
+    other.name = "Warm".to_owned();
+    file.copies.push(other.clone());
+    std::fs::write(&sidecar, file.to_xml()).unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    assert!(driven.engine.newer_file(false).is_empty());
+    driven.writes();
+    let written = sidecar::Edits::parse(&std::fs::read_to_string(&sidecar).unwrap(), 0).unwrap();
+    assert_eq!(written.copies.len(), 2);
+    assert_eq!(written.copies[1], other);
+    assert_eq!(
+        saved(&path).edit.modules["sample"].get("grain"),
+        Some(&ControlValue::Number(30.0))
+    );
+    remove(&path);
+}
+
+/// A Redo not yet saved of a step another program dropped, then a change laid on its file:
+/// the redone step applies nowhere in the joined log, so the person is told.
+#[test]
+fn a_redo_of_a_step_another_program_dropped_is_told() {
+    let path = scratch("history-redo-dropped");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let first = saved(&path).log.steps()[0].id;
+    driven.run([Command::GoTo { step: Some(first) }]);
+    driven.writes();
+    // The other program's: the first step, then its own, the second dropped.
+    rewrite_elsewhere(&path, &[0], 1);
+    driven.run([Command::Redo]);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    remove(&path);
+}
+
+/// Steps laid on a newer file get a clock of their own in the copy's vector, later than
+/// every clock the file and the steps had, so another program of this machine, whose base
+/// held the file before, finds the written file newer, never written over by it.
+#[test]
+fn steps_laid_on_a_newer_file_advance_the_clock_vector() {
+    let path = scratch("history-laid-clock");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    let read = saved(&path);
+    let changed = driven.run([set("size", ControlValue::Choice(2), true)]);
+    let laid = history(&changed).steps.last().unwrap().clock;
+    assert!(driven.writes().is_empty());
+    driven.engine.newer_file(false);
+    driven.writes();
+    let written = saved(&path);
+    let ours = (written.clocks().iter())
+        .find(|clock| clock.machine == laid.machine)
+        .copied()
+        .unwrap();
+    assert!(ours > laid, "{ours:?} after {laid:?}");
+    assert!(
+        read.clocks()
+            .iter()
+            .all(|theirs| ours > *theirs || theirs.machine != ours.machine)
+    );
+    remove(&path);
+}
+
+/// Another program that keeps changing the sidecar while the photo closes: each write the
+/// close makes finds it changed again, and after a few rounds the close tells it. The other
+/// program writes as each newer file is taken, so its write always lands between the take
+/// and the write that follows it, whatever the timing.
+#[test]
+fn a_file_another_program_keeps_changing_as_the_photo_closes_is_told() {
+    let path = scratch("history-still-changing");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    // Two of the other program's files, of different sizes, written in turn.
+    add_elsewhere(&path, 40.0);
+    let one = std::fs::read_to_string(&sidecar).unwrap();
+    add_elsewhere(&path, 60.0);
+    let two = std::fs::read_to_string(&sidecar).unwrap();
+    // A drag never released, which the close makes a step and writes.
+    driven.run([set("grain", ControlValue::Number(30.0), false)]);
+    let turns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (taken, rewrites) = (Arc::clone(&turns), sidecar.clone());
+    driven.engine.taking = Some(Box::new(move || {
+        let turn = taken.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let xml = if turn % 2 == 0 { &one } else { &two };
+        apertrust_base::fs::write(&rewrites, xml.as_bytes()).unwrap();
+    }));
+    let other = scratch("history-still-changing-other");
+    let events = driven.run([Command::Open(other.clone())]);
+    assert!(
+        (failures(&events).iter()).any(|failure| matches!(failure, SessionError::NotSaved { error, .. } if matches!(**error, SessionError::StillChanging))),
+        "{events:?}"
+    );
+    // Taken three times: the close's take, then twice more.
+    assert_eq!(turns.load(std::sync::atomic::Ordering::Relaxed), 3);
+    driven.engine.taking = None;
+    driven.settle();
+    remove(&path);
+    remove(&other);
+}
+
+/// Another program dropped a step the base applied and added its own, and the session made
+/// a change with no move of the end: the step is the other side's change, so nothing is
+/// told.
+#[test]
+fn a_step_another_program_dropped_under_a_change_is_no_move_not_kept() {
+    let path = scratch("history-dropped-applied");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    // The other program's: the first step, then its own, the second dropped.
+    rewrite_elsewhere(&path, &[0], 1);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(history(&taken).steps.len(), 3);
+    remove(&path);
+}
+
+/// Another program's history written over the file: the file's log with its end at `end`,
+/// then, with `add`, its own step setting Soften's amount, at the unknown machine's clock a
+/// minute after the file's latest.
+fn moved_elsewhere(path: &Path, end: usize, add: bool) {
+    let read = saved(path);
+    let mut log = read.log.clone();
+    log.set_end(end);
+    let last = (read.log.steps().iter().map(|step| step.clock))
+        .max()
+        .unwrap();
+    let clock = Clock::at(last.when + 60_000, None, "00000000".parse().unwrap());
+    if add {
+        let mut edit = log.fold();
+        let amount = ControlValue::Number(40.0);
+        (edit.set_control(&Soften, "amount", amount, &testing::image())).unwrap();
+        let changes = crate::history::Change::between(&log.fold(), &edit, &[]);
+        log.add_change(changes, StepSource::You, None, clock);
+    }
+    let mut clocks = read.clocks().to_vec();
+    crate::history::advance(&mut clocks, clock);
+    let path = sidecar::path_for(path);
+    sidecar::write_log(
+        &path,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, SAVING),
+        "cli",
+    )
+    .unwrap();
+}
+
+/// The session's change drops a step the base had not applied, which another program redid
+/// before adding its own: that step applying again beneath the step laid is the other
+/// program's move, no Undo of the session's, so nothing is told.
+#[test]
+fn a_step_another_program_redid_under_a_change_is_no_move_not_kept() {
+    let path = scratch("history-redid-unapplied");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let first = saved(&path).log.steps()[0].id;
+    driven.run([Command::GoTo { step: Some(first) }]);
+    driven.writes();
+    // The other program's: both steps applied again, then its own.
+    moved_elsewhere(&path, 2, true);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    remove(&path);
+}
+
+/// A `GoTo` Original not yet saved where another program redid the step the base had not
+/// applied: the other side moved its end, so the newer end stands, and the person is told.
+#[test]
+fn a_go_to_over_another_program_s_redo_is_not_kept_and_told() {
+    let path = scratch("history-go-to-redo");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let first = saved(&path).log.steps()[0].id;
+    driven.run([Command::GoTo { step: Some(first) }]);
+    driven.writes();
+    // The other program's Redo of the second step, no step added.
+    moved_elsewhere(&path, 2, false);
+    driven.run([Command::GoTo { step: None }]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    assert_eq!(history(&taken).end, 2);
+    remove(&path);
+}
+
+/// An Undo made again over a step this machine's other program added, at a clock later
+/// than the Undo's: the move made again gets a clock of its own, so the file written holds
+/// more than the other program's, which takes it in rather than write over the Undo.
+#[test]
+fn a_move_made_again_on_a_newer_file_advances_the_clock_vector() {
+    let path = scratch("history-moved-clock");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    let machine = apertrust_library::clock::MachineId::current();
+    let last = (saved(&path).log.steps().iter().map(|step| step.clock))
+        .max()
+        .unwrap();
+    add_at(&path, 40.0, Clock::at(last.when + 60_000, None, machine));
+    let theirs = saved(&path);
+    driven.run([Command::Undo]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    assert_eq!(history(&taken).end, 1);
+    driven.writes();
+    let written = saved(&path);
+    assert_eq!(written.log.end(), 1);
+    let base = crate::session::history::Base::of(&theirs.log, theirs.clocks());
+    assert!(
+        !base.covers(written.clocks()),
+        "{:?} over {:?}",
+        written.clocks(),
+        theirs.clocks()
+    );
     remove(&path);
 }
