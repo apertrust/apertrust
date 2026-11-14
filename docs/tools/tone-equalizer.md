@@ -6,7 +6,7 @@ It is darktable's tone equalizer in the first pass (decision 2). It has darktabl
 
 It drives one operation, `toneequal` ([../ports/toneequal.md](../ports/toneequal.md)), at darktable's place, camera RGB 24.0 (decision 22). An unedited photo does not run it: it is planned while the tool is on, as in darktable, where the tone equalizer is off until the user turns it on (decision 32). The tool owns every one of the operation's eighteen parameters; none is fixed.
 
-**Status:** built, in `crates/tools/src/tone_equalizer.rs`, its Advanced tab's graph of the bands included but for the mask's histogram ([Gaps](#gaps), 1). The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Adjust tab, after the tone mapper and before Local contrast, in [README.md](README.md)'s order (decision 38).
+**Status:** built, in `crates/tools/src/tone_equalizer.rs`, its Advanced tab's graph of the bands included but for the mask's histogram ([Gaps](#gaps), 1). The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after the tone mapper and before Local contrast, in [README.md](README.md)'s order (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after the Tone curve and before Exposure.
 
 - Its rows are tests in `crates/tools/tests/tone_equalizer.rs`; [Results](#results) gives what they measured.
 - The operation ports every luminance estimator and three of darktable's five filters: no filter, EIGF and averaged EIGF. The guided filter and the averaged guided filter are listed and drawn disabled until their follow-up (the spec's Planned).

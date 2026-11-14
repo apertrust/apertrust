@@ -42,7 +42,7 @@ flowchart LR
     setup --> kernel["main, one pass:<br/>manual vignette gain,<br/>vignetting at each tap,<br/>per-channel bicubic warp"]
 ```
 
-In Apertrust it is the operation behind the first pass's Lens correction tool, in the Geometry tab (decisions 2 and 38; `docs/tools/README.md`, Lens correction). It is the first port that changes an image's geometry through the engine's maps (decision 16).
+In Apertrust it is the operation behind the first pass's Lens correction tool, in Edit's Geometry tab (decisions 2 and 38; `docs/tools/README.md`, Lens correction). It is the first port that changes an image's geometry through the engine's maps (decision 16).
 
 ## Pipeline
 
@@ -575,7 +575,7 @@ flowchart TD
 
 **Later:**
 
-- the Lens correction tool (Geometry tab; switched, decision 32; the corrections done readout, computed by the operation crate and reported by the session), separate work, since a port is done only with its tool;
+- the Lens correction tool (Edit's Geometry tab; switched, decision 32; the corrections done readout, computed by the operation crate and reported by the session), separate work, since a port is done only with its tool;
 - the Lensfun method and its database;
 - the warp preference's bilinear and lanczos2;
 - `distort_mask` for layers' masks (Phase 4).

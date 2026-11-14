@@ -6,7 +6,7 @@ It is darktable's color calibration as its page has it, every tab, the CAT tab f
 
 Every colour raw runs the operation (decision 27), so the tool adds none. It has no first step, and at its defaults it sets nothing and leaves the plan, the cache keys and the frame as they were.
 
-**Status:** built, every tab, in `crates/tools/src/colour_calibration.rs`. It is in `TOOLS` after Exposure. The app draws it in the Adjust tab from its definition (`docs/gui.md`, Tool panels from definitions), after White balance and before Exposure (decision 38).
+**Status:** built, every tab, in `crates/tools/src/colour_calibration.rs`. It is in `TOOLS` after Exposure. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after White balance and before Exposure (decision 38); until Edit's tabs by editing stage are built, the app draws it in Colour, last, after RGB primaries.
 
 - As shot is darktable's `reload_defaults`, snapped to daylight or Planckian where darktable snaps ([As shot](#as-shot)).
 - The adaptation is unavailable while as shot in camera is chosen, through `Tool::available` of the values (decision 30).

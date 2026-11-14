@@ -35,7 +35,7 @@ Algorithmically it is a generalised log-logistic curve, `white · (F / (P + F))^
 - **Per channel** (darktable's default): in a space whose primaries are inset towards white and rotated, with the middle channel's hue partly restored.
 - **RGB ratio:** to the channels' mean, scaling the pixel, with a hyperbolic chroma compression into the display's range.
 
-In the first pass it is the Sigmoid tool, a tone mapper of its own in the Adjust tab, one tone mapper per edit (decision 2; `docs/tools/README.md`, Sigmoid).
+In the first pass it is the Sigmoid tool, a tone mapper of its own in Edit's Adjust tab, one tone mapper per edit (decision 2; `docs/tools/README.md`, Sigmoid).
 
 ## Pipeline
 

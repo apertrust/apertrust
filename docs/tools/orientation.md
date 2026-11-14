@@ -2,11 +2,11 @@
 
 Tool `flip`, version 1. It works on the background only and has no Auto.
 
-It is darktable's orientation in the first pass (decision 2), its page as darktable draws it: no tabs, sections or sliders, its transform label, a reset label of the stored orientation, with darktable's four buttons on the same line, rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically (`gui_init`, `flip.c:596`), and under it darktable's guides widget, show guides with the global guide settings button at its end (`dt_guides_init_module_widget`, `src/gui/guides.c`). It is in the Geometry tab, after Rotate and perspective and before Lens correction (decision 38); darktable's default group is base, where the darktable workspace has it.
+It is darktable's orientation in the first pass (decision 2), its page as darktable draws it: no tabs, sections or sliders, its transform label, a reset label of the stored orientation, with darktable's four buttons on the same line, rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically (`gui_init`, `flip.c:596`), and under it darktable's guides widget, show guides with the global guide settings button at its end (`dt_guides_init_module_widget`, `src/gui/guides.c`). Its tab is Edit's Geometry, after Rotate and perspective and before Lens correction (decision 38); darktable's default group is base, where the darktable workspace has it.
 
 It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip.md)), which every photo runs, so it adds no operation. It owns its one parameter, darktable's stored orientation. Its default is darktable's, auto: the photo's own orientation from its EXIF data, so an untouched photo shows the right way up and the tool sets nothing. A photo the right way up has no orientation in its plan at all (the port's Setup on the CPU).
 
-**Status:** built, in `crates/tools/src/orientation.rs`. The app draws it in the Geometry tab from its definition (`docs/gui.md`, Tool panels from definitions).
+**Status:** built, in `crates/tools/src/orientation.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Geometry tab (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after Exposure and before Demosaic.
 
 - Its rows are tests in `crates/tools/tests/orientation.rs` and the tool's source; [Results](#results) gives what they measured.
 - Every row is exact, so none has a proposed tolerance.

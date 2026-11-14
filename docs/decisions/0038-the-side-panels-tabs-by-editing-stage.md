@@ -16,7 +16,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 
 - **Order:** Photos first ([0037](0037-one-view-the-photos-tab.md)), the five editing tabs, History last. Ctrl+1 to Ctrl+5 reach Photos to Effects. Raw and History have no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types −; the settings file's `keys` table can give each one (`panel-tab-6`, `panel-tab-7`).
 - **What each holds,** top to bottom in editing order, the order a person reaches for them:
-  - Adjust: White balance, Colour calibration, Exposure, the edit's tone mapper, Tone equalizer, Local contrast, Haze removal, RGB curve, RGB levels, Colour balance RGB, Colour equalizer, RGB primaries;
+  - Adjust: White balance, Colour calibration, Exposure, the edit's tone mapper, Tone equalizer, Local contrast, Haze removal, RGB curve (the Tone curve at its place until RGB curve replaces it), RGB levels, Colour balance RGB, Colour equalizer, RGB primaries;
   - Detail: Denoise (profiled), Sharpen, Diffuse or sharpen, Retouch (retouch layers, Phase 4: [0074](0074-masks-ported-from-darktables-master.md));
   - Geometry: Crop, Rotate and perspective, Orientation, Lens correction, Chromatic aberrations;
   - Effects: Vignetting, Grain, Soften, Bloom;

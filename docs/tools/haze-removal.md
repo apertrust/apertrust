@@ -8,7 +8,7 @@ It drives one operation, `hazeremoval` ([../ports/hazeremoval.md](../ports/hazer
 
 darktable's two flags, `compatibility_mode` and `adaptive`, which `gui_changed` sets off and on whenever a slider moves, have no widget and are no parameter of the port. It renders as a new instance does, compatibility mode off and adaptive windows on (rule 12 of [README.md](README.md); the port's Parameters).
 
-**Status:** built, in `crates/tools/src/haze_removal.rs`. The app draws it in the Adjust tab from its definition (`docs/gui.md`, Tool panels from definitions), after Local contrast and before RGB curve (decision 38).
+**Status:** built, in `crates/tools/src/haze_removal.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after Local contrast and before RGB curve (decision 38); until Edit's tabs by editing stage are built, the app draws it in Correct, alone there so far.
 
 - In [README.md](README.md)'s order, darktable's (decision 38), it follows Sharpen and Retouch and comes before Chromatic aberrations, Lens correction and Denoise (profiled), whose tools are not built yet.
 - Its rows are tests in `crates/tools/tests/haze_removal.rs`; [Results](#results) gives what they measured.

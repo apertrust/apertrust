@@ -2062,7 +2062,7 @@ Built: darktable's groups, as the darktable workspace will hold them, shown in E
   - Ukrainian and Polish follow, awaiting native review as every translation does, each name fitting its tile as [Translation](#translation) has it.
 - **The icons** are one colour, in Lucide's style, drawn at 22 points, each with its filled form for the chosen tab (`crates/ui/assets/icons/README.md`; decision 81), drawn with the wireframe first. Photos and History are derived from Lucide's `folder` and `rotate-ccw-clock`, and Metadata from its `tag`.
 - **Each tab's tools,** top to bottom in editing order, display order only (decision 83; the pipeline's order stays fixed):
-  - Adjust: White balance, Colour calibration, Exposure, the edit's tone mapper, Tone equalizer, Local contrast, Haze removal, RGB curve, RGB levels, Colour balance RGB, Colour equalizer, RGB primaries;
+  - Adjust: White balance, Colour calibration, Exposure, the edit's tone mapper, Tone equalizer, Local contrast, Haze removal, RGB curve (the Tone curve at its place until RGB curve replaces it), RGB levels, Colour balance RGB, Colour equalizer, RGB primaries;
   - Detail: Denoise (profiled), Sharpen, Diffuse or sharpen, Retouch (retouch layers, Phase 4; [layers.md](layers.md#retouch-layers));
   - Geometry: Crop, Rotate and perspective, Orientation, Lens correction, Chromatic aberrations;
   - Effects: Vignetting, Grain, Soften, Bloom;
