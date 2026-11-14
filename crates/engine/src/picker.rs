@@ -108,7 +108,7 @@ pub enum PickerCommand {
     /// takes both, else a point; a picker of one kind, that kind. It starts at the
     /// picker's last point or area this session, else darktable's default. A module's
     /// picker turns its module on, makes its operation the edited instance, and has its
-    /// first reading applied as one completed change; `tools` are the tool settings the
+    /// first reading applied as one completed change; `settings` are the settings the
     /// module's pickers read, as the client keeps them, and `channel` the channel tab the
     /// module shows. Refused before the photo is live, and for a module's picker on a
     /// photo open for viewing only.
@@ -116,7 +116,7 @@ pub enum PickerCommand {
         picker: PickerRef,
         area: bool,
         keys: PickKeys,
-        tools: Vec<(&'static str, ControlValue)>,
+        settings: Vec<(&'static str, ControlValue)>,
         channel: Option<&'static str>,
     },
     /// The active picker's point moved, a click or a drag's step, `done` on the release;
@@ -140,14 +140,14 @@ pub enum PickerCommand {
     Switch,
     /// The active picker back to its default for its kind.
     Reset,
-    /// The tool settings of `module`'s pickers changed, as the client keeps them: kept,
-    /// and the module's last reading applied again where the picker that read it reads
-    /// one of them, as one completed change, the tool settings that pick measures never
-    /// handed back (`Shown::tools` empty), since the client has just sent its own.
-    /// Refused for a setting none of its pickers reads.
-    Tools {
+    /// The settings of `module`'s pickers changed, as the client keeps them: kept, and
+    /// the module's last reading applied again where the picker that read it reads one of
+    /// them, as one completed change, the settings that pick measures never handed back
+    /// (`Shown::settings` empty), since the client has just sent its own. Refused for a
+    /// setting none of its pickers reads.
+    Settings {
         module: &'static str,
-        tools: Vec<(&'static str, ControlValue)>,
+        settings: Vec<(&'static str, ControlValue)>,
     },
     /// The channel tab the active picker's module shows changed: kept for its next pick,
     /// applying nothing, as darktable's tab switch applies nothing; with no picker on,

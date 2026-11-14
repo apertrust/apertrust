@@ -79,9 +79,9 @@ pub struct Picked {
 pub struct Shown {
     /// The input patch, where the module shows one.
     pub patch: Option<Patch>,
-    /// The tool settings measure mode set, as darktable's measure mode writes its target
+    /// The module's settings measure mode set, as darktable's measure mode writes its target
     /// sliders; the client keeps them in its settings.
-    pub tools: Vec<(&'static str, ControlValue)>,
+    pub settings: Vec<(&'static str, ControlValue)>,
 }
 
 /// A patch of picked colour, as Exposure and Colour calibration show the area they read.

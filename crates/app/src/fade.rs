@@ -18,9 +18,9 @@
 //! `docs/gui.md`, The central panel's states).
 //!
 //! The live frame is drawn at full strength from its first frame, with the scopes, the
-//! values and the tools on at once; the picture is drawn over it, in the place it was drawn
-//! in, its alpha falling from 1 to 0 over [`FADE`], eased out. Only that swap fades
-//! ([`Reaction::Swapped`](crate::mirror::Reaction::Swapped)): an edit, a resize, a
+//! values and the on-photo controls on at once; the picture is drawn over it, in the place
+//! it was drawn in, its alpha falling from 1 to 0 over [`FADE`], eased out. Only that swap
+//! fades ([`Reaction::Swapped`](crate::mirror::Reaction::Swapped)): an edit, a resize, a
 //! re-render, a failed render and one photo replaced by another are cuts. The picture's own
 //! texture is kept until the fade ends, then dropped, and the app repaints only while it
 //! fades: one textured quad for about seven frames. With the system's reduce-motion

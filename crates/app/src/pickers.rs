@@ -199,13 +199,13 @@ impl Mirror {
 /// What the modules' picks showed on the photo, darktable's `spot_RGB` and L readout: each
 /// module's last input patch, for its panel's patches (`Row::Patches`), kept after its
 /// picker turns off until the module's values change from outside a pick ([`Picked::sent`])
-/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the tool settings
-/// a pick measured, measure mode's target, handed to the app's settings once.
+/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the module's
+/// settings a pick measured, measure mode's target, handed to the app's settings once.
 #[derive(Debug, Default)]
 pub struct Picked {
     patches: BTreeMap<&'static str, Patch>,
     /// The latest pick shown of the module whose picker is on: every reading after it
-    /// carries it again, so its patch and the tool settings it measured are taken once.
+    /// carries it again, so its patch and the settings it measured are taken once.
     seen: Option<(&'static str, Shown)>,
     /// The last command that took every module's patch away, by its number.
     cleared: u64,
@@ -223,7 +223,7 @@ impl Picked {
         }
     }
 
-    /// The session's `Event::Picker`: the module's patch kept, and the module with the tool
+    /// The session's `Event::Picker`: the module's patch kept, and the module with the
     /// settings its pick measured, where the pick comes for the first time. A pick measured
     /// before a command that took the module's patch away, still on its way as that command
     /// was sent, shows no patch, as darktable's `gui_update` leaves it zeroed until the next
@@ -253,7 +253,7 @@ impl Picked {
         {
             self.patches.insert(module, patch);
         }
-        (!shown.tools.is_empty()).then(|| (module, shown.tools.clone()))
+        (!shown.settings.is_empty()).then(|| (module, shown.settings.clone()))
     }
 
     /// The input patch `module`'s last pick showed on the photo.
@@ -318,22 +318,22 @@ pub fn moved_to(command: &PickerCommand) -> Option<Region> {
     }
 }
 
-/// What a press on `picker`'s button sends, `keys` held: `On`, with the tool settings its
-/// module's pickers read as the app keeps them, `tools`, and no channel tab until a module
+/// What a press on `picker`'s button sends, `keys` held: `On`, with the settings its
+/// module's pickers read as the app keeps them, `settings`, and no channel tab until a module
 /// reads one, or `Off` for the picker on, since `On` for it would start it again
 /// (`docs/pickers.md`, Against darktable).
 pub fn pressed(
     picker: PickerRef,
     action: PickerAction,
     keys: PickKeys,
-    tools: Vec<(&'static str, ControlValue)>,
+    settings: Vec<(&'static str, ControlValue)>,
 ) -> PickerCommand {
     match action {
         PickerAction::On { area } => PickerCommand::On {
             picker,
             area,
             keys,
-            tools,
+            settings,
             channel: None,
         },
         PickerAction::Off => PickerCommand::Off,
@@ -452,11 +452,11 @@ pub fn completes(command: &PickerCommand) -> bool {
 
 /// Whether `command`, sent while `active` is the picker on, completes a change on the edit,
 /// which the session answers with a write or the edit reported held: a module picker's
-/// command that [`completes`] one, and `Tools`, which applies its module's latest reading
+/// command that [`completes`] one, and `Settings`, which applies its module's latest reading
 /// again whether its picker is on or not; never the Colour picker's, which writes nothing.
 pub fn completes_edit(command: &PickerCommand, active: Option<PickerRef>) -> bool {
     let picker = match command {
-        PickerCommand::Tools { .. } => return true,
+        PickerCommand::Settings { .. } => return true,
         PickerCommand::On { picker, .. } => Some(*picker),
         _ => active,
     };
@@ -1555,7 +1555,7 @@ mod tests {
             picker,
             area,
             keys,
-            tools: Vec::new(),
+            settings: Vec::new(),
             channel: None,
         }
     }

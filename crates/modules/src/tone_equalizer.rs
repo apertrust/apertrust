@@ -50,7 +50,7 @@ use apertrust_color::tone_equalizer::Curve;
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, ToolSetting, Unit, Widget,
+    ChoiceStyle, Control, ControlKind, Definition, Row, SettingRow, Slider, Tab, Unit, Widget,
 };
 use crate::transfer::Transfer;
 use crate::values::{ControlValue, Controls};
@@ -278,7 +278,7 @@ static DEFINITION: Definition = Definition {
     before: &[],
     // darktable's toggle under its notebook: the mask in place of the photo, a view mode
     // that no edit stores (`docs/modules/README.md`, rule 10).
-    after: &[Row::ToolSetting(ToolSetting {
+    after: &[Row::Setting(SettingRow {
         id: "display_exposure_mask",
         kind: ControlKind::Bool { default: false },
         decimals: 0,

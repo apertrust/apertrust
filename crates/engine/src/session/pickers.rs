@@ -76,14 +76,14 @@ pub(super) struct Pickers {
     /// The active picker's latest module part and frame part.
     module: Option<ModuleReading>,
     frame: Option<FrameReading>,
-    /// The tool settings each module's pickers read, as the client last sent them.
-    tools: BTreeMap<&'static str, Vec<(&'static str, ControlValue)>>,
+    /// The settings each module's pickers read, as the client last sent them.
+    settings: BTreeMap<&'static str, Vec<(&'static str, ControlValue)>>,
     /// Each module's last reading applied, for the photo, as RGB levels' `last_picked_color`:
     /// what its pick takes as `last`.
     last: BTreeMap<&'static str, Last>,
     /// Each module's latest reading measured while its picker was on, applied or not, for
     /// the photo: darktable's `picked_color`, which every run of the pipe overwrites and
-    /// a tool setting's change applies again.
+    /// a setting's change applies again.
     latest: BTreeMap<&'static str, Last>,
     /// The drag a module picker's moves belong to: `On` begins one, and so does a move
     /// after the last one's release. Each drag's picks are one change, saved once.
@@ -602,16 +602,16 @@ impl Engine {
                 }
                 return Ok(PickerEffect::default());
             }
-            PickerCommand::Tools { module, tools } => {
-                return self.picker_tools(module, tools, events);
+            PickerCommand::Settings { module, settings } => {
+                return self.picker_settings(module, settings, events);
             }
             PickerCommand::On {
                 picker,
                 area,
                 keys,
-                tools,
+                settings,
                 channel,
-            } => return self.picker_on(picker, area, keys, tools, channel, events),
+            } => return self.picker_on(picker, area, keys, settings, channel, events),
             command => command,
         };
         let mut active = self.pickers.active.ok_or(SessionError::NoPicker)?;
@@ -655,7 +655,7 @@ impl Engine {
             }
             PickerCommand::On { .. }
             | PickerCommand::Off
-            | PickerCommand::Tools { .. }
+            | PickerCommand::Settings { .. }
             | PickerCommand::Channel { .. } => unreachable!("handled above"),
         };
         let after = (active.area, places.of_kind(active.area, &geometries));
@@ -697,7 +697,7 @@ impl Engine {
         picker: PickerRef,
         area: bool,
         keys: PickKeys,
-        tools: Vec<(&'static str, ControlValue)>,
+        settings: Vec<(&'static str, ControlValue)>,
         channel: Option<&'static str>,
         events: &mut Vec<Event>,
     ) -> Result<PickerEffect, SessionError> {
@@ -731,7 +731,7 @@ impl Engine {
                 .definition()
                 .picker(name)
                 .ok_or(SessionError::UnknownPicker)?;
-            check_tools(found.definition().pickers, &tools)?;
+            check_settings(found.definition().pickers, &settings)?;
             // Its module on, as darktable turns it on with its picker: its operation must
             // then be in the plan. With the history's end among the default steps it is the
             // first change, which applies the modules not applied (decision 78).
@@ -799,7 +799,9 @@ impl Engine {
                 }
                 (effect.values, effect.render, effect.save) = (true, true, true);
             }
-            self.pickers.tools.insert(found.definition().id, tools);
+            self.pickers
+                .settings
+                .insert(found.definition().id, settings);
             // The picker it replaces off first, its own commands answered; then a drag of
             // its own, complete as it begins, answered once its first reading is applied or
             // dropped.
@@ -847,22 +849,22 @@ impl Engine {
         Ok(effect)
     }
 
-    /// [`PickerCommand::Tools`]: the settings kept, and the module's latest reading measured
+    /// [`PickerCommand::Settings`]: the settings kept, and the module's latest reading measured
     /// applied again where the picker that read it reads one of them, as one completed
     /// change, as darktable's settings callbacks apply `picked_color` again
     /// (`exposure.c:1171-1175`). A pick refused turns the module's picker off where it is
     /// on, as a reading's refused pick does.
-    fn picker_tools(
+    fn picker_settings(
         &mut self,
         id: &'static str,
-        tools: Vec<(&'static str, ControlValue)>,
+        settings: Vec<(&'static str, ControlValue)>,
         events: &mut Vec<Event>,
     ) -> Result<PickerEffect, SessionError> {
         let module = edit::module(&self.modules, id)?;
-        check_tools(module.definition().pickers, &tools)?;
+        check_settings(module.definition().pickers, &settings)?;
         let id = module.definition().id;
-        let changed: BTreeSet<&str> = tools.iter().map(|(tool, _)| *tool).collect();
-        self.pickers.tools.insert(id, tools);
+        let changed: BTreeSet<&str> = settings.iter().map(|(setting, _)| *setting).collect();
+        self.pickers.settings.insert(id, settings);
         // A completed change, answered whether it applies a pick or not.
         let unapplied = PickerEffect {
             answer: true,
@@ -879,7 +881,8 @@ impl Engine {
             .open
             .as_ref()
             .is_some_and(|open| open.view_only.is_none());
-        if !self.live() || !editable || !latest.picker.tools.iter().any(|t| changed.contains(t)) {
+        let reads = latest.picker.settings.iter().any(|s| changed.contains(s));
+        if !self.live() || !editable || !reads {
             return Ok(unapplied);
         }
         let due = Due {
@@ -903,12 +906,12 @@ impl Engine {
                 let Some(picked) = picked else {
                     return Ok(None);
                 };
-                // The client has just sent its tool settings: a pick applied again never
+                // The client has just sent its settings: a pick applied again never
                 // hands them back, so measure mode, which writes only them, does nothing
                 // here, as darktable's settings callback re-runs only correction
                 // (`exposure.c:1170-1175`).
                 let mut shown = picked.shown.clone();
-                shown.tools.clear();
+                shown.settings.clear();
                 Ok(Some((self.write_pick(id, latest.picker, picked)?, shown)))
             });
         let (changed, shown) = match picked {
@@ -1369,7 +1372,7 @@ impl Engine {
         let module = edit::module(&self.modules, id)?;
         let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
         let values = open.edit.every(module, &open.image);
-        let tools = self.pickers.tools.get(id).cloned().unwrap_or_default();
+        let settings = self.pickers.settings.get(id).cloned().unwrap_or_default();
         let channel = (self.pickers.active)
             .and_then(|active| active.module)
             .filter(|on| on.module == id)
@@ -1381,7 +1384,7 @@ impl Engine {
                 reading,
                 &values,
                 &open.image,
-                &tools,
+                &settings,
                 channel,
                 last.as_ref(),
                 due.keys,
@@ -1407,7 +1410,7 @@ impl Engine {
                 writes.set(control, value.clone());
             }
             picked.writes = writes;
-            picked.shown.tools.retain(|(_, value)| finite(value));
+            picked.shown.settings.retain(|(_, value)| finite(value));
             picked
         }))
     }
@@ -1573,18 +1576,18 @@ fn keep_due(old: &Probed, new: &mut Probed) {
     }
 }
 
-/// Refuses tool settings that none of `pickers` reads.
-fn check_tools(
+/// Refuses settings that none of `pickers` reads.
+fn check_settings(
     pickers: &[Picker],
-    tools: &[(&'static str, ControlValue)],
+    settings: &[(&'static str, ControlValue)],
 ) -> Result<(), SessionError> {
     let read: BTreeSet<&str> = pickers
         .iter()
-        .flat_map(|picker| picker.tools)
+        .flat_map(|picker| picker.settings)
         .copied()
         .collect();
-    match tools.iter().find(|(tool, _)| !read.contains(tool)) {
-        Some(&(tool, _)) => Err(SessionError::UnknownTool(tool)),
+    match settings.iter().find(|(setting, _)| !read.contains(setting)) {
+        Some(&(setting, _)) => Err(SessionError::UnknownSetting(setting)),
         None => Ok(()),
     }
 }

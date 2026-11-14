@@ -45,8 +45,8 @@
 //! the range is. Dynamic range scaling, which only darktable's pickers and Read exposure
 //! read, is not ported, nor is the base primaries' export profile: both are drawn disabled
 //! and refused. The pickers on the exposures and the pivot are in the definition, as
-//! darktable's page has them, and the renderer draws a quad once its tool runs; the four
-//! actions are drawn disabled until theirs come. Show curve is empty until a read-only
+//! darktable's page has them, and the renderer draws a quad once what it runs is built; the
+//! four actions are drawn disabled until theirs are. Show curve is empty until a read-only
 //! graph row exists. darktable's presets wait for the header's presets menu.
 
 #![allow(
@@ -391,7 +391,7 @@ const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
         space: Space::Operation,
         keep: false,
         writes,
-        tools: &[],
+        settings: &[],
     }
 }
 
@@ -950,7 +950,7 @@ mod tests {
                 denoise: true,
                 output: false,
                 writes,
-                tools: &[],
+                settings: &[],
             }
         }
         const OUTPUT: &str = "curve_pivot_y_linear_output";

@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::definition::{ControlKind, Definition, Row, Slider, ToolSetting, Unit};
+use crate::definition::{ControlKind, Definition, Row, SettingRow, Slider, Unit};
 
 /// The module's title: `module-<module>-title`.
 pub fn title(module: &str) -> String {
@@ -78,13 +78,13 @@ pub fn row_words(module: &str, control: &str, words: &str) -> [String; 3] {
         .map(|part| format!("module-{module}-control-{control}-as-{words}-{part}"))
 }
 
-/// A tool's setting's short label, full name and promise ([`crate::Row::ToolSetting`]):
+/// A module's setting's short label, full name and promise ([`crate::Row::Setting`]):
 /// `module-<module>-setting-<setting>-label`, `-full` and `-promise`.
 pub fn setting(module: &str, setting: &str) -> [String; 3] {
     ["label", "full", "promise"].map(|part| format!("module-{module}-setting-{setting}-{part}"))
 }
 
-/// A tool's setting's option: `module-<module>-setting-<setting>-option-<option>`.
+/// A module's setting's option: `module-<module>-setting-<setting>-option-<option>`.
 pub fn setting_option(module: &str, setting: &str, option: &str) -> String {
     format!("module-{module}-setting-{setting}-option-{option}")
 }
@@ -176,7 +176,7 @@ pub fn unit_value(unit: Unit) -> String {
 
 /// Every message the definition implies, each once: its title, Auto's tooltip if it has
 /// Auto, each titled tab, each group label, a row of pickers' label among them, each
-/// collapsible group's title, the words of each row that has its own, each tool's
+/// collapsible group's title, the words of each row that has its own, each
 /// setting's words and options, each action's words, each control's label, full name and
 /// promise, each option, each view's coordinate's label, full name and promise, as a
 /// control's, each preset row's label, full name, promise and options, each unit it uses,
@@ -207,7 +207,7 @@ pub fn of(definition: &Definition) -> Vec<String> {
                 label: Some(words),
                 ..
             }) => ids.extend(row_words(module, control, words)),
-            Row::ToolSetting(ToolSetting { id, kind, .. }) => {
+            Row::Setting(SettingRow { id, kind, .. }) => {
                 ids.extend(setting(module, id));
                 if let ControlKind::Choice { options, .. } = kind {
                     ids.extend(options.iter().map(|o| setting_option(module, id, o)));
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_s_setting_implies_its_words_and_options() {
+    fn a_module_s_setting_implies_its_words_and_options() {
         static CONTROLS: &[Control] = &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -441,7 +441,7 @@ mod tests {
                 rows: &[Row::Slider(Slider::new("amount"))],
             }],
             before: &[],
-            after: &[Row::ToolSetting(ToolSetting {
+            after: &[Row::Setting(SettingRow {
                 id: "chart",
                 kind: ControlKind::Choice {
                     options: &["classic", "passport"],

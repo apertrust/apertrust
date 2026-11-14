@@ -341,7 +341,7 @@ fn a_picker_turned_on_among_the_default_steps_applies_them() {
         },
         area: true,
         keys: PickKeys::default(),
-        tools: Vec::new(),
+        settings: Vec::new(),
         channel: None,
     })]);
     assert!(failures(&events).is_empty(), "{events:?}");

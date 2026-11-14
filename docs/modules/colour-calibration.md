@@ -35,7 +35,7 @@ Each control is darktable's parameter as it is:
 | CAT | `x`, `y`: no rows of their own, the view shows them | `x`, `y` | Number: x −0.1 to 1.2 and y 0.0001 to 2, the operation's, widened to hold every hue and chroma (decision 27) | The camera's own light |
 | CAT | `gamut`: Gamut compression | `gamut` | Number, 0 to 12, the track over 0 to 4, 2 decimals, step 0.05 | 1 |
 | CAT | `clip`: Clip negative RGB from gamut | `clip` | Toggle | On |
-| CAT: Area colour mapping, a collapsible group, closed at first | `area_mode`: Area mode, `channel_mixing`: Take channel mixing into account; the Target label with `target_lightness`, `target_hue` and `target_chroma`: Lightness, Hue and Chroma; the input patch with its L, h and c and the target patch come with the picker | None: darktable's settings for its picker, kept in its darktablerc (`darkroom/modules/channelmixerrgb/use_mixing`, `lightness`, `hue`, `chroma`; the area mode reset to correction on every `gui_update`), never in an edit (rule 12); `Row::ToolSetting`s drawn disabled until the picker comes; titled "area colour mapping (active)" in correction mode with the target off 50 % and 0 | Correction, measure; toggle; lightness 0 to 100 %, hue 0 to 360° with no fill, chroma 0 to 128 with no unit, each 1 decimal | Correction, on, 50 %, 0°, 0 |
+| CAT: Area colour mapping, a collapsible group, closed at first | `area_mode`: Area mode, `channel_mixing`: Take channel mixing into account; the Target label with `target_lightness`, `target_hue` and `target_chroma`: Lightness, Hue and Chroma; the input patch with its L, h and c and the target patch come with the picker | None: darktable's settings for its picker, kept in its darktablerc (`darkroom/modules/channelmixerrgb/use_mixing`, `lightness`, `hue`, `chroma`; the area mode reset to correction on every `gui_update`), never in an edit (rule 12); `Row::Setting`s drawn disabled until the picker comes; titled "area colour mapping (active)" in correction mode with the target off 50 % and 0 | Correction, measure; toggle; lightness 0 to 100 %, hue 0 to 360° with no fill, chroma 0 to 128 with no unit, each 1 decimal | Correction, on, 50 %, 0°, 0 |
 | R | `red_r`, `red_g`, `red_b`: Input R, Input G, Input B | `red_0`, `red_1`, `red_2` | Number, −2 to 2 (darktable's `COLOR_MIN` to `COLOR_MAX`), step 0.01, three decimals | 1, 0, 0 |
 | R | `red_normalise`: Normalise channels | `normalize_R` | Toggle | Off |
 | G | `green_r`, `green_g`, `green_b`; `green_normalise` | `green_0` to `green_2`; `normalize_G` | As R | 0, 1, 0; off |
@@ -43,7 +43,7 @@ Each control is darktable's parameter as it is:
 | Colourfulness | `colourfulness_r`, `colourfulness_g`, `colourfulness_b`; `colourfulness_normalise` | `saturation_0` to `saturation_2`; `normalize_sat` | Number, −2 to 2, its track over −1 to 1, step 0.01, three decimals; toggle | 0; off |
 | Brightness | `brightness_r`, `brightness_g`, `brightness_b`; `brightness_normalise` | `lightness_0` to `lightness_2`; `normalize_light` | As Colourfulness | 0; off |
 | Grey | `grey_r`, `grey_g`, `grey_b`; `grey_normalise` | `grey_0` to `grey_2`; `normalize_grey` | As Colourfulness, its track over 0 to 1 | 0; off |
-| Under every tab: Calibrate with a colour checker, a collapsible group, closed at first | Chart, Optimise for, Patch scale | None: darktable's settings for its colour checker tool, kept in its darktablerc (`darkroom/modules/channelmixerrgb/colorchecker`, `optimization`, `safety`), never in an edit (rule 12). Each is a `Row::ToolSetting`, drawn disabled at darktable's default until the tool comes | darktable's seven charts; none, neutral, saturated, skin and soil, foliage, sky and water colours, average ΔE, maximum ΔE; 0 to 1, three decimals | The first chart, none, 0.5 |
+| Under every tab: Calibrate with a colour checker, a collapsible group, closed at first | Chart, Optimise for, Patch scale | None: darktable's settings for its colour checker, kept in its darktablerc (`darkroom/modules/channelmixerrgb/colorchecker`, `optimization`, `safety`), never in an edit (rule 12). Each is a `Row::Setting`, drawn disabled at darktable's default until the colour checker is built | darktable's seven charts; none, neutral, saturated, skin and soil, foliage, sky and water colours, average ΔE, maximum ΔE; 0 to 1, three decimals | The first chart, none, 0.5 |
 
 "Input R, G and B" are the adaptation space's channels, CAT16's LMS by default, not working RGB's, as in darktable (`docs/ports/channelmixerrgb.md`, Parameters). A script sends `SetControl { module: "channelmixerrgb", control: "grey_g", value: 1 }`, and `apertrust-cli edit --set channelmixerrgb.grey_g=1` makes a photo grey. `--param channelmixerrgb.grey_1` is refused, since the module owns it.
 
@@ -79,17 +79,17 @@ As shot, the default illuminant on a colour raw, is darktable's `reload_defaults
 
 It also decides what a reset of the illuminant gives (C1). Where As shot is custom, the light the illuminant wrote stays, a custom one. Where As shot snaps to daylight or Planckian, a reset of the illuminant returns to it; those read the temperature, not `x` and `y`, so the photo renders as untouched while the temperature is.
 
-**What the panel does not draw yet,** each a gap of the renderer or of a tool still to come:
+**What the panel does not draw yet,** each a gap of the renderer or of a feature still to be built:
 
-- the CAT tab's readout row: the CCT readout and the illuminant's colour, which a row drawing a text and a swatch the module computes will bring, and the picker beside them, designed in [pickers.md](../pickers.md) (decision 79, its pull request 79.9), with its tool;
+- the CAT tab's readout row: the CCT readout and the illuminant's colour, which a row drawing a text and a swatch the module computes will bring, and the picker beside them, designed in [pickers.md](../pickers.md) (decision 79, its pull request 79.9), with its pick;
 - as shot in camera listed on a colour raw only, as darktable's `reload_defaults` lists it: a choice's options do not follow the photo yet, so it is listed on every photo, and on one with no camera's light it renders the stored light through CAT16;
 - hue's track painted round the hues and chroma's from grey to the hue's colour, the temperature's along the loci, and the area mapping target's tracks, which painted tracks will bring (the module panel's row kinds); plain meanwhile;
 - the area colour mapping's input patch with its L, h and c, its target patch and its title's "(active)", which come with the picker; its settings are drawn disabled meanwhile;
-- the area colour mapping target's units, its lightness in % and its hue in °: a tool's setting has no unit yet, so screen readers are told the number alone;
-- the colour checker's ΔE readout and its Validate, Recompute and Accept buttons, and the chart's frame on the photo, which need the picker and on-photo tools (decision 16); Accept will write this module's mixer and illuminant as one history step;
+- the area colour mapping target's units, its lightness in % and its hue in °: a module's setting has no unit yet, so screen readers are told the number alone;
+- the colour checker's ΔE readout and its Validate, Recompute and Accept buttons, and the chart's frame on the photo, which need the picker and on-photo controls (decision 16); Accept will write this module's mixer and illuminant as one history step;
 - darktable's tab tooltips, "output R", "output G", "output B", "output colorfulness", "output brightness" and "output gray": a definition's tab has no words but its title;
 - darktable's sliders painted with the colours each input gives (`_update_RGB_colors`): the tracks are plain;
-- the colour checker's settings kept in settings, which come with the tool;
+- the colour checker's settings kept in settings, which come with the colour checker;
 - darktable's presets (monochrome films, basic channel mixer, channel swaps), Phase 3.
 
 ### Sliders against darktable
@@ -101,12 +101,12 @@ Audited against darktable's `src/iop/channelmixerrgb.c`, its params and `gui_ini
 | R, G and B tabs' Input R, G and B | −2 to 2; none | 3 | 0.01 | −2 to 2; the range | 3; 0.01 | No |
 | Colourfulness and Brightness tabs' Input R, G and B | −2 to 2; −1 to 1 | 3 | 0.01 | −2 to 2; −1 to 1 | 3; 0.01 | No |
 | Grey tab's Input R, G and B | −2 to 2; 0 to 1 | 3 | 0.01 | −2 to 2; 0 to 1 | 3; 0.01 | No |
-| Patch scale, the colour checker's tool setting | 0 to 1; none | 3 | 0.01 | 0 to 1; the range | 3; 0.01 | No |
+| Patch scale, the colour checker's setting | 0 to 1; none | 3 | 0.01 | 0 to 1; the range | 3; 0.01 | No |
 | CAT: Temperature | 1667 to 25000 K; 3000 to 7000 | 0 | 1 K | 1667 to 25000 K; 3000 to 7000 | 0; 1 | No |
 | CAT: Hue | 0 to 360°; none | 1 | 1° | 0 to 360°; the range | 1; 1 | No |
 | CAT: Chroma | 0 to 300 % (`set_hard_max`); 0 to 100 | 1 | 1 % | 0 to 300 %; 0 to 100 | 1; 1 | No |
 | CAT: Gamut compression | 0 to 12; 0 to 4 | 2 | 0.05 | 0 to 12; 0 to 4 | 2; 0.05 | No |
-| CAT: Area colour mapping's lightness, hue and chroma, tool settings | 0 to 100 %, 0 to 360°, 0 to 128; none | 1 | 1 | the same | 1; 1 | No |
+| CAT: Area colour mapping's lightness, hue and chroma, the module's settings | 0 to 100 %, 0 to 360°, 0 to 128; none | 1 | 1 | the same | 1; 1 | No |
 
 The Colourfulness, Brightness and Grey tabs' tracks span darktable's soft ranges; a value typed or scripted beyond one widens the track to show it until the row is reset. The CAT tab's rows are read from `gui_init`, as the table gives them, and `its_sliders_are_darktable_s` holds them too, with no difference.
 
@@ -165,10 +165,10 @@ C6 in detail: all 81 changes of the illuminant from one to another after the def
 ## Design choices
 
 - **The saturation algorithm:** not shown, `version` owned at 3. darktable hides the combobox at version 3 (`gui_update`), and rule 12 leaves out a control darktable shows only for an older edit.
-- **The colour checker's settings:** drawn disabled at darktable's defaults by a row of the definition format, `Row::ToolSetting`: no control, nothing an edit stores, words of its own (`module-<module>-setting-<setting>-…`), the kind giving the widget. The CAT tab's Area colour mapping and Exposure's Area exposure mapping use it too.
+- **The colour checker's settings:** drawn disabled at darktable's defaults by a row of the definition format, `Row::Setting`: no control, nothing an edit stores, words of its own (`module-<module>-setting-<setting>-…`), the kind giving the widget. The CAT tab's Area colour mapping and Exposure's Area exposure mapping use it too.
 - **Control ids:** `<tab>_r`, `_g`, `_b` and `<tab>_normalise`, by the tab's English name (`colourfulness_r` for `saturation_0`), so a script reads as the panel does. darktable's `normalize_R` is no snake_case id.
 - **Row ids:** C, for Colour calibration.
-- **The CAT tab's ids:** the controls take darktable's parameter names, `illum_fluo` and `illum_led` among them. The options take short ids of darktable's labels (`pipeline`, `planckian`, `camera`, `non_linear_bradford`, `none`), the illuminant bound by darktable's value. The tool settings are `area_mode`, `channel_mixing` and `target_lightness`, `target_hue`, `target_chroma`, apart from the view's `hue` and `chroma`.
+- **The CAT tab's ids:** the controls take darktable's parameter names, `illum_fluo` and `illum_led` among them. The options take short ids of darktable's labels (`pipeline`, `planckian`, `camera`, `non_linear_bradford`, `none`), the illuminant bound by darktable's value. The module's settings are `area_mode`, `channel_mixing` and `target_lightness`, `target_hue`, `target_chroma`, apart from the view's `hue` and `chroma`.
 - **Leaving as shot in camera:** the camera's light is not read again. `Module::follow` is given the values after the change (decision 27), and choosing as shot in camera already wrote the camera's light and CAT16, so leaving it gives darktable's light in every state the features Apertrust has reach ([Follow writes](#controls), above). Mirroring darktable where a script moved `x`, `y` or the adaptation would need `follow` to be given the control's previous value, as darktable's `gui_changed(self, w, previous)` is: an interface change.
 - **Hue or chroma's temperature:** written whenever `x` or `y` moves, as `_illum_xy_callback` writes it whenever the view is edited, whatever the illuminant. darktable's GUI shows the view for custom only, so a script moving `x` under daylight moves the temperature daylight reads.
 - **A temperature out of the control's range:** held to 1667 to 25000 K, as the operation's defaults hold one, so a follow write is always one the control takes.
@@ -180,5 +180,5 @@ C6 in detail: all 81 changes of the illuminant from one to another after the def
 ## Phases
 
 - **Built (Phase 2):** the six tabs, and the CAT tab with follow writes and the widened `x` and `y`, with C0 to C7 (decision 27); C7's availability through `Module::available` of the values (decision 30). Neither the CLI's `edit` nor the app's pending display applies follow writes yet: the CLI reads no image context, so `--set channelmixerrgb.illuminant=d` stores the illuminant alone, and the app shows a follow write once the session reports it.
-- **With the picker and on-photo tools:** the colour checker: its frame on the photo, the ΔE readout, Validate, Recompute and Accept, its settings kept in settings, and rows for what Accept writes. darktable closes the section on every `gui_update`, and opening it starts profiling (`_start_profiling_callback`: the module takes focus, turns on and frames the chart on the preview). So the group's open state there is the tool's, not only the panel's. Open for the tool: whether opening the group starts it, as in darktable, or a button does, and whether the group then stays closed after every change as darktable's does.
+- **With the picker and on-photo controls:** the colour checker: its frame on the photo, the ΔE readout, Validate, Recompute and Accept, its settings kept in settings, and rows for what Accept writes. darktable closes the section on every `gui_update`, and opening it starts profiling (`_start_profiling_callback`: the module takes focus, turns on and frames the chart on the preview). So the group's open state there is the colour checker's, not only the panel's. Open until the colour checker is built: whether opening the group starts it, as in darktable, or a button does, and whether the group then stays closed after every change as darktable's does.
 - **Phase 3:** darktable's presets, the grey where it runs as built ([Design choices](#design-choices), Where the grey runs).

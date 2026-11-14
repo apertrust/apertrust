@@ -542,7 +542,7 @@ fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
         };
         for target in [30.0, 50.0, 75.0] {
             let target_y = ((f64::from(target) + 16.0) / 116.0).powi(3);
-            let tools = [
+            let settings = [
                 ("area_mode", ControlValue::Choice(0)),
                 ("lightness", ControlValue::Number(target)),
             ];
@@ -563,7 +563,7 @@ fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
                         &reading,
                         &values,
                         &image,
-                        &tools,
+                        &settings,
                         None,
                         None,
                         PickKeys::default(),

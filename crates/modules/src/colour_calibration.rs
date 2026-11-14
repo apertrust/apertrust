@@ -36,7 +36,7 @@
 //!   colourfulness moves colours away from grey or towards it, brightness scales each
 //!   pixel by its channels' weights, and any grey weight off 0 makes the photo grey.
 //! - **Calibrate with a colour checker,** under every tab: darktable's settings for its
-//!   colour checker, which no edit stores, drawn disabled until the tool comes.
+//!   colour checker, which no edit stores, drawn disabled until the colour checker is built.
 //!
 //! Each control is its darktable parameter as it is, so the module has no transfer
 //! function. It drives `channelmixerrgb`, which every colour raw runs (decision 27), and
@@ -53,7 +53,7 @@ use apertrust_color::illuminants::{self, Illuminant, TEMPERATURE_RANGE};
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Row, Slider, Tab, ToolSetting, Unit,
+    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Row, SettingRow, Slider, Tab, Unit,
     View,
 };
 use crate::{Base, ControlValue, Controls, Module, ModuleValues, Owned, Setting};
@@ -294,7 +294,7 @@ const fn list(control: &'static str) -> Row {
 const MAPPING: Row = Row::Group {
     id: "area_colour_mapping",
     rows: &[
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "area_mode",
             kind: ControlKind::Choice {
                 options: &["correction", "measure"],
@@ -303,13 +303,13 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 0,
         }),
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "channel_mixing",
             kind: ControlKind::Bool { default: true },
             decimals: 0,
         }),
         Row::Label { id: "target" },
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "target_lightness",
             kind: ControlKind::Number {
                 min: 0.0,
@@ -319,7 +319,7 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 1,
         }),
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "target_hue",
             kind: ControlKind::Number {
                 min: 0.0,
@@ -329,7 +329,7 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 1,
         }),
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "target_chroma",
             kind: ControlKind::Number {
                 min: 0.0,
@@ -463,11 +463,11 @@ const OPTIMISATIONS: [&str; 8] = [
 /// what the fit favours and how much of each patch is read, darktable's settings kept in
 /// its darktablerc (`darkroom/modules/channelmixerrgb/colorchecker`, `optimization` and
 /// `safety`), at their defaults there. Its ΔE readout and its Validate, Recompute and Accept
-/// buttons, with the chart's frame on the photo, come with the tool.
+/// buttons, with the chart's frame on the photo, come with the colour checker.
 static CHECKER: [Row; 1] = [Row::Group {
     id: "colour_checker",
     rows: &[
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "chart",
             kind: ControlKind::Choice {
                 options: &CHARTS,
@@ -476,7 +476,7 @@ static CHECKER: [Row; 1] = [Row::Group {
             },
             decimals: 0,
         }),
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "optimise_for",
             kind: ControlKind::Choice {
                 options: &OPTIMISATIONS,
@@ -485,7 +485,7 @@ static CHECKER: [Row; 1] = [Row::Group {
             },
             decimals: 0,
         }),
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "patch_scale",
             kind: ControlKind::Number {
                 min: 0.0,

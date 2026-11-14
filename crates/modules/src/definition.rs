@@ -23,7 +23,7 @@
 //! its collapsible sections as [`Row::Group`]s, the rows it shows only in some modes as
 //! [`Row::When`], the rows it draws outside its notebook in [`Definition::before`] and
 //! [`Definition::after`], every option of a choice, those not ported marked, its own
-//! settings for a tool, which no edit stores, as [`Row::ToolSetting`], and its buttons,
+//! settings, which no edit stores, as [`Row::Setting`], and its buttons,
 //! actions no edit stores either, as [`Row::Action`]. Which rows show
 //! and which options can be chosen is the panel's, from the values, so the edit and the
 //! render never depend on it.
@@ -114,8 +114,8 @@ pub struct Picker {
     pub keep: bool,
     /// The controls its pick may write, each once; none for a picker that only shows.
     pub writes: &'static [&'static str],
-    /// The tool settings its pick reads ([`Row::ToolSetting`]), each once.
-    pub tools: &'static [&'static str],
+    /// The module's settings its pick reads ([`Row::Setting`]), each once.
+    pub settings: &'static [&'static str],
 }
 
 /// Whether a picker takes a point, an area or either: darktable's
@@ -317,7 +317,7 @@ pub struct Tab {
 
 /// How a tab shows one control, a label between them, rows darktable groups or shows only
 /// in some modes, a preset row, a lossless view's coordinate, one of darktable's settings
-/// for a tool, or a row of picker buttons. Each control is in exactly one row, or in one
+/// for the module, or a row of picker buttons. Each control is in exactly one row, or in one
 /// row per mode where darktable labels it differently by mode ([`Slider::label`]) or shows
 /// it under conditions one [`Row::When`] cannot join, as highlight reconstruction's Noise
 /// level, or only in the rows of the views covering it; each coordinate is in one row at
@@ -375,18 +375,18 @@ pub enum Row {
         preset: &'static str,
         style: ChoiceStyle,
     },
-    /// One of darktable's own settings for a tool of the module, which darktable keeps in
-    /// its darktablerc and never in an edit: the colour checker's chart, an area mode
+    /// One of darktable's own settings for the module, which darktable keeps in its
+    /// darktablerc and never in an edit: the colour checker's chart, an area mode
     /// (decision 29; `docs/modules/README.md`, rule 12). It is no control: an app setting
-    /// that comes with its tool, never stored with the photo. Until the tool comes the
+    /// that comes with what uses it, never stored with the photo. Until that is built the
     /// panel draws it disabled at darktable's default, so the page reads as darktable's and
     /// shows what is missing.
-    ToolSetting(ToolSetting),
+    Setting(SettingRow),
     /// One of darktable's buttons, by its id: an action that writes the module's controls
     /// and is never stored (`docs/modules/README.md`, rule 10), as AgX's Auto tune levels
     /// picks both exposures from the photo and its Set from above copies one set of
-    /// controls to another. It is no control. Until its tool comes the panel draws it
-    /// disabled, so the page reads as darktable's and shows what is missing.
+    /// controls to another. It is no control. Until what it runs is built the panel draws
+    /// it disabled, so the page reads as darktable's and shows what is missing.
     Action {
         id: &'static str,
     },
@@ -402,7 +402,7 @@ pub enum Row {
     /// darktable's input and target patches of a picker's area mapping, side by side
     /// under their headings, as Exposure's area exposure mapping shows them: the input,
     /// the area as the picker's last pick showed it ([`crate::pick::Shown::patch`]), with
-    /// its L readout, and the target, the colour of the tool settings `target` names, its
+    /// its L readout, and the target, the colour of the settings `target` names, its
     /// L, then its C and h where given, as darktable's `_target_color_draw` paints it
     /// ([`crate::pick::Patch::of_lch`]). It is no control; its words are shared
     /// ([`crate::messages::PATCHES`]), the target patch's tooltip its first setting's
@@ -464,7 +464,7 @@ impl Row {
             Row::Label { .. }
             | Row::Group { .. }
             | Row::When { .. }
-            | Row::ToolSetting(_)
+            | Row::Setting(_)
             | Row::Preset { .. }
             | Row::Action { .. }
             | Row::Pickers { .. }
@@ -636,10 +636,10 @@ pub fn slider_step(min: f32, max: f32, factor: f32) -> f32 {
     }
 }
 
-/// One of darktable's own settings for a tool, as a row ([`Row::ToolSetting`]).
+/// One of darktable's own settings for a module, as a row ([`Row::Setting`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ToolSetting {
-    /// snake_case, unique among the module's tool settings: its words follow from it
+pub struct SettingRow {
+    /// snake_case, unique among the module's settings: its words follow from it
     /// ([`crate::messages::setting`]).
     pub id: &'static str,
     /// A number, a choice or a boolean, with darktable's range, options and default.
@@ -648,7 +648,7 @@ pub struct ToolSetting {
     pub decimals: u8,
 }
 
-impl ToolSetting {
+impl SettingRow {
     /// Its default, darktable's.
     pub fn default(&self) -> ControlValue {
         self.control().default()
@@ -799,10 +799,10 @@ pub enum DefinitionError {
     DuplicateGroup(&'static str),
     #[error("the collapsible group {0} is inside another; a group holds controls, never a group")]
     GroupInGroup(&'static str),
-    #[error("two tool settings are called {0}")]
+    #[error("two settings are called {0}")]
     DuplicateSetting(&'static str),
     #[error(
-        "the patches of the picker {0}: their target is not one to three numbers among the module's tool settings"
+        "the patches of the picker {0}: their target is not one to three numbers among the module's settings"
     )]
     UnknownSetting(&'static str),
     #[error("two actions are called {0}")]
@@ -848,8 +848,8 @@ pub enum DefinitionError {
     DuplicatePicker(&'static str),
     #[error("the picker {0} writes a control the module lacks, or one twice")]
     PickerWrites(&'static str),
-    #[error("the picker {0} reads a tool setting the module lacks, or one twice")]
-    PickerTools(&'static str),
+    #[error("the picker {0} reads a setting the module lacks, or one twice")]
+    PickerSettings(&'static str),
     #[error("a row shows the picker {0}, which the module lacks")]
     UnknownPicker(&'static str),
     #[error("a row of pickers holds none")]
@@ -959,10 +959,10 @@ impl Definition {
     /// covering number controls of the module, each once, with a coordinate for each or
     /// fewer,
     /// each coordinate with its range in one slider row at most, each slider's soft range
-    /// in order inside its control's or coordinate's range, each tool setting once, its
+    /// in order inside its control's or coordinate's range, each setting once, its
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
     /// are unique together. Each picker has an id of its own, writes controls of the
-    /// module and reads its tool settings, each once, and is in exactly one row, a
+    /// module and reads its settings, each once, and is in exactly one row, a
     /// slider's quad or a row of pickers, which holds at least one.
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
@@ -1098,7 +1098,7 @@ impl Definition {
                     preset,
                     style: ChoiceStyle::Segmented,
                 } => return Err(DefinitionError::SegmentedPreset(preset)),
-                Row::ToolSetting(setting) => {
+                Row::Setting(setting) => {
                     if !settings.insert(setting.id) {
                         return Err(DefinitionError::DuplicateSetting(setting.id));
                     }
@@ -1131,10 +1131,10 @@ impl Definition {
                 if self.picker(picker).is_none() {
                     return Err(DefinitionError::UnknownPicker(picker));
                 }
-                // Its target's L, then C and h, each a number among the tool settings.
+                // Its target's L, then C and h, each a number among the settings.
                 let number = |id: &&str| {
                     placed.iter().any(|its| {
-                        matches!(its.row, Row::ToolSetting(setting)
+                        matches!(its.row, Row::Setting(setting)
                             if setting.id == *id
                                 && matches!(setting.kind, ControlKind::Number { .. }))
                     })
@@ -1295,8 +1295,8 @@ impl Definition {
         Ok(())
     }
 
-    /// Whether a picker's writes are controls of the module and its tools tool settings
-    /// of it, `settings` being their ids, each once.
+    /// Whether a picker's writes are controls of the module and the settings it reads
+    /// are the module's, `settings` being their ids, each once.
     fn check_picker(
         &self,
         picker: &Picker,
@@ -1308,11 +1308,11 @@ impl Definition {
         if !writes_hold {
             return Err(DefinitionError::PickerWrites(picker.id));
         }
-        let tools: BTreeSet<_> = picker.tools.iter().collect();
-        let tools_hold = tools.len() == picker.tools.len()
-            && picker.tools.iter().all(|id| settings.contains(id));
-        if !tools_hold {
-            return Err(DefinitionError::PickerTools(picker.id));
+        let reads: BTreeSet<_> = picker.settings.iter().collect();
+        let reads_hold = reads.len() == picker.settings.len()
+            && picker.settings.iter().all(|id| settings.contains(id));
+        if !reads_hold {
+            return Err(DefinitionError::PickerSettings(picker.id));
         }
         Ok(())
     }
@@ -2290,8 +2290,8 @@ mod tests {
         );
     }
 
-    /// A tool's setting, darktable's chart for its colour checker.
-    const CHART: ToolSetting = ToolSetting {
+    /// A module's setting, darktable's chart for its colour checker.
+    const CHART: SettingRow = SettingRow {
         id: "chart",
         kind: ControlKind::Choice {
             options: &["classic", "passport"],
@@ -2302,14 +2302,14 @@ mod tests {
     };
 
     #[test]
-    fn a_tool_s_settings_are_rows_of_no_control_each_once_and_whole() {
+    fn a_module_s_settings_are_rows_of_no_control_each_once_and_whole() {
         // In a group of their own, as darktable's colour checker: a group of settings
         // alone holds, and the settings show no control.
         let checker = Row::Group {
             id: "checker",
             rows: Box::leak(Box::new([
-                Row::ToolSetting(CHART),
-                Row::ToolSetting(ToolSetting {
+                Row::Setting(CHART),
+                Row::Setting(SettingRow {
                     id: "patch_scale",
                     kind: ControlKind::Number {
                         min: 0.0,
@@ -2323,26 +2323,23 @@ mod tests {
         };
         let rows = [Row::Slider(Slider::new("contrast")), checker];
         assert_eq!(page(with_mode(&rows)).check(), Ok(()));
-        assert!(Row::ToolSetting(CHART).controls().is_empty());
+        assert!(Row::Setting(CHART).controls().is_empty());
         let twice = [
             Row::Slider(Slider::new("contrast")),
-            Row::ToolSetting(CHART),
-            Row::ToolSetting(CHART),
+            Row::Setting(CHART),
+            Row::Setting(CHART),
         ];
         assert_eq!(
             page(with_mode(&twice)).check(),
             Err(DefinitionError::DuplicateSetting("chart"))
         );
         let setting = |setting| {
-            let rows = [
-                Row::Slider(Slider::new("contrast")),
-                Row::ToolSetting(setting),
-            ];
+            let rows = [Row::Slider(Slider::new("contrast")), Row::Setting(setting)];
             page(with_mode(&rows)).check()
         };
-        let named = |id| ToolSetting { id, ..CHART };
+        let named = |id| SettingRow { id, ..CHART };
         assert_eq!(setting(named("Chart")), Err(DefinitionError::Id("Chart")));
-        let default_outside = ToolSetting {
+        let default_outside = SettingRow {
             kind: ControlKind::Choice {
                 options: &["classic"],
                 default: 1,
@@ -2354,7 +2351,7 @@ mod tests {
             setting(default_outside),
             Err(DefinitionError::Options("chart"))
         );
-        let points = ToolSetting {
+        let points = SettingRow {
             kind: ControlKind::Points { default: &[] },
             ..CHART
         };
@@ -2422,12 +2419,12 @@ mod tests {
         space: Space::Operation,
         keep: false,
         writes: &["contrast", "detail"],
-        tools: &["chart"],
+        settings: &["chart"],
     };
 
     /// [`PAGE`] with `pickers`, the chart's setting and `rows` on its first tab.
     fn picking(pickers: &[Picker], rows: &[Row]) -> Result<(), DefinitionError> {
-        let mut all = vec![Row::ToolSetting(CHART)];
+        let mut all = vec![Row::Setting(CHART)];
         all.extend(rows.iter().cloned());
         Definition {
             pickers: Box::leak(pickers.into()),
@@ -2495,13 +2492,13 @@ mod tests {
     }
 
     #[test]
-    fn a_picker_writes_the_module_s_controls_and_reads_its_tool_settings_each_once() {
+    fn a_picker_writes_the_module_s_controls_and_reads_its_settings_each_once() {
         let quad = |picker| Row::Slider(Slider::new("contrast").quad(Quad::Picker(picker)));
         let one = |picker: Picker| picking(&[picker], &[quad(picker.id)]);
         // One that only shows writes nothing and reads nothing.
         let shows = Picker {
             writes: &[],
-            tools: &[],
+            settings: &[],
             ..LEVEL
         };
         assert_eq!(one(shows), Ok(()));
@@ -2518,11 +2515,11 @@ mod tests {
         let wrong = Err(DefinitionError::PickerWrites("level"));
         assert_eq!(writes(&["gamma"]), wrong);
         assert_eq!(writes(&["contrast", "contrast"]), wrong);
-        let tools = |tools| one(Picker { tools, ..LEVEL });
-        let wrong = Err(DefinitionError::PickerTools("level"));
-        // A tool setting is a row's, never a control.
-        assert_eq!(tools(&["mode"]), wrong);
-        assert_eq!(tools(&["chart", "chart"]), wrong);
+        let settings = |settings| one(Picker { settings, ..LEVEL });
+        let wrong = Err(DefinitionError::PickerSettings("level"));
+        // A setting is a row's, never a control.
+        assert_eq!(settings(&["mode"]), wrong);
+        assert_eq!(settings(&["chart", "chart"]), wrong);
     }
 
     #[test]

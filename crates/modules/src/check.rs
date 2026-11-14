@@ -754,7 +754,7 @@ mod tests {
             space: Space::Hsl,
             keep: false,
             writes: &["amount"],
-            tools: &[],
+            settings: &[],
         };
         assert_eq!(picking(&exposure, pick), []);
         let elsewhere = Picker {

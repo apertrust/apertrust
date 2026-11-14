@@ -60,7 +60,7 @@ pub enum Icon {
     More,
     /// A quad's eyedropper: pick from the photo.
     Pick,
-    /// A quad's line tool: draw on the photo.
+    /// A quad's line: draw on the photo.
     Line,
     Undo,
     Redo,

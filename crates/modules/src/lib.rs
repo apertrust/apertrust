@@ -34,11 +34,11 @@
 //! The engine's session runs the bindings: every client sends module values, and the
 //! session turns them into operation parameters, so the app, the CLI and MCP see the same
 //! modules. This crate depends on the operation interface, the shared colour maths and
-//! the settings part of `apertrust-base`, for its tool settings' statics ([`tools`]),
+//! the settings part of `apertrust-base`, for its settings' statics ([`settings`]),
 //! only, never on egui, wgpu, the engine or an operation crate; it names operations and
 //! parameters by id.
 
-// The tool settings' generated statics name their choices' types by this crate's name.
+// The settings' generated statics name their choices' types by this crate's name.
 extern crate self as apertrust_modules;
 
 pub mod agx;
@@ -57,12 +57,12 @@ pub mod output_colour_profile;
 pub mod pick;
 pub mod raw_black_white_point;
 pub mod rgb_primaries;
+pub mod settings;
 pub mod soften;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod tone_curve;
 pub mod tone_equalizer;
-pub mod tools;
 pub mod transfer;
 mod values;
 pub mod vignetting;
@@ -74,8 +74,8 @@ use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 
 pub use definition::{
     Button, ButtonIcon, ChoiceStyle, Control, ControlError, ControlKind, Coordinate, Definition,
-    DefinitionError, MAX_POINTS, MIN_GAP, Picker, PickerKind, PresetRow, Quad, Range, Row, Slider,
-    Space, Tab, ToolSetting, Track, Unit, View, Widget, slider_step,
+    DefinitionError, MAX_POINTS, MIN_GAP, Picker, PickerKind, PresetRow, Quad, Range, Row,
+    SettingRow, Slider, Space, Tab, Track, Unit, View, Widget, slider_step,
 };
 use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ModuleValues};
@@ -311,7 +311,7 @@ pub trait Module: Send + Sync {
     /// `color_picker_apply` (decision 79; `docs/pickers.md`, Declaring pickers): the
     /// controls it writes, each among the picker's `writes` and stored as darktable's rule
     /// gives it, with no other bound, and what the panel shows of the reading. `values`
-    /// is every control, the edit's over the defaults; `tools` the tool settings its
+    /// is every control, the edit's over the defaults; `settings` the settings its
     /// picker reads, as the client sent them; `channel` the channel tab the module shows,
     /// as RGB levels' and RGB curve's; `last` the module's last reading applied, one per
     /// module and shared by its pickers, as darktable's `picked_color`; `keys` the keys
@@ -330,7 +330,7 @@ pub trait Module: Send + Sync {
         _reading: &Reading,
         _values: &Controls,
         _image: &ImageContext,
-        _tools: &[(&str, ControlValue)],
+        _settings: &[(&str, ControlValue)],
         _channel: Option<&str>,
         _last: Option<&Reading>,
         _keys: PickKeys,

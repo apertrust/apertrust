@@ -37,7 +37,7 @@ fn on(area: bool) -> Command {
         picker: PickerRef::ColourPicker,
         area,
         keys: PickKeys::default(),
-        tools: Vec::new(),
+        settings: Vec::new(),
         channel: None,
     })
 }
@@ -53,7 +53,7 @@ fn on_picker(module: &'static str, id: &'static str, area: bool) -> Command {
         picker: PickerRef::Module { module, picker: id },
         area,
         keys: PickKeys::default(),
-        tools: Vec::new(),
+        settings: Vec::new(),
         channel: None,
     })
 }
@@ -353,18 +353,24 @@ fn on_is_refused_before_the_photo_is_live_and_a_move_with_no_picker_on() {
         refused(&driven.run([on_picker("exposure", "exposure", true)])),
         "UnknownPicker"
     );
-    // Tool settings no picker of the module reads.
-    let tools = vec![("target", ControlValue::Number(50.0))];
+    // Settings no picker of the module reads.
+    let unread = vec![("target", ControlValue::Number(50.0))];
     let mut module = on_module("brightness", true);
-    if let Command::Picker(PickerCommand::On { tools: asked, .. }) = &mut module {
-        *asked = tools.clone();
+    if let Command::Picker(PickerCommand::On {
+        settings: asked, ..
+    }) = &mut module
+    {
+        *asked = unread.clone();
     }
-    assert_eq!(refused(&driven.run([module])), "UnknownTool(\"target\")");
-    let settings = picker(PickerCommand::Tools {
+    assert_eq!(refused(&driven.run([module])), "UnknownSetting(\"target\")");
+    let settings = picker(PickerCommand::Settings {
         module: "sample",
-        tools,
+        settings: unread,
     });
-    assert_eq!(refused(&driven.run([settings])), "UnknownTool(\"target\")");
+    assert_eq!(
+        refused(&driven.run([settings])),
+        "UnknownSetting(\"target\")"
+    );
     // A move, a switch or a reset with no picker on; an `Off` changes nothing.
     for command in [
         point([0.5, 0.5]),
@@ -900,10 +906,10 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
         control(values(&picked), "sample", "size").value,
         ControlValue::Choice(2)
     );
-    // No tool settings: kept, and nothing applied, since no picker of Sample reads one.
-    let events = driven.run([picker(PickerCommand::Tools {
+    // No settings: kept, and nothing applied, since no picker of Sample reads one.
+    let events = driven.run([picker(PickerCommand::Settings {
         module: "sample",
-        tools: Vec::new(),
+        settings: Vec::new(),
     })]);
     assert!(events.is_empty(), "{events:?}");
     remove(&path);
@@ -948,7 +954,7 @@ static SPOT: Definition = Definition {
         space: Space::Operation,
         keep: false,
         writes: &[],
-        tools: &[],
+        settings: &[],
     }],
 };
 
@@ -1266,15 +1272,15 @@ fn a_release_whose_reading_misses_completes_the_drag_s_change() {
     remove(&path);
 }
 
-/// A module with one area picker on exposure's input, which reads the tool setting `gain`:
+/// A module with one area picker on exposure's input, which reads the setting `gain`:
 /// its pick sets `level` to the gain times the mean's first channel, and with no gain
 /// writes `other`, which its picker does not write, as a module's bug would; it shows a
 /// patch of the gain. It owns
 /// exposure's exposure and binds nothing.
-struct Tooled;
+struct Configured;
 
-static TOOLED: Definition = Definition {
-    id: "tooled",
+static CONFIGURED: Definition = Definition {
+    id: "configured",
     version: 1,
     layers: false,
     auto: false,
@@ -1308,7 +1314,7 @@ static TOOLED: Definition = Definition {
         rows: &[
             Row::Slider(Slider::new("level").quad(Quad::Picker("level"))),
             Row::Slider(Slider::new("other")),
-            Row::ToolSetting(apertrust_modules::ToolSetting {
+            Row::Setting(apertrust_modules::SettingRow {
                 id: "gain",
                 kind: ControlKind::Number {
                     min: 0.0,
@@ -1333,19 +1339,19 @@ static TOOLED: Definition = Definition {
         space: Space::Operation,
         keep: false,
         writes: &["level"],
-        tools: &["gain"],
+        settings: &["gain"],
     }],
 };
 
-static TOOLED_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
+static CONFIGURED_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
 
-impl Module for Tooled {
+impl Module for Configured {
     fn definition(&self) -> &'static Definition {
-        &TOOLED
+        &CONFIGURED
     }
 
     fn owns(&self) -> &'static [Owned] {
-        &TOOLED_OWNS
+        &CONFIGURED_OWNS
     }
 
     fn bind(&self, _: &ModuleValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
@@ -1358,14 +1364,14 @@ impl Module for Tooled {
         reading: &apertrust_modules::pick::Reading,
         _: &Controls,
         _: &ImageContext,
-        tools: &[(&str, ControlValue)],
+        settings: &[(&str, ControlValue)],
         _: Option<&str>,
         _: Option<&apertrust_modules::pick::Reading>,
         _: PickKeys,
     ) -> Option<apertrust_modules::pick::Picked> {
-        let gain = tools
+        let gain = settings
             .iter()
-            .find_map(|&(tool, ref value)| match (tool, value) {
+            .find_map(|&(setting, ref value)| match (setting, value) {
                 ("gain", &ControlValue::Number(gain)) => Some(gain),
                 _ => None,
             })
@@ -1380,36 +1386,36 @@ impl Module for Tooled {
         };
         Some(apertrust_modules::pick::Picked {
             writes,
-            // The gain it measured, as a measure mode gives its tool settings back.
+            // The gain it measured, as a measure mode gives its settings back.
             shown: apertrust_modules::pick::Shown {
                 patch: Some(patch),
-                tools: vec![("gain", ControlValue::Number(gain + 1.0))],
+                settings: vec![("gain", ControlValue::Number(gain + 1.0))],
             },
         })
     }
 }
 
 fn gain(gain: f32) -> Command {
-    picker(PickerCommand::Tools {
-        module: "tooled",
-        tools: vec![("gain", ControlValue::Number(gain))],
+    picker(PickerCommand::Settings {
+        module: "configured",
+        settings: vec![("gain", ControlValue::Number(gain))],
     })
 }
 
 #[test]
-fn tools_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picker_off() {
-    let path = scratch("picker-tools");
-    let mut driven = Driven::new(&[&Tooled]);
+fn settings_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picker_off() {
+    let path = scratch("picker-settings");
+    let mut driven = Driven::new(&[&Configured]);
     driven.open(&path);
-    driven.run([on_picker("tooled", "level", true)]);
+    driven.run([on_picker("configured", "level", true)]);
     let picked = driven.picked();
     let shown = |events: &[Event]| match readings(events).last() {
         Some(Some(reading)) => reading.module.as_ref().and_then(|m| m.picked.clone()),
         _ => None,
     };
-    // A reading's pick hands its tool settings back.
-    assert_eq!(shown(&picked).unwrap().tools.len(), 1, "{picked:?}");
-    let (last, latest) = driven.engine.pickers.readings_of("tooled");
+    // A reading's pick hands its settings back.
+    assert_eq!(shown(&picked).unwrap().settings.len(), 1, "{picked:?}");
+    let (last, latest) = driven.engine.pickers.readings_of("configured");
     assert_eq!(last, latest);
     // A larger viewport: exposure's input measured again, never applied, so the latest
     // reading is no longer the last applied.
@@ -1418,21 +1424,27 @@ fn tools_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picker_o
         height: 64,
     }]);
     driven.picked();
-    let (last, latest) = driven.engine.pickers.readings_of("tooled");
+    let (last, latest) = driven.engine.pickers.readings_of("configured");
     let (last, latest) = (last.unwrap(), latest.unwrap());
     assert_ne!(last.input.mean[0], latest.input.mean[0]);
     // A new gain applies the latest, darktable's `picked_color`, and sends the reading.
     let events = driven.run([gain(2.0)]);
     assert!(failures(&events).is_empty(), "{events:?}");
     assert_eq!(
-        number(values(&events), "tooled", "level"),
+        number(values(&events), "configured", "level"),
         (2.0 * latest.input.mean[0]).clamp(0.0, 10.0)
     );
     assert!(matches!(readings(&events)[..], [Some(_)]), "{events:?}");
     // The settings the client has just sent are never handed back.
     let shown = shown(&events).unwrap();
-    assert!(shown.patch.is_some() && shown.tools.is_empty(), "{shown:?}");
-    assert_eq!(driven.engine.pickers.readings_of("tooled").0, Some(latest));
+    assert!(
+        shown.patch.is_some() && shown.settings.is_empty(),
+        "{shown:?}"
+    );
+    assert_eq!(
+        driven.engine.pickers.readings_of("configured").0,
+        Some(latest)
+    );
     // A pick its module gets wrong is refused, the picker off, the last reading kept.
     driven.run([Command::Resize {
         width: 50,
@@ -1449,7 +1461,10 @@ fn tools_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picker_o
     );
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
     assert!(!driven.engine.pickers.on());
-    assert_eq!(driven.engine.pickers.readings_of("tooled").0, Some(latest));
+    assert_eq!(
+        driven.engine.pickers.readings_of("configured").0,
+        Some(latest)
+    );
     remove(&path);
 }
 
@@ -1616,11 +1631,11 @@ fn a_gpu_error_keeps_a_release_that_missed() {
 }
 
 #[test]
-fn tools_save_a_drag_under_way_before_their_pick() {
-    let path = scratch("picker-tools-mid-drag");
-    let mut driven = Driven::new(&[&Tooled]);
+fn settings_save_a_drag_under_way_before_their_pick() {
+    let path = scratch("picker-settings-mid-drag");
+    let mut driven = Driven::new(&[&Configured]);
     driven.open(&path);
-    driven.run([on_picker("tooled", "level", true)]);
+    driven.run([on_picker("configured", "level", true)]);
     driven.picked();
     driven.writes();
     // A step applied, unsaved, then a new gain: the step saved, then the gain's pick.
@@ -1700,8 +1715,8 @@ fn a_pick_that_writes_nothing_writes_again_after_a_failed_write() {
 }
 
 /// A write answering an earlier command never answers a picker's `On` whose first pick is
-/// still to come: `Tools` with no reading kept, answered held in the batch, then `On` for
-/// a module already on, the `Saved` through `Tools` alone until the pick arrives.
+/// still to come: `Settings` with no reading kept, answered held in the batch, then `On` for
+/// a module already on, the `Saved` through `Settings` alone until the pick arrives.
 #[test]
 fn a_write_never_answers_a_pick_still_to_come() {
     let path = scratch("picker-pick-to-come");
@@ -1716,11 +1731,11 @@ fn a_write_never_answers_a_pick_still_to_come() {
             })
             .max()
     };
-    let tools = picker(PickerCommand::Tools {
+    let settings = picker(PickerCommand::Settings {
         module: "sample",
-        tools: Vec::new(),
+        settings: Vec::new(),
     });
-    driven.run([tools, on_module("show", true)]);
+    driven.run([settings, on_module("show", true)]);
     let on = driven.engine.applied;
     assert_eq!(saved(&driven.writes()), Some(on - 1));
     driven.picked();
@@ -1787,7 +1802,7 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
         },
         area: true,
         keys: PickKeys::default(),
-        tools: mapping(0.0),
+        settings: mapping(0.0),
         channel: None,
     })]);
     events.extend(driven.picked());
@@ -1805,9 +1820,9 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
         }
     }
     // The latest reading again, by a target that gives a value.
-    let events = driven.run([picker(PickerCommand::Tools {
+    let events = driven.run([picker(PickerCommand::Settings {
         module: "exposure",
-        tools: mapping(50.0),
+        settings: mapping(50.0),
     })]);
     assert!(failures(&events).is_empty(), "{events:?}");
     let after = number(values(&events), "exposure", "exposure");
