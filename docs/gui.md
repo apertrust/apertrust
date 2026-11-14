@@ -265,7 +265,7 @@ An interface for photo editing must not be too contrasty, so:
   - the checkbox row (`ToggleRow`), one line: the design system's checkbox, then its label, which toggles it too; the action row (`ActionRow`), one text button;
   - the dropdown row, always one line, Blended in module panels and Boxed elsewhere (decision 42, [Choice rows: two styles](#choice-rows-two-styles));
   - the section frame (`Section`): a header 30 points high with chevron, title and action icons, centred vertically, and no summary when closed; underlined `Tabs`, each as wide as its name, their padding and then their names shrinking when they do not fit; group labels; collapsible groups (`CollapsibleGroup`), darktable's collapsible sections (decision 29); the body; peeking while H is held (`Section::peek`);
-  - the side panel's `TabBar` (icon tabs, a tab with nothing behind it yet drawn disabled, never chosen, saying it is to come, » and ⋮ menus), `PanelBody` (pinned sections, a band, scrolling sections, a quiet scroll bar, `quiet_scroll`, and a section's header kept over its scrolling body, `PanelBody::header`, with a hairline and a soft shadow under it while the body scrolls under it) and `PanelEdge`; a section's header drawn apart, `Section::show_header`, its body with `section_body`, laid out as `Section::show` lays them.
+  - the side panel's `TabBar` (icon tabs, a tab with nothing behind it yet drawn disabled, never chosen, saying it is to come, » and ⋮ menus), `PanelBody` (pinned sections, a band, scrolling sections, a quiet scroll bar, `quiet_scroll`, and a section's header kept over its scrolling body, `PanelBody::header`, with a hairline and a soft shadow under it while the body scrolls under it) and `PanelEdge`; a section's header drawn apart, `Section::show_header`, its body with `section_body`, laid out as `Section::show` lays them. Planned with the side panel's layout (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)): the draggable header (`Section::draggable`), the drop targets of `PanelBody` and `TabBar` with the insertion line, and the floating panel's frame.
 - **Painted widgets:** colour wheels (ring, puck, saturation and luminance arcs), [the curve](#the-curve), [the equalizer](#the-equalizer)'s bands, hue curve, [the scopes](#the-scopes) (histogram, waveform, parade, vectorscope, with their controls on hover), the grid panel's thumbnails (`GridCell`), layer rows.
 - **Shell parts:** `TopPanel`, `CentralBar`, `GridPanel` with its grid bar, the panels' edges (`PanelEdge`, `GridEdge`), `PhotoFrame` and `PhotoCaption`, a dialog window's content frame (its header where the platform draws none, its body and its row of buttons, decision 41), the alert's drawn body (`AlertBody`), the jobs spinner and window's content (`Jobs`), notifications.
 
@@ -761,6 +761,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Side Panel | `side-panel` | — | New, Phase 3, proposed. No item hides the grid panel |
 | Tab Names | `panel-tab-names` | — | Built in the tab bar's ⋮; the action is new |
 | Customise Tabs… | `customise-tabs` | — | New, drawn disabled until step 7 builds it |
+| Dock All Floating Panels | `dock-all` | — | New, with the floating panels in the UX pass (decision 83); also in the side panel's ⋮ |
 | Side Panel on the Right, Side Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built; its keys go |
 | — | | | |
@@ -981,7 +982,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
-  - ⋮ holds Show tab names, an item with a check mark, and Customise tabs….
+  - ⋮ holds Show tab names, an item with a check mark, and Customise tabs…; Processing Order, Reset Tab and Dock All Floating Panels join it with the side panel's layout (decision 83, planned).
 
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
@@ -1752,6 +1753,7 @@ flowchart TB
 - **Central bar:** the thin bar along the central panel's top.
 - **Grid bar:** three icon buttons, Sort and Labels at its start and Zoom at its end, and nothing else: at the bottom a narrow column at the grid panel's left end, the buttons stacked; at the left or right a row across the panel's top ([The grid bar](#the-grid-bar)). No name or count of the folder shows in it.
 - The **caption** under the photo in the central panel, and the side panel's **tab bar** and **sections**.
+- **Floating panel:** a section floating over the central panel, belonging to no tab (decision 83, planned).
 
 These are also the names screen readers hear for the regions F6 moves between ([Keyboard and actions](#keyboard-and-actions)) and the words of View › Panels. The code takes them: `TopPanel`, `CentralBar` and `GridPanel`, and the messages `top-panel`, `central-bar` and `grid-panel`. The themes' size `top_bar` keeps its name, so theme files stay valid.
 
@@ -1767,7 +1769,7 @@ The model's words:
 | Region | Holds |
 | --- | --- |
 | Top panel | The window's title bar, from its top edge ([The window frame and menus](#the-window-frame-and-menus)). At its start: the traffic lights' place on the Mac; the menu button, ☰, on Windows and Linux; Apertrust's mark; the common actions (Import, Export, Cull, Reset, Undo, Redo, Copy, Apply). At its end: the jobs spinner, an assistant's connection and the save state; the caption buttons on Windows and Linux. No layout switcher and no Settings button ([below](#the-top-panel)) |
-| Central panel | The current layout ([below](#the-central-panels-layouts)): in Photo, the active photo or the selected photos side by side; later in Map, the photos on a map. "No photo selected" when no photo is active |
+| Central panel | The current layout ([below](#the-central-panels-layouts)): in Photo, the active photo or the selected photos side by side; later in Map, the photos on a map. "No photo selected" when no photo is active. Floating panels lie over it (decision 83, planned) |
 | Central bar | The thin bar along the central panel's top ([below](#the-central-bar)). In Photo: the photo's toggles, ending with Guides; immediately after Guides the Map toggle (later); the layer menu, the values under the cursor, the scale. In Map: the photo's toggles where they are, drawn disabled, the Map toggle where it is, then Map's own controls |
 | Caption | One line under the photo, on the surround, as wide as the photo and part of its block in the central panel's slot ([below](#the-photo-frame)): the file name with its marks at its start; the photo's reject, rating and colour labels in its middle; the exposure at its end ([below](#the-caption-under-the-photo)) |
 | Side panel | The current workspace's icon tabs, the Photos tab first, the same whatever the central panel shows; then pinned sections, then sections that scroll; on the right or the left; as wide as the user drags its edge ([below](#the-side-panel)) |
@@ -1777,7 +1779,7 @@ The model's words:
 - **Over the view** ([below](#dialogs-sheets-and-the-slideshow)): Settings, Export and Customise tabs are dialogs, each a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)). About is Apertrust's own modal over the window. Import (Phase 5) and Print are full-window sheets, and the slideshow plays full screen. Each is modal, and the view's keys rest under it ([Keyboard and actions](#keyboard-and-actions)).
 - **A section** is anything in the side panel: a module, such as Exposure or the Photos tab's Browse, or a utility such as Scopes, Layers, History or Match.
   - Every section has an id, a title message, header actions and a body.
-  - The side panel lays out a list of section ids per tab, and a workspace is a named set of those lists. Customise tabs edits the current workspace's, so any section can sit in any tab, pinned or not.
+  - The side panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is a named set of those lists with the sections that float over the central panel (decision 83). Dragging a section's header, its ⋯ menu, keys, the settings file and Customise tabs all edit the current workspace's, so any section can sit in any tab, pinned or not, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
 - **Module sections are generated** from module definitions (decision 4, `ui-conventions`). Utility sections are written by hand, from the same components.
 - **Keys** have one scope for the view, so a key means the same in every layout; a key that means nothing in a layout is unavailable there (H outside Photo).
 
@@ -1885,18 +1887,18 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 A workspace is a named, saved set of the side panel's tabs, built in or the user's own. It is switched only when the person asks, and never with the central panel's layout.
 
-- **What one holds:** its tabs in order, each with its id, name and icon, its sections and which of them are pinned; and the side the panel sits on. Not the panel's width, which suits a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
+- **What one holds:** its tabs in order, each with its id, name and icon, its sections in order and which of them are pinned; the sections that float, and the tab each left (decision 83); and the side the panel sits on. Not the panel's width nor a floating panel's place and width, which suit a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
 - **Built in.** Each may leave modules out: Customise tabs lists what a workspace leaves out, and every module stays in at least one workspace, Edit holding them all.
   - **Edit,** the default: Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups between Apertrust's own two (decision 38; [The tabs](#the-tabs-darktables-groups)), with Scopes and Layers pinned in the editing tabs. It opens on Base.
   - **Photos,** from Phase 3, for culling and sorting (the wireframe's "Photo · culling · Photos workspace" frame): the Photos tab first, holding Browse and the photo's camera data with Scopes pinned, and opening there; Base next, for White balance and Exposure; then the rest.
   - **Map,** with the map: the Photos tab first, holding the Location section; then the rest.
-- **Changing and saving.** Customise tabs, renaming a tab, moving or pinning a section change the current workspace, kept at once, as every setting is. View › Workspace › Save as Workspace… keeps a copy of the current one under a new name, as the user's own. Rename Workspace… and Delete Workspace… act on the user's own; Reset Workspace takes a built-in one back to how it shipped.
+- **Changing and saving.** Dragging a section's header, its ⋯ menu's items, Customise tabs, renaming a tab, moving, pinning or floating a section change the current workspace, kept at once, as every setting is; so does editing the settings file, where the built-in workspaces can always be changed ([What the file looks like](#what-the-file-looks-like)). None of it is an edit: no step in the history, never undone by Undo (decision 83). View › Workspace › Save as Workspace… keeps a copy of the current one under a new name, as the user's own. Rename Workspace… and Delete Workspace… act on the user's own; Reset Workspace takes a built-in one back to how it shipped.
 - **Switching:** View › Workspace →, listing them with the current one checked; the side panel's ⋮ holds the same list. No default keys: the first nine by position are actions a user may give keys, as the side panel's tabs are by position.
   - A switch changes only the side panel: the central panel, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
   - Nothing switches it but the person: no layout, photo or tab changes the workspace.
 - **Kept** in settings ([Settings and workspace](#settings-and-workspace)): the current workspace by id; what the user changed in a built-in one; the user's own whole; in each, the tab last shown.
 - **What a script sees:** nothing; workspaces are interface state.
-- **When:** Phase 2 has a single workspace, Edit, the Photos tab first in it (decision 37), with no list, which Customise tabs edits (step 7). Named workspaces, their list and saving arrive in Phase 3, with the Photos workspace; Map's with the map.
+- **When:** Phase 2 has a single workspace, Edit, the Photos tab first in it (decision 37), with no list, which Customise tabs edits (step 7). The layout, its sections moved, pinned and floated by the gestures and the file, comes with named workspaces in Phase 3, Customise tabs moving onto it then, and the floating panels in the UX pass after it (decision 83). Named workspaces, their list and saving arrive in Phase 3, with the Photos workspace; Map's with the map.
 
 ### Dialogs, sheets and the slideshow
 
@@ -1998,11 +2000,11 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
 - **When the folder changes,** the photo changes with it: the photo shown is always one of the active folder's. This holds for every way the active folder changes: a folder chosen in Browse's tree or its menu's Open, Browse's recents and Open This Folder, File › Open Folder…, File › Open Recent, Locate… and a dropped folder (built: `change_folder` in `crates/app/src/main.rs`, the one place every one of them goes through).
   - The photo open is closed, its edit saved as for any photo left, the folder staying open, unless it is one of the folder now active.
   - Then the photo last active in that folder this run opens once the folder's listing holds it, as a click in the grid panel opens one (decision 77), never before. Failing that, the photo what was open last (`state.toml`) records for that folder.
-  - With neither, or one no longer in the folder, the central panel says "No photo selected" and the editing tabs are drawn disabled, as with a folder open and no photo active.
+  - With neither, or one no longer in the folder, the central panel says "No photo selected" and the editing tabs' modules are drawn disabled, as with a folder open and no photo active.
   - The last active photo is kept by folder in memory only, for the run (`Remembered`), and File › Close forgets it, as it forgets what was open last. What was open last keeps the folder and photo active at the end, which agree, or the photo still waited for when the app ends before the folder lists it.
   - File › Open… of a raw (and Open With's or a drop's raws) opens that photo with its folder, and the start's reopening opens what was open last; they choose their photo themselves.
 - **Names.** The interface has no word for a folder and an album together. The grid bar does not name the one shown: screen readers hear the folder's name and count as the thumbnails' list's name, and on screen Browse's top line names the folder opened, the tree's root, and the active folder's row in the tree has its count. Names shorten in their middle at 320 points (`middle_cut` in `apertrust-ui`, a file name keeping its extension), the tree indents 12 points a level, and the panel's width serves a deep tree.
-- **The editing tabs' states** (Base, Colour, Correct and Effect, the tabs about one photo's pixels), as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab:
+- **The editing tabs' states** (Base, Colour, Correct and Effect, the tabs about one photo's pixels), as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab. Each rule is a section's, not the tab's: every tab stays choosable, and once sections move (decision 83) a section follows its own rule in any tab or floating, so Browse moved to Base still chooses photos with none open:
   - **With a photo open,** its modules with its values as the session reports them and the Scopes section with its latest reading, every control sending its command (none on a photo open for viewing only).
   - **With no photo** (none opened yet, a folder open with none chosen, after an open fails), and **from the moment another photo is asked for** (a click or Enter on a grid cell, File › Open…) until the session reports its values: every module's section as usual, each control at its definition's default, drawn disabled, with no kept marks; the resets, preset rows and buttons disabled; Scopes open or closed as it was, with no graph, since nothing is measured, and drawn disabled. The sections still open, close and change tab, which is the app's own state; nothing is sent to the session. The photo left's values and scopes reading go as the open is sent, so the click is answered at once.
   - **The switch** to the photo's values happens in one frame, as the mirror takes its values in (`Event::Values`, which the session sends with its `Opened`); its Scopes section comes with them and shows its first reading as it arrives.
@@ -2047,7 +2049,7 @@ Decided with the library (decisions 46, 52 and 53; [library.md](library.md#in-th
 
 #### The tabs: darktable's groups
 
-The default tabs are darktable's default "workflow: scene-referred" groups, with the same labels and similar icons, each module in darktable's tab and in darktable's order (decision 38). The only differences are Apertrust's own tabs, Photos and History; darktable's quick access panel and active modules tabs are left out.
+The default tabs are darktable's default "workflow: scene-referred" groups, with the same labels and similar icons, each module in darktable's tab and in darktable's order (decision 38). These are the Edit workspace's defaults: a person can reorder, pin, move and float sections, on screen only (decision 83, [below](#moving-pinning-and-floating-sections)). The only differences are Apertrust's own tabs, Photos and History; darktable's quick access panel and active modules tabs are left out.
 
 Built: the bar, the labels and icons, each built module's tab and place, History with its History section, Base first shown and the old ids read as unknown.
 
@@ -2074,8 +2076,82 @@ Built: the bar, the labels and icons, each built module's tab and place, History
 - **History** is built: a click and Side Panel Tab's item choose it (`panel-tab-6`), and a tab kept as `history` opens it; it has no default key. It holds the History section, with no Scopes, Snapshots to come over it ([The side panel](#the-side-panel); [history.md](history.md#in-the-app)). A tab with nothing behind it yet would be drawn disabled, as a titled content tab without rows is (decision 29), its tooltip saying it is to come (`panel-tab-later`); none is now.
 - **The Photos tab** is built, with Browse and its Folders alone ([The side panel](#the-side-panel)): Ctrl+1, View › Browse (L) and a click choose it, and a tab kept as `photos` opens it. `library`, which earlier builds kept for it, is an unknown id: Base is shown with a warning (decision 38). A tab kept in settings that is drawn disabled opens Base, its id kept.
 - **The tab first shown** in the Edit workspace is Base. darktable opens its darkroom on `plugins/darkroom/groups`, 2 by default, which named its basic group while the groups were fixed (darktable 3.2) and lands on its second group, color, since presets define them.
-- **Scopes** stay pinned in darktable's four groups' tabs, as darktable's histogram sits over its groups, and in neither the Photos tab nor History; Layers in the four groups once they come (Phase 4).
+- **Scopes** are pinned by default in darktable's four groups' tabs, as darktable's histogram sits over its groups, and in neither the Photos tab nor History; Layers in the four groups once they come (Phase 4).
 - **Unknown tab ids** in settings, such as `profile`, `adjust`, `optics` and `detail`, which development builds wrote, are values this build cannot read: Base is shown, with a warning, and the id stays in the file until the user chooses a tab ([Settings and workspace](#settings-and-workspace)). No migration; the version stays 1; the ids are not reused for another tab. The Library tab's other old ids are read as theirs are: a kept `edit.sections.folders` is no longer read, Browse keeping `browse`; a kept `keys.view-library` is warned of as no action's id and kept unused, its key not carried to `show-browse`, as for any unknown action id.
+
+#### Moving, pinning and floating sections
+
+Planned (decision 83): built in Phase 3 with named workspaces, the floating panels in the UX pass after it ([Build order](#build-order)). Every section, a module or a utility, moves within its tab, to the pinned area, to another tab or over the photo, by one gesture, dragging its header, and by its ⋯ menu, keys and screen readers' actions. Where it is released decides what happens.
+
+**Display order only.** A move changes the workspace's layout in settings, never the edit, its history or the render: no session command carries it, and the engine plans by each operation's slot whatever order it is given. Each tab starts in darktable's order, the last module at the top. This departs from darktable, whose drag of a processing module's header changes the pipeline order (`src/develop/imageop.c` at the reference release); its utility modules' drag (`src/libs/lib.c`) is the same as Apertrust's. So that the departure is never misread:
+
+- a processing module's drag says, under the lifted header, "Moves it in this tab only. Processing order stays fixed.";
+- Ctrl+Shift with the drag, darktable's gesture, does what a plain drag does;
+- the side panel's ⋮ has **Processing Order**, checked while the processing modules of each of the tab's two lists, the pinned and the scrolling, are in pipeline order; chosen, it sorts each list's processing modules among the places they hold in it, none crossing the pinned area's edge and utilities keeping their places, so a pinned module stays pinned above the rest; disabled in a tab with no processing modules;
+- a move is never a step in History, and Undo never undoes one.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Rest
+    Rest --> Pressed: press on the header, not a button
+    Pressed --> Rest: released within 6 points (a click, open or close)
+    Pressed --> Dragging: moves 6 points
+    Dragging --> Rest: Esc, right-click, focus lost, a dialog (nothing changes)
+    Dragging --> Rest: released where nothing changes
+    Dragging --> Moved: released over a target
+    Moved --> Rest: settings written, the focus on the moved header
+```
+
+**The gesture.**
+
+- **Where it starts:** anywhere on the header but its buttons (reset, presets, ⋯, a picker's), the sticky header kept over a scrolling body too; never the body, whose rows, tabs, groups, curves and scopes keep their own drags. The pointer stays the arrow at rest, a click being the header's first job, and is the grabbing hand while dragging.
+- **The threshold** is egui's click distance: a press that moves 6 points is a drag, one released before is a click. A press held 0.8 s and released without moving neither opens nor moves it, egui's click duration; there is no long press on the desktop.
+- **While dragging:** the lifted header, as wide as the side panel and at most 320 points, follows the pointer on `raised` with the popup shadow, its title and chevron and no buttons; the source stays where it was, its title in `text_disabled`, so nothing reflows; the insertion line, 2 points in the accent with round ends, shows the gap the section would land in, Lucide's `pin` at its start in the pinned area; a tab under the pointer takes its hover fill and a 2-point accent ring; over nothing the pointer is `NoDrop`. One 12-point line in `text_secondary` under the lifted header says what a release does: "Moves it in this tab only. Processing order stays fixed." (a utility's: "Moves it in this tab."), "Pins it in Base", "Moves it to Colour", "Floats it over the photo".
+- **Which gap:** the one nearest the pointer; over an open section, before it while over its header's upper half, after it while over its body's lower part, the line staying put over the body's middle.
+- **Auto-scroll:** within 32 points of the scrolling list's top or bottom, faster nearer the edge; the pinned list too when it is taller than its room.
+- **Reduced motion:** no animation; otherwise a cancelled drag slides back in 120 ms, and a tab that receives a section pulses once.
+
+| Released over | Does |
+| --- | --- |
+| A gap in the scrolling list | Moves the section there, unpinned |
+| A gap in the pinned area, or the upper half of the band under it | Moves it there and pins it in this tab |
+| The lower half of the band | Moves it to the top of the scrolling list, unpinned |
+| Another tab's icon | Moves it to that tab, the tab shown unchanged; held 0.6 s, that tab opens under the drag |
+| The central panel | Floats it there |
+| Its own place or a gap beside it, the current tab, a tab already holding it ("Already in Colour"), a disabled tab, », ⋮, the tab bar's empty end | Nothing: such a tab's icon takes no drop and does not open under the drag |
+
+**After a drop** the list reflows once; the section keeps its open state, content tab and groups; its header shows the hover band for 600 ms and keeps the focus, without a ring; the layout is written to settings at once. A section's controls keep their state through a move, each section drawn under a scope id of its own (`UiBuilder::scope_id`).
+
+**Another tab.** Dropped on a tab's icon, a processing module lands at its pipeline place among that tab's processing modules, by its nearest neighbour there; a utility at the top of the scrolling list; unpinned, unless the spring-loaded tab lets the person drop it exactly. A move never copies: the section leaves the tab it was dragged from and lands in another, so a module whose only tab that was can move as any section can, and every module stays in a tab of Edit. A section in several tabs, such as Scopes, leaves only the tab it was dragged from; Move to Tab › lists a tab already holding it disabled. Moved to another tab, the focus goes to that tab's icon.
+
+**Any section in any tab.** The side panel draws each tab's sections by id through one dispatcher: a module, Browse, Scopes, History, later the rest. History's header stays at its tab's top only while it is alone there; with company, its list is a fixed-height `section_list`, as Browse's groups are. View › Browse (L) chooses the first tab holding Browse, or brings it to the front where it floats; History's Shift-click on a step does the same for its module. Scopes are counted whenever they are shown and open, in a tab or floating. A tab everything has left says "Nothing in this tab. Drag a section's header here, or use Customise Tabs…".
+
+**The ⋯ menu,** for a module and a utility alike, through the popup service, native on the Mac (decision 40):
+
+| Item | Does | Disabled when |
+| --- | --- | --- |
+| Move Up, Move Down | One place in its list, the pinned or the scrolling one | First, or last, in it |
+| Move to Pinned Area, or Move to Scrolling Area | To the end of the pinned list, or the top of the scrolling list | — |
+| Move to Tab › each tab by name | As a drop on its icon | The tab it is in, one already holding it, a disabled tab with its "to come" tip |
+| Float, or Dock | Floats it near the side panel's top, or returns it to the place it left | — |
+| Position › Top Left, Top Right, Bottom Left, Bottom Right (a floating panel) | Moves the panel to that corner | — |
+
+A right-click on a module's header opens its presets, as darktable's does; on a utility's header it opens ⋯. Shift+F10 and the Menu key on a focused header open what a right-click opens.
+
+**Keys and screen readers.** On a focused header, Alt+↑ and Alt+↓ (Option on a Mac) move it up and down, repeating while held; on a floating panel's header Alt+Shift with the arrows move the panel 10 points. The registry's actions, with no default keys: `section-move-up`, `section-move-down`, `section-pin`, `section-move-to-tab-1` to `-6`, `section-float` and `section-dock`, each acting on the section whose header has the focus and unavailable otherwise; and `dock-all`, available while a section floats, and `tab-processing-order`, acting on the tab shown and unavailable in one with no processing modules, neither needing a header's focus. To AccessKit the header stays a Button with its expanded state and gains the custom actions Move up, Move down, Pin, Float and Dock; a polite live region says "Exposure moved to 3 of 9 in Base", "Exposure pinned in Base", "Exposure moved to Colour", "Exposure floating" and "Exposure docked in Base".
+
+**Floating panels,** inside the app's window, never windows of their own:
+
+- **What it is:** the same section, drawn by the same function and sending the same changes, on an `egui::Area` over the central panel, below the central bar and never over the side, top or grid panel; on `raised` with the popup shadow and a 1-point `border`, solid, never translucent. Popups, tooltips and dialogs stay over it, and a press on it brings it to the front. The photo takes no click under it, and nothing that reads the pointer over the photo reads it there.
+- **It belongs to no tab:** it shows whatever tab is chosen, and no tab shows anything for it; its id stays in its tabs' lists in settings, hidden while it floats, so the place it left, pinned or not, survives a restart. The layout remembers the place it left, its tab and its place in that tab's lists.
+- **Its header** is the section's, with its buttons, and at its end × named for the tab it left, "Return to Base". × docks it, as ⋯ › Dock and Dock All Floating Panels do: back to the place it left, or to its default place where that tab no longer holds it.
+- **Moving and docking:** dragging its header moves it over the central panel, its edges snapping within 8 points to the central panel's and to other floating panels' edges; dragged over the side panel, it shows the insertion line, and released there it docks at that gap, in any tab, which also moves it from the tab it left to that one. Released on a tab's icon, it docks there as a drop on the icon does. Into a tab that already holds it, as Scopes may, it docks at the gap, its place there moved to it, and the tab it left keeps it.
+- **Its size:** at first the side panel's width as it floats; a `PanelEdge` on each side edge, with the edge's keys, from 240 to 600 points; its height its content's, up to the central panel's less 16 points, its body scrolling beyond with the quiet scroll bar.
+- **The window and the panels:** each keeps its distance from its corner of the central panel, beside the side panel or away from it, as the window, the side panel or the grid panel change size, pushed inside where an edge would cut it; where the central panel has not 160 points of photo beside it or 200 points of height, it shows docked at the place it left until there is room again, nothing written. Under a sheet or the slideshow it is hidden and comes back as it was; with no photo it follows its section's rule, as docked: a module's controls disabled, Browse and the Photos tab's other sections working as ever.
+- **Focus:** F6 visits the region Floating panels after the side panel, and Tab goes through them front to back. H held over it peeks as in the side panel.
+- **Kept:** which sections float, in the workspace; each one's place and width, app-wide, so it comes back as it was; its open state, the section's one open state everywhere.
+
+**The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped: a section it brings back leaves any other tab whose defaults lack it, so a move out of the tab is undone while Scopes, shipped in several tabs, stay in each; a section it takes out goes to its default place where no other tab holds it; floating sections stay floating, one whose tab no longer holds it docking later at its default place; Dock All Floating Panels, in ⋮ and View › Panels; from Phase 3, Reset Workspace.
 
 ### The photo frame
 
@@ -2500,7 +2576,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - 12 at the sides, the header's chevron at 8.
 - **A section's header** is 30 points (`sizes.section_header`) with its title and buttons centred vertically and the whole 30 its click target.
   - Its title is 15-point Medium (`text.section_title`; `text.title` stays for About's version line), and its chevron `text_secondary` while closed and `text` while open or under the pointer.
-  - A module's buttons are reset, presets and options (⋯), options at the header's end. Options is drawn disabled, its tooltip "No options yet" (`section-options-none`), until its menu's items are decided. A utility, such as Scopes, has options only; History has a reset before its options, which resets the edit (`Section::utility_reset`, "Reset edit").
+  - A module's buttons are reset, presets and options (⋯), options at the header's end. Options holds the section's layout items, a module's and a utility's alike (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)); until they are built it is drawn disabled on a module, its tooltip "No options yet" (`section-options-none`). A utility, such as Scopes, has options only; History has a reset before its options, which resets the edit (`Section::utility_reset`, "Reset edit").
   - Each button is 14 points wide round its 14-point icon (`sizes.section_button`) and a control high, with 4 points between every two (`spacing.section_button_gap`). The last one's ink, not its box, ends where the rows do, 12 points from the section's edge: Lucide's ⋯ ends 1.7 points inside its box at 14 points, so the header's end inset is 10.3.
   - A title that would run under the header's buttons is cut at its end with …, as labels are, its tooltip giving it whole on a line of its own and screen readers hearing it whole. At the side panel's narrowest, 240 points, a module's title has about 139 points: three English titles are cut, Highlight reconstruction (166 points), Raw black/white point (154) and Output colour profile (143), and more Polish and Ukrainian ones, Usuwanie zamglenia (141) and Balans kolorów RGB (139) among them, Відновлення переекспонованого (238) the longest.
 - **A section's tabs** (`Tabs`, drawn by `Section::tabs`) sit right under the header, the strip 26 points high, and the first tab's name is on the content's 12-point edge (the strip starts 8 points, the tabs' padding, before it and its line from the edge), as the wireframe's board has them.
@@ -2588,7 +2664,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - `Picker`, a picker's button pressed, which it sends as `Command::Picker` and shows at once, the picker on or off ([pickers.md](pickers.md#the-picker-button));
   - `Toggle`, `Tab` and `Group`, which change the app's own state after the section is drawn.
 - **Values are what the row shows:** a definition's 0.01 is f32's 0.0099999998, so the renderer widens each f32 to the decimal it was written as before the slider steps and clamps in f64, and a key step lands on +2.00, not on +1.9999999. A value is then rounded to the row's decimals before it is sent, so nothing finer than the row shows is ever set: a Contrast of 0.1 would run colour balance rgb while its row read "0". A key's move is never less than that last decimal (darktable's `min_visible`), so Alt's tenth of a step still moves where the step is the last decimal, as on Global offset chroma.
-- **Which modules a tab shows** is a list per tab in the app (`TAB_MODULES`), in [modules/README.md](modules/README.md)'s order, darktable's groups and its on-screen order, the last in the pipeline at the top (decision 38; [The tabs](#the-tabs-darktables-groups)), until Customise tabs edits it (step 7). A test holds each list to `apertrust_operations::OPERATIONS` reversed. Built:
+- **Which modules a tab shows** is a list per tab in the app (`TAB_MODULES`), in [modules/README.md](modules/README.md)'s order, darktable's groups and its on-screen order, the last in the pipeline at the top (decision 38; [The tabs](#the-tabs-darktables-groups)), until Customise tabs edits it (step 7). From Phase 3 they are the Edit workspace's defaults, from which, with what settings keep, the layout shown is worked out (decision 83). A test holds each list to `apertrust_operations::OPERATIONS` reversed. Built:
   - Base: AgX, the Tone curve (RGB curve's place), the Tone equalizer, Exposure, Demosaic, Highlight reconstruction, White balance and Raw black/white point;
   - Colour: Output colour profile, Colour balance RGB, RGB primaries and Colour calibration;
   - Correct: Haze removal;
@@ -3001,6 +3077,7 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
   - The widget scope is the focused widget's own keys, a fixed list rather than registry entries.
     - A focused control (a button, a slider, a tab) keeps the arrows, Home, End, Page Up, Page Down, Space, Enter, Tab, Escape, Backspace and Delete, without Ctrl.
     - A focused slider also keeps a digit, a minus sign and the decimal separator, which open its value field, and Shift+F10 and the Menu key, which open its popup (decision 42).
+    - A focused section header also keeps Alt+↑ and Alt+↓ (Option on a Mac), which move it in its list, and on a floating panel Alt+Shift with the arrows, which move the panel (decision 83, planned).
     - A focused control also keeps Insert and +, which add a point to a curve: Czech and Slovak keyboards type + on the 1 key, and the curve still gets it, while Ctrl with it still chooses the first tab.
     - A text field keeps every key without Ctrl but F1 to F35, and Ctrl with A, C, V, X, Z, Y, the arrows, Home, End, Backspace and Delete.
   - A key whose narrowest action can't run does nothing, even where a wider scope binds it too. While a modal dialog or a sheet is open, the view's keys rest and F6 stays in it; while the slideshow plays, its keys are its own ([Dialogs, sheets and the slideshow](#dialogs-sheets-and-the-slideshow)).
@@ -3107,7 +3184,8 @@ It is versioned (`version = 1`) and migrated as `.apxmp` is. It holds:
 - the keys that differ from the defaults;
 - whether the side panel's tabs show their names, and its width once the user drags its edge ([The side panel](#the-side-panel));
 - the grid panel's position and its rows and columns, and the grid bar's sort and thumbnail size, each once the user changes it ([The grid panel](#the-grid-panel), [The grid bar](#the-grid-bar));
-- the workspaces ([Workspaces](#workspaces)): in each, the tab last shown; once Customise tabs edits them (step 7), what the user changed in a built-in one; from Phase 3, the current one by id and the user's own whole;
+- the workspaces ([Workspaces](#workspaces)): in each, the tab last shown; once Customise tabs edits them (step 7), what the user changed in a built-in one; from Phase 3, the current one by id and the user's own whole, and in each its layout, each tab's pinned and scrolling sections and the sections that float (decision 83);
+- each floating panel's place and width, the same in every workspace (decision 83, with the floating panels);
 - the sections the user opened or closed, the same in every workspace, and the collapsible groups, by module and group (decision 29);
 - the Scopes section's view (the graph, the scale, the channels shown and the clipping toggles), in a top-level `[scopes]` table, one key per part, each once the user changes it, the same in every workspace;
 - the central panel's margins (`[central_panel]`, [The photo frame](#the-photo-frame)), with no page in Settings;
@@ -3224,8 +3302,23 @@ sort = "file-name"
 descending = true
 thumbnails = "large"
 
+[side_panel.floating.scopes]   # decision 83
+corner = "top-away"
+x = 24
+y = 48
+width = 320
+
 [workspaces.edit]
 tab = "base"
+
+[workspaces.edit.pinned]       # decision 83
+base = ["scopes"]
+
+[workspaces.edit.order]
+base = ["exposure", "agx", "tone_curve", "toneequal", "flip", "demosaic", "highlights", "temperature", "rawprepare"]
+
+[workspaces.edit.floating]
+scopes = "base"
 
 [workspaces.photos]
 tab = "photos"
@@ -3239,6 +3332,7 @@ show_selected = false       # from Phase 3
 ```
 
 - **Workspaces** live under `[workspaces.<id>]`: a built-in one holds only what the user changed in it; a user's own adds its name and its tabs, each with its id, name, icon, sections and pinned sections.
+- **The layout** (decision 83, planned): in each workspace, `pinned.<tab>` and `order.<tab>`, a tab's pinned and scrolling sections top first, written together once either changes, so a tab nobody changed follows each build's defaults; `floating.<section>`, the tab a floating section left, its id staying in that tab's lists; `hidden`, the sections a workspace leaves out, written by Customise tabs, never a module in Edit. App-wide, `[side_panel.floating.<section>]`: `corner` (`top-beside`, `top-away`, `bottom-beside` or `bottom-away`, the central panel's corner it keeps its distance from, beside the side panel or away from it), `x` and `y`, that distance, and `width`, in points; a place a smaller window cannot show is shown pushed inside, never written. Where only one of a tab's two lists is kept, the other is its default less the ids the kept one holds; an id in both stays pinned, and one twice in a list keeps its first place. An id this build does not know is skipped and kept; a section no tab holds and `hidden` does not name goes into each tab whose default list holds it, after its nearest default neighbour there. Reset Tab removes the tab's two lists, and takes the sections it brings back out of the other tabs whose defaults lack them ([the ways back](#moving-pinning-and-floating-sections)).
 - **The tab** is kept by id (`base`), each workspace its own, so a tab that moves keeps it. **Sections** are kept by id, the same in every workspace, only those the user opened or closed, the others as their section starts. **Tab names** are the side panel's, the same in every workspace.
 - **The side panel's width** is in points, the same in every layout and workspace, under `[side_panel]` as `width`, kept only once dragged. A value outside 240 to 600 is read as the nearer end, with a warning, and left in the file until the user drags the edge; the width shown in a narrower window is never written.
 - **The grid panel's size** is in whole lines under `[grid_panel]`, `rows` at the bottom and `columns` at the sides, beside `position`, `sort`, `descending` and `thumbnails`, the same in every layout and workspace, each kept only once changed; a value out of range is read as the nearer end; the lines a smaller window shows are never written.
@@ -3286,6 +3380,7 @@ show_selected = false       # from Phase 3
   - the popup (planned) a SpinButton with a description of its keys and a polite live region for each step, the focus back on the slider when it closes;
   - an exact value by keyboard: Tab to the slider, type "6.5", Enter; the popup without a mouse: Enter, Shift+F10, the Menu key or ShowContextMenu.
 - **A colour picker** ([pickers.md](pickers.md#accessibility)): its button a toggle button described by its tooltip; while it is on, its point or area on the photo a group named "Picker area, Exposure", its value the region in percent of the photo, Increment and Decrement moving it along x and the custom actions Move up and Move down along y, the keys its own while it has the focus; and a polite live region reading out what a pick changed once it has rested half a second.
+- **A section's place** (decision 83, planned): every drag has a menu item and a key; the header, a Button, has the custom actions Move up, Move down, Pin, Float and Dock; after a move a polite live region says where it went ("Exposure moved to 3 of 9 in Base"); each floating panel is a pane named by its section, in the region Floating panels.
 - **Keyboard** as above, with a visible focus ring from the theme. The ring shows after a key or a screen reader's request moves focus, not after a click or a drag, as browsers' `:focus-visible` does (`apertrust-ui`'s `FocusVisible`): a slider being dragged has focus, and a ring around it only distracts.
 - **Scale:** the system's scale times the user's (egui's zoom factor, set in View › Interface Size and in Settings, with no default keys, since Ctrl+= and Ctrl+− are the photo's zoom); every size is a token in points.
 - **Colour:**
@@ -3299,11 +3394,11 @@ show_selected = false       # from Phase 3
 
 - **Unit tests** for:
   - formatting and parsing;
-  - the models the shell draws from: the layouts' cells, the selection's rules and the workspaces;
+  - the models the shell draws from: the layouts' cells, the selection's rules and the workspaces, the side panel's layout among them (the defaults equal to decision 38's lists, a kept list shown as kept, a new section placed by its neighbour, unknown ids kept, no section twice in one tab, a section drawn once a frame though it sits in several tabs, as Scopes do; decision 83);
   - the actions registry (no default shortcut used twice in one scope);
   - settings migrations;
   - the mirror, fed event sequences (`crates/app/src/mirror.rs`).
-- **Interaction tests** with `egui_kittest`, which finds widgets through AccessKit by role and label: drag a slider, type a value, press a shortcut, then check the command the app emitted. A dialog's content is tested in a harness of its own, and the app's tests check which dialog the action opens through a recording host (decision 41). The windows, their modality and the system's alerts are checked by hand on each platform, since they do not run headless.
+- **Interaction tests** with `egui_kittest`, which finds widgets through AccessKit by role and label: drag a slider, type a value, press a shortcut, then check the command the app emitted. A section's move, float and dock emit no command on the edit, the Scopes request aside, which follows whether Scopes are shown, and leave the sidecar, the history and the render as they were (decision 83). A dialog's content is tested in a harness of its own, and the app's tests check which dialog the action opens through a recording host (decision 41). The windows, their modality and the system's alerts are checked by hand on each platform, since they do not run headless.
 - **Snapshot tests** of the gallery in every built-in theme and in the pseudo-locale.
   - They render through wgpu on CI's software GPU (decision 7), with a small image tolerance.
   - The tolerance, in `kittest.toml` for every snapshot test, lets 2/255 a channel and 2 pixels more through, since GPUs rasterise antialiased edges and text differently: a snapshot made on one machine passes on the others. `crates/ui/tests/tolerance.rs` checks on every runner that it still fails a colour token 3/255 off, a widget moved by a point and a label that lost its last letter.
@@ -3330,7 +3425,7 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 6. The module renderer, from `apertrust-modules` definitions (decision 28), and the first pass's modules for the ported operations, darktable's (decision 2; `docs/roadmap.md`, Phase 2), the side panel's tabs darktable's groups (decision 38). Built: the renderer and every module listed in [the renderer](#the-renderer). Left: RGB levels and RGB curve, then the rest.
 7. The actions registry, the keyboard map, settings, Customise tabs on the Edit workspace, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
    - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry.
-   - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host.
+   - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host, editing the Edit workspace's fixed tab lists; Phase 3 reworks it onto the side panel's layout model (decision 83).
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Browse's Folders; the grid panel showing the folder, with the engine's thumbnails and its grid bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The grid panel](#the-grid-panel)); File › Open…, Open Folder… and Open Recent; the central panel's empty states ([The central panel's layouts](#the-central-panels-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
    - Built: File › Open Folder… and Open…, drag and drop onto the window, one photo from a terminal with Open This Folder, Open With and a double-click into folder mode (`--in-folder`, and macOS's open-documents event), View › Browse, the Photos tab with Browse, its top line listing the recents, ＋, ⋯ and its Folders as the tree of the folder opened, its root fixed, a click choosing the active folder ([The side panel](#the-side-panel)), the grid panel's cells with the camera's embedded pictures, its grid bar's Sort and Zoom, its edge in whole rows or columns and its position, and the central panel's empty states.
@@ -3346,8 +3441,16 @@ Phase 3 adds, for the interface:
 - virtual copies in the grid panel, History's Snapshots, photo groups and Import… by copy, in folder mode (decision 46);
 - ratings, the reject and labels from the caption, so culling is Photo with the grid panel and the caption's ratings, with no Grid;
 - named workspaces and the Photos workspace;
+- with them, the side panel's layout (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), each part one pull request, and Customise tabs reworked onto its model once part 1 is built:
+  - 0, the Edit workspace's settings keys as [What the file looks like](#what-the-file-looks-like) has them, `[edit]` read into them;
+  - 1, the layout model and its settings, Processing Order and Reset Tab, the four group tabs drawn from the layout shown;
+  - 2, moving by drag within a tab, pinning by drag included;
+  - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
+  - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
 - the Export dialog, a native modal window (decision 41), in [its cards' order](#the-build-in-cards) on the session's export job (decision 56): built on the Mac, its presets, metadata and the other platforms left;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
+
+The UX pass after Phase 3 adds the layout's part 5, floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83).
 
 ## Product choices
 
@@ -3404,6 +3507,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |
 | Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in module panels and Boxed elsewhere, the drawn dropdown filtering as darktable's (decision 42; [Slider values and choices](#slider-values-and-choices)) |
+| The side panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in settings; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
 | The view | One view: the Photos tab choosing the photos; the central panel's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a dialog, Import and Print sheets, the slideshow an action (decision 37; [The shell](#the-shell)) |
 
 ## Open questions

@@ -10,7 +10,7 @@ The modules users edit with. In the first pass each is darktable's own: one modu
 
 Every module's operation keeps darktable's place, darktable's v5.0 order throughout (decision 22; `src/common/iop_order.c`; [engine.md](../engine.md), Order): the tone equalizer at camera RGB 24.0, RGB curve and RGB levels at 42 and 43, before the tone mapper.
 
-The side panel's tabs are Photos, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each module sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last module at the top. The app's `TAB_MODULES` holds these lists for the built modules, and a test holds them to `OPERATIONS` reversed. How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
+The side panel's tabs are Photos, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each module sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last module at the top. The app's `TAB_MODULES` holds these lists for the built modules, the Edit workspace's defaults, and a test holds them to `OPERATIONS` reversed; a person can reorder, pin, move and float sections on screen, never the processing order (decision 83). How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
 
 The tables below are in that order:
 
