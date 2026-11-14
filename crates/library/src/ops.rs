@@ -557,7 +557,7 @@ pub const RENDERED: &[u8] = b"rendered\0";
 /// The operations and viewport pipeline used for rendered thumbnails. Increment this
 /// whenever an operation or the pipeline changes the pixels a saved edit produces,
 /// including colour conversion, quantisation and thumbnail averaging, and whenever a
-/// module's or an operation's defaults change, which every render of a photo with no edit
+/// tool's or an operation's defaults change, which every render of a photo with no edit
 /// ([`UNALTERED`]) holds. This is separate
 /// from the application's build version so unrelated changes keep the cache useful.
 pub const THUMBNAIL_RENDER_VERSION: u32 = 1;

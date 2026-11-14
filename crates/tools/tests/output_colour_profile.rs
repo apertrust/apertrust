@@ -142,7 +142,7 @@ fn o0_the_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// O0 on every corpus raw: the module at its default, written or kept, plans the very
+/// O0 on every corpus raw: the tool at its default, written or kept, plans the very
 /// instances and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -169,7 +169,7 @@ fn o0_on_the_corpus() {
 
 // O1: the control moved, then reset.
 
-/// No edit's instances with colorout's profile set by the module's binding for `name`,
+/// No edit's instances with colorout's profile set by the tool's binding for `name`,
 /// the binding's values set directly: what the edit would render once the profile is no
 /// longer held back.
 fn bound(bench: &Bench, name: &str) -> Vec<Instance<'static>> {
@@ -218,7 +218,7 @@ fn o1_holds(bench: &mut Bench) {
         edit.reset_tool(&OutputColourProfile);
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "O1, {name} and the module reset"
+            "O1, {name} and the tool reset"
         );
     }
     for name in HELD_BACK {
@@ -256,7 +256,7 @@ fn o1_on_the_corpus() {
 
 /// O3: every profile but sRGB is refused as a command, and the edit stays as it was: the
 /// two linear ones held back for the display path (decision 26), the nine others not
-/// ported, on the small raw and the sweep alike. colorout's parameters are the module's:
+/// ported, on the small raw and the sweep alike. colorout's parameters are the tool's:
 /// its profile owned, its intent fixed.
 #[test]
 fn o3_every_profile_but_srgb_is_refused() {
@@ -296,7 +296,7 @@ fn o3_every_profile_but_srgb_is_refused() {
 
 // O4: on a layer.
 
-/// O4: colorout encodes the whole image for its output, after every layer, so the module
+/// O4: colorout encodes the whole image for its output, after every layer, so the tool
 /// is the background's only, as darktable's output color profile is one instance with no
 /// mask.
 #[test]

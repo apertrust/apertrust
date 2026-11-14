@@ -157,7 +157,7 @@ impl Scene {
 
     /// The default pipeline with these parameters set, as an edit sets them, and every
     /// operation an unedited photo does not run that a setting names, with its settings,
-    /// as a module's binding adds it (decision 28); no modules, so the tests stay about
+    /// as a tool's binding adds it (decision 28); no tools, so the tests stay about
     /// the pipeline.
     fn instances(&self, settings: &[(&str, &str, f32)]) -> Vec<Instance<'static>> {
         let optional = |id: &str| {
@@ -167,7 +167,7 @@ impl Scene {
                 .find(|op| op.manifest().id == id && !op.manifest().default_enabled)
         };
         let mut edit = Edit::default();
-        // An edit refuses an optional operation's parameters, which only modules set.
+        // An edit refuses an optional operation's parameters, which only tools set.
         let mut joined: Vec<Instance<'static>> = Vec::new();
         for &(id, param, value) in settings {
             let Some(operation) = optional(id) else {

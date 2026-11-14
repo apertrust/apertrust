@@ -1,6 +1,6 @@
 [package]
 name = "apertrust-golden"
-description = "Golden-image harness: compares Apertrust modules against darktable-cli renders"
+description = "Golden-image harness: compares Apertrust operations against darktable-cli renders"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

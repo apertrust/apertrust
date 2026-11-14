@@ -84,7 +84,7 @@ fn history_lists_and_moves_with_the_cli_s_exit_statuses() {
         "{stdout}"
     );
     assert!(
-        stdout.contains("\n  1–9  defaults: 9 modules every photo runs\n"),
+        stdout.contains("\n  1–9  defaults: 9 tools every photo runs\n"),
         "{stdout}"
     );
     assert!(stdout.ends_with("   0  Original\n"), "{stdout}");

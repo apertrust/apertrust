@@ -1009,7 +1009,7 @@ Commands are plain data in the engine and move into the protocol unchanged ([ses
 
 `apertrust-engine::session`, decision 28.
 
-- **The session takes the tools** as it takes the operations: `Session::start(gpu, operations, modules, build, budget, cache, wake)`, the binaries handing it `apertrust_tools::TOOLS` and `apertrust_operations::OPERATIONS` (decisions 17 and 28). It accepts the tools with `apertrust_tools::check::accept`: a parameter belongs to the first tool that owns it, and a later one owning it too is left out whole, reported as `SessionError::Tool`. A test refuses a built-in tool that owns a parameter already owned, unknown or of the wrong kind. The values report `apertrust-tools`'s `Setting`.
+- **The session takes the tools** as it takes the operations: `Session::start(gpu, operations, tools, build, budget, cache, wake)`, the binaries handing it `apertrust_tools::TOOLS` and `apertrust_operations::OPERATIONS` (decisions 17 and 28). It accepts the tools with `apertrust_tools::check::accept`: a parameter belongs to the first tool that owns it, and a later one owning it too is left out whole, reported as `SessionError::Tool`. A test refuses a built-in tool that owns a parameter already owned, unknown or of the wrong kind. The values report `apertrust-tools`'s `Setting`.
 - **`Set` has no `done`,** so it is saved with the next completed change, or when the photo closes or the session ends.
 - **A command that changes nothing writes nothing:** a `done` repeating the value already set, or a reset of what is untouched, so a photo opened and reset leaves no file beside it.
 - **Saving.** The edit's writer thread reports `Saved { path, through }`, the file and how many commands the written edit includes, and a failed write as `SessionError::Save` with the same two, to the client itself, so `wake` is `Send + Sync`.
@@ -1619,7 +1619,7 @@ fn follow(&self, _control: &str, _values: &Controls, _image: &ImageContext) -> C
 **What is built** (`apertrust-tools`, `apertrust-engine::edit` and `session`):
 
 - `Tool::follow` as above, and `Controls::iter` to read what it gives.
-- **`Edit::follow(before, module, set, image)`.** For each control of `set`, the controls the command wrote (`edit::written`: the control, or a coordinate's view's controls, or a preset row's), whose value moved from `before`, in the definition's order, it takes what `follow` gives with every control the edit's over the defaults, a later control's write over an earlier one's.
+- **`Edit::follow(before, tool, set, image)`.** For each control of `set`, the controls the command wrote (`edit::written`: the control, or a coordinate's view's controls, or a preset row's), whose value moved from `before`, in the definition's order, it takes what `follow` gives with every control the edit's over the defaults, a later control's write over an earlier one's.
   - Every write is checked before any is made, then each is written and kept unless it leaves its control as it is. A write of the control's default for the photo resets it, value and mark, so a change and its reset leave the edit untouched.
   - A write to a control the tool lacks or that `set` holds, a value its control refuses, or a `follow` that panics is `EditError::FollowFailed`, naming the control followed, and the edit is `before` again, so the command changes nothing.
   - A control set to the value it holds moves nothing, so follows nothing, as darktable's widgets call `gui_changed` only for a change.

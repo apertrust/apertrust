@@ -18,11 +18,11 @@
 //! viewport pipe (decision 12). A client sends [`Command`]s and reads [`Event`]s; it
 //! never waits for the GPU, a decode or a file.
 //!
-//! Clients speak modules (decision 28): they set, reset and keep module controls, and the
+//! Clients speak tools (decision 28): they set, reset and keep tool controls, and the
 //! coordinates of lossless views as controls, and apply the options of preset rows
 //! (decision 2), and the session turns the edit into operation parameters through the
-//! modules' bindings ([`crate::edit::instances`]). Only parameters no module owns yet, of
-//! operations an unedited photo runs, are set at operation level. A module whose binding
+//! tools' bindings ([`crate::edit::instances`]). Only parameters no tool owns yet, of
+//! operations an unedited photo runs, are set at operation level. A tool whose binding
 //! misbehaves is reported and left out of the render; the rest of the edit still renders.
 //!
 //! The thread takes every command that has arrived, applies them in order and renders
@@ -40,12 +40,12 @@
 //! the edit in memory, and the next completed change, or closing the photo, writes it
 //! again. Each edit records the build that wrote it, which the client hands the session.
 //!
-//! A gesture, the run of `done: false` changes on one module, can be cancelled, as a
+//! A gesture, the run of `done: false` changes on one tool, can be cancelled, as a
 //! slider popup's is ([`Command::CancelGesture`], decision 42): the session keeps the
 //! edit and the held coordinates as they stood before its first change, puts both back,
 //! leaving no history step, and writes nothing while the file holds that edit.
 //!
-//! Each completed change is a step of the edit's history for each module it touched,
+//! Each completed change is a step of the edit's history for each tool it touched,
 //! several sharing a batch, kept in memory for the photo open (decision 78,
 //! [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`] move through,
 //! darktable's undo records first, a batch whole, and [`Command::GoTo`] moves the end of;
@@ -76,10 +76,10 @@
 //! While a colour picker is on ([`Command::Picker`], decision 79; [`crate::picker`]), the
 //! frame is measured under it in a submission of its own after the scopes' count, and on
 //! the frame shown when its point or area moves, read back the same way and sent as
-//! [`Event::Picker`] after the frame it measured. A module's picker is measured at its
+//! [`Event::Picker`] after the frame it measured. A tool's picker is measured at its
 //! operation in the viewport pipe too, in the render's own encoder or, when its area moves
 //! with no edit, by a sample-only render, and the session applies its readings through the
-//! module's pick. The pickers are view state, never in the edit; a failure turns them off
+//! tool's pick. The pickers are view state, never in the edit; a failure turns them off
 //! for the session, never the frame.
 //!
 //! The session runs background jobs on darktable's control (decision 57,
@@ -179,10 +179,10 @@ pub enum Command {
     Close,
     /// The most physical pixels the photo may be shown in.
     Resize { width: u32, height: u32 },
-    /// Set a module's control, which keeps it. `done` on the last change of a gesture (a
+    /// Set a tool's control, which keeps it. `done` on the last change of a gesture (a
     /// drag released, a click, a typed value), which saves the edit.
     ///
-    /// `control` may name a coordinate of one of the module's lossless views (decision
+    /// `control` may name a coordinate of one of the tool's lossless views (decision
     /// 2): the view's controls then take the values that give it `value` while the view's
     /// other coordinates hold, each kept, as one change. Its other coordinates are held
     /// from the gesture's start for as long as the controls hold what the session wrote,
@@ -195,20 +195,20 @@ pub enum Command {
         done: bool,
     },
     /// A control back to its default for the photo, no longer kept. A view's coordinate
-    /// goes back to its value at the module's defaults, holding the others; once all are
+    /// goes back to its value at the tool's defaults, holding the others; once all are
     /// there, the view's controls are reset exactly.
     ResetControl { tool: String, control: String },
-    /// Every control of a module back to its default: the header's reset.
+    /// Every control of a tool back to its default: the header's reset.
     ResetTool { tool: String },
-    /// Cancel the gesture under way on a module, as a slider popup's cancel does
-    /// (decision 42). A gesture is a run of `SetControl { done: false }` on one module;
+    /// Cancel the gesture under way on a tool, as a slider popup's cancel does
+    /// (decision 42). A gesture is a run of `SetControl { done: false }` on one tool;
     /// any other command on the edit, refused or not, ends it as completed, while a
-    /// resize, the scopes and a cancel naming another module leave it under way. The
-    /// module goes back exactly as it was before the gesture's first change: every
+    /// resize, the scopes and a cancel naming another tool leave it under way. The
+    /// tool goes back exactly as it was before the gesture's first change: every
     /// control's value and mark, follow writes and clamps included, and the coordinates
     /// its views held. It is no history step, and nothing is written while the file holds
     /// that edit, though the writer reports it [`Event::Saved`] with the cancel's number.
-    /// Naming a module no gesture is under way on, it changes nothing, and is reported
+    /// Naming a tool no gesture is under way on, it changes nothing, and is reported
     /// saved alike while the file holds the edit.
     CancelGesture { tool: String },
     /// Keep a control, or release it, leaving its value; a view's coordinate keeps or
@@ -218,9 +218,9 @@ pub enum Command {
         control: String,
         kept: bool,
     },
-    /// Apply an option of a module's preset row (decision 2), as White balance's Mode:
+    /// Apply an option of a tool's preset row (decision 2), as White balance's Mode:
     /// the controls it writes take its values for the photo as one change, each kept, and
-    /// the module's other controls stay as they are. An option the photo cannot have
+    /// the tool's other controls stay as they are. An option the photo cannot have
     /// ([`PresetState::available`]), or one the row lacks, is refused. It completes a
     /// change, which saves the edit.
     ApplyPreset {
@@ -228,7 +228,7 @@ pub enum Command {
         preset: String,
         option: String,
     },
-    /// Set a parameter no module owns yet, of an operation an unedited photo runs; any
+    /// Set a parameter no tool owns yet, of an operation an unedited photo runs; any
     /// other is refused. It leaves the protocol before the first release, and is saved
     /// with the next completed change.
     Set {
@@ -237,7 +237,7 @@ pub enum Command {
         value: Value,
     },
     /// The whole edit back to nothing, as one history step noted `history-reset`
-    /// ([`Note::reset`]) holding every module it reset: each back to its defaults, a
+    /// ([`Note::reset`]) holding every tool it reset: each back to its defaults, a
     /// switched one off (decision 32), which Undo brings back.
     Reset,
     /// Takes back the newest change to the history this photo's session made, as
@@ -261,7 +261,7 @@ pub enum Command {
     /// changes nothing. The edit then saves as a completed change does.
     GoTo { step: Option<StepId> },
     /// Compress History, darktable's compress history stack (decision 78): every default
-    /// step kept; among the person's steps up to the end, each module's last kept with its
+    /// step kept; among the person's steps up to the end, each tool's last kept with its
     /// id, clock, source, note and batch, one whose entry is empty dropped, Reset's among
     /// them; their steps after the end dropped. It makes no step, the end is then the last
     /// step kept up to it, and the photo shows what it showed, at the end and at Original.
@@ -281,15 +281,15 @@ pub enum Command {
     /// steps again, as a new photo is, the file written with no step until the first
     /// change. On a photo open for viewing only because of a [`sidecar::Problem`]
     /// ([`sidecar::Reason::Unreadable`]), the one command on the edit taken: the log
-    /// starts afresh, a new photo's default steps, then a step of each module the edit
+    /// starts afresh, a new photo's default steps, then a step of each tool the edit
     /// holds as far as it was read, sharing a batch, source You, noted `history-discard`
-    /// ([`Note::discard`]), the end the last, a module not applied left so; the photo is
+    /// ([`Note::discard`]), the end the last, a tool not applied left so; the photo is
     /// then editable, `Opened` sent again, and the file written with the fresh log, what it
     /// held that could not be read dropped with it. Refused on one a newer Apertrust wrote
     /// ([`SessionError::ViewOnly`]).
     DiscardHistory,
     /// Several commands on the edit as one change of `source` with `note` (decision 78), a
-    /// history step of each module they write, in the order written, sharing a batch where
+    /// history step of each tool they write, in the order written, sharing a batch where
     /// there are several, as the app sends its changes of several commands and an assistant
     /// one request. A `Reset` inside is one step noted `history-reset`, not with `note`.
     /// It holds only `SetControl`, `ResetControl`, `ResetTool`, `Keep`, `ApplyPreset`,
@@ -301,28 +301,28 @@ pub enum Command {
     /// touched.
     ///
     /// One source per gesture: a `Step` takes in the gesture under way where its commands
-    /// write the gesture's module and its source and note are the gesture's, so a drag's
+    /// write the gesture's tool and its source and note are the gesture's, so a drag's
     /// changes and a `Step` releasing it are one change; otherwise the gesture is a change of
     /// its own first. One holding `SetControl { done: false }` changes alone is a gesture's
-    /// change, of its source and note, continued by the next of the same on the module and
+    /// change, of its source and note, continued by the next of the same on the tool and
     /// completed as any gesture is. A `Step` refused begins no gesture.
     Step {
         source: StepSource,
         note: Option<Note>,
         commands: Vec<Command>,
     },
-    /// The History tab's eye, held (decision 78): the live frame shows the module as if it
-    /// were reset while `hidden`, off for a switched module and at its defaults for one
+    /// The History tab's eye, held (decision 78): the live frame shows the tool as if it
+    /// were reset while `hidden`, off for a switched tool and at its defaults for one
     /// every photo runs, whose operation is never skipped; with `hidden` false, as the edit
     /// has it again. View state, as [`Command::Resize`] is, never a command on the edit: no
     /// history step, nothing written, no export, still or thumbnail changed, a gesture
     /// under way left under way, and taken on a photo opening or open for viewing only.
     /// It ends as the photo closes or another opens. Reported as [`ToolState::hidden`];
-    /// a module the session lacks is refused ([`EditError::UnknownTool`]); with no photo
-    /// open, nothing. A module's colour picker, which would read the view and write the
-    /// edit, measures nothing and applies no reading while any module is hidden, its reading
+    /// a tool the session lacks is refused ([`EditError::UnknownTool`]); with no photo
+    /// open, nothing. A tool's colour picker, which would read the view and write the
+    /// edit, measures nothing and applies no reading while any tool is hidden, its reading
     /// due waiting until all are shown, and none turns on meanwhile
-    /// ([`SessionError::Hidden`]); the Colour picker module's, which reads the frame shown and
+    /// ([`SessionError::Hidden`]); the Colour picker's, which reads the frame shown and
     /// writes nothing, is untouched.
     Hide { tool: String, hidden: bool },
     /// Write the open photo's edit again after its last write failed, as a client's Try
@@ -334,17 +334,17 @@ pub enum Command {
     /// counted for counts that frame again, without rendering.
     Scopes(Option<Graphs>),
     /// The active colour picker (decision 79; `docs/pickers.md`): turned on, its point or
-    /// area moved, switched between them, reset or turned off, a module's or the Colour
-    /// picker module's, and a module's pickers' settings and channel. View state,
-    /// never a command on the edit, though a module's picker writes the edit: its module
-    /// turned on with it, and its readings applied through the module's pick, the first
+    /// area moved, switched between them, reset or turned off, a tool's or the Colour
+    /// picker's, and a tool's pickers' settings and channel. View state,
+    /// never a command on the edit, though a tool's picker writes the edit: its tool
+    /// turned on with it, and its readings applied through the tool's pick, the first
     /// after it turns on and each after its region moves, a drag's one gesture. Answered by
     /// [`Event::Picker`]; `On` refused before the photo is live ([`SessionError::NotLive`]),
-    /// for a module's picker on a photo open for viewing only ([`SessionError::ViewOnly`]) or
-    /// while the History tab's eye hides a module ([`SessionError::Hidden`]),
-    /// and for a picker no module declares ([`SessionError::UnknownPicker`]); a point, an
+    /// for a tool's picker on a photo open for viewing only ([`SessionError::ViewOnly`]) or
+    /// while the History tab's eye hides a tool ([`SessionError::Hidden`]),
+    /// and for a picker no tool declares ([`SessionError::UnknownPicker`]); a point, an
     /// area, a switch or a reset with no picker on ([`SessionError::NoPicker`]); a
-    /// setting no picker of the module reads ([`SessionError::UnknownSetting`]).
+    /// setting no picker of the tool reads ([`SessionError::UnknownSetting`]).
     Picker(PickerCommand),
     /// Cancel a job, as its progress's cancel does (decision 57): a queued job never
     /// runs, and a running one stops at its body's next check, its GPU task dropped
@@ -485,17 +485,17 @@ fn viewport_limits(limits: &Limits, viewport: [u32; 2], sensor: &ImageDesc) -> L
     }
 }
 
-/// The modules a command changes: one, by its id; `Some(None)` for every module, as
+/// The tools a command changes: one, by its id; `Some(None)` for every tool, as
 /// `Reset` changes them; `None` for none, as a command off the edit, an operation's
 /// parameter and `RetrySave`.
-fn changed_module(command: &Command) -> Option<Option<String>> {
+fn changed_tool(command: &Command) -> Option<Option<String>> {
     match command {
-        Command::SetControl { tool: module, .. }
-        | Command::ResetControl { tool: module, .. }
-        | Command::ResetTool { tool: module }
-        | Command::CancelGesture { tool: module }
-        | Command::Keep { tool: module, .. }
-        | Command::ApplyPreset { tool: module, .. } => Some(Some(module.clone())),
+        Command::SetControl { tool, .. }
+        | Command::ResetControl { tool, .. }
+        | Command::ResetTool { tool }
+        | Command::CancelGesture { tool }
+        | Command::Keep { tool, .. }
+        | Command::ApplyPreset { tool, .. } => Some(Some(tool.clone())),
         Command::Reset => Some(None),
         _ => None,
     }
@@ -536,7 +536,7 @@ pub enum Event {
     /// open's number, where the photo turns view-only as a newer sidecar is taken in
     /// (`docs/history.md`, Behaviour), its values following.
     Opened(Photo),
-    /// Every module's controls and the unowned parameters, after an open or a change.
+    /// Every tool's controls and the unowned parameters, after an open or a change.
     Values(Values),
     /// A new frame to show.
     Frame(Frame),
@@ -554,7 +554,7 @@ pub enum Event {
     },
     /// `path` holds the edit as it stood after the first `through` commands
     /// ([`Session::send`] numbers them): written, or, where the file held it already,
-    /// reported with no write, as after a cancel or a module picker's completed command
+    /// reported with no write, as after a cancel or a tool picker's completed command
     /// whose pick wrote nothing; never proof of a new write.
     Saved {
         path: PathBuf,
@@ -613,7 +613,7 @@ pub enum Topic {
 pub enum Fact {
     /// The opening photo's picture: [`Event::OpenPreview`].
     OpenPreview,
-    /// Every module's controls: [`Event::Values`].
+    /// Every tool's controls: [`Event::Values`].
     Values,
     /// The frame to show: [`Event::Frame`].
     Frame,
@@ -723,7 +723,7 @@ pub struct Photo {
     pub aperture: Option<f32>,
     pub focal_length: Option<f32>,
     /// The photo's image context at full resolution, the one every binding sees, so a
-    /// client shows a module's view and availability of its pending values as the session
+    /// client shows a tool's view and availability of its pending values as the session
     /// will (decision 27): White balance's temperature and tint read the camera's matrix.
     /// Boxed, as the largest part of the photo the session opened.
     pub image: Box<ImageContext>,
@@ -731,12 +731,12 @@ pub struct Photo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Values {
-    /// Every module's controls, in the modules' order.
+    /// Every tool's controls, in the tools' order.
     pub tools: Vec<ToolState>,
-    /// Every parameter no module owns, of the operations an unedited photo runs: the
+    /// Every parameter no tool owns, of the operations an unedited photo runs: the
     /// edit's values over the photo's defaults.
     pub settings: Vec<Setting>,
-    /// Whether anything differs from its default for the photo, a switched module that is
+    /// Whether anything differs from its default for the photo, a switched tool that is
     /// on included (decision 32).
     pub edited: bool,
     /// How many commands had been applied: every one [`Session::send`] numbered up to
@@ -762,19 +762,19 @@ impl Values {
     }
 }
 
-/// One module's controls.
+/// One tool's controls.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolState {
     pub tool: &'static str,
-    /// Whether the module renders (decision 32): true for a module that is not switched,
+    /// Whether the tool renders (decision 32): true for a tool that is not switched,
     /// but while the history's end lies before its default step and darktable leaves it off
     /// until its workflow applies it (decision 78), and for a switched one while it is on;
-    /// a switched module off renders nothing, its controls at darktable's defaults. A panel
+    /// a switched tool off renders nothing, its controls at darktable's defaults. A panel
     /// shows nothing more for it than its reset unavailable, and screen readers hear "Not
     /// applied".
     pub enabled: bool,
     /// Whether its reset would change the render: a control differs from its default for
-    /// the photo, or a switched module is on.
+    /// the photo, or a switched tool is on.
     pub edited: bool,
     /// Whether the History tab's eye hides it from the view ([`Command::Hide`]): the live
     /// frame shows it as if it were reset, while its controls, `enabled` and `edited` stay
@@ -794,15 +794,15 @@ pub struct ToolState {
 pub struct CoordinateState {
     pub view: &'static str,
     pub coordinate: &'static str,
-    /// The coordinate held through a gesture, else the module's view of the controls'
+    /// The coordinate held through a gesture, else the tool's view of the controls'
     /// values; it may lie outside its range, where the controls put it.
     pub value: f32,
-    /// Its value at the module's defaults for the photo, which a reset goes back to.
+    /// Its value at the tool's defaults for the photo, which a reset goes back to.
     pub default: f32,
     /// The mark its view's controls share, `None` where they differ: marks belong to the
     /// stored controls, which views and presets set together.
     pub mark: Option<Mark>,
-    /// Whether it can change the photo: some control it moves can, and the module says the
+    /// Whether it can change the photo: some control it moves can, and the tool says the
     /// coordinate itself can, as White balance's temperature and tint cannot without the
     /// camera's matrix (decision 30). Never on a photo open for viewing only.
     pub available: bool,
@@ -828,7 +828,7 @@ pub struct ControlState {
     /// Its untouched value for the photo, which a reset goes back to.
     pub default: ControlValue,
     pub mark: Option<Mark>,
-    /// Whether it can change anything on this photo while the module's controls hold the
+    /// Whether it can change anything on this photo while the tool's controls hold the
     /// values reported with it (`Tool::available`, asked again after every change, so a
     /// control another's value disables follows it; decision 30), never for a control
     /// not ported (`Control::unported`) nor on a photo open for viewing only
@@ -837,14 +837,14 @@ pub struct ControlState {
     pub available: bool,
     /// For a choice, the options this photo lists, by id, in the definition's order
     /// (`Tool::options`, decision 30), computed once as the photo opened: every option
-    /// where the module's code panics or gives a list that does not hold together. The
+    /// where the tool's code panics or gives a list that does not hold together. The
     /// session refuses any other; `value` may still hold one, from another photo's edit.
     /// Empty for a control that is no choice.
     pub options: Vec<&'static str>,
-    /// For a number, its range while the module's controls hold the values reported with
+    /// For a number, its range while the tool's controls hold the values reported with
     /// it (`Tool::range`, decision 30): what a value may hold, what the track spans at
     /// rest and what a key moves, asked again after every change, so a range another
-    /// control moves follows it; the definition's where the module's code panics or gives
+    /// control moves follows it; the definition's where the tool's code panics or gives
     /// one that does not hold, warned of once for the photo. The session refuses a value
     /// outside it, and clamps one a change leaves outside. `None` for a control that is no
     /// number.
@@ -886,7 +886,7 @@ pub enum SessionError {
     NotAMosaic,
     #[error("reading the edit: {0}")]
     Sidecar(#[from] sidecar::SidecarError),
-    /// A change refused: out of range, of another kind, unknown, or a parameter a module
+    /// A change refused: out of range, of another kind, unknown, or a parameter a tool
     /// owns.
     #[error(transparent)]
     Edit(#[from] EditError),
@@ -918,7 +918,7 @@ pub enum SessionError {
     /// [`Command::GoTo`] named a step not in the open photo's history.
     #[error("the history has no step {step}")]
     UnknownStep { step: StepId },
-    /// A module that does not hold, left out of the session; or one whose binding failed,
+    /// A tool that does not hold, left out of the session; or one whose binding failed,
     /// left out of the render until it binds again.
     #[error("the tool {tool} is left out: {source}")]
     Tool {
@@ -969,19 +969,19 @@ pub enum SessionError {
     /// the rest of the session.
     #[error("the scopes are off: {0}")]
     Scopes(String),
-    /// [`PickerCommand::On`] named a picker no module declares, or one whose operation
-    /// the plan lacks once its module is on.
+    /// [`PickerCommand::On`] named a picker no tool declares, or one whose operation
+    /// the plan lacks once its tool is on.
     #[error("no tool has that colour picker")]
     UnknownPicker,
     /// [`PickerCommand::On`] or [`PickerCommand::Settings`] named a setting none of the
-    /// module's pickers reads.
+    /// tool's pickers reads.
     #[error("no colour picker of the tool reads the setting {0}")]
     UnknownSetting(&'static str),
     /// A colour picker's point, area, switch or reset with no picker on.
     #[error("no colour picker is on")]
     NoPicker,
-    /// [`PickerCommand::On`] named a module's picker while the History tab's eye hides a
-    /// module ([`Command::Hide`]): its reading would be the view's, not the edit's, and
+    /// [`PickerCommand::On`] named a tool's picker while the History tab's eye hides a
+    /// tool ([`Command::Hide`]): its reading would be the view's, not the edit's, and
     /// what it wrote would reach the edit and its exports (decision 78).
     #[error("a tool is hidden in the view")]
     Hidden,
@@ -1030,22 +1030,22 @@ pub(crate) struct Decoded {
     pub(crate) shot: Shot,
 }
 
-/// The options each choice of `modules` lists on `image`, by module and control
-/// (decision 30): [`edit::listed`], every option where a module's code panics or gives a
+/// The options each choice of `tools` lists on `image`, by tool and control
+/// (decision 30): [`edit::listed`], every option where a tool's code panics or gives a
 /// list that does not hold together, warned of once for the photo.
 fn listed_options(
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
     image: &ImageContext,
 ) -> BTreeMap<(&'static str, &'static str), Vec<&'static str>> {
     let mut lists = BTreeMap::new();
-    for &module in modules {
-        let id = module.definition().id;
-        let choices = module.definition().controls.iter();
+    for &tool in tools {
+        let id = tool.definition().id;
+        let choices = tool.definition().controls.iter();
         for control in choices.filter(|c| matches!(c.kind, ControlKind::Choice { .. })) {
-            let (listed, failed) = edit::listed(module, control, image);
+            let (listed, failed) = edit::listed(tool, control, image);
             if let Some(message) = failed {
                 let control = control.id;
-                tracing::warn!(target: "pipe", "module {id}'s {control} lists every option: {message}");
+                tracing::warn!(target: "pipe", "tool {id}'s {control} lists every option: {message}");
             }
             lists.insert((id, control.id), listed);
         }
@@ -1068,8 +1068,8 @@ pub struct Session {
 
 impl Session {
     /// Starts the engine thread on `gpu` with `operations`, the pipeline's operations,
-    /// and `modules`, what clients edit with. A module that does not hold against the
-    /// operations or the modules before it ([`check::accept`]) is reported
+    /// and `tools`, what clients edit with. A tool that does not hold against the
+    /// operations or the tools before it ([`check::accept`]) is reported
     /// [`SessionError::Tool`] and left out. Every edit the session writes records
     /// `build` as the build that wrote it: the client's version (decision 44). Every photo
     /// is planned within `budget` bytes of GPU memory, the engine's memory budget
@@ -1084,7 +1084,7 @@ impl Session {
     pub fn start(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        modules: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn Tool],
         build: &str,
         budget: u64,
         cache: Option<CacheOptions>,
@@ -1093,7 +1093,7 @@ impl Session {
         Self::spawn(
             gpu,
             operations,
-            modules,
+            tools,
             build,
             budget,
             cache,
@@ -1109,7 +1109,7 @@ impl Session {
     pub(crate) fn spawn(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        modules: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn Tool],
         build: &str,
         budget: u64,
         cache: Option<CacheOptions>,
@@ -1146,7 +1146,7 @@ impl Session {
                 let (mut engine, rejected) = Engine::new(
                     gpu,
                     operations,
-                    modules,
+                    tools,
                     build,
                     budget,
                     Writer::start(outbox.clone()),
@@ -1810,9 +1810,9 @@ impl Drop for Writer {
 struct Engine {
     gpu: GpuContext,
     operations: &'static [&'static dyn Operation],
-    /// The modules that hold, in order.
-    modules: Vec<&'static dyn Tool>,
-    /// The ids of the modules Apertrust has retired, whose values a saved edit loses
+    /// The tools that hold, in order.
+    tools: Vec<&'static dyn Tool>,
+    /// The ids of the tools Apertrust has retired, whose values a saved edit loses
     /// without making the photo view-only: `apertrust_tools::RETIRED`.
     retired: &'static [&'static str],
     /// The build every edit written records.
@@ -2165,41 +2165,41 @@ struct Open {
     unreadable: Option<Option<Stamp>>,
     /// Whether the edit has changed since it was last handed to the writer.
     unsaved: bool,
-    /// The modules whose binding failed at the last render, each reported once.
+    /// The tools whose binding failed at the last render, each reported once.
     failing: BTreeSet<&'static str>,
-    /// The modules whose preset rows panicked as the values were reported, each warned
+    /// The tools whose preset rows panicked as the values were reported, each warned
     /// of once for the photo.
     presets_failed: BTreeSet<&'static str>,
-    /// The modules whose availability panicked as the values were reported, each warned
+    /// The tools whose availability panicked as the values were reported, each warned
     /// of once for the photo (decision 30).
     available_failed: BTreeSet<&'static str>,
-    /// The modules whose ranges failed as the values were reported, each warned of once
+    /// The tools whose ranges failed as the values were reported, each warned of once
     /// for the photo (decision 30).
     ranges_failed: BTreeSet<&'static str>,
-    /// The options each choice lists on the photo, by module and control, computed once as
+    /// The options each choice lists on the photo, by tool and control, computed once as
     /// it opened (decision 30).
     options: BTreeMap<(&'static str, &'static str), Vec<&'static str>>,
     /// The coordinates of lossless views held through gestures (decision 2).
     held: Held,
     /// The gesture under way, which [`Command::CancelGesture`] puts back (decision 42).
     gesture: Option<Gesture>,
-    /// The modules whose views failed as the values were reported, each warned of once
+    /// The tools whose views failed as the values were reported, each warned of once
     /// for the photo.
     views_failed: BTreeSet<&'static str>,
     pipeline: Option<Pipeline>,
     /// The edit's history in memory, and its undo records (decision 78).
     history: history::PhotoHistory,
-    /// The modules the History tab's eye hides from the live frame ([`Command::Hide`]):
+    /// The tools the History tab's eye hides from the live frame ([`Command::Hide`]):
     /// view state, never in the edit, gone with the photo.
     hidden: BTreeSet<&'static str>,
 }
 
 /// A gesture under way (decision 42): the run of `SetControl { done: false }` on one
-/// module, and what its cancel puts back, the photo's edit as it stood before its first
+/// tool, and what its cancel puts back, the photo's edit as it stood before its first
 /// change. The whole edit, so whatever a change writes beside its own control, follow
-/// writes and clamps, and a switched module's on or off (decision 32), comes back with it.
+/// writes and clamps, and a switched tool's on or off (decision 32), comes back with it.
 struct Gesture {
-    module: String,
+    tool: String,
     /// The source and note of its step: those of the change that began it (decision 78).
     source: StepSource,
     note: Option<Note>,
@@ -2233,12 +2233,12 @@ struct Effect {
 }
 
 impl Engine {
-    /// The engine, planning within `budget` bytes, and an event for each module it
+    /// The engine, planning within `budget` bytes, and an event for each tool it
     /// leaves out.
     fn new(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        modules: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn Tool],
         build: String,
         budget: u64,
         writer: Writer,
@@ -2248,11 +2248,11 @@ impl Engine {
             budget,
             ..Limits::of(&gpu)
         };
-        let (modules, rejected) = check::accept(modules, operations);
+        let (tools, rejected) = check::accept(tools, operations);
         let rejected = rejected
             .into_iter()
             .map(|rejected| {
-                tracing::error!(target: "pipe", "module {} left out: {}", rejected.tool, rejected.error);
+                tracing::error!(target: "pipe", "tool {} left out: {}", rejected.tool, rejected.error);
                 Event::Failed(SessionError::Tool {
                     tool: rejected.tool,
                     source: rejected.error,
@@ -2262,7 +2262,7 @@ impl Engine {
         let engine = Engine {
             gpu,
             operations,
-            modules,
+            tools,
             retired: apertrust_tools::RETIRED,
             build,
             limits,
@@ -2532,7 +2532,7 @@ impl Engine {
         };
         let mut events = Vec::new();
         let (mut values, mut render, mut save, mut cancelled) = (false, false, false, false);
-        // Whether a module picker's command owed an answer has nothing to write.
+        // Whether a tool picker's command owed an answer has nothing to write.
         let mut answer = false;
         // Whether the scopes now count a graph the published frame was not counted for.
         let mut recount = false;
@@ -2543,9 +2543,9 @@ impl Engine {
             // Values follow every change asked for, failed or not, so a client's own
             // value is replaced by the engine's either way.
             values |= on_edit(&command);
-            // The module a command changes: a module's colour picker on turns off as its
-            // module changes.
-            let changes = changed_module(&command);
+            // The tool a command changes: a tool's colour picker on turns off as its
+            // tool changes.
+            let changes = changed_tool(&command);
             let result = match command {
                 Command::Open(path) => {
                     // Its number, which its `Opened` or its failure carries. What was
@@ -2585,10 +2585,7 @@ impl Engine {
                     Ok(())
                 }
                 // View state: its values say so, and the frame shows it.
-                Command::Hide {
-                    tool: module,
-                    hidden,
-                } => self.hide(&module, hidden).map(|changed| {
+                Command::Hide { tool, hidden } => self.hide(&tool, hidden).map(|changed| {
                     values |= changed;
                     render |= changed;
                 }),
@@ -2689,8 +2686,8 @@ impl Engine {
             };
             match result {
                 Ok(()) => {
-                    if let Some(module) = changes {
-                        self.picker_module_changed(module.as_deref(), &mut events);
+                    if let Some(tool) = changes {
+                        self.picker_tool_changed(tool.as_deref(), &mut events);
                     }
                 }
                 // An open's failure names its open already.
@@ -2706,7 +2703,7 @@ impl Engine {
         {
             events.push(Event::Values(open.values(
                 self.operations,
-                &self.modules,
+                &self.tools,
                 self.applied,
             )));
             // Once a batch, after its values and before its frame.
@@ -2748,23 +2745,23 @@ impl Engine {
             let size = [display.size.0, display.size.1];
             self.sample(&buffer, size, &mut events);
         }
-        // A module's picker at its operation, where the batch's render did not measure it:
+        // A tool's picker at its operation, where the batch's render did not measure it:
         // a sample-only render after the frame.
         self.probe_alone(&mut events);
         events
     }
 
-    /// Whether the History tab's eye hides any module of the open photo, while which a
-    /// module's picker measures and applies nothing (decision 78).
+    /// Whether the History tab's eye hides any tool of the open photo, while which a
+    /// tool's picker measures and applies nothing (decision 78).
     fn hiding(&self) -> bool {
         (self.open.as_ref()).is_some_and(|open| !open.hidden.is_empty())
     }
 
-    /// The History tab's eye on `module` ([`Command::Hide`]): whether the open photo's
-    /// hidden modules changed; none with no photo open. A module the session lacks is
+    /// The History tab's eye on `tool` ([`Command::Hide`]): whether the open photo's
+    /// hidden tools changed; none with no photo open. A tool the session lacks is
     /// refused.
-    fn hide(&mut self, module: &str, hidden: bool) -> Result<bool, SessionError> {
-        let id = edit::tool(&self.modules, module)?.definition().id;
+    fn hide(&mut self, tool: &str, hidden: bool) -> Result<bool, SessionError> {
+        let id = edit::tool(&self.tools, tool)?.definition().id;
         let Some(open) = &mut self.open else {
             return Ok(false);
         };
@@ -2821,58 +2818,55 @@ impl Engine {
     fn apply_command(&mut self, command: Command) -> Result<Effect, SessionError> {
         let (changed, completes) = match command {
             Command::SetControl {
-                tool: module,
+                tool,
                 control,
                 value,
                 done,
             } => {
-                let changed = self.change_holding(|edit, held, modules, _, image| {
-                    let module = edit::tool(modules, &module)?;
+                let changed = self.change_holding(|edit, held, tools, _, image| {
+                    let tool = edit::tool(tools, &tool)?;
                     let before = edit.clone();
-                    if module.definition().coordinate(&control).is_some() {
-                        edit.set_coordinate(held, module, &control, value, image)?;
+                    if tool.definition().coordinate(&control).is_some() {
+                        edit.set_coordinate(held, tool, &control, value, image)?;
                     } else {
-                        edit.set_control(module, &control, value, image)?;
+                        edit.set_control(tool, &control, value, image)?;
                     }
-                    edit.follow(&before, module, edit::written(module, &control), image)
+                    edit.follow(&before, tool, edit::written(tool, &control), image)
                 })?;
                 (changed, done)
             }
-            Command::ResetControl {
-                tool: module,
-                control,
-            } => {
+            Command::ResetControl { tool, control } => {
                 // A reset is a change to the default, with its follow writes.
-                let changed = self.change_holding(|edit, held, modules, _, image| {
-                    let module = edit::tool(modules, &module)?;
+                let changed = self.change_holding(|edit, held, tools, _, image| {
+                    let tool = edit::tool(tools, &tool)?;
                     let before = edit.clone();
-                    if module.definition().coordinate(&control).is_some() {
-                        edit.reset_coordinate(held, module, &control, image)?;
+                    if tool.definition().coordinate(&control).is_some() {
+                        edit.reset_coordinate(held, tool, &control, image)?;
                     } else {
-                        edit.reset_control(module, &control)?;
+                        edit.reset_control(tool, &control)?;
                     }
-                    edit.follow(&before, module, edit::written(module, &control), image)
+                    edit.follow(&before, tool, edit::written(tool, &control), image)
                 })?;
                 (changed, true)
             }
-            Command::ResetTool { tool: module } => {
-                let changed = self.change(|edit, modules, _, _| {
-                    edit.reset_tool(edit::tool(modules, &module)?);
+            Command::ResetTool { tool } => {
+                let changed = self.change(|edit, tools, _, _| {
+                    edit.reset_tool(edit::tool(tools, &tool)?);
                     Ok(())
                 })?;
                 (changed, true)
             }
             Command::Keep {
-                tool: module,
+                tool,
                 control,
                 kept,
             } => {
-                self.change(|edit, modules, _, _| {
-                    let module = edit::tool(modules, &module)?;
-                    if module.definition().coordinate(&control).is_some() {
-                        edit.keep_coordinate(module, &control, kept)
+                self.change(|edit, tools, _, _| {
+                    let tool = edit::tool(tools, &tool)?;
+                    if tool.definition().coordinate(&control).is_some() {
+                        edit.keep_coordinate(tool, &control, kept)
                     } else {
-                        edit.keep(module, &control, kept)
+                        edit.keep(tool, &control, kept)
                     }
                 })?;
                 // A mark changes no pixel.
@@ -2883,9 +2877,9 @@ impl Engine {
                     wrote: Vec::new(),
                 });
             }
-            Command::CancelGesture { tool: module } => {
+            Command::CancelGesture { tool } => {
                 let open = self.open.as_mut();
-                let Some(changed) = open.and_then(|open| open.cancel(&module)) else {
+                let Some(changed) = open.and_then(|open| open.cancel(&tool)) else {
                     // No gesture under way on it: nothing to put back, nor to save.
                     return Ok(Effect {
                         render: false,
@@ -2903,15 +2897,15 @@ impl Engine {
                 });
             }
             Command::ApplyPreset {
-                tool: module,
+                tool,
                 preset,
                 option,
             } => {
-                // An option's values are the module's own, every control it describes,
+                // An option's values are the tool's own, every control it describes,
                 // so they take no follow writes, as darktable's `_preset_tune_callback`
                 // writes its parameters without `gui_changed`.
-                let changed = self.change(|edit, modules, _, image| {
-                    edit.apply_preset(edit::tool(modules, &module)?, &preset, &option, image)
+                let changed = self.change(|edit, tools, _, image| {
+                    edit.apply_preset(edit::tool(tools, &tool)?, &preset, &option, image)
                 })?;
                 (changed, true)
             }
@@ -2920,8 +2914,8 @@ impl Engine {
                 param,
                 value,
             } => {
-                let changed = self.change(|edit, modules, operations, _| {
-                    edit.set_param(operations, modules, &operation, &param, value)
+                let changed = self.change(|edit, tools, operations, _| {
+                    edit.set_param(operations, tools, &operation, &param, value)
                 })?;
                 (changed, false)
             }
@@ -2999,8 +2993,8 @@ impl Engine {
         if let Some(view_only) = self.open.as_ref().and_then(|open| open.view_only.as_ref()) {
             return Err(SessionError::ViewOnly(view_only.clone()));
         }
-        self.change_holding(|edit, _, modules, operations, image| {
-            change(edit, modules, operations, image)
+        self.change_holding(|edit, _, tools, operations, image| {
+            change(edit, tools, operations, image)
         })
     }
 
@@ -3024,13 +3018,13 @@ impl Engine {
         let changed = change(
             &mut open.edit,
             &mut open.held,
-            &self.modules,
+            &self.tools,
             self.operations,
             &open.image,
         );
         // A number a moved range leaves outside comes back inside, in the same change
         // (decision 30).
-        let changed = changed.and_then(|()| open.edit.clamp(&before, &self.modules, &open.image));
+        let changed = changed.and_then(|()| open.edit.clamp(&before, &self.tools, &open.image));
         open.held.prune(&open.edit);
         changed?;
         let changed = open.edit != before;
@@ -3084,7 +3078,7 @@ impl Engine {
                 open.history.handed();
                 held
             };
-            let xml = open.xml(self.operations, &self.modules, &self.build);
+            let xml = open.xml(self.operations, &self.tools, &self.build);
             if !held || self.writer.failed(&open.sidecar) {
                 let hash = apertrust_library::index::hash(xml.as_bytes());
                 if open.thumbnail_hash != Some(hash) {
@@ -3107,7 +3101,7 @@ impl Engine {
             // step, as a gesture a batch began after completing a change: that is still to
             // write, and so is the edit before a gesture where it is not the log's fold. A
             // clamp of the fold alone is never a step, and nothing to write.
-            open.unsaved = !history::clamp_only(open, &self.modules);
+            open.unsaved = !history::clamp_only(open, &self.tools);
             let stepped = open.history.stepped();
             if let Some(gesture) = &mut open.gesture {
                 gesture.unsaved = gesture.edit != *stepped;
@@ -3167,7 +3161,7 @@ impl Engine {
     ///   session's log is written over it, with nothing to tell;
     /// - one a newer Apertrust wrote, or with a [`sidecar::Problem`], is shown as it reads,
     ///   for viewing only: `Opened` again with its reason, its values and history, the
-    ///   steps not yet saved reported unwritten, and a module's picker turned off;
+    ///   steps not yet saved reported unwritten, and a tool's picker turned off;
     /// - one that cannot be read is reported once, and nothing is written over it: each
     ///   later write finds it again, until it reads;
     /// - any other is taken in: the steps not yet saved laid on its log after its end, the
@@ -3195,7 +3189,7 @@ impl Engine {
                     &xml,
                     modified,
                     self.operations,
-                    &self.modules,
+                    &self.tools,
                     self.retired,
                 );
                 loaded.map_err(SessionError::Sidecar)
@@ -3257,7 +3251,7 @@ impl Engine {
             tracing::warn!(target: "pipe", "{name} changed, now for viewing only: {view_only}");
             let unsaved = (open.history.base() != *base
                 && (!open.history.unwritten() || open.history.cleared()))
-                || !history::clamp_only(open, &self.modules);
+                || !history::clamp_only(open, &self.tools);
             if unsaved {
                 events.push(Event::Failed(SessionError::NotSaved {
                     path: path.clone(),
@@ -3286,8 +3280,8 @@ impl Engine {
             *open.photo.image = open.image.clone();
             let photo = open.photo.clone();
             events.insert(0, Event::Opened(photo));
-            // A module's picker writes the edit, which no longer takes a change.
-            self.module_picker_off(&mut events);
+            // A tool's picker writes the edit, which no longer takes a change.
+            self.tool_picker_off(&mut events);
         } else {
             tracing::debug!(target: "pipe", "{name} changed: its steps taken in");
             for warning in &loaded.warnings {
@@ -3312,7 +3306,7 @@ impl Engine {
                 gesture.edit = crate::history::rebase(&gesture.edit, &was, &now);
             }
             open.edit = crate::history::rebase(&open.edit, &was, &now);
-            for warning in open.edit.clamp_read(&self.modules, &open.image) {
+            for warning in open.edit.clamp_read(&self.tools, &open.image) {
                 tracing::warn!(target: "pipe", "{warning}");
             }
             open.held.prune(&open.edit);
@@ -3324,7 +3318,7 @@ impl Engine {
         let changed = open.edit != before;
         events.push(Event::Values(open.values(
             self.operations,
-            &self.modules,
+            &self.tools,
             self.applied,
         )));
         events.extend(self.history_event());
@@ -3371,7 +3365,7 @@ impl Engine {
             load: Arc::clone(&self.load),
             cache: self.cache.clone(),
             operations: self.operations,
-            tools: self.modules.clone(),
+            tools: self.tools.clone(),
             retired: self.retired,
             // Read once the writer has written the edits handed to it, the photo
             // before's among them.
@@ -3402,7 +3396,7 @@ impl Engine {
             Stage::Read { read: Ok(read), .. } => {
                 let photo = self.install(*read, open);
                 let values = (self.open.as_mut())
-                    .map(|photo| photo.values(self.operations, &self.modules, self.applied));
+                    .map(|photo| photo.values(self.operations, &self.tools, self.applied));
                 events.push(Event::Opened(photo));
                 events.extend(values.map(Event::Values));
                 events.extend(self.history_event());
@@ -3480,7 +3474,7 @@ impl Engine {
         let base = history::Base::of(&log, &clocks);
         // A photo open for viewing only takes no change, so it is given no default steps.
         let defaults = match view_only {
-            None => crate::history::default_tools(&self.modules, self.operations),
+            None => crate::history::default_tools(&self.tools, self.operations),
             Some(_) => Vec::new(),
         };
         let history = history::PhotoHistory::read(log, clocks, &defaults);
@@ -3501,7 +3495,7 @@ impl Engine {
             focal_length: metadata.shot.focal_length,
             image: Box::new(image.clone()),
         };
-        let options = listed_options(&self.modules, &image);
+        let options = listed_options(&self.tools, &image);
         // Its saves are the ones its thumbnail waits for, and the file as read is what the
         // first compares.
         self.writer
@@ -3548,7 +3542,7 @@ impl Engine {
             return;
         };
         let start = Instant::now();
-        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
+        let bound = edit::instances(&open.shown(), self.operations, &self.tools, &open.image);
         let pipe = Pipe::Viewport { width, height };
         let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
         let planned = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits);
@@ -3595,11 +3589,11 @@ impl Engine {
         };
         if metadata.image != photo.image {
             tracing::debug!(target: "raw", "{name}: the decode's image context differs from the metadata's, taken");
-            photo.options = listed_options(&self.modules, &metadata.image);
+            photo.options = listed_options(&self.tools, &metadata.image);
             photo.image = metadata.image;
             // Clamped again to the ranges the decode's context gives, as an opened edit is.
             if photo.view_only.is_none() {
-                for warning in photo.edit.clamp_read(&self.modules, &photo.image) {
+                for warning in photo.edit.clamp_read(&self.tools, &photo.image) {
                     tracing::warn!(target: "pipe", "{warning}");
                 }
             }
@@ -3611,7 +3605,7 @@ impl Engine {
         photo.shot = metadata.shot;
         photo.input = Some(input);
         self.opening = None;
-        let values = photo.values(self.operations, &self.modules, self.applied);
+        let values = photo.values(self.operations, &self.tools, self.applied);
         events.push(Event::Values(values));
         events.extend(self.history_event());
         match self.render(started, events) {
@@ -3647,7 +3641,7 @@ impl Engine {
         let run = export_job::Run {
             gpu: self.gpu.clone(),
             operations: self.operations,
-            tools: self.modules.clone(),
+            tools: self.tools.clone(),
             retired: self.retired,
             limits: self.limits,
             load: Arc::clone(&self.load),
@@ -3724,7 +3718,7 @@ impl Engine {
         }
         let run = export_preview::Run {
             operations: self.operations,
-            tools: self.modules.clone(),
+            tools: self.tools.clone(),
             limits: self.limits,
             active: self
                 .live_among(&photos)
@@ -4004,8 +3998,8 @@ impl Engine {
     }
 
     /// Renders the photo at the viewport's size and publishes it, once both are known. A
-    /// module whose binding fails is left out of it and reported in `events`, once until
-    /// it binds again. A module's colour picker on is measured at its operation in the
+    /// tool whose binding fails is left out of it and reported in `events`, once until
+    /// it binds again. A tool's colour picker on is measured at its operation in the
     /// render's own submission; a reduction there the GPU refuses turns the pickers off,
     /// and the frame is rendered again without it.
     fn render(
@@ -4014,7 +4008,7 @@ impl Engine {
         events: &mut Vec<Event>,
     ) -> Result<Option<Frame>, SessionError> {
         let mut reduced = false;
-        // A module's picker measures nothing while the eye hides a module (decision 78).
+        // A tool's picker measures nothing while the eye hides a tool (decision 78).
         if !self.pickers.probing() || self.hiding() {
             return self.render_frame(since, events, false, &mut reduced);
         }
@@ -4052,7 +4046,7 @@ impl Engine {
         again
     }
 
-    /// [`Self::render`]'s one try, measuring at the module picker's operation with
+    /// [`Self::render`]'s one try, measuring at the tool picker's operation with
     /// `probe`; `reduced` says whether a reduction there went into its submission.
     fn render_frame(
         &mut self,
@@ -4069,16 +4063,13 @@ impl Engine {
             return Ok(None);
         };
         let pipe = Pipe::Viewport { width, height };
-        // The edit as shown, the modules the eye hides as if reset.
-        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
+        // The edit as shown, the tools the eye hides as if reset.
+        let bound = edit::instances(&open.shown(), self.operations, &self.tools, &open.image);
         let failing: BTreeSet<&'static str> = bound.failed.iter().map(|(id, _)| *id).collect();
-        for (module, source) in bound.failed {
-            if !open.failing.contains(module) {
-                tracing::error!(target: "pipe", "module {module} left out: {source}");
-                events.push(Event::Failed(SessionError::Tool {
-                    tool: module,
-                    source,
-                }));
+        for (tool, source) in bound.failed {
+            if !open.failing.contains(tool) {
+                tracing::error!(target: "pipe", "tool {tool} left out: {source}");
+                events.push(Event::Failed(SessionError::Tool { tool, source }));
             }
         }
         open.failing = failing;
@@ -4150,7 +4141,7 @@ impl Engine {
         };
         let display = self.display.insert(display);
         let next = 1 - display.published;
-        // A module's colour picker measured at its operation while what it reads changes,
+        // A tool's colour picker measured at its operation while what it reads changes,
         // in the same submission, right after the operation's last pass.
         let mut recorded = None;
         let probe = Self::probe(
@@ -4196,9 +4187,9 @@ impl Engine {
 
 impl Open {
     /// The edit as its file holds it, which thumbnails and exports render, as every reader
-    /// of the file folds it from the log at its saved end, the modules not applied among
+    /// of the file folds it from the log at its saved end, the tools not applied among
     /// it: the edit, but for a log of default steps never written, which the file lacks,
-    /// every module applied (decision 78).
+    /// every tool applied (decision 78).
     fn saved_edit(&self) -> Edit {
         let mut edit = self.edit.clone();
         if self.history.unwritten() {
@@ -4207,7 +4198,7 @@ impl Open {
         edit
     }
 
-    /// The edit as the live frame shows it: each module the History tab's eye hides as if
+    /// The edit as the live frame shows it: each tool the History tab's eye hides as if
     /// it were reset, off where switched and at its defaults where every photo runs it, its
     /// operation still planned (decision 78); the edit itself where none is hidden.
     fn shown(&self) -> Cow<'_, Edit> {
@@ -4215,8 +4206,8 @@ impl Open {
             return Cow::Borrowed(&self.edit);
         }
         let mut edit = self.edit.clone();
-        for module in &self.hidden {
-            edit.modules.remove(*module);
+        for tool in &self.hidden {
+            edit.tools.remove(*tool);
         }
         Cow::Owned(edit)
     }
@@ -4227,25 +4218,25 @@ impl Open {
     fn xml(
         &self,
         operations: &[&'static dyn Operation],
-        modules: &[&'static dyn Tool],
+        tools: &[&'static dyn Tool],
         build: &str,
     ) -> String {
         let (log, clocks) = (self.history.written(), self.history.clocks());
-        sidecar::log_xml(&self.file, &log, clocks, (operations, modules), build)
+        sidecar::log_xml(&self.file, &log, clocks, (operations, tools), build)
     }
 
     /// Follows the gesture under way through `command`, a change to the edit about to
     /// apply (decision 42): a `SetControl { done: false }`, or a `Step` of such changes
-    /// alone, goes on with the gesture on its module of its source and note, or begins one
+    /// alone, goes on with the gesture on its tool of its source and note, or begins one
     /// there from the edit and the held coordinates as they stand; any other change ends it
     /// as completed. A cancel is left to [`Self::cancel`].
     fn gesture_through(&mut self, command: &Command) {
-        if let Some((module, source, note)) = history::gesture_of(command) {
+        if let Some((tool, source, note)) = history::gesture_of(command) {
             let other =
-                |g: &Gesture| g.module != module || g.source != source || g.note.as_ref() != note;
+                |g: &Gesture| g.tool != tool || g.source != source || g.note.as_ref() != note;
             if self.gesture.as_ref().is_none_or(other) {
                 self.gesture = Some(Gesture {
-                    module: module.to_owned(),
+                    tool: tool.to_owned(),
                     source,
                     note: note.cloned(),
                     edit: self.edit.clone(),
@@ -4259,10 +4250,10 @@ impl Open {
     }
 
     /// Puts the edit, the held coordinates and whether the writer has that edit back as
-    /// they stood before the gesture under way on `module`, and says whether the edit
+    /// they stood before the gesture under way on `tool`, and says whether the edit
     /// changed; `None`, changing nothing, where no gesture is under way on it.
-    fn cancel(&mut self, module: &str) -> Option<bool> {
-        let gesture = self.gesture.take_if(|gesture| gesture.module == module)?;
+    fn cancel(&mut self, tool: &str) -> Option<bool> {
+        let gesture = self.gesture.take_if(|gesture| gesture.tool == tool)?;
         let changed = self.edit != gesture.edit;
         (self.edit, self.held, self.unsaved) = (gesture.edit, gesture.held, gesture.unsaved);
         Some(changed)
@@ -4271,17 +4262,17 @@ impl Open {
     fn values(
         &mut self,
         operations: &[&dyn Operation],
-        modules: &[&dyn Tool],
+        tools: &[&dyn Tool],
         through: u64,
     ) -> Values {
         let mut edited = false;
         // On a photo open for viewing only, no control can change anything.
         let editable = self.view_only.is_none();
-        let modules_state = modules
+        let tools_state = tools
             .iter()
-            .map(|module| {
-                let definition = module.definition();
-                let set = self.edit.modules.get(definition.id);
+            .map(|tool| {
+                let definition = tool.definition();
+                let set = self.edit.tools.get(definition.id);
                 // Every control's value: the edit's over its default for the photo.
                 let over = |defaults: &Controls| {
                     let mut values = Controls::new();
@@ -4295,21 +4286,21 @@ impl Open {
                     }
                     values
                 };
-                // A module's code may panic, as its binding is guarded against. Should
+                // A tool's code may panic, as its binding is guarded against. Should
                 // its defaults panic, its controls show the definition's, live; the
-                // render, which asks for them too, leaves the module out and reports it
+                // render, which asks for them too, leaves the tool out and reports it
                 // while the edit holds values of it.
-                let defaults = catch_unwind(AssertUnwindSafe(|| module.defaults(&self.image)))
+                let defaults = catch_unwind(AssertUnwindSafe(|| tool.defaults(&self.image)))
                     .unwrap_or_else(|_| definition.defaults());
                 let values = over(&defaults);
                 // A control not ported can change nothing on any photo; the others, as
-                // the module says while the controls hold what they hold now, so a
+                // the tool says while the controls hold what they hold now, so a
                 // control another's value disables follows it (decision 30).
                 let ported = || definition.controls.iter().map(|control| !control.unported);
                 let available = catch_unwind(AssertUnwindSafe(|| {
                     let available = definition.controls.iter().zip(ported()).map(
                         |(control, ported)| {
-                            ported && module.available(control.id, &values, &self.image)
+                            ported && tool.available(control.id, &values, &self.image)
                         },
                     );
                     available.collect::<Vec<bool>>()
@@ -4321,7 +4312,7 @@ impl Open {
                     let id = definition.id;
                     if self.available_failed.insert(id) {
                         let message = panic_message(panic.as_ref());
-                        tracing::warn!(target: "pipe", "module {id}'s controls all live: {message}");
+                        tracing::warn!(target: "pipe", "tool {id}'s controls all live: {message}");
                     }
                     ported().collect()
                 });
@@ -4347,13 +4338,13 @@ impl Open {
                         // nothing there (decision 30).
                         let alone = check::lists_only(control, &options, &value);
                         // A number's range for the values reported (decision 30).
-                        let range = edit::range(*module, control.id, &values).map(
+                        let range = edit::range(*tool, control.id, &values).map(
                             |(range, failed)| {
                                 let id = definition.id;
                                 if let Some(message) = failed
                                     && self.ranges_failed.insert(id)
                                 {
-                                    tracing::warn!(target: "pipe", "module {id}'s ranges are its definition's: {message}");
+                                    tracing::warn!(target: "pipe", "tool {id}'s ranges are its definition's: {message}");
                                 }
                                 range
                             },
@@ -4369,16 +4360,16 @@ impl Open {
                         }
                     })
                     .collect();
-                let enabled = self.edit.is_on(*module);
-                let module_edited = (definition.switched && enabled)
+                let enabled = self.edit.is_on(*tool);
+                let tool_edited = (definition.switched && enabled)
                     || controls.iter().any(|c| c.value != c.default);
-                edited |= module_edited;
-                let presets = self.presets(*module, &controls);
-                let views = self.views(*module, &controls, &values);
+                edited |= tool_edited;
+                let presets = self.presets(*tool, &controls);
+                let views = self.views(*tool, &controls, &values);
                 ToolState {
                     tool: definition.id,
                     enabled,
-                    edited: module_edited,
+                    edited: tool_edited,
                     hidden: self.hidden.contains(definition.id),
                     controls,
                     presets,
@@ -4401,7 +4392,7 @@ impl Open {
                 continue;
             };
             for param in operation.schema().params {
-                if check::owner(modules, manifest.id, param.name).is_some() {
+                if check::owner(tools, manifest.id, param.name).is_some() {
                     continue;
                 }
                 if let Some(value) = resolved.get(param.name) {
@@ -4410,13 +4401,13 @@ impl Open {
                 }
             }
         }
-        // The edit's instances as the live frame shows them, every module's that binds and
+        // The edit's instances as the live frame shows them, every tool's that binds and
         // the eye does not hide, as the render plans them.
-        let instances = edit::instances(&self.shown(), operations, modules, &self.image).instances;
+        let instances = edit::instances(&self.shown(), operations, tools, &self.image).instances;
         let extent = pipeline::extent(&instances, &self.image)
             .unwrap_or([self.image.width, self.image.height]);
         Values {
-            tools: modules_state,
+            tools: tools_state,
             settings,
             edited,
             through,
@@ -4425,12 +4416,12 @@ impl Open {
         }
     }
 
-    /// Each of the module's preset rows while its controls hold `controls`: the option
+    /// Each of the tool's preset rows while its controls hold `controls`: the option
     /// they match and the options the photo can have, none while it is open for viewing
-    /// only. Should the module's code panic, every row reads Custom, with no option to
+    /// only. Should the tool's code panic, every row reads Custom, with no option to
     /// apply, and a warning says so once for the photo.
-    fn presets(&mut self, module: &dyn Tool, controls: &[ControlState]) -> Vec<PresetState> {
-        let rows = module.definition().presets;
+    fn presets(&mut self, tool: &dyn Tool, controls: &[ControlState]) -> Vec<PresetState> {
+        let rows = tool.definition().presets;
         let editable = self.view_only.is_none();
         let mut values = Controls::new();
         for control in controls {
@@ -4440,13 +4431,13 @@ impl Open {
             rows.iter()
                 .map(|row| PresetState {
                     preset: row.id,
-                    matching: module.matching(row.id, &values, &self.image),
+                    matching: tool.matching(row.id, &values, &self.image),
                     available: row
                         .options
                         .iter()
                         .copied()
                         .filter(|option| {
-                            editable && module.preset(row.id, option, &self.image).is_some()
+                            editable && tool.preset(row.id, option, &self.image).is_some()
                         })
                         .collect(),
                 })
@@ -4455,11 +4446,11 @@ impl Open {
         match states {
             Ok(states) => states,
             Err(panic) => {
-                let id = module.definition().id;
+                let id = tool.definition().id;
                 // The values are reported after every change: once is enough.
                 if self.presets_failed.insert(id) {
                     let message = panic_message(panic.as_ref());
-                    tracing::warn!(target: "pipe", "module {id}'s presets read Custom: {message}");
+                    tracing::warn!(target: "pipe", "tool {id}'s presets read Custom: {message}");
                 }
                 rows.iter()
                     .map(|row| PresetState {
@@ -4472,26 +4463,26 @@ impl Open {
         }
     }
 
-    /// Every coordinate of the module's lossless views: the held coordinates through a
-    /// gesture, else the module's view of the values, each available while a control of
-    /// `controls` it moves is and the module's `available` holds for it on `values`. A view
-    /// the module fails to give, by a panic or with no coordinates, is left out, and a
+    /// Every coordinate of the tool's lossless views: the held coordinates through a
+    /// gesture, else the tool's view of the values, each available while a control of
+    /// `controls` it moves is and the tool's `available` holds for it on `values`. A view
+    /// the tool fails to give, by a panic or with no coordinates, is left out, and a
     /// warning says so once for the photo.
     fn views(
         &mut self,
-        module: &dyn Tool,
+        tool: &dyn Tool,
         controls: &[ControlState],
         values: &Controls,
     ) -> Vec<CoordinateState> {
-        let id = module.definition().id;
+        let id = tool.definition().id;
         let mut states = Vec::new();
-        for view in module.definition().views {
+        for view in tool.definition().views {
             let image = &self.image;
             let viewed = self
                 .edit
-                .coordinates(&self.held, module, view, image)
+                .coordinates(&self.held, tool, view, image)
                 .and_then(|values| {
-                    let defaults = edit::default_coordinates(module, view, image)?;
+                    let defaults = edit::default_coordinates(tool, view, image)?;
                     Ok((values, defaults))
                 });
             let (viewed, defaults) = match viewed {
@@ -4499,7 +4490,7 @@ impl Open {
                 Err(error) => {
                     // The values are reported after every change: once is enough.
                     if self.views_failed.insert(id) {
-                        tracing::warn!(target: "pipe", "module {id}'s views left out: {error}");
+                        tracing::warn!(target: "pipe", "tool {id}'s views left out: {error}");
                     }
                     continue;
                 }
@@ -4517,10 +4508,10 @@ impl Open {
                 .any(|shown| shown.available && view.controls.contains(&shown.control));
             let coordinates = view.coordinates.iter().zip(viewed).zip(defaults);
             for ((coordinate, value), default) in coordinates {
-                // A module's code may panic, as its binding is guarded against: the
+                // A tool's code may panic, as its binding is guarded against: the
                 // coordinate then follows its controls.
                 let own = catch_unwind(AssertUnwindSafe(|| {
-                    module.available(coordinate.id, values, image)
+                    tool.available(coordinate.id, values, image)
                 }))
                 .unwrap_or(true);
                 states.push(CoordinateState {
@@ -4544,20 +4535,20 @@ pub mod testing {
     use super::*;
 
     /// Starts a session as [`Session::start`] does, within the engine's default budget and
-    /// with no disk cache, whose every raw is the modules crate's synthetic photo, 96 × 72
+    /// with no disk cache, whose every raw is the tools crate's synthetic photo, 96 × 72
     /// photosites, whatever its path; one called `embedded.ARW` holds an embedded
     /// picture. The edit beside each path is read and written as any.
     pub fn start(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        modules: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn Tool],
         build: &str,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Session {
         Session::spawn(
             gpu,
             operations,
-            modules,
+            tools,
             build,
             pipeline::BUDGET,
             None,
@@ -4662,16 +4653,16 @@ mod tests {
     /// A session opening the synthetic photos `develop` gives.
     fn start_with(
         gpu: &GpuContext,
-        modules: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn Tool],
         develop: open::testing::Develop,
     ) -> (Session, Receiver<()>) {
-        spawned(gpu, modules, None, loading(develop))
+        spawned(gpu, tools, None, loading(develop))
     }
 
     /// A session opening the raws `load` gives, keeping `cache`.
     fn spawned(
         gpu: &GpuContext,
-        modules: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn Tool],
         cache: Option<CacheOptions>,
         load: Load,
     ) -> (Session, Receiver<()>) {
@@ -4682,7 +4673,7 @@ mod tests {
         let session = Session::spawn(
             gpu.clone(),
             OPERATIONS,
-            modules,
+            tools,
             BUILD,
             pipeline::BUDGET,
             cache,
@@ -4693,8 +4684,8 @@ mod tests {
     }
 
     /// A session opening the raws on disk.
-    fn start(gpu: &GpuContext, modules: &'static [&'static dyn Tool]) -> (Session, Receiver<()>) {
-        spawned(gpu, modules, None, open::files())
+    fn start(gpu: &GpuContext, tools: &'static [&'static dyn Tool]) -> (Session, Receiver<()>) {
+        spawned(gpu, tools, None, open::files())
     }
 
     /// Whether `event` is the values of a photo gone live.
@@ -5610,7 +5601,7 @@ mod tests {
     }
 
     #[test]
-    fn a_faulty_module_is_reported_and_left_out() {
+    fn a_faulty_tool_is_reported_and_left_out() {
         let gpu = gpu();
         let (session, wakes) = start(&gpu, &[&Sample, &Rival]);
         let events = until(&session, &wakes, |e| matches!(e, Event::Failed(_)));
@@ -5644,8 +5635,8 @@ mod tests {
             ),
             "{events:?}"
         );
-        let modules: Vec<&str> = values(&events).tools.iter().map(|m| m.tool).collect();
-        assert_eq!(modules, ["sample"]);
+        let tools: Vec<&str> = values(&events).tools.iter().map(|m| m.tool).collect();
+        assert_eq!(tools, ["sample"]);
     }
 
     /// A session's engine, driven directly, its photos the synthetic one, with the
@@ -5659,23 +5650,23 @@ mod tests {
     }
 
     impl Driven {
-        fn new(modules: &'static [&'static dyn Tool]) -> Self {
-            Driven::within(modules, pipeline::BUDGET)
+        fn new(tools: &'static [&'static dyn Tool]) -> Self {
+            Driven::within(tools, pipeline::BUDGET)
         }
 
         /// An engine that plans within `budget` bytes.
-        fn within(modules: &'static [&'static dyn Tool], budget: u64) -> Self {
-            Driven::on(gpu(), modules, budget)
+        fn within(tools: &'static [&'static dyn Tool], budget: u64) -> Self {
+            Driven::on(gpu(), tools, budget)
         }
 
         /// An engine on `gpu` that plans within `budget` bytes.
-        fn on(gpu: GpuContext, modules: &'static [&'static dyn Tool], budget: u64) -> Self {
+        fn on(gpu: GpuContext, tools: &'static [&'static dyn Tool], budget: u64) -> Self {
             let (sent, saved) = outbox::channel(Arc::new(|| {}));
             let (tasks, inbox) = mpsc::channel();
             let (mut engine, _) = Engine::new(
                 gpu.clone(),
                 OPERATIONS,
-                modules,
+                tools,
                 BUILD.to_owned(),
                 budget,
                 Writer::start(sent.clone()),
@@ -5850,11 +5841,11 @@ mod tests {
             .collect()
     }
 
-    fn control<'v>(values: &'v Values, module: &str, control: &str) -> &'v ControlState {
+    fn control<'v>(values: &'v Values, tool: &str, control: &str) -> &'v ControlState {
         values
             .tools
             .iter()
-            .find(|m| m.tool == module)
+            .find(|m| m.tool == tool)
             .and_then(|m| m.controls.iter().find(|c| c.control == control))
             .unwrap()
     }
@@ -5862,7 +5853,7 @@ mod tests {
     /// The viewport pipe's render of the synthetic photo through the operations an
     /// unedited photo runs, decision 22's eight and colour calibration (decision 27),
     /// named here rather than taken from an edit, and `extra`, with `settings`: as the
-    /// engine rendered before modules.
+    /// engine rendered before tools.
     fn direct(gpu: &GpuContext, extra: &[&str], settings: &[(&str, &str, Value)]) -> Vec<u8> {
         let ids = [
             "rawprepare",
@@ -5944,7 +5935,7 @@ mod tests {
         COUNTED_ASKED.with(std::cell::Cell::get)
     }
 
-    /// A module with two choices for the session's lists (decision 30): `mode`, which
+    /// A tool with two choices for the session's lists (decision 30): `mode`, which
     /// every photo lists only at its default, one, as darktable lists a monochrome
     /// sensor's one demosaic method; and `counted`, whose list panics, counting the times
     /// it is asked. It owns and binds nothing.
@@ -6293,11 +6284,11 @@ mod tests {
         remove(&path);
     }
 
-    /// Each change's clamp asks every module (decision 30) and passes over one whose
-    /// defaults for the photo panic: another module's changes apply with their clamps, and
+    /// Each change's clamp asks every tool (decision 30) and passes over one whose
+    /// defaults for the photo panic: another tool's changes apply with their clamps, and
     /// the photo stays open and saves them.
     #[test]
-    fn a_module_whose_defaults_panic_leaves_the_others_changes_to_apply() {
+    fn a_tool_whose_defaults_panic_leaves_the_others_changes_to_apply() {
         let path = scratch("defaultless");
         let mut driven = Driven::new(&[&Defaultless, &Sample]);
         driven.open(&path);
@@ -6320,7 +6311,7 @@ mod tests {
 
     /// A drag of a view's coordinate whose move of a range clamps another control
     /// (decision 30): each step clamps in the same change, and the coordinates it holds
-    /// survive the clamp, the difference held exactly where the module's view of the
+    /// survive the clamp, the difference held exactly where the tool's view of the
     /// values would round it.
     #[test]
     fn a_coordinate_s_drag_clamps_what_its_range_leaves_outside_holding_the_others() {
@@ -6350,11 +6341,11 @@ mod tests {
         remove(&path);
     }
 
-    /// A drag step whose clamp would rewrite what the step itself wrote is the module's
+    /// A drag step whose clamp would rewrite what the step itself wrote is the tool's
     /// failure (decision 30): [`Pushing`]'s bias writes a coarseness of 190 % as it
     /// moves, which a bias under 90 % leaves outside. The step is refused, the edit as the
     /// step before left it, and the gesture's held coordinates dropped: the coordinates are
-    /// the module's view of the values again.
+    /// the tool's view of the values again.
     #[test]
     fn a_drag_step_whose_clamp_is_refused_changes_nothing_and_ends_the_gesture() {
         let path = scratch("view-clamp-refused");
@@ -6424,7 +6415,7 @@ mod tests {
     }
 
     #[test]
-    fn an_untouched_module_renders_what_the_engine_did_before_modules() {
+    fn an_untouched_tool_renders_what_the_engine_did_before_tools() {
         let path = scratch("untouched");
         let mut driven = Driven::new(&[&Sample]);
         let events = driven.open(&path);
@@ -6466,12 +6457,12 @@ mod tests {
         remove(&path);
     }
 
-    /// A switched module (decision 32): off and unedited on a new photo; a write at its
+    /// A switched tool (decision 32): off and unedited on a new photo; a write at its
     /// default turns it on and edited, rendering darktable's new instance; a cancelled
     /// gesture and its reset each put it back off, the second rendering the untouched
     /// frame.
     #[test]
-    fn a_switched_module_reports_on_from_a_write_until_its_reset() {
+    fn a_switched_tool_reports_on_from_a_write_until_its_reset() {
         use apertrust_tools::grain::Grain;
         let path = scratch("switched");
         let mut driven = Driven::new(&[&Grain]);
@@ -6512,7 +6503,7 @@ mod tests {
     }
 
     #[test]
-    fn module_commands_render_the_parameters_their_binding_derives() {
+    fn tool_commands_render_the_parameters_their_binding_derives() {
         let path = scratch("derived");
         let mut driven = Driven::new(&[&Sample]);
         driven.open(&path);
@@ -6594,7 +6585,7 @@ mod tests {
                         source: ControlError::WrongKind { .. },
                         ..
                     }),
-                    // An option darktable lists that the module does not port.
+                    // An option darktable lists that the tool does not port.
                     SessionError::Edit(EditError::Control {
                         source: ControlError::Unported { option: "film", .. },
                         ..
@@ -6716,8 +6707,8 @@ mod tests {
         driven.open(&path);
         driven.run([set("grain", ControlValue::Number(20.0), true)]);
         driven.writes();
-        let other = |module: &str, preset: &str| Command::ApplyPreset {
-            tool: module.to_owned(),
+        let other = |tool: &str, preset: &str| Command::ApplyPreset {
+            tool: tool.to_owned(),
             preset: preset.to_owned(),
             option: "grainy".to_owned(),
         };
@@ -6781,7 +6772,7 @@ mod tests {
         })
     }
 
-    /// The pair's coordinates for grain and bias, the module's view of them.
+    /// The pair's coordinates for grain and bias, the tool's view of them.
     fn viewed(grain_and_bias: &[(ControlValue, Option<Mark>); 2]) -> Vec<f32> {
         let mut values = Sample.defaults(&testing::image());
         for (id, (value, _)) in ["grain", "bias"].into_iter().zip(grain_and_bias) {
@@ -6790,7 +6781,7 @@ mod tests {
         Sample.view("pair", &values, &testing::image()).unwrap()
     }
 
-    /// Grain and bias for the pair's `coordinates`, the module's inverse of its view.
+    /// Grain and bias for the pair's `coordinates`, the tool's inverse of its view.
     fn unviewed(coordinates: [f32; 2]) -> [ControlValue; 2] {
         let values = Sample
             .unview("pair", &coordinates, &testing::image())
@@ -6819,13 +6810,13 @@ mod tests {
         assert!(driven.writes().is_empty(), "nothing saved until done");
         let events = driven.run([set("sum", ControlValue::Number(110.1), true)]);
         let shown = values(&events);
-        // Grain and bias are what the module's inverse gives the sum and the difference
+        // Grain and bias are what the tool's inverse gives the sum and the difference
         // held, each kept, as though the drag had been one step.
         let [grain, bias] = unviewed([110.1, -40.3]);
         let kept = Some(Mark::Kept);
         assert_eq!(grain_and_bias(shown), [(grain.clone(), kept), (bias, kept)]);
         assert_eq!(pair(shown), [(110.1, 100.0, kept), (-40.3, -100.0, kept)]);
-        // The module's view of them gives the difference back only to a rounding: the
+        // The tool's view of them gives the difference back only to a rounding: the
         // session's hold is what keeps it exact.
         assert_ne!(viewed(&grain_and_bias(shown))[1], -40.3);
         // One change, saved once, rendering what the binding derives.
@@ -6853,7 +6844,7 @@ mod tests {
                 set("difference", ControlValue::Number(-40.3), true),
             ]);
             // A change to grain or bias but through the pair: the coordinates are the
-            // module's view of the values again, ...
+            // tool's view of the values again, ...
             let events = driven.run([other.clone()]);
             let viewed = viewed(&grain_and_bias(values(&events)));
             let shown = pair(values(&events)).map(|(value, ..)| value);
@@ -6875,7 +6866,7 @@ mod tests {
     }
 
     #[test]
-    fn a_coordinate_resets_holding_the_others_and_all_back_leave_the_module_untouched() {
+    fn a_coordinate_resets_holding_the_others_and_all_back_leave_the_tool_untouched() {
         let path = scratch("view-reset");
         let mut driven = Driven::new(&[&Sample]);
         let opened = driven.open(&path);
@@ -6908,7 +6899,7 @@ mod tests {
             [(100.0, 100.0, None), (-100.0, -100.0, None)]
         );
 
-        // Both in one batch, then the module's own reset: the same.
+        // Both in one batch, then the tool's own reset: the same.
         driven.run(moved.clone());
         let events = driven.run([reset("sum"), reset("difference")]);
         assert_eq!(edit(&driven), Edit::default());
@@ -7052,7 +7043,7 @@ mod tests {
     }
 
     /// A preset row whose options panic, and a lossless view whose coordinates do, as a
-    /// module's bug may make them.
+    /// tool's bug may make them.
     struct Brittle;
 
     static BRITTLE: Definition = Definition {
@@ -7127,7 +7118,7 @@ mod tests {
     }
 
     #[test]
-    fn a_preset_row_whose_module_panics_reads_custom_and_refuses_its_options() {
+    fn a_preset_row_whose_tool_panics_reads_custom_and_refuses_its_options() {
         let path = scratch("brittle");
         let mut driven = Driven::new(&[&Sample, &Brittle]);
         let events = driven.open(&path);
@@ -7167,13 +7158,13 @@ mod tests {
     }
 
     #[test]
-    fn a_view_whose_module_panics_is_left_out_and_refuses_its_coordinates() {
+    fn a_view_whose_tool_panics_is_left_out_and_refuses_its_coordinates() {
         let path = scratch("brittle-view");
         let mut driven = Driven::new(&[&Sample, &Brittle]);
         let events = driven.open(&path);
-        let modules = &values(&events).tools;
-        assert!(modules[1].views.is_empty());
-        assert_eq!(modules[0].views.len(), 2, "Sample's pair still shows");
+        let tools = &values(&events).tools;
+        assert!(tools[1].views.is_empty());
+        assert_eq!(tools[0].views.len(), 2, "Sample's pair still shows");
         let events = driven.run([
             Command::SetControl {
                 tool: "brittle".to_owned(),
@@ -7302,8 +7293,8 @@ mod tests {
             matches!(opened.first(), Some(Event::Opened(photo)) if *photo.image == testing::image())
         );
         let settings = |values: &Values| {
-            let module = &values.tools[0];
-            let row = module.presets.iter().find(|p| p.preset == "settings");
+            let tool = &values.tools[0];
+            let row = tool.presets.iter().find(|p| p.preset == "settings");
             (
                 row.unwrap().matching,
                 control(values, "temperature", "preset").value.clone(),
@@ -7366,7 +7357,7 @@ mod tests {
     }
 
     #[test]
-    fn a_follow_write_its_module_gets_wrong_refuses_the_change() {
+    fn a_follow_write_its_tool_gets_wrong_refuses_the_change() {
         use apertrust_tools::testing::{Follow, Following};
         let path = scratch("follow-wrong");
         let mut driven = Driven::new(&[&Following(Follow::OutOfRange)]);
@@ -7397,7 +7388,7 @@ mod tests {
 
     /// [`Sample`] whose grain writes its size as [`testing::Following`]'s does: follow
     /// writes, a range that clamps (coarseness up to 100 % plus the bias) and a lossless
-    /// view on one module, for the tests of a gesture's cancel.
+    /// view on one tool, for the tests of a gesture's cancel.
     struct Followed;
 
     impl Tool for Followed {
@@ -7473,13 +7464,13 @@ mod tests {
     }
 
     /// A slider popup's cancel (decision 42): a drag of several `done: false` changes on
-    /// one module, with a change to another of its controls, follow writes and a clamp, is
+    /// one tool, with a change to another of its controls, follow writes and a clamp, is
     /// put back exactly, every value and mark and the coordinate the pair held, and the
     /// frame before it renders again. It is no history step and leaves nothing to write:
     /// the writer reports it saved with the cancel's number and writes nothing, neither
     /// then nor as the photo closes.
     #[test]
-    fn a_cancelled_gesture_puts_its_module_back_as_it_was_and_writes_nothing() {
+    fn a_cancelled_gesture_puts_its_tool_back_as_it_was_and_writes_nothing() {
         let path = scratch("cancel");
         let other = scratch("cancel-other");
         let sidecar = sidecar::path_for(&path);
@@ -7536,7 +7527,7 @@ mod tests {
         let cancelled = values(&events);
         assert_eq!(reported(cancelled), reported(&before));
         assert_eq!(cancelled.through, through);
-        // The difference as the pair held it, where the module's view of grain and bias
+        // The difference as the pair held it, where the tool's view of grain and bias
         // rounds it.
         assert_eq!(coordinate(cancelled, "difference").value, -40.3);
         assert_ne!(viewed(&grain_and_bias(cancelled))[1], -40.3);
@@ -7587,14 +7578,14 @@ mod tests {
         remove(&path);
     }
 
-    /// With no gesture under way on the module it names, a cancel changes nothing: no
+    /// With no gesture under way on the tool it names, a cancel changes nothing: no
     /// frame, no write, the values as they were, and the gesture under way on another
-    /// module still under way. Like every cancel (decision 42), it is reported saved with
+    /// tool still under way. Like every cancel (decision 42), it is reported saved with
     /// its number while the file holds the edit; while the file does not, as after a step
     /// of a gesture or an unowned parameter's `Set`, it is not, and the edit is saved when
     /// it would have been.
     #[test]
-    fn a_cancel_with_no_gesture_under_way_on_its_module_changes_nothing() {
+    fn a_cancel_with_no_gesture_under_way_on_its_tool_changes_nothing() {
         let path = scratch("cancel-nothing");
         let other = scratch("cancel-nothing-other");
         let sidecar = sidecar::path_for(&path);
@@ -7623,7 +7614,7 @@ mod tests {
         let writes = nothing(&mut driven, cancel(), values(&events));
         assert!(saved(&driven, &writes), "{writes:?}");
         assert_eq!(written_file(&sidecar), file);
-        // Another module named, while a gesture is under way on this one.
+        // Another tool named, while a gesture is under way on this one.
         let events = driven.run([set("grain", ControlValue::Number(60.0), false)]);
         let elsewhere = Command::CancelGesture {
             tool: "other".to_owned(),
@@ -7656,7 +7647,7 @@ mod tests {
     }
 
     /// A gesture that begins with a change no write includes yet, the end of a gesture on
-    /// another module or an unowned parameter's `Set`, starts unsaved: its cancel writes
+    /// another tool or an unowned parameter's `Set`, starts unsaved: its cancel writes
     /// the log, which holds the other gesture's step but not the `Set`, a change not yet a
     /// step; once another photo opens, the `Set` is a step, and the file holds both.
     #[test]
@@ -7717,7 +7708,7 @@ mod tests {
     }
 
     /// Any other change to the edit ends a gesture as completed (decision 42), so a cancel
-    /// after it changes nothing, and a gesture on another module begins where the first
+    /// after it changes nothing, and a gesture on another tool begins where the first
     /// ended; a resize and the scopes, which change no edit, leave it under way.
     #[test]
     fn another_change_ends_a_gesture_as_completed_but_a_resize_does_not() {
@@ -7812,8 +7803,8 @@ mod tests {
             views.iter().find(|c| c.coordinate == id).unwrap().value
         };
         let settings = |values: &Values| {
-            let module = &values.tools[0];
-            let row = module.presets.iter().find(|p| p.preset == "settings");
+            let tool = &values.tools[0];
+            let row = tool.presets.iter().find(|p| p.preset == "settings");
             (
                 row.unwrap().matching,
                 control(values, "temperature", "preset").mark,
@@ -7852,7 +7843,7 @@ mod tests {
         remove(&path);
     }
 
-    /// A module whose `available` panics while its `trigger` is on, as a module's bug may
+    /// A tool whose `available` panics while its `trigger` is on, as a tool's bug may
     /// make it, so a change reaches the bug (decision 30). Its `level` defaults to the
     /// photo's width, which its preset row's one option writes, and `later` is not ported.
     struct Touchy;
@@ -7968,16 +7959,16 @@ mod tests {
             touchy(&driven.run([on])),
             touchy(&driven.run([set("grain", ControlValue::Number(20.0), true)])),
         ];
-        for module in &reports {
-            let state = |id| module.controls.iter().find(|c| c.control == id).unwrap();
+        for tool in &reports {
+            let state = |id| tool.controls.iter().find(|c| c.control == id).unwrap();
             // The photo's defaults stand: level at its width, its preset's option matched,
             // and nothing but the trigger edited.
             let level = state("level");
             assert_eq!(level.value, ControlValue::Number(84.0));
             assert_eq!(level.default, ControlValue::Number(84.0));
-            assert_eq!(module.presets[0].matching, Some("photo"));
-            assert!(module.edited);
-            let edited: Vec<&str> = module
+            assert_eq!(tool.presets[0].matching, Some("photo"));
+            assert!(tool.edited);
+            let edited: Vec<&str> = tool
                 .controls
                 .iter()
                 .filter(|c| c.value != c.default)
@@ -7996,8 +7987,8 @@ mod tests {
             tool: "touchy".to_owned(),
             control: "trigger".to_owned(),
         };
-        let module = touchy(&driven.run([off]));
-        assert_eq!(module, untouched);
+        let tool = touchy(&driven.run([off]));
+        assert_eq!(tool, untouched);
         driven.writes();
         remove(&path);
     }
@@ -8127,13 +8118,13 @@ mod tests {
 
     /// [`brightened`] as version 2 writes it, a log of its one step.
     fn brightened_log(build: &str) -> String {
-        let modules: &[&dyn Tool] = &[&Sample];
-        let loaded = sidecar::from_xml(&brightened(build), OPERATIONS, modules, &[]).unwrap();
+        let tools: &[&dyn Tool] = &[&Sample];
+        let loaded = sidecar::from_xml(&brightened(build), OPERATIONS, tools, &[]).unwrap();
         let (log, clocks) = (&loaded.log, loaded.clocks());
-        sidecar::log_xml(&loaded.file, log, clocks, (OPERATIONS, modules), build)
+        sidecar::log_xml(&loaded.file, log, clocks, (OPERATIONS, tools), build)
     }
 
-    /// `xml` with a module entry for `lens`, which no build here has, before the others.
+    /// `xml` with a tool entry for `lens`, which no build here has, before the others.
     fn with_lens(xml: &str) -> String {
         xml.replacen(
             "<rdf:Seq>\n",
@@ -8178,7 +8169,7 @@ mod tests {
                 sidecar::Newer::Version(3),
             ),
             (
-                "module",
+                "tool",
                 brightened_by.replace(
                     r#"apertrust:moduleVersion="1""#,
                     r#"apertrust:moduleVersion="2""#,
@@ -8273,7 +8264,7 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_module_is_left_out_and_the_photo_stays_editable() {
+    fn a_retired_tool_is_left_out_and_the_photo_stays_editable() {
         let path = scratch("retired");
         let sidecar = sidecar::path_for(&path);
         std::fs::write(&sidecar, with_lens(&brightened("0.3.0"))).unwrap();
@@ -8287,7 +8278,7 @@ mod tests {
         assert!(control(values(&opened), "sample", "grain").available);
         driven.run([set("grain", ControlValue::Number(30.0), true)]);
         assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
-        // Saved as this build writes it, without the retired module's values.
+        // Saved as this build writes it, without the retired tool's values.
         let xml = std::fs::read_to_string(&sidecar).unwrap();
         assert!(!xml.contains("lens"), "{xml}");
         assert!(xml.contains(r#"control:brightness="0.5""#), "{xml}");
@@ -8409,7 +8400,7 @@ mod tests {
         let saved = sidecar::read(&sidecar::path_for(&path), OPERATIONS, &[&Sample], &[])
             .expect("the edit was saved")
             .edit;
-        let values = saved.tool("sample").expect("the module's values");
+        let values = saved.tool("sample").expect("the tool's values");
         assert_eq!(values.number("grain"), Some(25.0));
         assert_eq!(values.number("brightness"), Some(0.5));
         assert!(!sidecar::path_for(&other).exists());
@@ -8668,7 +8659,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_whose_binding_fails_is_left_out_and_the_rest_renders() {
+    fn a_tool_whose_binding_fails_is_left_out_and_the_rest_renders() {
         let path = scratch("faulty");
         let mut driven = Driven::new(&[&Faulty, &Sample]);
         let opened = driven.open(&path);
@@ -8699,7 +8690,7 @@ mod tests {
         let events = driven.run([faulty("stray")]);
         assert!(failures(&events).is_empty(), "{events:?}");
 
-        // The saved edit still opens, the module reported again, the rest rendered.
+        // The saved edit still opens, the tool reported again, the rest rendered.
         driven.writes();
         let mut again = Driven::new(&[&Faulty, &Sample]);
         let events = again.open(&path);
@@ -9024,7 +9015,7 @@ mod tests {
             .or_else(|_| std::fs::copy(corpus_raw(), &path).map(|_| ()))
             .expect("the corpus raw");
         let gpu = gpu();
-        // No modules, so exposure's exposure is unowned and `Set` drives it, as the app's
+        // No tools, so exposure's exposure is unowned and `Set` drives it, as the app's
         // spike slider does.
         let (session, wakes) = start(&gpu, &[]);
         session.send(Command::Open(path.clone()));
@@ -11070,11 +11061,11 @@ mod tests {
 
         fn cached_with(
             name: &str,
-            modules: &'static [&'static dyn Tool],
+            tools: &'static [&'static dyn Tool],
         ) -> (Driven, Arc<Cache>, PathBuf) {
             let path = scratch(name);
             std::fs::write(&path, b"synthetic raw").unwrap();
-            let mut driven = Driven::new(modules);
+            let mut driven = Driven::new(tools);
             let cache = with_cache(&mut driven, path.parent().unwrap());
             driven.open(&path);
             (driven, cache, path)

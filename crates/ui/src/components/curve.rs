@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The curve: points on a square plot, the curve through them, and black and white point
-//! handles under it. The Tone curve module draws its curves with it; the hue curve and the
+//! handles under it. The Tone curve tool draws its curves with it; the hue curve and the
 //! tone equalizer's band curve are to follow.
 //!
 //! It knows nothing of splines or of what the axes measure. It is given the points, x and y
@@ -183,7 +183,7 @@ pub struct Curve<'a> {
 }
 
 impl<'a> Curve<'a> {
-    /// `name` is the curve's full, translated name, unique in its module ("Tone curve,
+    /// `name` is the curve's full, translated name, unique in its tool ("Tone curve,
     /// Red"): what screen readers say, and the curve's id. `points` are (x, y) from 0 to 1,
     /// in increasing x.
     pub fn new(name: &'a str, points: &'a [(f32, f32)]) -> Self {

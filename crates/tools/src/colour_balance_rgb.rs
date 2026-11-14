@@ -262,7 +262,7 @@ static PICKERS: [Picker; 6] = [
     picker("grey_fulcrum", &["grey_fulcrum"]),
 ];
 
-/// An area picker of the module's input writing `writes`.
+/// An area picker of the tool's input writing `writes`.
 const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
     Picker {
         id,
@@ -372,7 +372,7 @@ static DEFINITION: Definition = Definition {
     pickers: &PICKERS,
 };
 
-/// Every parameter of `colorbalancergb`: the module is darktable's and owns them all.
+/// Every parameter of `colorbalancergb`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 33] = owns();
 
 const fn owns() -> [Owned; 33] {

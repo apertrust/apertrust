@@ -565,7 +565,7 @@ mod tests {
     use apertrust_export::size::Request;
     use apertrust_operations::OPERATIONS;
     use apertrust_plugin::Format as Pixels;
-    use apertrust_tools::testing::{self as modules, Sample};
+    use apertrust_tools::testing::{self as tools, Sample};
 
     use super::*;
     use crate::export_job::testing::{Hold, path_in};
@@ -651,12 +651,12 @@ mod tests {
         }
     }
 
-    /// The open photo `photo` as the session holds it: the modules crate's synthetic one.
+    /// The open photo `photo` as the session holds it: the tools crate's synthetic one.
     fn active(photo: &Path, unsaved: bool) -> Active {
         Active {
             sidecar: sidecar::path_for(photo),
             edit: Edit::default(),
-            image: modules::image(),
+            image: tools::image(),
             sensor: ImageDesc::new(96, 72, Pixels::Mosaic16),
             shot: Shot {
                 maker: "Maker".to_owned(),
@@ -1107,9 +1107,9 @@ mod tests {
 
     fn synthetic(_: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         Ok(open::testing::photo(
-            modules::image(),
+            tools::image(),
             [96, 72],
-            modules::mosaic(),
+            tools::mosaic(),
         ))
     }
 

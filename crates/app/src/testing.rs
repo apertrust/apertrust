@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! What the app's tests share across its modules: a log of a test's own.
+//! What the app's tests share across its tools: a log of a test's own.
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 

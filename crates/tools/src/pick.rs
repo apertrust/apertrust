@@ -16,7 +16,7 @@
 
 //! What a colour picker reads and where (decision 79; `docs/pickers.md`): its point or
 //! area on the photo, the statistics of a reading and the keys held as it reads, and what
-//! a module's pick makes of a reading. The engine's session takes and gives them, and
+//! a tool's pick makes of a reading. The engine's session takes and gives them, and
 //! [`crate::Tool::pick`] takes a [`Reading`] and gives what it writes and shows; plain
 //! data, so they move into the protocol unchanged.
 
@@ -44,7 +44,7 @@ pub struct Stats {
     pub max: [f32; 4],
 }
 
-/// The keys held, which some modules read as darktable reads `dt_key_modifier_state`.
+/// The keys held, which some tools read as darktable reads `dt_key_modifier_state`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PickKeys {
     /// Ctrl, Cmd on the Mac.
@@ -52,7 +52,7 @@ pub struct PickKeys {
     pub shift: bool,
 }
 
-/// What a module's picker measured at its operation, as [`crate::Tool::pick`] reads it:
+/// What a tool's picker measured at its operation, as [`crate::Tool::pick`] reads it:
 /// the operation's input and, with the picker's [`crate::Picker::output`], its output,
 /// each in the picker's space. A region that misses the operation's image measures
 /// nothing, and gives no reading to pick from.
@@ -63,7 +63,7 @@ pub struct Reading {
     pub output: Option<Stats>,
 }
 
-/// What a module's pick makes of a reading ([`crate::Tool::pick`]): darktable's
+/// What a tool's pick makes of a reading ([`crate::Tool::pick`]): darktable's
 /// `color_picker_apply`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picked {
@@ -74,12 +74,12 @@ pub struct Picked {
     pub shown: Shown,
 }
 
-/// What the module's panel shows of a reading.
+/// What the tool's panel shows of a reading.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Shown {
-    /// The input patch, where the module shows one.
+    /// The input patch, where the tool shows one.
     pub patch: Option<Patch>,
-    /// The module's settings measure mode set, as darktable's measure mode writes its target
+    /// The tool's settings measure mode set, as darktable's measure mode writes its target
     /// sliders; the client keeps them in its settings.
     pub settings: Vec<(&'static str, ControlValue)>,
 }

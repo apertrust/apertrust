@@ -258,7 +258,7 @@ fn a_smaller_view_does_the_exports_processing_at_its_scale() {
 /// (docs/ports/colorequal.md, Tool binding notes): at its defaults the guided filter
 /// smooths the chromaticity the output is rebuilt from, the curves through nodes at 1
 /// ripple between them, and the gamut mapping compresses saturated colours, so its
-/// module is switched (decision 32).
+/// tool is switched (decision 32).
 #[test]
 fn no_setting_is_an_identity() {
     let (width, height) = (64, 60);

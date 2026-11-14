@@ -53,7 +53,7 @@ use golden::cases::CASES;
 use common::{Bench, Rendered, exact, id, raw_context, small_raw};
 use corpus::each_corpus_raw;
 
-const MODULE: &str = "temperature";
+const TOOL: &str = "temperature";
 
 /// What every rendering row reads: the frame, colorout's output.
 #[derive(Debug, Clone, Copy)]
@@ -86,7 +86,7 @@ fn bench() -> Bench {
 fn every(edit: &Edit, image: &ImageContext) -> Controls {
     let definition = WhiteBalance.definition();
     let mut values = WhiteBalance.defaults(image);
-    for (control, value) in edit.tool(MODULE).iter().flat_map(|set| set.values()) {
+    for (control, value) in edit.tool(TOOL).iter().flat_map(|set| set.values()) {
         values.set(definition.control(control).unwrap().id, value.clone());
     }
     values
@@ -133,7 +133,7 @@ fn apply(edit: &mut Edit, option: &str, image: &ImageContext) {
 
 /// What the operation renders an unedited `image` with, every parameter resolved.
 fn operation_defaults(image: &ImageContext) -> ParamValues {
-    let operation = apertrust_operations::operation(MODULE).unwrap();
+    let operation = apertrust_operations::operation(TOOL).unwrap();
     operation
         .schema()
         .resolve_over(&operation.defaults(image), &ParamValues::new())
@@ -168,7 +168,7 @@ fn untouched(image: &ImageContext) -> Vec<Edit> {
     vec![written, kept]
 }
 
-/// The module's untouched values are the operation's own on `image`.
+/// The tool's untouched values are the operation's own on `image`.
 fn defaults_are_the_operation_s(image: &ImageContext) {
     let resolved = operation_defaults(image);
     let defaults = WhiteBalance.defaults(image);
@@ -197,7 +197,7 @@ fn w0_every_control_at_its_default_renders_as_no_edit() {
             .unwrap();
         bench.edit(&moved, Frame);
         for edit in untouched(&image) {
-            let values = edit.tool(MODULE).unwrap();
+            let values = edit.tool(TOOL).unwrap();
             let off = values.off_defaults(&WhiteBalance.defaults(&image));
             let base = Base::new(OPERATIONS, &image);
             assert!(WhiteBalance.bind(&off, &image, &base).is_empty());
@@ -221,7 +221,7 @@ fn moves() -> Vec<(&'static str, ControlValue)> {
 
 /// W1 as far as it holds. Each control moved as the session moves it changes the frame,
 /// and each Settings option but as shot to reference, which the defaults hold; each
-/// renders as no edit once the module is reset, and each option once the controls it
+/// renders as no edit once the tool is reset, and each option once the controls it
 /// wrote are reset, control by control. A coefficient, temperature or tint reset control
 /// by control leaves its follow write, `preset` user modified, so the photo renders as
 /// shot, darktable's own state then (its `gui_update` names the as-shot coefficients as
@@ -243,9 +243,9 @@ fn w1_a_control_moved_and_reset_renders_as_no_edit_or_as_shot() {
         set(&mut edit, &mut held, control, value, &image);
         let moved: Rendered = bench.edit(&edit, Frame);
         assert_ne!(none.pixels, moved.pixels, "{control} changes the frame");
-        let mut reset_module = edit.clone();
-        reset_module.reset_tool(&WhiteBalance);
-        assert!(exact(&none, &bench.edit(&reset_module, Frame)), "{control}");
+        let mut reset_tool = edit.clone();
+        reset_tool.reset_tool(&WhiteBalance);
+        assert!(exact(&none, &bench.edit(&reset_tool, Frame)), "{control}");
         reset(&mut edit, &mut held, control, &image);
         let left = every(&edit, &image);
         assert_eq!(
@@ -309,7 +309,7 @@ fn grid(steps: usize) -> impl Iterator<Item = [f64; 2]> {
     })
 }
 
-/// Temperature and tint as the module's view gives them for `coefficients`.
+/// Temperature and tint as the tool's view gives them for `coefficients`.
 fn viewed(coefficients: [f32; 3], image: &ImageContext) -> [f32; 2] {
     let mut values = WhiteBalance.defaults(image);
     for (control, value) in COEFFICIENTS.into_iter().zip(coefficients) {
@@ -633,13 +633,13 @@ fn w6_a_coefficient_temperature_or_tint_writes_user_modified() {
     for (control, value) in moves() {
         let (mut edit, mut held) = (Edit::default(), Held::default());
         set(&mut edit, &mut held, control, value, &image);
-        let values = edit.tool(MODULE).unwrap();
+        let values = edit.tool(TOOL).unwrap();
         assert_eq!(values.get("preset"), Some(&setting("user")), "{control}");
         assert_eq!(values.mark("preset"), Some(Mark::Kept), "{control}");
         let instances = edit::instances(&edit, OPERATIONS, TOOLS, &image)
             .all()
             .unwrap();
-        let temperature = instances.iter().find(|i| id(i) == MODULE).unwrap();
+        let temperature = instances.iter().find(|i| id(i) == TOOL).unwrap();
         assert_eq!(
             temperature.params.get("preset"),
             Some(Value::Choice(2)),
@@ -651,8 +651,8 @@ fn w6_a_coefficient_temperature_or_tint_writes_user_modified() {
 // W7: darktable's match.
 
 /// W7: the temperature parameters of every golden sidecar that has them, version 4, set
-/// as the module's controls, bind exactly darktable's, so the raw stage's checks against
-/// darktable are the module's.
+/// as the tool's controls, bind exactly darktable's, so the raw stage's checks against
+/// darktable are the tool's.
 #[test]
 fn w7_each_golden_sidecar_s_values_bind_darktable_s_parameters() {
     let image = raw_context(8, 8, 0.0);
@@ -660,7 +660,7 @@ fn w7_each_golden_sidecar_s_values_bind_darktable_s_parameters() {
     for case in CASES {
         // darktable migrates an older sidecar's with `preset` unknown, which no control
         // holds; version 4's alone are W7's.
-        let Ok(params) = golden::xmp::module_params(case.xmp, MODULE) else {
+        let Ok(params) = golden::xmp::module_params(case.xmp, TOOL) else {
             continue;
         };
         if params.version != 4 {
@@ -687,7 +687,7 @@ fn w7_each_golden_sidecar_s_values_bind_darktable_s_parameters() {
         let instances = edit::instances(&edit, OPERATIONS, TOOLS, &image)
             .all()
             .unwrap();
-        let instance = instances.iter().find(|i| id(i) == MODULE).unwrap();
+        let instance = instances.iter().find(|i| id(i) == TOOL).unwrap();
         let operation = instance.operation;
         let ours = operation
             .schema()
@@ -702,7 +702,7 @@ fn w7_each_golden_sidecar_s_values_bind_darktable_s_parameters() {
     assert!(sidecars >= 1);
 }
 
-/// W8: background only, as the raw stage: the module never offers itself on a layer.
+/// W8: background only, as the raw stage: the tool never offers itself on a layer.
 #[test]
 fn w8_it_works_on_the_background_only() {
     let definition = WhiteBalance.definition();

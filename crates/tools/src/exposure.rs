@@ -39,8 +39,8 @@
 //! controls whose parameters are not ported are marked so (`Control::unported`): drawn
 //! disabled, they take only their defaults, the only values the operation renders, as
 //! Mode takes only manual. Contrast and its pivot, which it once bound through colour
-//! balance rgb, are the Colour balance RGB module's `contrast` and `grey_fulcrum`
-//! (decision 2), and Brightness that module's `midtones_y`.
+//! balance rgb, are the Colour balance RGB tool's `contrast` and `grey_fulcrum`
+//! (decision 2), and Brightness that tool's `midtones_y`.
 
 use apertrust_base::settings::Choice;
 use apertrust_color::{
@@ -269,7 +269,7 @@ const PICKER: Picker = Picker {
     settings: &["area_mode", "lightness"],
 };
 
-/// Every parameter of `exposure`: the module is darktable's and owns them all.
+/// Every parameter of `exposure`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 7] = [
     Owned::new(EXPOSURE, "mode"),
     Owned::new(EXPOSURE, "black"),
@@ -317,7 +317,7 @@ impl Tool for Exposure {
 
     /// Compensate camera exposure does nothing on a photo that records no bias, and Mode
     /// nothing on an image that is not a raw, where darktable makes it insensitive
-    /// (`gui_update`); neither depends on the module's values. The controls not ported
+    /// (`gui_update`); neither depends on the tool's values. The controls not ported
     /// are unavailable everywhere, as the session reports every such control.
     fn available(&self, control: &str, _: &Controls, image: &ImageContext) -> bool {
         match control {
@@ -481,7 +481,7 @@ fn white_to_exposure(white: f32) -> f32 {
 
 /// The input profile's camera RGB to XYZ D50, darktable's `matrix_in` of the pipe's input
 /// profile, through which Exposure's picker reads its area: colorin's default for the
-/// photo, which no module changes, the camera's matrix on a colour raw (darktable's
+/// photo, which no tool changes, the camera's matrix on a colour raw (darktable's
 /// standard matrix) and linear Rec2020 otherwise. This crate cannot call colorin, so its
 /// rule is repeated here; a test holds the two to agree. `None` on a colour raw with no
 /// matrix, which colorin cannot render.
@@ -510,7 +510,7 @@ pub fn default_black(image: &ImageContext) -> f32 {
 /// darktable's default exposure for the photo, its `reload_defaults` in the scene-referred
 /// workflow: +0.7 EV on a colour raw, 0 on a monochrome one or an image that is not a
 /// raw. The exposure operation's own default; this crate cannot call it, so the rule is
-/// repeated here and the module's tests check the two agree.
+/// repeated here and the tool's tests check the two agree.
 pub fn default_exposure(image: &ImageContext) -> f32 {
     match &image.camera {
         Some(camera) if camera.cfa.is_some() => 0.7,
@@ -521,7 +521,7 @@ pub fn default_exposure(image: &ImageContext) -> f32 {
 /// The camera's exposure bias as the exposure operation compensates it: within ±5 EV,
 /// as darktable's `_get_exposure_bias` trusts it. The image context carries it
 /// unclamped, and this crate cannot call the operation's own, so the clamp is repeated
-/// here; the module's tests check the two agree.
+/// here; the tool's tests check the two agree.
 pub fn camera_bias(image: &ImageContext) -> f32 {
     image.camera.as_ref().map_or(0.0, |camera| {
         camera.exposure_bias.clamp(-BIAS_LIMIT, BIAS_LIMIT)

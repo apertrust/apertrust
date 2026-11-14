@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The Tone equalizer's invariants (`docs/tools/tone-equalizer.md`, Invariants), one
-//! test per row, each named after its row: a switched module's (decision 32), Q0 off, Q1
+//! test per row, each named after its row: a switched tool's (decision 32), Q0 off, Q1
 //! the first step, on at darktable's defaults, Q2 moved and reset, Q3 the order, Q4 the
 //! darktable match, Q6 on at darktable's defaults on the CPU and Q7 version 1's edits; Q5,
 //! on a layer, waits for Phase 4. The synthetic ramp and sweep run on CI's software GPUs,
@@ -124,7 +124,7 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults: the tone equalizer planned at the
+    /// The tool on at darktable's defaults: the tone equalizer planned at the
     /// operation's defaults, darktable's new instance (rows Q1 and Q2).
     fn on_at_defaults(&self, measure: impl common::Measure) -> Vec<Instance<'static>> {
         self.instances(
@@ -142,7 +142,7 @@ impl Bench {
 
 /// Q0 on one pipeline, as the session renders: no edit, then the tone equalizer joining
 /// the plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// module off, every frame as the first.
+/// tool off, every frame as the first.
 fn q0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let joined = bench.on_at_defaults(Frame);
@@ -306,7 +306,7 @@ fn q1_on_the_corpus() {
 
 // Q2: each control moved, then reset.
 
-/// Moves on every tab, and a write of a band at its default, which turns the module on:
+/// Moves on every tab, and a write of a band at its default, which turns the tool on:
 /// each changes the frame, as the first step at least does.
 const MOVES: [&[(&str, f32)]; 7] = [
     &[("midtones", 0.0)],
@@ -328,9 +328,9 @@ const MOVES: [&[(&str, f32)]; 7] = [
 ];
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// the tone equalizer joins with each move and leaves with each module's reset.
+/// the tone equalizer joins with each move and leaves with each tool's reset.
 fn q2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults(Frame);
@@ -356,13 +356,13 @@ fn q2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn q2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn q2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = ramp();
     q2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -415,7 +415,7 @@ fn q2_and_q3_on_the_corpus() {
     }
 }
 
-/// Q0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// Q0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -458,7 +458,7 @@ fn apart(ours: [u8; 4], theirs: [u8; 4]) -> f32 {
     }
 }
 
-/// Q4: the module's controls set to the values of the tone equalizer's golden cases,
+/// Q4: the tool's controls set to the values of the tone equalizer's golden cases,
 /// darktable's tests 0080, 0129, 0131, 0133 and 0134 and the two edited from them, as
 /// darktable's sliders show them, bind to the parameters the harness renders each case
 /// with and, through the operation's setup, to the same kernel inputs, which the golden
@@ -563,8 +563,8 @@ fn q4_the_golden_cases_values_bind_to_darktable_s_parameters() {
 
 // Q6: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind the tone equalizer's own, and the
-/// module on at its defaults plans it with no parameter set, darktable's new instance;
+/// The tool's defaults, each made explicit, bind the tone equalizer's own, and the
+/// tool on at its defaults plans it with no parameter set, darktable's new instance;
 /// off, it plans none.
 #[test]
 fn q6_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
@@ -575,7 +575,7 @@ fn q6_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound: the tone equalizer planned where a value was off its default, with what the
-/// binding gives those values, and not planned, the module off, where none was.
+/// binding gives those values, and not planned, the tool off, where none was.
 #[test]
 fn q7_version_1_s_edits_bind_what_they_bound() {
     let image = common::photo();

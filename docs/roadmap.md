@@ -134,7 +134,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [x] 4.1 A tool's settings named settings in the code.
   - [x] 4.2 The docs say tool, the tools' pages in `docs/tools/`.
   - [x] 4.3 `apertrust-tools` in `crates/tools`, with its public names and the CLI's help.
-  - [ ] 4.4 The code's own names, tests and comments.
+  - [x] 4.4 The code's own names, tests and comments.
   - [ ] 4.5 The Fluent ids `tool-…`, in `tools.ftl`.
   - [ ] 4.6 The words people see and hear, in every language.
   - [ ] 4.7 The sidecar's `apertrust:tool` and `apertrust:toolVersion`.

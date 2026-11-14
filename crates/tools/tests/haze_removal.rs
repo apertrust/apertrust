@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Haze removal's invariants (`docs/tools/haze-removal.md`, Invariants), one test per
-//! row, each named after its row: a switched module's (decision 32), Z0 off, Z1 the
+//! row, each named after its row: a switched tool's (decision 32), Z0 off, Z1 the
 //! first step, on at darktable's defaults, Z2 moved and reset, Z3 the order, Z4 the
 //! darktable match, Z7 on at darktable's defaults on the CPU and Z8 version 1's edits; Z5,
 //! on a layer, waits for Phase 4, and Z6 is withdrawn. The synthetic ramp and sweep run on
@@ -93,7 +93,7 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults, a strength and a distance of 0.2: haze
+    /// The tool on at darktable's defaults, a strength and a distance of 0.2: haze
     /// removal planned at the operation's defaults, darktable's new instance (rows Z1 and
     /// Z2).
     fn on_at_defaults(&self) -> Vec<Instance<'static>> {
@@ -109,7 +109,7 @@ impl Bench {
 
 /// Z0 on one pipeline, as the session renders: no edit, then haze removal joining the
 /// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// module off, every frame as the first.
+/// tool off, every frame as the first.
 fn z0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let joined = bench.on_at_defaults();
@@ -140,7 +140,7 @@ fn z0_off_renders_as_no_edit() {
     }
 }
 
-/// Z0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// Z0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -253,7 +253,7 @@ fn z1_on_the_corpus() {
 // Z2: each control moved, then reset.
 
 /// Moves of every control: the strength removing haze and adding it, a write of it at
-/// darktable's 0.2, which turns the module on, the distance alone, and both at test
+/// darktable's 0.2, which turns the tool on, the distance alone, and both at test
 /// 0166's values. Each changes the frame.
 const MOVES: [&[(&str, f32)]; 6] = [
     &[(STRENGTH, 0.5)],
@@ -265,9 +265,9 @@ const MOVES: [&[(&str, f32)]; 6] = [
 ];
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// haze removal joins with each move and leaves with each module's reset.
+/// haze removal joins with each move and leaves with each tool's reset.
 fn z2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults();
@@ -293,13 +293,13 @@ fn z2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn z2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn z2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     z2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -354,10 +354,10 @@ fn z2_and_z3_on_the_corpus() {
 
 // Z4: darktable's golden cases.
 
-/// Z4: the module's controls set to the values of each `hazeremoval` golden case,
+/// Z4: the tool's controls set to the values of each `hazeremoval` golden case,
 /// darktable's tests 0026 and 0166, bind the case's parameters bit for bit, and through
 /// the operation's `prepare` give the very passes the golden harness checks against
-/// darktable's render. So the module renders those values as the cases measure the port.
+/// darktable's render. So the tool renders those values as the cases measure the port.
 #[test]
 fn z4_the_golden_cases_values_bind_to_darktable_s_parameters() {
     let schema = hazeremoval::HazeRemoval.schema();
@@ -419,7 +419,7 @@ fn z4_the_golden_cases_values_bind_to_darktable_s_parameters() {
 
 // Z7: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind haze removal's own, and the module on
+/// The tool's defaults, each made explicit, bind haze removal's own, and the tool on
 /// at its defaults plans it with no parameter set, darktable's new instance; off, it
 /// plans none.
 #[test]
@@ -431,7 +431,7 @@ fn z7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound: haze removal planned where the strength was off 0, version 1's untouched value,
-/// with the strength version 1 always wrote, and not planned, the module off, where it
+/// with the strength version 1 always wrote, and not planned, the tool off, where it
 /// was not.
 #[test]
 fn z8_version_1_s_edits_bind_what_they_bound() {

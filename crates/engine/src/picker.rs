@@ -33,10 +33,10 @@
 //! - **The frame's reading** ([`FrameReading`]) is the frame's RGB, as the window shows
 //!   it, and each statistic in Lab D50, as darktable's color picker utility reads its
 //!   samples on the display-referred frame.
-//! - **A module's reading** ([`ToolReading`]) is its operation's input and output
-//!   statistics in the live viewport pipe, and what the module's pick showed of them.
+//! - **A tool's reading** ([`ToolReading`]) is its operation's input and output
+//!   statistics in the live viewport pipe, and what the tool's pick showed of them.
 //!
-//! Built: the Colour picker module's picker, measured on the frame, and module pickers,
+//! Built: the Colour picker's own, measured on the frame, and tool pickers,
 //! measured at their operation and applied by the session. Stored samples and the spaces
 //! other than the operation's own are to come.
 
@@ -62,7 +62,7 @@ pub const KERNEL: Kernel = Kernel {
 
 /// The boxes one reduction takes, across its buffers.
 pub const MAX_BOXES: usize = 64;
-/// The buffers one reduction reads: a module picker's operation's input and output.
+/// The buffers one reduction reads: a tool picker's operation's input and output.
 const MAX_GROUPS: usize = 2;
 /// The pixels a workgroup reduces across and down: 16 invocations each adding 4, 16 apart.
 const TILE: u32 = 64;
@@ -90,13 +90,13 @@ pub const DEFAULT_AREA: Region = Region::Area([0.02, 0.02, 0.98, 0.98]);
 /// A picker, by its owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PickerRef {
-    /// A module's picker, by its module's id and the picker's id in its definition
+    /// A tool's picker, by its tool's id and the picker's id in its definition
     /// (`Definition::pickers`).
     Tool {
         tool: &'static str,
         picker: &'static str,
     },
-    /// The Colour picker module's, darktable's primary picker with no module.
+    /// The Colour picker's, darktable's primary picker with no module.
     ColourPicker,
 }
 
@@ -106,11 +106,11 @@ pub enum PickerRef {
 pub enum PickerCommand {
     /// Turns `picker` on, the one on before it off: an area with `area` where the picker
     /// takes both, else a point; a picker of one kind, that kind. It starts at the
-    /// picker's last point or area this session, else darktable's default. A module's
-    /// picker turns its module on, makes its operation the edited instance, and has its
+    /// picker's last point or area this session, else darktable's default. A tool's
+    /// picker turns its tool on, makes its operation the edited instance, and has its
     /// first reading applied as one completed change; `settings` are the settings the
-    /// module's pickers read, as the client keeps them, and `channel` the channel tab the
-    /// module shows. Refused before the photo is live, and for a module's picker on a
+    /// tool's pickers read, as the client keeps them, and `channel` the channel tab the
+    /// tool shows. Refused before the photo is live, and for a tool's picker on a
     /// photo open for viewing only.
     On {
         picker: PickerRef,
@@ -140,8 +140,8 @@ pub enum PickerCommand {
     Switch,
     /// The active picker back to its default for its kind.
     Reset,
-    /// The settings of `module`'s pickers changed, as the client keeps them: kept, and
-    /// the module's last reading applied again where the picker that read it reads one of
+    /// The settings of `tool`'s pickers changed, as the client keeps them: kept, and
+    /// the tool's last reading applied again where the picker that read it reads one of
     /// them, as one completed change, the settings that pick measures never handed back
     /// (`Shown::settings` empty), since the client has just sent its own. Refused for a
     /// setting none of its pickers reads.
@@ -149,7 +149,7 @@ pub enum PickerCommand {
         tool: &'static str,
         settings: Vec<(&'static str, ControlValue)>,
     },
-    /// The channel tab the active picker's module shows changed: kept for its next pick,
+    /// The channel tab the active picker's tool shows changed: kept for its next pick,
     /// applying nothing, as darktable's tab switch applies nothing; with no picker on,
     /// nothing.
     Channel { channel: Option<&'static str> },
@@ -170,7 +170,7 @@ pub struct PickerReading {
     /// As drawn, in the photo's coordinates: an area the average of its sorted corners,
     /// as darktable's `dt_color_picker_transform_box` draws it.
     pub region: Region,
-    /// A module picker's statistics at its operation; `None` for the Colour picker's, and
+    /// A tool picker's statistics at its operation; `None` for the Colour picker's, and
     /// until the first arrives.
     pub tool: Option<ToolReading>,
     /// The frame's colour under the region; `None` until measured, or where the region
@@ -178,7 +178,7 @@ pub struct PickerReading {
     pub frame: Option<FrameReading>,
 }
 
-/// What a module's picker measured at its operation, darktable's `picked_color`,
+/// What a tool's picker measured at its operation, darktable's `picked_color`,
 /// `picked_color_min` and `picked_color_max` of its input and output, each in the
 /// picker's space.
 #[derive(Debug, Clone, PartialEq)]
@@ -187,7 +187,7 @@ pub struct ToolReading {
     pub input: Option<Stats>,
     /// With the picker's `output` only.
     pub output: Option<Stats>,
-    /// What the module's pick made of the last reading it applied, for its panel; `None`
+    /// What the tool's pick made of the last reading it applied, for its panel; `None`
     /// where it made nothing.
     pub picked: Option<Shown>,
 }
@@ -497,7 +497,7 @@ impl Group<'_> {
 /// The bytes the session's two reducers hold at most for a viewport whose frame is at
 /// most `viewport` and whose pickers may read a mosaic of `mosaic` photosites: their
 /// uniforms, results and staging pairs, the frame's partials for [`MAX_BOXES`] boxes over
-/// the whole frame, and a module picker's for one box over the larger of its
+/// the whole frame, and a tool picker's for one box over the larger of its
 /// operation's images, which the reductions of its input and output share; and the
 /// uniform blocks, one a dispatch: the frame's one, and for the operation's input and
 /// output, read in row windows at worst a window a row of workgroups. The plan's memory
@@ -552,7 +552,7 @@ pub struct Reduced<T> {
 
 /// Reduces boxes of RGBA buffers and mosaics on the GPU and reads the results back
 /// through two staging buffers in turn, never waiting: the pickers' GPU side, which the
-/// session keeps for its life, one for the frame and one at a module picker's
+/// session keeps for its life, one for the frame and one at a tool picker's
 /// operation. `T` is what its owner keeps of each reduction until it arrives.
 pub struct Reducer<T> {
     rgba: ImageKernel,

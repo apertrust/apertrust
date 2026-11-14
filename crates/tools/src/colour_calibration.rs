@@ -38,14 +38,14 @@
 //! - **Calibrate with a colour checker,** under every tab: darktable's settings for its
 //!   colour checker, which no edit stores, drawn disabled until the colour checker is built.
 //!
-//! Each control is its darktable parameter as it is, so the module has no transfer
+//! Each control is its darktable parameter as it is, so the tool has no transfer
 //! function. It drives `channelmixerrgb`, which every colour raw runs (decision 27), and
 //! owns every parameter of it. Its defaults are the operation's on every photo, As shot
 //! on a colour raw, darktable's: the camera's own light, as daylight or Planckian where
 //! one lies close, as a custom illuminant otherwise: a control at its default sets
-//! nothing, and the module adds no operation, so it has no first step.
+//! nothing, and the tool adds no operation, so it has no first step.
 //! darktable shows its saturation algorithm (`version`) only for an edit made with an
-//! older one, which no Apertrust edit is, so the module owns it with no control and leaves
+//! older one, which no Apertrust edit is, so the tool owns it with no control and leaves
 //! it at version 3 (`docs/tools/README.md`, rule 12).
 
 use apertrust_color::Adaptation;
@@ -349,7 +349,7 @@ const MAPPING: Row = Row::Group {
 /// compression, its track over 0 to 4, clipping and the area colour mapping. A hue has no
 /// direction, so its track has no fill, as darktable's `illum_x` has none. The CCT readout
 /// with the illuminant's colour and the picker, darktable's row after the adaptation, waits
-/// for a row that draws a text and a swatch the module computes.
+/// for a row that draws a text and a swatch the tool computes.
 static CAT_TAB: [Row; 5] = [
     list("adaptation"),
     Row::When {
@@ -588,7 +588,7 @@ impl Tool for ColourCalibration {
         &OWNS
     }
 
-    /// `version`, the last parameter the module owns, left at darktable's version 3.
+    /// `version`, the last parameter the tool owns, left at darktable's version 3.
     fn fixed(&self) -> &'static [Owned] {
         &OWNS[OWNS.len() - 1..]
     }
@@ -751,7 +751,7 @@ struct AsShot {
 
 /// As shot: colour calibration's defaults for the photo (`docs/ports/channelmixerrgb.md`,
 /// Defaults), darktable's `reload_defaults`. This crate cannot call the operation's
-/// `image_defaults`, so this restates it; the module's tests hold the two equal, bit for
+/// `image_defaults`, so this restates it; the tool's tests hold the two equal, bit for
 /// bit.
 ///
 /// - A colour raw: in `x` and `y` the light its as-shot multipliers neutralise at the
@@ -1073,7 +1073,7 @@ mod tests {
 
     #[test]
     fn its_defaults_are_the_operation_s_on_every_photo() {
-        // An unedited photo renders the operation's defaults, so the module's zero is
+        // An unedited photo renders the operation's defaults, so the tool's zero is
         // exactly what every photo runs: As shot's light and adaptation, the identity
         // mixer, every weight at 0, no normalisation, darktable's version 3.
         for image in images() {

@@ -282,8 +282,8 @@ pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     let out = Section::new(&title, browse.open.browse)
         .options_menu(options)
         .show(ui, |ui| {
-            // The section's body has a module's margins: the top line starts 4 points under
-            // the header and 12 in from the sides, as a module's first row does.
+            // The section's body has a tool's margins: the top line starts 4 points under
+            // the header and 12 in from the sides, as a tool's first row does.
             ui.spacing_mut().item_spacing.y = 0.0;
             top_line(ui, browse, &mut actions);
             // Its groups scroll under it, Browse keeping its height.
@@ -1399,7 +1399,7 @@ mod tests {
     }
 
     /// Browse keeps its height whatever its tree holds, the groups scrolling under the top
-    /// line, which stays where it is; the top line has a module's margins.
+    /// line, which stays where it is; the top line has a tool's margins.
     #[test]
     fn browse_keeps_its_height_and_its_top_line_while_the_tree_scrolls() {
         let with = |subfolders: usize| {
@@ -1439,23 +1439,23 @@ mod tests {
         long.run();
         let end = |harness: &Harness<'_, Vec<Action>>| harness.get_by_label("After Browse").rect();
         assert_eq!(end(&short).top(), end(&long).top());
-        // The top line's box, centred in its one-line row, starts where a module's first
+        // The top line's box, centred in its one-line row, starts where a tool's first
         // row starts, under its header and in from the panel's start.
-        let mut module = Harness::builder()
+        let mut tool = Harness::builder()
             .with_size(egui::vec2(320.0, 200.0))
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
             .build_ui_state(
                 |ui, first: &mut egui::Pos2| {
                     PanelBody::new().show(ui, |ui| {
                         Section::new("Exposure", true)
-                            .module()
+                            .edits()
                             .show(ui, |ui| *first = ui.cursor().min);
                     });
                 },
                 egui::Pos2::ZERO,
             );
-        module.run();
-        let first = *module.state();
+        tool.run();
+        let first = *tool.state();
         let line = theme(&long.ctx).sizes.panel_line;
         let top_line = long.get_by_label("What is open").rect();
         assert_eq!(top_line.left(), first.x);

@@ -19,11 +19,11 @@
 //! is at the start and the row's quad just before the option, with a point of the row over
 //! and under them.
 //!
-//! - **Boxed**, the default, everywhere but module panels: the box at the end, its end edge
+//! - **Boxed**, the default, everywhere but tool panels: the box at the end, its end edge
 //!   on the value fields', a field high and styled as a value field, its text followed by
 //!   ⌄. It is as wide as its widest option and never narrower than a value field, so a
 //!   choice never changes it.
-//! - **Blended**, darktable's combobox, in module panels: no box, the option right-aligned
+//! - **Blended**, darktable's combobox, in tool panels: no box, the option right-aligned
 //!   in the small text and followed by ⌄ in the secondary text, whose stroke ends where
 //!   slider values end, and the focus ring round the whole row. Its place is as wide as
 //!   its widest option, with no minimum, so a choice never changes it either.
@@ -72,7 +72,7 @@ use crate::popup::{self, Answer, Item, Request};
 use crate::{Icon, Theme, theme, translator};
 
 /// How a dropdown row looks (decision 42). Not the definitions'
-/// `apertrust_tools::ChoiceStyle`, a list or segments: a module panel draws a list in
+/// `apertrust_tools::ChoiceStyle`, a list or segments: a tool panel draws a list in
 /// this row's Blended style.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChoiceStyle {
@@ -80,7 +80,7 @@ pub enum ChoiceStyle {
     /// sections, the Export dialog, Customise tabs.
     #[default]
     Boxed,
-    /// darktable's combobox, in module panels: the option at the row's end with no box,
+    /// darktable's combobox, in tool panels: the option at the row's end with no box,
     /// ending where slider values end.
     Blended,
 }
@@ -145,7 +145,7 @@ impl<'a> Choice<'a> {
         }
     }
 
-    /// The control's full name, unique in its module: what screen readers say, and the
+    /// The control's full name, unique in its tool: what screen readers say, and the
     /// row's id.
     pub fn name(mut self, full: &'a str) -> Self {
         self.name = full;
@@ -158,7 +158,7 @@ impl<'a> Choice<'a> {
         self
     }
 
-    /// The row's look: Boxed unless given, Blended in module panels.
+    /// The row's look: Boxed unless given, Blended in tool panels.
     pub fn style(mut self, style: ChoiceStyle) -> Self {
         self.style = style;
         self
@@ -233,7 +233,7 @@ impl<'a> Choice<'a> {
     }
 
     /// The list under `anchor`, each option an item whose id is its index: the chosen one
-    /// checked, the others the photo cannot use or the module does not port disabled, with
+    /// checked, the others the photo cannot use or the tool does not port disabled, with
     /// their tooltips, and a separator where the row has one.
     fn list(&self, anchor: Rect) -> Request {
         let (disabled, disabled_tip) = self.disabled_options;
@@ -305,7 +305,7 @@ impl<'a> Choice<'a> {
             option.max(t.sizes.value_column).max(self.min_box)
         };
         let label_width = width_of(ui, self.label, &body);
-        // A Blended row is a module panel's one-line row, `panel_line` high; a Boxed one
+        // A Blended row is a tool panel's one-line row, `panel_line` high; a Boxed one
         // keeps the option with a point of the row over and under it.
         let height = if blended {
             t.sizes.panel_line

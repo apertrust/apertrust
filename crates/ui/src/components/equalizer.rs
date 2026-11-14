@@ -148,7 +148,7 @@ pub struct Equalizer<'a> {
 }
 
 impl<'a> Equalizer<'a> {
-    /// `name` is the graph's full, translated name, unique in its module ("Tone equalizer,
+    /// `name` is the graph's full, translated name, unique in its tool ("Tone equalizer,
     /// curve"): what screen readers say, and its id. `bands` are their corrections in EV,
     /// the darkest first, each a node named by `names`, its band's full name.
     pub fn new(name: &'a str, bands: &'a [f32], names: &'a [&'a str]) -> Self {
@@ -177,7 +177,7 @@ impl<'a> Equalizer<'a> {
         self
     }
 
-    /// No curve at all, as where the module's code failed to give one.
+    /// No curve at all, as where the tool's code failed to give one.
     pub fn no_curve(mut self) -> Self {
         self.curve = Drawn::Nothing;
         self

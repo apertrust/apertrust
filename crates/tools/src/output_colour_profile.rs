@@ -22,9 +22,9 @@
 //!
 //! It drives `colorout`, which every photo runs, and owns both its parameters. Its
 //! default is the operation's, darktable's sRGB (web-safe), on every photo, so an
-//! untouched module sets nothing. darktable's output intent shows only while its
+//! untouched tool sets nothing. darktable's output intent shows only while its
 //! preference forcing LittleCMS 2 for export is on, off by default, so it is not shown
-//! (rule 12 of `docs/tools/README.md`): the module fixes it at perceptual.
+//! (rule 12 of `docs/tools/README.md`): the tool fixes it at perceptual.
 //!
 //! The operation ports sRGB, linear Rec709 and linear Rec2020, but the viewport draws
 //! colorout's output as sRGB, so an edit can choose only sRGB until the display path
@@ -126,7 +126,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `colorout`: the module is darktable's and owns them both, the
+/// Every parameter of `colorout`: the tool is darktable's and owns them both, the
 /// output intent last, fixed ([`OutputColourProfile::fixed`]).
 static OWNS: [Owned; 2] = [Owned::new(COLOROUT, TYPE), Owned::new(COLOROUT, "intent")];
 
@@ -148,7 +148,7 @@ impl Tool for OutputColourProfile {
 
     /// Export profile changes nothing on any photo: sRGB, its default, is the only
     /// profile an edit can choose until the display path converts from the edit's profile
-    /// (decision 26). It does not depend on the module's values or the photo.
+    /// (decision 26). It does not depend on the tool's values or the photo.
     fn available(&self, _control: &str, _: &Controls, _image: &ImageContext) -> bool {
         false
     }
@@ -174,7 +174,7 @@ mod tests {
     use super::*;
     use crate::{ControlError, ControlValue, check};
 
-    /// Every kind of image the module meets: a colour raw and an image that is not a raw.
+    /// Every kind of image the tool meets: a colour raw and an image that is not a raw.
     fn images() -> [ImageContext; 2] {
         [crate::testing::image(), ImageContext::full(8, 8)]
     }

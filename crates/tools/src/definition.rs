@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A module's definition (decision 28, `docs/gui.md`, Tool panels from definitions):
+//! A tool's definition (decision 28, `docs/gui.md`, Tool panels from definitions):
 //! static data the app draws a panel from and MCP describes. Controls, what an edit
 //! stores, are kept apart from rows, how a tab shows them, so validation, edits and MCP
 //! read the controls without walking the panel.
@@ -32,7 +32,7 @@
 //! several controls ([`PresetRow`]), and a lossless view's coordinate, a second view of
 //! some stored controls ([`View`]), shown by a [`Row::Slider`] that names it.
 //!
-//! A module's colour pickers (decision 79) are declared apart from the rows too
+//! A tool's colour pickers (decision 79) are declared apart from the rows too
 //! ([`Picker`]), and each shown by one row: a slider's quad ([`Quad::Picker`]) or a row of
 //! picker buttons ([`Row::Pickers`]).
 
@@ -40,7 +40,7 @@ use std::collections::BTreeSet;
 
 use crate::values::{ControlValue, Controls};
 
-/// A module, as data. Its words are message ids that follow from its ids
+/// A tool, as data. Its words are message ids that follow from its ids
 /// ([`crate::messages`]), so it holds no text.
 #[derive(Debug)]
 pub struct Definition {
@@ -49,11 +49,11 @@ pub struct Definition {
     /// From 1, raised whenever a control's meaning or the binding changes, with a
     /// migration ([`crate::Tool::migrate`]).
     pub version: u32,
-    /// Whether the module works on a masked layer.
+    /// Whether the tool works on a masked layer.
     pub layers: bool,
-    /// Whether the module has an Auto. The header draws no button for it.
+    /// Whether the tool has an Auto. The header draws no button for it.
     pub auto: bool,
-    /// Whether the module is switched (decision 32): one darktable leaves off on a new
+    /// Whether the tool is switched (decision 32): one darktable leaves off on a new
     /// photo, off until a command writes one of its controls, then on with darktable's
     /// defaults for the rest until its reset turns it off. It owns no parameter of an
     /// operation every photo runs ([`crate::check::accept`]), and its defaults bind its
@@ -76,28 +76,28 @@ pub struct Definition {
     pub views: &'static [View],
     /// Its colour pickers (decision 79), each darktable's `dt_color_picker_new` call, shown
     /// by a slider's quad ([`Quad::Picker`]) or a row of picker buttons ([`Row::Pickers`]).
-    /// Nothing is stored under them: the session measures the photo and the module's
+    /// Nothing is stored under them: the session measures the photo and the tool's
     /// [`crate::Tool::pick`] writes its controls.
     pub pickers: &'static [Picker],
 }
 
-/// One of the module's colour pickers (decision 79; `docs/pickers.md`, Declaring
+/// One of the tool's colour pickers (decision 79; `docs/pickers.md`, Declaring
 /// pickers): darktable's `dt_color_picker_new` call, its flags and colour space, and what
 /// its pick may write and read.
 ///
 /// Its words come with its button and the central bar (`docs/pickers.md`, The picker
 /// button, On the photo), in the controls' and actions' scheme:
-/// `module-<module>-picker-<id>-label`, its name; `-full`, what screen readers say;
+/// `module-<tool>-picker-<id>-label`, its name; `-full`, what screen readers say;
 /// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence
 /// ([`crate::messages::picker`]). [`crate::messages::of`] implies none of them: the app
-/// draws a module's pickers only once its pick is built.
+/// draws a tool's pickers only once its pick is built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Picker {
-    /// snake_case ASCII and permanent, unique among the module's pickers: clients name it
-    /// with the module's id. Pickers are a namespace of their own, as a picker on a
+    /// snake_case ASCII and permanent, unique among the tool's pickers: clients name it
+    /// with the tool's id. Pickers are a namespace of their own, as a picker on a
     /// slider's quad takes its control's id (Exposure's `exposure`).
     pub id: &'static str,
-    /// The operation whose input, and with `output` output, it reads: one the module owns
+    /// The operation whose input, and with `output` output, it reads: one the tool owns
     /// a parameter of ([`crate::check::accept`]).
     pub operation: &'static str,
     /// darktable's `DT_COLOR_PICKER_POINT`, `_AREA` or `_POINT_AREA`.
@@ -109,12 +109,12 @@ pub struct Picker {
     pub output: bool,
     /// darktable's `picker_cst`: the space each pixel is read in.
     pub space: Space,
-    /// darktable's "keep-active": it stays on when its module changes, as RGB curve's
+    /// darktable's "keep-active": it stays on when its tool changes, as RGB curve's
     /// show colour does.
     pub keep: bool,
     /// The controls its pick may write, each once; none for a picker that only shows.
     pub writes: &'static [&'static str],
-    /// The module's settings its pick reads ([`Row::Setting`]), each once.
+    /// The tool's settings its pick reads ([`Row::Setting`]), each once.
     pub settings: &'static [&'static str],
 }
 
@@ -144,13 +144,13 @@ pub enum Space {
     Jzczhz,
 }
 
-/// Options that each write several of the module's controls, as White balance's Mode
-/// writes its light (decision 2). Nothing is stored under it: the module gives each
+/// Options that each write several of the tool's controls, as White balance's Mode
+/// writes its light (decision 2). Nothing is stored under it: the tool gives each
 /// option's values for a photo ([`crate::Tool::preset`]) and says which option the
 /// values hold ([`crate::Tool::matching`]), and the session applies one as one change.
 #[derive(Debug)]
 pub struct PresetRow {
-    /// snake_case ASCII and permanent, as a control's, and unique among the module's
+    /// snake_case ASCII and permanent, as a control's, and unique among the tool's
     /// controls and preset rows.
     pub id: &'static str,
     /// Option ids, snake_case, in the row's order.
@@ -159,30 +159,30 @@ pub struct PresetRow {
     pub controls: &'static [&'static str],
 }
 
-/// A lossless view of some of the module's controls, every one a number (decision 2):
+/// A lossless view of some of the tool's controls, every one a number (decision 2):
 /// coordinates that are an exact, invertible change of coordinates of them, or fewer
-/// coordinates than controls where the module's model drops a scale of them, as White
+/// coordinates than controls where the tool's model drops a scale of them, as White
 /// balance's temperature and tint drop its three coefficients' (decision 27), `unview`
-/// then the inverse up to that scale. Nothing is stored under it: the module gives the
+/// then the inverse up to that scale. Nothing is stored under it: the tool gives the
 /// coordinates for the controls' values ([`crate::Tool::view`]) and the values for
 /// coordinates ([`crate::Tool::unview`]), and the session writes the controls when a
 /// coordinate is set, holding the view's other coordinates through the gesture.
 #[derive(Debug)]
 pub struct View {
-    /// snake_case ASCII and permanent, unique among the module's views.
+    /// snake_case ASCII and permanent, unique among the tool's views.
     pub id: &'static str,
-    /// The stored controls it covers, each a number of the module, each once.
+    /// The stored controls it covers, each a number of the tool, each once.
     pub controls: &'static [&'static str],
     /// As many as the controls it covers, or fewer for a model of them, at least one, in
     /// the order [`crate::Tool::view`] gives them.
     pub coordinates: &'static [Coordinate],
 }
 
-/// One coordinate of a [`View`], addressed like a control: its id names it in a module
+/// One coordinate of a [`View`], addressed like a control: its id names it in a tool
 /// command, and its words are a control's ([`crate::messages`]).
 #[derive(Debug)]
 pub struct Coordinate {
-    /// snake_case ASCII and permanent, unique among the module's controls, preset rows
+    /// snake_case ASCII and permanent, unique among the tool's controls, preset rows
     /// and coordinates.
     pub id: &'static str,
     /// What a command may set it to, `min..=max`. The controls' values may give it one
@@ -215,10 +215,10 @@ impl Coordinate {
     }
 }
 
-/// What an edit stores for a module: one value of one kind.
+/// What an edit stores for a tool: one value of one kind.
 #[derive(Debug)]
 pub struct Control {
-    /// snake_case ASCII and permanent, as the module's.
+    /// snake_case ASCII and permanent, as the tool's.
     pub id: &'static str,
     pub kind: ControlKind,
     /// A number's unit; `None` for a plain number and every other kind.
@@ -309,7 +309,7 @@ impl Unit {
 /// draws it disabled, as an action that cannot run is, saying it is to come.
 #[derive(Debug)]
 pub struct Tab {
-    /// The tab's id, for its title; `None` for a module's only tab, which draws no tab
+    /// The tab's id, for its title; `None` for a tool's only tab, which draws no tab
     /// strip.
     pub id: Option<&'static str>,
     pub rows: &'static [Row],
@@ -317,7 +317,7 @@ pub struct Tab {
 
 /// How a tab shows one control, a label between them, rows darktable groups or shows only
 /// in some modes, a preset row, a lossless view's coordinate, one of darktable's settings
-/// for the module, or a row of picker buttons. Each control is in exactly one row, or in one
+/// for the tool, or a row of picker buttons. Each control is in exactly one row, or in one
 /// row per mode where darktable labels it differently by mode ([`Slider::label`]) or shows
 /// it under conditions one [`Row::When`] cannot join, as highlight reconstruction's Noise
 /// level, or only in the rows of the views covering it; each coordinate is in one row at
@@ -348,7 +348,7 @@ pub enum Row {
         id: &'static str,
         rows: &'static [Row],
     },
-    /// Rows darktable shows only while another control of the module, a choice or a
+    /// Rows darktable shows only while another control of the tool, a choice or a
     /// toggle, holds one of the values `is` names as that control writes them
     /// ([`Control::text`]): option ids, or `true` or `false`. Otherwise they are hidden,
     /// which a control that merely cannot act never is (decision 30). The control is
@@ -375,14 +375,14 @@ pub enum Row {
         preset: &'static str,
         style: ChoiceStyle,
     },
-    /// One of darktable's own settings for the module, which darktable keeps in its
+    /// One of darktable's own settings for the tool, which darktable keeps in its
     /// darktablerc and never in an edit: the colour checker's chart, an area mode
     /// (decision 29; `docs/tools/README.md`, rule 12). It is no control: an app setting
     /// that comes with what uses it, never stored with the photo. Until that is built the
     /// panel draws it disabled at darktable's default, so the page reads as darktable's and
     /// shows what is missing.
     Setting(SettingRow),
-    /// One of darktable's buttons, by its id: an action that writes the module's controls
+    /// One of darktable's buttons, by its id: an action that writes the tool's controls
     /// and is never stored (`docs/tools/README.md`, rule 10), as AgX's Auto tune levels
     /// picks both exposures from the photo and its Set from above copies one set of
     /// controls to another. It is no control. Until what it runs is built the panel draws
@@ -394,7 +394,7 @@ pub enum Row {
     /// by its id, and the buttons of pickers of [`Definition::pickers`] at its end, as
     /// AgX's Auto tune levels and RGB levels' black, grey and white. It is no control.
     /// The label is a group label's: its words are [`crate::messages::group`]'s, and its
-    /// id is unique among the module's group labels.
+    /// id is unique among the tool's group labels.
     Pickers {
         label: Option<&'static str>,
         pickers: &'static [&'static str],
@@ -424,13 +424,13 @@ pub enum Row {
     /// `IOP_FLAGS_GUIDES_WIDGET` (`dt_guides_init_module_widget`): its show guides
     /// toggle, the overlay while the module has focus, kept in darktablerc and never in
     /// an edit, and the global guide settings button at its end. Its words are shared
-    /// ([`crate::messages::GUIDES`]). Until the module's guides come the panel draws it
+    /// ([`crate::messages::GUIDES`]). Until the tool's guides come the panel draws it
     /// disabled, off.
     Guides,
 }
 
 /// One button of a [`Row::Buttons`]: its action's id, whose words are an action's
-/// (`module-<module>-action-<id>-label`, `-full` and `-promise`), and its icon.
+/// (`module-<tool>-action-<id>-label`, `-full` and `-promise`), and its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Button {
     pub id: &'static str,
@@ -570,11 +570,11 @@ impl Slider {
     }
 }
 
-/// A number control's range for the module's values (decision 30), as darktable's slider
+/// A number control's range for the tool's values (decision 30), as darktable's slider
 /// has them: what a value may hold, `min..=max`; what the track spans at rest, `soft`,
 /// inside it; and what a key moves, `step`. Most are the definition's
 /// ([`Definition::range`]); where darktable's `gui_changed` moves a slider's range with
-/// other controls, as AgX's pivot spans black to white relative exposure, the module gives
+/// other controls, as AgX's pivot spans black to white relative exposure, the tool gives
 /// it ([`crate::Tool::range`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Range {
@@ -636,10 +636,10 @@ pub fn slider_step(min: f32, max: f32, factor: f32) -> f32 {
     }
 }
 
-/// One of darktable's own settings for a module, as a row ([`Row::Setting`]).
+/// One of darktable's own settings for a tool, as a row ([`Row::Setting`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SettingRow {
-    /// snake_case, unique among the module's settings: its words follow from it
+    /// snake_case, unique among the tool's settings: its words follow from it
     /// ([`crate::messages::setting`]).
     pub id: &'static str,
     /// A number, a choice or a boolean, with darktable's range, options and default.
@@ -706,14 +706,14 @@ pub enum ChoiceStyle {
     Segmented,
 }
 
-/// The design system's painted widgets a definition can name; a third-party module
+/// The design system's painted widgets a definition can name; a third-party tool
 /// chooses among them and ships no UI code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Widget {
     Curve,
     ColourWheels,
     /// darktable's tone equalizer graph: its controls are bands in EV, numbers 1 EV apart
-    /// up to +0 EV, the darkest first; it draws the module's curve through them
+    /// up to +0 EV, the darkest first; it draws the tool's curve through them
     /// ([`crate::Tool::curve`] of the first), and a drag reaches as far as the curve is
     /// wide ([`crate::Tool::curve_width`]).
     Equalizer,
@@ -898,7 +898,7 @@ impl Definition {
 
     /// A number control's range as the definition gives it (decision 30): its range and
     /// step, and the soft range of the first slider row showing it, else its range, so its
-    /// track. `None` for a control that is no number, or that the module lacks.
+    /// track. `None` for a control that is no number, or that the tool lacks.
     pub fn range(&self, control: &str) -> Option<Range> {
         let ControlKind::Number { min, max, step, .. } = self.control(control)?.kind else {
             return None;
@@ -955,14 +955,14 @@ impl Definition {
     /// and only in the rows of the views covering it or of a preset row writing it,
     /// besides, for a number, in one equalizer's row at most, the one widget allowed
     /// beside a control's own rows, each preset row with options,
-    /// writing controls the module has, in one row at most and a list, each view
-    /// covering number controls of the module, each once, with a coordinate for each or
+    /// writing controls the tool has, in one row at most and a list, each view
+    /// covering number controls of the tool, each once, with a coordinate for each or
     /// fewer,
     /// each coordinate with its range in one slider row at most, each slider's soft range
     /// in order inside its control's or coordinate's range, each setting once, its
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
     /// are unique together. Each picker has an id of its own, writes controls of the
-    /// module and reads its settings, each once, and is in exactly one row, a
+    /// tool and reads its settings, each once, and is in exactly one row, a
     /// slider's quad or a row of pickers, which holds at least one.
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
@@ -1084,7 +1084,7 @@ impl Definition {
                     soft: Some(soft),
                     ..
                 }) => {
-                    // A control or a coordinate the module lacks is refused below.
+                    // A control or a coordinate the tool lacks is refused below.
                     if let Some(range) = self.number_range(control)
                         && !soft_holds(*soft, range)
                     {
@@ -1295,8 +1295,8 @@ impl Definition {
         Ok(())
     }
 
-    /// Whether a picker's writes are controls of the module and the settings it reads
-    /// are the module's, `settings` being their ids, each once.
+    /// Whether a picker's writes are controls of the tool and the settings it reads
+    /// are the tool's, `settings` being their ids, each once.
     fn check_picker(
         &self,
         picker: &Picker,
@@ -1330,7 +1330,7 @@ impl Definition {
     }
 
     /// Whether a preset row holds together: options that are ids, each once, and controls
-    /// of the module, each once.
+    /// of the tool, each once.
     fn check_preset(&self, preset: &PresetRow) -> Result<(), DefinitionError> {
         let options: BTreeSet<_> = preset.options.iter().collect();
         let options_hold = !preset.options.is_empty()
@@ -1349,9 +1349,9 @@ impl Definition {
         Ok(())
     }
 
-    /// Whether a view holds together: number controls of the module, each once, and a
+    /// Whether a view holds together: number controls of the tool, each once, and a
     /// coordinate for each, so it can be an invertible change of their coordinates, or
-    /// fewer, where the module's model drops a scale of them, as White balance's
+    /// fewer, where the tool's model drops a scale of them, as White balance's
     /// temperature and tint drop the coefficients' (decision 27).
     fn check_view(&self, view: &View) -> Result<(), DefinitionError> {
         let controls: BTreeSet<_> = view.controls.iter().collect();
@@ -1369,7 +1369,7 @@ impl Definition {
     }
 
     /// Whether rows can follow `control` for the values `is` names: a choice or a toggle
-    /// of the module, values it holds, and none of the rows its own.
+    /// of the tool, values it holds, and none of the rows its own.
     fn check_mode(
         &self,
         control: &'static str,
@@ -2290,7 +2290,7 @@ mod tests {
         );
     }
 
-    /// A module's setting, darktable's chart for its colour checker.
+    /// A tool's setting, darktable's chart for its colour checker.
     const CHART: SettingRow = SettingRow {
         id: "chart",
         kind: ControlKind::Choice {
@@ -2302,7 +2302,7 @@ mod tests {
     };
 
     #[test]
-    fn a_module_s_settings_are_rows_of_no_control_each_once_and_whole() {
+    fn a_tool_s_settings_are_rows_of_no_control_each_once_and_whole() {
         // In a group of their own, as darktable's colour checker: a group of settings
         // alone holds, and the settings show no control.
         let checker = Row::Group {
@@ -2492,7 +2492,7 @@ mod tests {
     }
 
     #[test]
-    fn a_picker_writes_the_module_s_controls_and_reads_its_settings_each_once() {
+    fn a_picker_writes_the_tool_s_controls_and_reads_its_settings_each_once() {
         let quad = |picker| Row::Slider(Slider::new("contrast").quad(Quad::Picker(picker)));
         let one = |picker: Picker| picking(&[picker], &[quad(picker.id)]);
         // One that only shows writes nothing and reads nothing.
@@ -2523,7 +2523,7 @@ mod tests {
     }
 
     #[test]
-    fn a_preset_row_writes_controls_the_module_has_and_is_in_one_row_at_most() {
+    fn a_preset_row_writes_controls_the_tool_has_and_is_in_one_row_at_most() {
         const AMOUNT: Row = Row::Slider(Slider::new("amount"));
         const LOOK: Row = Row::Preset {
             preset: "look",
@@ -2586,7 +2586,7 @@ mod tests {
             with(presets, Box::leak(Box::new([segmented, AMOUNT]))),
             Err(DefinitionError::SegmentedPreset("look"))
         );
-        // Its controls are the module's, each once.
+        // Its controls are the tool's, each once.
         for controls in [&[][..], &["amount", "missing"], &["amount", "amount"]] {
             assert_eq!(
                 look(&["soft"], controls),

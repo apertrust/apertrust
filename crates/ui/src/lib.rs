@@ -17,7 +17,7 @@
 //! `apertrust-ui`: Apertrust's design system, the tokens and themes, fonts, icons and
 //! components every screen is built from (`docs/gui.md`, architecture decision 36).
 //!
-//! It knows nothing of photos, modules or the engine: a component draws the value it is
+//! It knows nothing of photos, tools or the engine: a component draws the value it is
 //! given and reports what the user did, and the app turns that into a session command.
 //! Components read the current theme from egui's context ([`theme()`]) and never hold a
 //! colour or size of their own.

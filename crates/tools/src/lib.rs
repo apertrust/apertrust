@@ -14,26 +14,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Apertrust's modules (architecture decisions 4 and 28): what the user edits with. A
-//! module is one editing task, as the modules README lists them (`docs/tools/README.md`),
+//! Apertrust's tools (architecture decisions 4 and 28): what the user edits with. A
+//! tool is one editing task, as the tools README lists them (`docs/tools/README.md`),
 //! with its controls, its tabs and maybe Auto; an operation is one of the engine's
-//! algorithms. A module implements [`Tool`]:
+//! algorithms. A tool implements [`Tool`]:
 //!
 //! - its [`Definition`], static data: the controls an edit stores apart from the rows a
 //!   panel draws them in, and no text, since every word is a message id that follows
 //!   from the ids ([`messages`]);
 //! - its defaults for a photo, the definition's unless they come from the photo, and
-//!   whether each control can change anything on it while the module's values stand;
-//! - the operation parameters it owns, each owned by one module only ([`check`]);
+//!   whether each control can change anything on it while the tool's values stand;
+//! - the operation parameters it owns, each owned by one tool only ([`check`]);
 //! - its binding: a pure function from its own values, the photo's image context and
 //!   [`Base`], each operation's defaults for the photo, to the parameters it sets,
 //!   through transfer functions that carry their derivatives ([`transfer`]);
 //! - its colour pickers, and what each makes of a reading of the photo ([`pick`]);
 //! - migrations from the values an earlier version saved.
 //!
-//! The engine's session runs the bindings: every client sends module values, and the
+//! The engine's session runs the bindings: every client sends tool values, and the
 //! session turns them into operation parameters, so the app, the CLI and MCP see the same
-//! modules. This crate depends on the operation interface, the shared colour maths and
+//! tools. This crate depends on the operation interface, the shared colour maths and
 //! the settings part of `apertrust-base`, for its settings' statics ([`settings`]),
 //! only, never on egui, wgpu, the engine or an operation crate; it names operations and
 //! parameters by id.
@@ -80,13 +80,13 @@ pub use definition::{
 use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ToolValues};
 
-/// The built-in modules, in the order the session reports them and an edit saves them:
+/// The built-in tools, in the order the session reports them and an edit saves them:
 /// Raw black/white point, Highlight reconstruction, Demosaic, AgX and Output colour
 /// profile, in the Profile tab's order; then White balance, Orientation, Exposure, Colour
 /// calibration, Tone equalizer, Colour balance RGB, Tone curve, which becomes RGB curve,
 /// Haze removal, then RGB primaries, Grain, Soften and Vignetting, as the side panel's
 /// Profile and Adjust tabs listed them until decision 38 gave it darktable's groups, whose
-/// lists are the app's. The first pass's other modules follow (`docs/gui.md`, Build
+/// lists are the app's. The first pass's other tools follow (`docs/gui.md`, Build
 /// order).
 pub const TOOLS: &[&dyn Tool] = &[
     &raw_black_white_point::RawBlackWhitePoint,
@@ -108,15 +108,15 @@ pub const TOOLS: &[&dyn Tool] = &[
     &vignetting::Vignetting,
 ];
 
-/// The ids of the modules Apertrust has retired (decision 43): an older build wrote
+/// The ids of the tools Apertrust has retired (decision 43): an older build wrote
 /// their values, so an edit holding one loses them with a warning and still opens for
-/// editing, where a module neither built in nor retired is a newer Apertrust's and opens
-/// the photo for viewing only. A module removed or renamed joins the list, as the Tone
+/// editing, where a tool neither built in nor retired is a newer Apertrust's and opens
+/// the photo for viewing only. A tool removed or renamed joins the list, as the Tone
 /// curve's `tone_curve` will once RGB curve replaces it (decision 2), and leaves it when
-/// a module takes its id again. Empty until then.
+/// a tool takes its id again. Empty until then.
 pub const RETIRED: &[&str] = &[];
 
-/// The contract between the engine's session and a module (decision 28).
+/// The contract between the engine's session and a tool (decision 28).
 pub trait Tool: Send + Sync {
     fn definition(&self) -> &'static Definition;
 
@@ -126,26 +126,26 @@ pub trait Tool: Send + Sync {
         self.definition().defaults()
     }
 
-    /// Every operation parameter the module owns (decision 4). No other module owns
+    /// Every operation parameter the tool owns (decision 4). No other tool owns
     /// one of them, and nothing else sets them.
     fn owns(&self) -> &'static [Owned];
 
-    /// The parameters of [`Self::owns`] no control sets, which the module holds at the
+    /// The parameters of [`Self::owns`] no control sets, which the tool holds at the
     /// operation's value for the photo, as Raw black/white point holds the raw's crop
     /// margins and Colour calibration darktable's version 3 (rule 12 of
-    /// `docs/tools/README.md`): a client asking to set one is told the module fixes it,
+    /// `docs/tools/README.md`): a client asking to set one is told the tool fixes it,
     /// not that it sets it. None, as provided.
     fn fixed(&self) -> &'static [Owned] {
         &[]
     }
 
-    /// The operation parameters these values set: a pure function of the module's own
+    /// The operation parameters these values set: a pure function of the tool's own
     /// values, the photo's image context at full resolution and `base`, never of another
-    /// module, a pipe or any state, so the viewport and the export get the same
+    /// tool, a pipe or any state, so the viewport and the export get the same
     /// parameters and the order controls were used in cannot matter.
     ///
     /// `values` holds only the controls off their defaults for the photo, and the session
-    /// binds no module that has none, so a module at its defaults sets nothing and leaves
+    /// binds no tool that has none, so a tool at its defaults sets nothing and leaves
     /// the plan exactly as it was. It sets only parameters it owns, each within its
     /// schema: an operation an unedited photo does not run is planned while some binding
     /// sets one of its parameters, so a binding that needs one at its defaults sets one
@@ -153,10 +153,10 @@ pub trait Tool: Send + Sync {
     /// written over `base`.
     fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting>;
 
-    /// Whether the control can change anything on this photo while the module's controls
+    /// Whether the control can change anything on this photo while the tool's controls
     /// hold `values`, every control, the edit's over the defaults: true unless the photo
     /// lacks what it acts on, as Exposure's Use camera bias does on a photo that records
-    /// no bias (decision 30), or another of the module's controls holds a value under
+    /// no bias (decision 30), or another of the tool's controls holds a value under
     /// which it acts on nothing, as darktable makes vignetting's width/height ratio
     /// insensitive while automatic ratio is on (decision 30). A panel draws a control
     /// that cannot as disabled, as an action that cannot run is; it still takes a value
@@ -175,7 +175,7 @@ pub trait Tool: Send + Sync {
     /// order (decision 30): darktable's list for the photo, as demosaic lists its
     /// sensor's methods and colour calibration lists as shot in camera only on a colour
     /// raw. Never empty, and holding the photo's default ([`check::listed`]). Pure, and
-    /// reading only the photo, never the module's values: the session asks once as the
+    /// reading only the photo, never the tool's values: the session asks once as the
     /// photo opens, reports the list and refuses any other option, which an edit from
     /// another photo may still hold. Provided: every option; none for a control that is
     /// no choice.
@@ -190,15 +190,15 @@ pub trait Tool: Send + Sync {
         }
     }
 
-    /// The range of the number control `control` while the module's controls hold
+    /// The range of the number control `control` while the tool's controls hold
     /// `values`, every control, the edit's over the defaults (decision 30): what a value
     /// may hold, what the track spans at rest and what a key moves, as darktable's slider
     /// has them for those values. The definition's, as provided ([`Definition::range`]);
     /// `None` for a control that is no number. Override it where darktable's `gui_changed`
     /// moves a slider's range with other controls, as AgX's pivot spans black to white
     /// relative exposure: the definition's range is then the widest any values give, and
-    /// its soft range and step those at the module's defaults. Pure, as [`Self::bind`] is,
-    /// reading the module's values but never `control`'s own, nor the photo. The session
+    /// its soft range and step those at the tool's defaults. Pure, as [`Self::bind`] is,
+    /// reading the tool's values but never `control`'s own, nor the photo. The session
     /// reports it, refuses a command outside it, and after every change clamps a number a
     /// moved range leaves outside, written at its nearer end in the same change
     /// ([`check::clamp`]).
@@ -207,7 +207,7 @@ pub trait Tool: Send + Sync {
     }
 
     /// The curve a curve row draws through the points of `control`, or a band graph
-    /// through its bands, named by its first, while the module's controls hold `values`:
+    /// through its bands, named by its first, while the tool's controls hold `values`:
     /// its output at an input, both on the row's axes, so the curve drawn is the curve the
     /// operation renders. `None`, as provided, joins the points with straight lines; a
     /// band graph draws them in the warning colour, as no curve fits its bands.
@@ -216,7 +216,7 @@ pub trait Tool: Send + Sync {
     }
 
     /// The width σ, in its input's units, of the Gaussians the curve [`Self::curve`] gives
-    /// for `control` is a sum of, while the module's controls hold `values`: how far a drag
+    /// for `control` is a sum of, while the tool's controls hold `values`: how far a drag
     /// on a band graph reaches, as darktable's tone equalizer moves the bands around the
     /// pointer by a Gaussian its curve smoothing widens. `None`, as provided, for a curve
     /// of no such width, where a band graph takes darktable's default, √2.
@@ -228,7 +228,7 @@ pub trait Tool: Send + Sync {
     /// for each control the row names, each within its range; `None` where this photo
     /// cannot have it, as As shot on a photo that records no white balance (decision 2).
     /// Pure, as [`Self::bind`] is: it reads only the image context, so an option may be
-    /// the controls' defaults for the photo. A module that declares a preset row gives
+    /// the controls' defaults for the photo. A tool that declares a preset row gives
     /// its options here. An option takes no follow writes ([`Self::follow`]), as
     /// darktable's presets write their parameters without `gui_changed`, so it writes
     /// itself every control a follow write would otherwise keep in step, as White
@@ -241,7 +241,7 @@ pub trait Tool: Send + Sync {
     /// every control, the edit's over the defaults; `None` for Custom. As provided, the
     /// first option whose [`Self::preset`] values equal the row's controls exactly, so an
     /// option given by the defaults matches after a reset, and a value off by a rounding
-    /// reads Custom rather than an option it is not. A module may compare in a precision
+    /// reads Custom rather than an option it is not. A tool may compare in a precision
     /// of its own.
     fn matching(
         &self,
@@ -259,14 +259,14 @@ pub trait Tool: Send + Sync {
         })
     }
 
-    /// The coordinates of the lossless view `view` while the module's controls hold
+    /// The coordinates of the lossless view `view` while the tool's controls hold
     /// `values`, every control, the edit's over the defaults: one for each of the view's
-    /// coordinates, in the definition's order, and `None` for a view the module lacks
+    /// coordinates, in the definition's order, and `None` for a view the tool lacks
     /// (decision 2). Pure, as [`Self::bind`] is, and reading only the controls the view
-    /// covers and the image context, never the module's other controls: the session holds
+    /// covers and the image context, never the tool's other controls: the session holds
     /// a view's coordinates through a gesture for as long as those controls are unchanged,
     /// so coordinates that moved with another control would be reported stale. A
-    /// coordinate may lie outside its range, where the values put it. A module that
+    /// coordinate may lie outside its range, where the values put it. A tool that
     /// declares a view gives its coordinates here.
     fn view(&self, _view: &str, _values: &Controls, _image: &ImageContext) -> Option<Vec<f32>> {
         None
@@ -278,17 +278,17 @@ pub trait Tool: Send + Sync {
     /// its inverse up to the scale the model drops, the values as darktable's GUI writes
     /// them, as White balance's coefficients normalised to green 1. A value may lie
     /// outside its control's range, which the session then refuses. `None` for a view the
-    /// module lacks.
+    /// tool lacks.
     fn unview(&self, _view: &str, _coordinates: &[f32], _image: &ImageContext) -> Option<Controls> {
         None
     }
 
-    /// What darktable's button `action` of a [`Row::Buttons`] writes when the module's
+    /// What darktable's button `action` of a [`Row::Buttons`] writes when the tool's
     /// controls hold `values`, every control, the edit's over the defaults: each control
     /// it sets with its new value, which a client sends as `SetControl`, one change, as
     /// orientation's rotate composes the orientation shown with a quarter turn. Pure, as
     /// [`Self::bind`] is, so the panel computes it from the values it shows. `None`, as
-    /// provided, for an action the module does not run.
+    /// provided, for an action the tool does not run.
     fn action(&self, _action: &str, _values: &Controls, _image: &ImageContext) -> Option<Controls> {
         None
     }
@@ -312,17 +312,17 @@ pub trait Tool: Send + Sync {
     /// controls it writes, each among the picker's `writes` and stored as darktable's rule
     /// gives it, with no other bound, and what the panel shows of the reading. `values`
     /// is every control, the edit's over the defaults; `settings` the settings its
-    /// picker reads, as the client sent them; `channel` the channel tab the module shows,
-    /// as RGB levels' and RGB curve's; `last` the module's last reading applied, one per
-    /// module and shared by its pickers, as darktable's `picked_color`; `keys` the keys
-    /// held as the reading was asked for. Pure, as [`Self::bind`] is, so the module's tests
+    /// picker reads, as the client sent them; `channel` the channel tab the tool shows,
+    /// as RGB levels' and RGB curve's; `last` the tool's last reading applied, one per
+    /// tool and shared by its pickers, as darktable's `picked_color`; `keys` the keys
+    /// held as the reading was asked for. Pure, as [`Self::bind`] is, so the tool's tests
     /// drive it with readings and no GPU: the session calls it as a reading arrives and
     /// applies what it gives as one change, with no follow writes ([`Self::follow`]).
-    /// `None`, as provided, for a picker the module does not run, and where a reading
+    /// `None`, as provided, for a picker the tool does not run, and where a reading
     /// writes and shows nothing, as RGB levels' when it equals the last.
     #[allow(
         clippy::too_many_arguments,
-        reason = "darktable's picker state, each part read by some module's pick"
+        reason = "darktable's picker state, each part read by some tool's pick"
     )]
     fn pick(
         &self,
@@ -338,7 +338,7 @@ pub trait Tool: Send + Sync {
         None
     }
 
-    /// Values saved by version `from`, brought up to this version. A module raises its
+    /// Values saved by version `from`, brought up to this version. A tool raises its
     /// version, and migrates, whenever a control's meaning or its binding changes, so an
     /// old edit keeps its look.
     fn migrate(&self, _from: u32, values: ToolValues) -> ToolValues {
@@ -346,9 +346,9 @@ pub trait Tool: Send + Sync {
     }
 }
 
-/// A module's values saved before it became switched (decision 32), as its migration
+/// A tool's values saved before it became switched (decision 32), as its migration
 /// gives them back: on with every value, where they rendered something then, else off,
-/// their values dropped, since they rendered nothing, and their marks kept. A module that
+/// their values dropped, since they rendered nothing, and their marks kept. A tool that
 /// becomes switched raises its version, and its [`Tool::migrate`] says whether an older
 /// edit rendered, writing first, where darktable's defaults differ from the older
 /// version's, those older defaults, so each edit binds what it bound.
@@ -364,7 +364,7 @@ pub fn switched_from(mut values: ToolValues, rendered: bool) -> ToolValues {
 }
 
 /// One operation parameter's value: what a binding sets, and what the session reports
-/// for the parameters no module owns.
+/// for the parameters no tool owns.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Setting {
     pub operation: &'static str,
@@ -382,7 +382,7 @@ impl Setting {
     }
 }
 
-/// An operation parameter a module owns.
+/// An operation parameter a tool owns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Owned {
     pub operation: &'static str,
@@ -425,7 +425,7 @@ impl Base {
     }
 
     /// A number parameter's value. A binding reads only parameters it owns, which
-    /// [`check::accept`] holds to exist, so a missing one is a bug in the module.
+    /// [`check::accept`] holds to exist, so a missing one is a bug in the tool.
     pub fn float(&self, operation: &str, param: &str) -> f32 {
         match self.get(operation, param) {
             Some(Value::Float(value)) => value,
@@ -446,13 +446,13 @@ impl Base {
 mod tests {
     use super::*;
 
-    /// A retired id taken again belongs to the module that took it, which reads its
+    /// A retired id taken again belongs to the tool that took it, which reads its
     /// values, so it leaves the list.
     #[test]
-    fn no_retired_id_is_a_built_in_module_s() {
+    fn no_retired_id_is_a_built_in_tool_s() {
         for id in RETIRED {
             assert!(
-                !TOOLS.iter().any(|module| module.definition().id == *id),
+                !TOOLS.iter().any(|tool| tool.definition().id == *id),
                 "{id} is retired and built in"
             );
         }

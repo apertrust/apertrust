@@ -73,7 +73,7 @@ pub struct Edit {
     /// the key of a thumbnail (planned), which hashes the edit the file holds, so that
     /// another build rewriting the same edit differently does not invalidate them.
     pub file_hash: [u8; 32],
-    /// Whether the photo has an edit: some module's last entry up to a copy's end is not
+    /// Whether the photo has an edit: some tool's last entry up to a copy's end is not
     /// empty, a fold of its log as text (`docs/history.md`, In the sidecar), or the file is a
     /// newer Apertrust's, whose layout this build may not read and so may not call empty.
     pub edited: bool,

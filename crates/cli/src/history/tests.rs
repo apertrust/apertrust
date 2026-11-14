@@ -112,12 +112,12 @@ fn mine(edits: &sidecar::Edits) -> Clock {
         .expect("this machine's clock")
 }
 
-/// The modules and operations of `log`'s steps' entries, in order.
-fn modules_of(log: &Log) -> Vec<&str> {
+/// The tools and operations of `log`'s steps' entries, in order.
+fn tools_of(log: &Log) -> Vec<&str> {
     (log.steps().iter())
         .flat_map(|step| step.change.entries())
         .map(|entry| match entry {
-            Entry::Tool { tool: module, .. } => module.as_str(),
+            Entry::Tool { tool, .. } => tool.as_str(),
             Entry::Operation { operation, .. } => operation.as_str(),
         })
         .collect()
@@ -125,7 +125,7 @@ fn modules_of(log: &Log) -> Vec<&str> {
 
 /// `edit` gives a photo with no history its default steps before its first change, as the
 /// app's first change does, at a clock before the change's, so Original leaves out the
-/// modules darktable's workflow applies; a later change adds none, and one that changes
+/// tools darktable's workflow applies; a later change adds none, and one that changes
 /// nothing, a note alone among them, writes nothing.
 #[test]
 fn edit_gives_a_photo_with_no_history_its_default_steps_first() {
@@ -133,9 +133,9 @@ fn edit_gives_a_photo_with_no_history_its_default_steps_first() {
     photo.edit(&["exposure.exposure=1"], None);
     let log = photo.log();
     let defaults = default_tools(TOOLS, OPERATIONS);
-    let mut modules = defaults.clone();
-    modules.push("exposure");
-    assert_eq!(modules_of(&log), modules);
+    let mut tools = defaults.clone();
+    tools.push("exposure");
+    assert_eq!(tools_of(&log), tools);
     assert_eq!((log.end(), log.defaults()), (10, 9));
     assert!(log.steps()[8].clock < log.steps()[9].clock);
     let unapplied: Vec<String> = log.unapplied(0).into_iter().collect();
@@ -149,11 +149,11 @@ fn edit_gives_a_photo_with_no_history_its_default_steps_first() {
     assert_eq!(photo.bytes(), bytes);
 }
 
-/// `edit --clear` with the end at Original moves no value, but applies the modules not
+/// `edit --clear` with the end at Original moves no value, but applies the tools not
 /// applied there, as the session's Reset does: one Reset step of each, the default steps
 /// kept and moved below it, the person's after the end dropped.
 #[test]
-fn clear_at_original_applies_the_modules_not_applied() {
+fn clear_at_original_applies_the_tools_not_applied() {
     let photo = Photo::edited("clear");
     make(&photo.path(), Move::GoTo(0), OPERATIONS, TOOLS).unwrap();
     crate::edit(
@@ -173,11 +173,11 @@ fn clear_at_original_applies_the_modules_not_applied() {
     let log = photo.log();
     let defaults = default_tools(TOOLS, OPERATIONS);
     assert_eq!((log.steps().len(), log.end()), (10, 10));
-    assert_eq!(modules_of(&log)[..9], defaults[..]);
+    assert_eq!(tools_of(&log)[..9], defaults[..]);
     let reset = &log.steps()[9];
     assert_eq!(reset.note, Some(Note::reset()));
     assert_eq!(
-        modules_of(&Log::from_steps(vec![reset.clone()], 1)),
+        tools_of(&Log::from_steps(vec![reset.clone()], 1)),
         ["agx", "channelmixerrgb", "exposure"]
     );
     assert!(log.unapplied(log.end()).is_empty());
@@ -275,7 +275,7 @@ fn refused_moves_leave_the_file_as_it_is() {
         Move::Truncate,
         Move::Discard,
     ];
-    // A newer Apertrust's: a module this build lacks.
+    // A newer Apertrust's: a tool this build lacks.
     let photo = Photo::edited("newer");
     let xml = String::from_utf8(photo.bytes()).unwrap().replacen(
         "apertrust:module=\"rawprepare\"",
@@ -314,17 +314,17 @@ fn refused_moves_leave_the_file_as_it_is() {
     }
     let made = make(&photo.path(), Move::Discard, OPERATIONS, TOOLS).unwrap();
     assert!(made.written);
-    // Afresh: the default steps, then a step of each module the edit holds as read, in a
+    // Afresh: the default steps, then a step of each tool the edit holds as read, in a
     // batch, noted `history-discard`, the end the last; nothing left that cannot be read.
     let edits = photo.edits();
     assert!(edits.problems.is_empty(), "{:?}", edits.problems);
     let log = photo.log();
     assert_eq!(log, made.log);
     let defaults = default_tools(TOOLS, OPERATIONS);
-    assert_eq!(modules_of(&log)[..defaults.len()], defaults[..]);
+    assert_eq!(tools_of(&log)[..defaults.len()], defaults[..]);
     let fresh = &log.steps()[defaults.len()..];
     assert_eq!(
-        modules_of(&Log::from_steps(fresh.to_vec(), 0)),
+        tools_of(&Log::from_steps(fresh.to_vec(), 0)),
         ["agx", "colorbalancergb", "exposure"]
     );
     assert!(fresh.iter().all(|step| step.note == Some(Note::discard())));
@@ -362,8 +362,8 @@ fn undo_stops_above_a_default_step_redo_applied() {
     let log = Log::afresh(&edit, &defaults, clock);
     let (steps, end) = (log.steps().len(), log.end());
     let file = sidecar::Edits::new("test");
-    let modules = (OPERATIONS, TOOLS);
-    sidecar::write_log(&photo.sidecar(), &file, &log, &[clock], modules, "test").unwrap();
+    let tools = (OPERATIONS, TOOLS);
+    sidecar::write_log(&photo.sidecar(), &file, &log, &[clock], tools, "test").unwrap();
     let made = make(&photo.path(), Move::Redo, OPERATIONS, TOOLS).unwrap();
     assert_eq!(made.log.end(), end + 1);
     assert_eq!(made.log.end(), steps);
@@ -388,7 +388,7 @@ fn undo_stops_above_a_default_step_redo_applied() {
 
 /// `--discard` on an unreadable history of default steps alone, here a clock of the copy's
 /// vector that cannot be read: with the end among them, the fresh log is written as it
-/// is, so the modules not applied stay so as the photo reopens; with every one applied, as
+/// is, so the tools not applied stay so as the photo reopens; with every one applied, as
 /// no step, as a new photo's.
 #[test]
 fn discard_keeps_default_steps_not_applied_in_an_unreadable_history() {
@@ -401,8 +401,8 @@ fn discard_keeps_default_steps_not_applied_in_an_unreadable_history() {
         log.add_defaults(&defaults, clock);
         log.set_end(end);
         let file = sidecar::Edits::new("test");
-        let modules = (OPERATIONS, TOOLS);
-        sidecar::write_log(&photo.sidecar(), &file, &log, &[clock], modules, "test").unwrap();
+        let tools = (OPERATIONS, TOOLS);
+        sidecar::write_log(&photo.sidecar(), &file, &log, &[clock], tools, "test").unwrap();
         // The vector's clock, after the steps', with a counter that is no number.
         let xml = String::from_utf8(photo.bytes()).unwrap();
         let (steps, vector) = xml.split_at(xml.find("<apertrust:clocks>").unwrap());
@@ -421,7 +421,7 @@ fn discard_keeps_default_steps_not_applied_in_an_unreadable_history() {
         let written = photo.log();
         assert_eq!(written, made.log);
         if end < defaults.len() {
-            assert_eq!(modules_of(&written), defaults);
+            assert_eq!(tools_of(&written), defaults);
             assert_eq!(written.end(), end);
             assert_eq!(written.fold(), read.edit);
             let unapplied: Vec<String> = written.unapplied(end).into_iter().collect();
@@ -467,9 +467,9 @@ fn told(source: StepSource, minute: u64, changes: Vec<ToolChange>) -> Arc<Histor
     })
 }
 
-/// What a step changed of one module: each of `controls`, a number from its first to its
+/// What a step changed of one tool: each of `controls`, a number from its first to its
 /// second, or a choice where the two are none.
-fn module(id: &'static str, controls: &[(&'static str, Option<(f32, f32)>)]) -> ToolChange {
+fn tool(id: &'static str, controls: &[(&'static str, Option<(f32, f32)>)]) -> ToolChange {
     ToolChange {
         tool: Cow::Borrowed(id),
         enabled: None,
@@ -498,12 +498,12 @@ fn module(id: &'static str, controls: &[(&'static str, Option<(f32, f32)>)]) -> 
 #[test]
 fn the_listing_says_what_each_step_changed_newest_first() {
     let defaults = ["rawprepare", "demosaic", "exposure"]
-        .map(|id| told(StepSource::Default, 0, vec![module(id, &[])]));
+        .map(|id| told(StepSource::Default, 0, vec![tool(id, &[])]));
     let mut batch = [
         told(
             StepSource::Assistant,
             2,
-            vec![module(
+            vec![tool(
                 "colorbalancergb",
                 &[("contrast", Some((0.0, 0.2))), ("saturation", None)],
             )],
@@ -511,7 +511,7 @@ fn the_listing_says_what_each_step_changed_newest_first() {
         told(
             StepSource::Assistant,
             2,
-            vec![module("agx", &[("curve_pivot_x", Some((0.0, -1.0)))])],
+            vec![tool("agx", &[("curve_pivot_x", Some((0.0, -1.0)))])],
         ),
     ];
     for step in &mut batch {
@@ -519,24 +519,24 @@ fn the_listing_says_what_each_step_changed_newest_first() {
         step.batch = Some(apertrust_engine::history::BatchId(7));
         step.note = Some(Note::Text("Warmer look".to_owned()));
     }
-    let mut reset = told(StepSource::You, 5, vec![module("exposure", &[])]);
+    let mut reset = told(StepSource::You, 5, vec![tool("exposure", &[])]);
     Arc::make_mut(&mut reset).note = Some(Note::reset());
     let mut unknown = told(
         StepSource::You,
         0,
-        vec![module("sigmoid", &[("contrast", None)])],
+        vec![tool("sigmoid", &[("contrast", None)])],
     );
     Arc::make_mut(&mut unknown).clock = Clock::at(0, None, MachineId::UNKNOWN);
     let steps: Vec<Arc<HistoryStep>> = (defaults.into_iter())
         .chain([told(
             StepSource::You,
             1,
-            vec![module("exposure", &[("exposure", Some((0.7, 1.2)))])],
+            vec![tool("exposure", &[("exposure", Some((0.7, 1.2)))])],
         )])
         .chain(batch)
         .chain([
             unknown,
-            told(StepSource::Auto, 4, vec![module("temperature", &[])]),
+            told(StepSource::Auto, 4, vec![tool("temperature", &[])]),
             reset,
         ])
         .collect();
@@ -551,7 +551,7 @@ fn the_listing_says_what_each_step_changed_newest_first() {
     6    agx curve_pivot_x ↓         2026-11-14 10:02
     5    colorbalancergb 2 controls  2026-11-14 10:02
     4  exposure ↑                    2026-11-14 10:01
-  1–3  defaults: 3 modules every photo runs
+  1–3  defaults: 3 tools every photo runs
     3    exposure                    2026-11-14 10:00
     2    demosaic                    2026-11-14 10:00
     1    rawprepare                  2026-11-14 10:00
@@ -563,7 +563,7 @@ fn the_listing_says_what_each_step_changed_newest_first() {
     let listed = listing("IMG.ARW", &steps, 2);
     assert!(
         listed.contains(
-            "  1–3  defaults: 3 modules every photo runs\n    3    exposure                    \
+            "  1–3  defaults: 3 tools every photo runs\n    3    exposure                    \
              2026-11-14 10:00\n         6 undone: the next edit drops them; 1 default step \
              not applied: the next edit applies it\n>   2    demosaic"
         ),

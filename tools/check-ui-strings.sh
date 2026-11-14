@@ -23,7 +23,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Not checked: the design system's gallery and the viewport spike's section in the app,
-# tools for developers; the module renderer replaces the spike (docs/gui.md, build order
+# tools for developers; the tool renderer replaces the spike (docs/gui.md, build order
 # step 6).
 allowed='^(crates/ui/src/gallery\.rs|crates/app/src/spike\.rs)$'
 

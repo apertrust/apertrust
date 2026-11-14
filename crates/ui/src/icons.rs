@@ -98,7 +98,7 @@ pub enum Icon {
     Edited,
     /// An eye: the grid bar's Labels, which shows the captions under the thumbnails.
     Labels,
-    /// An eye: the History tab's eye, held to see the photo without a module.
+    /// An eye: the History tab's eye, held to see the photo without a tool.
     Visible,
     /// A star: a point of a photo's rating, under its thumbnail; filled for each point.
     Star,

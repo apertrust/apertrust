@@ -92,8 +92,8 @@
 //! A setting the user never changed is not written, so a missing one is its default.
 //! The language is kept only once the user chooses one; until then it follows the
 //! system's. The side panel's width is in points, as the user dragged it, within the
-//! widths it can be dragged to; until then it is the theme's. A module's collapsible
-//! groups are kept by the module's id and the group's, only those the user opened or
+//! widths it can be dragged to; until then it is the theme's. A tool's collapsible
+//! groups are kept by the tool's id and the group's, only those the user opened or
 //! closed, the others starting closed (decision 29). The scopes' view is kept by part:
 //! the graph, the scale (`linear` or `logarithmic`), the channels shown and whether each
 //! clipping overlay is on, each once the user changes it. So is the grid panel's: the
@@ -221,7 +221,7 @@ pub struct Settings {
     pub keys: BTreeMap<String, Vec<String>>,
     /// The Export dialog's last settings, `export.*`, kept as they are left.
     pub export: Values,
-    /// The modules' settings, `tools.<module>.*` (decision 29).
+    /// The tools' settings, `tools.<tool>.*` (decision 29).
     pub tool_settings: ToolSettings,
     /// Whether Export and Export Again ask before replacing files, `export.ask_before_overwrite`:
     /// kept apart from the dialog's settings, since the dialog does not edit it and its
@@ -501,8 +501,8 @@ impl Settings {
     }
 }
 
-/// The modules' settings (decision 29; `docs/pickers.md`, A tool's settings): each kept
-/// setting of [`apertrust_tools::settings::registry`], by its module and its id there,
+/// The tools' settings (decision 29; `docs/pickers.md`, A tool's settings): each kept
+/// setting of [`apertrust_tools::settings::registry`], by its tool and its id there,
 /// as the value its row (`Row::Setting`) shows and the picker's commands carry. Kept by
 /// the app as darktable keeps its darktablerc, never in an edit, and sent with
 /// `PickerCommand::On` and `Settings`. One `--conf` gives keeps its value for the run, as
@@ -520,7 +520,7 @@ impl Default for ToolSettings {
     fn default() -> ToolSettings {
         ToolSettings {
             values: kept()
-                .map(|(module, row, _)| ((module, row.id), row.default()))
+                .map(|(tool, row, _)| ((tool, row.id), row.default()))
                 .collect(),
             overridden: BTreeSet::new(),
         }
@@ -545,28 +545,28 @@ impl ToolSettings {
             values: BTreeMap::new(),
             overridden: BTreeSet::new(),
         };
-        for (module, row, declared) in kept() {
+        for (tool, row, declared) in kept() {
             let value = store.value(declared);
             let value = value.as_ref().and_then(|value| control_value(row, value));
             let value = value.unwrap_or_else(|| row.default());
-            settings.values.insert((module, row.id), value);
+            settings.values.insert((tool, row.id), value);
             if store.overridden(declared) {
-                settings.overridden.insert((module, row.id));
+                settings.overridden.insert((tool, row.id));
             }
         }
         settings
     }
 
-    /// Whether `--conf` gives `module`'s setting `setting` for this run.
-    pub fn overridden(&self, module: &str, setting: &str) -> bool {
-        (self.overridden.iter()).any(|&(m, s)| m == module && s == setting)
+    /// Whether `--conf` gives `tool`'s setting `setting` for this run.
+    pub fn overridden(&self, tool: &str, setting: &str) -> bool {
+        (self.overridden.iter()).any(|&(m, s)| m == tool && s == setting)
     }
 
     /// Sets in `store` each value that differs from `was`.
     fn write(&self, store: &mut Store, was: &ToolSettings) {
-        for (module, row, declared) in kept() {
-            let value = self.get(module, row.id);
-            if value != was.get(module, row.id)
+        for (tool, row, declared) in kept() {
+            let value = self.get(tool, row.id);
+            if value != was.get(tool, row.id)
                 && let Some(value) = value.and_then(|value| toml_value(row, value))
             {
                 store.set_value(declared, &value);
@@ -574,42 +574,42 @@ impl ToolSettings {
         }
     }
 
-    /// `module`'s setting `setting`, if it is kept.
-    pub fn get(&self, module: &str, setting: &str) -> Option<&ControlValue> {
+    /// `tool`'s setting `setting`, if it is kept.
+    pub fn get(&self, tool: &str, setting: &str) -> Option<&ControlValue> {
         self.values
             .iter()
-            .find(|((m, s), _)| *m == module && *s == setting)
+            .find(|((m, s), _)| *m == tool && *s == setting)
             .map(|(_, value)| value)
     }
 
-    /// Sets `module`'s setting `setting`, if it is kept and `--conf` does not give it.
-    pub fn set(&mut self, module: &str, setting: &str, value: ControlValue) {
-        if self.overridden(module, setting) {
+    /// Sets `tool`'s setting `setting`, if it is kept and `--conf` does not give it.
+    pub fn set(&mut self, tool: &str, setting: &str, value: ControlValue) {
+        if self.overridden(tool, setting) {
             return;
         }
         if let Some((_, kept)) = self
             .values
             .iter_mut()
-            .find(|((m, s), _)| *m == module && *s == setting)
+            .find(|((m, s), _)| *m == tool && *s == setting)
         {
             *kept = value;
         }
     }
 
-    /// `module`'s kept settings, as its picker's commands carry them.
-    pub fn of(&self, module: &str) -> Vec<(&'static str, ControlValue)> {
+    /// `tool`'s kept settings, as its picker's commands carry them.
+    pub fn of(&self, tool: &str) -> Vec<(&'static str, ControlValue)> {
         (self.values.iter())
-            .filter(|((m, _), _)| *m == module)
+            .filter(|((m, _), _)| *m == tool)
             .map(|((_, setting), value)| (*setting, value.clone()))
             .collect()
     }
 }
 
-/// Each kept module setting: its module's id, its row and its declaration.
+/// Each kept tool setting: its tool's id, its row and its declaration.
 fn kept() -> impl Iterator<Item = (&'static str, &'static SettingRow, &'static dyn Declared)> {
-    TOOLS.iter().flat_map(|module| {
-        let id = module.definition().id;
-        module.definition().rows().filter_map(move |row| match row {
+    TOOLS.iter().flat_map(|tool| {
+        let id = tool.definition().id;
+        tool.definition().rows().filter_map(move |row| match row {
             Row::Setting(setting) => apertrust_tools::settings::setting(id, setting.id)
                 .map(|declared| (id, setting, declared)),
             _ => None,
@@ -617,7 +617,7 @@ fn kept() -> impl Iterator<Item = (&'static str, &'static SettingRow, &'static d
     })
 }
 
-/// A module setting's value as `settings.toml` keeps it, read as its row's kind.
+/// A tool setting's value as `settings.toml` keeps it, read as its row's kind.
 fn control_value(row: &SettingRow, value: &toml::Value) -> Option<ControlValue> {
     match row.kind {
         ControlKind::Number { .. } => match value {
@@ -635,7 +635,7 @@ fn control_value(row: &SettingRow, value: &toml::Value) -> Option<ControlValue> 
     }
 }
 
-/// A module setting's value as `settings.toml` keeps it.
+/// A tool setting's value as `settings.toml` keeps it.
 fn toml_value(row: &SettingRow, value: &ControlValue) -> Option<toml::Value> {
     match (row.kind, value) {
         (ControlKind::Number { .. }, ControlValue::Number(n)) => {
@@ -854,7 +854,7 @@ pub struct ViewState {
     /// The sections the user opened or closed, by id; the others start as their section
     /// does.
     pub sections: BTreeMap<String, bool>,
-    /// The collapsible groups the user opened or closed, by module and group, the same
+    /// The collapsible groups the user opened or closed, by tool and group, the same
     /// for every photo; the others start closed.
     pub groups: BTreeMap<String, BTreeMap<String, bool>>,
 }
@@ -865,12 +865,12 @@ pub struct ViewState {
 fn registries() -> Vec<&'static dyn Declared> {
     let engine = engine::registry::ALL.iter();
     let export = apertrust_export::settings::registry::ALL.iter();
-    let modules = apertrust_tools::settings::registry::ALL.iter();
+    let tools = apertrust_tools::settings::registry::ALL.iter();
     registry::ALL
         .iter()
         .chain(engine)
         .chain(export)
-        .chain(modules)
+        .chain(tools)
         .copied()
         .collect()
 }
@@ -1375,13 +1375,13 @@ mod tests {
     /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
-        let modules = apertrust_tools::settings::registry::ALL.iter();
+        let tools = apertrust_tools::settings::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
         let reopen = LIBRARY_REOPEN_LAST.id;
         registry::ALL
             .iter()
             .chain(export)
-            .chain(modules)
+            .chain(tools)
             .map(|s| s.id())
             .filter(move |id| *id != page && *id != old && *id != reopen)
     }
@@ -1907,11 +1907,11 @@ size = [1280, 800]
         assert!(conf(&["central_panel.margin=wide"]).is_err());
     }
 
-    /// A module setting `--conf` gives keeps its value for the run: a change of its row and a
+    /// A tool setting `--conf` gives keeps its value for the run: a change of its row and a
     /// value a pick measured are refused, so the picker's commands carry `--conf`'s, and the
     /// file keeps its own; the others change as ever.
     #[test]
-    fn a_module_setting_conf_gives_keeps_its_value_for_the_run() {
+    fn a_tool_setting_conf_gives_keeps_its_value_for_the_run() {
         let folder = Folder::new("module-settings-conf");
         let text = "version = 1\n[tools.exposure]\nlightness = 30.0\n";
         std::fs::write(folder.settings(), text).expect("written");

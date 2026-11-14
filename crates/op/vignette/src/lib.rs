@@ -17,12 +17,12 @@
 
 //! Vignetting, ported from darktable (`src/iop/vignette.c`): darkening or
 //! lightening, and desaturating or saturating, towards the image's edges, in a
-//! superellipse around a centre. The Vignette module (`docs/tools/README.md`). See
+//! superellipse around a centre. The Vignette tool (`docs/tools/README.md`). See
 //! `docs/ports/vignette.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
-//! parameters, the Vignette module's (decision 28).
+//! it, and the session plans it only while a tool's binding sets one of its
+//! parameters, the Vignette tool's (decision 28).
 
 mod setup;
 
@@ -55,7 +55,7 @@ static MANIFEST: Manifest = Manifest {
     differentiable: true,
     // Per pixel: its position comes from the pass header, so a tile needs no border.
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "vignette",

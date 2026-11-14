@@ -36,7 +36,7 @@ Shape a new command so it moves unchanged: plain data, no references, no GPU obj
 
 Built. A client starts a session and talks to it through its handle:
 
-- `Session::start(gpu, operations, modules, build, budget, cache, wake)` starts the engine thread on `gpu` with the binaries' `OPERATIONS` and `TOOLS`, the build that every edit written records (decision 44), the engine's memory budget (decision 12), the disk cache the binary opened with its limit, or none (decision 76; [cache.md](cache.md#through-the-session)), and `wake`, which the session calls when events arrive ([events.md](events.md#one-outbox-per-session)).
+- `Session::start(gpu, operations, tools, build, budget, cache, wake)` starts the engine thread on `gpu` with the binaries' `OPERATIONS` and `TOOLS`, the build that every edit written records (decision 44), the engine's memory budget (decision 12), the disk cache the binary opened with its limit, or none (decision 76; [cache.md](cache.md#through-the-session)), and `wake`, which the session calls when events arrive ([events.md](events.md#one-outbox-per-session)).
 - `Session::send(command) -> u64` sends a command and returns its number. It never waits.
 - `Session::events() -> Vec<Event>` drains the events that have arrived, oldest first. It never waits.
 - Dropping the handle ends the session: the edit commands still queued apply, rendering nothing, up to one that opens another photo; the edit is saved; then the jobs end, as the control's shutdown ends them.

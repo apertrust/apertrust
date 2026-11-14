@@ -23,7 +23,7 @@ apertrust-plugin.workspace = true
 apertrust-raw.workspace = true
 apertrust-tools.workspace = true
 # The .apxmp file's text layer, `apertrust_library::sidecar`; the engine reads and writes
-# its values with the modules (decision 54).
+# its values with the tools (decision 54).
 apertrust-library.workspace = true
 # The export's start, for darktable's variables (`names`).
 chrono.workspace = true
@@ -35,7 +35,7 @@ tracing.workspace = true
 wgpu.workspace = true
 
 [features]
-# A session whose raws are the modules crate's synthetic photo (`session::testing`), for the
+# A session whose raws are the tools crate's synthetic photo (`session::testing`), for the
 # tests of the engine's clients: the app's, through its dev-dependencies.
 testing = ["apertrust-tools/testing"]
 
@@ -45,7 +45,7 @@ apertrust-base = { workspace = true, features = ["codegen"] }
 
 [dev-dependencies]
 naga.workspace = true
-# Its `testing::Sample` module, for the session's and the edit's tests.
+# Its `testing::Sample` tool, for the session's and the edit's tests.
 apertrust-operations.workspace = true
 apertrust-tools = { workspace = true, features = ["testing"] }
 

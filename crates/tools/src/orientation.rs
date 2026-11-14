@@ -18,7 +18,7 @@
 //! with it, in the first pass (decision 2). It drives `flip`, which every photo runs, and
 //! owns its one parameter, darktable's stored orientation, auto by default, the photo's
 //! own orientation from its EXIF data, so an untouched photo shows the right way up and
-//! the module sets nothing. It has no tabs or groups, and works on the background only.
+//! the tool sets nothing. It has no tabs or groups, and works on the background only.
 //!
 //! darktable's page, as the module has it: its transform label, a reset label of the
 //! stored orientation, with darktable's four buttons inline, rotate 90° anticlockwise
@@ -26,7 +26,7 @@
 //! with its turn or mirror as darktable's `do_rotate`, `_flip_h` and `_flip_v` do
 //! (`Tool::action`), a `SetControl` of the orientation; then darktable's guides widget,
 //! show guides with the global guide settings button at its end, no edit's, drawn
-//! disabled until the module's guides come. darktable's presets wait for the
+//! disabled until the tool's guides come. darktable's presets wait for the
 //! header's presets menu.
 
 use apertrust_plugin::{ImageContext, Value};
@@ -36,7 +36,7 @@ use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 
 pub struct Orientation;
 
-/// The operation it drives, and the module's id.
+/// The operation it drives, and the tool's id.
 const FLIP: &str = "flip";
 
 /// The control, the operation's parameter, darktable's `orientation`.
@@ -224,7 +224,7 @@ mod tests {
     }
 
     /// The options are the operation's choices, darktable's values from -1 in order, and
-    /// the module owns its one parameter.
+    /// the tool owns its one parameter.
     #[test]
     fn its_options_are_the_operation_s_and_it_owns_its_parameter() {
         let schema = operation::Flip.schema();

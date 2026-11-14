@@ -16,8 +16,8 @@
 
 //! `apertrust`: the desktop editor. For now it is the shell (`docs/gui.md`, The shell)
 //! with one raw in Edit: the top panel, the side panel, the central bar and the grid panel,
-//! and in the side panel's tabs, darktable's module groups, the modules' sections, each
-//! drawn from its definition (`modules`), under the Scopes section every editing tab pins
+//! and in the side panel's tabs, darktable's module groups, the tools' sections, each
+//! drawn from its definition (`tools`), under the Scopes section every editing tab pins
 //! (`scopes`). Its buttons and keys run the actions declared in `actions`. File › Open
 //! Image… opens another raw in its place, chosen in the platform's open dialog
 //! (`dialogs`).
@@ -1172,7 +1172,7 @@ const TABS: [(Icon, &str); 6] = [
 const BASE: usize = 1;
 
 /// The tabs' ids, as settings keep the last one, so a tab the user moves keeps its place:
-/// darktable's names for its groups, as a module's id is its operation's.
+/// darktable's names for its groups, as a tool's id is its operation's.
 const TAB_IDS: [&str; TABS.len()] = ["photos", "base", "color", "correct", "effect", "history"];
 
 /// The Photos tab, first: Browse so far.
@@ -1218,9 +1218,9 @@ fn offered(locale: Locale, debug: bool) -> bool {
     locale != Locale::Pseudo || debug
 }
 
-/// The modules each tab shows, by id: each in darktable's group, those darktable puts in
+/// The tools each tab shows, by id: each in darktable's group, those darktable puts in
 /// none in the group its other layouts give them, and listed as darktable's right panel
-/// lists them, in pipeline order with the last module at the top (decision 38,
+/// lists them, in pipeline order with the last tool at the top (decision 38,
 /// `docs/tools/README.md`). Customise tabs edits these lists once settings keep them
 /// (`docs/gui.md`, The shell).
 const TAB_TOOLS: [&[&str]; TABS.len()] = [
@@ -1247,7 +1247,7 @@ const TAB_TOOLS: [&[&str]; TABS.len()] = [
     &[],
 ];
 
-/// Whether each tab pins Scopes over its modules: darktable's four groups, as darktable's
+/// Whether each tab pins Scopes over its tools: darktable's four groups, as darktable's
 /// histogram sits over its groups (`docs/gui.md`, The tabs: darktable's groups); not the
 /// Photos tab, nor History, which holds Snapshots, once built, then History.
 const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, false];
@@ -1265,7 +1265,7 @@ struct App {
     /// The grid panel's place and lines at the last frame, to tell when it moves.
     grid_lines: (GridPosition, usize),
     shell: Shell,
-    /// Each module section's open state and tab.
+    /// Each tool section's open state and tab.
     panels: Panels,
     /// Whether tagging the window's colour space failed, reported once.
     tag_failed: bool,
@@ -1763,7 +1763,7 @@ struct Shell {
     export_again: bool,
     /// The Export dialog's settings, as it left them (`export.*`).
     export: export::Values,
-    /// The modules' settings, as their rows and picks left them (`tools.*`).
+    /// The tools' settings, as their rows and picks left them (`tools.*`).
     tool_settings: settings::ToolSettings,
     /// Whether Export and Export Again ask before replacing files
     /// (`export.ask_before_overwrite`).
@@ -1801,14 +1801,14 @@ struct Shell {
     keymap: Keymap,
     /// The sections the user opened or closed in Edit, by id.
     sections: BTreeMap<String, bool>,
-    /// The module whose section a History line opened, scrolled to as its tab next shows
+    /// The tool whose section a History line opened, scrolled to as its tab next shows
     /// ([`Shell::reveal`]).
     reveal: Option<&'static str>,
-    /// The module the History tab's eye has hidden while it is held ([`Shell::peek`]), and
+    /// The tool the History tab's eye has hidden while it is held ([`Shell::peek`]), and
     /// the open of the photo it hid it on.
     peeking: Option<&'static str>,
     peeked_on: Option<u64>,
-    /// The collapsible groups the user opened or closed, by module and group.
+    /// The collapsible groups the user opened or closed, by tool and group.
     groups: BTreeMap<String, BTreeMap<String, bool>>,
     /// What the Scopes section shows, as the user left it.
     scopes: ScopeView,
@@ -2130,22 +2130,22 @@ impl Shell {
         }
     }
 
-    /// Opens `module`'s section where a tab lists it, as Shift-click on a step's History
+    /// Opens `tool`'s section where a tab lists it, as Shift-click on a step's History
     /// line asks, after darktable's Shift-click on a history item,
-    /// which switches to the module's group and expands it: the first tab that lists it is
+    /// which switches to the tool's group and expands it: the first tab that lists it is
     /// chosen, the section opened, for this run and the next, and scrolled to as the tab
-    /// shows. A module no tab lists changes nothing.
-    fn reveal(&mut self, module: &'static str) {
-        let Some(tab) = TAB_TOOLS.iter().position(|ids| ids.contains(&module)) else {
+    /// shows. A tool no tab lists changes nothing.
+    fn reveal(&mut self, tool: &'static str) {
+        let Some(tab) = TAB_TOOLS.iter().position(|ids| ids.contains(&tool)) else {
             return;
         };
         self.choose_tab(tab);
-        self.set_section_open(module, true);
-        self.reveal = Some(module);
+        self.set_section_open(tool, true);
+        self.reveal = Some(tool);
     }
 
     /// Carries out what the History section asked for (`history::Action`): opens or closes
-    /// it, or opens a module ([`Shell::reveal`]); returns the command a step's click sends,
+    /// it, or opens a tool ([`Shell::reveal`]); returns the command a step's click sends,
     /// `GoTo`, and its options' Compress History and Truncate History, only while the photo
     /// `takes` edits, live and not open for viewing only; Reset Edit for the header's
     /// reset, run as the top panel's Reset runs it, and Discard History… for its options'
@@ -2165,8 +2165,8 @@ impl Shell {
             history::Action::GoTo(step) => {
                 takes.then_some(FromHistory::Send(Box::new(Command::GoTo { step })))
             }
-            history::Action::Open(module) => {
-                self.reveal(module);
+            history::Action::Open(tool) => {
+                self.reveal(tool);
                 ctx.request_repaint();
                 None
             }
@@ -2183,12 +2183,12 @@ impl Shell {
         }
     }
 
-    /// What the History tab's eye holds this frame, `held`, the module it shows the photo
+    /// What the History tab's eye holds this frame, `held`, the tool it shows the photo
     /// without (`history::Action::Peek`), none where it is let go, its line or tab gone, or
-    /// the window lost the focus: the `Hide` commands that show the module hidden until now
+    /// the window lost the focus: the `Hide` commands that show the tool hidden until now
     /// and hide the one held, view state with nothing to save; none where it is the same.
     /// So nothing stays hidden once the eye is let go. `photo` is the open of the mirror's
-    /// photo: another, or none, hides nothing, as the session shows every module of a photo
+    /// photo: another, or none, hides nothing, as the session shows every tool of a photo
     /// as it opens, so the first hold there sends `Hide`.
     fn peek(&mut self, held: Option<&'static str>, photo: Option<u64>) -> Vec<Command> {
         if self.peeked_on != photo {
@@ -2198,48 +2198,48 @@ impl Shell {
         if held == self.peeking {
             return Vec::new();
         }
-        let hide = |module: &str, hidden| Command::Hide {
-            tool: module.to_owned(),
+        let hide = |tool: &str, hidden| Command::Hide {
+            tool: tool.to_owned(),
             hidden,
         };
-        let shown = self.peeking.take().map(|module| hide(module, false));
+        let shown = self.peeking.take().map(|tool| hide(tool, false));
         self.peeking = held;
         shown
             .into_iter()
-            .chain(held.map(|module| hide(module, true)))
+            .chain(held.map(|tool| hide(tool, true)))
             .collect()
     }
 
-    /// Whether the tab shown lists the module a History line opened, which its sections
+    /// Whether the tab shown lists the tool a History line opened, which its sections
     /// scroll to this frame ([`Shell::reveal`]).
     fn revealing(&self) -> bool {
         let shown = TAB_TOOLS.get(self.panel_tab).copied().unwrap_or_default();
-        self.reveal.is_some_and(|module| shown.contains(&module))
+        self.reveal.is_some_and(|tool| shown.contains(&tool))
     }
 
-    /// Whether `module`'s collapsible group `group` is open: as the user left it, or
+    /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
     /// closed (decision 29).
-    fn group_open(&self, module: &str, group: &str) -> bool {
-        self.group_open_or(module, group, tools::GROUP_OPEN)
+    fn group_open(&self, tool: &str, group: &str) -> bool {
+        self.group_open_or(tool, group, tools::GROUP_OPEN)
     }
 
-    /// Whether `module`'s collapsible group `group` is open: as the user left it, or
+    /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
     /// `default`, as Browse's Folders, open in folder mode, where it is Browse alone.
-    fn group_open_or(&self, module: &str, group: &str, default: bool) -> bool {
-        let kept = self.groups.get(module).and_then(|groups| groups.get(group));
+    fn group_open_or(&self, tool: &str, group: &str, default: bool) -> bool {
+        let kept = self.groups.get(tool).and_then(|groups| groups.get(group));
         kept.copied().unwrap_or(default)
     }
 
-    /// Opens or closes `module`'s collapsible group `group`, for this run and the next.
-    /// Resetting the module leaves it as it is.
-    fn toggle_group(&mut self, module: &str, group: &str) {
-        let open = !self.group_open(module, group);
-        self.set_group_open(module, group, open);
+    /// Opens or closes `tool`'s collapsible group `group`, for this run and the next.
+    /// Resetting the tool leaves it as it is.
+    fn toggle_group(&mut self, tool: &str, group: &str) {
+        let open = !self.group_open(tool, group);
+        self.set_group_open(tool, group, open);
     }
 
-    /// Keeps `module`'s collapsible group `group` open or closed, for this run and the next.
-    fn set_group_open(&mut self, module: &str, group: &str, open: bool) {
-        let groups = self.groups.entry(module.to_owned()).or_default();
+    /// Keeps `tool`'s collapsible group `group` open or closed, for this run and the next.
+    fn set_group_open(&mut self, tool: &str, group: &str, open: bool) {
+        let groups = self.groups.entry(tool.to_owned()).or_default();
         groups.insert(group.to_owned(), open);
     }
 
@@ -2739,58 +2739,58 @@ fn open_cache(folder: &Path) -> Option<Arc<Cache>> {
     }
 }
 
-/// The command a module section's change of the edit's values sends, and what the app
+/// The command a tool section's change of the edit's values sends, and what the app
 /// shows of it until a report includes it: `SetControl`, `ResetControl`, `Keep` or
 /// `ResetTool`, or several of them as one `Step { source: You }` (decision 78), each shown
 /// as alone; none for any other change.
 fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
     Some(match change {
         Change::Set {
-            module,
+            tool,
             control,
             value,
             done,
         } => (
             Command::SetControl {
-                tool: module.to_owned(),
+                tool: tool.to_owned(),
                 control: control.to_owned(),
                 value: value.clone(),
                 done,
             },
             vec![Pending::Control {
-                module,
+                tool,
                 control,
                 value,
             }],
         ),
-        Change::Reset { module, control } => (
+        Change::Reset { tool, control } => (
             Command::ResetControl {
-                tool: module.to_owned(),
+                tool: tool.to_owned(),
                 control: control.to_owned(),
             },
-            vec![Pending::Reset { module, control }],
+            vec![Pending::Reset { tool, control }],
         ),
         Change::Keep {
-            module,
+            tool,
             control,
             kept,
         } => (
             Command::Keep {
-                tool: module.to_owned(),
+                tool: tool.to_owned(),
                 control: control.to_owned(),
                 kept,
             },
             vec![Pending::Keep {
-                module,
+                tool,
                 control,
                 kept,
             }],
         ),
-        Change::ResetTool { module } => (
+        Change::ResetTool { tool } => (
             Command::ResetTool {
-                tool: module.to_owned(),
+                tool: tool.to_owned(),
             },
-            vec![Pending::ResetTool { module }],
+            vec![Pending::ResetTool { tool }],
         ),
         Change::Step(changes) => {
             let (commands, shown): (Vec<_>, Vec<_>) = changes.into_iter().filter_map(sent).unzip();
@@ -2970,7 +2970,7 @@ impl App {
         let notice = run.notice(info.device_type == egui_wgpu::wgpu::DeviceType::Cpu);
         let places = export::places();
         let ctx = cc.egui_ctx.clone();
-        let modules = apertrust_tools::TOOLS;
+        let tools = apertrust_tools::TOOLS;
         let cache_limit = keeper.cache_limit();
         let cache = cache.map(|cache| CacheOptions {
             cache,
@@ -2979,7 +2979,7 @@ impl App {
         let session = Session::start(
             gpu,
             apertrust_operations::OPERATIONS,
-            modules,
+            tools,
             apertrust_base::program!().version,
             engine.budget,
             cache,
@@ -2992,7 +2992,7 @@ impl App {
         )));
         let mut app = Self {
             session,
-            mirror: Mirror::new(modules, jobs::Mirror::new(places.home.clone())),
+            mirror: Mirror::new(tools, jobs::Mirror::new(places.home.clone())),
             bounds: Bounds::default(),
             window_size: egui::Vec2::ZERO,
             panel_width: 0.0,
@@ -3454,9 +3454,9 @@ impl App {
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Measure mode's target, kept as the user's own.
-                    Reaction::Measured { module, settings } => {
+                    Reaction::Measured { tool, settings } => {
                         for (setting, value) in settings {
-                            self.shell.tool_settings.set(module, setting, value);
+                            self.shell.tool_settings.set(tool, setting, value);
                         }
                     }
                     Reaction::FolderFailed { path, reason } => {
@@ -3487,17 +3487,17 @@ impl App {
         jobs::refresh(view, opened, &mut self.dialogs, show, place, ctx);
     }
 
-    /// Sends a module control's new value and shows it at once, kept, until the engine
+    /// Sends a tool control's new value and shows it at once, kept, until the engine
     /// reports it; `done` on the last change of a gesture, which saves the edit.
     fn set_control(
         &mut self,
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         value: ControlValue,
         done: bool,
     ) {
         self.send_change(Change::Set {
-            module,
+            tool,
             control,
             value,
             done,
@@ -3522,10 +3522,10 @@ impl App {
         self.mirror.pend(number, pending);
     }
 
-    /// Sends what a module section asks of the session, shown at once until a report
+    /// Sends what a tool section asks of the session, shown at once until a report
     /// includes it, or applies what it asks of the section's own state. A photo open for
     /// viewing only takes no change of its edit, whose controls and resets are drawn
-    /// disabled, nor a module's picker turned on.
+    /// disabled, nor a tool's picker turned on.
     fn change(&mut self, change: Change, ctx: &egui::Context) {
         let edits = matches!(
             change,
@@ -3556,12 +3556,12 @@ impl App {
             // Nothing to show before the session reports it: the option's values are the
             // photo's, which only the session knows.
             Change::ApplyPreset {
-                module,
+                tool,
                 preset,
                 option,
             } => {
                 self.send_edit(Command::ApplyPreset {
-                    tool: module.to_owned(),
+                    tool: tool.to_owned(),
                     preset: preset.to_owned(),
                     option: option.to_owned(),
                 });
@@ -3569,7 +3569,7 @@ impl App {
             // darktable's button, run on the values shown: each control it writes, one
             // change, shown at once as a slider's is.
             Change::Action {
-                module,
+                tool,
                 action,
                 values,
             } => {
@@ -3577,56 +3577,47 @@ impl App {
                     return;
                 };
                 let writes = tools::action_writes(
-                    self.mirror.modules(),
-                    module,
+                    self.mirror.tools(),
+                    tool,
                     action,
                     &values,
                     &photo.image,
                     self.view_only(),
                 );
                 for (control, value, done) in writes {
-                    self.set_control(module, control, value, done);
+                    self.set_control(tool, control, value, done);
                 }
             }
-            Change::Toggle { module } => {
-                let open = self.shell.section_open(module, tools::OPEN);
-                self.shell.set_section_open(module, !open);
+            Change::Toggle { tool } => {
+                let open = self.shell.section_open(tool, tools::OPEN);
+                self.shell.set_section_open(tool, !open);
             }
-            Change::Group { module, group } => self.shell.toggle_group(module, group),
+            Change::Group { tool, group } => self.shell.toggle_group(tool, group),
             Change::Tab { .. } => self.panels.apply(&change),
             Change::Picker {
-                module,
+                tool,
                 picker,
                 action,
                 keys,
             } => {
-                let settings = self.shell.tool_settings.of(module);
-                let picker = PickerRef::Tool {
-                    tool: module,
-                    picker,
-                };
+                let settings = self.shell.tool_settings.of(tool);
+                let picker = PickerRef::Tool { tool, picker };
                 let command = pickers::pressed(picker, action, keys, settings);
                 self.send_picker(command, ctx);
             }
             // Kept as the user moves it; the session takes them as the gesture ends, and
-            // applies the module's latest reading again by them, as darktable's settings
+            // applies the tool's latest reading again by them, as darktable's settings
             // callback does (`exposure.c:1170-1175`).
             Change::Setting {
-                module,
+                tool,
                 setting,
                 value,
                 done,
             } => {
-                self.shell.tool_settings.set(module, setting, value);
+                self.shell.tool_settings.set(tool, setting, value);
                 if done {
-                    let settings = self.shell.tool_settings.of(module);
-                    self.send_picker(
-                        PickerCommand::Settings {
-                            tool: module,
-                            settings,
-                        },
-                        ctx,
-                    );
+                    let settings = self.shell.tool_settings.of(tool);
+                    self.send_picker(PickerCommand::Settings { tool, settings }, ctx);
                 }
             }
         }
@@ -3637,8 +3628,8 @@ impl App {
     /// live region waits for the reading of a command that applies one, and the save
     /// state, for a command that completes a change, for the values its pick reports.
     fn send_picker(&mut self, command: PickerCommand, ctx: &egui::Context) {
-        let showing = pickers::Showing::of(&command, self.mirror.modules());
-        // A module's pick is a change on the edit, which the session answers with a
+        let showing = pickers::Showing::of(&command, self.mirror.tools());
+        // A tool's pick is a change on the edit, which the session answers with a
         // write, or the edit reported held where it wrote nothing; the Colour picker's
         // writes nothing.
         let completes = pickers::completes_edit(&command, self.mirror.pickers.active());
@@ -3930,7 +3921,7 @@ impl App {
             }
             return tab_clicked;
         }
-        // A module's section a History line asked for is scrolled to once its tab shows.
+        // A tool's section a History line asked for is scrolled to once its tab shows.
         let revealed = self.shell.revealing();
         let (scopes, changes, history) =
             edit_tab(ui, &self.shell, &self.mirror, &self.panels, peek);
@@ -3945,7 +3936,7 @@ impl App {
         }
         let mut run = tab_clicked;
         let held = history.iter().find_map(|action| match action {
-            history::Action::Peek(module) => Some(*module),
+            history::Action::Peek(tool) => Some(*tool),
             _ => None,
         });
         // View state, no change to the edit: nothing to save or wait for.
@@ -4203,7 +4194,7 @@ impl App {
             .zip(self.mirror.pickers.area())
             .filter(|_| open)
             .and_then(|(picker, area)| {
-                pickers::bar_words(&words, self.mirror.modules(), picker, area, mac)
+                pickers::bar_words(&words, self.mirror.tools(), picker, area, mac)
             });
         // The viewport only fits the photo for now: the zoom shows Fit, and its menu
         // offers Fit alone, which it already is.
@@ -4355,11 +4346,8 @@ impl App {
         };
         let words = translator(ui.ctx());
         let name = match picker {
-            PickerRef::Tool {
-                tool: module,
-                picker,
-            } => (self.mirror.modules().iter())
-                .find(|m| m.definition().id == module)
+            PickerRef::Tool { tool, picker } => (self.mirror.tools().iter())
+                .find(|m| m.definition().id == tool)
                 .map(|m| pickers::name(&words, m.definition(), picker))
                 .unwrap_or_default(),
             PickerRef::ColourPicker => String::new(),
@@ -4380,7 +4368,7 @@ impl App {
             Instant::now(),
             self.mirror.pickers.reading(),
             &self.mirror.values,
-            self.mirror.modules(),
+            self.mirror.tools(),
             &words,
         );
         if let Some(wait) = wait {
@@ -5058,8 +5046,8 @@ impl eframe::App for App {
         // the menus this frame builds or brings up to date.
         // Named only while the photo takes edits, as Undo and Redo run only then.
         let history = (self.mirror.history.as_ref()).filter(|_| self.mirror.takes_edits());
-        let modules = self.mirror.modules();
-        let steps = history::steps(history, modules, &translator(ctx));
+        let tools = self.mirror.tools();
+        let steps = history::steps(history, tools, &translator(ctx));
         self.shell.steps = steps;
     }
 
@@ -5934,7 +5922,7 @@ fn hold_close(ctx: &egui::Context, dialogs: &dialog_host::AppDialogs) -> bool {
 
 /// An editing tab's sections as the mirror's photo has them (`docs/gui.md`, The side
 /// panel): the open photo's values and Scopes; with no photo, and from the moment another
-/// is asked for until its values arrive, every module at its defaults and Scopes with no
+/// is asked for until its values arrive, every tool at its defaults and Scopes with no
 /// graph, all drawn disabled and each open or closed as it was, never a blank panel. Only the open photo's sections send the session
 /// anything ([`Mirror::takes_edits`], which [`App::change`] asks); every section opens,
 /// closes and changes tab whatever it shows. The History tab holds the History section,
@@ -5950,7 +5938,7 @@ fn edit_tab(
     // A photo opening shows Scopes as with no photo until it is live (decision 77).
     let photo = matches!(shown, Shown::Photo { .. });
     let scopes = Some((photo.then(|| mirror.scopes.measured()).flatten(), photo));
-    let (modules, values) = (mirror.modules(), &mirror.values);
+    let (tools, values) = (mirror.tools(), &mirror.values);
     // Every control of a photo opening says why it is disabled.
     let words = translator(ui.ctx());
     let opening = mirror.opening_name().map(|name| {
@@ -5970,7 +5958,7 @@ fn edit_tab(
         // As Reset Edit: while the edit holds anything the photo takes back.
         let resettable = takes && mirror.resettable();
         let shown = mirror.history.as_ref();
-        // The eye's modules, as the photo's values report them.
+        // The eye's tools, as the photo's values report them.
         let hidden: Vec<&str> = (values.tools.iter())
             .filter(|state| state.hidden)
             .map(|state| state.tool)
@@ -5982,10 +5970,10 @@ fn edit_tab(
             options: history_options(mirror, shell.discard, ui.ctx().os()),
             photo: mirror.photo.open(),
         };
-        let history = history::tab(ui, shown, modules, &hidden, open, peek, state, today);
+        let history = history::tab(ui, shown, tools, &hidden, open, peek, state, today);
         return (Vec::new(), Vec::new(), history);
     }
-    // A module's picker is pressed only on the open photo once live, and never on one
+    // A tool's picker is pressed only on the open photo once live, and never on one
     // open for viewing only, whose notice says why.
     let view_only = match &mirror.photo {
         PhotoState::Open(photo) => photo.view_only.as_ref(),
@@ -6004,7 +5992,7 @@ fn edit_tab(
         ui,
         shell,
         scopes,
-        modules,
+        tools,
         values,
         panels,
         peek,
@@ -6018,10 +6006,10 @@ fn edit_tab(
 /// The side panel's sections under its tab bar: Scopes pinned over the band where the
 /// tab pins it, unless `scopes` is `None`, its graph from what it holds and drawn disabled
 /// unless its flag says a photo is shown, then the tab's
-/// modules among `modules`, drawn from their definitions with the mirror's `values`; each
+/// tools among `tools`, drawn from their definitions with the mirror's `values`; each
 /// section open as the shell keeps it, peeking while `peek` holds, its reset disabled
 /// unless `editable`, and its colour pickers as `pickers` says; the section a History line
-/// opened scrolled to. Returns what Scopes and the modules asked for.
+/// opened scrolled to. Returns what Scopes and the tools asked for.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the side panel, each part apart"
@@ -6030,7 +6018,7 @@ fn panel_body(
     ui: &mut egui::Ui,
     shell: &Shell,
     scopes: Option<(Option<&scopes::Measured>, bool)>,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     values: &Values,
     panels: &Panels,
     peek: bool,
@@ -6050,17 +6038,17 @@ fn panel_body(
     }
     body.show(ui, |ui| {
         for id in shown {
-            let module = modules.iter().find(|module| module.definition().id == *id);
+            let tool = tools.iter().find(|tool| tool.definition().id == *id);
             let state = values.tools.iter().find(|state| state.tool == *id);
-            if let (Some(module), Some(state)) = (module, state) {
+            if let (Some(tool), Some(state)) = (tool, state) {
                 let open = shell.section_open(id, tools::OPEN);
                 let groups = |group: &str| shell.group_open(id, group);
-                // Each section's widgets in an id of their own, the module's: two modules'
+                // Each section's widgets in an id of their own, the tool's: two tools'
                 // sliders of one name, as Vignetting's and Soften's Brightness, never share
                 // one.
                 let drawn = ui.push_id(id, |ui| {
                     tools::section(
-                        ui, *module, state, open, panels, &groups, peek, editable, opening, pickers,
+                        ui, *tool, state, open, panels, &groups, peek, editable, opening, pickers,
                     )
                 });
                 // The section a History line opened, its header at the top.
@@ -6489,13 +6477,13 @@ mod tests {
     #[test]
     fn changes_of_several_commands_are_sent_as_one_step() {
         let set = |control, value| Change::Set {
-            module: "toneequal",
+            tool: "toneequal",
             control,
             value: ControlValue::Number(value),
             done: true,
         };
         let reset = |control| Change::Reset {
-            module: "toneequal",
+            tool: "toneequal",
             control,
         };
         let changes = vec![set("shadows", 0.5), set("blacks", 0.25), reset("noise")];
@@ -6517,7 +6505,7 @@ mod tests {
         // changes alone does not, as the engine says.
         assert!(completes(&command));
         let dragged = Change::Set {
-            module: "toneequal",
+            tool: "toneequal",
             control: "shadows",
             value: ControlValue::Number(0.5),
             done: false,
@@ -6542,11 +6530,11 @@ mod tests {
         }
 
         let image = testing::image();
-        let modules: &[&dyn Tool] = &[&Twin];
+        let tools: &[&dyn Tool] = &[&Twin];
         let definition = Twin.definition();
         let coordinate = |id| definition.coordinate(id).is_some();
         // What the session reports of Twin with `edit` and `held`: each control's value
-        // over its default and its mark, each view's coordinates, held or the module's
+        // over its default and its mark, each view's coordinates, held or the tool's
         // view of the values, with the mark its controls share.
         let report = |edit: &Edit, held: &Held| {
             let set = edit.tool("twin");
@@ -6628,25 +6616,25 @@ mod tests {
         };
         // The step as the app sends it.
         let pending = |step: Step| {
-            let module = "twin";
+            let tool = "twin";
             match step {
                 Step::Set(control, v) => Pending::Control {
-                    module,
+                    tool,
                     control,
                     value: ControlValue::Number(v),
                 },
-                Step::Reset(control) => Pending::Reset { module, control },
+                Step::Reset(control) => Pending::Reset { tool, control },
                 Step::Keep(control, kept) => Pending::Keep {
-                    module,
+                    tool,
                     control,
                     kept,
                 },
-                Step::ResetTool => Pending::ResetTool { module },
+                Step::ResetTool => Pending::ResetTool { tool },
             }
         };
         // x through its own row, then the pair, then the mix, which moves the pair, and
         // back: a coordinate reset with the other held, released and kept, x reset, both
-        // of the pair's back, which resets x and y and moves the mix, then the module.
+        // of the pair's back, which resets x and y and moves the mix, then the tool.
         let steps = [
             Step::Set("x", 30.0),
             Step::Set("sum", 110.0),
@@ -6672,10 +6660,10 @@ mod tests {
             apply(&mut edit, &mut held, step);
             let expected = report(&edit, &held);
             let change = pending(step);
-            show(&mut sent, &change, modules, &image);
+            show(&mut sent, &change, tools, &image);
             assert_eq!(sent.tools, expected.tools, "after {step:?}");
             every.push((number, change));
-            again = reported(again, &mut every, modules, &image);
+            again = reported(again, &mut every, tools, &image);
             if wrong.is_none() && again.tools != expected.tools {
                 wrong = Some(step);
             }
@@ -6765,15 +6753,15 @@ mod tests {
             extent: [84, 62],
             live: true,
         };
-        let modules: &[&dyn Tool] = &[&WhiteBalance];
+        let tools: &[&dyn Tool] = &[&WhiteBalance];
         let drag = Pending::Control {
-            module: definition.id,
+            tool: definition.id,
             control: "temperature",
             value: ControlValue::Number(5000.0),
         };
         let shown = |image: &ImageContext| {
             let mut values = report.clone();
-            show(&mut values, &drag, modules, image);
+            show(&mut values, &drag, tools, image);
             let controls = &values.tools[0].controls;
             COEFFICIENTS.map(|id| {
                 let shown = controls.iter().find(|c| c.control == id).unwrap();
@@ -8678,7 +8666,7 @@ mod tests {
         // Its Shape tab, where the Midtones group is.
         let mut panels = tools::Panels::default();
         panels.apply(&Change::Tab {
-            module: "sample",
+            tool: "sample",
             tab: 1,
         });
         let mut harness = Harness::builder()
@@ -8702,8 +8690,8 @@ mod tests {
                         &tools::Pickers::NONE,
                     );
                     for change in changes {
-                        if let Change::Group { module, group } = change {
-                            kept.shell.toggle_group(module, group);
+                        if let Change::Group { tool, group } = change {
+                            kept.shell.toggle_group(tool, group);
                         }
                     }
                     keep(&mut kept.shell, &mut kept.keeper, &ctx, true);
@@ -8756,7 +8744,7 @@ mod tests {
         let (keeper, settings) = Keeper::open(folder.storage());
         let exposure = apertrust_tools::TOOLS
             .iter()
-            .find(|module| module.definition().id == "exposure")
+            .find(|tool| tool.definition().id == "exposure")
             .expect("Exposure is built in")
             .definition();
         let untouched = ToolState {
@@ -8793,13 +8781,13 @@ mod tests {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let (shell, measured) = (&side.shell, side.scopes.measured());
                     let panels = tools::Panels::default();
-                    let modules = apertrust_tools::TOOLS;
+                    let tools = apertrust_tools::TOOLS;
                     let values = &side.values;
                     let (scopes, _) = panel_body(
                         ui,
                         shell,
                         Some((measured, true)),
-                        modules,
+                        tools,
                         values,
                         &panels,
                         false,
@@ -8864,7 +8852,7 @@ mod tests {
             // Tall enough for every section of a tab to be laid out.
             .with_size(egui::vec2(360.0, 6000.0))
             // egui's warning of two widgets with one id, drawn in a glyph the theme's fonts
-            // lack, fails these tests: every module's section keeps ids of its own.
+            // lack, fails these tests: every tool's section keeps ids of its own.
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
             .build_ui_state(
                 |ui, editing: &mut Editing| {
@@ -8893,7 +8881,7 @@ mod tests {
             )
     }
 
-    /// The module titles `tab` lists, in English.
+    /// The tool titles `tab` lists, in English.
     fn titles(tab: usize) -> Vec<String> {
         let words = Translator::new(Locale::EnGb);
         TAB_TOOLS[tab]
@@ -8902,7 +8890,7 @@ mod tests {
             .collect()
     }
 
-    /// Whether `tab` draws the no-photo state: each of its modules' sections, their resets
+    /// Whether `tab` draws the no-photo state: each of its tools' sections, their resets
     /// and every control disabled, and Scopes with no graph. Panics saying what differs.
     fn draws_no_photo(harness: &Harness<'_, Editing>, tab: usize) {
         // Scopes keeps its section, open as it was, with no graph.
@@ -8946,7 +8934,7 @@ mod tests {
     }
 
     #[test]
-    fn with_no_photo_every_edit_tab_draws_its_modules_and_scopes_disabled_at_defaults() {
+    fn with_no_photo_every_edit_tab_draws_its_tools_and_scopes_disabled_at_defaults() {
         let folder = settings::testing::Folder::new("panel-no-photo");
         let mut harness = editing(&folder);
         for tab in [BASE, 2, 3, 4] {
@@ -9022,7 +9010,7 @@ mod tests {
                     }
                     let takes = editing.mirror.takes_edits();
                     let held = history.iter().find_map(|action| match action {
-                        history::Action::Peek(module) => Some(*module),
+                        history::Action::Peek(tool) => Some(*tool),
                         _ => None,
                     });
                     let peeks = editing.shell.peek(held, editing.mirror.photo.open());
@@ -9045,11 +9033,11 @@ mod tests {
     }
 
     /// A plain click on a step goes to it, as darktable's click on an item does: `GoTo`,
-    /// the tab staying History. Shift-click opens the step's module in its tab and sends
+    /// the tab staying History. Shift-click opens the step's tool in its tab and sends
     /// nothing. A Shift the window's input still holds, its release lost while a dialog
     /// held it, does not make a plain click a Shift-click: the click's own event says.
     #[test]
-    fn a_click_on_a_step_goes_to_it_and_only_shift_click_opens_its_module() {
+    fn a_click_on_a_step_goes_to_it_and_only_shift_click_opens_its_tool() {
         use crate::mirror::tests::photo;
         use apertrust_engine::session::StepId;
         let folder = settings::testing::Folder::new("panel-history-steps");
@@ -9115,10 +9103,10 @@ mod tests {
     }
 
     /// The eye held on a step's line sends `Hide`, view state, on a photo open for viewing
-    /// only too, and let go, `Hide` to show the module again, once each; nothing stays
+    /// only too, and let go, `Hide` to show the tool again, once each; nothing stays
     /// hidden when the tab changes while it is held.
     #[test]
-    fn the_eye_held_sends_hide_and_let_go_shows_the_module_again() {
+    fn the_eye_held_sends_hide_and_let_go_shows_the_tool_again() {
         use crate::mirror::tests::photo;
         use apertrust_engine::sidecar::Newer;
         let folder = settings::testing::Folder::new("panel-history-eye");
@@ -9161,8 +9149,8 @@ mod tests {
             });
             harness.run();
         };
-        let hide = |module: &str, hidden| Command::Hide {
-            tool: module.to_owned(),
+        let hide = |tool: &str, hidden| Command::Hide {
+            tool: tool.to_owned(),
             hidden,
         };
         press(&mut harness, true);
@@ -9174,7 +9162,7 @@ mod tests {
             [hide("grain", true), hide("grain", false)]
         );
         // Another photo opening while it is held hides nothing of it, so the hold sends
-        // `Hide` there anew, and letting go shows the module again.
+        // `Hide` there anew, and letting go shows the tool again.
         harness.state_mut().sent.clear();
         press(&mut harness, true);
         let mirror = &mut harness.state_mut().mirror;
@@ -9197,7 +9185,7 @@ mod tests {
                 hide("grain", false)
             ]
         );
-        // The tab changed while it is held: the module shown again.
+        // The tab changed while it is held: the tool shown again.
         harness.state_mut().sent.clear();
         press(&mut harness, true);
         harness.state_mut().shell.panel_tab = BASE;
@@ -9227,11 +9215,11 @@ mod tests {
         harness.get_by_role_and_label(Role::TreeItem, "Original");
     }
 
-    /// Shift-click on a step's History line, a default step's among them, opens the module's
+    /// Shift-click on a step's History line, a default step's among them, opens the tool's
     /// section in the first tab that lists it, to be scrolled to as that tab shows; a
-    /// module no tab lists, as an operation's unowned parameters, changes nothing.
+    /// tool no tab lists, as an operation's unowned parameters, changes nothing.
     #[test]
-    fn a_module_a_history_line_opens_is_shown_in_its_tab_open() {
+    fn a_tool_a_history_line_opens_is_shown_in_its_tab_open() {
         let mut shell = opened_on("history");
         shell.reveal("grain");
         assert_eq!(shell.panel_tab, 4);
@@ -9244,7 +9232,7 @@ mod tests {
         assert!(!shell.revealing());
     }
 
-    /// Every module's values as the session reports them for a photo, every control live,
+    /// Every tool's values as the session reports them for a photo, every control live,
     /// Exposure's at `exposure`, after `through` commands.
     fn photo_values(exposure: f32, through: u64) -> Values {
         let mut values = crate::mirror::tests::mirror().values;
@@ -9650,7 +9638,7 @@ mod tests {
     }
 
     #[test]
-    fn scopes_are_pinned_over_the_base_tab_s_modules_and_count_the_histogram() {
+    fn scopes_are_pinned_over_the_base_tab_s_tools_and_count_the_histogram() {
         let folder = settings::testing::Folder::new("scopes-pinned");
         let mut harness = side(&folder);
         harness.run();
@@ -10844,7 +10832,7 @@ mod tests {
         assert_eq!(recents, [found]);
     }
 
-    /// Browse's Folders starts open, unlike a module's groups. A click on its row closes it,
+    /// Browse's Folders starts open, unlike a tool's groups. A click on its row closes it,
     /// hiding its rows, and it is kept closed as `browse.folders` in `edit.groups`; a
     /// click on Browse's header closes Browse, kept as `browse` in `edit.sections`.
     #[test]
@@ -10927,41 +10915,41 @@ mod tests {
         }
     }
 
-    /// Each tab lists its modules as darktable's right panel does, in pipeline order with
-    /// the last module at the top (decision 38): the order of their operations in
-    /// [`apertrust_operations::OPERATIONS`], reversed. A module's id is its operation's but
+    /// Each tab lists its tools as darktable's right panel does, in pipeline order with
+    /// the last tool at the top (decision 38): the order of their operations in
+    /// [`apertrust_operations::OPERATIONS`], reversed. A tool's id is its operation's but
     /// for the Tone curve's, whose Luma curve is RGB curve's (decision 2).
     #[test]
-    fn each_tab_lists_its_modules_last_in_the_pipeline_first() {
-        let place = |module: &str| {
-            let operation = match module {
+    fn each_tab_lists_its_tools_last_in_the_pipeline_first() {
+        let place = |tool: &str| {
+            let operation = match tool {
                 "tone_curve" => "rgbcurve",
                 other => other,
             };
             apertrust_operations::OPERATIONS
                 .iter()
                 .position(|op| op.manifest().id == operation)
-                .unwrap_or_else(|| panic!("{module} has no operation {operation}"))
+                .unwrap_or_else(|| panic!("{tool} has no operation {operation}"))
         };
-        for (modules, id) in TAB_TOOLS.iter().zip(TAB_IDS) {
-            let places: Vec<usize> = modules.iter().map(|module| place(module)).collect();
+        for (tools, id) in TAB_TOOLS.iter().zip(TAB_IDS) {
+            let places: Vec<usize> = tools.iter().map(|tool| place(tool)).collect();
             assert!(
                 places.windows(2).all(|pair| pair[0] > pair[1]),
-                "{id}: {modules:?} at {places:?}"
+                "{id}: {tools:?} at {places:?}"
             );
         }
     }
 
-    /// Every built-in module is drawn in some tab, once, and every module a tab names is
-    /// built in, so a module that joins `TOOLS` joins a tab too.
+    /// Every built-in tool is drawn in some tab, once, and every tool a tab names is
+    /// built in, so a tool that joins `TOOLS` joins a tab too.
     #[test]
-    fn every_built_in_module_is_in_one_tab() {
+    fn every_built_in_tool_is_in_one_tab() {
         let listed: Vec<&str> = TAB_TOOLS
             .iter()
             .flat_map(|tab| tab.iter().copied())
             .collect();
-        for module in apertrust_tools::TOOLS {
-            let id = module.definition().id;
+        for tool in apertrust_tools::TOOLS {
+            let id = tool.definition().id;
             let tabs = listed.iter().filter(|listed| **listed == id).count();
             assert_eq!(tabs, 1, "{id} is in {tabs} tabs");
         }
@@ -10969,7 +10957,7 @@ mod tests {
             assert!(
                 apertrust_tools::TOOLS
                     .iter()
-                    .any(|module| module.definition().id == id),
+                    .any(|tool| tool.definition().id == id),
                 "{id} is in a tab but not built in"
             );
         }
@@ -11392,9 +11380,9 @@ mod tests {
                 |ui, bench: &mut Bench| {
                     let ctx = ui.ctx().clone();
                     // As `App::logic` words them before each frame.
-                    let modules = apertrust_tools::TOOLS;
+                    let tools = apertrust_tools::TOOLS;
                     let words = translator(&ctx);
-                    bench.shell.steps = history::steps(bench.history.as_ref(), modules, &words);
+                    bench.shell.steps = history::steps(bench.history.as_ref(), tools, &words);
                     let state = bench.state(&ctx);
                     bench.shell.access_key(&ctx, &state);
                     let keys = actions::read(&ctx, &bench.shell.keymap, &state);
@@ -11421,7 +11409,7 @@ mod tests {
                         ui.set_width(width);
                         let tab = bench.shell.tab_bar(ui);
                         let out = Section::new("Exposure", true)
-                            .module()
+                            .edits()
                             .peek(keys.held.contains(&ActionId::PEEK))
                             .show(ui, |ui| {
                                 SliderRow::new("Brightness", 0.0, -100.0..=100.0).show(ui);

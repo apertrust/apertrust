@@ -300,7 +300,7 @@ of = "boolean"
 default = {}
 applies = "at-once"
 
-# The collapsible groups the user opened or closed, by module and group, the same for
+# The collapsible groups the user opened or closed, by tool and group, the same for
 # every photo; the others start closed (decision 29), but Browse's Folders, open.
 [edit.groups]
 owner = "app"

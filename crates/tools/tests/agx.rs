@@ -161,7 +161,7 @@ fn a0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// A0 on every corpus raw: the module at its defaults, written or kept, plans the very
+/// A0 on every corpus raw: the tool at its defaults, written or kept, plans the very
 /// instances and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -231,7 +231,7 @@ fn a1_holds(bench: &mut Bench) {
         edit.reset_tool(&Agx);
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
@@ -375,7 +375,7 @@ fn darktable_params(case: &golden::cases::Case) -> Vec<(&'static str, Value)> {
         .collect()
 }
 
-/// The module's controls set to darktable's parameters as darktable's sliders show them,
+/// The tool's controls set to darktable's parameters as darktable's sliders show them,
 /// unrounded: each number times its factor, the pivot in EV over the case's range.
 fn edit_for(darktable: &[(&'static str, Value)]) -> Edit {
     let field = |name: &str| darktable.iter().find(|(n, _)| *n == name).unwrap().1;
@@ -478,15 +478,15 @@ fn sweep_with(bench: &mut Bench, params: ParamValues) -> common::Rendered {
 
 /// A4: for each of AgX's golden cases, darktable's tests 0175 (`agx`), 0174 (params
 /// version 4, which darktable replaces with its scene-referred defaults, `agx-default`),
-/// 0186 (`agx-highlights`) and 0174's sidecar edited (`agx-edges`), the module's controls
+/// 0186 (`agx-highlights`) and 0174's sidecar edited (`agx-edges`), the tool's controls
 /// set to the case's values as darktable's sliders show them, unrounded, bind to the
 /// case's parameters bit for bit, but the three [`UNREACHABLE`] ones, which the binding
 /// reaches from no value of their control, where darktable's rounding to its digits
 /// reaches them, and which bind one f32 step from darktable's; and through the
 /// operation's `prepare` to the kernel inputs the golden harness checks against
 /// darktable's render, bit for bit for the three cases with none of them. On the sweep the
-/// module's frame is the frame of darktable's parameters set directly: byte for byte for
-/// those three, within the jump printed for `agx`. So the module renders the cases' values
+/// tool's frame is the frame of darktable's parameters set directly: byte for byte for
+/// those three, within the jump printed for `agx`. So the tool renders the cases' values
 /// as the cases measure the port: ΔE2000 means of 0.0000 (`docs/ports/agx.md`).
 #[test]
 fn a4_the_golden_cases_values_bind_to_darktable_s_parameters_bit_for_bit() {

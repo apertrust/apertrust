@@ -213,7 +213,7 @@ pub enum Cause {
     Unreadable,
     /// Its edit cannot be read.
     Edit,
-    /// A module's binding fails on its edit: an export renders the edit as it is or not
+    /// A tool's binding fails on its edit: an export renders the edit as it is or not
     /// at all.
     Binding,
     /// The format cannot hold the size asked for, or the size leaves no image (D8).
@@ -853,7 +853,7 @@ impl Run {
                 tracing::warn!(target: "pipe", "{warning}");
             }
         }
-        // A module whose binding fails fails the photo: an export renders the edit as it
+        // A tool whose binding fails fails the photo: an export renders the edit as it
         // is, or not at all.
         let instances = match edit::instances(&edit, self.operations, &self.tools, &image).all() {
             Ok(instances) => instances,
@@ -1199,7 +1199,7 @@ mod tests {
     use apertrust_export::settings::OnConflict;
     use apertrust_operations::OPERATIONS;
     use apertrust_tools::ControlValue;
-    use apertrust_tools::testing::{self as modules, Sample};
+    use apertrust_tools::testing::{self as tools, Sample};
 
     use super::*;
     use crate::export::export_at;
@@ -1211,7 +1211,7 @@ mod tests {
     /// The build the tests' sessions record.
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
-    /// The modules the tests edit with: `Sample`'s brightness moves exposure.
+    /// The tools the tests edit with: `Sample`'s brightness moves exposure.
     const TOOLS: &[&dyn Tool] = &[&Sample];
 
     fn gpu() -> GpuContext {
@@ -1219,7 +1219,7 @@ mod tests {
             .expect("a GPU adapter, hardware or software")
     }
 
-    /// The modules crate's synthetic photo, whatever the path, as the session's tests load
+    /// The tools crate's synthetic photo, whatever the path, as the session's tests load
     /// it, or the wide one for a raw called `wide.ARW` ([`photo`]); one called `broken.ARW`
     /// cannot be read.
     fn synthetic(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
@@ -1231,15 +1231,15 @@ mod tests {
     }
 
     /// The synthetic photo the tests' loader gives for `path`, its context, its sensor and
-    /// its mosaic: the modules crate's, 96 × 72 photosites, or for `wide.ARW` the same
+    /// its mosaic: the tools crate's, 96 × 72 photosites, or for `wide.ARW` the same
     /// gradient on 1100 × 72, its image 1088 × 62, wider than a job's largest tile and
     /// small enough for the budget to render whole.
     fn photo(path: &Path) -> (ImageContext, [u32; 2], Vec<u16>) {
         if !path.ends_with("wide.ARW") {
-            return (modules::image(), [96, 72], modules::mosaic());
+            return (tools::image(), [96, 72], tools::mosaic());
         }
         let [width, height] = [1100, 72];
-        let mut camera = modules::image().camera.expect("a raw's");
+        let mut camera = tools::image().camera.expect("a raw's");
         camera.width = width;
         camera.crop = [2, 2, 1096, 68];
         camera.declared = [6, 4, 1088, 62];
@@ -1312,7 +1312,7 @@ mod tests {
         let mut edit = Edit::default();
         if let Some(value) = value {
             let number = ControlValue::Number(value);
-            let image = modules::image();
+            let image = tools::image();
             edit.set_control(&Sample, "brightness", number, &image)
                 .unwrap();
         }

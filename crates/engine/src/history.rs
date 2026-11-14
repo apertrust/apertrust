@@ -17,15 +17,15 @@
 //! The edit's history (decision 78, `docs/history.md`): a [`Log`] of [`Step`]s and its
 //! end, the edit folded from it, and what a client is told of it, [`History`].
 //!
-//! A step is one module's change, or one operation's unowned parameters', as darktable's
-//! history item is one module's: its whole state after it ([`Entry`]); an empty entry is
-//! the reset state, the module's defaults, or off for a switched one (decision 32). Reset
-//! is the one step of several, an empty entry for each module it reset ([`Change`]). A
-//! completed change that touches several modules makes a step for each, sharing a
+//! A step is one tool's change, or one operation's unowned parameters', as darktable's
+//! history item is one tool's: its whole state after it ([`Entry`]); an empty entry is
+//! the reset state, the tool's defaults, or off for a switched one (decision 32). Reset
+//! is the one step of several, an empty entry for each tool it reset ([`Change`]). A
+//! completed change that touches several tools makes a step for each, sharing a
 //! [`BatchId`], which Undo and Redo move whole, as darktable's undo group. The edit is the
-//! fold of the log: each module's last entry among the steps up to the end, else its reset
+//! fold of the log: each tool's last entry among the steps up to the end, else its reset
 //! state, so nothing else stores it. The before of a step is derived, never stored: the
-//! module's entry at the previous step that touched it, else its reset state. A control's
+//! tool's entry at the previous step that touched it, else its reset state. A control's
 //! quick repeats merge into the step before them ([`Log::merge`]), as darktable's undo
 //! merges them; the session decides when.
 //!
@@ -33,15 +33,15 @@
 //! step of source Default of each of darktable's default modules, at its reset state, as
 //! darktable adds its default modules and auto-applied presets to a new raw's history.
 //! They are steps 1 to n; Undo's fallback stops at them ([`Log::defaults`]). Below its
-//! default step a module darktable leaves off until its workflow applies it is not applied
+//! default step a tool darktable leaves off until its workflow applies it is not applied
 //! ([`Log::unapplied`]), so the end within them shows the photo with the first k applied.
 //!
-//! Compress keeps the default steps and each module's last step up to the end
+//! Compress keeps the default steps and each tool's last step up to the end
 //! ([`Log::compressed`]), as darktable's compress history stack; Truncate drops the person's
 //! steps after the end ([`Log::truncated`]), as its Ctrl-click on it. Neither changes what
 //! the photo shows at the end or at Original but at end 0, where both drop every step. An
 //! edit whose history cannot be read is started afresh as a new photo's default steps and
-//! a step of each module it holds ([`Log::afresh`]), as Discard History does there.
+//! a step of each tool it holds ([`Log::afresh`]), as Discard History does there.
 //!
 //! Plain data, which the session keeps in memory for the photo open and the engine's
 //! `sidecar` reads and writes in version 2, with the copy's clock vector ([`advance`]).
@@ -70,7 +70,7 @@ impl fmt::Display for StepId {
     }
 }
 
-/// The session's id for the steps one completed change made, one per module it touched,
+/// The session's id for the steps one completed change made, one per tool it touched,
 /// and later on several photos (decision 37); never a client's. Drawn at random, again on
 /// a clash within its log. Written as 16 hex digits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -123,7 +123,7 @@ impl StepSource {
     }
 }
 
-/// What a step says of itself in place of the modules it touched.
+/// What a step says of itself in place of the tools it touched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Note {
     /// Apertrust's own words, as a message id with its arguments, worded by the client
@@ -161,7 +161,7 @@ impl Note {
     }
 }
 
-/// One module, or the unowned parameters of one operation, with its whole state after the
+/// One tool, or the unowned parameters of one operation, with its whole state after the
 /// step that holds it; empty, the reset state.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Entry {
@@ -169,36 +169,36 @@ pub enum Entry {
         tool: String,
         values: ToolValues,
     },
-    /// Parameters no module owns, while `Set` exists.
+    /// Parameters no tool owns, while `Set` exists.
     Operation {
         operation: String,
         params: ParamValues,
     },
 }
 
-/// What an entry is of: its module's or its operation's id. Layers add a layer and an
+/// What an entry is of: its tool's or its operation's id. Layers add a layer and an
 /// instance to it (decision 34).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Key<'a> {
-    Module(&'a str),
+    Tool(&'a str),
     Operation(&'a str),
 }
 
 impl Entry {
-    /// The entries a change from `before` to `after` makes: each module and operation whose
-    /// state differs, with its whole state in `after`, in id order, modules first. An
+    /// The entries a change from `before` to `after` makes: each tool and operation whose
+    /// state differs, with its whole state in `after`, in id order, tools first. An
     /// entry holding nothing and none at all are the same reset state.
     pub fn between(before: &Edit, after: &Edit) -> Vec<Entry> {
         let mut entries = Vec::new();
-        let modules: BTreeSet<&str> = (before.modules.keys())
-            .chain(after.modules.keys())
+        let tools: BTreeSet<&str> = (before.tools.keys())
+            .chain(after.tools.keys())
             .map(String::as_str)
             .collect();
-        for module in modules {
-            let state = module_state(after, module);
-            if module_state(before, module) != state {
+        for tool in tools {
+            let state = tool_state(after, tool);
+            if tool_state(before, tool) != state {
                 entries.push(Entry::Tool {
-                    tool: module.to_owned(),
+                    tool: tool.to_owned(),
                     values: state.cloned().unwrap_or_default(),
                 });
             }
@@ -229,7 +229,7 @@ impl Entry {
 
     pub(crate) fn key(&self) -> Key<'_> {
         match self {
-            Entry::Tool { tool: module, .. } => Key::Module(module),
+            Entry::Tool { tool, .. } => Key::Tool(tool),
             Entry::Operation { operation, .. } => Key::Operation(operation),
         }
     }
@@ -237,17 +237,11 @@ impl Entry {
     /// Lays it on `edit`: its state, or none for an empty entry.
     fn apply(&self, edit: &mut Edit) {
         match self {
-            Entry::Tool {
-                tool: module,
-                values,
-            } if values.is_empty() => {
-                edit.modules.remove(module);
+            Entry::Tool { tool, values } if values.is_empty() => {
+                edit.tools.remove(tool);
             }
-            Entry::Tool {
-                tool: module,
-                values,
-            } => {
-                edit.modules.insert(module.clone(), values.clone());
+            Entry::Tool { tool, values } => {
+                edit.tools.insert(tool.clone(), values.clone());
             }
             Entry::Operation { operation, .. } if self.is_empty() => {
                 edit.params.remove(operation);
@@ -259,9 +253,9 @@ impl Entry {
     }
 }
 
-/// The module's state in `edit`, none where it holds nothing.
-fn module_state<'e>(edit: &'e Edit, module: &str) -> Option<&'e ToolValues> {
-    edit.modules.get(module).filter(|values| !values.is_empty())
+/// The tool's state in `edit`, none where it holds nothing.
+fn tool_state<'e>(edit: &'e Edit, tool: &str) -> Option<&'e ToolValues> {
+    edit.tools.get(tool).filter(|values| !values.is_empty())
 }
 
 /// The operation's unowned parameters in `edit`, none where it sets none.
@@ -273,40 +267,40 @@ fn params_state<'e>(edit: &'e Edit, operation: &str) -> Option<&'e ParamValues> 
 /// is part of ([`Change::between`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Wrote {
-    /// A module, by a control set or reset, a keep, a preset row or its reset.
+    /// A tool, by a control set or reset, a keep, a preset row or its reset.
     Tool(String),
     /// An operation's unowned parameters, by `Set`.
     Operation(String),
-    /// Every module and operation: `Reset`.
+    /// Every tool and operation: `Reset`.
     All,
 }
 
 impl Wrote {
     fn key(&self) -> Option<Key<'_>> {
         match self {
-            Wrote::Tool(module) => Some(Key::Module(module)),
+            Wrote::Tool(tool) => Some(Key::Tool(tool)),
             Wrote::Operation(operation) => Some(Key::Operation(operation)),
             Wrote::All => None,
         }
     }
 }
 
-/// What a step holds: one module's or one operation's entry, as darktable's history item
-/// holds one module, or Reset's.
+/// What a step holds: one tool's or one operation's entry, as darktable's history item
+/// holds one tool, or Reset's.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Change {
     Entry(Entry),
-    /// Reset, noted `history-reset`: an empty entry for each module and operation it reset,
+    /// Reset, noted `history-reset`: an empty entry for each tool and operation it reset,
     /// in [`Entry::between`]'s order.
     Reset(Vec<Entry>),
 }
 
 impl Change {
     /// The changes, one step each, that a completed change from `before` to `after` makes,
-    /// `wrote` what its commands wrote in order: one for each module and operation whose
+    /// `wrote` what its commands wrote in order: one for each tool and operation whose
     /// state differs, in the order they were first written after the last `Reset`; one
     /// Reset, in that `Reset`'s place, holding each empty entry no command wrote after it;
-    /// then each entry no command wrote, as a module's change of another's, in
+    /// then each entry no command wrote, as a tool's change of another's, in
     /// [`Entry::between`]'s order. None where nothing differs.
     pub fn between(before: &Edit, after: &Edit, wrote: &[Wrote]) -> Vec<Change> {
         let reset = wrote.iter().rposition(|wrote| *wrote == Wrote::All);
@@ -340,7 +334,7 @@ impl Change {
     }
 }
 
-/// One module's change, or Reset (decision 78).
+/// One tool's change, or Reset (decision 78).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Step {
     pub id: StepId,
@@ -348,10 +342,10 @@ pub struct Step {
     pub clock: Clock,
     pub source: StepSource,
     pub note: Option<Note>,
-    /// Shared by the steps of one completed change that touched several modules, which
+    /// Shared by the steps of one completed change that touched several tools, which
     /// Undo and Redo move whole; `None` for a change of one.
     pub batch: Option<BatchId>,
-    /// The module it touched, with its whole state after it, or Reset's.
+    /// The tool it touched, with its whole state after it, or Reset's.
     pub change: Change,
 }
 
@@ -381,13 +375,13 @@ impl Log {
         self.end
     }
 
-    /// The edit: each module's last entry among the steps up to the end, else its reset
+    /// The edit: each tool's last entry among the steps up to the end, else its reset
     /// state.
     pub fn fold(&self) -> Edit {
         self.fold_to(self.end)
     }
 
-    /// The edit with the first `end` steps applied, and the modules whose default step lies
+    /// The edit with the first `end` steps applied, and the tools whose default step lies
     /// after them not applied where darktable leaves them off ([`Log::unapplied`]).
     pub(crate) fn fold_to(&self, end: usize) -> Edit {
         let mut edit = Edit::default();
@@ -400,7 +394,7 @@ impl Log {
         edit
     }
 
-    /// The modules whose default step lies after the first `end` steps, with no entry among
+    /// The tools whose default step lies after the first `end` steps, with no entry among
     /// them, of those darktable leaves off until its workflow's auto-applied preset turns
     /// them on (`_dev_auto_apply_presets`, `src/develop/develop.c:1856`): Exposure, Colour
     /// calibration and the tone mapper. darktable's modules on by default run at
@@ -416,26 +410,26 @@ impl Log {
             .filter(|step| step.source == StepSource::Default)
             .flat_map(|step| step.change.entries())
             .filter_map(|entry| match entry {
-                Entry::Tool { tool: module, .. }
-                    if !on_by_default(module) && !before.contains(&entry.key()) =>
+                Entry::Tool { tool, .. }
+                    if !on_by_default(tool) && !before.contains(&entry.key()) =>
                 {
-                    Some(module.clone())
+                    Some(tool.clone())
                 }
                 _ => None,
             })
             .collect()
     }
 
-    /// Gives a log with no step its default steps: one of each of `modules`, in order,
-    /// source Default with no note and no batch, its entry empty, the module's reset state,
+    /// Gives a log with no step its default steps: one of each of `tools`, in order,
+    /// source Default with no note and no batch, its entry empty, the tool's reset state,
     /// at `clock`; the end after the last. A log that has steps is left as it is, so a
-    /// module a later build adds to `modules` runs at its defaults with no step, and the
+    /// tool a later build adds to `tools` runs at its defaults with no step, and the
     /// steps keep their numbers.
-    pub fn add_defaults(&mut self, modules: &[&str], clock: Clock) {
+    pub fn add_defaults(&mut self, tools: &[&str], clock: Clock) {
         if !self.steps.is_empty() {
             return;
         }
-        for module in modules {
+        for tool in tools {
             let id = self.new_id();
             self.add(Step {
                 id,
@@ -444,7 +438,7 @@ impl Log {
                 note: None,
                 batch: None,
                 change: Change::Entry(Entry::Tool {
-                    tool: (*module).to_owned(),
+                    tool: (*tool).to_owned(),
                     values: ToolValues::new(),
                 }),
             });
@@ -462,10 +456,10 @@ impl Log {
 
     /// Adds `step` at the end, the steps after the end dropped first, as darktable's
     /// `_dev_add_history_item_ext` removes the items above `history_end`, but for a
-    /// default step of a module with no entry up to the end, which is kept and moved below
+    /// default step of a tool with no entry up to the end, which is kept and moved below
     /// it, before `step`, as darktable keeps an always-on module's item
     /// (`src/develop/develop.c:1191-1229`). darktable drops its auto-applied items there;
-    /// Apertrust keeps every default step on purpose, the modules every photo runs never
+    /// Apertrust keeps every default step on purpose, the tools every photo runs never
     /// being off (decision 32). Returns the steps that were after the end, the kept among them, which
     /// Undo puts back in their place.
     pub fn add(&mut self, step: Step) -> Vec<Step> {
@@ -524,9 +518,9 @@ impl Log {
         dropped
     }
 
-    /// Merges a change of one module into the last step applied, as darktable's undo merges
+    /// Merges a change of one tool into the last step applied, as darktable's undo merges
     /// a widget's quick repeats (`docs/history.md`, Merging consecutive changes), where that
-    /// step holds one entry of the same module or operation and is in no batch: the step
+    /// step holds one entry of the same tool or operation and is in no batch: the step
     /// keeps its id, `entry`, the change's, takes the place of its entry, and its clock
     /// becomes `clock`. Whether it merged; with no such step, nothing.
     pub fn merge(&mut self, entry: &Entry, clock: Clock) -> bool {
@@ -546,7 +540,7 @@ impl Log {
     /// The log Compress leaves, darktable's compress history stack
     /// (`dt_history_compress_on_image`, `src/common/history.c:1193`): every default step,
     /// wherever the end is, so the photo at each end and at Original shows what it showed;
-    /// and among the person's steps up to the end, each module's and operation's last,
+    /// and among the person's steps up to the end, each tool's and operation's last,
     /// with its id, clock, source, note and batch, one whose entries are all empty dropped,
     /// Reset's among them, as an empty entry and none are the same reset state; their steps
     /// after the end dropped, as darktable deletes the items above `history_end`
@@ -588,7 +582,7 @@ impl Log {
         Log::from_steps(steps.collect(), self.end)
     }
 
-    /// The default steps after the end, which leave their modules not applied there
+    /// The default steps after the end, which leave their tools not applied there
     /// ([`Log::unapplied`]).
     fn defaults_after(&self) -> impl Iterator<Item = Step> + '_ {
         (self.steps[self.end..].iter())
@@ -598,20 +592,20 @@ impl Log {
 
     /// A fresh log of `edit`, as Discard History starts an edit whose history cannot be
     /// read: a default step of each of `defaults` at `clock`, as a new photo's log begins
-    /// ([`Log::add_defaults`]), then a step of each module and operation the edit holds,
+    /// ([`Log::add_defaults`]), then a step of each tool and operation the edit holds,
     /// in [`Entry::between`]'s order, source You, noted `history-discard`
     /// ([`Note::discard`]), sharing a batch where there are several, the end after the
-    /// last. The default steps of the modules the edit holds not applied come after the
+    /// last. The default steps of the tools the edit holds not applied come after the
     /// end, so they stay not applied, and Original is the untouched photo.
     pub fn afresh(edit: &Edit, defaults: &[&str], clock: Clock) -> Log {
         let (after, before): (Vec<&str>, Vec<&str>) =
-            (defaults.iter()).partition(|module| edit.unapplied.contains(**module));
+            (defaults.iter()).partition(|tool| edit.unapplied.contains(**tool));
         let mut log = Log::default();
         log.add_defaults(&before, clock);
         let changes = Change::between(&Edit::default(), edit, &[]);
         log.add_change(changes, StepSource::You, Some(Note::discard()), clock);
         let end = log.end;
-        for module in after {
+        for tool in after {
             let id = log.new_id();
             log.steps.push(Step {
                 id,
@@ -620,7 +614,7 @@ impl Log {
                 note: None,
                 batch: None,
                 change: Change::Entry(Entry::Tool {
-                    tool: module.to_owned(),
+                    tool: tool.to_owned(),
                     values: ToolValues::new(),
                 }),
             });
@@ -736,7 +730,7 @@ pub fn latest<'c>(clocks: impl IntoIterator<Item = &'c Clock>, me: MachineId) ->
     })
 }
 
-/// `edit` moved from `from` onto `onto`: `onto` with each module and operation whose state
+/// `edit` moved from `from` onto `onto`: `onto` with each tool and operation whose state
 /// differs between `from` and `edit` at its state in `edit`, as a change not yet a step is
 /// laid on a newer log.
 pub(crate) fn rebase(edit: &Edit, from: &Edit, onto: &Edit) -> Edit {
@@ -785,23 +779,23 @@ pub struct HistoryStep {
     pub clock: Clock,
     pub source: StepSource,
     pub note: Option<Note>,
-    /// Shared by the steps of one change that touched several modules, which Undo and Redo
+    /// Shared by the steps of one change that touched several tools, which Undo and Redo
     /// move whole, as [`Move::Steps`] names them.
     pub batch: Option<BatchId>,
-    /// The module the step touched, with what changed: one, or for a reset each module it
+    /// The tool the step touched, with what changed: one, or for a reset each tool it
     /// reset, in the step's order; an operation's unowned parameters under the operation's
-    /// id, its controls the parameters. A module or an operation this build does not know,
+    /// id, its controls the parameters. A tool or an operation this build does not know,
     /// as a newer build may have written, is listed by its stored name with no control.
     pub changes: Vec<ToolChange>,
 }
 
-/// What a step changed of one module.
+/// What a step changed of one tool.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolChange {
-    /// The module's id, or the operation's for its unowned parameters; borrowed for one
+    /// The tool's id, or the operation's for its unowned parameters; borrowed for one
     /// this build knows, owned for one it does not.
     pub tool: Cow<'static, str>,
-    /// Before and after, where the step turned a switched module on or off.
+    /// Before and after, where the step turned a switched tool on or off.
     pub enabled: Option<[bool; 2]>,
     /// Each control whose value or mark changed, in the definition's order.
     pub controls: Vec<ControlChange>,
@@ -849,27 +843,27 @@ const WITH_BUTTON: &[&str] = &["temperature", "highlights", "flip"];
 
 /// The modules darktable's default workflow, scene-referred, applies to a new raw as
 /// auto-applied presets after those (`_dev_auto_apply_presets`, `:1856`): Exposure, Colour
-/// calibration and the tone mapper, Apertrust's AgX. No other module has a default step:
+/// calibration and the tone mapper, Apertrust's AgX. No other tool has a default step:
 /// Tone curve, which no preset applies, runs at its defaults with none.
 const AUTO_APPLIED: &[&str] = &["exposure", "channelmixerrgb", "agx"];
 
 /// Whether darktable has the module on by default (`default_enabled`), with an on/off
 /// button or none, so it runs at its defaults below its default step.
-fn on_by_default(module: &str) -> bool {
-    NO_BUTTON.contains(&module) || WITH_BUTTON.contains(&module)
+fn on_by_default(tool: &str) -> bool {
+    NO_BUTTON.contains(&tool) || WITH_BUTTON.contains(&tool)
 }
 
-/// The modules a new photo's default steps hold (`docs/history.md`, Original and the default
-/// steps): darktable's for a new raw, among `modules`, in its history order, its three
-/// groups: the modules on by default with no on/off button, those with one, and those its
-/// workflow auto-applies, each in the pipe's order, by the first operation each module
+/// The tools a new photo's default steps hold (`docs/history.md`, Original and the default
+/// steps): darktable's for a new raw, among `tools`, in its history order, its three
+/// groups: the tools on by default with no on/off button, those with one, and those its
+/// workflow auto-applies, each in the pipe's order, by the first operation each tool
 /// owns.
 pub fn default_tools(
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
     operations: &[&'static dyn Operation],
 ) -> Vec<&'static str> {
-    let position = |module: &dyn Tool| {
-        (module.owns().iter())
+    let position = |tool: &dyn Tool| {
+        (tool.owns().iter())
             .filter_map(|owned| {
                 (operations.iter()).position(|operation| operation.manifest().id == owned.operation)
             })
@@ -887,10 +881,10 @@ pub fn default_tools(
             3
         }
     };
-    let mut lines: Vec<(u8, usize, &'static str)> = (modules.iter())
-        .map(|module| {
-            let id = module.definition().id;
-            (group(id), position(*module), id)
+    let mut lines: Vec<(u8, usize, &'static str)> = (tools.iter())
+        .map(|tool| {
+            let id = tool.definition().id;
+            (group(id), position(*tool), id)
         })
         .filter(|&(group, _, _)| group < 3)
         .collect();
@@ -903,7 +897,7 @@ pub fn default_tools(
 #[derive(Default)]
 pub struct Described {
     steps: Vec<Arc<HistoryStep>>,
-    /// Each module's defaults for the photo, asked once.
+    /// Each tool's defaults for the photo, asked once.
     defaults: BTreeMap<&'static str, Controls>,
     /// The operations' defaults for the photo, for unowned parameters, made once asked.
     base: Option<Base>,
@@ -916,7 +910,7 @@ impl Described {
     pub fn steps(
         &mut self,
         log: &Log,
-        modules: &[&'static dyn Tool],
+        tools: &[&'static dyn Tool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> Vec<Arc<HistoryStep>> {
@@ -936,7 +930,7 @@ impl Described {
                 let changes = (step.change.entries().iter())
                     .map(|entry| {
                         let before = last.get(&entry.key()).copied();
-                        self.change(before, entry, modules, operations, image)
+                        self.change(before, entry, tools, operations, image)
                     })
                     .collect();
                 self.steps.push(Arc::new(HistoryStep {
@@ -956,17 +950,17 @@ impl Described {
     }
 
     /// What `entry` changed over `before`, the key's previous entry, none being its
-    /// reset state; a module or an operation this build does not know, by its stored
+    /// reset state; a tool or an operation this build does not know, by its stored
     /// name with no control, as nothing can describe its values.
     fn change(
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
-        modules: &[&'static dyn Tool],
+        tools: &[&'static dyn Tool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> ToolChange {
-        self.known(before, entry, modules, operations, image)
+        self.known(before, entry, tools, operations, image)
             .unwrap_or_else(|| {
                 let (Entry::Tool { tool: name, .. }
                 | Entry::Operation {
@@ -980,27 +974,24 @@ impl Described {
             })
     }
 
-    /// What `entry` changed over `before`, as [`Self::change`]; `None` for a module or an
+    /// What `entry` changed over `before`, as [`Self::change`]; `None` for a tool or an
     /// operation this build does not know.
     fn known(
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
-        modules: &[&'static dyn Tool],
+        tools: &[&'static dyn Tool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> Option<ToolChange> {
         match entry {
-            Entry::Tool {
-                tool: module,
-                values,
-            } => {
-                let module = *modules.iter().find(|m| m.definition().id == module)?;
-                let definition = module.definition();
-                // A module's code may panic, as its binding is guarded against: its
+            Entry::Tool { tool, values } => {
+                let tool = *tools.iter().find(|m| m.definition().id == tool)?;
+                let definition = tool.definition();
+                // A tool's code may panic, as its binding is guarded against: its
                 // controls then read the definition's defaults, as the values do.
                 let defaults = self.defaults.entry(definition.id).or_insert_with(|| {
-                    catch_unwind(AssertUnwindSafe(|| module.defaults(image)))
+                    catch_unwind(AssertUnwindSafe(|| tool.defaults(image)))
                         .unwrap_or_else(|_| definition.defaults())
                 });
                 let empty = ToolValues::new();

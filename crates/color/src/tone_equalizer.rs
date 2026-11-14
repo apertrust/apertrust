@@ -22,7 +22,7 @@
 //! to the gains of the nine bands at −8 EV to 0 EV, clamped to ¼ to 4.
 //!
 //! Shared by the operation's setup (`apertrust-op-toneequal`), whose kernel sums the
-//! Gaussians with the weights fitted here, and by the Tone equalizer module's band graph
+//! Gaussians with the weights fitted here, and by the Tone equalizer tool's band graph
 //! (`Tool::curve`, decision 31), which draws the curve the kernel renders (decision
 //! 65). It runs on the CPU, to set the kernel up and to draw, never on a pixel.
 

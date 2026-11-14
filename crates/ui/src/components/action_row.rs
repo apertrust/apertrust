@@ -15,10 +15,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The action row, one line (`docs/gui.md`, How the rows are laid out): one of darktable's
-//! buttons in a module, an action that writes the module's controls and is never stored,
+//! buttons in a tool, an action that writes the tool's controls and is never stored,
 //! as AgX's Auto tune levels and Set from above. The design system's [`Button`] at the
 //! start, holding the short label; screen readers hear its full name, and its promise is
-//! the tooltip. Until what it runs is built a module's action is drawn disabled.
+//! the tooltip. Until what it runs is built a tool's action is drawn disabled.
 
 use egui::Ui;
 

@@ -182,7 +182,7 @@ pub enum Owner {
     /// the app keeps them as darktable keeps its conf, and the CLI's `export` reads them
     /// as darktable-cli reads darktablerc.
     Export,
-    /// A module's setting, by the module's id (decision 29), kept by the client and sent
+    /// A tool's setting, by the tool's id (decision 29), kept by the client and sent
     /// with the commands that use it.
     Tool(&'static str),
 }

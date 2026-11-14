@@ -20,7 +20,7 @@
 //! or presets of its own.
 //!
 //! Each control is one `hazeremoval` parameter as it is, as darktable's slider shows it.
-//! The module is switched (decision 32), as darktable leaves haze removal off on a new
+//! The tool is switched (decision 32), as darktable leaves haze removal off on a new
 //! photo: off, it renders nothing; any write of a control turns it on, with darktable's
 //! defaults for the other, a strength and a distance of 0.2, the operation's own, until
 //! its reset turns it off. So the binding sets each control only while it is off its
@@ -102,7 +102,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Both parameters of `hazeremoval`: the module is darktable's and owns them all.
+/// Both parameters of `hazeremoval`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 2] = [
     Owned::new(HAZEREMOVAL, STRENGTH),
     Owned::new(HAZEREMOVAL, DISTANCE),
@@ -257,14 +257,14 @@ mod tests {
         assert_eq!(value(&settings, DISTANCE), Some(Value::Float(0.8)));
         assert_eq!(settings.len(), 2);
         // The strength alone leaves the distance at the operation's default, the
-        // module's.
+        // tool's.
         let settings = bind(&[(STRENGTH, -0.35)]);
         assert_eq!(value(&settings, STRENGTH), Some(Value::Float(-0.35)));
         assert_eq!(settings.len(), 1);
     }
 
     /// The distance alone binds itself, whatever the strength holds: haze removal is
-    /// switched, so the session plans it while the module is on, not while the strength
+    /// switched, so the session plans it while the tool is on, not while the strength
     /// is off 0.
     #[test]
     fn the_distance_alone_binds_itself() {

@@ -21,7 +21,7 @@
 //! nothing outside the mirror, so a test feeds it events and reads the state and the
 //! reactions back.
 //!
-//! - **What it holds:** the photo ([`PhotoState`]), the modules' values as the session last
+//! - **What it holds:** the photo ([`PhotoState`]), the tools' values as the session last
 //!   reported them with the changes sent since shown over them, what the side panel's
 //!   editing tabs draw of them ([`Shown`]), the latest frame, the scopes' reading, whether
 //!   the edit is on disk ([`Saving`]), the photo's history, which names what Undo and Redo
@@ -32,7 +32,7 @@
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
 //! - **No photo:** before any, from the moment another is asked for until its values
-//!   arrive, and after an open fails, the side panel draws every module at its
+//!   arrive, and after an open fails, the side panel draws every tool at its
 //!   definition's defaults and Scopes with no graph, disabled ([`Shown::Nothing`]): never a blank
 //!   panel. The photo's values replace them in one apply ([`Shown::Photo`]).
 //! - **Stale events:** while a photo opens, what an earlier open left on its way is dropped
@@ -81,10 +81,10 @@ pub enum Reaction {
     FolderOpened(PathBuf),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
     FolderFailed { path: PathBuf, reason: String },
-    /// A module's pick measured these settings, measure mode's target: the app keeps them
+    /// A tool's pick measured these settings, measure mode's target: the app keeps them
     /// in its settings, as darktable writes its target sliders and darktablerc.
     Measured {
-        module: &'static str,
+        tool: &'static str,
         settings: Vec<(&'static str, ControlValue)>,
     },
     /// The first live frame of the photo the open numbered `open` replaced its first
@@ -104,7 +104,7 @@ pub enum Shown {
     /// its values, every control drawn disabled with its tooltip saying why, and Scopes
     /// with no graph, as with no photo.
     Opening,
-    /// No photo, or one opening whose values have not arrived: every module at its
+    /// No photo, or one opening whose values have not arrived: every tool at its
     /// definition's defaults and Scopes with no graph, drawn disabled, with no marks, so the
     /// person sees at once that a click on another photo was taken.
     Nothing,
@@ -119,12 +119,12 @@ impl Shown {
 
 /// The session as the app last heard of it.
 pub struct Mirror {
-    /// The modules the session was started with, whose views show the pending values.
-    modules: &'static [&'static dyn Tool],
+    /// The tools the session was started with, whose views show the pending values.
+    tools: &'static [&'static dyn Tool],
     pub photo: PhotoState,
-    /// The modules' controls and the unowned parameters as the engine last reported them,
+    /// The tools' controls and the unowned parameters as the engine last reported them,
     /// with the pending ones in their place (`docs/gui.md`, A frame); with no photo, and
-    /// while one opens, every module untouched ([`untouched`]).
+    /// while one opens, every tool untouched ([`untouched`]).
     pub values: Values,
     /// What the side panel draws of `values`.
     shown: Shown,
@@ -164,7 +164,7 @@ pub struct Mirror {
     /// The active colour picker, as the session last reported it with what the app asked
     /// since (decision 79); none with no photo, and while one opens.
     pub pickers: pickers::Mirror,
-    /// What the modules' picks showed on the photo, for their patches; none with no photo.
+    /// What the tools' picks showed on the photo, for their patches; none with no photo.
     pub picked: pickers::Picked,
     /// The jobs the session has reported, which the spinner and the jobs window show
     /// (decision 57).
@@ -180,16 +180,16 @@ pub struct Mirror {
 }
 
 impl Mirror {
-    /// The modules the session was started with.
-    pub fn modules(&self) -> &'static [&'static dyn Tool] {
-        self.modules
+    /// The tools the session was started with.
+    pub fn tools(&self) -> &'static [&'static dyn Tool] {
+        self.tools
     }
 
-    /// The mirror before any event: no photo, every module untouched, the jobs as given.
-    pub fn new(modules: &'static [&'static dyn Tool], jobs: jobs::Mirror) -> Mirror {
-        let untouched = untouched(modules);
+    /// The mirror before any event: no photo, every tool untouched, the jobs as given.
+    pub fn new(tools: &'static [&'static dyn Tool], jobs: jobs::Mirror) -> Mirror {
+        let untouched = untouched(tools);
         Mirror {
-            modules,
+            tools,
             photo: PhotoState::None,
             values: untouched.clone(),
             shown: Shown::Nothing,
@@ -228,15 +228,14 @@ impl Mirror {
     }
 
     /// Whether Reset would change the photo: its edit holds anything, or the history's end
-    /// lies before a default step, leaving a module every photo runs not applied, which
+    /// lies before a default step, leaving a tool every photo runs not applied, which
     /// Reset applies as a step (decision 78). Its edit's `edited` alone stays what the
     /// folder marks as edited.
     pub fn resettable(&self) -> bool {
         let unapplied = |state: &ToolState| {
             !state.enabled
-                && (self.modules.iter()).any(|module| {
-                    module.definition().id == state.tool && !module.definition().switched
-                })
+                && (self.tools.iter())
+                    .any(|tool| tool.definition().id == state.tool && !tool.definition().switched)
         };
         self.values.edited || self.values.tools.iter().any(unapplied)
     }
@@ -341,7 +340,7 @@ impl Mirror {
         }
     }
 
-    /// No photo is open: every module untouched, no history, no picker and no scopes
+    /// No photo is open: every tool untouched, no history, no picker and no scopes
     /// reading.
     fn no_photo(&mut self) {
         self.shown = Shown::Nothing;
@@ -364,7 +363,7 @@ impl Mirror {
     /// again, a coordinate's change would start from coordinates later changes have moved.
     pub fn pend(&mut self, number: u64, pending: Pending) {
         let image = self.photo.image();
-        show(&mut self.values, &pending, self.modules, &image);
+        show(&mut self.values, &pending, self.tools, &image);
         self.pending.push((number, pending));
     }
 
@@ -411,7 +410,7 @@ impl Mirror {
                     let live = values.live;
                     self.saving.reported(&values);
                     let image = self.photo.image();
-                    self.values = reported(values, &mut self.pending, self.modules, &image);
+                    self.values = reported(values, &mut self.pending, self.tools, &image);
                     self.live = live;
                     self.shown = if live {
                         Shown::Photo { editable }
@@ -436,8 +435,8 @@ impl Mirror {
             Event::Scopes(reading) => self.scopes.receive(&reading),
             // The active picker's reading, or `None` as it turns off.
             Event::Picker { through, reading } => {
-                if let Some((module, settings)) = self.picked.apply(reading.as_ref()) {
-                    reactions.push(Reaction::Measured { module, settings });
+                if let Some((tool, settings)) = self.picked.apply(reading.as_ref()) {
+                    reactions.push(Reaction::Measured { tool, settings });
                 }
                 self.pickers.apply(through, reading);
             }
@@ -473,7 +472,7 @@ impl Mirror {
                     self.history = Some(history);
                 }
             }
-            // The session logs a failed save, a module left out and the scopes turned off as
+            // The session logs a failed save, a tool left out and the scopes turned off as
             // they happen; the rest only reach the app.
             Event::Failed(SessionError::Save {
                 path,
@@ -569,16 +568,16 @@ impl Mirror {
     }
 }
 
-/// Every module's controls at its definition's defaults, as the side panel draws them with
+/// Every tool's controls at its definition's defaults, as the side panel draws them with
 /// no photo open: none can change anything, none is marked, no preset row's option can be
 /// applied, and a choice lists every option. A preset row reads the option the defaults
-/// match and a view's coordinates are the module's view of them, both on the no-photo
-/// image ([`PhotoState::image`]); a row whose module cannot say reads Custom, and a view
-/// whose module cannot is left out, as the session leaves it out.
-fn untouched(modules: &[&dyn Tool]) -> Values {
+/// match and a view's coordinates are the tool's view of them, both on the no-photo
+/// image ([`PhotoState::image`]); a row whose tool cannot say reads Custom, and a view
+/// whose tool cannot is left out, as the session leaves it out.
+fn untouched(tools: &[&dyn Tool]) -> Values {
     let image = PhotoState::None.image();
-    let states = modules.iter().map(|module| {
-        let definition = module.definition();
+    let states = tools.iter().map(|tool| {
+        let definition = tool.definition();
         let defaults = definition.defaults();
         let controls: Vec<ControlState> = definition
             .controls
@@ -590,7 +589,7 @@ fn untouched(modules: &[&dyn Tool]) -> Values {
                 mark: None,
                 available: false,
                 options: Vec::new(),
-                range: edit::range(*module, control.id, &defaults).map(|(range, _)| range),
+                range: edit::range(*tool, control.id, &defaults).map(|(range, _)| range),
             })
             .collect();
         let presets = definition
@@ -599,7 +598,7 @@ fn untouched(modules: &[&dyn Tool]) -> Values {
             .map(|row| PresetState {
                 preset: row.id,
                 matching: catch_unwind(AssertUnwindSafe(|| {
-                    module.matching(row.id, &defaults, &image)
+                    tool.matching(row.id, &defaults, &image)
                 }))
                 .unwrap_or_default(),
                 available: Vec::new(),
@@ -607,7 +606,7 @@ fn untouched(modules: &[&dyn Tool]) -> Values {
             .collect();
         let mut views = Vec::new();
         for view in definition.views {
-            let viewed = catch_unwind(AssertUnwindSafe(|| module.view(view.id, &defaults, &image)));
+            let viewed = catch_unwind(AssertUnwindSafe(|| tool.view(view.id, &defaults, &image)));
             let Ok(Some(coordinates)) = viewed else {
                 continue;
             };
@@ -695,11 +694,11 @@ impl PhotoState {
         }
     }
 
-    /// The image context a module's view of the pending values reads ([`Pending::show`]):
+    /// The image context a tool's view of the pending values reads ([`Pending::show`]):
     /// the open photo's, as the session reports it in `Photo` (decision 27), so a view
     /// that reads the camera, as White balance's temperature and tint read its matrix,
     /// shows its pending values as the session will. The pending display's availability
-    /// reads it too (decision 30), where the pending values move the module's answer.
+    /// reads it too (decision 30), where the pending values move the tool's answer.
     pub fn image(&self) -> ImageContext {
         match self {
             PhotoState::Open(photo) => (*photo.image).clone(),
@@ -771,14 +770,14 @@ pub struct Picture {
 /// Every control, coordinate and preset option of `values` drawn disabled, as a photo's
 /// values are until it is live (decision 77), each keeping its value and mark.
 fn read_only(values: &mut Values) {
-    for module in &mut values.tools {
-        for control in &mut module.controls {
+    for tool in &mut values.tools {
+        for control in &mut tool.controls {
             control.available = false;
         }
-        for coordinate in &mut module.views {
+        for coordinate in &mut tool.views {
             coordinate.available = false;
         }
-        for preset in &mut module.presets {
+        for preset in &mut tool.presets {
             preset.available.clear();
         }
     }
@@ -939,12 +938,12 @@ impl Saving {
 pub fn reported(
     mut reported: Values,
     pending: &mut Vec<(u64, Pending)>,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     image: &ImageContext,
 ) -> Values {
     pending.retain(|(number, _)| *number > reported.through);
     for (_, change) in pending.iter() {
-        show(&mut reported, change, modules, image);
+        show(&mut reported, change, tools, image);
     }
     reported
 }
@@ -952,15 +951,15 @@ pub fn reported(
 /// Shows a change sent in `values` as the session will report it ([`Pending::show`]): a
 /// control set shows as kept, as the session keeps it, one reset its default, released,
 /// and a lossless view's coordinates and controls move together. `image` is what the
-/// module's view reads.
-pub fn show(values: &mut Values, change: &Pending, modules: &[&dyn Tool], image: &ImageContext) {
-    let id = change.module();
-    let module = modules.iter().find(|module| module.definition().id == id);
+/// tool's view reads.
+pub fn show(values: &mut Values, change: &Pending, tools: &[&dyn Tool], image: &ImageContext) {
+    let id = change.tool();
+    let tool = tools.iter().find(|tool| tool.definition().id == id);
     let state = values.tools.iter_mut().find(|state| state.tool == id);
-    let (Some(module), Some(state)) = (module, state) else {
+    let (Some(tool), Some(state)) = (tool, state) else {
         return;
     };
-    change.show(*module, state, image);
+    change.show(*tool, state, image);
     values.edited |= state.edited;
 }
 
@@ -1220,7 +1219,7 @@ pub(crate) mod tests {
             reported(report, pending, apertrust_tools::TOOLS, &image)
         };
         let set_black = |value| Pending::Control {
-            module: "exposure",
+            tool: "exposure",
             control: "black_level",
             value: ControlValue::Number(value),
         };
@@ -1233,7 +1232,7 @@ pub(crate) mod tests {
             (
                 7,
                 Pending::Reset {
-                    module: "exposure",
+                    tool: "exposure",
                     control: "exposure",
                 },
             ),
@@ -1250,12 +1249,12 @@ pub(crate) mod tests {
             (
                 8,
                 Pending::Keep {
-                    module: "exposure",
+                    tool: "exposure",
                     control: "exposure",
                     kept: false,
                 },
             ),
-            (9, Pending::ResetTool { module: "exposure" }),
+            (9, Pending::ResetTool { tool: "exposure" }),
         ];
         let shown = mirror(report(0.2, 1.0, 7), &mut pending[..1].to_vec());
         assert_eq!(shown.tools, [exposure(0.2, None, 1.0, None)]);
@@ -1280,7 +1279,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// The exposure module with Exposure at `exposure`, reported after `through` commands.
+    /// The exposure tool with Exposure at `exposure`, reported after `through` commands.
     pub(crate) fn report(exposure: f32, through: u64) -> Values {
         use apertrust_engine::session::{ControlState, ToolState};
         Values {
@@ -1311,7 +1310,7 @@ pub(crate) mod tests {
 
     fn set_exposure(value: f32) -> Pending {
         Pending::Control {
-            module: "exposure",
+            tool: "exposure",
             control: "exposure",
             value: ControlValue::Number(value),
         }
@@ -1660,7 +1659,7 @@ pub(crate) mod tests {
 
     /// The photo's picker readings reach the pickers' mirror; a refused `On` stops
     /// showing, and so does one the session turned off again before its first reading, as
-    /// a change of its module does; another photo, and a photo closed, forget it and drop
+    /// a change of its tool does; another photo, and a photo closed, forget it and drop
     /// what it still sends.
     #[test]
     fn the_mirror_keeps_the_photo_s_picker() {
@@ -1722,7 +1721,7 @@ pub(crate) mod tests {
         assert_eq!(m.pickers.active(), None);
     }
 
-    /// A module pick's command that completes a change is waited for as any completed
+    /// A tool pick's command that completes a change is waited for as any completed
     /// change is: the session answers it with `Saved`, the edit written or, where the pick
     /// wrote nothing, reported held, so a release whose only answer is `Saved`, with no
     /// `Values`, is waited for no more, and a slider's drag after it shows no Saving…; a
@@ -1768,11 +1767,11 @@ pub(crate) mod tests {
         );
     }
 
-    /// Whether `values` are every module's, untouched and unavailable, as with no photo.
+    /// Whether `values` are every tool's, untouched and unavailable, as with no photo.
     fn untouched_all(values: &Values) -> bool {
         let ids: Vec<&str> = apertrust_tools::TOOLS
             .iter()
-            .map(|module| module.definition().id)
+            .map(|tool| tool.definition().id)
             .collect();
         let shown: Vec<&str> = values.tools.iter().map(|state| state.tool).collect();
         let controls = values.tools.iter().flat_map(|state| &state.controls);
@@ -1789,14 +1788,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn with_no_photo_every_module_is_untouched_and_takes_no_edit() {
+    fn with_no_photo_every_tool_is_untouched_and_takes_no_edit() {
         let m = mirror();
         assert_eq!(m.shown(), Shown::Nothing);
         assert!(!m.takes_edits() && !m.shown().editable());
         assert!(untouched_all(&m.values));
         // Each control at its definition's default, whatever the photo would make it.
-        for (module, state) in apertrust_tools::TOOLS.iter().zip(&m.values.tools) {
-            for (control, shown) in module.definition().controls.iter().zip(&state.controls) {
+        for (tool, state) in apertrust_tools::TOOLS.iter().zip(&m.values.tools) {
+            for (control, shown) in tool.definition().controls.iter().zip(&state.controls) {
                 assert_eq!(shown.value, control.default(), "{}", control.id);
             }
         }
@@ -1816,7 +1815,7 @@ pub(crate) mod tests {
         )));
         assert_eq!(m.shown(), Shown::Photo { editable: true });
         assert!(m.takes_edits());
-        // Another photo is asked for: at once no photo, every module untouched, no scopes,
+        // Another photo is asked for: at once no photo, every tool untouched, no scopes,
         // and nothing sent for them.
         m.pend(2, set_exposure(2.0));
         m.opening(PathBuf::from("/photos/b.ARW"), 3, Instant::now());
@@ -1900,11 +1899,11 @@ pub(crate) mod tests {
         assert!(!m.saving.writing());
     }
 
-    /// Reset is available while a module every photo runs is not applied, the history's end
+    /// Reset is available while a tool every photo runs is not applied, the history's end
     /// before its default step, though the edit holds nothing: Reset applies it (decision
-    /// 78). A switched module off is no reason, and the edit's `edited` stays as it was.
+    /// 78). A switched tool off is no reason, and the edit's `edited` stays as it was.
     #[test]
-    fn reset_is_available_while_a_default_module_is_not_applied() {
+    fn reset_is_available_while_a_default_tool_is_not_applied() {
         let mut mirror = mirror();
         assert!(!mirror.values.edited);
         assert!(mirror.values.tools.iter().any(|state| !state.enabled));
@@ -2475,7 +2474,7 @@ pub(crate) mod tests {
         assert_eq!((read, history.end), (ids, n + 2));
         let words = apertrust_ui::Translator::new(apertrust_ui::Locale::EnGb);
         let today = crate::history::today();
-        let listed = crate::history::listed(Some(&history), live.mirror.modules(), &words, today);
+        let listed = crate::history::listed(Some(&history), live.mirror.tools(), &words, today);
         let steps = (listed.lines())
             .filter(|line| matches!(line.place, crate::history::Place::Step { .. }))
             .count();
@@ -2506,7 +2505,7 @@ pub(crate) mod tests {
 
     /// Through a real session: a plain click on a step in the History section, the app's
     /// own drawing of the session's history, asks to go to it, and the session, sent that,
-    /// takes the edit back to that step; Shift-click asks to open its module and nothing
+    /// takes the edit back to that step; Shift-click asks to open its tool and nothing
     /// else.
     #[test]
     fn a_plain_click_on_a_step_takes_a_real_session_s_edit_back_to_it() {
@@ -2558,14 +2557,14 @@ pub(crate) mod tests {
                 |ui, scene: &mut Scene| {
                     let m = &scene.live.mirror;
                     let (history, takes) = (m.history.as_ref(), m.takes_edits());
-                    let modules = m.modules();
+                    let tools = m.tools();
                     let today = crate::history::today();
                     let state = crate::history::State {
                         editable: takes,
                         ..crate::history::State::default()
                     };
                     let asked =
-                        crate::history::tab(ui, history, modules, &[], true, false, state, today);
+                        crate::history::tab(ui, history, tools, &[], true, false, state, today);
                     scene.actions.extend(asked);
                 },
                 Scene {
@@ -2574,7 +2573,7 @@ pub(crate) mod tests {
                 },
             );
         harness.run();
-        // A line by its number and module, whatever it says changed after them.
+        // A line by its number and tool, whatever it says changed after them.
         fn item<'a>(harness: &'a Harness<'_, Scene>, name: &str) -> egui_kittest::Node<'a> {
             let named = |node: &egui_kittest::Node<'_>| {
                 let label = node.accesskit_node().label().unwrap_or_default();
@@ -2596,7 +2595,7 @@ pub(crate) mod tests {
         live.until(|m| m.history.as_ref().is_some_and(|h| h.end == n + 1));
         assert_eq!(live.exposure("exposure"), Some(ControlValue::Number(1.0)));
         assert_eq!(live.exposure("black_level"), Some(before));
-        // Shift-click: the module, and no step gone to.
+        // Shift-click: the tool, and no step gone to.
         harness.state_mut().actions.clear();
         harness.run();
         item(&harness, &second_name).click_modifiers(eframe::egui::Modifiers::SHIFT);

@@ -17,14 +17,14 @@
 
 //! Tone equalizer, ported from darktable (`src/iop/toneequal.c`): nine bands of
 //! exposure correction over a luminance mask, through a curve of eight Gaussians fitted
-//! to them. The operation behind the Tone equalizer module (decision 2). See
+//! to them. The operation behind the Tone equalizer tool (decision 2). See
 //! `docs/ports/toneequal.md`.
 //!
 //! Every luminance estimator, with no mask filter (darktable's "preserve details: no"),
 //! EIGF, darktable's default, or averaged EIGF, whose mask is built by whole-image passes
 //! over the whole image at the pipe's scale (decision 15). The guided filters return
 //! [`NotPorted`]. It is in `OPERATIONS` with `default_enabled` off: an unedited photo
-//! does not run it, and the session plans it only while a module's binding sets one of
+//! does not run it, and the session plans it only while a tool's binding sets one of
 //! its parameters (decision 28).
 
 pub mod filters;
@@ -61,7 +61,7 @@ static MANIFEST: Manifest = Manifest {
     // `main` reads only its own pixel; the mask's whole-image passes cover the whole
     // image in every pipe, an export's tiles in two rounds (decision 15).
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "toneequal",

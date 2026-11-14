@@ -111,21 +111,21 @@ pub fn run(
     photo: &Path,
     chosen: Option<Move>,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
     }
     let (log, view_only) = match chosen {
         Some(chosen) => {
-            let made = make(photo, chosen, operations, modules)?;
+            let made = make(photo, chosen, operations, tools)?;
             println!("{}", made.said);
             if made.written {
                 println!("Wrote {}", sidecar::path_for(photo).display());
             }
             (made.log, None)
         }
-        None => match crate::saved(photo, operations, modules)? {
+        None => match crate::saved(photo, operations, tools)? {
             Some(loaded) => {
                 let view_only = loaded.view_only();
                 (loaded.log, view_only)
@@ -134,7 +134,7 @@ pub fn run(
         },
     };
     let image = image_of(photo);
-    let steps = Described::default().steps(&log, modules, operations, &image);
+    let steps = Described::default().steps(&log, tools, operations, &image);
     let name = apertrust_base::log::file_name(photo);
     print!("{}", listing(&name, &steps, log.end()));
     if let Some(view_only) = view_only {
@@ -171,9 +171,9 @@ pub fn make(
     photo: &Path,
     chosen: Move,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
 ) -> Result<Made> {
-    prepare(photo, chosen, operations, modules)?.write()
+    prepare(photo, chosen, operations, tools)?.write()
 }
 
 /// A move made on the log read, still to be written over the file as it was read.
@@ -190,7 +190,7 @@ pub struct Prepared<'a> {
     clocks: Vec<Clock>,
     said: String,
     operations: &'a [&'static dyn Operation],
-    modules: &'a [&'static dyn Tool],
+    tools: &'a [&'static dyn Tool],
 }
 
 /// Reads the edit saved beside `photo` and makes `chosen` on its log, to be written.
@@ -201,11 +201,11 @@ pub fn prepare<'a>(
     photo: &'a Path,
     chosen: Move,
     operations: &'a [&'static dyn Operation],
-    modules: &'a [&'static dyn Tool],
+    tools: &'a [&'static dyn Tool],
 ) -> Result<Prepared<'a>> {
     let path = sidecar::path_for(photo);
     let read = crate::stamp(&path)?;
-    let (file, before, mut clocks, afresh) = match crate::saved(photo, operations, modules)? {
+    let (file, before, mut clocks, afresh) = match crate::saved(photo, operations, tools)? {
         Some(loaded) => {
             let afresh = match loaded.view_only() {
                 None => None,
@@ -237,7 +237,7 @@ pub fn prepare<'a>(
     let clock = Clock::now(latest.as_ref(), machine);
     let (after, said) = match afresh {
         Some(edit) => {
-            let (after, said) = started_afresh(&edit, operations, modules, clock);
+            let (after, said) = started_afresh(&edit, operations, tools, clock);
             (Some(after), said)
         }
         None => match moved(&before, chosen)? {
@@ -255,7 +255,7 @@ pub fn prepare<'a>(
         clocks,
         said,
         operations,
-        modules,
+        tools,
     })
 }
 
@@ -275,7 +275,7 @@ impl Prepared<'_> {
             self.read,
             self.file,
             (&after, &self.clocks),
-            (self.operations, self.modules),
+            (self.operations, self.tools),
         )?;
         if !written {
             bail!(
@@ -371,17 +371,17 @@ pub fn moved(log: &Log, chosen: Move) -> Result<Moved> {
 }
 
 /// The log Discard History starts an edit whose history cannot be read with, as the
-/// session's ([`Log::afresh`]): a new photo's default steps and a step of each module and
+/// session's ([`Log::afresh`]): a new photo's default steps and a step of each tool and
 /// operation `edit` holds as read, noted `history-discard`. Default steps alone, every one
 /// applied, are written as no step, as a new photo's are; with the end among them, as they
-/// are, so the modules the edit as read holds not applied stay so as the photo reopens.
+/// are, so the tools the edit as read holds not applied stay so as the photo reopens.
 fn started_afresh(
     edit: &Edit,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
     clock: Clock,
 ) -> (Log, String) {
-    let defaults = default_tools(modules, operations);
+    let defaults = default_tools(tools, operations);
     let afresh = Log::afresh(edit, &defaults, clock);
     let defaults_alone = (afresh.steps().iter()).all(|step| step.source == StepSource::Default);
     if defaults_alone && afresh.end() == afresh.steps().len() {
@@ -453,9 +453,9 @@ struct Row {
 }
 
 /// The listing of `steps`, `end` of them applied, of the photo `name`, as the History tab
-/// lists them in words, newest first: each step's number, module, what changed and its
+/// lists them in words, newest first: each step's number, tool, what changed and its
 /// time, its source where it is not the person's own, its note; a batch, one change of
-/// several modules, under a line of its own with its range, source and note; the default
+/// several tools, under a line of its own with its range, source and note; the default
 /// steps under theirs; then Original. The end's line is marked `>`, and the steps after it
 /// are counted under them. Times are in UTC.
 pub fn listing(name: &str, steps: &[Arc<HistoryStep>], end: usize) -> String {
@@ -521,10 +521,7 @@ fn rows(steps: &[Arc<HistoryStep>], end: usize) -> Vec<Row> {
         let group = first < last;
         if group {
             let text = if last < defaults {
-                format!(
-                    "defaults: {} every photo runs",
-                    counted(at - first, "module")
-                )
+                format!("defaults: {} every photo runs", counted(at - first, "tool"))
             } else {
                 let mut text = counted(at - first, "step");
                 text.push_str(&tagged(&steps[last]));
@@ -596,32 +593,32 @@ fn undone(steps: &[Arc<HistoryStep>], end: usize) -> String {
     said.join("; ")
 }
 
-/// A step's module and what changed, as the History tab's line says it: Reset for Reset's
-/// step, the module's id, or an operation's for its unowned parameters, or a module this
+/// A step's tool and what changed, as the History tab's line says it: Reset for Reset's
+/// step, the tool's id, or an operation's for its unowned parameters, or a tool this
 /// build does not know by its stored name; then what changed ([`changed`]).
 fn line(step: &HistoryStep) -> String {
     if is_reset(step) {
         return "Reset".to_owned();
     }
-    let Some(module) = step.changes.first() else {
+    let Some(tool) = step.changes.first() else {
         return step.source.name().to_owned();
     };
     match changed(step) {
-        Some(changed) => format!("{} {changed}", module.tool),
-        None => module.tool.to_string(),
+        Some(changed) => format!("{} {changed}", tool.tool),
+        None => tool.tool.to_string(),
     }
 }
 
-/// What a step changed, as the History tab's line says it after the module: one number its
+/// What a step changed, as the History tab's line says it after the tool: one number its
 /// control and which way it went, `shadows ↑`, the arrow alone where the control is the
-/// module's own, as Exposure's exposure; any other control alone; several controls how
-/// many. Nothing for Reset, a default step or a module this build does not know.
+/// tool's own, as Exposure's exposure; any other control alone; several controls how
+/// many. Nothing for Reset, a default step or a tool this build does not know.
 fn changed(step: &HistoryStep) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
-    let module = step.changes.first()?;
-    match module.controls.as_slice() {
+    let tool = step.changes.first()?;
+    match tool.controls.as_slice() {
         [] => None,
         [one] => {
             let arrow = match (&one.before, &one.after) {
@@ -633,7 +630,7 @@ fn changed(step: &HistoryStep) -> Option<String> {
                 }
                 _ => None,
             };
-            let control = Some(one.control).filter(|control| *control != module.tool);
+            let control = Some(one.control).filter(|control| *control != tool.tool);
             match (control, arrow) {
                 (Some(control), Some(arrow)) => Some(format!("{control} {arrow}")),
                 (Some(control), None) => Some(control.to_owned()),

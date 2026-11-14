@@ -901,7 +901,7 @@ fn auto_tile(
 #[cfg(test)]
 mod tests {
     use apertrust_operations::{OPERATIONS, bloom, hazeremoval};
-    use apertrust_tools::testing as modules;
+    use apertrust_tools::testing as tools;
 
     use super::*;
     use crate::edit::{self, Edit};
@@ -917,7 +917,7 @@ mod tests {
     fn a_handed_export_equals_one_rendered_where_it_runs() {
         let gpu = pollster::block_on(GpuContext::new(&GpuOptions::default()))
             .expect("a GPU adapter, hardware or software");
-        let image = modules::image();
+        let image = tools::image();
         let mut instances = edit::instances(&Edit::default(), OPERATIONS, &[], &image)
             .all()
             .unwrap();
@@ -926,7 +926,7 @@ mod tests {
             operation: &bloom::Bloom,
             params: bloom::values(&settings),
         });
-        let input = || GpuImage::upload_mosaic(&gpu, 96, 72, &modules::mosaic()).unwrap();
+        let input = || GpuImage::upload_mosaic(&gpu, 96, 72, &tools::mosaic()).unwrap();
         // The synthetic photo is 84 × 62.
         let half = |finalscale| Resample {
             output: [42, 31],
@@ -1120,7 +1120,7 @@ mod tests {
     /// asks for smaller tiles gets them.
     #[test]
     fn a_job_s_tiles_are_at_most_its_edge_and_the_budget_s() {
-        let image = modules::image();
+        let image = tools::image();
         let instances = edit::instances(&Edit::default(), OPERATIONS, &[], &image)
             .all()
             .unwrap();

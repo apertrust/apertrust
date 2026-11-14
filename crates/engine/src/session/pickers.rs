@@ -15,20 +15,20 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The session's colour pickers (decision 79; `docs/pickers.md`, Through the session):
-//! view state, never in the edit. One active picker, a module's or the Colour picker
-//! module's, and each picker's last point and area, kept in the original image's
+//! view state, never in the edit. One active picker, a tool's or the Colour
+//! picker's, and each picker's last point and area, kept in the original image's
 //! coordinates for the session's life ([`crate::picker::Place`]).
 //!
 //! The active picker is measured on the frame, in a submission of its own after each
 //! frame's copy and the scopes' count, and on the frame shown when its region changes
-//! with no render. A module's picker is measured at its operation in the live viewport
+//! with no render. A tool's picker is measured at its operation in the live viewport
 //! pipe too: right after the operation's last pass in a render's encoder while what it
 //! reads changes, or, where its area moves with no edit, by a sample-only render from the
 //! newest cache point at or before the operation, its operation the edited instance.
 //! Readings come back without the thread waiting, as the scopes' do, and go out as
 //! [`Event::Picker`] when they change what a client shows: after the frame they measured.
 //!
-//! The session applies a module's reading itself, through the module's pure
+//! The session applies a tool's reading itself, through the tool's pure
 //! [`apertrust_tools::Tool::pick`]: the first after the picker turns on and each after
 //! its region moves, never one an edit upstream caused, a drag's readings one gesture. A
 //! failure turns the pickers off for the session, never the frame.
@@ -63,7 +63,7 @@ pub(super) struct Pickers {
     places: BTreeMap<PickerRef, Places>,
     /// The frame's reduction and its readback, made with the first measurement.
     pub(super) reducer: Option<Reducer<Sampled>>,
-    /// The reduction at a module picker's operation, made as the first turns on.
+    /// The reduction at a tool picker's operation, made as the first turns on.
     probe: Option<Reducer<Probed>>,
     /// Why the pickers failed, which turns them off for the session.
     failed: Option<String>,
@@ -73,26 +73,26 @@ pub(super) struct Pickers {
     ready: Vec<Arrived>,
     /// The reading last sent while the active picker is on.
     sent: Option<PickerReading>,
-    /// The active picker's latest module part and frame part.
-    module: Option<ToolReading>,
+    /// The active picker's latest tool part and frame part.
+    tool: Option<ToolReading>,
     frame: Option<FrameReading>,
-    /// The settings each module's pickers read, as the client last sent them.
+    /// The settings each tool's pickers read, as the client last sent them.
     settings: BTreeMap<&'static str, Vec<(&'static str, ControlValue)>>,
-    /// Each module's last reading applied, for the photo, as RGB levels' `last_picked_color`:
+    /// Each tool's last reading applied, for the photo, as RGB levels' `last_picked_color`:
     /// what its pick takes as `last`.
     last: BTreeMap<&'static str, Last>,
-    /// Each module's latest reading measured while its picker was on, applied or not, for
+    /// Each tool's latest reading measured while its picker was on, applied or not, for
     /// the photo: darktable's `picked_color`, which every run of the pipe overwrites and
     /// a setting's change applies again.
     latest: BTreeMap<&'static str, Last>,
-    /// The drag a module picker's moves belong to: `On` begins one, and so does a move
+    /// The drag a tool picker's moves belong to: `On` begins one, and so does a move
     /// after the last one's release. Each drag's picks are one change, saved once.
     drag: u64,
     /// The newest drag released, which completes it and every one before it.
     released: u64,
     /// The drag whose picks wrote changes the writer has yet to be handed.
     gesture: Option<u64>,
-    /// A module picker's commands that complete a change, `On`, `Switch`, `Reset` or a
+    /// A tool picker's commands that complete a change, `On`, `Switch`, `Reset` or a
     /// move's release, with no answer yet, each by its number and its drag, oldest first.
     /// One is answered by the first write handed over once its drag is complete, released
     /// with no reading of it still to come, or then by the edit reported held where it has
@@ -106,16 +106,16 @@ pub(super) struct Pickers {
 struct Active {
     picker: PickerRef,
     area: bool,
-    /// A module's picker's state; `None` for the Colour picker's.
-    module: Option<OnModule>,
+    /// A tool's picker's state; `None` for the Colour picker's.
+    tool: Option<OnTool>,
 }
 
-/// A module's picker on.
+/// A tool's picker on.
 #[derive(Debug, Clone, Copy)]
-struct OnModule {
-    module: &'static str,
+struct OnTool {
+    tool: &'static str,
     picker: &'static Picker,
-    /// The channel tab the module shows.
+    /// The channel tab the tool shows.
     channel: Option<&'static str>,
     /// What its last measurement at the operation read: [`Probing::key`].
     measured: Option<u64>,
@@ -132,7 +132,7 @@ pub(super) struct Due {
     keys: PickKeys,
 }
 
-/// A module's last reading applied, with its picker and the keys held.
+/// A tool's last reading applied, with its picker and the keys held.
 #[derive(Debug, Clone, Copy)]
 struct Last {
     picker: &'static Picker,
@@ -168,7 +168,7 @@ pub(super) struct Sampled {
     region: Region,
 }
 
-/// What the session keeps of a module picker's measurement at its operation until its
+/// What the session keeps of a tool picker's measurement at its operation until its
 /// reading arrives.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Probed {
@@ -183,7 +183,7 @@ pub(super) struct Probed {
 /// and output's, `None` where the region misses what it reads.
 enum Arrived {
     Frame(Sampled, Option<Stats>),
-    Module(Probed, Option<Vec<Stats>>),
+    Tool(Probed, Option<Vec<Stats>>),
     /// No reading at the operation, which lies in the viewport's tiles.
     Unavailable(Probed),
 }
@@ -193,7 +193,7 @@ impl Arrived {
     fn through(&self) -> u64 {
         match self {
             Arrived::Frame(sampled, _) => sampled.through,
-            Arrived::Module(probed, _) | Arrived::Unavailable(probed) => probed.through,
+            Arrived::Tool(probed, _) | Arrived::Unavailable(probed) => probed.through,
         }
     }
 
@@ -201,12 +201,12 @@ impl Arrived {
     fn due(&self) -> Option<Due> {
         match self {
             Arrived::Frame(..) => None,
-            Arrived::Module(probed, _) | Arrived::Unavailable(probed) => probed.due,
+            Arrived::Tool(probed, _) | Arrived::Unavailable(probed) => probed.due,
         }
     }
 }
 
-/// What a module's picker measures at its operation in a plan.
+/// What a tool's picker measures at its operation in a plan.
 pub(super) struct Probing {
     /// The operation, as an index into the plan's operations.
     pub(super) op: usize,
@@ -221,7 +221,7 @@ pub(super) struct Probing {
     tag: Probed,
 }
 
-/// A buffer a module picker reads and its box.
+/// A buffer a tool picker reads and its box.
 struct Target {
     size: [u32; 2],
     /// The mosaic's pattern, for a mosaic.
@@ -281,7 +281,7 @@ impl Pickers {
     pub(super) fn clear(&mut self) {
         self.active = None;
         self.sent = None;
-        self.module = None;
+        self.tool = None;
         self.frame = None;
         self.ready.clear();
         self.gesture = None;
@@ -298,12 +298,12 @@ impl Pickers {
         self.active.is_some()
     }
 
-    /// Whether a module's picker is on, measured at its operation in each render.
+    /// Whether a tool's picker is on, measured at its operation in each render.
     pub(super) fn probing(&self) -> bool {
-        self.active.is_some_and(|active| active.module.is_some())
+        self.active.is_some_and(|active| active.tool.is_some())
     }
 
-    /// The reduction at a module picker's operation, once one has turned on.
+    /// The reduction at a tool picker's operation, once one has turned on.
     pub(super) fn probe_mut(&mut self) -> Option<&mut Reducer<Probed>> {
         self.probe.as_mut()
     }
@@ -323,7 +323,7 @@ impl Pickers {
         // complete is the drag's, kept apart from any reading.
         let held = (self.ready.iter().filter_map(Arrived::due))
             .chain((self.probe.iter()).flat_map(|probe| probe.on_its_way().filter_map(|p| p.due)))
-            .chain(self.module_on().and_then(|on| on.due))
+            .chain(self.tool_on().and_then(|on| on.due))
             .max_by_key(|due| (due.drag, due.command));
         self.ready.clear();
         if let Some(reducer) = &mut self.reducer {
@@ -332,25 +332,17 @@ impl Pickers {
         if let Some(probe) = &mut self.probe {
             probe.discard();
         }
-        if let Some(on) = self
-            .active
-            .as_mut()
-            .and_then(|active| active.module.as_mut())
-        {
+        if let Some(on) = self.active.as_mut().and_then(|active| active.tool.as_mut()) {
             on.measured = None;
             on.due = held;
         }
     }
 
-    /// A module picker's reading that arrived while the History tab's eye hides a module,
+    /// A tool picker's reading that arrived while the History tab's eye hides a tool,
     /// not applied: its application, `due`, waits, the newest of it and any due already
     /// kept, and what it read is measured again (decision 78).
     fn wait(&mut self, due: Option<Due>) {
-        if let Some(on) = self
-            .active
-            .as_mut()
-            .and_then(|active| active.module.as_mut())
-        {
+        if let Some(on) = self.active.as_mut().and_then(|active| active.tool.as_mut()) {
             on.measured = None;
             on.due = on
                 .due
@@ -360,16 +352,16 @@ impl Pickers {
         }
     }
 
-    /// The module's picker on, if one is.
-    fn module_on(&self) -> Option<OnModule> {
-        self.active.and_then(|active| active.module)
+    /// The tool's picker on, if one is.
+    fn tool_on(&self) -> Option<OnTool> {
+        self.active.and_then(|active| active.tool)
     }
 
     /// Whether a reading to apply of `drag` is still to come: due, on its way from the
     /// operation, or yet to be handed over.
     fn of_drag_to_come(&self, drag: u64) -> bool {
         let of = |due: Option<Due>| due.is_some_and(|due| due.drag == drag);
-        of(self.module_on().and_then(|on| on.due))
+        of(self.tool_on().and_then(|on| on.due))
             || self.ready.iter().any(|arrived| of(arrived.due()))
             || (self.probe.iter()).any(|probe| probe.on_its_way().any(|p| of(p.due)))
     }
@@ -415,16 +407,16 @@ impl Pickers {
     fn horizon(&self) -> Option<u64> {
         let frame =
             (self.reducer.iter()).flat_map(|reducer| reducer.on_its_way().map(|s| s.through));
-        let module = (self.probe.iter()).flat_map(|probe| probe.on_its_way().map(|p| p.through));
-        frame.chain(module).min()
+        let tool = (self.probe.iter()).flat_map(|probe| probe.on_its_way().map(|p| p.through));
+        frame.chain(tool).min()
     }
 
-    /// The module's last reading applied and its latest measured, for a test.
+    /// The tool's last reading applied and its latest measured, for a test.
     #[cfg(test)]
-    pub(super) fn readings_of(&self, module: &str) -> (Option<Reading>, Option<Reading>) {
+    pub(super) fn readings_of(&self, tool: &str) -> (Option<Reading>, Option<Reading>) {
         (
-            self.last.get(module).map(|last| last.reading),
-            self.latest.get(module).map(|latest| latest.reading),
+            self.last.get(tool).map(|last| last.reading),
+            self.latest.get(tool).map(|latest| latest.reading),
         )
     }
 
@@ -435,20 +427,20 @@ impl Pickers {
         Some(probed.due.map(|due| (due.command, due.drag)))
     }
 
-    /// The drag the module picker's moves belong to, and the newest released, for a test.
+    /// The drag the tool picker's moves belong to, and the newest released, for a test.
     #[cfg(test)]
     pub(super) fn drags(&self) -> (u64, u64) {
         (self.drag, self.released)
     }
 
-    /// Forgets what the photo gave: each module's last reading, as another photo opens or
+    /// Forgets what the photo gave: each tool's last reading, as another photo opens or
     /// the photo closes.
     pub(super) fn forget_photo(&mut self) {
         self.last.clear();
         self.latest.clear();
     }
 
-    /// The module picker's measurement that `recorded` made, now submitted: what it read
+    /// The tool picker's measurement that `recorded` made, now submitted: what it read
     /// becomes the last measured, and its reading arrives later. A reduction that could
     /// not be recorded is why the pickers fail.
     fn submitted(
@@ -467,22 +459,18 @@ impl Pickers {
         None
     }
 
-    /// What the module picker on reads now is `key`: its due reading is on its way.
+    /// What the tool picker on reads now is `key`: its due reading is on its way.
     fn measured(&mut self, key: u64) {
-        if let Some(on) = self
-            .active
-            .as_mut()
-            .and_then(|active| active.module.as_mut())
-        {
+        if let Some(on) = self.active.as_mut().and_then(|active| active.tool.as_mut()) {
             on.measured = Some(key);
             on.due = None;
         }
     }
 }
 
-/// The measurement the module picker on makes at its operation in `plan`, where what it
+/// The measurement the tool picker on makes at its operation in `plan`, where what it
 /// reads differs from what it read last; `instances` bind the edit, which `plan` plans,
-/// for the photo `image`. `None` with no module picker on, nothing new to read, or its
+/// for the photo `image`. `None` with no tool picker on, nothing new to read, or its
 /// operation not in the plan.
 pub(super) fn probing(
     pickers: &mut Pickers,
@@ -492,7 +480,7 @@ pub(super) fn probing(
     through: u64,
 ) -> Option<Probing> {
     let active = pickers.active?;
-    let on = active.module?;
+    let on = active.tool?;
     let operation = on.picker.operation;
     let op = plan
         .operations
@@ -597,16 +585,13 @@ impl Engine {
                 return Ok(PickerEffect::default());
             }
             PickerCommand::Channel { channel } => {
-                if let Some(on) = (self.pickers.active.as_mut()).and_then(|a| a.module.as_mut()) {
+                if let Some(on) = (self.pickers.active.as_mut()).and_then(|a| a.tool.as_mut()) {
                     on.channel = channel;
                 }
                 return Ok(PickerEffect::default());
             }
-            PickerCommand::Settings {
-                tool: module,
-                settings,
-            } => {
-                return self.picker_settings(module, settings, events);
+            PickerCommand::Settings { tool, settings } => {
+                return self.picker_settings(tool, settings, events);
             }
             PickerCommand::On {
                 picker,
@@ -666,7 +651,7 @@ impl Engine {
             moved: true,
             ..Default::default()
         };
-        if let Some(on) = &mut active.module {
+        if let Some(on) = &mut active.tool {
             let pickers = &mut self.pickers;
             if after != before {
                 // A move after the last drag's release begins the next.
@@ -714,7 +699,7 @@ impl Engine {
             moved: true,
             ..Default::default()
         };
-        let mut module = None;
+        let mut tool = None;
         if let PickerRef::Tool {
             tool: id,
             picker: name,
@@ -724,24 +709,24 @@ impl Engine {
             if let Some(view_only) = &open.view_only {
                 return Err(SessionError::ViewOnly(view_only.clone()));
             }
-            // What it would read is the view's while the eye hides a module, and it writes
+            // What it would read is the view's while the eye hides a tool, and it writes
             // the edit (decision 78).
             if !open.hidden.is_empty() {
                 return Err(SessionError::Hidden);
             }
-            let found = edit::tool(&self.modules, id).map_err(|_| SessionError::UnknownPicker)?;
+            let found = edit::tool(&self.tools, id).map_err(|_| SessionError::UnknownPicker)?;
             let declared = found
                 .definition()
                 .picker(name)
                 .ok_or(SessionError::UnknownPicker)?;
             check_settings(found.definition().pickers, &settings)?;
-            // Its module on, as darktable turns it on with its picker: its operation must
+            // Its tool on, as darktable turns its module on with its picker: its operation must
             // then be in the plan. With the history's end among the default steps it is the
-            // first change, which applies the modules not applied (decision 78).
+            // first change, which applies the tools not applied (decision 78).
             let mut edit = open.edit.clone();
             edit.unapplied.clear();
             edit.turn_on(found);
-            let bound = edit::instances(&edit, self.operations, &self.modules, &open.image);
+            let bound = edit::instances(&edit, self.operations, &self.tools, &open.image);
             let planned = bound
                 .instances
                 .iter()
@@ -766,7 +751,7 @@ impl Engine {
             // while it turns on, the drag under way's or the picker it replaces', answers it.
             let owed = (self.applied, self.pickers.drag + 1);
             self.pickers.owed.push(owed);
-            // A drag under way is saved before the module turns on, never with it.
+            // A drag under way is saved before the tool turns on, never with it.
             if self.pickers.gesture.take().is_some() {
                 self.save_picks();
             }
@@ -790,7 +775,7 @@ impl Engine {
                     open.gesture = None;
                 }
                 // With the end among the default steps it applies them, darktable's first
-                // change: a step of its module, as darktable's picker turning its module on
+                // change: a step of its tool, as darktable's picker turning its module on
                 // is a history item, saved with the log.
                 if applies {
                     if let Some(open) = &mut self.open {
@@ -818,10 +803,10 @@ impl Engine {
                 PickerKind::Area => true,
                 PickerKind::PointArea => area,
             };
-            module = Some((
+            tool = Some((
                 area,
-                OnModule {
-                    module: found.definition().id,
+                OnTool {
+                    tool: found.definition().id,
                     picker: declared,
                     channel,
                     measured: None,
@@ -837,25 +822,21 @@ impl Engine {
         if self.pickers.active.is_some() {
             self.picker_off(events);
         }
-        let (area, module) = match module {
+        let (area, tool) = match tool {
             Some((area, on)) => (area, Some(on)),
             None => (area, None),
         };
         let geometries = self.geometries()?;
         let places = self.pickers.places.entry(picker).or_default();
         places.of_kind(area, &geometries);
-        self.pickers.active = Some(Active {
-            picker,
-            area,
-            module,
-        });
+        self.pickers.active = Some(Active { picker, area, tool });
         Ok(effect)
     }
 
-    /// [`PickerCommand::Settings`]: the settings kept, and the module's latest reading measured
+    /// [`PickerCommand::Settings`]: the settings kept, and the tool's latest reading measured
     /// applied again where the picker that read it reads one of them, as one completed
     /// change, as darktable's settings callbacks apply `picked_color` again
-    /// (`exposure.c:1171-1175`). A pick refused turns the module's picker off where it is
+    /// (`exposure.c:1171-1175`). A pick refused turns the tool's picker off where it is
     /// on, as a reading's refused pick does.
     fn picker_settings(
         &mut self,
@@ -863,9 +844,9 @@ impl Engine {
         settings: Vec<(&'static str, ControlValue)>,
         events: &mut Vec<Event>,
     ) -> Result<PickerEffect, SessionError> {
-        let module = edit::tool(&self.modules, id)?;
-        check_settings(module.definition().pickers, &settings)?;
-        let id = module.definition().id;
+        let tool = edit::tool(&self.tools, id)?;
+        check_settings(tool.definition().pickers, &settings)?;
+        let id = tool.definition().id;
         let changed: BTreeSet<&str> = settings.iter().map(|(setting, _)| *setting).collect();
         self.pickers.settings.insert(id, settings);
         // A completed change, answered whether it applies a pick or not.
@@ -873,7 +854,7 @@ impl Engine {
             answer: true,
             ..PickerEffect::default()
         };
-        // No reading applies while the History tab's eye hides a module (decision 78).
+        // No reading applies while the History tab's eye hides a tool (decision 78).
         if self.hiding() {
             return Ok(unapplied);
         }
@@ -895,8 +876,8 @@ impl Engine {
         };
         let on = |pickers: &Pickers| {
             pickers.active.and_then(|active| {
-                let on = active.module?;
-                (on.module == id && on.picker.id == latest.picker.id).then_some((active.picker, on))
+                let on = active.tool?;
+                (on.tool == id && on.picker.id == latest.picker.id).then_some((active.picker, on))
             })
         };
         // A drag under way is saved before the pick, never with it.
@@ -929,7 +910,7 @@ impl Engine {
         };
         self.pickers.last.insert(id, latest);
         if let Some((picker, _)) = on(&self.pickers)
-            && let Some(part) = &mut self.pickers.module
+            && let Some(part) = &mut self.pickers.tool
         {
             part.picked = Some(shown);
             let region = self.pickers.sent.as_ref().map(|sent| sent.region);
@@ -977,27 +958,27 @@ impl Engine {
         }
     }
 
-    /// Turns the active picker off where it is a module's, which writes the edit, as a
+    /// Turns the active picker off where it is a tool's, which writes the edit, as a
     /// photo turns view-only; the Colour picker's stays on.
-    pub(super) fn module_picker_off(&mut self, events: &mut Vec<Event>) {
+    pub(super) fn tool_picker_off(&mut self, events: &mut Vec<Event>) {
         if self
             .pickers
             .active
-            .is_some_and(|active| active.module.is_some())
+            .is_some_and(|active| active.tool.is_some())
         {
             self.picker_off(events);
         }
     }
 
-    /// Turns a module's picker off as a command on the edit changes its module, as
-    /// darktable's `dt_iop_gui_changed` and `gui_update` do: `module` names the module the
+    /// Turns a tool's picker off as a command on the edit changes its tool, as
+    /// darktable's `dt_iop_gui_changed` and `gui_update` do: `tool` names the tool the
     /// command changed, `None` the whole edit. A picker that is darktable's "keep-active"
     /// stays on.
-    pub(super) fn picker_module_changed(&mut self, module: Option<&str>, events: &mut Vec<Event>) {
-        let Some(on) = self.pickers.active.and_then(|active| active.module) else {
+    pub(super) fn picker_tool_changed(&mut self, tool: Option<&str>, events: &mut Vec<Event>) {
+        let Some(on) = self.pickers.active.and_then(|active| active.tool) else {
             return;
         };
-        if !on.picker.keep && module.is_none_or(|module| module == on.module) {
+        if !on.picker.keep && tool.is_none_or(|tool| tool == on.tool) {
             self.picker_off(events);
         }
     }
@@ -1059,7 +1040,7 @@ impl Engine {
         }
     }
 
-    /// The probe a render records at the module picker's operation for `probing`, with
+    /// The probe a render records at the tool picker's operation for `probing`, with
     /// where its reduction goes once recorded; `None` with nothing to measure.
     pub(super) fn probe<'a>(
         reducer: Option<&'a mut Reducer<Probed>>,
@@ -1078,7 +1059,7 @@ impl Engine {
         })
     }
 
-    /// After a render that may have measured the module picker's operation, `recorded`
+    /// After a render that may have measured the tool picker's operation, `recorded`
     /// what it recorded there: the reading on its way, or, where the region misses the
     /// operation's image, one that needs no GPU. A reduction that could not be recorded
     /// turns the pickers off.
@@ -1096,7 +1077,7 @@ impl Engine {
             let arrived = if probing.unavailable {
                 Arrived::Unavailable(probing.tag)
             } else {
-                Arrived::Module(probing.tag, None)
+                Arrived::Tool(probing.tag, None)
             };
             self.pickers.ready.push(arrived);
             return;
@@ -1106,13 +1087,13 @@ impl Engine {
         }
     }
 
-    /// The module picker's reading at its operation where no render measured it: a
+    /// The tool picker's reading at its operation where no render measured it: a
     /// sample-only render, from the newest cache point at or before the operation, as its
     /// region moved or it turned on with no edit, its operation then the edited instance.
     /// Where it reads what it read last, a reading due is not, and a release completes
     /// the gesture with the values already written.
     pub(super) fn probe_alone(&mut self, events: &mut Vec<Event>) {
-        // Nothing measured while the eye hides a module: its reading would be the view's.
+        // Nothing measured while the eye hides a tool: its reading would be the view's.
         if !self.pickers.probing() || self.hiding() {
             return;
         }
@@ -1124,7 +1105,7 @@ impl Engine {
             // Nothing rendered yet: the first frame measures it.
             return;
         };
-        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
+        let bound = edit::instances(&open.shown(), self.operations, &self.tools, &open.image);
         let probing = probing(
             &mut self.pickers,
             pipeline.plan(),
@@ -1134,7 +1115,7 @@ impl Engine {
         );
         let Some(probing) = probing else {
             // Nothing new to read: no reading is due, and a drag released is complete.
-            if let Some(on) = (self.pickers.active.as_mut()).and_then(|a| a.module.as_mut()) {
+            if let Some(on) = (self.pickers.active.as_mut()).and_then(|a| a.tool.as_mut()) {
                 on.due = None;
             }
             self.settle();
@@ -1184,8 +1165,8 @@ impl Engine {
 
     /// The active picker's readings that have arrived, never waiting, handed over in the
     /// order of the commands they measured, one waiting for any measured before it still
-    /// on its way. Each is sent where it changes the region, the module's part or the
-    /// frame's part the client was sent last; a module's reading due is applied through
+    /// on its way. Each is sent where it changes the region, the tool's part or the
+    /// frame's part the client was sent last; a tool's reading due is applied through
     /// its pick after it is sent, its change's values and frame after it, and a drag
     /// released is saved once no reading of it is still to come.
     pub(super) fn picked(&mut self) -> Vec<Event> {
@@ -1200,7 +1181,7 @@ impl Engine {
             failed = polled.err().map(|e| e.to_string()).or(error);
             self.pickers.ready.extend(
                 (reduced.into_iter())
-                    .map(|reduced| Arrived::Module(reduced.tag, Some(reduced.stats))),
+                    .map(|reduced| Arrived::Tool(reduced.tag, Some(reduced.stats))),
             );
         }
         if failed.is_none() && self.pickers.reducer.as_ref().is_some_and(Reducer::pending) {
@@ -1234,15 +1215,15 @@ impl Engine {
                         self.send(sampled.through, sampled.picker, sampled.region, &mut events);
                     }
                 }
-                Arrived::Module(probed, stats) => {
+                Arrived::Tool(probed, stats) => {
                     if self.on(probed.picker) {
                         self.arrived(probed, stats, &mut events);
                     }
                 }
-                // No reading at the operation, and none applied: the module part goes.
+                // No reading at the operation, and none applied: the tool part goes.
                 Arrived::Unavailable(probed) => {
                     if self.on(probed.picker) {
-                        self.pickers.module = None;
+                        self.pickers.tool = None;
                         self.send(probed.through, probed.picker, probed.region, &mut events);
                     }
                 }
@@ -1286,13 +1267,13 @@ impl Engine {
         }
     }
 
-    /// A module picker's reading at its operation, `stats` its input's and output's:
-    /// sent, then, where due, applied through the module's pick.
+    /// A tool picker's reading at its operation, `stats` its input's and output's:
+    /// sent, then, where due, applied through the tool's pick.
     fn arrived(&mut self, probed: Probed, stats: Option<Vec<Stats>>, events: &mut Vec<Event>) {
-        let Some(on) = self.pickers.active.and_then(|active| active.module) else {
+        let Some(on) = self.pickers.active.and_then(|active| active.tool) else {
             return;
         };
-        // Applied once no module is hidden: until then its application waits, and the
+        // Applied once no tool is hidden: until then its application waits, and the
         // next render once all are shown measures again (decision 78).
         if self.hiding() {
             self.pickers.wait(probed.due);
@@ -1306,25 +1287,25 @@ impl Engine {
         });
         let previous = self
             .pickers
-            .module
+            .tool
             .as_ref()
             .and_then(|part| part.picked.clone());
         // darktable's `picked_color`, which every reading overwrites.
         if let Some(reading) = reading {
             let keys = (probed.due.map(|due| due.keys))
-                .or_else(|| self.pickers.latest.get(on.module).map(|latest| latest.keys))
+                .or_else(|| self.pickers.latest.get(on.tool).map(|latest| latest.keys))
                 .unwrap_or_default();
             let latest = Last {
                 picker: on.picker,
                 reading,
                 keys,
             };
-            self.pickers.latest.insert(on.module, latest);
+            self.pickers.latest.insert(on.tool, latest);
         }
         let mut picked = None;
         if let Some(due) = probed.due {
             let made = match &reading {
-                Some(reading) => self.pick(on.module, on.picker, reading, due),
+                Some(reading) => self.pick(on.tool, on.picker, reading, due),
                 None => Ok(None),
             };
             match made {
@@ -1339,7 +1320,7 @@ impl Engine {
                 }
             }
         }
-        self.pickers.module = Some(ToolReading {
+        self.pickers.tool = Some(ToolReading {
             input: reading.map(|reading| reading.input),
             output: reading.and_then(|reading| reading.output),
             picked: match &picked {
@@ -1361,9 +1342,9 @@ impl Engine {
         events.extend(applied);
     }
 
-    /// The module's pick of `reading` by its picker `picker`, for the reading `due` asked
-    /// for: darktable's `color_picker_apply`, which the module's last reading becomes. A
-    /// pick that panicked is the module's failure; a number it gives that is not finite is
+    /// The tool's pick of `reading` by its picker `picker`, for the reading `due` asked
+    /// for: darktable's `color_picker_apply`, which the tool's last reading becomes. A
+    /// pick that panicked is the tool's failure; a number it gives that is not finite is
     /// left out, the rest of the pick and what it shows kept.
     fn pick(
         &mut self,
@@ -1372,17 +1353,17 @@ impl Engine {
         reading: &Reading,
         due: Due,
     ) -> Result<Option<Picked>, SessionError> {
-        let module = edit::tool(&self.modules, id)?;
+        let tool = edit::tool(&self.tools, id)?;
         let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
-        let values = open.edit.every(module, &open.image);
+        let values = open.edit.every(tool, &open.image);
         let settings = self.pickers.settings.get(id).cloned().unwrap_or_default();
         let channel = (self.pickers.active)
-            .and_then(|active| active.module)
-            .filter(|on| on.module == id)
+            .and_then(|active| active.tool)
+            .filter(|on| on.tool == id)
             .and_then(|on| on.channel);
         let last = self.pickers.last.get(id).map(|last| last.reading);
         let picked = catch_unwind(AssertUnwindSafe(|| {
-            module.pick(
+            tool.pick(
                 picker.id,
                 reading,
                 &values,
@@ -1418,7 +1399,7 @@ impl Engine {
         }))
     }
 
-    /// Writes what the module's picker picked as one change, and says whether the edit
+    /// Writes what the tool's picker picked as one change, and says whether the edit
     /// changed: a change on the edit, so a slider's gesture under way ends, a step of its
     /// own source first, never the pick's.
     fn write_pick(
@@ -1428,8 +1409,8 @@ impl Engine {
         picked: Picked,
     ) -> Result<bool, SessionError> {
         self.end_gesture();
-        let changed = self.change(|edit, modules, _, image| {
-            edit.pick(edit::tool(modules, id)?, picker, &picked.writes, image)
+        let changed = self.change(|edit, tools, _, image| {
+            edit.pick(edit::tool(tools, id)?, picker, &picked.writes, image)
         })?;
         if changed && let Some(open) = &mut self.open {
             open.gesture = None;
@@ -1440,10 +1421,10 @@ impl Engine {
     /// Applies a reading's pick, `made` of `reading` for the reading `due` asked for, as
     /// one change: one of its drag's, saved once the drag is released and no reading of
     /// it is still to come, never with the next drag's; then the values, and the frame.
-    /// Written, `reading` is the module's last applied, as RGB levels' `last_picked_color`.
+    /// Written, `reading` is the tool's last applied, as RGB levels' `last_picked_color`.
     fn apply_pick(
         &mut self,
-        on: OnModule,
+        on: OnTool,
         made: Picked,
         due: Due,
         reading: Reading,
@@ -1455,13 +1436,13 @@ impl Engine {
             self.pickers.gesture = None;
             self.save_picks();
         }
-        let changed = self.write_pick(on.module, on.picker, made)?;
+        let changed = self.write_pick(on.tool, on.picker, made)?;
         let last = Last {
             picker: on.picker,
             reading,
             keys: due.keys,
         };
-        self.pickers.last.insert(on.module, last);
+        self.pickers.last.insert(on.tool, last);
         if changed {
             self.pickers.gesture = Some(due.drag);
         }
@@ -1469,7 +1450,7 @@ impl Engine {
         if let Some(open) = &mut self.open {
             events.push(Event::Values(open.values(
                 self.operations,
-                &self.modules,
+                &self.tools,
                 self.applied,
             )));
         }
@@ -1506,7 +1487,7 @@ impl Engine {
             through,
             picker,
             region,
-            tool: pickers.module.clone(),
+            tool: pickers.tool.clone(),
             frame: pickers.frame,
         };
         let changed = pickers.sent.as_ref().is_none_or(|sent| {
@@ -1556,10 +1537,10 @@ impl Engine {
     }
 
     /// The maps between the open photo's coordinates and its original image's, as its
-    /// edit gives them in the live frame, the modules the eye hides as if reset.
+    /// edit gives them in the live frame, the tools the eye hides as if reset.
     fn geometries(&self) -> Result<Geometries, SessionError> {
         let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
-        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
+        let bound = edit::instances(&open.shown(), self.operations, &self.tools, &open.image);
         Ok(Geometries::of(&bound.instances, &open.image)?)
     }
 }

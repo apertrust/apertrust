@@ -32,7 +32,7 @@
 //! slider shows it: its percentages as percentages, so the binding divides them by 100,
 //! its rotations in degrees, and the pivot in EV against the range, as darktable's slider
 //! shows `curve_pivot_x` with the range's width as its factor and its black as its offset.
-//! The module stores the pivot in EV and writes `curve_pivot_x` from it and the range, so
+//! The tool stores the pivot in EV and writes `curve_pivot_x` from it and the range, so
 //! moving the range keeps the pivot's exposure, as darktable's `_update_pivot_x` does. Its
 //! slider is darktable's for the range (decision 30): it holds black to white relative
 //! exposure, its track the same, and steps by darktable's step for the range's width; a
@@ -261,7 +261,7 @@ static CONTROLS: [Control; 36] = [
         unported: true,
         ..number(SCALING, (-0.5, 2.0), 100.0, 0.5, 0.1, Some(Unit::Percent))
     },
-    // Every pivot any range gives: its range for the module's values is the input range,
+    // Every pivot any range gives: its range for the tool's values is the input range,
     // black to white, as darktable's slider has it (`Agx::range`).
     number(PIVOT, (-20.0, 20.0), 1.0, 0.1, 0.0, Some(Unit::Ev)),
     percent("curve_pivot_y_linear_output", 0.18),
@@ -380,7 +380,7 @@ static PICKERS: [Picker; 4] = [
     picker("pivot_output", &[PIVOT, "curve_pivot_y_linear_output"]),
 ];
 
-/// A denoised area picker of the module's input writing `writes`.
+/// A denoised area picker of the tool's input writing `writes`.
 const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
     Picker {
         id,
@@ -548,7 +548,7 @@ static DEFINITION: Definition = Definition {
     pickers: &PICKERS,
 };
 
-/// Every parameter of `agx`: the module is darktable's and owns them all, each with its
+/// Every parameter of `agx`: the tool is darktable's and owns them all, each with its
 /// control.
 static OWNS: [Owned; 35] = owns();
 
@@ -706,7 +706,7 @@ mod tests {
         assert!(!DEFINITION.layers && !DEFINITION.auto);
     }
 
-    /// The module owns every parameter of `agx`, each with its control of the same name,
+    /// The tool owns every parameter of `agx`, each with its control of the same name,
     /// and each number control's range and default are its parameter's, shown as its
     /// slider shows them, within an f32 step: 29.462451 % over 100 is not always
     /// darktable's 0.29462451 to the bit, and the binding never writes a default. The

@@ -19,11 +19,11 @@
 //! `src/common/guided_filter.c` and `src/common/box_filters.cc`): He, Sun and Tang's
 //! dark channel prior, with the ambient light, the image's depth and the filtered
 //! transmission computed by whole-image passes on the GPU (decision 15). The
-//! first pass's Haze removal module drives it (`docs/tools/README.md`). See
+//! first pass's Haze removal tool drives it (`docs/tools/README.md`). See
 //! `docs/ports/hazeremoval.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
+//! it, and the session plans it only while a tool's binding sets one of its
 //! parameters (decision 28).
 
 mod setup;
@@ -59,7 +59,7 @@ static MANIFEST: Manifest = Manifest {
     // its whole-image passes, which see the whole image; its last pass reads its own
     // pixel and their results.
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "hazeremoval",

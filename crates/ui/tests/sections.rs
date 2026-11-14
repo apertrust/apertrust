@@ -29,9 +29,9 @@ use egui::epaint::TextShape;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
-/// A module section, open or closed, with tabs, and what it last reported.
+/// A tool section, open or closed, with tabs, and what it last reported.
 #[derive(Default)]
-struct Module {
+struct Tool {
     open: bool,
     tab: usize,
     actions: Vec<SectionAction>,
@@ -40,14 +40,14 @@ struct Module {
     peeking: bool,
 }
 
-fn module(open: bool) -> Harness<'static, Module> {
+fn tool(open: bool) -> Harness<'static, Tool> {
     Harness::builder()
         .with_size(egui::vec2(400.0, 260.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
         .build_ui_state(
-            |ui, state: &mut Module| {
+            |ui, state: &mut Tool| {
                 let out = Section::new("White balance", state.open)
-                    .module()
+                    .edits()
                     .tabs(&["Basic", "Advanced"], state.tab)
                     .peek(state.peek_held)
                     .show(ui, |ui| {
@@ -63,7 +63,7 @@ fn module(open: bool) -> Harness<'static, Module> {
                 state.actions.extend(out.actions);
                 state.peeking = out.peeking;
             },
-            Module {
+            Tool {
                 open,
                 ..Default::default()
             },
@@ -72,7 +72,7 @@ fn module(open: bool) -> Harness<'static, Module> {
 
 #[test]
 fn the_header_opens_and_closes_the_section() {
-    let mut harness = module(false);
+    let mut harness = tool(false);
     harness.run();
     assert!(
         harness
@@ -94,7 +94,7 @@ fn the_header_opens_and_closes_the_section() {
 
 #[test]
 fn the_header_buttons_report_in_the_wireframe_s_order() {
-    let mut harness = module(true);
+    let mut harness = tool(true);
     harness.run();
     for name in ["Reset White balance", "White balance presets"] {
         harness.get_by_label(name).click();
@@ -106,16 +106,16 @@ fn the_header_buttons_report_in_the_wireframe_s_order() {
     );
 }
 
-/// A module's section and a utility's, closed, one under the other, presets and options
+/// A tool's section and a utility's, closed, one under the other, presets and options
 /// asked of both, enabled or not, and what they reported.
-fn module_and_utility(enabled: bool) -> Harness<'static, Vec<SectionAction>> {
+fn editing_tool_and_utility(enabled: bool) -> Harness<'static, Vec<SectionAction>> {
     Harness::builder()
         .with_size(egui::vec2(400.0, 120.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
         .build_ui_state(
             move |ui, actions: &mut Vec<SectionAction>| {
                 for section in [
-                    Section::new("Exposure", false).module(),
+                    Section::new("Exposure", false).edits(),
                     Section::new("Scopes", false),
                 ] {
                     let out = section.presets(enabled).options(enabled).show(ui, |_| {});
@@ -126,12 +126,12 @@ fn module_and_utility(enabled: bool) -> Harness<'static, Vec<SectionAction>> {
         )
 }
 
-/// A module's header ends in its options button, drawn disabled even when asked to run,
+/// A tool's header ends in its options button, drawn disabled even when asked to run,
 /// with a tooltip saying why; a utility's runs. Each button is `sizes.section_button` wide,
 /// `spacing.section_button_gap` from the next, and the last ends where both headers' do.
 #[test]
-fn a_module_s_options_are_disabled_and_a_utility_s_run() {
-    let mut harness = module_and_utility(true);
+fn an_editing_tool_s_options_are_disabled_and_a_utility_s_run() {
+    let mut harness = editing_tool_and_utility(true);
     harness.run();
     let t = Theme::default();
     let rect = |name: &str| harness.get_by_label(name).rect();
@@ -148,14 +148,14 @@ fn a_module_s_options_are_disabled_and_a_utility_s_run() {
     );
     assert_eq!(options.right(), rect("Scopes options").right());
 
-    let module = harness.get_by_label("Exposure options");
-    assert!(module.accesskit_node().is_disabled());
+    let tool = harness.get_by_label("Exposure options");
+    assert!(tool.accesskit_node().is_disabled());
     // Screen readers hear why without a hover.
     assert_eq!(
-        module.accesskit_node().description(),
+        tool.accesskit_node().description(),
         Some("No options yet".to_owned())
     );
-    module.hover();
+    tool.hover();
     harness.run();
     harness.get_by_label("No options yet");
     harness.get_by_label("Exposure options").click();
@@ -167,7 +167,7 @@ fn a_module_s_options_are_disabled_and_a_utility_s_run() {
 }
 
 /// A utility given a reset, as History's header has, draws it before its options, the
-/// gap a module's buttons keep, reporting `Reset` while it can run and drawn disabled
+/// gap a tool's buttons keep, reporting `Reset` while it can run and drawn disabled
 /// while it cannot.
 #[test]
 fn a_utility_s_reset_sits_before_its_options() {
@@ -220,7 +220,7 @@ fn the_header_s_ink_ends_where_the_rows_do() {
         .build_ui_state(
             |ui, end: &mut f32| {
                 *end = ui.max_rect().right();
-                Section::new("Exposure", false).module().show(ui, |_| {});
+                Section::new("Exposure", false).edits().show(ui, |_| {});
             },
             0.0,
         );
@@ -236,21 +236,21 @@ fn the_header_s_ink_ends_where_the_rows_do() {
     );
 }
 
-/// A module that is off and renders nothing (decision 32) shows nothing more, but its
+/// A tool that is off and renders nothing (decision 32) shows nothing more, but its
 /// toggle's description starts with "Not applied" for screen readers; one that is on says
 /// nothing of it.
 #[test]
-fn a_module_not_applied_says_so_to_screen_readers_alone() {
+fn a_tool_not_applied_says_so_to_screen_readers_alone() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(400.0, 120.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
         .build_ui(|ui| {
             Section::new("Grain", false)
-                .module()
+                .edits()
                 .not_applied(true)
                 .show(ui, |_| {});
             Section::new("Exposure", false)
-                .module()
+                .edits()
                 .not_applied(false)
                 .show(ui, |_| {});
         });
@@ -275,15 +275,15 @@ fn a_module_not_applied_says_so_to_screen_readers_alone() {
 }
 
 #[test]
-fn a_module_header_has_no_auto_button() {
-    let mut harness = module(true);
+fn a_tool_header_has_no_auto_button() {
+    let mut harness = tool(true);
     harness.run();
     assert!(harness.query_by_label("Auto").is_none());
 }
 
 #[test]
 fn presets_and_options_drawn_disabled_do_not_run() {
-    let mut harness = module_and_utility(false);
+    let mut harness = editing_tool_and_utility(false);
     harness.run();
     for name in ["Exposure presets", "Exposure options", "Scopes options"] {
         let button = harness.get_by_label(name);
@@ -298,7 +298,7 @@ fn presets_and_options_drawn_disabled_do_not_run() {
 
 #[test]
 fn the_tabs_switch() {
-    let mut harness = module(true);
+    let mut harness = tool(true);
     harness.run();
     harness.get_by_role_and_label(Role::Tab, "Advanced").click();
     harness.run();
@@ -314,7 +314,7 @@ fn a_tab_with_nothing_behind_it_is_disabled_and_says_so() {
         .build_ui_state(
             |ui, actions: &mut Vec<SectionAction>| {
                 let out = Section::new("Tone curve", true)
-                    .module()
+                    .edits()
                     .tabs(&["Luma", "RGB", "Advanced"], 0)
                     .disabled_tabs(&[1], "Coming in a later version")
                     .show(ui, |_| {});
@@ -337,7 +337,7 @@ fn a_tab_with_nothing_behind_it_is_disabled_and_says_so() {
     assert_eq!(*harness.state(), vec![SectionAction::Tab(2)]);
 }
 
-/// A module section with `tabs`, at `width` in the side panel's body, and the tab chosen.
+/// A tool section with `tabs`, at `width` in the side panel's body, and the tab chosen.
 fn tabbed(tabs: Vec<String>, width: f32, locale: Locale) -> Harness<'static, usize> {
     Harness::builder()
         .with_size(egui::vec2(width + 40.0, 160.0))
@@ -351,8 +351,8 @@ fn tabbed(tabs: Vec<String>, width: f32, locale: Locale) -> Harness<'static, usi
                 let names: Vec<&str> = tabs.iter().map(String::as_str).collect();
                 ui.allocate_ui(egui::vec2(width, 140.0), |ui| {
                     PanelBody::new().show(ui, |ui| {
-                        let out = Section::new("Module", true)
-                            .module()
+                        let out = Section::new("Tool", true)
+                            .edits()
                             .tabs(&names, *tab)
                             .show(ui, |_| {});
                         for action in out.actions {
@@ -577,7 +577,7 @@ fn the_keys_move_between_tabs_and_choose_one() {
 
 #[test]
 fn the_section_peeks_while_the_peek_keys_are_held_over_it_or_its_header_has_focus() {
-    let mut harness = module(true);
+    let mut harness = tool(true);
     harness.run();
     let header = harness
         .get_by_role_and_label(Role::Button, "White balance")
@@ -1019,7 +1019,7 @@ fn tab_names_that_fit_keep_the_theme_s_size() {
     }
 }
 
-/// The longest Ukrainian module title, Highlight reconstruction's, in a section at the side
+/// The longest Ukrainian tool title, Highlight reconstruction's, in a section at the side
 /// panel's narrowest, 240 points, with every button a header has: cut at its end before
 /// the buttons, and whole in its tooltip and to screen readers.
 #[test]
@@ -1035,7 +1035,7 @@ fn a_long_title_is_cut_before_the_header_s_buttons_at_the_narrowest_side_panel()
         })
         .build_ui(move |ui| {
             ui.allocate_ui(egui::vec2(240.0, 100.0), |ui| {
-                Section::new(&shown, false).module().show(ui, |_| {});
+                Section::new(&shown, false).edits().show(ui, |_| {});
             });
         });
     harness.run();
@@ -1091,16 +1091,16 @@ fn ukrainian_and_polish_names_shrink_no_further_than_they_need() {
     }
 }
 
-/// An open module of one toggle, with the tabs asked for, in a 400-point window.
+/// An open tool of one toggle, with the tabs asked for, in a 400-point window.
 fn rhythm(tabs: &'static [&'static str]) -> Harness<'static> {
     Harness::builder()
         .with_size(egui::vec2(400.0, 200.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
         .build_ui(move |ui| {
-            // A module panel stacks its rows with no item spacing.
+            // A tool panel stacks its rows with no item spacing.
             ui.spacing_mut().item_spacing.y = 0.0;
             Section::new("Exposure", true)
-                .module()
+                .edits()
                 .tabs(tabs, 0)
                 .show(ui, |ui| {
                     apertrust_ui::components::ToggleRow::new("Use camera bias", true).show(ui);
@@ -1108,13 +1108,13 @@ fn rhythm(tabs: &'static [&'static str]) -> Harness<'static> {
         })
 }
 
-/// The module header is 30 points (`sizes.section_header`) and all of it is the click
+/// The tool header is 30 points (`sizes.section_header`) and all of it is the click
 /// target; the buttons are centred in it.
 #[test]
 fn the_header_is_thirty_points_and_clickable_all_over() {
     let t = Theme::default();
     assert_eq!(t.sizes.section_header, 30.0);
-    let mut harness = module(false);
+    let mut harness = tool(false);
     harness.run();
     let toggle = harness
         .get_by_role_and_label(Role::Button, "White balance")
@@ -1139,7 +1139,7 @@ fn the_header_is_thirty_points_and_clickable_all_over() {
 
 /// Without tabs the first row starts 4 points under the header (`spacing.xs`).
 #[test]
-fn a_module_without_tabs_starts_four_points_under_its_header() {
+fn a_tool_without_tabs_starts_four_points_under_its_header() {
     let t = Theme::default();
     let mut harness = rhythm(&[]);
     harness.run();

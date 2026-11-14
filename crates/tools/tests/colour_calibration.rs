@@ -58,7 +58,7 @@ use common::{
 };
 use corpus::each_corpus_raw;
 
-const MODULE: &str = "channelmixerrgb";
+const TOOL: &str = "channelmixerrgb";
 
 /// What every rendering row reads: the frame, colorout's output, from exposure on for a
 /// synthetic image.
@@ -138,7 +138,7 @@ fn followed(set: &[(&str, ControlValue)], image: &ImageContext) -> Edit {
 fn every(edit: &Edit, image: &ImageContext) -> Controls {
     let definition = ColourCalibration.definition();
     let mut values = ColourCalibration.defaults(image);
-    for (control, value) in edit.tool(MODULE).iter().flat_map(|set| set.values()) {
+    for (control, value) in edit.tool(TOOL).iter().flat_map(|set| set.values()) {
         values.set(definition.control(control).unwrap().id, value.clone());
     }
     values
@@ -151,7 +151,7 @@ fn ramp() -> (Picture, ImageContext) {
 
 /// What the operation renders an unedited `image` with, every parameter resolved.
 fn operation_defaults(image: &ImageContext) -> ParamValues {
-    let operation = apertrust_operations::operation(MODULE).unwrap();
+    let operation = apertrust_operations::operation(TOOL).unwrap();
     operation
         .schema()
         .resolve_over(&operation.defaults(image), &ParamValues::new())
@@ -207,7 +207,7 @@ fn untouched(image: &ImageContext) -> Vec<Edit> {
     vec![edit_of(&written), kept]
 }
 
-/// The module's untouched values are the operation's own on `image`: As shot's light and
+/// The tool's untouched values are the operation's own on `image`: As shot's light and
 /// adaptation, the identity mixer, every weight 0, no normalisation, and the version it
 /// leaves alone, darktable's 3.
 fn defaults_are_the_operation_s(image: &ImageContext) {
@@ -227,7 +227,7 @@ fn c0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     bench.edit(&edit_of(&[("red_g", number(0.3))]), Frame);
     for edit in untouched(&bench.image) {
-        let values = edit.tool(MODULE).unwrap();
+        let values = edit.tool(TOOL).unwrap();
         let base = Base::new(OPERATIONS, &bench.image);
         let off = values.off_defaults(&ColourCalibration.defaults(&bench.image));
         assert!(ColourCalibration.bind(&off, &bench.image, &base).is_empty());
@@ -343,7 +343,7 @@ fn reset_following(edit: &mut Edit, control: &str, image: &ImageContext) {
 
 /// Each move as the session makes it, then reset by `ResetTool` (the header's reset)
 /// and by `ResetControl` (a double-click or Delete), on the bench's one pipeline: each
-/// renders as no edit once the module is reset, and, but for the light's moves, once its
+/// renders as no edit once the tool is reset, and, but for the light's moves, once its
 /// controls are. A light's control reset keeps the light it wrote, as darktable's
 /// `gui_changed` does where the illuminant's default is custom: the controls' resets
 /// leave `x` and `y` holding it, kept, and the illuminant at its default, custom.
@@ -359,7 +359,7 @@ fn c1_holds(bench: &mut Bench, moves: Vec<Vec<(&'static str, ControlValue)>>, li
             reset_following(&mut edit, control, &image);
         }
         if light {
-            let kept = edit.tool(MODULE).unwrap();
+            let kept = edit.tool(TOOL).unwrap();
             for control in ["x", "y"] {
                 assert_eq!(
                     kept.get(control),
@@ -381,7 +381,7 @@ fn c1_holds(bench: &mut Bench, moves: Vec<Vec<(&'static str, ControlValue)>>, li
         edit.reset_tool(&ColourCalibration);
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
@@ -454,7 +454,7 @@ fn rendered_light(edit: &Edit, image: &ImageContext) -> [f32; 2] {
     let instances = edit::instances(edit, OPERATIONS, TOOLS, image)
         .all()
         .unwrap();
-    let instance = instances.iter().find(|i| id(i) == MODULE).unwrap();
+    let instance = instances.iter().find(|i| id(i) == TOOL).unwrap();
     let operation = instance.operation;
     let params = operation
         .schema()
@@ -532,7 +532,7 @@ fn c2_two_controls_render_the_same_whichever_came_first() {
     c2_holds(("illuminant", illuminant("f")), ("red_g", number(0.3)));
 }
 
-/// C3: background only: the module never offers itself on a layer (Phase 4 adds
+/// C3: background only: the tool never offers itself on a layer (Phase 4 adds
 /// layers).
 #[test]
 fn c3_it_works_on_the_background_only() {
@@ -542,17 +542,14 @@ fn c3_it_works_on_the_background_only() {
 }
 
 /// C4: darktable's match. Every channelmixerrgb golden case's parameters, the CAT tab's
-/// with the mixer, colourfulness, brightness, grey and normalisations, set as the module's
+/// with the mixer, colourfulness, brightness, grey and normalisations, set as the tool's
 /// controls, bind exactly the parameters darktable rendered the case with, so the cases'
 /// ΔE2000 against darktable (`docs/ports/channelmixerrgb.md`, Results) is the
-/// module's. `version` is the 3 every case holds.
+/// tool's. `version` is the 3 every case holds.
 #[test]
 fn c4_each_golden_case_s_values_bind_darktable_s_parameters() {
     let image = raw_context(8, 8, 0.0);
-    let cases: Vec<_> = CASES
-        .iter()
-        .filter(|case| case.operation == MODULE)
-        .collect();
+    let cases: Vec<_> = CASES.iter().filter(|case| case.operation == TOOL).collect();
     assert_eq!(cases.len(), 11);
     for case in cases {
         let theirs =
@@ -565,7 +562,7 @@ fn c4_each_golden_case_s_values_bind_darktable_s_parameters() {
         let instances = edit::instances(&edit, OPERATIONS, TOOLS, &image)
             .all()
             .unwrap();
-        let instance = instances.iter().find(|i| id(i) == MODULE).unwrap();
+        let instance = instances.iter().find(|i| id(i) == TOOL).unwrap();
         let operation = instance.operation;
         let ours = operation
             .schema()
@@ -719,7 +716,7 @@ fn camera(image: &ImageContext) -> Option<[f32; 2]> {
 }
 
 /// darktable's `_check_if_close_to_daylight` for the temperature alone, held to the
-/// parameter's range as the module holds it.
+/// parameter's range as the tool holds it.
 fn close_to_daylight(x: f32, y: f32) -> f32 {
     let (min, max) = TEMPERATURE_RANGE;
     illuminants::closest_cct_model(x, y).0.clamp(min, max)
@@ -776,7 +773,7 @@ fn gui_changed(p: &mut Light, w: Widget, image: &ImageContext) {
     }
 }
 
-/// C6: each change of the light, through the module's follow writes as the session
+/// C6: each change of the light, through the tool's follow writes as the session
 /// applies them, against darktable's `gui_changed` restated: every illuminant from every
 /// other, from the defaults, an F and an LED source, a temperature on daylight and on
 /// Planckian, hues and chromas through both of darktable's temperatures, the fit and the
@@ -930,7 +927,7 @@ fn c6_follow_writes_are_darktable_s_gui_changed() {
 
     // Every write is kept, as the change's own: choosing daylight keeps x and y.
     let edit = followed(&[("illuminant", illuminant("d"))], &image);
-    let values = edit.tool(MODULE).unwrap();
+    let values = edit.tool(TOOL).unwrap();
     for control in ["illuminant", "x", "y"] {
         assert_eq!(
             values.mark(control),
@@ -954,7 +951,7 @@ fn c6_a_hue_moved_and_reset_leaves_the_edit_untouched() {
         .unwrap();
     edit.follow(&before, &ColourCalibration, set, &image)
         .unwrap();
-    let moved = edit.tool(MODULE).unwrap();
+    let moved = edit.tool(TOOL).unwrap();
     assert!(moved.get("temperature").is_some());
     let before = edit.clone();
     edit.reset_coordinate(&mut held, &ColourCalibration, "hue", &image)
@@ -966,7 +963,7 @@ fn c6_a_hue_moved_and_reset_leaves_the_edit_untouched() {
 
 // C7: the CAT tab's rows.
 
-/// The controls and coordinates the CAT tab shows while the module holds `values`, in the
+/// The controls and coordinates the CAT tab shows while the tool holds `values`, in the
 /// panel's order: rows following a control shown only for the values they follow.
 fn shown(values: &Controls) -> Vec<&'static str> {
     fn walk(rows: &'static [Row], values: &Controls, out: &mut Vec<&'static str>) {
@@ -1073,7 +1070,7 @@ fn c7_the_adaptation_is_unavailable_while_as_shot_in_camera_is_chosen() {
 
 // The corpus, locally.
 
-/// C0 on every corpus raw: the module's untouched values are the operation's own, and
+/// C0 on every corpus raw: the tool's untouched values are the operation's own, and
 /// Colour calibration at its defaults, written or kept, plans the very instances and
 /// cache keys no edit does, so the same frame.
 #[test]

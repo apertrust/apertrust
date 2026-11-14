@@ -16,7 +16,7 @@
 
 //! A section's tabs: plain text over a thin line, each tab as wide as its name with a little
 //! room at each end, one after another from the row's start, the chosen one SemiBold and
-//! underlined (a module's content tabs, a scope's views). When the row is too narrow for
+//! underlined (a tool's content tabs, a scope's views). When the row is too narrow for
 //! them, that room shrinks first, then the names in proportion to their widths, each cut
 //! at its end with an ellipsis, on one line. And the small all-caps label that groups rows
 //! inside a tab.

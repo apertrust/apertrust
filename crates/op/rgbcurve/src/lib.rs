@@ -17,12 +17,12 @@
 
 //! RGB curve, ported from darktable (`src/iop/rgbcurve.c`): linked or independent
 //! channels, every interpolation, every way of preserving colours, middle grey
-//! compensated or not. The Tone curve module's curves (`docs/tools/README.md`). See
+//! compensated or not. The Tone curve tool's curves (`docs/tools/README.md`). See
 //! `docs/ports/rgbcurve.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
-//! parameters, the Tone curve module's (decision 28).
+//! it, and the session plans it only while a tool's binding sets one of its
+//! parameters, the Tone curve tool's (decision 28).
 
 mod setup;
 
@@ -56,7 +56,7 @@ static MANIFEST: Manifest = Manifest {
     layers: true,
     differentiable: true,
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "rgbcurve",

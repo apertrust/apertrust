@@ -18,7 +18,7 @@
 //! Tone equalizer: setup for the `toneequal` kernel, ported from darktable's
 //! `commit_params()`, `modify_roi_in()` and `get_channels_factors()`, with the band fit,
 //! darktable's `pseudo_solve()` in f32, solved in f64 instead, and the mask's passes. The
-//! curve and its fit are `apertrust-color`'s (`tone_equalizer`), which the module's band
+//! curve and its fit are `apertrust-color`'s (`tone_equalizer`), which the tool's band
 //! graph draws too (decision 65). See `docs/ports/toneequal.md`.
 
 use apertrust_color::tone_equalizer::{self, Curve};
@@ -1208,7 +1208,7 @@ mod tests {
 
     #[test]
     fn a_band_change_leaves_the_whole_image_passes_unchanged() {
-        // So a band drag, the module's sliders, is main alone (decision 15).
+        // So a band drag, the tool's sliders, is main alone (decision 15).
         let settings = Settings::defaults();
         let moved = Settings {
             bands: TEST_0131,

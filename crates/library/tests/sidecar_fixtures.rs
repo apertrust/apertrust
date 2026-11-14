@@ -64,7 +64,7 @@ fn the_version_1_fixture_holds_the_engine_s_edit() {
 
 /// The version 2 fixture: one virtual copy with five steps, the end on the fourth, so the
 /// last is greyed; each source, a note in words, a message with its arguments, a batch, a
-/// switched module on and an unowned operation's entry; two machines' clocks.
+/// switched tool on and an unowned operation's entry; two machines' clocks.
 fn history_fixture() -> (PathBuf, String) {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/xmp/version-2-history.apxmp");

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Colour balance RGB's invariants (`docs/tools/colour-balance-rgb.md`, Invariants),
-//! one test per row, each named after its row: a switched module's (decision 32), B0
+//! one test per row, each named after its row: a switched tool's (decision 32), B0
 //! off, B1 the first step, on at darktable's defaults, B2 moved and reset, B3 the order,
 //! B4 the darktable match, B6 on at darktable's defaults on the CPU and B7 version 1's
 //! edits; B5, on a layer, waits for Phase 4. The synthetic ramp and sweep run on CI's
@@ -107,7 +107,7 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults: colour balance rgb planned at the
+    /// The tool on at darktable's defaults: colour balance rgb planned at the
     /// operation's defaults, darktable's new instance (rows B1 and B2).
     fn on_at_defaults(&self) -> Vec<Instance<'static>> {
         self.instances(
@@ -125,7 +125,7 @@ impl Bench {
 
 /// B0 on one pipeline, as the session renders: no edit, then colour balance rgb joining
 /// the plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// module off, every frame as the first.
+/// tool off, every frame as the first.
 fn b0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let joined = bench.on_at_defaults();
@@ -244,7 +244,7 @@ fn b1_on_the_corpus() {
 // B2: each control moved, then reset.
 
 /// Moves on every tab, the formula included, and a write of the contrast at its default,
-/// which turns the module on: each changes the frame, as the first step at least does.
+/// which turns the tool on: each changes the frame, as the first step at least does.
 const MOVES: [&[(&str, f32)]; 6] = [
     &[("contrast", 0.0)],
     &[("contrast", 20.0)],
@@ -261,9 +261,9 @@ const MOVES: [&[(&str, f32)]; 6] = [
 ];
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// colour balance rgb joins with each move and leaves with each module's reset.
+/// colour balance rgb joins with each move and leaves with each tool's reset.
 fn b2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults();
@@ -289,13 +289,13 @@ fn b2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn b2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn b2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = ramp();
     b2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -348,7 +348,7 @@ fn b2_and_b3_on_the_corpus() {
     }
 }
 
-/// B0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// B0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -395,10 +395,10 @@ fn apart(ours: [u8; 4], theirs: [u8; 4]) -> f32 {
 /// 100 is within one step of darktable's parameter, and the setup may round once more.
 const TWO_STEPS: f32 = 2.4e-7;
 
-/// B4: the module's controls set to the values of `colorbalancergb`'s golden cases,
+/// B4: the tool's controls set to the values of `colorbalancergb`'s golden cases,
 /// darktable's tests 0083 (params version 4, JzAzBz) and 0093 (version 5, darktable
 /// UCS), bind to the case's parameters and, through the operation's `prepare`, to the
-/// kernel inputs the golden harness checks against darktable's render. So the module
+/// kernel inputs the golden harness checks against darktable's render. So the tool
 /// renders those values as the cases measure the port: ΔE2000 means of 0.0057 and 0.0018
 /// (`docs/ports/colorbalancergb.md`).
 #[test]
@@ -474,8 +474,8 @@ fn b4_the_golden_cases_values_bind_to_darktable_s_parameters() {
 
 // B6: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind colour balance rgb's own, within one
-/// f32 step for a percentage divided by 100, and the module on at its defaults plans it
+/// The tool's defaults, each made explicit, bind colour balance rgb's own, within one
+/// f32 step for a percentage divided by 100, and the tool on at its defaults plans it
 /// with no parameter set, darktable's new instance; off, it plans none.
 #[test]
 fn b6_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
@@ -486,7 +486,7 @@ fn b6_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound: colour balance rgb planned where a value was off its default, with what the
-/// binding gives those values, and not planned, the module off, where none was.
+/// binding gives those values, and not planned, the tool off, where none was.
 #[test]
 fn b7_version_1_s_edits_bind_what_they_bound() {
     let image = common::photo();

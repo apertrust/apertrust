@@ -36,7 +36,7 @@
 //!   these controls are not either (`Control::unported`): they take only darktable's
 //!   defaults, and their rows never show, as their methods cannot be chosen. Their
 //!   parameters come with their methods (decision 51): the operation's schema holds only
-//!   the method and the threshold, which the module owns.
+//!   the method and the threshold, which the tool owns.
 //!
 //! It drives `highlights`, which every raw runs, so the threshold starts at the
 //! operation's default for the photo (rule 4 of `docs/tools/README.md`, decision 21),
@@ -250,7 +250,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `highlights`, the method and the threshold: the module is
+/// Every parameter of `highlights`, the method and the threshold: the tool is
 /// darktable's and owns them all.
 static OWNS: [Owned; 2] = [Owned::new(HIGHLIGHTS, "mode"), Owned::new(HIGHLIGHTS, CLIP)];
 
@@ -274,7 +274,7 @@ impl Tool for HighlightReconstruction {
     /// Every control changes nothing on an image that is not a colour raw: one that is
     /// not a raw runs no raw stage, and on a monochrome raw darktable shows its "not
     /// applicable" page in place of the controls (`reload_defaults`, `gui_init`). Neither
-    /// depends on the module's values. The controls not ported are unavailable
+    /// depends on the tool's values. The controls not ported are unavailable
     /// everywhere, as the session reports every such control. A raw with no colour filter
     /// array is read as monochrome; a linear raw has none either, so the image context
     /// must tell the two apart before `Tool::options` lists a linear raw's two methods.
@@ -301,7 +301,7 @@ impl Tool for HighlightReconstruction {
 /// (darktable's `reload_defaults`): the lower of 1 and the raw's linear response limit,
 /// where the sensor stops responding linearly, a DNG's LinearResponseLimit, at least 0; 1
 /// for an image that is not a raw or a limit that is not finite. This crate cannot call
-/// the operation's own, so it is restated here; the module's tests check the two agree.
+/// the operation's own, so it is restated here; the tool's tests check the two agree.
 pub fn threshold(image: &ImageContext) -> f32 {
     match &image.camera {
         Some(camera) if camera.linear_response_limit.is_finite() => {
@@ -423,7 +423,7 @@ mod tests {
         assert!(!DEFINITION.layers && !DEFINITION.auto);
     }
 
-    /// The controls `rows` show while the module's controls hold `values`, every control,
+    /// The controls `rows` show while the tool's controls hold `values`, every control,
     /// as darktable's `gui_changed` shows its widgets.
     fn shown(rows: &'static [Row], values: &Controls, out: &mut Vec<&'static str>) {
         for row in rows {
@@ -487,7 +487,7 @@ mod tests {
         );
     }
 
-    /// The module owns every parameter of `highlights`, the method's options are the
+    /// The tool owns every parameter of `highlights`, the method's options are the
     /// operation's choices, and the threshold's range is the schema's.
     #[test]
     fn it_owns_every_parameter_of_the_operation_and_its_ranges_are_the_schema_s() {

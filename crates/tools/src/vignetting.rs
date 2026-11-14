@@ -152,7 +152,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `vignette`: the module is darktable's and owns them all, `unbound`
+/// Every parameter of `vignette`: the tool is darktable's and owns them all, `unbound`
 /// at the operation's default, on, with no control, as darktable shows none.
 static OWNS: [Owned; 11] = [
     Owned::new(VIGNETTE, "scale"),
@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn each_control_off_its_default_binds_its_parameter_as_it_is() {
         // A radius alone sets only itself: vignetting is switched, so the session plans
-        // the operation while the module is on.
+        // the operation while the tool is on.
         let settings = bind(&[("scale", ControlValue::Number(40.0))]);
         assert_eq!(
             settings,

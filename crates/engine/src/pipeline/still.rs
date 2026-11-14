@@ -468,7 +468,7 @@ impl Pipeline {
         self.writes_running(sources, first, keys.len())
     }
 
-    /// [`Self::writes`] for the sample-only render a module's colour picker at operation
+    /// [`Self::writes`] for the sample-only render a tool's colour picker at operation
     /// `op` runs, reading its output too with `output` (decision 79): it writes only what
     /// it runs, from its first operation up to `op`, and `op` itself with `output`.
     pub(crate) fn sample_writes(&self, sources: &Sources, op: usize, output: bool) -> bool {

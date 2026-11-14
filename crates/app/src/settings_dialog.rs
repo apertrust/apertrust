@@ -868,7 +868,7 @@ fn draw_row(
         let said = tr_.text("settings-changed");
         ctx.accesskit_node_builder(response.id, |node| node.set_description(said));
     }
-    // Delete on the label in focus resets it too, as on a module's row.
+    // Delete on the label in focus resets it too, as on a tool's row.
     let delete =
         response.has_focus() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Delete));
     if resets && (response.double_clicked() || delete) {

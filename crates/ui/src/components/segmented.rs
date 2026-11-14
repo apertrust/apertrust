@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! A few options side by side, one of them chosen: Linear | Log, a scope's colour space.
-//! In a bar each option is as wide as the widest; in a module the row is two lines
+//! In a bar each option is as wide as the widest; in a tool the row is two lines
 //! (`docs/gui.md`, How the rows are laid out), the label on a line of its own and the
 //! options sharing the full width under it.
 
@@ -43,7 +43,7 @@ impl<'a> Segmented<'a> {
         }
     }
 
-    /// In a module: the control's short, translated label on a line of its own, and the
+    /// In a tool: the control's short, translated label on a line of its own, and the
     /// options across the full width under it.
     pub fn label(mut self, short: &'a str) -> Self {
         self.label = Some(short);

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! A collapsible group (decision 29): darktable's collapsible section, a row inside a
-//! module that shows or hides the controls under it (`docs/gui.md`, Tool panels from
+//! tool that shows or hides the controls under it (`docs/gui.md`, Tool panels from
 //! definitions).
 //!
 //! - Its row is darktable's form, not a section header's: the title in [`group_label`]'s

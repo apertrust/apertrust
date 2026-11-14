@@ -3479,7 +3479,7 @@ struct Submitted {
     copied: Option<wgpu::Buffer>,
 }
 
-/// A module's colour picker's measurement at its operation in a live render (decision
+/// A tool's colour picker's measurement at its operation in a live render (decision
 /// 79): recorded right after the operation's last pass, given the buffers of its input
 /// and its output, while both are intact ([`Pipeline::render_probing`]).
 pub(crate) struct Probe<'a> {
@@ -4230,7 +4230,7 @@ impl Pipeline {
     }
 
     /// [`Self::render_then`], recording `probe` right after its operation's last pass, while
-    /// that operation's input and output are intact, as a module's colour picker measures
+    /// that operation's input and output are intact, as a tool's colour picker measures
     /// them (decision 79); and whether it was recorded, which it is only where the render
     /// runs the operation's passes.
     pub(crate) fn render_probing(
@@ -4434,7 +4434,7 @@ impl Pipeline {
     }
 
     /// A sample-only render (decision 79; `docs/pickers.md`, When it runs): what a
-    /// module's colour picker reads at operation `op` when its area moves with no edit,
+    /// tool's colour picker reads at operation `op` when its area moves with no edit,
     /// with no frame. Where the edit cache holds `op`'s input and only that is read,
     /// `record` is given the edit cache, with no pass. Otherwise the render runs from the
     /// newest cache point before `op`, or from the edit cache where it holds the input of

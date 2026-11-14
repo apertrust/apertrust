@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Vignetting's invariants (`docs/tools/vignetting.md`, Invariants), one test per row,
-//! each named after its row: a switched module's (decision 32), V0 off, V1 the first
+//! each named after its row: a switched tool's (decision 32), V0 off, V1 the first
 //! step, on at darktable's defaults, V2 moved and reset, V3 the order, V4 the darktable
 //! match, V7 on at darktable's defaults on the CPU and V8 version 1's edits; V5, on a
 //! layer, waits for Phase 4; and V6, the width/height ratio while automatic ratio is on
@@ -90,7 +90,7 @@ fn edit_of(set: &[(&str, ControlValue)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults, brightness and saturation −0.5 among them:
+    /// The tool on at darktable's defaults, brightness and saturation −0.5 among them:
     /// the vignette planned at the operation's defaults, darktable's new instance (rows
     /// V1 and V2).
     fn on_at_defaults(&self) -> Vec<Instance<'static>> {
@@ -121,7 +121,7 @@ const PIPES: [Pipe; 2] = [
 
 /// V0 on one pipeline, as the session renders: no edit, then the vignette joining the
 /// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// module off, every frame as the first.
+/// tool off, every frame as the first.
 fn v0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let joined = bench.on_at_defaults();
@@ -146,7 +146,7 @@ fn v0_off_renders_as_no_edit() {
     }
 }
 
-/// V0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// V0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -174,7 +174,7 @@ fn v0_on_the_corpus() {
 // V1: the first step, on at darktable's defaults, measured and reported without a bound
 // (decision 22).
 
-/// V1 on one pipeline: the module on at darktable's defaults, darktable's new instance
+/// V1 on one pipeline: the tool on at darktable's defaults, darktable's new instance
 /// darkening and desaturating towards the corners, against no edit; its jump.
 fn v1_jump(bench: &mut Bench) -> common::Jump {
     let none = bench.edit(&Edit::default(), Frame);
@@ -219,7 +219,7 @@ fn v1_on_the_corpus() {
 // V2: each control moved, then reset.
 
 /// Moves of every control: a write of the brightness at darktable's −0.5, which turns the
-/// module on; the strengths, the radii, the centre and shape, automatic ratio, and every
+/// tool on; the strengths, the radii, the centre and shape, automatic ratio, and every
 /// control at test 0045's values, the `vignette` golden case's. Each changes the frame.
 fn moves() -> [Vec<(&'static str, ControlValue)>; 7] {
     [
@@ -251,9 +251,9 @@ fn moves() -> [Vec<(&'static str, ControlValue)>; 7] {
 }
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// the vignette joins with each move and leaves with each module's reset.
+/// the vignette joins with each move and leaves with each tool's reset.
 fn v2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults();
@@ -276,13 +276,13 @@ fn v2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn v2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn v2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     v2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -341,8 +341,8 @@ fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
     bytes.as_chunks::<4>().0.to_vec()
 }
 
-/// The golden cases a module's values can reach: all but `vignette-clip`, whose clipping
-/// (`unbound` off) the module fixes on.
+/// The golden cases a tool's values can reach: all but `vignette-clip`, whose clipping
+/// (`unbound` off) the tool fixes on.
 const CASES: [&str; 5] = [
     "vignette",
     "vignette-autoratio",
@@ -356,9 +356,9 @@ const CASES: [&str; 5] = [
 /// chooses for each case.
 const SETTINGS_WORDS: usize = 12;
 
-/// V4: the module's controls set to each golden case's values, darktable's fields as they
+/// V4: the tool's controls set to each golden case's values, darktable's fields as they
 /// are, bind darktable's parameters bit for bit, and, through the operation's `prepare`,
-/// the kernel inputs the golden harness checks against darktable's render. So the module
+/// the kernel inputs the golden harness checks against darktable's render. So the tool
 /// renders those values as the cases measure the port: a ΔE2000 mean of 0.0000, max
 /// 0.0002 (`docs/ports/vignette.md`, Results).
 #[test]
@@ -426,9 +426,9 @@ fn v4_the_golden_cases_values_bind_darktable_s_parameters_bit_for_bit() {
     }
 }
 
-/// The case the module cannot reach: `vignette-clip` clips, which the module never does.
+/// The case the tool cannot reach: `vignette-clip` clips, which the tool never does.
 #[test]
-fn v4_the_clipped_case_is_out_of_the_module_s_reach() {
+fn v4_the_clipped_case_is_out_of_the_tool_s_reach() {
     let case = golden::cases::find("vignette-clip").unwrap();
     let darktable = golden::xmp::module_params(case.xmp, VIGNETTE).unwrap();
     let fields = words(&darktable.bytes);
@@ -478,8 +478,8 @@ fn v6_the_ratio_is_unavailable_and_changes_nothing_while_automatic_ratio_is_on()
 
 // V7: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind the vignette's own, `unbound` on among
-/// them, and the module on at its defaults plans it with no parameter set, darktable's new
+/// The tool's defaults, each made explicit, bind the vignette's own, `unbound` on among
+/// them, and the tool on at its defaults plans it with no parameter set, darktable's new
 /// instance; off, it plans none.
 #[test]
 fn v7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
@@ -491,7 +491,7 @@ fn v7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound, resolved over the schema: the vignette planned where brightness or saturation
 /// was off 0, version 1's untouched value, both bound, the other at 0, and `unbound` on;
-/// not planned, the module off, where neither was.
+/// not planned, the tool off, where neither was.
 #[test]
 fn v8_version_1_s_edits_bind_what_they_bound() {
     let image = common::photo();

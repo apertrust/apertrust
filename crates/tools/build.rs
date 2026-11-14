@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Generates the modules' settings, those the settings schema gives an owner
+//! Generates the tools' settings, those the settings schema gives an owner
 //! `tool:<id>` (`data/settings.schema.toml`), as typed statics in `OUT_DIR/settings.rs`,
 //! which `src/settings.rs` includes as its `registry` (decisions 29 and 43). The generator
 //! embeds the schema, so a change to it reruns this script; one it refuses fails the
-//! build, naming the line. Exposure is the only module with settings so far, its area
-//! exposure mapping's; the next module's settings join them here.
+//! build, naming the line. Exposure is the only tool with settings so far, its area
+//! exposure mapping's; the next tool's settings join them here.
 
 fn main() {
     apertrust_base::settings::codegen::build("tool:exposure");

@@ -37,7 +37,7 @@ struct Graph {
     smoothing: f32,
     /// The bins over −8 to 0 EV, and the mask's 5th and 95th percentiles.
     histogram: Option<(Vec<f32>, [f32; 2])>,
-    /// Where a drag's bands settle after each step, as the module's curve gives them.
+    /// Where a drag's bands settle after each step, as the tool's curve gives them.
     settle: Option<Box<Settle<'static>>>,
     actions: Vec<EqualizerAction>,
 }

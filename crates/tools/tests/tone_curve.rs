@@ -24,7 +24,7 @@
 //! ```
 //!
 //! Synthetic images enter after demosaic, already in the working space. A row that reads
-//! the module's output plans RGB curve alone on the image, so the curve sees the image as
+//! the tool's output plans RGB curve alone on the image, so the curve sees the image as
 //! it is, and compares it with the image; a row that reads the frame runs the pipeline
 //! from exposure on, leaving colorin out, RGB curve before AgX as in darktable (decision
 //! 22), and reads colorout's output before it is rounded to 8 bits.
@@ -67,7 +67,7 @@ fn ramp() -> (Picture, ImageContext) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Measure {
     /// RGB curve's output, planned alone on the image.
-    Module,
+    Tool,
     /// The output, colorout's.
     Frame,
 }
@@ -75,7 +75,7 @@ enum Measure {
 impl common::Measure for Measure {
     fn keep(self, instances: &mut Vec<Instance<'static>>, synthetic: bool) {
         match self {
-            Measure::Module => instances.retain(|i| id(i) == RGB_CURVE),
+            Measure::Tool => instances.retain(|i| id(i) == RGB_CURVE),
             Measure::Frame => {
                 instances.retain(|i| !(synthetic && BEFORE_THE_WORKING_SPACE.contains(&id(i))))
             }
@@ -252,14 +252,14 @@ fn t0_every_curve_straight_renders_as_no_edit() {
 
 #[test]
 fn t1_the_luma_curve_s_first_step_changes_no_pixel_beyond_the_curve_s_precision() {
-    // The module's output against its input: within 1e-5, relative above 1.
+    // The tool's output against its input: within 1e-5, relative above 1.
     for (name, (picture, image)) in [
         ("the ramp", ramp()),
         ("the extended ramp", extended_ramp(0.0)),
         ("the sweep", sweep(0.0)),
     ] {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
-        let first = bench.first_step(Measure::Module);
+        let first = bench.first_step(Measure::Tool);
         let output = bench.render(&first);
         let mut worst = 0.0_f32;
         for (before, after) in picture.pixels.iter().zip(&output.pixels) {
@@ -268,7 +268,7 @@ fn t1_the_luma_curve_s_first_step_changes_no_pixel_beyond_the_curve_s_precision(
                 worst = worst.max(error);
             }
         }
-        println!("T1 on {name}, the module's output: at most {worst:.2e} off its input");
+        println!("T1 on {name}, the tool's output: at most {worst:.2e} off its input");
         assert!(worst <= 1e-5, "T1 on {name}: {worst:e}");
     }
     // The frame against the untouched frame: a max ΔE2000 of 0.01.
@@ -290,7 +290,7 @@ fn t1_the_luma_curve_s_first_step_changes_no_pixel_beyond_the_curve_s_precision(
     }
 }
 
-// T4 to T7 and T17: the Luma curve's points, on the module's output; T4, T5 and T17 for
+// T4 to T7 and T17: the Luma curve's points, on the tool's output; T4, T5 and T17 for
 // each Preserve colours option.
 
 /// Each grey the curve's output: where its input sits on the axis, and where its output
@@ -314,7 +314,7 @@ fn rendered_as_drawn(norm: &str) -> Vec<(&'static str, f32, f32)> {
         let xs: Vec<f32> = nodes.iter().map(|node| node[0]).collect();
         let (picture, image) = ramp_with(&xs);
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
-        let output = bench.curve(points, option(norm), Measure::Module);
+        let output = bench.curve(points, option(norm), Measure::Tool);
         let drawn = LumaCurve::new(points).unwrap();
         let measured = on_the_axis(&picture, &output);
         // Through each node, at the greys whose lightness is each node's input.
@@ -374,7 +374,7 @@ fn t5_luma_points_scale_each_pixel_s_channels_alike_whatever_the_norm() {
     let mut failures = Vec::new();
     for (preserve, norm) in NORMS.iter().enumerate() {
         for (name, points) in CURVES {
-            let output = bench.curve(points, preserve as u32, Measure::Module);
+            let output = bench.curve(points, preserve as u32, Measure::Tool);
             let mut worst = (0.0_f64, 0);
             for (i, (before, after)) in picture.pixels.iter().zip(&output.pixels).enumerate() {
                 if luminance(*before) <= 1e-6 {
@@ -457,7 +457,7 @@ fn t17_the_curve_acts_on_the_measure_each_option_names() {
         for (preserve, option) in NORMS.iter().enumerate() {
             let norm = norm_of(preserve as u32);
             for (name, points) in CURVES {
-                let output = bench.curve(points, preserve as u32, Measure::Module);
+                let output = bench.curve(points, preserve as u32, Measure::Tool);
                 let curve = LumaCurve::new(points).unwrap();
                 let mut worst = (0.0_f64, 0);
                 for (i, (before, after)) in picture.pixels.iter().zip(&output.pixels).enumerate() {
@@ -508,7 +508,7 @@ fn t6_rising_points_keep_tones_in_order_with_nothing_overshooting() {
     let (picture, image) = ramp();
     let mut bench = Bench::picture(&picture, image, Pipe::Export);
     for (name, points) in rising() {
-        let output = bench.curve(points, LUMINANCE, Measure::Module);
+        let output = bench.curve(points, LUMINANCE, Measure::Tool);
         // The ramp's greys rise, so their outputs must not fall.
         for (i, pair) in output.pixels.windows(2).enumerate() {
             assert!(
@@ -553,7 +553,7 @@ fn points_added_on_curves() -> Vec<(&'static str, f32, f32)> {
     let mut bench = Bench::picture(&picture, image, Pipe::Export);
     let mut moves = Vec::new();
     for (name, points) in CURVES {
-        let before = bench.curve(points, LUMINANCE, Measure::Module);
+        let before = bench.curve(points, LUMINANCE, Measure::Tool);
         let drawn = LumaCurve::new(points).unwrap();
         for x in [0.1_f32, 0.5, 0.9] {
             if nodes(points).iter().any(|p| (p[0] - x).abs() < MIN_GAP) {
@@ -561,7 +561,7 @@ fn points_added_on_curves() -> Vec<(&'static str, f32, f32)> {
             }
             let mut added = points.to_vec();
             added.insert(added.partition_point(|p| p[0] < x), [x, drawn.at(x)]);
-            let after = bench.curve(&added, LUMINANCE, Measure::Module);
+            let after = bench.curve(&added, LUMINANCE, Measure::Tool);
             let moved = before
                 .pixels
                 .iter()
@@ -622,7 +622,7 @@ fn t8_removing_a_point_and_putting_it_back_renders_as_before() {
     .unwrap();
     assert!(exact(&none, &bench.edit(&edit, Measure::Frame)), "removed");
     // Putting it back, as undo will, renders as before; so do resetting the control and
-    // the module, the curve's Shift+Delete and the header's reset.
+    // the tool, the curve's Shift+Delete and the header's reset.
     edit.set_control(
         &ToneCurve,
         LUMA,
@@ -639,7 +639,7 @@ fn t8_removing_a_point_and_putting_it_back_renders_as_before() {
     assert_eq!(edit, Edit::default());
     assert!(
         exact(&none, &bench.edit(&edit, Measure::Frame)),
-        "module reset"
+        "tool reset"
     );
 }
 
@@ -741,7 +741,7 @@ fn t16_extreme_curves_render_finite() {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
         for points in extremes {
             for preserve in 0..NORMS.len() as u32 {
-                for measure in [Measure::Module, Measure::Frame] {
+                for measure in [Measure::Tool, Measure::Frame] {
                     let output = bench.curve(points, preserve, measure);
                     let at = output
                         .pixels

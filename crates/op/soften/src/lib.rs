@@ -19,10 +19,10 @@
 //! pixel's HSL saturation and lightness are scaled and clipped, the result blurred over
 //! the whole image by darktable's box mean (`src/common/box_filters.cc`, shared in the
 //! colour library) in whole-image passes, and mixed into the input by a per-pixel
-//! `main`. The Soften module (`docs/tools/README.md`). See `docs/ports/soften.md`.
+//! `main`. The Soften tool (`docs/tools/README.md`). See `docs/ports/soften.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
+//! it, and the session plans it only while a tool's binding sets one of its
 //! parameters (decision 28).
 
 pub mod hsl;
@@ -59,7 +59,7 @@ static MANIFEST: Manifest = Manifest {
     // The whole-image passes see the whole image and `main` reads only its own pixel
     // and their scratch, so a tile needs no border.
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "soften",

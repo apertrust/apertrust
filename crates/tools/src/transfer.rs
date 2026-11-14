@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Transfer functions (decision 28): how a control's value becomes an operation
-//! parameter's, each with its derivative, which the optimiser needs to fit module values
+//! parameter's, each with its derivative, which the optimiser needs to fit tool values
 //! through the kernels' gradients (principle 7). Each is a named pure function, tested:
 //! monotone where its control's promise says so, and its derivative against finite
 //! differences ([`check`]). That nothing is set at the default and that the ends stay

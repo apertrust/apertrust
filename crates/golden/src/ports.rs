@@ -1243,7 +1243,7 @@ fn color_balance_inputs(settings: &Settings) -> Result<KernelInputs> {
 /// `illuminant`, `illum_fluo`, `illum_led` and `adaptation` (enums), `x`, `y`,
 /// `temperature` and `gamut` (f32), `clip` (gboolean) and `version` (enum). Versions 1
 /// and 2 would need `legacy_params`' migration, which no case needs (the spec's
-/// Parameter versions). Public for the Colour calibration module's darktable match
+/// Parameter versions). Public for the Colour calibration tool's darktable match
 /// (`crates/tools/tests/colour_calibration.rs`).
 pub fn channelmixerrgb_settings(xmp: &str) -> Result<channelmixerrgb::Settings> {
     use apertrust_color::{Adaptation, Illuminant};

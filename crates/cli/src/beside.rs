@@ -64,7 +64,7 @@ struct Client {
     session: Session,
     wakes: mpsc::Receiver<()>,
     frames: Vec<Sample>,
-    /// The Exposure module's Exposure as the session last reported it.
+    /// The Exposure tool's Exposure as the session last reported it.
     exposure: Option<f32>,
     /// The export job started by the command of this number, once added, and whether it
     /// has ended.
@@ -88,8 +88,8 @@ impl Client {
                     let control = values
                         .tools
                         .iter()
-                        .filter(|module| module.tool == EXPOSURE.0)
-                        .flat_map(|module| &module.controls)
+                        .filter(|tool| tool.tool == EXPOSURE.0)
+                        .flat_map(|tool| &tool.controls)
                         .find(|control| control.control == EXPOSURE.1);
                     if let Some(ControlValue::Number(ev)) = control.map(|c| &c.value) {
                         self.exposure = Some(*ev);
@@ -139,7 +139,7 @@ impl Client {
         Ok(())
     }
 
-    /// One change of the Exposure module's Exposure, as a drag sends it.
+    /// One change of the Exposure tool's Exposure, as a drag sends it.
     fn change(&self, ev: f32) -> u64 {
         self.session.send(Command::SetControl {
             tool: EXPOSURE.0.to_owned(),
