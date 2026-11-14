@@ -136,7 +136,7 @@ Decision 77 ([engine.md](engine.md#opening-a-photo)). A photo opens in three sta
 
 | Stage | Events | What a client shows |
 | --- | --- | --- |
-| 1. The picture | `OpenPreview { open, picture, source }`, a fact, from the open's job | The picture fitted, unmarked; no scopes, clipping overlays, values under the cursor, zoom past fit or on-photo tools |
+| 1. The picture | `OpenPreview { open, picture, source }`, a fact, from the open's job | The picture fitted, unmarked; no scopes, clipping overlays, values under the cursor, zoom past fit or on-photo controls |
 | 2. The values | `Opened(Photo)`, then `Values { live: false }`, from the engine thread | The photo's values, read-only |
 | 3. Live | `Values { live: true }`, then the `Frame` or the render's failure, in one batch | The live frame in one swap, the values enabled, then the scopes |
 
@@ -198,7 +198,7 @@ An event says what changed and why, as darktable's `COLLECTION_CHANGED` passes i
 `Failed(SessionError)` carries errors in plain words, which the app shows and the CLI logs. Those that answer a command are wrapped with its number:
 
 - `Open { open, error }`: an `Open` that failed; the photo before it is closed, its edit saved, and none is open. It comes after the open's `Opened` when the decode or the upload fails (decision 77).
-- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, `NotLive`, a command on the edit or a picker's `On` from an `Open` until the photo is live (decision 77), a picker no module declares, `UnknownPicker`, a tool setting no picker of the module reads, `UnknownTool`, a picker's move with none on, `NoPicker`, `On` after the pickers failed, `Pickers`, or a pick its module got wrong, `Edit(PickFailed)`, naming the command that asked for the reading (decision 79), or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76).
+- `Refused { command, error }`: a refused command, `error` being `Edit`, `ViewOnly`, `NotCancellable`, `NotRetryable`, `NotLive`, a command on the edit or a picker's `On` from an `Open` until the photo is live (decision 77), a picker no module declares, `UnknownPicker`, a setting no picker of the module reads, `UnknownSetting`, a picker's move with none on, `NoPicker`, `On` after the pickers failed, `Pickers`, or a pick its module got wrong, `Edit(PickFailed)`, naming the command that asked for the reading (decision 79), or a cache's Clear refused, `CacheKept`, `CacheClearing` or `NoCache` (decision 76).
 - `CacheWalk { command, source }`: the walk for a `CacheCommand::Sizes` failed, its folder or a kind's not listed, one for each `Sizes` that walk's pass answers.
 
 The others stand alone:

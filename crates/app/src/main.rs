@@ -1763,8 +1763,8 @@ struct Shell {
     export_again: bool,
     /// The Export dialog's settings, as it left them (`export.*`).
     export: export::Values,
-    /// The modules' tool settings, as their rows and picks left them (`tools.*`).
-    tools: settings::Tools,
+    /// The modules' settings, as their rows and picks left them (`tools.*`).
+    tool_settings: settings::ToolSettings,
     /// Whether Export and Export Again ask before replacing files
     /// (`export.ask_before_overwrite`).
     overwrite: alerts::Question,
@@ -1878,7 +1878,7 @@ impl Shell {
             export_asked: false,
             export_again: false,
             export: settings.export.clone(),
-            tools: settings.tools.clone(),
+            tool_settings: settings.tool_settings.clone(),
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
             discard: alerts::Question::discard(settings.ask_before_discard, false),
             discard_history: false,
@@ -1936,7 +1936,7 @@ impl Shell {
             grid: self.grid,
             keys: self.keymap.overrides().clone(),
             export: self.export.clone(),
-            tools: self.tools.clone(),
+            tool_settings: self.tool_settings.clone(),
             ask_before_overwrite: self.overwrite.asks(),
             ask_before_discard: self.discard.asks(),
         }
@@ -3454,9 +3454,9 @@ impl App {
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Measure mode's target, kept as the user's own.
-                    Reaction::Measured { module, tools } => {
-                        for (setting, value) in tools {
-                            self.shell.tools.set(module, setting, value);
+                    Reaction::Measured { module, settings } => {
+                        for (setting, value) in settings {
+                            self.shell.tool_settings.set(module, setting, value);
                         }
                     }
                     Reaction::FolderFailed { path, reason } => {
@@ -3600,24 +3600,24 @@ impl App {
                 action,
                 keys,
             } => {
-                let tools = self.shell.tools.of(module);
+                let settings = self.shell.tool_settings.of(module);
                 let picker = PickerRef::Module { module, picker };
-                let command = pickers::pressed(picker, action, keys, tools);
+                let command = pickers::pressed(picker, action, keys, settings);
                 self.send_picker(command, ctx);
             }
             // Kept as the user moves it; the session takes them as the gesture ends, and
             // applies the module's latest reading again by them, as darktable's settings
             // callback does (`exposure.c:1170-1175`).
-            Change::Tool {
+            Change::Setting {
                 module,
                 setting,
                 value,
                 done,
             } => {
-                self.shell.tools.set(module, setting, value);
+                self.shell.tool_settings.set(module, setting, value);
                 if done {
-                    let tools = self.shell.tools.of(module);
-                    self.send_picker(PickerCommand::Tools { module, tools }, ctx);
+                    let settings = self.shell.tool_settings.of(module);
+                    self.send_picker(PickerCommand::Settings { module, settings }, ctx);
                 }
             }
         }
@@ -5985,7 +5985,7 @@ fn edit_tab(
         on: mirror.pickers.active(),
         enabled: shown.editable(),
         why: opening.as_deref().or(view_only.as_deref()),
-        tools: &shell.tools,
+        settings: &shell.tool_settings,
         picked: &mirror.picked,
     };
     let (scopes, changes) = panel_body(

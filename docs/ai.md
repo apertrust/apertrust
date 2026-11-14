@@ -63,7 +63,7 @@ Zero-copy means both devices use the same GPU memory allocation. On Vulkan, exte
 
 ## Agents
 
-**MCP** through `rmcp` is a thin adapter over the session protocol (decision 58). Its tools cover listing images, reading modules and their controls, setting module values, histograms and rendering previews; MCP tools can return images, so agents can see their edits.
+**MCP** through `rmcp` is a thin adapter over the session protocol (decision 58). Its MCP tools cover listing images, reading modules and their controls, setting module values, histograms and rendering previews; MCP tools can return images, so agents can see their edits.
 
 **Assistants are a core capability, not the headline** (decision 1, principle 8). Scripts and AI assistants work through the same modules, layers, history and undo as a person, and nothing they can do is hidden from the editor. What they change appears in the history as ordinary module values with a short note on what they did, and one undo reverts it. They check their results by measurement, such as histograms or the distance to a target, before showing them, and they connect only when the user allows it.
 

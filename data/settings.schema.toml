@@ -11,7 +11,7 @@
 # A setting's fields:
 # - owner: "app", read by the desktop app alone; "engine", by every process that runs the
 #   engine; "export", the Export dialog's last settings, which the app keeps and the CLI's
-#   export reads (decision 56); "module:<id>", a module's tool setting.
+#   export reads (decision 56); "module:<id>", a module's setting.
 # - kind, with its own fields:
 #   "boolean";
 #   "number": min, max, step and decimals (how many it is kept and shown with), or in
@@ -758,8 +758,8 @@ applies = "at-once"
 
 # Exposure's area exposure mapping (docs/modules/exposure.md; decision 29), the settings
 # its picker reads, kept here as darktable keeps them in its darktablerc, never in an
-# edit. The app sends them with the picker's On and Tools commands (docs/pickers.md, Tool
-# settings).
+# edit. The app sends them with the picker's On and Settings commands (docs/pickers.md,
+# A module's settings).
 
 # Area mode: correction sets Exposure so the area maps to the target lightness, measure
 # sets the target lightness the area gives at the current exposure. darktable's

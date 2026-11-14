@@ -29,7 +29,7 @@
 //!   EC readout waits for a row that draws a readout.
 //! - **Black level correction,** darktable's offset over the photo's own black.
 //! - **Area exposure mapping,** a collapsible group of darktable's settings for its
-//!   picker, which no edit stores, kept in settings ([`crate::tools`]), and the area's
+//!   picker, which no edit stores, kept in settings ([`crate::settings`]), and the area's
 //!   input and target patches with the input's L readout.
 //! - **Its picker,** on Exposure's quad: darktable's `_auto_set_exposure`, which sets the
 //!   exposure that maps the area to the target lightness, or measures the target the area
@@ -50,8 +50,8 @@ use apertrust_color::{
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, Slider, Space,
-    Tab, ToolSetting, Unit,
+    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, SettingRow,
+    Slider, Space, Tab, Unit,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown};
 use crate::transfer::Transfer;
@@ -156,7 +156,7 @@ static CONTROLS: [Control; 7] = [
 const MAPPING: Row = Row::Group {
     id: "area_exposure_mapping",
     rows: &[
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "area_mode",
             kind: ControlKind::Choice {
                 options: &AREA_MODES,
@@ -169,7 +169,7 @@ const MAPPING: Row = Row::Group {
             picker: "exposure",
             target: &["lightness"],
         },
-        Row::ToolSetting(ToolSetting {
+        Row::Setting(SettingRow {
             id: "lightness",
             kind: ControlKind::Number {
                 min: 0.0,
@@ -185,7 +185,7 @@ const MAPPING: Row = Row::Group {
 /// darktable's area modes, `dt_spot_mode_t`'s two that Exposure lists, in its order.
 const AREA_MODES: [&str; 2] = ["correction", "measure"];
 
-/// The area exposure mapping's mode, the tool setting `tools.exposure.area_mode`:
+/// The area exposure mapping's mode, the setting `tools.exposure.area_mode`:
 /// darktable's `dt_spot_mode_t`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AreaMode {
@@ -266,7 +266,7 @@ const PICKER: Picker = Picker {
     space: Space::Operation,
     keep: false,
     writes: &["exposure", "black_level"],
-    tools: &["area_mode", "lightness"],
+    settings: &["area_mode", "lightness"],
 };
 
 /// Every parameter of `exposure`: the module is darktable's and owns them all.
@@ -389,7 +389,7 @@ impl Module for Exposure {
     ///   not finite, showing the patch still.
     /// - **Measure:** no control; the target lightness the area renders at at the current
     ///   exposure, held to the setting's 0 to 100 as darktable's slider holds it, which the
-    ///   client keeps (`Shown::tools`).
+    ///   client keeps (`Shown::settings`).
     ///
     /// Highlight preservation mode, not ported, is never on, so its bias is never added.
     /// Nothing on a colour raw with no matrix, which colorin cannot render, as darktable
@@ -400,7 +400,7 @@ impl Module for Exposure {
         reading: &Reading,
         values: &Controls,
         image: &ImageContext,
-        tools: &[(&str, ControlValue)],
+        settings: &[(&str, ControlValue)],
         _channel: Option<&str>,
         _last: Option<&Reading>,
         _keys: PickKeys,
@@ -418,10 +418,10 @@ impl Module for Exposure {
                 srgb: apertrust_color::xyz_d50_to_srgb(grey).map(|c| c.clamp(0.0, 1.0)),
                 lch: [lightness, 0.0, 0.0],
             }),
-            tools: Vec::new(),
+            settings: Vec::new(),
         };
-        let tool = |id: &str| tools.iter().find(|(tool, _)| *tool == id).map(|(_, v)| v);
-        let mode = match tool("area_mode") {
+        let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
+        let mode = match setting("area_mode") {
             Some(&ControlValue::Choice(1)) => AreaMode::Measure,
             _ => AreaMode::Correction,
         };
@@ -438,10 +438,10 @@ impl Module for Exposure {
                 let white = exposure_to_white(-(exposure - bias));
                 let out = xyz_to_lab_d50(grey.map(|c| c * white))[0];
                 let out = ControlValue::Number(out.clamp(0.0, 100.0));
-                shown.tools.push(("lightness", out));
+                shown.settings.push(("lightness", out));
             }
             AreaMode::Correction => {
-                let target = match tool("lightness") {
+                let target = match setting("lightness") {
                     Some(&ControlValue::Number(target)) => target,
                     _ => 50.0,
                 };
@@ -704,7 +704,7 @@ mod tests {
         let settings: Vec<&str> = DEFINITION
             .rows()
             .filter_map(|row| match row {
-                Row::ToolSetting(setting) => Some(setting.id),
+                Row::Setting(setting) => Some(setting.id),
                 _ => None,
             })
             .collect();
@@ -832,7 +832,7 @@ mod tests {
             denoise: false,
             output: false,
             writes: &["exposure", "black_level"],
-            tools: &["area_mode", "lightness"],
+            settings: &["area_mode", "lightness"],
         }];
         assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
     }
@@ -1000,7 +1000,7 @@ mod tests {
         image: &ImageContext,
         rgb: [f32; 3],
         values: &Controls,
-        tools: &[(&str, ControlValue)],
+        settings: &[(&str, ControlValue)],
     ) -> Picked {
         Exposure
             .pick(
@@ -1008,7 +1008,7 @@ mod tests {
                 &reading(rgb),
                 values,
                 image,
-                tools,
+                settings,
                 None,
                 None,
                 PickKeys::default(),
@@ -1201,8 +1201,8 @@ mod tests {
             assert!(picked.writes.is_empty());
             let y = luminance(&image, rgb) * (f64::from(exposure) - bias).exp2();
             let expected = 116.0 * y.cbrt() - 16.0;
-            let [("lightness", ControlValue::Number(lightness))] = picked.shown.tools[..] else {
-                panic!("{:?}", picked.shown.tools)
+            let [("lightness", ControlValue::Number(lightness))] = picked.shown.settings[..] else {
+                panic!("{:?}", picked.shown.settings)
             };
             assert!(
                 (f64::from(lightness) - expected).abs() < 1e-3,
@@ -1221,7 +1221,7 @@ mod tests {
             &measure,
         );
         assert_eq!(
-            bright.shown.tools,
+            bright.shown.settings,
             [("lightness", ControlValue::Number(100.0))]
         );
     }

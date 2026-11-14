@@ -24,7 +24,7 @@ use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Coordinate, Definition, Picker, PickerKind, PresetRow, Quad,
-    Range, Row, Slider, Space, Tab, ToolSetting, Unit, View, slider_step,
+    Range, Row, SettingRow, Slider, Space, Tab, Unit, View, slider_step,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
@@ -237,7 +237,7 @@ static DEFINITION: Definition = Definition {
             space: Space::Operation,
             keep: false,
             writes: &["brightness"],
-            tools: &[],
+            settings: &[],
         },
         Picker {
             id: "spread",
@@ -248,7 +248,7 @@ static DEFINITION: Definition = Definition {
             space: Space::Operation,
             keep: false,
             writes: &["grain", "size"],
-            tools: &[],
+            settings: &[],
         },
         Picker {
             id: "show",
@@ -259,7 +259,7 @@ static DEFINITION: Definition = Definition {
             space: Space::Operation,
             keep: true,
             writes: &[],
-            tools: &[],
+            settings: &[],
         },
     ],
 };
@@ -460,7 +460,7 @@ fn patch(stats: &Stats) -> Shown {
             srgb: [r, g, b],
             lch: [100.0 * grey(stats), 0.0, 0.0],
         }),
-        tools: Vec::new(),
+        settings: Vec::new(),
     }
 }
 
@@ -880,7 +880,7 @@ pub struct DarktablePicker {
     /// What its `color_picker_apply` writes.
     pub writes: &'static [&'static str],
     /// The darktablerc settings it reads.
-    pub tools: &'static [&'static str],
+    pub settings: &'static [&'static str],
 }
 
 /// Every picker of `definition` as a [`DarktablePicker`], in the definition's order, with
@@ -906,18 +906,18 @@ pub fn pickers_on_sliders(definition: &Definition) -> Vec<DarktablePicker> {
             denoise: picker.denoise,
             output: picker.output,
             writes: picker.writes,
-            tools: picker.tools,
+            settings: picker.settings,
         })
         .collect()
 }
 
-/// darktable's slider for one control or tool setting, as its params and `gui_init`
+/// darktable's slider for one control or setting, as its params and `gui_init`
 /// leave it, in the parameter's own units: a row of a module's slider table
 /// (`docs/modules/README.md`, Sliders against darktable), which [`slider_differences`]
 /// holds the module's definition to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DarktableSlider {
-    /// The control's id, or the tool setting's.
+    /// The control's id, or the setting's.
     pub id: &'static str,
     /// Its hard range: the params' `$MIN` and `$MAX`, or what
     /// `dt_bauhaus_slider_new_with_range` gives.
@@ -1004,7 +1004,7 @@ impl DarktableSlider {
 }
 
 /// How a module's sliders differ from darktable's while its controls hold `values`, a
-/// line each: every slider row and every number tool setting against its row of
+/// line each: every slider row and every number setting against its row of
 /// `darktable`, by id, in the units shown: the range a value may hold, what the track
 /// spans at rest, the decimals and the key step; then each of darktable's sliders that no
 /// row shows. A control's range, track and step are the module's for `values`
@@ -1051,7 +1051,7 @@ pub fn slider_differences(
                     (id, range, step, slider.decimals, slider.soft)
                 }
             }
-            Row::ToolSetting(ToolSetting {
+            Row::Setting(SettingRow {
                 id,
                 kind: ControlKind::Number { min, max, step, .. },
                 decimals,

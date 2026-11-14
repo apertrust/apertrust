@@ -1397,7 +1397,7 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .name("Use the camera's exposure bias, no bias recorded")
         .enabled(false)
         .show(ui);
-    // An action row, live, and disabled as an action is until its tool comes.
+    // An action row, live, and disabled as an action is until what it runs is built.
     if ActionRow::new("Set from above")
         .name("Set the primaries after tone mapping from above")
         .promise("Set parameters to completely reverse primaries modifications.")

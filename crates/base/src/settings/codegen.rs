@@ -851,19 +851,19 @@ mod tests {
     fn the_schema_is_read_and_its_ids_are_unique() {
         let schema = parse(SCHEMA, SCHEMA_PATH).unwrap_or_else(|errors| panic!("{errors:?}"));
         let owned = |owner: &str| schema.settings.iter().filter(|s| s.owner == owner).count();
-        // Exposure's area exposure mapping is the one module's tool with settings.
-        let tools = "module:exposure";
+        // Exposure is the one module with settings, its area exposure mapping's.
+        let module = "module:exposure";
         assert_eq!(
-            owned("app") + owned("engine") + owned("export") + owned(tools),
+            owned("app") + owned("engine") + owned("export") + owned(module),
             schema.settings.len()
         );
         let (app, engine) = (schema.generate("app"), schema.generate("engine"));
-        let (export, tools) = (schema.generate("export"), schema.generate(tools));
+        let (export, module) = (schema.generate("export"), schema.generate(module));
         assert_eq!(
-            ids(&tools),
+            ids(&module),
             ["tools.exposure.area_mode", "tools.exposure.lightness"]
         );
-        let mut every = [ids(&app), ids(&engine), ids(&export), ids(&tools)].concat();
+        let mut every = [ids(&app), ids(&engine), ids(&export), ids(&module)].concat();
         assert_eq!(
             (every.first(), every.len()),
             (Some(&"theme"), schema.settings.len())

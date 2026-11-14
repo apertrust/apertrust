@@ -3,7 +3,7 @@
 #   module-<module>-title, module-<module>-auto, module-<module>-tab-<tab>,
 #   module-<module>-group-<group>, module-<module>-collapsible-<group>,
 #   module-<module>-control-<control>-label, -full and -promise,
-#   module-<module>-control-<control>-option-<option>, a tool's setting's
+#   module-<module>-control-<control>-option-<option>, a module's setting's
 #   module-<module>-setting-<setting>-label, -full, -promise and -option-<option>, and a
 #   preset row's module-<module>-preset-<preset>-label, -full, -promise and
 #   -option-<option>.
@@ -628,7 +628,7 @@ module-channelmixerrgb-control-grey_normalise-label = Normalise channels
 module-channelmixerrgb-control-grey_normalise-full = Grey, normalise channels
 module-channelmixerrgb-control-grey_normalise-promise = Scales the grey's three weights so they add up to 1, keeping the photo's brightness.
 # The colour checker's settings, darktable's own and never in an edit, drawn disabled until
-# the tool comes.
+# the colour checker is built.
 module-channelmixerrgb-collapsible-colour_checker = Calibrate with a colour checker
 module-channelmixerrgb-setting-chart-label = Chart
 module-channelmixerrgb-setting-chart-full = Colour checker chart

@@ -18,7 +18,7 @@
 //! buttons in a module, an action that writes the module's controls and is never stored,
 //! as AgX's Auto tune levels and Set from above. The design system's [`Button`] at the
 //! start, holding the short label; screen readers hear its full name, and its promise is
-//! the tooltip. Until its tool comes a module's action is drawn disabled.
+//! the tooltip. Until what it runs is built a module's action is drawn disabled.
 
 use egui::Ui;
 
@@ -56,7 +56,7 @@ impl<'a> ActionRow<'a> {
     }
 
     /// A disabled action keeps its plate, its words in `text_disabled`, and ignores input:
-    /// one whose tool has not come, or that cannot run now.
+    /// one whose action is not built yet, or that cannot run now.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self

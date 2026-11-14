@@ -40,7 +40,7 @@ darktable's base group, with RGB levels and RGB curve after the tone mapper, Dem
 | White balance | white balance | `temperature`, raw 3 | Background only | Built; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
 | Raw black/white point | raw black/white point | `rawprepare`, raw 1 | Background only | Built; its levels start at the raw's own, flat field correction not ported | [page](raw-black-white-point.md), [port](../ports/rawprepare.md) |
 
-- **Crop** has no angle of its own, as darktable's crop has none: its straighten tool writes Rotate and perspective's rotation.
+- **Crop** has no angle of its own, as darktable's crop has none: its straighten line writes Rotate and perspective's rotation.
 - **RGB curve** keeps decision 31's fixed ends at (0, 0) and (1, 1); black and white are RGB levels'. Its graph is darktable's (decision 22).
 - **Demosaic** keeps capture sharpening, in the raw stage, as darktable has it.
 - **Local contrast,** once on, starts at darktable's local laplacian filter, detail 125 %, highlights and shadows 50 % and midtone range 0.5.
@@ -151,7 +151,7 @@ Port specs, module pages and code cite these by number.
 10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. A picker is declared in `Definition::pickers` with darktable's flags and applied by `Module::pick` ([pickers.md](../pickers.md), decision 79). The module's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
 11. **Layers** replace darktable's instances and per-module masks (decision 34; [layers.md](../layers.md)). A module works on layers unless the tables above say background only.
 12. **darktable's interface settings** (decision 29).
-    - darktable's own settings for a tool, kept in darktablerc and never in an edit, are rows of the module (`Row::ToolSetting`), kept in `settings.toml` under `[tools.<module>]` once the tool comes (decision 43).
+    - darktable's own settings for a module, kept in darktablerc and never in an edit, are rows of the module (`Row::Setting`), kept in `settings.toml` under `[tools.<module>]` once what uses them is built (decision 43).
     - A control darktable shows only under a preference that is off by default, or only for an edit made with an older algorithm, is not shown; its parameter stays at darktable's default or current value.
 13. **Follow writes** (decision 27). Where darktable's GUI writes other parameters with a control, to keep one quantity consistent (colour calibration's illuminant writing `x`, `y` and the temperature; White balance's coefficients writing `preset`), the module gives those writes (`Module::follow`) and the session applies them in the same change.
     - A preset row's option takes none: it writes every control itself (`Module::preset`).
@@ -273,7 +273,7 @@ A letter per module and a number: A for AgX, D for Demosaic, O for Output colour
 
 ## Sliders against darktable
 
-A first-pass module's sliders are darktable's (rule 3, decision 30). Each module's page records them, audited against darktable's params and `gui_init`, and a test in the module's source holds its definition to that table through `testing::slider_differences`. It compares every slider row and number tool setting with darktable's (`testing::DarktableSlider`: the hard range, the soft range, the factor and offset it shows by, its digits). What is compared, in the units shown:
+A first-pass module's sliders are darktable's (rule 3, decision 30). Each module's page records them, audited against darktable's params and `gui_init`, and a test in the module's source holds its definition to that table through `testing::slider_differences`. It compares every slider row and number setting with darktable's (`testing::DarktableSlider`: the hard range, the soft range, the factor and offset it shows by, its digits). What is compared, in the units shown:
 
 - **The range** a value may hold, the control's: darktable's hard range, the params' `$MIN` and `$MAX`, times the factor plus the offset. A typed value, a script or a preset may reach it. Where darktable's `gui_changed` moves it with other controls, as AgX's pivot's spans black to white relative exposure, the range, the track and the step are compared for given values through `Module::range`, at the module's defaults and, in the module's own test, at others; the definition's range is then the widest any values give (decision 30).
 - **The track's span at rest:** darktable's soft range (`dt_bauhaus_slider_set_soft_range`), `Slider::soft`, else the range. The track widens to show a value beyond it, and keeps that span until the row is reset, as darktable's `dt_bauhaus_slider_set` widens its visible range; a drag and the keys stay inside the span shown (`docs/gui.md`, How the rows are laid out).

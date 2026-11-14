@@ -143,7 +143,7 @@ use apertrust_base::settings::{
 };
 use apertrust_engine::session::ControlValue;
 use apertrust_engine::settings as engine;
-use apertrust_modules::{ControlKind, MODULES, Row, ToolSetting, tools};
+use apertrust_modules::{ControlKind, MODULES, Row, SettingRow};
 use apertrust_ui::components::{
     Channel, GridBarAction, GridPosition, Marker, ScopeView, Sort, ThumbnailSize,
 };
@@ -221,8 +221,8 @@ pub struct Settings {
     pub keys: BTreeMap<String, Vec<String>>,
     /// The Export dialog's last settings, `export.*`, kept as they are left.
     pub export: Values,
-    /// The modules' tool settings, `tools.<module>.*` (decision 29).
-    pub tools: Tools,
+    /// The modules' settings, `tools.<module>.*` (decision 29).
+    pub tool_settings: ToolSettings,
     /// Whether Export and Export Again ask before replacing files, `export.ask_before_overwrite`:
     /// kept apart from the dialog's settings, since the dialog does not edit it and its
     /// Default settings do not reset it.
@@ -264,7 +264,7 @@ impl Default for Settings {
             grid: Grid::default(),
             keys: BTreeMap::new(),
             export: Values::default(),
-            tools: Tools::default(),
+            tool_settings: ToolSettings::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
         }
@@ -349,7 +349,7 @@ impl Settings {
             },
             keys: store.get(&KEYS),
             export: Values::read(store),
-            tools: Tools::read(store),
+            tool_settings: ToolSettings::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
             ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
         }
@@ -489,8 +489,8 @@ impl Settings {
         if s.export != was.export {
             s.export.write(store);
         }
-        if s.tools != was.tools {
-            s.tools.write(store, &was.tools);
+        if s.tool_settings != was.tool_settings {
+            s.tool_settings.write(store, &was.tool_settings);
         }
         if s.ask_before_overwrite != was.ask_before_overwrite {
             store.set(&EXPORT_ASK_BEFORE_OVERWRITE, s.ask_before_overwrite);
@@ -501,24 +501,24 @@ impl Settings {
     }
 }
 
-/// The modules' tool settings (decision 29; `docs/settings.md`, Tool settings): each kept
-/// tool setting of [`tools::registry`], by its module and its id there, as the value its
-/// row (`Row::ToolSetting`) shows and the picker's commands carry. Kept by the app as
-/// darktable keeps its darktablerc, never in an edit, and sent with `PickerCommand::On`
-/// and `Tools`. One `--conf` gives keeps its value for the run, as the store keeps it
-/// (decision 43): a set of it is refused, a measured value's too, and its row is drawn
-/// disabled.
+/// The modules' settings (decision 29; `docs/settings.md`, A module's settings): each kept
+/// setting of [`apertrust_modules::settings::registry`], by its module and its id there,
+/// as the value its row (`Row::Setting`) shows and the picker's commands carry. Kept by
+/// the app as darktable keeps its darktablerc, never in an edit, and sent with
+/// `PickerCommand::On` and `Settings`. One `--conf` gives keeps its value for the run, as
+/// the store keeps it (decision 43): a set of it is refused, a measured value's too, and
+/// its row is drawn disabled.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Tools {
+pub struct ToolSettings {
     values: BTreeMap<(&'static str, &'static str), ControlValue>,
     /// Those `--conf` gives for this run.
     overridden: BTreeSet<(&'static str, &'static str)>,
 }
 
-/// Each kept tool setting at its default, darktable's.
-impl Default for Tools {
-    fn default() -> Tools {
-        Tools {
+/// Each kept setting at its default, darktable's.
+impl Default for ToolSettings {
+    fn default() -> ToolSettings {
+        ToolSettings {
             values: kept()
                 .map(|(module, row, _)| ((module, row.id), row.default()))
                 .collect(),
@@ -527,21 +527,21 @@ impl Default for Tools {
     }
 }
 
-impl Tools {
+impl ToolSettings {
     /// None kept.
     #[cfg(test)]
-    pub const fn new() -> Tools {
-        Tools {
+    pub const fn new() -> ToolSettings {
+        ToolSettings {
             values: BTreeMap::new(),
             overridden: BTreeSet::new(),
         }
     }
 
-    /// Every kept tool setting's value in `store`, read by its row's kind: a number, the
+    /// Every kept setting's value in `store`, read by its row's kind: a number, the
     /// option a choice's id names, or a boolean; one that cannot be read is its default.
     /// Those `--conf` gives are marked so.
-    pub fn read(store: &Store) -> Tools {
-        let mut tools = Tools {
+    pub fn read(store: &Store) -> ToolSettings {
+        let mut settings = ToolSettings {
             values: BTreeMap::new(),
             overridden: BTreeSet::new(),
         };
@@ -549,21 +549,21 @@ impl Tools {
             let value = store.value(declared);
             let value = value.as_ref().and_then(|value| control_value(row, value));
             let value = value.unwrap_or_else(|| row.default());
-            tools.values.insert((module, row.id), value);
+            settings.values.insert((module, row.id), value);
             if store.overridden(declared) {
-                tools.overridden.insert((module, row.id));
+                settings.overridden.insert((module, row.id));
             }
         }
-        tools
+        settings
     }
 
-    /// Whether `--conf` gives `module`'s tool setting `setting` for this run.
+    /// Whether `--conf` gives `module`'s setting `setting` for this run.
     pub fn overridden(&self, module: &str, setting: &str) -> bool {
         (self.overridden.iter()).any(|&(m, s)| m == module && s == setting)
     }
 
     /// Sets in `store` each value that differs from `was`.
-    fn write(&self, store: &mut Store, was: &Tools) {
+    fn write(&self, store: &mut Store, was: &ToolSettings) {
         for (module, row, declared) in kept() {
             let value = self.get(module, row.id);
             if value != was.get(module, row.id)
@@ -574,7 +574,7 @@ impl Tools {
         }
     }
 
-    /// `module`'s tool setting `setting`, if it is kept.
+    /// `module`'s setting `setting`, if it is kept.
     pub fn get(&self, module: &str, setting: &str) -> Option<&ControlValue> {
         self.values
             .iter()
@@ -582,7 +582,7 @@ impl Tools {
             .map(|(_, value)| value)
     }
 
-    /// Sets `module`'s tool setting `setting`, if it is kept and `--conf` does not give it.
+    /// Sets `module`'s setting `setting`, if it is kept and `--conf` does not give it.
     pub fn set(&mut self, module: &str, setting: &str, value: ControlValue) {
         if self.overridden(module, setting) {
             return;
@@ -596,7 +596,7 @@ impl Tools {
         }
     }
 
-    /// `module`'s kept tool settings, as its picker's commands carry them.
+    /// `module`'s kept settings, as its picker's commands carry them.
     pub fn of(&self, module: &str) -> Vec<(&'static str, ControlValue)> {
         (self.values.iter())
             .filter(|((m, _), _)| *m == module)
@@ -605,21 +605,20 @@ impl Tools {
     }
 }
 
-/// Each kept tool setting: its module's id, its row and its declaration.
-fn kept() -> impl Iterator<Item = (&'static str, &'static ToolSetting, &'static dyn Declared)> {
+/// Each kept module setting: its module's id, its row and its declaration.
+fn kept() -> impl Iterator<Item = (&'static str, &'static SettingRow, &'static dyn Declared)> {
     MODULES.iter().flat_map(|module| {
         let id = module.definition().id;
         module.definition().rows().filter_map(move |row| match row {
-            Row::ToolSetting(setting) => {
-                tools::setting(id, setting.id).map(|declared| (id, setting, declared))
-            }
+            Row::Setting(setting) => apertrust_modules::settings::setting(id, setting.id)
+                .map(|declared| (id, setting, declared)),
             _ => None,
         })
     })
 }
 
-/// A tool setting's value as `settings.toml` keeps it, read as its row's kind.
-fn control_value(row: &ToolSetting, value: &toml::Value) -> Option<ControlValue> {
+/// A module setting's value as `settings.toml` keeps it, read as its row's kind.
+fn control_value(row: &SettingRow, value: &toml::Value) -> Option<ControlValue> {
     match row.kind {
         ControlKind::Number { .. } => match value {
             toml::Value::Float(n) => Some(ControlValue::Number(*n as f32)),
@@ -636,8 +635,8 @@ fn control_value(row: &ToolSetting, value: &toml::Value) -> Option<ControlValue>
     }
 }
 
-/// A tool setting's value as `settings.toml` keeps it.
-fn toml_value(row: &ToolSetting, value: &ControlValue) -> Option<toml::Value> {
+/// A module setting's value as `settings.toml` keeps it.
+fn toml_value(row: &SettingRow, value: &ControlValue) -> Option<toml::Value> {
     match (row.kind, value) {
         (ControlKind::Number { .. }, ControlValue::Number(n)) => {
             Some(toml::Value::Float(f64::from(*n)))
@@ -866,12 +865,12 @@ pub struct ViewState {
 fn registries() -> Vec<&'static dyn Declared> {
     let engine = engine::registry::ALL.iter();
     let export = apertrust_export::settings::registry::ALL.iter();
-    let tools = tools::registry::ALL.iter();
+    let modules = apertrust_modules::settings::registry::ALL.iter();
     registry::ALL
         .iter()
         .chain(engine)
         .chain(export)
-        .chain(tools)
+        .chain(modules)
         .copied()
         .collect()
 }
@@ -1225,11 +1224,11 @@ mod tests {
                 high_quality: true,
                 profile: apertrust_export::settings::Profile::Srgb,
             },
-            tools: {
-                let mut tools = Tools::default();
-                tools.set("exposure", "area_mode", ControlValue::Choice(1));
-                tools.set("exposure", "lightness", ControlValue::Number(42.5));
-                tools
+            tool_settings: {
+                let mut settings = ToolSettings::default();
+                settings.set("exposure", "area_mode", ControlValue::Choice(1));
+                settings.set("exposure", "lightness", ControlValue::Number(42.5));
+                settings
             },
             ask_before_overwrite: false,
             ask_before_discard: false,
@@ -1342,7 +1341,7 @@ mod tests {
                 keys: BTreeMap::new(),
                 export: Values::default(),
                 // Exposure's area exposure mapping at darktable's: correction, 50 %.
-                tools: Tools {
+                tool_settings: ToolSettings {
                     values: BTreeMap::from([
                         (("exposure", "area_mode"), ControlValue::Choice(0)),
                         (("exposure", "lightness"), ControlValue::Number(50.0)),
@@ -1376,13 +1375,13 @@ mod tests {
     /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
-        let tools = tools::registry::ALL.iter();
+        let modules = apertrust_modules::settings::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
         let reopen = LIBRARY_REOPEN_LAST.id;
         registry::ALL
             .iter()
             .chain(export)
-            .chain(tools)
+            .chain(modules)
             .map(|s| s.id())
             .filter(move |id| *id != page && *id != old && *id != reopen)
     }
@@ -1908,24 +1907,24 @@ size = [1280, 800]
         assert!(conf(&["central_panel.margin=wide"]).is_err());
     }
 
-    /// A tool setting `--conf` gives keeps its value for the run: a change of its row and a
+    /// A module setting `--conf` gives keeps its value for the run: a change of its row and a
     /// value a pick measured are refused, so the picker's commands carry `--conf`'s, and the
     /// file keeps its own; the others change as ever.
     #[test]
-    fn a_tool_setting_conf_gives_keeps_its_value_for_the_run() {
-        let folder = Folder::new("tools-conf");
+    fn a_module_setting_conf_gives_keeps_its_value_for_the_run() {
+        let folder = Folder::new("module-settings-conf");
         let text = "version = 1\n[tools.exposure]\nlightness = 30.0\n";
         std::fs::write(folder.settings(), text).expect("written");
         let overrides = conf(&["tools.exposure.area_mode=measure"]).expect("read");
         let (mut keeper, mut settings) = Keeper::open_with(folder.storage(), &overrides);
-        let tools = &mut settings.tools;
-        assert!(tools.overridden("exposure", "area_mode"));
-        assert!(!tools.overridden("exposure", "lightness"));
+        let kept = &mut settings.tool_settings;
+        assert!(kept.overridden("exposure", "area_mode"));
+        assert!(!kept.overridden("exposure", "lightness"));
         // Correction asked for from the row, and a measured lightness.
-        tools.set("exposure", "area_mode", ControlValue::Choice(0));
-        tools.set("exposure", "lightness", ControlValue::Number(42.0));
+        kept.set("exposure", "area_mode", ControlValue::Choice(0));
+        kept.set("exposure", "lightness", ControlValue::Number(42.0));
         assert_eq!(
-            tools.of("exposure"),
+            kept.of("exposure"),
             [
                 ("area_mode", ControlValue::Choice(1)),
                 ("lightness", ControlValue::Number(42.0)),

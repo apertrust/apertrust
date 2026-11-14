@@ -38,8 +38,8 @@
 //!   now (`ValueField::number_only`); Enter, Tab or a click elsewhere sets it, clamped to
 //!   the range, Escape puts it back, and so does leaving it empty or with a sign or a
 //!   separator alone; the value is text again.
-//! - The quad is an optional action just before the value: a line tool, or a colour
-//!   picker's [`PickerButton`] in its quad mode (`docs/pickers.md`, The picker button).
+//! - The quad is an optional action just before the value: a line drawn on the photo, or a
+//!   colour picker's [`PickerButton`] in its quad mode (`docs/pickers.md`, The picker button).
 //! - The track spans the soft range, as darktable's sliders do (`soft_range`), inside the
 //!   range, which stays what a value may hold: a value beyond it, typed, pasted or set by
 //!   a script, widens the track just enough to show it, and the track keeps that span
@@ -141,7 +141,7 @@ pub struct Quad<'a> {
     pub icon: Icon,
     /// Translated: the tooltip and the accessible name.
     pub name: &'a str,
-    /// On while its tool is in use: its filled icon (decision 81).
+    /// On while what it runs is in use: its filled icon (decision 81).
     pub active: bool,
 }
 

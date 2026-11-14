@@ -36,7 +36,7 @@
 //! gamut mapping, as darktable's does.
 //!
 //! The pickers on the hues and the fulcrums are in the definition, as darktable's page
-//! has them; the renderer draws a quad once its tool runs. Left out until the renderer
+//! has them; the renderer draws a quad once what it runs is built. Left out until the renderer
 //! can draw them: the luminance
 //! ranges' graph and the fall-offs' and the mask fulcrum's mask display; and the mask
 //! preview's settings, which are the app's (`docs/modules/README.md`, rule 12).
@@ -273,7 +273,7 @@ const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
         space: Space::Operation,
         keep: false,
         writes,
-        tools: &[],
+        settings: &[],
     }
 }
 
@@ -592,7 +592,7 @@ mod tests {
                 denoise: false,
                 output: false,
                 writes,
-                tools: &[],
+                settings: &[],
             }
         }
         let darktable = [

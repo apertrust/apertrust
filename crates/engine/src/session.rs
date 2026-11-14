@@ -336,7 +336,7 @@ pub enum Command {
     Scopes(Option<Graphs>),
     /// The active colour picker (decision 79; `docs/pickers.md`): turned on, its point or
     /// area moved, switched between them, reset or turned off, a module's or the Colour
-    /// picker module's, and a module's pickers' tool settings and channel. View state,
+    /// picker module's, and a module's pickers' settings and channel. View state,
     /// never a command on the edit, though a module's picker writes the edit: its module
     /// turned on with it, and its readings applied through the module's pick, the first
     /// after it turns on and each after its region moves, a drag's one gesture. Answered by
@@ -344,8 +344,8 @@ pub enum Command {
     /// for a module's picker on a photo open for viewing only ([`SessionError::ViewOnly`]) or
     /// while the History tab's eye hides a module ([`SessionError::Hidden`]),
     /// and for a picker no module declares ([`SessionError::UnknownPicker`]); a point, an
-    /// area, a switch or a reset with no picker on ([`SessionError::NoPicker`]); a tool
-    /// setting no picker of the module reads ([`SessionError::UnknownTool`]).
+    /// area, a switch or a reset with no picker on ([`SessionError::NoPicker`]); a
+    /// setting no picker of the module reads ([`SessionError::UnknownSetting`]).
     Picker(PickerCommand),
     /// Cancel a job, as its progress's cancel does (decision 57): a queued job never
     /// runs, and a running one stops at its body's next check, its GPU task dropped
@@ -974,10 +974,10 @@ pub enum SessionError {
     /// the plan lacks once its module is on.
     #[error("no module has that colour picker")]
     UnknownPicker,
-    /// [`PickerCommand::On`] or [`PickerCommand::Tools`] named a tool setting none of the
+    /// [`PickerCommand::On`] or [`PickerCommand::Settings`] named a setting none of the
     /// module's pickers reads.
-    #[error("no colour picker of the module reads the tool setting {0}")]
-    UnknownTool(&'static str),
+    #[error("no colour picker of the module reads the setting {0}")]
+    UnknownSetting(&'static str),
     /// A colour picker's point, area, switch or reset with no picker on.
     #[error("no colour picker is on")]
     NoPicker,

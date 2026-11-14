@@ -81,11 +81,11 @@ pub enum Reaction {
     FolderOpened(PathBuf),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
     FolderFailed { path: PathBuf, reason: String },
-    /// A module's pick measured these tool settings, measure mode's target: the app keeps
-    /// them in its settings, as darktable writes its target sliders and darktablerc.
+    /// A module's pick measured these settings, measure mode's target: the app keeps them
+    /// in its settings, as darktable writes its target sliders and darktablerc.
     Measured {
         module: &'static str,
-        tools: Vec<(&'static str, ControlValue)>,
+        settings: Vec<(&'static str, ControlValue)>,
     },
     /// The first live frame of the photo the open numbered `open` replaced its first
     /// picture, the mirror's of `generation`: the central panel fades that picture out over
@@ -436,8 +436,8 @@ impl Mirror {
             Event::Scopes(reading) => self.scopes.receive(&reading),
             // The active picker's reading, or `None` as it turns off.
             Event::Picker { through, reading } => {
-                if let Some((module, tools)) = self.picked.apply(reading.as_ref()) {
-                    reactions.push(Reaction::Measured { module, tools });
+                if let Some((module, settings)) = self.picked.apply(reading.as_ref()) {
+                    reactions.push(Reaction::Measured { module, settings });
                 }
                 self.pickers.apply(through, reading);
             }
