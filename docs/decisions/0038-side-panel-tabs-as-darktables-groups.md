@@ -11,7 +11,7 @@ The first pass presents darktable's modules ([0002](0002-rewrite-darktable-first
 - **Labels** are darktable's words in British English and sentence case. Their ids, as settings keep the tab, are darktable's names: `base`, `color`, `correct`, `effect`, beside `photos` and `history`. Ukrainian and Polish start from darktable's own translations.
 - **Icons** are darktable's shapes (`src/dtgtk/paint.c`) as one-colour icons drawn at 22 points, in the style of Lucide, the icons' foundation ([gui.md](../gui.md), Fonts and icons), with a filled form for the chosen tab: Base a circle; Colour darktable's circle, its gradient suggested by line work; Correct two half circles offset sideways; Effect a circle with three sparkles.
 - **Order:** Photos first ([0037](0037-one-view-the-photos-tab.md)), the four groups in darktable's order, History last, so Ctrl+1 to Ctrl+5 reach the Photos tab and the four groups.
-- **Each module sits in darktable's group** and a tab lists its modules as darktable's right panel does, in pipeline order with the last module at the top:
+- **Each module sits in darktable's group** and a tab lists its modules as darktable's right panel does, in pipeline order with the last module at the top. These are the Edit workspace's defaults: a person can reorder, pin, move and float sections on screen, display order only ([0083](0083-the-side-panels-layout-dragged-and-floating.md)):
   - Base: Local contrast, the edit's tone mapper, Crop, Tone equalizer, Exposure, Orientation, Rotate and perspective, Highlight reconstruction, White balance;
   - Colour: Colour balance RGB, Colour equalizer, RGB primaries, Colour calibration;
   - Correct: Sharpen, Retouch, Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled);
@@ -20,7 +20,7 @@ The first pass presents darktable's modules ([0002](0002-rewrite-darktable-first
 - **No quick access panel and no active-modules tab.** darktable's module search may come later as its own piece of work.
 - **A tab with nothing behind it yet** (History until it is built) is drawn disabled in its place, saying it is to come, with no key.
 - **Edit opens on Base.** A tab id in settings that this build does not know, or one drawn disabled, opens Base with a warning, and the id stays in the file until a tab is chosen. `library`, which development builds wrote for Photos, is such an id, never given to another tab.
-- **Scopes** are pinned over every tab's modules but the Photos tab's; Layers join the four groups when they come.
+- **Scopes** are pinned over the four groups' modules by default, in neither the Photos tab nor History; Layers join the four groups when they come.
 - **Styles** go in the Photos tab, as darktable's styles module is the lighttable's.
 
 ## Options considered
@@ -36,5 +36,5 @@ The first pass presents darktable's modules ([0002](0002-rewrite-darktable-first
 
 ## Consequences
 
-- The app's `TABS` and `TAB_MODULES` hold these lists; a module added to `OPERATIONS` gets its tab by this rule.
+- The app's `TABS` and `TAB_MODULES` hold these lists, the Edit workspace's defaults, which the layout shown starts from ([0083](0083-the-side-panels-layout-dragged-and-floating.md)); a module added to `OPERATIONS` gets its tab by this rule.
 - A port's module page names its tab from darktable's preset.

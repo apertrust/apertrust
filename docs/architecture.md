@@ -171,7 +171,7 @@ Details: [engine.md, The module layer](engine.md#the-module-layer), [modules/REA
 
 ### The desktop interface
 
-One egui interface for the desktop and the browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the side panel's Photos tab chooses the photos, the centre shows the photo, the grid panel is always there (decision 37). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); the viewport's colour is managed by the app, by the system later for HDR.
+One egui interface for the desktop and the browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the side panel's Photos tab chooses the photos, the centre shows the photo, the grid panel is always there (decision 37). The side panel's tabs start as darktable's groups (decision 38); a person moves, pins and floats sections by dragging their headers, display order only, kept in the workspace's settings, the floating panels inside the window (decision 83, planned). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); the viewport's colour is managed by the app, by the system later for HDR.
 
 Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#display-colour), [The shell](gui.md#the-shell), [Module panels from definitions](gui.md#module-panels-from-definitions), and the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK) for how it looks.
 

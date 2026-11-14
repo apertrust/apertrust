@@ -236,6 +236,13 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
 - [ ] Filters over the open folder, by rating, label, date, camera, keywords and the rest (decision 73).
 - [ ] Culling in the Photo layout with the grid panel and the caption's ratings, with no Grid layout; the selected photos side by side, up to 11 and a 12th cell for the rest (decision 37).
 - [ ] Rating, Apply edit and Export on every selected photo, with one undo.
+- [ ] Named workspaces and the Photos workspace for culling, switched from View › Workspace (decision 37; [gui.md](gui.md#workspaces)).
+- [ ] With them, the side panel's layout (decision 83; [gui.md](gui.md#moving-pinning-and-floating-sections)), display order only, never the processing order:
+  - [ ] The Edit workspace's settings keys, `[workspaces.edit]` and `[side_panel]`, the old `[edit]` read into them.
+  - [ ] The layout model in settings, which a person can edit in the file: each tab's pinned and scrolling sections, darktable's groups the defaults; Processing Order and Reset Tab in the side panel's ⋮; Customise tabs reworked onto it.
+  - [ ] Moving a section by dragging its header within its tab; dropping it in the pinned area pins it, dragging it out unpins it.
+  - [ ] The section's ⋯ menu (Move Up, Move Down, Move to Pinned Area or Scrolling Area, Move to Tab, Float or Dock), Alt+↑ and Alt+↓, and screen readers' actions and announcements.
+  - [ ] Moving a section to another tab, by a drop on its icon or into it; any section in any tab.
 - [ ] Changes made outside Apertrust noticed; nothing overwritten without reading it first.
 - [ ] Virtual copies.
 - [ ] Two computers editing the same photo: both versions kept, never one lost.
@@ -253,6 +260,7 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
+- [ ] Floating panels inside the window, belonging to no tab, docked by a drop into any tab or back where they left by × or Dock (decision 83; [gui.md](gui.md#moving-pinning-and-floating-sections)).
 
 ## Mobile, after Phase 3
 
