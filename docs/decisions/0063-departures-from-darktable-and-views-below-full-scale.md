@@ -17,7 +17,7 @@ During the migration a port renders what darktable's export renders ([0061](0061
 - grain: a seed stored in the edit, its default darktable's file-name hash, one stored value darktable does not have (planned; `docs/ports/grain.md`);
 - vignetting: the raised-cosine fall-off of darktable's GPU path, where darktable's CPU path is linear without dithering (planned; `docs/ports/vignette.md`);
 - AgX: dynamic range scaling as the pickers' and Read exposure's margin only, never writing into the range, and Curve y gamma left alone by Keep the pivot on the diagonal (`docs/modules/agx.md`);
-- pickers: a picked value held at its parameter's `$MIN` or `$MAX` where the module's own rule leaves it past them, and Colour balance RGB's picked hue wrapped onto 0° to 360° ([0079](0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md); `docs/pickers.md`);
+- pickers: a picked value held at its parameter's `$MIN` or `$MAX` where the module's own rule leaves it past them, and Colour balance RGB's picked hue wrapped onto 0° to 360° ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md); `docs/pickers.md`);
 - the tone equalizer: none yet.
 
 **Every smaller view follows the export at its scale,** never darktable's darkroom or preview pipe:

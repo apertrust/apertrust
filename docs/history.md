@@ -54,7 +54,7 @@ The wireframe's History frame, which the API serves:
 
 Each virtual copy of a photo has one log: its steps in order, and its **end**, how many of them apply, darktable's `history_end`. End 0 is Original.
 
-**The edit is folded from the log:** for each module, its entry at its last step among the first `end`, else its reset state, its defaults for the photo and off when it is switched ([decision 32](decisions/0032-modules-off-until-first-touched.md)). Nothing else stores the edit; the session folds it as a photo opens and keeps it in step with each change, and export, thumbnails and the index read the same fold.
+**The edit is folded from the log:** for each module, its entry at its last step among the first `end`, else its reset state, its defaults for the photo and off when it is switched ([decision 32](decisions/0032-tools-off-until-first-touched.md)). Nothing else stores the edit; the session folds it as a photo opens and keeps it in step with each change, and export, thumbnails and the index read the same fold.
 
 The log is the engine's (`apertrust_engine::history`): `Log`, `Step` and the functions that add, fold, merge, compress (`Log::compressed`), truncate (`Log::truncated`) and start an unreadable history afresh (`Log::afresh`), plain data, used by the session and by `apertrust-cli`, Undo's and Redo's fallback among them (`Log::undo_end`, `Log::redo_end`). The sidecar's text layer (`apertrust_library::sidecar`, [decision 54](decisions/0054-four-layers-for-the-librarys-code.md)) holds the steps as strings, knowing no module's meaning.
 
@@ -73,7 +73,7 @@ The log is the engine's (`apertrust_engine::history`): `Log`, `Step` and the fun
 
 - **An empty entry** is the module's reset state: its defaults, or `off` for a switched module (decision 32).
 - **Planned:** the ratings, reject, labels, keywords and metadata a step sets, with the library's steps 14 and 15 (decision 47). Their encoding in a step is part of step 14's scope.
-- **Room for layers** (Phase 4, [decision 34](decisions/0034-layers-masked-module-instances-in-a-fixed-order.md)): an entry's key, a module id today, gains a layer and an instance, as darktable keys its history by operation and `multi_priority`. A line then names the layer after a ·; nothing else in the step changes.
+- **Room for layers** (Phase 4, [decision 34](decisions/0034-layers-masked-tool-instances-in-a-fixed-order.md)): an entry's key, a module id today, gains a layer and an instance, as darktable keys its history by operation and `multi_priority`. A line then names the layer after a ·; nothing else in the step changes.
 
 ### Whole entries after, the before derived
 

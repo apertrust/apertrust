@@ -10,7 +10,7 @@ darktable at the reference release:
 - **Processing modules** reorder by dragging their header too, and that changes the pipeline order: `dt_ioppr_move_iop_before` or `_after`, a history item and a rebuilt pipe (`src/develop/imageop.c`, `_on_drag_motion`). Within a group the darkroom lists its modules in pipeline order; which modules a group holds is set in the module group presets.
 - **No floating panels.**
 
-Apertrust never reorders the processing (principles, What we will not build; [0022](0022-pipeline-order-and-the-default-pipeline.md), [0034](0034-layers-masked-module-instances-in-a-fixed-order.md)). Workspaces are interface state ([0037](0037-one-view-the-photos-tab.md)); every client reaches the engine through the session protocol ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)); eframe's viewports are rejected ([0041](0041-dialogs-as-native-modal-windows.md)).
+Apertrust never reorders the processing (principles, What we will not build; [0022](0022-pipeline-order-and-the-default-pipeline.md), [0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)). Workspaces are interface state ([0037](0037-one-view-the-photos-tab.md)); every client reaches the engine through the session protocol ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)); eframe's viewports are rejected ([0041](0041-dialogs-as-native-modal-windows.md)).
 
 ## Decision
 
@@ -136,4 +136,4 @@ Customise tabs moves onto the layout model once step 1 is built.
 - Customise tabs, built in Phase 2 on the fixed lists, is reworked in Phase 3 to edit the layout model.
 - `data/settings.schema.toml`: the `tabs` registry, the record kind, `workspaces.edit.pinned`, `order` and `floating`, a workspace's `hidden`, and `side_panel.floating`.
 - The `ui-conventions` skill: a module's header has ⋯ with the layout items, pinning by drop, the draggable header; `desktop-architecture`: sections drawn under stable scope ids, one place a frame.
-- Decisions [0018](0018-one-submit-gate-for-the-engine-and-the-window.md), [0022](0022-pipeline-order-and-the-default-pipeline.md), [0032](0032-modules-off-until-first-touched.md), [0034](0034-layers-masked-module-instances-in-a-fixed-order.md) and [0041](0041-dialogs-as-native-modal-windows.md) are unchanged: no new surface, no new window, the order fixed.
+- Decisions [0018](0018-one-submit-gate-for-the-engine-and-the-window.md), [0022](0022-pipeline-order-and-the-default-pipeline.md), [0032](0032-tools-off-until-first-touched.md), [0034](0034-layers-masked-tool-instances-in-a-fixed-order.md) and [0041](0041-dialogs-as-native-modal-windows.md) are unchanged: no new surface, no new window, the order fixed.

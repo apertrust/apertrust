@@ -15,7 +15,7 @@ darktable offers several tone mappers (AgX, sigmoid, filmic rgb), each a module,
 - **A photo using another tone mapper shows that module,** with a note.
 - **Switching an existing photo is an explicit action,** one undo step; the setting never changes the tone mapper of edits already made.
 
-**A layer may choose its own tone mapper,** planned with layers ([0034](0034-layers-masked-module-instances-in-a-fixed-order.md)): any of the three, which replaces the background's within the layer's mask, never stacked on it, so a pixel is tone-mapped once. darktable's masked tone-mapper instances import onto such layers ([0051](0051-importing-darktables-edits.md)).
+**A layer may choose its own tone mapper,** planned with layers ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)): any of the three, which replaces the background's within the layer's mask, never stacked on it, so a pixel is tone-mapped once. darktable's masked tone-mapper instances import onto such layers ([0051](0051-importing-darktables-edits.md)).
 
 **Every other module a layer can use acts at its darktable place** ([0022](0022-pipeline-order-and-the-default-pipeline.md)): those before the tone mapper shape the light it compresses, so a slider means the same on a layer as on the background, and darktable's display-referred effects (grain, vignetting and the others after it) follow it.
 

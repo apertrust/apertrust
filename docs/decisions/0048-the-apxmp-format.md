@@ -6,7 +6,7 @@ What does an edit file look like, and how is it read so that a photo is never lo
 
 ## Decision
 
-**XMP beside the photo,** `IMG.ARW.apxmp`: one `rdf:Description` with `apertrust:version`, the build that wrote it in `x:xmptk`, and its entries: each module's values with the module's version and its marks, and the operation parameters the edit sets only where no module owns them ([0028](0028-modules-bound-to-operations.md)). Values left out keep their defaults for the photo.
+**XMP beside the photo,** `IMG.ARW.apxmp`: one `rdf:Description` with `apertrust:version`, the build that wrote it in `x:xmptk`, and its entries: each module's values with the module's version and its marks, and the operation parameters the edit sets only where no module owns them ([0028](0028-tools-bound-to-operations.md)). Values left out keep their defaults for the photo.
 
 - **Numbers** are written in their shortest exact form and **choices by name**, so a reordered list changes no edit.
 - **The namespaces** are on the project's domain: `https://apertrust.org/ns/xmp/` for Apertrust's own properties (prefix `apertrust`), `https://apertrust.org/ns/xmp/control/` for module controls (`control`), `https://apertrust.org/ns/xmp/param/` for operation parameters (`param`) and, from version 2, `https://apertrust.org/ns/xmp/arg/` for the arguments of a history step's note (`arg`), the fields of the step's `apertrust:noteArgs` struct, nested so that no argument's name meets a step's own field's. A URI is an identifier, so nothing is hosted there; the schema's version is `apertrust:version`, not part of the URI. Nothing else is read: a file in another namespace is not an Apertrust edit (`SidecarError::NotAnEdit`).

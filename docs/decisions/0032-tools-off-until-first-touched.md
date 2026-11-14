@@ -1,4 +1,4 @@
-# 0032. Modules off until first touched
+# 0032. Tools off until first touched
 
 ## Context
 
@@ -6,7 +6,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 ## Decision
 
-**A module darktable leaves off on a new photo is switched** (`Definition::switched`): off until a command writes one of its controls, then on with darktable's defaults for every control not set, until its reset turns it off. **A module that is off is a no-op**, covered by an invariant test. A module whose operation every photo runs is always on, untouched at its defaults ([0028](0028-modules-bound-to-operations.md)); `check::accept` refuses a switched module over such an operation.
+**A module darktable leaves off on a new photo is switched** (`Definition::switched`): off until a command writes one of its controls, then on with darktable's defaults for every control not set, until its reset turns it off. **A module that is off is a no-op**, covered by an invariant test. A module whose operation every photo runs is always on, untouched at its defaults ([0028](0028-tools-bound-to-operations.md)); `check::accept` refuses a switched module over such an operation.
 
 **From darktable:** `dt_iop_gui_changed` enables a module on every slider and combobox callback, without comparing values, so a click at the same value turns an off module on; its history stores `enabled` with the parameters.
 
@@ -16,7 +16,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 **Commands:**
 
-- Any write of a control turns a switched module on, whatever the value: `SetControl` on a control or a view's coordinate, `ApplyPreset`, their follow writes, and Auto and pickers when they come; a picker turned on turns its module on as darktable's does, before any write ([0079](0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md)). A script turns a module on at its defaults by setting a control to its default.
+- Any write of a control turns a switched module on, whatever the value: `SetControl` on a control or a view's coordinate, `ApplyPreset`, their follow writes, and Auto and pickers when they come; a picker turned on turns its module on as darktable's does, before any write ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)). A script turns a module on at its defaults by setting a control to its default.
 - `ResetControl` and `Keep` never turn one on, and leave an on module on.
 - `ResetModule` clears its values and marks and turns it off; `Reset` turns every module off.
 

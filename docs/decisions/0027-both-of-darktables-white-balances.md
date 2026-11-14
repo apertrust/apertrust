@@ -39,4 +39,4 @@ darktable balances white in two modules: white balance, over the raw-stage `temp
 
 - A White balance drag restarts at the mosaic and reruns the raw stage and demosaic at full resolution: on the M4 about 40 ms a frame at 10 MP and 240 ms at 61 MP before the rest. A spike times the drag; if it misses, demosaic's speed is the first engine performance work. Demosaic at reduced size while dragging stays ruled out ([0012](0012-planning-regions-scale-and-cache-points.md)).
 - The whole-pipeline comparison writes Apertrust's Colour calibration parameters into darktable's history ([0062](0062-the-whole-pipeline-comparison.md)).
-- Open: local white balance, which is Colour calibration's CAT on a layer ([0034](0034-layers-masked-module-instances-in-a-fixed-order.md)); the button bar and the CCT readout row, with the renderer.
+- Open: local white balance, which is Colour calibration's CAT on a layer ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)); the button bar and the CCT readout row, with the renderer.

@@ -130,6 +130,15 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
   - [ ] Denoise (profiled), ported, with darktable's noise profiles.
 - [x] Switched modules (decision 32): modules darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
 - [ ] Undo, redo and the History tab, with the history saved in the sidecar as its log of steps (decisions 47 and 78; [history.md](history.md), [the library's step 9](#the-librarys-steps)).
+- [ ] Tools, not modules (decision 4):
+  - [ ] 4.1 A tool's settings named settings in the code.
+  - [ ] 4.2 The docs say tool; `docs/modules/` moved to `docs/tools/`.
+  - [ ] 4.3 `apertrust-tools` in `crates/tools`, with its public names and the CLI's help.
+  - [ ] 4.4 The code's own names, tests and comments.
+  - [ ] 4.5 The Fluent ids `tool-…`, in `tools.ftl`.
+  - [ ] 4.6 The words people see and hear, in every language.
+  - [ ] 4.7 The sidecar's `apertrust:tool` and `apertrust:toolVersion`.
+  - [ ] 4.8 The agent kit's skills, agents and commands.
 - [ ] Per-pixel steps fused into fewer GPU passes, once a spike measures how.
 - [ ] A fine-control popup for sliders, as darktable's (decision 42).
 - [x] The slider's marker as a setting, Triangle, Circle or Square, Square by default, kept whole at the track's ends (decision 75).

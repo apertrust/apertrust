@@ -6,7 +6,7 @@ darktable corrects lenses from two sources: the corrections many raws embed (Son
 
 ## Decision
 
-**Both of darktable's sources, embedded corrections first.** The module is darktable's lens correction, its method choosing the source ([0029](0029-a-module-is-darktables-page.md)).
+**Both of darktable's sources, embedded corrections first.** The module is darktable's lens correction, its method choosing the source ([0029](0029-a-tool-is-darktables-page.md)).
 
 **Embedded corrections, as darktable reads and applies them:**
 
@@ -16,7 +16,7 @@ darktable corrects lenses from two sources: the corrections many raws embed (Son
 - **Fujifilm's vignetting table** is ported literally, 16 entries with zeros past `ncin` and the divisor's floor at 1e-4; a test holds that no corpus raw reaches past its last knot.
 - **Only manual vignette** is ported with the manual vignette, its gain then a copy.
 - **Corrections done:** the operation crate offers a pure port of `_check_corrections_md`; the session computes it when the module's values or the photo change and reports it with the module's state.
-- **The module is switched** ([0032](0032-modules-off-until-first-touched.md)): off on a new photo, as darktable's lens correction is, and on with darktable's `reload_defaults` values, every correction, at its first change.
+- **The module is switched** ([0032](0032-tools-off-until-first-touched.md)): off on a new photo, as darktable's lens correction is, and on with darktable's `reload_defaults` values, every correction, at its first change.
 - **Golden cases** take raws from darktable's tests and from the raw.pixls.us corpus, so all four types are compared with darktable.
 
 **lensfun's database** (planned): its lookup and interpolation ported to Rust, its database read directly, its models in a Slang kernel.

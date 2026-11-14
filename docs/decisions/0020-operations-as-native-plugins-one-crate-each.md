@@ -21,7 +21,7 @@ darktable's processing modules (iops) are each one unit: parameters, processing 
 
 **Shared colour maths** lives in `apertrust-color`: Slang for kernels, Rust for setups. A helper from darktable's `src/common/` moves there once its second port is scheduled ([0065](0065-names-and-crates.md)).
 
-**Modules are not part of an operation.** A module binds to operations' parameters, so module definitions live in `apertrust-modules` ([0028](0028-modules-bound-to-operations.md)).
+**Modules are not part of an operation.** A module binds to operations' parameters, so module definitions live in `apertrust-modules` ([0028](0028-tools-bound-to-operations.md)).
 
 **darktable's modules are never loaded.** Its code is the reference a port is written from, with provenance recorded per operation, and ported files keep darktable's copyright ([0064](0064-licences-gplv3-darktables-provenance-and-bundled-fonts.md)).
 

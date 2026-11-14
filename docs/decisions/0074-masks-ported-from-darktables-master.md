@@ -2,7 +2,7 @@
 
 ## Context
 
-Layers' masks follow darktable's Flexi masks ([0034](0034-layers-masked-module-instances-in-a-fixed-order.md)). Flexi is on darktable's master, 5.7.0-dev, and in no stable release: the reference release, 5.6.2, has darktable's classic masks ([0003](0003-the-reference-is-darktables-latest-stable-release.md)). Its formats look settled while its panel and preset behaviour still change. Masks and retouch come in Phase 4, after the migration and its reference rule end ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)).
+Layers' masks follow darktable's Flexi masks ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)). Flexi is on darktable's master, 5.7.0-dev, and in no stable release: the reference release, 5.6.2, has darktable's classic masks ([0003](0003-the-reference-is-darktables-latest-stable-release.md)). Its formats look settled while its panel and preset behaviour still change. Masks and retouch come in Phase 4, after the migration and its reference rule end ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)).
 
 ## Decision
 
