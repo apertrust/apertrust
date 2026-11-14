@@ -121,7 +121,9 @@ pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<D
     let photos: Vec<PathBuf> = paths.iter().map(|path| photo(path)).collect();
     let mut refused = None;
     for (i, (path, photo)) in paths.iter().zip(&photos).enumerate() {
-        let edit = photo != path;
+        // A folder named like an edit, `Album.apxmp`, is the folder it is.
+        let edit = photo != path && kind(path) != Kind::Folder;
+        let photo = if edit { photo } else { path };
         match kind(photo) {
             Kind::Folder if !edit => return Some(Dropped::Folder(path.clone())),
             Kind::Raw => {
@@ -499,6 +501,11 @@ pub(crate) mod tests {
             opens(&edits[1..], kind),
             Some(Dropped::Refused { path, why })
         );
+        // A folder named like an edit opens as the folder it is, nothing named Album there.
+        let album = folder.0.join("Album.apxmp");
+        std::fs::create_dir(&album).expect("a folder");
+        let dropped = opens(std::slice::from_ref(&album), kind);
+        assert_eq!(dropped, Some(Dropped::Folder(album)));
     }
 
     /// A window in the default theme, the photo's surround over its left part and the
