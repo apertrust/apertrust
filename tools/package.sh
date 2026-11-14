@@ -20,12 +20,13 @@
 # Windows the NSIS installer and a portable zip, on Linux the AppImage and a tarball, each
 # with the app, the CLI and the licences, into target/package/<target>/out.
 #
-#   tools/package.sh [--target TRIPLE] [--finder-layout] [--dev]
+#   tools/package.sh [--target TRIPLE] [--finder-layout] [--nightly]
 #
-# --dev packages Apertrust Dev, a development build that installs and keeps its settings
-# beside Apertrust, as the nightly builds are (docs/packaging.md): the binaries are built
-# with APERTRUST_DEV=1 and named apertrust-dev and apertrust-dev-cli, and the packages
-# take the name, the id and the files packaging/dev-identity.txt gives.
+# --nightly packages Apertrust Nightly, a development build that installs and keeps its
+# settings beside Apertrust, as the nightly builds are (docs/packaging.md): the binaries
+# are built with APERTRUST_NIGHTLY=1 and named apertrust-nightly and apertrust-nightly-cli,
+# and the packages take the name, the id and the files packaging/nightly-identity.txt
+# gives.
 #
 # On macOS it packages each architecture apart, a disk image for Apple silicon and one for
 # Intel, into target/package/aarch64-apple-darwin/out and x86_64-apple-darwin/out, for
@@ -49,18 +50,18 @@ PACKAGER=0.11.8
 export MACOSX_DEPLOYMENT_TARGET=11.0
 
 finder_layout=false
-dev=false
+nightly=false
 only=
 while [[ $# -gt 0 ]]; do
     case "$1" in
     --finder-layout) finder_layout=true ;;
-    --dev) dev=true ;;
+    --nightly) nightly=true ;;
     --target)
         only=${2:?--target needs a target triple}
         shift
         ;;
     *)
-        echo "usage: tools/package.sh [--target TRIPLE] [--finder-layout] [--dev]" >&2
+        echo "usage: tools/package.sh [--target TRIPLE] [--finder-layout] [--nightly]" >&2
         exit 2
         ;;
     esac
@@ -68,23 +69,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 # The package's identity: its files' and binaries' name, the name it shows, its id.
-if [[ "$dev" = true ]]; then
-    # Read by apertrust-base's build script: the binaries name themselves Apertrust Dev
+if [[ "$nightly" = true ]]; then
+    # Read by apertrust-base's build script: the binaries name themselves Apertrust Nightly
     # and keep their settings in its folder.
-    export APERTRUST_DEV=1
-    package=apertrust-dev
-    product="Apertrust Dev"
-    id=org.apertrust.Apertrust.Dev
+    export APERTRUST_NIGHTLY=1
+    package=apertrust-nightly
+    product="Apertrust Nightly"
+    id=org.apertrust.Apertrust.Nightly
 else
     package=apertrust
     product=Apertrust
     id=org.apertrust.Apertrust
 fi
 
-# The file $1 with the package's identity: as it is, or for --dev with each
-# `FROM => TO` of packaging/dev-identity.txt replaced wherever it occurs.
+# The file $1 with the package's identity: as it is, or for --nightly with each
+# `FROM => TO` of packaging/nightly-identity.txt replaced wherever it occurs.
 with_identity() {
-    if [[ "$dev" = false ]]; then
+    if [[ "$nightly" = false ]]; then
         cat "$1"
         return
     fi
@@ -97,7 +98,7 @@ with_identity() {
         from=${line%% => *}
         to=${line#* => }
         text=${text//"$from"/"$to"}
-    done <packaging/dev-identity.txt
+    done <packaging/nightly-identity.txt
     printf '%s\n' "$text"
 }
 
@@ -153,8 +154,8 @@ fi
 # cargo-packager made. The image is made writable, attached where no Finder window opens,
 # given both files, compressed again as cargo-packager compresses it, and signed again as
 # packaging/Packager.toml signs it. The layout finds its background by the volume's name,
-# so the volume must be the product's, Apertrust or Apertrust Dev, with no version, each
-# with its own layout, which also places the app by its bundle's name.
+# so the volume must be the product's, Apertrust or Apertrust Nightly, with no version,
+# each with its own layout, which also places the app by its bundle's name.
 dress_dmg() {
     dmg=$1
     work=$2
@@ -171,7 +172,7 @@ dress_dmg() {
         exit 1
     fi
     layout=layout.DS_Store
-    [[ "$dev" = true ]] && layout="layout-dev.DS_Store"
+    [[ "$nightly" = true ]] && layout="layout-nightly.DS_Store"
     mkdir -p "$mount/.background"
     cp packaging/macos/dmg/background.tiff "$mount/.background/background.tiff"
     cp "packaging/macos/dmg/$layout" "$mount/.DS_Store"
@@ -204,7 +205,7 @@ package() {
         cli=$target_dir/$host/release/apertrust-cli$exe
     fi
     # The version is the word before the three of "[macos arm64 release]", as the name may
-    # be "Apertrust Dev CLI".
+    # be "Apertrust Nightly CLI".
     full=$("$cli" --version | head -1 | awk '{ print $(NF - 3) }')
     short=${full%%[+~-]*}
     if ! grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' <<<"$short"; then
@@ -224,9 +225,10 @@ package() {
     out=$stage/out
     rm -rf "$out"
     mkdir -p "$out"
-    # Apertrust Dev's binaries under their own names, so that its installer and tarball
-    # never take Apertrust's place (Windows registers Open With by the executable's name).
-    if [[ "$dev" = true ]]; then
+    # Apertrust Nightly's binaries under their own names, so that its installer and
+    # tarball never take Apertrust's place (Windows registers Open With by the
+    # executable's name).
+    if [[ "$nightly" = true ]]; then
         mkdir -p "$stage/bin"
         cp "$bin_dir/apertrust$exe" "$stage/bin/$package$exe"
         cp "$bin_dir/apertrust-cli$exe" "$stage/bin/$package-cli$exe"
@@ -241,7 +243,7 @@ package() {
     fill packaging/Packager.toml "$stage/Packager.toml"
     fill packaging/macos/Info.plist "$stage/Info.plist"
     # The Linux desktop entry and metadata, named after the id, which the AppImage of
-    # Apertrust Dev takes from here and the tarball of either.
+    # Apertrust Nightly takes from here and the tarball of either.
     with_identity packaging/linux/org.apertrust.Apertrust.desktop >"$stage/$id.desktop"
     with_identity packaging/linux/org.apertrust.Apertrust.metainfo.xml \
         >"$stage/$id.metainfo.xml"
@@ -271,10 +273,10 @@ package() {
         for dmg in "$out"/*.dmg; do
             dress_dmg "$dmg" "$stage"
             codesign --verify --strict "$dmg"
-            # cargo-packager names the image after the product, "Apertrust Dev_…": the
-            # file's name has no space, and -dev as the other packages' have.
-            if [[ "$dev" = true ]]; then
-                mv "$dmg" "$out/Apertrust-dev_${dmg##*/Apertrust Dev_}"
+            # cargo-packager names the image after the product, "Apertrust Nightly_…": the
+            # file's name has no space, and -nightly as the other packages' have.
+            if [[ "$nightly" = true ]]; then
+                mv "$dmg" "$out/Apertrust-nightly_${dmg##*/Apertrust Nightly_}"
             fi
         done
         ;;

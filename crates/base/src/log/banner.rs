@@ -68,8 +68,8 @@ pub struct Program {
     /// grows along main, for what takes numbers only, as macOS's `CFBundleVersion`.
     /// `None` where the version is `0.0.0` or a packager's.
     pub build_number: Option<u32>,
-    /// Whether this is a development build, Apertrust Dev, which installs and keeps its
-    /// settings beside Apertrust (docs/settings.md, Development builds): a nightly
+    /// Whether this is a development build, Apertrust Nightly, which installs and keeps
+    /// its settings beside Apertrust (docs/settings.md, Development builds): a nightly
     /// package, or, once the history has a release tag, a build not on one.
     pub dev: bool,
     /// The packages the banner can name, as the build's `Cargo.lock` locks them:
@@ -104,21 +104,21 @@ impl Program {
         }
     }
 
-    /// The app's name, never translated: `Apertrust`, or `Apertrust Dev` for a
+    /// The app's name, never translated: `Apertrust`, or `Apertrust Nightly` for a
     /// development build. The window's title, and the banner's first word.
     pub const fn app_name(&self) -> &'static str {
         if self.dev {
-            "Apertrust Dev"
+            "Apertrust Nightly"
         } else {
             "Apertrust"
         }
     }
 
     /// The app's id, as every package names it (packaging/): a development build's has
-    /// `.Dev` after it.
+    /// `.Nightly` after it.
     pub const fn app_id(&self) -> &'static str {
         if self.dev {
-            "org.apertrust.Apertrust.Dev"
+            "org.apertrust.Apertrust.Nightly"
         } else {
             "org.apertrust.Apertrust"
         }
@@ -289,8 +289,8 @@ pub fn about(program: Program, build: &[Item]) -> String {
 }
 
 /// The program as a person writes it: `Apertrust` for the app, `Apertrust CLI` for
-/// `apertrust-cli`, and `Apertrust golden` for `apertrust-golden`; `Apertrust Dev`,
-/// `Apertrust Dev CLI` and so on for a development build.
+/// `apertrust-cli`, and `Apertrust golden` for `apertrust-golden`; `Apertrust Nightly`,
+/// `Apertrust Nightly CLI` and so on for a development build.
 fn display_name(program: &Program) -> String {
     let app = program.app_name();
     match program.name.strip_prefix("apertrust") {
@@ -377,22 +377,22 @@ mod tests {
         assert_eq!(egui(&packaged), Item::new("eframe / egui", "unknown"));
     }
 
-    /// A development build names itself Apertrust Dev, in the banner as in its id.
+    /// A development build names itself Apertrust Nightly, in the banner as in its id.
     #[test]
-    fn a_development_build_is_apertrust_dev() {
+    fn a_development_build_is_apertrust_nightly() {
         let dev = |name| Program::from_build(name, "0.1.0+3~gabc1234", "3", "1", "", "");
         assert!(dev("apertrust").dev);
-        assert_eq!(dev("apertrust").app_name(), "Apertrust Dev");
-        assert_eq!(dev("apertrust").app_id(), "org.apertrust.Apertrust.Dev");
-        assert_eq!(display_name(&dev("apertrust")), "Apertrust Dev");
-        assert_eq!(display_name(&dev("apertrust-cli")), "Apertrust Dev CLI");
+        assert_eq!(dev("apertrust").app_name(), "Apertrust Nightly");
+        assert_eq!(dev("apertrust").app_id(), "org.apertrust.Apertrust.Nightly");
+        assert_eq!(display_name(&dev("apertrust")), "Apertrust Nightly");
+        assert_eq!(display_name(&dev("apertrust-cli")), "Apertrust Nightly CLI");
         assert_eq!(
             display_name(&dev("apertrust-golden")),
-            "Apertrust Dev golden"
+            "Apertrust Nightly golden"
         );
         let text = about(dev("apertrust-cli"), &[]);
         assert!(
-            text.starts_with("Apertrust Dev CLI 0.1.0+3~gabc1234 ["),
+            text.starts_with("Apertrust Nightly CLI 0.1.0+3~gabc1234 ["),
             "{text}"
         );
     }

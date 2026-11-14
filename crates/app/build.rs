@@ -66,7 +66,7 @@ fn main() {
 /// The icons and the version resource of `apertrust.exe`: the app's icon 1, the first,
 /// which Explorer shows for the executable, and the edit's 2; the version's four numbers
 /// the release's and the count of commits, its strings the full version, as the banner
-/// gives it, and the name Apertrust Dev for a development build.
+/// gives it, and the name Apertrust Nightly for a development build.
 #[cfg(windows)]
 fn windows_resources(version: &apertrust_base::build::Version) {
     let icon = "assets/icons/apertrust.ico";
@@ -76,7 +76,7 @@ fn windows_resources(version: &apertrust_base::build::Version) {
     let [x, y, z, build] = version.numbers().map(u64::from);
     let numbers = x << 48 | y << 32 | z << 16 | build;
     let name = if version.dev {
-        "Apertrust Dev"
+        "Apertrust Nightly"
     } else {
         "Apertrust"
     };

@@ -37,9 +37,9 @@ In `packaging/`, beside the configuration:
 
 - `background.svg`: the source, in the dark theme's tokens, with the layout in its comment; the logo is linked and the caption outlined, so it renders with no fonts. To change the words, set them as text, outline them with usvg and replace the path.
 - `background.tiff`: the background at 1× (660 × 400, 72 dpi) and 2× (1320 × 800, 144 dpi) in one file, as Finder takes a background for Retina screens; written by `tools/build-dmg-background.sh`, which renders the SVG with resvg through the app's `dmg_background` example and joins the two with macOS's `tiffutil`. Run it on a Mac after the SVG or the logo changes and commit the TIFF.
-- `layout.DS_Store`: Finder's view of the window: its size, icon view with no toolbar, icons of 128 points with labels of 13, the app at (170, 196) and Applications at (490, 196), and the background. `layout-dev.DS_Store` is the same for Apertrust Dev's image (below), its volume and its bundle named `Apertrust Dev`. `generate.py` writes both from nothing, holding no path, user or disk of the machine that ran it; run it by hand when the layout changes, with `pip install ds_store==1.3.3 mac_alias==2.2.3` (both MIT) in a virtual environment, and commit the files, so packaging never needs Python.
+- `layout.DS_Store`: Finder's view of the window: its size, icon view with no toolbar, icons of 128 points with labels of 13, the app at (170, 196) and Applications at (490, 196), and the background. `layout-nightly.DS_Store` is the same for Apertrust Nightly's image (below), its volume and its bundle named `Apertrust Nightly`. `generate.py` writes both from nothing, holding no path, user or disk of the machine that ran it; run it by hand when the layout changes, with `pip install ds_store==1.3.3 mac_alias==2.2.3` (both MIT) in a virtual environment, and commit the files, so packaging never needs Python.
 
-`tools/package.sh` adds both to each image after cargo-packager makes it, with `hdiutil` alone: the image made writable, attached with no Finder window, given `.background/background.tiff` and `.DS_Store`, compressed again and signed again. The layout finds its background by the volume's name, so the volume is the product's, `Apertrust` or `Apertrust Dev`, with no version, as cargo-packager names it; the script stops on any other.
+`tools/package.sh` adds both to each image after cargo-packager makes it, with `hdiutil` alone: the image made writable, attached with no Finder window, given `.background/background.tiff` and `.DS_Store`, compressed again and signed again. The layout finds its background by the volume's name, so the volume is the product's, `Apertrust` or `Apertrust Nightly`, with no version, as cargo-packager names it; the script stops on any other.
 
 **The icons** are rendered from the mark's SVGs by `tools/build-icons.sh` into `crates/app/assets/icons`, beside their sources and the window's icon, which the binary compiles from the same tree: the `.icns`, the `.ico` (16 to 256 px) and the hicolor tree, named after the app id ([its README](../crates/app/assets/icons/README.md)). The edit's document icon on Windows, `apertrust-apxmp.ico`, is the executable's icon resource 2, beside the app's, 1 (`crates/app/build.rs`); on macOS the system draws the edit's.
 
@@ -52,21 +52,21 @@ In `packaging/`, beside the configuration:
 - **The edit, Apertrust's own.** `.apxmp` gets the ProgID `Apertrust.Edit`, named "Apertrust edit", its `DefaultIcon` the executable's document icon, `"<install folder>\apertrust.exe",-2`, and the same `shell\open\command`, which opens the edit's photo; the ProgID's name under `.apxmp\OpenWithProgids`, `.apxmp` in the `Applications` entry's `SupportedTypes`, and, as Apertrust owns the extension, `.apxmp`'s default value, `Apertrust.Edit`.
 - **The uninstaller** removes exactly those: `.apxmp`'s default where it is still `Apertrust.Edit`, the ProgIDs' names from each `OpenWithProgids` (the key, and the extension's, only where nothing else is left in it), the ProgIDs, the `Applications` entry, the Start menu entry (in the folder chosen at install, which the installer's key keeps), the desktop shortcut, the files it installed with the install folder once empty, the uninstall entry and the installer's own key. The person's settings and edits, elsewhere, stay. A default the person chose for a type is the system's to forget.
 
-## Apertrust Dev
+## Apertrust Nightly
 
-The nightly builds are Apertrust Dev, a development build that installs and runs beside Apertrust: its own name, id, executables, package files and user data folder ([settings.md](settings.md), Development builds), so neither replaces the other.
+The nightly builds are Apertrust Nightly, a development build that installs and runs beside Apertrust: its own name, id, executables, package files and user data folder ([settings.md](settings.md), Development builds), so neither replaces the other.
 
-**Which builds are Dev:** the nightly packages are always Dev; the nightly job says so explicitly. Every other build, from source or `cargo run`, stays Apertrust while no release tag exists, and becomes Dev once one does: a build not on a release tag, when the history has one.
+**Which builds are Nightly:** the nightly packages are always Nightly; the nightly job says so explicitly. Every other build, from source or `cargo run`, stays Apertrust while no release tag exists, and becomes Nightly once one does: a build not on a release tag, when the history has one.
 
-`tools/package.sh --dev` packages it. The binaries are built with `APERTRUST_DEV=1`, which makes them name themselves Apertrust Dev and keep their settings in its folder, and are copied as `apertrust-dev` and `apertrust-dev-cli`: the Windows installer registers Open With and finds a running app by the executable's name, and the tarball's `bin/` shares a prefix with Apertrust's. The packaging files are given the identity `packaging/dev-identity.txt` lists, each line a text and what replaces it; without `--dev` they are used as they are.
+`tools/package.sh --nightly` packages it. The binaries are built with `APERTRUST_NIGHTLY=1`, which makes them name themselves Apertrust Nightly and keep their settings in its folder, and are copied as `apertrust-nightly` and `apertrust-nightly-cli`: the Windows installer registers Open With and finds a running app by the executable's name, and the tarball's `bin/` shares a prefix with Apertrust's. The packaging files are given the identity `packaging/nightly-identity.txt` lists, each line a text and what replaces it; without `--nightly` they are used as they are.
 
-| Platform | Apertrust Dev's packages |
+| Platform | Apertrust Nightly's packages |
 | --- | --- |
-| macOS | `Apertrust-dev_<version>_aarch64.dmg` and `Apertrust-dev_<version>_x64.dmg`, the volume `Apertrust Dev`, laid out by `layout-dev.DS_Store`, holding `Apertrust Dev.app`: the bundle id `org.apertrust.Apertrust.Dev`, its name `Apertrust Dev`, the executables `apertrust-dev` and `apertrust-dev-cli`, the edit's type at the rank Alternate, so it opens edits but never takes them from Apertrust |
-| Windows | `apertrust-dev_<version>_x64-setup.exe`, installing into `%LOCALAPPDATA%\Programs\Apertrust Dev` with its own uninstall entry, Start menu shortcut `Apertrust Dev`, ProgIDs `Apertrust.Dev.RawImage` and `Apertrust.Dev.Edit`, the edit's in Open With alone, never `.apxmp`'s default, and Open With entry `Applications\apertrust-dev.exe`; `apertrust-dev_<version>_x64-portable.zip`, an `Apertrust Dev` folder |
-| Linux | `apertrust-dev_<version>_x86_64.AppImage` and `apertrust-dev_<version>_x86_64.tar.gz`, with `apertrust-dev` and `apertrust-dev-cli`, the desktop entry `org.apertrust.Apertrust.Dev.desktop` (named Apertrust Dev) and the metadata `org.apertrust.Apertrust.Dev.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
+| macOS | `Apertrust-nightly_<version>_aarch64.dmg` and `Apertrust-nightly_<version>_x64.dmg`, the volume `Apertrust Nightly`, laid out by `layout-nightly.DS_Store`, holding `Apertrust Nightly.app`: the bundle id `org.apertrust.Apertrust.Nightly`, its name `Apertrust Nightly`, the executables `apertrust-nightly` and `apertrust-nightly-cli`, the edit's type at the rank Alternate, so it opens edits but never takes them from Apertrust |
+| Windows | `apertrust-nightly_<version>_x64-setup.exe`, installing into `%LOCALAPPDATA%\Programs\Apertrust Nightly` with its own uninstall entry, Start menu shortcut `Apertrust Nightly`, ProgIDs `Apertrust.Nightly.RawImage` and `Apertrust.Nightly.Edit`, the edit's in Open With alone, never `.apxmp`'s default, and Open With entry `Applications\apertrust-nightly.exe`; `apertrust-nightly_<version>_x64-portable.zip`, an `Apertrust Nightly` folder |
+| Linux | `apertrust-nightly_<version>_x86_64.AppImage` and `apertrust-nightly_<version>_x86_64.tar.gz`, with `apertrust-nightly` and `apertrust-nightly-cli`, the desktop entry `org.apertrust.Apertrust.Nightly.desktop` (named Apertrust Nightly) and the metadata `org.apertrust.Apertrust.Nightly.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
 
-`crates/app/tests/packaging.rs` applies `dev-identity.txt` to the files as the script does, and checks that each line still matches and that every package names Apertrust Dev by its own id.
+`crates/app/tests/packaging.rs` applies `nightly-identity.txt` to the files as the script does, and checks that each line still matches and that every package names Apertrust Nightly by its own id.
 
 ## Opening a raw from the system
 
@@ -95,7 +95,7 @@ On Windows each file opened with the app starts an app of its own, since one ins
 ```sh
 cargo install --locked cargo-packager --version 0.11.8   # once; the script checks the version
 tools/package.sh                 # this platform's packages into target/package/<target>/out
-tools/package.sh --dev           # Apertrust Dev's, as the nightly builds are
+tools/package.sh --nightly       # Apertrust Nightly's, as the nightly builds are
 APERTRUST_VERSION=0.2.0 tools/package.sh                  # a packager's version
 ```
 
@@ -120,15 +120,15 @@ The packages are not signed with a developer's certificate yet, so each system w
 - **Windows**: SmartScreen says "Windows protected your PC" for the installer and the executables: More info › Run anyway.
 - **Linux**: neither the AppImage nor the tarball is signed; make the AppImage executable (`chmod +x`) and run it.
 
-Apertrust Dev's are the same, under its names: `/Applications/Apertrust Dev.app`, `apertrust-dev_*_x86_64.AppImage`.
+Apertrust Nightly's are the same, under its names: `/Applications/Apertrust Nightly.app`, `apertrust-nightly_*_x86_64.AppImage`.
 
 ## Nightly builds
 
-`.github/workflows/nightly-builds.yml` builds Apertrust Dev's packages each night at 01:18 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
+`.github/workflows/nightly-builds.yml` builds Apertrust Nightly's packages each night at 00:08 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
 
 - **When**: only when main has changed since the commit the `nightly` tag points at. A run by hand from the Actions tab builds the same way, and its `force` input builds and publishes an unchanged main too. One run at a time; a second waits.
-- **The jobs**: `check` compares main with the tag; then three builds, each `tools/package.sh --dev` with cargo-packager 0.11.8, from a full clone so the version is computed: `macos` on `macos-15` (both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin`), `windows` on `windows-2025` (the installer and the zip), `linux` on `ubuntu-24.04` (the AppImage and the tarball). Each uploads its packages as an artifact, kept seven days.
-- **Publishing**: once every build has succeeded, `publish`, the one job that may write, makes the `nightly` release again: it deletes the release with its tag, then creates it through GitHub's Releases API on the commit built, with the night's files and `SHA256SUMS.txt`, their SHA-256 sums. The API makes the tag, since GitHub refuses the job's own token a `git push` of a tag whose commit changes workflow files. The release is missing for the minute between. The release's notes give the commit and the date, and say that nightlies are untested development builds and unsigned (above). It is a pre-release, never the latest release. A file's version `+` is published as `.` (`apertrust-dev_0.0.0.615_x64-setup.exe`), as GitHub would otherwise rename it after the sums were taken.
+- **The jobs**: `check` compares main with the tag; then three builds, each `tools/package.sh --nightly` with cargo-packager 0.11.8, from a full clone so the version is computed: `macos` on `macos-15` (both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin`), `windows` on `windows-2025` (the installer and the zip), `linux` on `ubuntu-24.04` (the AppImage and the tarball). Each uploads its packages as an artifact, kept seven days.
+- **Publishing**: once every build has succeeded, `publish`, the one job that may write, makes the `nightly` release again: it deletes the release with its tag, then creates it through GitHub's Releases API on the commit built, with the night's files and `SHA256SUMS.txt`, their SHA-256 sums. The API makes the tag, since GitHub refuses the job's own token a `git push` of a tag whose commit changes workflow files. The release is missing for the minute between. The release's notes give the commit and the date, and say that nightlies are untested development builds and unsigned (above). It is a pre-release, never the latest release. A file's version `+` is published as `.` (`apertrust-nightly_0.0.0.615_x64-setup.exe`), as GitHub would otherwise rename it after the sums were taken.
 - **On failure**: when any build fails, nothing is published and the last nightly stays. A run from another branch builds but never publishes.
 - **What is not there**: tests, which CI runs on every push to main, and signing (above).
 

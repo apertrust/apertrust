@@ -27,8 +27,8 @@
 ;   SupportedTypes, in place of FileAssociation.nsh's APP_ASSOCIATE, which takes the
 ;   extension's default;
 ; - Apertrust's own type, its edit (.apxmp, the ProgID Apertrust.Edit), is the one
-;   default it takes, with the executable's second icon, the document's; Apertrust Dev's,
-;   Apertrust.Dev.Edit, is in Open With alone;
+;   default it takes, with the executable's second icon, the document's; Apertrust
+;   Nightly's, Apertrust.Nightly.Edit, is in Open With alone;
 ; - the uninstaller removes exactly those, where cargo-packager's loops over a field the
 ;   associations do not have and removes nothing, the edit's default only where it is
 ;   still Apertrust's, and the installer's own registry key;
@@ -562,7 +562,7 @@ Section Install
     {{/each}}
     {{#if (eq association.name "Apertrust.Edit") ~}}
       ; Apertrust's own type: .apxmp's default too, so a double-click opens an edit.
-      ; Apertrust Dev's ProgID, Apertrust.Dev.Edit, never takes it.
+      ; Apertrust Nightly's ProgID, Apertrust.Nightly.Edit, never takes it.
       WriteRegStr SHCTX "Software\Classes\.apxmp" "" "Apertrust.Edit"
     {{/if ~}}
   {{/each}}

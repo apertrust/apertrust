@@ -15,8 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Writes layout.DS_Store and layout-dev.DS_Store, Finder's view of the disk image's
-window for Apertrust and for Apertrust Dev (docs/packaging.md).
+"""Writes layout.DS_Store and layout-nightly.DS_Store, Finder's view of the disk image's
+window for Apertrust and for Apertrust Nightly (docs/packaging.md).
 
 Run by hand, on any system, only when the layout changes, and commit what it writes;
 packaging copies the file into each image and never needs Python:
@@ -40,8 +40,12 @@ from mac_alias import ALIAS_EJECTABLE_DISK, ALIAS_KIND_FILE, Alias, TargetInfo, 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Each layout's file and its volume, the product's name, the app's bundle named after
-# it. Held to background.svg's comment, tools/package.sh and packaging/dev-identity.txt.
-LAYOUTS = {"layout.DS_Store": "Apertrust", "layout-dev.DS_Store": "Apertrust Dev"}
+# it. Held to background.svg's comment, tools/package.sh and
+# packaging/nightly-identity.txt.
+LAYOUTS = {
+    "layout.DS_Store": "Apertrust",
+    "layout-nightly.DS_Store": "Apertrust Nightly",
+}
 BACKGROUND = ".background/background.tiff"
 WIDTH, HEIGHT = 660, 400  # the window's content, in points: the background's 1x size
 TITLE_BAR = 32  # Finder's title bar with no toolbar, above the content

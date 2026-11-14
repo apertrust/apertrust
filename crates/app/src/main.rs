@@ -753,13 +753,13 @@ impl ApplicationHandler<eframe::UserEvent> for Gated<'_> {
     }
 }
 
-/// The app's name, never translated: the window's title, Apertrust Dev for a development
-/// build. On macOS the app menu's comes from `Info.plist`, which the build embeds in the
-/// binary (`build.rs`).
+/// The app's name, never translated: the window's title, Apertrust Nightly for a
+/// development build. On macOS the app menu's comes from `Info.plist`, which the build
+/// embeds in the binary (`build.rs`).
 const APP_NAME: &str = apertrust_base::program!().app_name();
 /// The app's id, its desktop file's name on Linux, where a Wayland compositor finds the
 /// window's icon and name through it (packaging/linux); a development build's ends in
-/// `.Dev`.
+/// `.Nightly`.
 const APP_ID: &str = apertrust_base::program!().app_id();
 
 /// The smallest size the shell takes, in logical pixels; its size at first start is

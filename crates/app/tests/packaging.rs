@@ -18,10 +18,10 @@
 //! hold every extension rawler decodes and no other, so a rawler update that adds one
 //! fails here until the packages open it too, the Windows installer's template in Open
 //! With alone; Apertrust's own type, the edit (`.apxmp`), is Apertrust's on macOS and
-//! Windows, and never Apertrust Dev's; the app's id is the same everywhere, Apertrust's
-//! and, as `packaging/dev-identity.txt` makes the files for `tools/package.sh --dev`,
-//! Apertrust Dev's; and the plist the binary embeds agrees with the bundle's
-//! (docs/packaging.md).
+//! Windows, and never Apertrust Nightly's; the app's id is the same everywhere,
+//! Apertrust's and, as `packaging/nightly-identity.txt` makes the files for
+//! `tools/package.sh --nightly`, Apertrust Nightly's; and the plist the binary embeds
+//! agrees with the bundle's (docs/packaging.md).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -31,9 +31,9 @@ const APP_ID: &str = "org.apertrust.Apertrust";
 
 /// The edit's type on macOS, which the bundle exports.
 const EDIT_TYPE: &str = "org.apertrust.edit";
-/// The edit's ProgID on Windows, Apertrust's, and Apertrust Dev's.
+/// The edit's ProgID on Windows, Apertrust's, and Apertrust Nightly's.
 const EDIT_PROGID: &str = "Apertrust.Edit";
-const DEV_EDIT_PROGID: &str = "Apertrust.Dev.Edit";
+const NIGHTLY_EDIT_PROGID: &str = "Apertrust.Nightly.Edit";
 
 /// Each extension's type on macOS: the system's where it declares one (as `mdls` reports
 /// for a file of that name), else the one `Info.plist` imports; and on Linux its MIME
@@ -467,7 +467,7 @@ fn block<'a>(template: &'a str, section: &str, condition: &str) -> Vec<&'a str> 
 
 /// Apertrust owns the edit's extension on Windows: Apertrust.Edit, with the executable's
 /// second icon, is `.apxmp`'s default as well, which the uninstaller clears only while it
-/// is still Apertrust's. Apertrust Dev's ProgID, of another name, never takes it.
+/// is still Apertrust's. Apertrust Nightly's ProgID, of another name, never takes it.
 #[test]
 fn the_installer_makes_the_edit_apertrust_s_and_takes_it_back() {
     let template = read("packaging/windows/installer.nsi");
@@ -488,7 +488,7 @@ fn the_installer_makes_the_edit_apertrust_s_and_takes_it_back() {
         ]
     );
 
-    // The edit's ProgID, Apertrust's or Apertrust Dev's, shows the executable's icon 2,
+    // The edit's ProgID, Apertrust's or Apertrust Nightly's, shows the executable's icon 2,
     // which crates/app/build.rs embeds; the raws' its icon 1, the first.
     let icon = |index: &str| {
         let exe = r#"$\"$INSTDIR\${MAINBINARYNAME}.exe$\""#;
@@ -530,17 +530,17 @@ fn every_package_names_the_app_by_one_id() {
     assert!(main.contains("const APP_ID: &str = apertrust_base::program!().app_id();"));
 }
 
-/// The files `tools/package.sh --dev` gives Apertrust Dev's identity.
-const DEV_FILES: [&str; 4] = [
+/// The files `tools/package.sh --nightly` gives Apertrust Nightly's identity.
+const NIGHTLY_FILES: [&str; 4] = [
     "packaging/Packager.toml",
     "packaging/macos/Info.plist",
     "packaging/linux/org.apertrust.Apertrust.desktop",
     "packaging/linux/org.apertrust.Apertrust.metainfo.xml",
 ];
 
-/// `packaging/dev-identity.txt`'s replacements, `FROM => TO`, as the script reads them.
-fn dev_identity() -> Vec<(String, String)> {
-    read("packaging/dev-identity.txt")
+/// `packaging/nightly-identity.txt`'s replacements, `FROM => TO`, as the script reads them.
+fn nightly_identity() -> Vec<(String, String)> {
+    read("packaging/nightly-identity.txt")
         .lines()
         .map(|line| line.trim_end_matches('\r'))
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -551,44 +551,44 @@ fn dev_identity() -> Vec<(String, String)> {
         .collect()
 }
 
-/// A file of `packaging/` as `tools/package.sh --dev` reads it: each replacement made
+/// A file of `packaging/` as `tools/package.sh --nightly` reads it: each replacement made
 /// wherever its text occurs, in order.
-fn as_dev(path: &str) -> String {
+fn as_nightly(path: &str) -> String {
     let mut text = read(path);
-    for (from, to) in dev_identity() {
+    for (from, to) in nightly_identity() {
         text = text.replace(&from, &to);
     }
     text
 }
 
 #[test]
-fn every_dev_identity_line_still_matches() {
-    let files: Vec<String> = DEV_FILES.iter().map(|path| read(path)).collect();
-    for (from, _) in dev_identity() {
+fn every_nightly_identity_line_still_matches() {
+    let files: Vec<String> = NIGHTLY_FILES.iter().map(|path| read(path)).collect();
+    for (from, _) in nightly_identity() {
         assert!(
             files.iter().any(|text| text.contains(&from)),
-            "{from:?} in none of {DEV_FILES:?}: packaging/dev-identity.txt is stale"
+            "{from:?} in none of {NIGHTLY_FILES:?}: packaging/nightly-identity.txt is stale"
         );
     }
     // The edit's rank, replaced wherever it occurs, is the one Owner.
     let owner = "<string>Owner</string>";
-    assert!(dev_identity().iter().any(|(from, _)| from == owner));
+    assert!(nightly_identity().iter().any(|(from, _)| from == owner));
     let count: usize = files.iter().map(|text| text.matches(owner).count()).sum();
     assert_eq!(count, 1, "{owner} is the edit's rank alone");
 }
 
-/// Apertrust Dev's packages name it by its own id, name, binaries and Open With entry, so
-/// that it installs beside Apertrust; its icon is Apertrust's.
+/// Apertrust Nightly's packages name it by its own id, name, binaries and Open With
+/// entry, so that it installs beside Apertrust; its icon is Apertrust's.
 #[test]
-fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
+fn apertrust_nightly_is_named_by_its_own_id_in_every_package() {
     let id = program(true).app_id();
-    assert_eq!(id, format!("{APP_ID}.Dev"));
-    assert_eq!(program(true).app_name(), "Apertrust Dev");
+    assert_eq!(id, format!("{APP_ID}.Nightly"));
+    assert_eq!(program(true).app_name(), "Apertrust Nightly");
 
-    let config: toml::Table = as_dev("packaging/Packager.toml").parse().expect("TOML");
+    let config: toml::Table = as_nightly("packaging/Packager.toml").parse().expect("TOML");
     assert_eq!(config["identifier"].as_str(), Some(id));
-    assert_eq!(config["name"].as_str(), Some("apertrust-dev"));
-    assert_eq!(config["productName"].as_str(), Some("Apertrust Dev"));
+    assert_eq!(config["name"].as_str(), Some("apertrust-nightly"));
+    assert_eq!(config["productName"].as_str(), Some("Apertrust Nightly"));
     let binaries: Vec<(&str, bool)> = config["binaries"]
         .as_array()
         .expect("binaries")
@@ -600,7 +600,10 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
         .collect();
     assert_eq!(
         binaries,
-        [("apertrust-dev", true), ("apertrust-dev-cli", false)]
+        [
+            ("apertrust-nightly", true),
+            ("apertrust-nightly-cli", false)
+        ]
     );
     let associations = config["fileAssociations"].as_array().expect("associations");
     let names: Vec<&str> = associations
@@ -608,7 +611,7 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
         .map(|association| association["name"].as_str().expect("a ProgID"))
         .collect();
     // Its edit's ProgID is not Apertrust's, which alone the installer makes the default.
-    assert_eq!(names, ["Apertrust.Dev.RawImage", DEV_EDIT_PROGID]);
+    assert_eq!(names, ["Apertrust.Nightly.RawImage", NIGHTLY_EDIT_PROGID]);
     assert_eq!(
         config["deb"]["desktopTemplate"].as_str(),
         Some(format!("@STAGE@/{id}.desktop").as_str())
@@ -620,9 +623,9 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
         Some(format!("usr/share/metainfo/{id}.metainfo.xml").as_str())
     );
 
-    let plist = as_dev("packaging/macos/Info.plist");
+    let plist = as_nightly("packaging/macos/Info.plist");
     for key in ["CFBundleName", "CFBundleDisplayName"] {
-        let pair = format!("<key>{key}</key>\n\t<string>Apertrust Dev</string>");
+        let pair = format!("<key>{key}</key>\n\t<string>Apertrust Nightly</string>");
         assert!(plist.contains(&pair), "{key}");
     }
     // It opens edits, never taking them from Apertrust.
@@ -630,8 +633,11 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
     assert_eq!(edit, ["Apertrust edit", "Editor", "Alternate", EDIT_TYPE]);
     assert!(!plist.contains("Owner"));
 
-    let desktop = as_dev("packaging/linux/org.apertrust.Apertrust.desktop");
-    for line in ["Name=Apertrust Dev", "Exec=apertrust-dev --in-folder %F"] {
+    let desktop = as_nightly("packaging/linux/org.apertrust.Apertrust.desktop");
+    for line in [
+        "Name=Apertrust Nightly",
+        "Exec=apertrust-nightly --in-folder %F",
+    ] {
         assert!(
             desktop.contains(&format!("\n{line}\n")),
             "{line} in {desktop}"
@@ -641,13 +647,13 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
         desktop.contains(&format!("\nIcon={APP_ID}\n")),
         "Apertrust's icon"
     );
-    let metainfo = as_dev("packaging/linux/org.apertrust.Apertrust.metainfo.xml");
+    let metainfo = as_nightly("packaging/linux/org.apertrust.Apertrust.metainfo.xml");
     for element in [
         format!("<id>{id}</id>"),
-        "<name>Apertrust Dev</name>".to_owned(),
+        "<name>Apertrust Nightly</name>".to_owned(),
         format!("<launchable type=\"desktop-id\">{id}.desktop</launchable>"),
-        "<binary>apertrust-dev</binary>".to_owned(),
-        "<binary>apertrust-dev-cli</binary>".to_owned(),
+        "<binary>apertrust-nightly</binary>".to_owned(),
+        "<binary>apertrust-nightly-cli</binary>".to_owned(),
     ] {
         assert!(metainfo.contains(&element), "{element} in {metainfo}");
     }

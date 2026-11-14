@@ -31,8 +31,8 @@
 //!   `~/Library/Application Support/Apertrust` on macOS, `%APPDATA%\Apertrust\config` on
 //!   Windows, and on Linux `$XDG_CONFIG_HOME/apertrust`, by default `~/.config/apertrust`,
 //!   one whole folder, never split by XDG's kinds. A development build's is Apertrust
-//!   Dev's instead (`platform_folder`): `Apertrust Dev` for `Apertrust` on macOS and
-//!   Windows, `apertrust-dev` on Linux (decision 43).
+//!   Nightly's instead (`platform_folder`): `Apertrust Nightly` for `Apertrust` on macOS
+//!   and Windows, `apertrust-nightly` on Linux (decision 43).
 //!
 //! A leading `~` is the home folder, as darktable has it: `~` alone or `~/…`, never another
 //! user's `~ana`, since the shell leaves it after `=` and in quotes. A relative folder is
@@ -61,7 +61,7 @@
 //!   person's Apertrust;
 //! - then the platform's cache folder: `~/Library/Caches/Apertrust` on macOS,
 //!   `%LOCALAPPDATA%\Apertrust\cache` on Windows, and on Linux `$XDG_CACHE_HOME/apertrust`,
-//!   by default `~/.cache/apertrust`; Apertrust Dev's beside it.
+//!   by default `~/.cache/apertrust`; Apertrust Nightly's beside it.
 //!
 //! A leading `~` and a relative folder are taken as for the user data folder. The cache
 //! folder is only chosen here, never created or probed: the cache creates what it writes.
@@ -227,7 +227,7 @@ pub struct Folders {
 
 impl Folders {
     /// Chooses the folders: the user data folder `given` names on the command line, else
-    /// [`VARIABLE`]'s, else the platform's, Apertrust Dev's for a `dev` build
+    /// [`VARIABLE`]'s, else the platform's, Apertrust Nightly's for a `dev` build
     /// (`Program::dev`), created where it is missing; and the cache folder `cache` names,
     /// by one of [`CACHE_FLAGS`], else [`CACHE_VARIABLE`]'s, else the user data folder's or the
     /// platform's, never created here. Logs both under `-d settings`. None, with a warning,
@@ -332,15 +332,15 @@ struct System {
 }
 
 /// The platform folder's own part, which `directories` puts in the system's place:
-/// Apertrust's, or a development build's, Apertrust Dev's, beside it. Lower case on
+/// Apertrust's, or a development build's, Apertrust Nightly's, beside it. Lower case on
 /// Linux, with a hyphen for the space, as the stable folder's `apertrust` is.
 fn platform_folder(dev: bool) -> &'static str {
     let lower = !cfg!(any(target_os = "macos", target_os = "windows"));
     match (dev, lower) {
         (false, false) => "Apertrust",
         (false, true) => "apertrust",
-        (true, false) => "Apertrust Dev",
-        (true, true) => "apertrust-dev",
+        (true, false) => "Apertrust Nightly",
+        (true, true) => "apertrust-nightly",
     }
 }
 
@@ -648,8 +648,8 @@ mod tests {
         chosen.expect("usable").expect("a folder")
     }
 
-    /// A development build's platform folder is Apertrust Dev's, beside Apertrust's, and
-    /// Apertrust's stays where settings have always been.
+    /// A development build's platform folder is Apertrust Nightly's, beside Apertrust's,
+    /// and Apertrust's stays where settings have always been.
     #[test]
     fn a_development_build_has_a_platform_folder_of_its_own() {
         let config = |dev| {
@@ -663,9 +663,9 @@ mod tests {
         };
         assert_ne!(dev, stable);
         let wanted = if cfg!(any(target_os = "macos", target_os = "windows")) {
-            "Apertrust Dev"
+            "Apertrust Nightly"
         } else {
-            "apertrust-dev"
+            "apertrust-nightly"
         };
         let named = |path: &Path, name| path.components().any(|part| part.as_os_str() == name);
         assert!(named(&dev, wanted), "{}", dev.display());

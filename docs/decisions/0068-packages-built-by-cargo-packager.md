@@ -24,7 +24,7 @@ Every package ships the GPL, `CREDITS.md`, the fonts' OFL and Lucide's licence, 
 
 - **macOS:** the bundle exports `org.apertrust.edit`, conforming to `public.xml` and `public.data`, its icon the system's document page with the text APXMP (`UTTypeIconText`, no icon file), and Apertrust is its editor at the rank Owner.
 - **Windows:** the installer makes the ProgID `Apertrust.Edit` `.apxmp`'s default, its icon the executable's icon resource 2 (`apertrust.exe,-2`); the uninstaller clears that default only while it is still `Apertrust.Edit`.
-- **Apertrust Dev** opens edits but never takes them: the rank Alternate on macOS, and `Apertrust.Dev.Edit` in Open With alone on Windows.
+- **Apertrust Nightly** opens edits but never takes them: the rank Alternate on macOS, and `Apertrust.Nightly.Edit` in Open With alone on Windows.
 
 **The version is the build's** ([0044](0044-logging-the-banner-and-versions.md)): the package's is the release's three numbers with the count of commits, since installers take numbers only, and the full version stays in the binaries' banner and the Windows version resource's text.
 
@@ -46,5 +46,5 @@ Every package ships the GPL, `CREDITS.md`, the fonts' OFL and Lucide's licence, 
 - cargo-packager 0.11.8's quirks are worked around in the config and the script: `--binaries-dir` is ignored, so the folder is in the config; a config file with no `name` makes it look for a `Cargo.toml` beside it.
 - The installer's script is Apertrust's own, `packaging/windows/installer.nsi`: cargo-packager 0.11.8's template with the per-user folder `%LOCALAPPDATA%\Programs\Apertrust`, the raw types registered under Open With alone (cargo-packager's makes Apertrust their default handler), `.apxmp`'s default `Apertrust.Edit`, and an uninstaller that removes them (cargo-packager's leaves them behind); a new cargo-packager's template is compared with it.
 - The Windows app is a windowed program, so no console opens beside it; started from a terminal it attaches to that terminal's console, so `--version`, `-d` logs and errors print there ([packaging.md](../packaging.md), Windows). The CLI stays a console program.
-- The nightly builds package Apertrust Dev, which installs beside Apertrust, each package on its own platform (`tools/package.sh --dev`, `nightly-builds.yml`).
+- The nightly builds package Apertrust Nightly, which installs beside Apertrust, each package on its own platform (`tools/package.sh --nightly`, `nightly-builds.yml`).
 - Planned: a release workflow that builds every package on its own platform; a Developer ID and notarisation on macOS, a code-signing certificate on Windows, Flatpak on Linux ([packaging.md](../packaging.md)).
