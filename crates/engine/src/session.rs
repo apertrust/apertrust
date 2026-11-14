@@ -3204,6 +3204,17 @@ impl Engine {
                 }));
             }
             let clocks = loaded.clocks().to_vec();
+            // Part of its history cannot be read: the file the writer compares from now on,
+            // and lays Discard History's fresh log on, the only write it takes while
+            // view-only. A newer build's is never written, so the stamp before it stays.
+            if matches!(view_only.reason, sidecar::Reason::Unreadable(_)) {
+                self.writer
+                    .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
+                let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
+                open.file = loaded.file;
+                open.file.photo = photo;
+                open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+            }
             open.history = history::PhotoHistory::read(loaded.log, clocks, &[]);
             open.edit = loaded.edit;
             open.view_only = Some(view_only.clone());

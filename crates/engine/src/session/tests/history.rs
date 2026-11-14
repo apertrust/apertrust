@@ -3199,3 +3199,50 @@ fn a_compress_undone_is_not_told_when_a_newer_file_is_taken_in() {
     assert_eq!(after.steps[0].id, ids[0]);
     remove(&path);
 }
+
+/// Another program's file part of whose history cannot be read, found before a write, makes
+/// the photo view-only; nothing is written over it until Discard History, whose write is
+/// compared with that file, not the one before it: the fresh log written, the photo
+/// editable from then on, nothing taken in again.
+#[test]
+fn discard_history_writes_over_an_unreadable_file_taken_in() {
+    let path = scratch("history-discard-unreadable-newer");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    let xml = std::fs::read_to_string(&sidecar).unwrap();
+    let damaged = xml.replacen(
+        r#"apertrust:source="you""#,
+        r#"apertrust:source="robot""#,
+        1,
+    );
+    assert_ne!(damaged, xml);
+    std::fs::write(&sidecar, &damaged).unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(matches!(taken.first(), Some(Event::Opened(p)) if p.view_only.is_some()));
+    // View-only: no change, and nothing written over the file.
+    let refused = driven.run([set("brightness", ControlValue::Number(1.0), true)]);
+    assert!(matches!(
+        failures(&refused)[..],
+        [SessionError::ViewOnly(_)]
+    ));
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), damaged);
+    // Discard History: written at once, the photo editable.
+    let discarded = driven.run([Command::DiscardHistory]);
+    assert!(failures(&discarded).is_empty(), "{discarded:?}");
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    assert!(driven.engine.newer_file(false).is_empty());
+    let read = assert_saved(&driven, &path, SAVING);
+    assert_eq!(read.view_only(), None);
+    assert_eq!(softened(values(&discarded)), ControlValue::Number(40.0));
+    let changed = driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+    assert!(failures(&changed).is_empty(), "{changed:?}");
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    remove(&path);
+}
