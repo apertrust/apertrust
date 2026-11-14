@@ -39,6 +39,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `lock` | Lucide's `lock`, from Feather |
 | `edited` | Lucide's `pencil` |
 | `labels`, `labels-filled` | Lucide's `eye` |
+| `visible` | Lucide's `eye` |
 | `star`, `star-filled` | Lucide's `star` |
 | `reject` | Lucide's `circle-x` |
 | `rotate-left`, `rotate-right` | Lucide's `rotate-ccw-square` and `rotate-cw-square` |
@@ -64,7 +65,7 @@ Every icon follows the same rules, so it takes the theme's colour and stays shar
 
 - **One colour, `currentColor`.** Strokes, and the fills of dots and filled forms, use `currentColor`; no other colour appears. Nothing is partly transparent: no `opacity`, `fill-opacity` or `stroke-opacity`, so every part is solid or an outline. The app renders the file with resvg at the exact pixel size it needs, in white, and tints it with a theme token.
 - **Lucide's grid:** `viewBox="0 0 24 24"` with `width` and `height` 24; shapes a unit inside the box, their strokes' centres between 2 and 22; round caps and joins; outlines; Lucide's corner radii, 2 units, 1 on small rectangles; about 2 units between distinct parts. The caption buttons and the mark keep boxes of their own, the size they are drawn at: 10 and 20.
-- **Sizes:** `Icon::size` is the size an icon is drawn at, in points: 14 for header and control icons, 16 for the top panel's and the central bar's and the start window's ways in, 22 for the side panel's tabs; 10 and 12 for chevrons, the check, the caption's lock, the grid's marks, the rating's stars and reject, and the scopes' clipping toggles.
+- **Sizes:** `Icon::size` is the size an icon is drawn at, in points: 14 for header and control icons and the History tab's eye, 16 for the top panel's and the central bar's and the start window's ways in, 22 for the side panel's tabs; 10 and 12 for chevrons, the check, the caption's lock, the grid's marks, the rating's stars and reject, and the scopes' clipping toggles.
 - **Stroke:** every line is drawn 1.25 points wide whatever the icon's size (`icons::STROKE`, Lucide's `absoluteStrokeWidth`). The files keep Lucide's 2-unit stroke, set once on the `<svg>` element and nowhere else, and the renderer sets it to 1.25 × 24 ÷ the size drawn in points: 3 units at 10 points, 2.14 at 14, 1.36 at 22. The caption buttons keep their 1-unit strokes on half-unit coordinates, thin and sharp at every whole scale, and the mark, filled, has none.
 - **Shapes:** `<path>`, `<circle>`, `<rect>` and `<line>`; no text, images, gradients, filters or masks, but the exceptions below.
 - **Filled forms**, `<name>-filled.svg`, only to show a state: the chosen side panel tab, an icon button that is on (a toggle, a quad's picker), and a rating's points (`Icon::filled`). Each is its outline's shapes, in its box and stroke, filled. Where a line crosses the filled shape, a mask cuts it out, so the icon stays one colour on any background: one `<mask id="cut">`, a white square with the lines in black, applied with `mask="url(#cut)"`.

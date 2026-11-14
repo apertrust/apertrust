@@ -823,6 +823,8 @@ history-points =
         [many] { $count } точок
        *[other] { $count } точки
     }
+history-peek = Утримуйте, щоб побачити знімок без модуля: { $module }
+history-peek-tip = Утримуйте, щоб побачити знімок без модуля: { $module }. Нічого не зберігається
 
 ## Крива
 

@@ -3246,3 +3246,224 @@ fn discard_history_writes_over_an_unreadable_file_taken_in() {
     assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
     remove(&path);
 }
+
+/// The operations the open photo's live pipeline runs, in order, each once.
+fn live_operations(driven: &Driven) -> Vec<&'static str> {
+    let open = driven.engine.open.as_ref().unwrap();
+    let plan = open.pipeline.as_ref().expect("a live pipeline").plan();
+    let mut ids: Vec<&'static str> = plan.passes().map(|(operation, _)| operation.id).collect();
+    ids.dedup();
+    ids
+}
+
+/// The module `id`'s state among the values in `events`.
+fn state<'v>(events: &'v [Event], id: &str) -> &'v ModuleState {
+    (values(events).modules.iter())
+        .find(|state| state.module == id)
+        .unwrap()
+}
+
+fn hide(module: &str, hidden: bool) -> Command {
+    Command::Hide {
+        module: module.to_owned(),
+        hidden,
+    }
+}
+
+/// The eye (`Hide`) shows the live frame as if the module were reset, and is no more than
+/// view state: a module every photo runs at its defaults, its operation still planned; a
+/// switched one off, its operation out of the plan. Its controls stay the edit's, reported
+/// hidden. No step, nothing written: the file, the live export's edit and the thumbnail's
+/// plan stay the edit's. Shown again, the frame is the edit's again.
+#[test]
+fn the_eye_hides_a_module_from_the_view_alone() {
+    let path = scratch("history-eye");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    let opened = driven.open(&path);
+    let untouched = frame(&driven.gpu, &opened);
+    driven.run([set("brightness", ControlValue::Number(0.6), true)]);
+    let edited = driven.run([amount(40.0, true)]);
+    let edited_frame = frame(&driven.gpu, &edited);
+    assert_eq!(history(&edited).steps.len(), 2);
+    driven.writes();
+    let file = std::fs::read(&sidecar).unwrap();
+    let all = live_operations(&driven);
+    assert!(
+        all.contains(&"exposure") && all.contains(&"soften"),
+        "{all:?}"
+    );
+
+    let hidden = driven.run([hide("soften", true)]);
+    // Its values, then the frame; no history.
+    assert_eq!(kinds(&hidden), ["values", "frame"]);
+    let soften = state(&hidden, "soften");
+    assert!(soften.hidden && soften.enabled && soften.edited);
+    assert!(!state(&hidden, "sample").hidden);
+    assert!(values(&hidden).edited);
+    let without: Vec<&str> = all.iter().copied().filter(|id| *id != "soften").collect();
+    assert_eq!(live_operations(&driven), without);
+    assert!(frame(&driven.gpu, &hidden) != edited_frame);
+
+    // Sample, which every photo runs, at its defaults, its operation still planned: the
+    // frame is the untouched photo's.
+    let both = driven.run([hide("sample", true)]);
+    assert!(state(&both, "sample").hidden);
+    assert_eq!(brightness(&both), ControlValue::Number(0.6));
+    assert_eq!(live_operations(&driven), without);
+    assert!(frame(&driven.gpu, &both) == untouched);
+
+    // Nothing written, no step, and what the file, an export and a thumbnail take is the
+    // edit, both modules applied.
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read(&sidecar).unwrap(), file);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert_eq!(open.history.log().steps().len(), 2);
+    let live = driven
+        .engine
+        .live_among(std::slice::from_ref(&path))
+        .unwrap();
+    assert_eq!(live.edit, edit(&driven));
+    assert!(!driven.engine.thumbnail_plan(open).unwrap().unaltered);
+
+    // Hiding what is hidden changes nothing, and is not reported.
+    let again = driven.run([hide("soften", true)]);
+    assert!(kinds(&again).is_empty(), "{again:?}");
+    // Shown again: the edit's frame.
+    let shown = driven.run([hide("soften", false), hide("sample", false)]);
+    assert_eq!(kinds(&shown), ["values", "frame"]);
+    assert!(!state(&shown, "soften").hidden && !state(&shown, "sample").hidden);
+    assert_eq!(live_operations(&driven), all);
+    assert!(frame(&driven.gpu, &shown) == edited_frame);
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read(&sidecar).unwrap(), file);
+    remove(&path);
+}
+
+/// The eye on a module every photo runs that the edit leaves untouched changes nothing: the
+/// frame is the photo's as it was.
+#[test]
+fn the_eye_on_an_untouched_module_every_photo_runs_changes_nothing() {
+    let path = scratch("history-eye-untouched");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    let opened = driven.open(&path);
+    let all = live_operations(&driven);
+    let hidden = driven.run([hide("sample", true)]);
+    assert!(state(&hidden, "sample").hidden);
+    assert!(frame(&driven.gpu, &hidden) == frame(&driven.gpu, &opened));
+    assert_eq!(live_operations(&driven), all);
+    assert!(driven.writes().is_empty());
+    assert!(!sidecar::path_for(&path).exists());
+    remove(&path);
+}
+
+/// The eye is no command on the edit: it neither ends a gesture under way nor is refused on
+/// a photo open for viewing only or still opening; a module the session lacks is refused.
+#[test]
+fn the_eye_leaves_a_gesture_under_way_and_is_taken_view_only_and_opening() {
+    let path = scratch("history-eye-gesture");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.2), false)]);
+    let hidden = driven.run([hide("soften", true)]);
+    assert!(failures(&hidden).is_empty(), "{hidden:?}");
+    assert!(histories(&hidden).is_empty());
+    let released = driven.run([set("brightness", ControlValue::Number(0.4), true)]);
+    // The drag is one step, from the default to its release.
+    let steps = &history(&released).steps;
+    assert_eq!(steps.len(), 1);
+    let change = &steps[0].changes[0].controls[0];
+    assert_eq!(
+        (&change.before, &change.after),
+        (&ControlValue::Number(0.0), &ControlValue::Number(0.4))
+    );
+    let unknown = driven.run([hide("nothing", true)]);
+    assert!(
+        matches!(
+            failures(&unknown)[..],
+            [SessionError::Edit(EditError::UnknownModule(_))]
+        ),
+        "{unknown:?}"
+    );
+    remove(&path);
+
+    // Still opening: taken, the first live frame showing it.
+    let path = scratch("history-eye-opening");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    driven.run([Command::HoldDecode(hold)]);
+    driven.run([
+        Command::Open(path.clone()),
+        Command::Resize {
+            width: 40,
+            height: 40,
+        },
+    ]);
+    driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::History(_))));
+    begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+    let opening = driven.run([hide("sample", true)]);
+    assert!(failures(&opening).is_empty(), "{opening:?}");
+    assert!(state(&opening, "sample").hidden);
+    permit.send(()).unwrap();
+    let live = driven.settle();
+    assert!(state(&live, "sample").hidden && values(&live).live);
+    remove(&path);
+
+    // Open for viewing only: taken, nothing written.
+    let path = scratch("history-eye-view-only");
+    let sidecar = sidecar::path_for(&path);
+    let xml = brightened("0.9.0").replace(
+        r#"apertrust:moduleVersion="1""#,
+        r#"apertrust:moduleVersion="2""#,
+    );
+    std::fs::write(&sidecar, &xml).unwrap();
+    let mut driven = Driven::new(&[&Sample]);
+    let opened = driven.open(&path);
+    let viewed = driven.run([hide("sample", true)]);
+    assert!(failures(&viewed).is_empty(), "{viewed:?}");
+    assert!(state(&viewed, "sample").hidden);
+    assert!(frame(&driven.gpu, &viewed) != frame(&driven.gpu, &opened));
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml);
+    remove(&path);
+}
+
+/// What the eye hides ends with the photo: as it closes, and as another opens.
+#[test]
+fn what_the_eye_hides_ends_as_the_photo_closes_or_another_opens() {
+    let path = scratch("history-eye-ends");
+    let mut driven = Driven::new(&[&Sample, &Soften]);
+    driven.open(&path);
+    assert!(state(&driven.run([hide("sample", true)]), "sample").hidden);
+    driven.run([Command::Close]);
+    let reopened = driven.open(&path);
+    assert!(!state(&reopened, "sample").hidden);
+    assert!(state(&driven.run([hide("sample", true)]), "sample").hidden);
+    let other = scratch("history-eye-other");
+    let opened = driven.open(&other);
+    assert!(
+        (values(&opened).modules.iter()).all(|state| !state.hidden),
+        "{opened:?}"
+    );
+    remove(&path);
+    remove(&other);
+}
+
+/// Hiding never adds an effect: a default module the history's end leaves not applied stays
+/// out of the live plan when hidden, reported off and hidden, the frame as it was.
+#[test]
+fn a_module_the_end_leaves_not_applied_stays_out_when_hidden() {
+    let path = scratch("history-eye-unapplied");
+    let mut driven = Driven::new(DEFAULTS);
+    let (_, ids) = opened_with_defaults(&mut driven, &path);
+    let balanced = driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    let before = frame(&driven.gpu, &balanced);
+    let planned = live_operations(&driven);
+    assert!(!planned.contains(&"exposure"), "{planned:?}");
+    let hidden = driven.run([hide("exposure", true)]);
+    let exposure = state(&hidden, "exposure");
+    assert!(exposure.hidden && !exposure.enabled);
+    assert_eq!(live_operations(&driven), planned);
+    assert!(frame(&driven.gpu, &hidden) == before);
+    remove(&path);
+}

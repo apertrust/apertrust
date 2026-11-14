@@ -342,6 +342,24 @@ impl Pickers {
         }
     }
 
+    /// A module picker's reading that arrived while the History tab's eye hides a module,
+    /// not applied: its application, `due`, waits, the newest of it and any due already
+    /// kept, and what it read is measured again (decision 78).
+    fn wait(&mut self, due: Option<Due>) {
+        if let Some(on) = self
+            .active
+            .as_mut()
+            .and_then(|active| active.module.as_mut())
+        {
+            on.measured = None;
+            on.due = on
+                .due
+                .into_iter()
+                .chain(due)
+                .max_by_key(|due| (due.drag, due.command));
+        }
+    }
+
     /// The module's picker on, if one is.
     fn module_on(&self) -> Option<OnModule> {
         self.active.and_then(|active| active.module)
@@ -703,6 +721,11 @@ impl Engine {
             if let Some(view_only) = &open.view_only {
                 return Err(SessionError::ViewOnly(view_only.clone()));
             }
+            // What it would read is the view's while the eye hides a module, and it writes
+            // the edit (decision 78).
+            if !open.hidden.is_empty() {
+                return Err(SessionError::Hidden);
+            }
             let found = edit::module(&self.modules, id).map_err(|_| SessionError::UnknownPicker)?;
             let declared = found
                 .definition()
@@ -845,6 +868,10 @@ impl Engine {
             answer: true,
             ..PickerEffect::default()
         };
+        // No reading applies while the History tab's eye hides a module (decision 78).
+        if self.hiding() {
+            return Ok(unapplied);
+        }
         let Some(latest) = self.pickers.latest.get(id).copied() else {
             return Ok(unapplied);
         };
@@ -1079,7 +1106,8 @@ impl Engine {
     /// Where it reads what it read last, a reading due is not, and a release completes
     /// the gesture with the values already written.
     pub(super) fn probe_alone(&mut self, events: &mut Vec<Event>) {
-        if !self.pickers.probing() {
+        // Nothing measured while the eye hides a module: its reading would be the view's.
+        if !self.pickers.probing() || self.hiding() {
             return;
         }
         let through = self.applied;
@@ -1090,7 +1118,7 @@ impl Engine {
             // Nothing rendered yet: the first frame measures it.
             return;
         };
-        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
         let probing = probing(
             &mut self.pickers,
             pipeline.plan(),
@@ -1258,6 +1286,12 @@ impl Engine {
         let Some(on) = self.pickers.active.and_then(|active| active.module) else {
             return;
         };
+        // Applied once no module is hidden: until then its application waits, and the
+        // next render once all are shown measures again (decision 78).
+        if self.hiding() {
+            self.pickers.wait(probed.due);
+            return;
+        }
         let reading = stats.as_ref().and_then(|stats| {
             Some(Reading {
                 input: *stats.first()?,
@@ -1521,10 +1555,10 @@ impl Engine {
     }
 
     /// The maps between the open photo's coordinates and its original image's, as its
-    /// edit gives them.
+    /// edit gives them in the live frame, the modules the eye hides as if reset.
     fn geometries(&self) -> Result<Geometries, SessionError> {
         let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
-        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
         Ok(Geometries::of(&bound.instances, &open.image)?)
     }
 }

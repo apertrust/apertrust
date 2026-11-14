@@ -824,6 +824,8 @@ history-points =
         [many] { $count } punktów
        *[other] { $count } punktu
     }
+history-peek = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $module }
+history-peek-tip = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $module }. Nic nie jest zapisywane
 
 ## Krzywa
 

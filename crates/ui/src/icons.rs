@@ -98,6 +98,8 @@ pub enum Icon {
     Edited,
     /// An eye: the grid bar's Labels, which shows the captions under the thumbnails.
     Labels,
+    /// An eye: the History tab's eye, held to see the photo without a module.
+    Visible,
     /// A star: a point of a photo's rating, under its thumbnail; filled for each point.
     Star,
     /// A crossed circle: a photo's reject mark, under its thumbnail.
@@ -168,7 +170,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 80] = [
+    pub const ALL: [Icon; 81] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -203,6 +205,7 @@ impl Icon {
         Icon::Lock,
         Icon::Edited,
         Icon::Labels,
+        Icon::Visible,
         Icon::Star,
         Icon::Reject,
         Icon::RotateLeft,
@@ -366,6 +369,7 @@ impl Icon {
             Icon::Lock => derived!("lock", "lock", 12.0),
             Icon::Edited => derived!("edited", "pencil", 12.0),
             Icon::Labels => derived!("labels", "eye", 16.0),
+            Icon::Visible => derived!("visible", "eye", 14.0),
             Icon::Star => derived!("star", "star", 12.0),
             Icon::Reject => derived!("reject", "circle-x", 12.0),
             Icon::RotateLeft => derived!("rotate-left", "rotate-ccw-square", 14.0),

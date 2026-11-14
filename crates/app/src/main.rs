@@ -1798,6 +1798,10 @@ struct Shell {
     /// The module whose section a History line opened, scrolled to as its tab next shows
     /// ([`Shell::reveal`]).
     reveal: Option<&'static str>,
+    /// The module the History tab's eye has hidden while it is held ([`Shell::peek`]), and
+    /// the open of the photo it hid it on.
+    peeking: Option<&'static str>,
+    peeked_on: Option<u64>,
     /// The collapsible groups the user opened or closed, by module and group.
     groups: BTreeMap<String, BTreeMap<String, bool>>,
     /// What the Scopes section shows, as the user left it.
@@ -1883,6 +1887,8 @@ impl Shell {
             keymap,
             sections: settings.edit.sections.clone(),
             reveal: None,
+            peeking: None,
+            peeked_on: None,
             groups: settings.edit.groups.clone(),
             scopes: settings.scopes,
             grid: settings.grid,
@@ -2131,8 +2137,9 @@ impl Shell {
 
     /// Carries out what the History section asked for (`history::Action`): opens or closes
     /// it, or opens a module ([`Shell::reveal`]); returns the command a step's click sends,
-    /// `GoTo`, only while the photo `takes` edits, live and not open for viewing only, and
-    /// Reset Edit for the header's reset, run as the top panel's Reset runs it.
+    /// `GoTo`, only while the photo `takes` edits, live and not open for viewing only,
+    /// and Reset Edit for the header's reset, run as the top panel's Reset runs it. The eye
+    /// held is [`Shell::peek`]'s.
     fn history_action(
         &mut self,
         action: history::Action,
@@ -2154,7 +2161,36 @@ impl Shell {
                 None
             }
             history::Action::Reset => Some(FromHistory::Run(ActionId::RESET)),
+            // The eye held: what it hides follows the frame's, `Shell::peek`.
+            history::Action::Peek(_) => None,
         }
+    }
+
+    /// What the History tab's eye holds this frame, `held`, the module it shows the photo
+    /// without (`history::Action::Peek`), none where it is let go, its line or tab gone, or
+    /// the window lost the focus: the `Hide` commands that show the module hidden until now
+    /// and hide the one held, view state with nothing to save; none where it is the same.
+    /// So nothing stays hidden once the eye is let go. `photo` is the open of the mirror's
+    /// photo: another, or none, hides nothing, as the session shows every module of a photo
+    /// as it opens, so the first hold there sends `Hide`.
+    fn peek(&mut self, held: Option<&'static str>, photo: Option<u64>) -> Vec<Command> {
+        if self.peeked_on != photo {
+            self.peeking = None;
+            self.peeked_on = photo;
+        }
+        if held == self.peeking {
+            return Vec::new();
+        }
+        let hide = |module: &str, hidden| Command::Hide {
+            module: module.to_owned(),
+            hidden,
+        };
+        let shown = self.peeking.take().map(|module| hide(module, false));
+        self.peeking = held;
+        shown
+            .into_iter()
+            .chain(held.map(|module| hide(module, true)))
+            .collect()
     }
 
     /// Whether the tab shown lists the module a History line opened, which its sections
@@ -3784,6 +3820,10 @@ impl App {
         if browse {
             let actions = self.photos_tab(ui);
             self.carry_out(actions, ui.ctx());
+            // No eye is held on another tab.
+            for command in self.shell.peek(None, self.mirror.photo.open()) {
+                self.session.send(command);
+            }
             return tab_clicked;
         }
         // A module's section a History line asked for is scrolled to once its tab shows.
@@ -3800,6 +3840,14 @@ impl App {
             self.change(change, ui.ctx());
         }
         let mut run = tab_clicked;
+        let held = history.iter().find_map(|action| match action {
+            history::Action::Peek(module) => Some(*module),
+            _ => None,
+        });
+        // View state, no change to the edit: nothing to save or wait for.
+        for command in self.shell.peek(held, self.mirror.photo.open()) {
+            self.session.send(command);
+        }
         for action in history {
             let takes = self.mirror.takes_edits();
             match self.shell.history_action(action, takes, ui.ctx()) {
@@ -5815,8 +5863,15 @@ fn edit_tab(
         // As Reset Edit: while the edit holds anything the photo takes back.
         let resettable = takes && mirror.resettable();
         let shown = mirror.history.as_ref();
+        // The eye's modules, as the photo's values report them.
+        let hidden: Vec<&str> = (values.modules.iter())
+            .filter(|state| state.hidden)
+            .map(|state| state.module)
+            .collect();
         let today = history::today();
-        let history = history::tab(ui, shown, modules, open, peek, takes, resettable, today);
+        let history = history::tab(
+            ui, shown, modules, &hidden, open, peek, takes, resettable, today,
+        );
         return (Vec::new(), Vec::new(), history);
     }
     // A module's picker is pressed only on the open photo once live, and never on one
@@ -6398,6 +6453,7 @@ mod tests {
                     module: "twin",
                     enabled: true,
                     edited,
+                    hidden: false,
                     controls,
                     presets: Vec::new(),
                     views,
@@ -6530,6 +6586,7 @@ mod tests {
                 module: definition.id,
                 enabled: true,
                 edited: false,
+                hidden: false,
                 controls: definition
                     .controls
                     .iter()
@@ -8460,6 +8517,7 @@ mod tests {
             module: definition.id,
             enabled: true,
             edited: false,
+            hidden: false,
             controls: definition
                 .controls
                 .iter()
@@ -8564,6 +8622,7 @@ mod tests {
             module: exposure.id,
             enabled: true,
             edited: false,
+            hidden: false,
             controls: exposure
                 .controls
                 .iter()
@@ -8821,6 +8880,12 @@ mod tests {
                         editing.shell.reveal = None;
                     }
                     let takes = editing.mirror.takes_edits();
+                    let held = history.iter().find_map(|action| match action {
+                        history::Action::Peek(module) => Some(*module),
+                        _ => None,
+                    });
+                    let peeks = editing.shell.peek(held, editing.mirror.photo.open());
+                    editing.sent.extend(peeks);
                     for action in history {
                         editing.history.push(action);
                         match editing.shell.history_action(action, takes, &ctx) {
@@ -8906,6 +8971,100 @@ mod tests {
         );
         assert_eq!(harness.state().shell.panel_tab, 4);
         assert!(harness.state().shell.section_open("grain", false));
+    }
+
+    /// The eye held on a step's line sends `Hide`, view state, on a photo open for viewing
+    /// only too, and let go, `Hide` to show the module again, once each; nothing stays
+    /// hidden when the tab changes while it is held.
+    #[test]
+    fn the_eye_held_sends_hide_and_let_go_shows_the_module_again() {
+        use crate::mirror::tests::photo;
+        use apertrust_engine::sidecar::Newer;
+        let folder = settings::testing::Folder::new("panel-history-eye");
+        let mut harness = side_panel(&folder);
+        harness.state_mut().shell.panel_tab = HISTORY;
+        let mirror = &mut harness.state_mut().mirror;
+        // A newer build's edit: open for viewing only, no step taken, the eye still sent.
+        mirror.apply(Event::Opened(Photo {
+            view_only: Some(ViewOnly {
+                build: Some("9.9.9".to_owned()),
+                reason: Reason::Newer(Newer::Module("lens".to_owned())),
+            }),
+            ..photo(1)
+        }));
+        mirror.apply(Event::Values(photo_values(1.5, 3)));
+        let steps = vec![
+            history::tests::step(7, &["exposure"], None),
+            history::tests::step(8, &["grain"], None),
+        ];
+        mirror.apply(Event::History(history::tests::history(
+            3, steps, None, None,
+        )));
+        harness.run();
+        assert!(!harness.state().mirror.takes_edits());
+        harness
+            .get_by_role_and_label(Role::TreeItem, "Step 2: Grain")
+            .hover();
+        harness.run();
+        let at = harness
+            .get_by_role_and_label(Role::Button, "Hold to see the photo without Grain")
+            .rect()
+            .center();
+        let press = |harness: &mut Harness<'_, Editing>, pressed| {
+            harness.event(egui::Event::PointerMoved(at));
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            harness.run();
+        };
+        let hide = |module: &str, hidden| Command::Hide {
+            module: module.to_owned(),
+            hidden,
+        };
+        press(&mut harness, true);
+        harness.run();
+        assert_eq!(harness.state().sent, [hide("grain", true)]);
+        press(&mut harness, false);
+        assert_eq!(
+            harness.state().sent,
+            [hide("grain", true), hide("grain", false)]
+        );
+        // Another photo opening while it is held hides nothing of it, so the hold sends
+        // `Hide` there anew, and letting go shows the module again.
+        harness.state_mut().sent.clear();
+        press(&mut harness, true);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(2)));
+        mirror.apply(Event::Values(photo_values(1.5, 5)));
+        let steps = vec![
+            history::tests::step(7, &["exposure"], None),
+            history::tests::step(8, &["grain"], None),
+        ];
+        mirror.apply(Event::History(history::tests::history(
+            5, steps, None, None,
+        )));
+        harness.run();
+        press(&mut harness, false);
+        assert_eq!(
+            harness.state().sent,
+            [
+                hide("grain", true),
+                hide("grain", true),
+                hide("grain", false)
+            ]
+        );
+        // The tab changed while it is held: the module shown again.
+        harness.state_mut().sent.clear();
+        press(&mut harness, true);
+        harness.state_mut().shell.panel_tab = BASE;
+        harness.run();
+        assert_eq!(
+            harness.state().sent,
+            [hide("grain", true), hide("grain", false)]
+        );
     }
 
     /// A click on the History tab in the tab bar runs its action and shows the History

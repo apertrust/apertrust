@@ -1870,3 +1870,62 @@ fn a_settled_pick_sends_its_history() {
     );
     remove(&path);
 }
+
+fn hide(module: &str, hidden: bool) -> Command {
+    Command::Hide {
+        module: module.to_owned(),
+        hidden,
+    }
+}
+
+/// While the History tab's eye hides a module, a module's picker already on measures and
+/// applies nothing (decision 78): what it read would be the view's, and what it wrote the
+/// edit's. A `Hide` leaves it on; a move meanwhile writes nothing to the edit or its file,
+/// its reading waiting; shown again, the next reading applies as usual. `On` for a
+/// module's picker is refused while a module is hidden, `Hidden`; the Colour picker
+/// module's, which writes nothing, still turns on.
+#[test]
+fn a_module_picker_applies_no_reading_while_a_module_is_hidden() {
+    let path = scratch("picker-hidden");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(&[&Orientation, &Sample]);
+    driven.open(&path);
+    driven.run([on_module("brightness", true)]);
+    let before = number(values(&driven.picked()), "sample", "brightness");
+    driven.writes();
+    let file = std::fs::read(&sidecar).unwrap();
+    let edit = driven.engine.open.as_ref().unwrap().edit.clone();
+    // Hidden: the picker stays on.
+    let hidden = driven.run([hide("flip", true)]);
+    assert!(failures(&hidden).is_empty(), "{hidden:?}");
+    assert_eq!(end(&hidden), None);
+    // A move measures and applies nothing, writing nothing.
+    let moved_events = driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
+    assert!(failures(&moved_events).is_empty(), "{moved_events:?}");
+    let picked = driven.picked();
+    assert!(
+        !picked.iter().any(|e| matches!(e, Event::Values(_))),
+        "{picked:?}"
+    );
+    assert_eq!(driven.engine.open.as_ref().unwrap().edit, edit);
+    driven.writes();
+    assert_eq!(std::fs::read(&sidecar).unwrap(), file);
+    // `On` for a module's picker is refused while hidden.
+    let refused = driven.run([on_module("spread", true)]);
+    assert!(
+        matches!(failures(&refused)[..], [SessionError::Hidden]),
+        "{refused:?}"
+    );
+    // Shown again: the moved area's reading applies.
+    let shown = driven.run([hide("flip", false)]);
+    assert!(failures(&shown).is_empty(), "{shown:?}");
+    let picked = driven.picked();
+    let after = number(values(&picked), "sample", "brightness");
+    assert!((after - before).abs() > 1e-4, "{before} then {after}");
+    assert_ne!(driven.engine.open.as_ref().unwrap().edit, edit);
+    // The Colour picker module's turns on while a module is hidden.
+    driven.run([hide("flip", true)]);
+    let reading = driven.reading([on(false)]);
+    assert_eq!(reading.picker, PickerRef::ColourPicker);
+    remove(&path);
+}
