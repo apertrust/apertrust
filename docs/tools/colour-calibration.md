@@ -165,7 +165,7 @@ C6 in detail: all 81 changes of the illuminant from one to another after the def
 ## Design choices
 
 - **The saturation algorithm:** not shown, `version` owned at 3. darktable hides the combobox at version 3 (`gui_update`), and rule 12 leaves out a control darktable shows only for an older edit.
-- **The colour checker's settings:** drawn disabled at darktable's defaults by a row of the definition format, `Row::Setting`: no control, nothing an edit stores, words of its own (`module-<module>-setting-<setting>-…`), the kind giving the widget. The CAT tab's Area colour mapping and Exposure's Area exposure mapping use it too.
+- **The colour checker's settings:** drawn disabled at darktable's defaults by a row of the definition format, `Row::Setting`: no control, nothing an edit stores, words of its own (`tool-<tool>-setting-<setting>-…`), the kind giving the widget. The CAT tab's Area colour mapping and Exposure's Area exposure mapping use it too.
 - **Control ids:** `<tab>_r`, `_g`, `_b` and `<tab>_normalise`, by the tab's English name (`colourfulness_r` for `saturation_0`), so a script reads as the panel does. darktable's `normalize_R` is no snake_case id.
 - **Row ids:** C, for Colour calibration.
 - **The CAT tab's ids:** the controls take darktable's parameter names, `illum_fluo` and `illum_led` among them. The options take short ids of darktable's labels (`pipeline`, `planckian`, `camera`, `non_linear_bradford`, `none`), the illuminant bound by darktable's value. The tool's settings are `area_mode`, `channel_mixing` and `target_lightness`, `target_hue`, `target_chroma`, apart from the view's `hue` and `chroma`.

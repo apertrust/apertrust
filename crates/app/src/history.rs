@@ -611,7 +611,7 @@ fn batch_line(
         None => {
             let mut args = Args::new();
             args.set("count", steps.len());
-            tr.text_with("history-group-modules", Some(&args))
+            tr.text_with("history-group-tools", Some(&args))
         }
     };
     let titles: Vec<String> = (steps.iter())
@@ -691,7 +691,7 @@ fn defaults_group(
             },
             key: LineKey::Group(GroupKey::Defaults),
             name: tr.text("history-defaults"),
-            change: Some(tr.text_with("history-defaults-modules", Some(&args))),
+            change: Some(tr.text_with("history-defaults-tools", Some(&args))),
             heard: None,
             tag: None,
             tip: Tip::Changes {
@@ -1794,7 +1794,7 @@ const EYE: f32 = 16.0;
 fn eye_button(ui: &mut egui::Ui, tool: &str) -> egui::Response {
     let words = translator(ui.ctx());
     let mut args = Args::new();
-    args.set("module", tool);
+    args.set("tool", tool);
     let name = words.text_with("history-peek", Some(&args));
     let tip = words.text_with("history-peek-tip", Some(&args));
     IconButton::new(Icon::Visible, &name)
@@ -1871,7 +1871,7 @@ fn said(line: &Line, words: &Translator) -> String {
         Place::Batch { first, last, .. } => {
             args.set("first", first);
             args.set("last", last);
-            args.set("modules", line.change.clone().unwrap_or_default());
+            args.set("tools", line.change.clone().unwrap_or_default());
             words.text_with("history-group-name", Some(&args))
         }
         Place::Original { .. } => line.name.clone(),
@@ -2379,9 +2379,9 @@ fn name(steps: &[Arc<HistoryStep>], tools: &[&dyn Tool], tr: &Translator) -> Opt
         return Some(first);
     }
     let mut args = Args::new();
-    args.set("module", first);
+    args.set("tool", first);
     args.set("count", more);
-    Some(tr.text_with("history-modules", Some(&args)))
+    Some(tr.text_with("history-tools", Some(&args)))
 }
 
 /// One step's name: its note, else its tool's title.

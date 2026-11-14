@@ -353,8 +353,8 @@ The interface is in British English, as the docs are (colour, grey, centre, cust
   - Messages carry variables, plurals and selectors, which translators control for their own language: `{ $count -> [one] one photo *[other] { $count } photos }`.
   - Each locale has its `.ftl` files in `crates/ui/locales/<locale>/`. British English (`en-GB`) is the source; Ukrainian (`uk`) and Polish (`pl`) are translated from the start.
   - American English (`en-US`) is an overlay of British English: its files hold only the messages whose words it spells differently (color, gray, center, normalize, canceled, license), with the same variables, and every other message is British English's. darktable's module names, American upstream, are darktable's there: Color balance RGB. A system language of `en-US` chooses it; every other English chooses British English. Numbers are written as in British English.
-- **Every user-visible string is a message id.** Components and the app look text up by id (`tr(ctx, "module-exposure-control-contrast-label")`), so no English literal reaches the screen. `tools/check-ui-strings.sh`, run in CI, fails on a literal passed to a label, button, heading or tooltip in the interface's code.
-- **Message ids say where a string lives:** `module-exposure-title`, `module-exposure-control-contrast-label`, `module-exposure-control-contrast-promise`, `action-copy-edit`, `error-raw-unsupported`. A tool's ids follow its definition ([Tool panels from definitions](#the-section-and-its-words), decision 28).
+- **Every user-visible string is a message id.** Components and the app look text up by id (`tr(ctx, "tool-exposure-control-contrast-label")`), so no English literal reaches the screen. `tools/check-ui-strings.sh`, run in CI, fails on a literal passed to a label, button, heading or tooltip in the interface's code.
+- **Message ids say where a string lives:** `tool-exposure-title`, `tool-exposure-control-contrast-label`, `tool-exposure-control-contrast-promise`, `action-copy-edit`, `error-raw-unsupported`. A tool's ids follow its definition ([Tool panels from definitions](#the-section-and-its-words), decision 28).
 - **The engine never translates.** Its errors are codes with arguments, and the UI owns the words. Log lines and the startup banner (decision 44) stay in English, because they are for diagnosis.
 - **The locale** is the system's at first start, can be changed in settings, and switches live. The settings file keeps it once the user chooses one; until then the interface follows the system's language.
 - **Numbers and units follow the locale.**
@@ -919,7 +919,7 @@ Tab closes an open menu, giving the focus back. The focus is on the chosen item,
 #### Translation
 
 - **The top-level menus' names** are messages of their own, each with its `&`, never shown, and `&&` an ampersand that is: `menu-file`, `menu-edit`, `menu-photo`, `menu-layer`, `menu-view`, `menu-window`, `menu-help`. Submenus need none: `menu-open-recent`, `menu-auto`, `menu-rating`, `menu-colour-label`, `menu-new-layer`, `menu-panel-tab`, `menu-workspace`, `menu-panels`, `menu-interface-size`, `menu-sort-by`, `menu-thumbnail-size` and `menu-background`. The items macOS performs but Apertrust names are messages too: `menu-services`, `menu-hide-app`, `menu-hide-others`, `menu-show-all`, `menu-minimise`, `menu-zoom-window` and `menu-bring-all-to-front`.
-- **An item that runs an action** reads the action's message (`action-<id>`), with attributes where a menu says it differently: `.menu`, the menu's words; `.mac` where macOS's differ; `.windows` where Windows' differ from Linux's. A missing attribute falls back to the next, then to the message, so translators keep one message per action in step. Undo and Redo use `menu-undo-step` and `menu-redo-step`, with `$step`. Auto's items are the tools' titles, and its action's name for the keyboard map is `action-auto`, "Auto: { $module }", which no language has to decline.
+- **An item that runs an action** reads the action's message (`action-<id>`), with attributes where a menu says it differently: `.menu`, the menu's words; `.mac` where macOS's differ; `.windows` where Windows' differ from Linux's. A missing attribute falls back to the next, then to the message, so translators keep one message per action in step. Undo and Redo use `menu-undo-step` and `menu-redo-step`, with `$step`. Auto's items are the tools' titles, and its action's name for the keyboard map is `action-auto`, "Auto: { $tool }", which no language has to decline.
 
   ```ftl
   action-reset = Reset
@@ -2594,22 +2594,22 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
 
   | Message | Id |
   | --- | --- |
-  | The tool's title | `module-<module>-title` |
-  | Auto's tooltip, naming its target | `module-<module>-auto` |
-  | A tab | `module-<module>-tab-<tab>` |
-  | A group label | `module-<module>-group-<group>` |
-  | A collapsible group's title | `module-<module>-collapsible-<group>` |
-  | A view's coordinate: as a control's, under its id | `module-<module>-control-<coordinate>-label`, `-full`, `-promise` |
-  | A preset row's label, full name and promise, and each option | `module-<module>-preset-<preset>-label`, `-full`, `-promise`; `module-<module>-preset-<preset>-option-<option>`; Custom is the shared `preset-custom` |
-  | A control's short label, full name (what screen readers say) and promise (the tooltip) | `module-<module>-control-<control>-label`, `-full`, `-promise` |
-  | A choice's option | `module-<module>-control-<control>-option-<option>` |
-  | A row's own words, where darktable labels its control otherwise in the row's mode (`Slider::label`) | `module-<module>-control-<control>-as-<words>-label`, `-full`, `-promise` |
-  | One of darktable's own settings for a tool (`Row::Setting`), and each of its options | `module-<module>-setting-<setting>-label`, `-full`, `-promise`; `module-<module>-setting-<setting>-option-<option>` |
-  | One of darktable's buttons, an action (`Row::Action`) | `module-<module>-action-<action>-label`, `-full`, `-promise` |
+  | The tool's title | `tool-<tool>-title` |
+  | Auto's tooltip, naming its target | `tool-<tool>-auto` |
+  | A tab | `tool-<tool>-tab-<tab>` |
+  | A group label | `tool-<tool>-group-<group>` |
+  | A collapsible group's title | `tool-<tool>-collapsible-<group>` |
+  | A view's coordinate: as a control's, under its id | `tool-<tool>-control-<coordinate>-label`, `-full`, `-promise` |
+  | A preset row's label, full name and promise, and each option | `tool-<tool>-preset-<preset>-label`, `-full`, `-promise`; `tool-<tool>-preset-<preset>-option-<option>`; Custom is the shared `preset-custom` |
+  | A control's short label, full name (what screen readers say) and promise (the tooltip) | `tool-<tool>-control-<control>-label`, `-full`, `-promise` |
+  | A choice's option | `tool-<tool>-control-<control>-option-<option>` |
+  | A row's own words, where darktable labels its control otherwise in the row's mode (`Slider::label`) | `tool-<tool>-control-<control>-as-<words>-label`, `-full`, `-promise` |
+  | One of darktable's own settings for a tool (`Row::Setting`), and each of its options | `tool-<tool>-setting-<setting>-label`, `-full`, `-promise`; `tool-<tool>-setting-<setting>-option-<option>` |
+  | One of darktable's buttons, an action (`Row::Action`) | `tool-<tool>-action-<action>-label`, `-full`, `-promise` |
   | A unit, from the closed list a control's unit takes | `unit-<unit>`: `unit-ev`, `unit-percent`, `unit-degrees`, `unit-kelvin`, `unit-pixels`, `unit-iso` |
   | A value with its unit, `$value` already in the language's number format, so each language places the unit | `unit-<unit>-value`: `{ $value } EV`, `{ $value }%` |
 
-  They live in `crates/ui/locales/<locale>/modules.ftl`, and a test in `crates/tools/tests` checks every id a definition implies against `apertrust_ui::i18n::message_ids()`; the translation tests keep Ukrainian and Polish complete. A third-party tool (later, decision 20) ships its own `.ftl` files in its package, loaded into the translator when the package loads; its tool id carries the package's prefix, so its messages cannot collide with the built-in ones.
+  They live in `crates/ui/locales/<locale>/tools.ftl`, and a test in `crates/tools/tests` checks every id a definition implies against `apertrust_ui::i18n::message_ids()`; the translation tests keep Ukrainian and Polish complete. A third-party tool (later, decision 20) ships its own `.ftl` files in its package, loaded into the translator when the package loads; its tool id carries the package's prefix, so its messages cannot collide with the built-in ones.
 - **Values come from the session mirror:** each control's value, its default for the photo (White balance's as shot comes from the photo, so the UI never computes a default) and its mark, `Mark::Kept` or `Mark::Auto`.
 - **Readouts come from the mirror too** (decision 19; [engine.md](engine.md), Readouts): what an operation measured of the photo for its tool's panel, the latest `Event::Readout` per tool and readout, plain data the renderer hands to the widget as `apertrust-ui`'s own arrays, as the Scopes section turns its readings into `HistogramBins`. `None` while the tool's operation is not planned, when the widget draws no histogram, as darktable draws none while the module is off.
 - **Custom widgets come from a closed registry** in the design system. A third-party plugin (decision 20, later) can choose among them but cannot ship UI code.

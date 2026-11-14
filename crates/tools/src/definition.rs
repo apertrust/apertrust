@@ -87,7 +87,7 @@ pub struct Definition {
 ///
 /// Its words come with its button and the central bar (`docs/pickers.md`, The picker
 /// button, On the photo), in the controls' and actions' scheme:
-/// `module-<tool>-picker-<id>-label`, its name; `-full`, what screen readers say;
+/// `tool-<tool>-picker-<id>-label`, its name; `-full`, what screen readers say;
 /// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence
 /// ([`crate::messages::picker`]). [`crate::messages::of`] implies none of them: the app
 /// draws a tool's pickers only once its pick is built.
@@ -430,7 +430,7 @@ pub enum Row {
 }
 
 /// One button of a [`Row::Buttons`]: its action's id, whose words are an action's
-/// (`module-<tool>-action-<id>-label`, `-full` and `-promise`), and its icon.
+/// (`tool-<tool>-action-<id>-label`, `-full` and `-promise`), and its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Button {
     pub id: &'static str,

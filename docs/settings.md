@@ -52,7 +52,7 @@ A setting holds:
 
 **Built so far:** the boolean, number, choice, text, list and table kinds; `default`, `optional`, `owner`, `applies`, `page`, `group`, `requires` and `platforms`, for the graphics API; a number's `above`, for the window's size and scale factor, and its `unit` and `factor`, for the interface's size and the memory budget; and each owner's `ALL`, every setting it owns, the registry its store reads. Whole numbers and folders come with the first setting that needs one.
 
-**Words** stay in Fluent, by ids that follow from the id, as a tool's do: `setting-<id>-label`, `-full`, `-promise` and `-option-<option>`, the id's dots and underscores as hyphens, with `settings-page-<page>` and `settings-group-<group>`. A tool's setting keeps its tool's, `module-<module>-setting-<setting>-…` (decision 29). The schema holds no English.
+**Words** stay in Fluent, by ids that follow from the id, as a tool's do: `setting-<id>-label`, `-full`, `-promise` and `-option-<option>`, the id's dots and underscores as hyphens, with `settings-page-<page>` and `settings-group-<group>`. A tool's setting keeps its tool's, `tool-<tool>-setting-<setting>-…` (decision 29). The schema holds no English.
 
 **How it becomes code:**
 

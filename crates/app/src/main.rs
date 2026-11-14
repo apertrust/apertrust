@@ -8703,7 +8703,7 @@ mod tests {
                 },
             );
         harness.run();
-        let midtones = "module-sample-collapsible-midtones";
+        let midtones = "tool-sample-collapsible-midtones";
         let group = harness.get_by_role_and_label(Role::Button, midtones);
         assert_eq!(group.accesskit_node().data().is_expanded(), Some(false));
         group.click();

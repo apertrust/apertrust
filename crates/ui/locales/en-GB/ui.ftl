@@ -968,8 +968,8 @@ menu-bring-all-to-front = Bring All to Front
 # A step that put the whole edit back to nothing: Reset Edit.
 history-reset = Reset
 # The steps of one change that touched several modules, a step each, as Undo and Redo name
-# them: $module is the first's title, $count how many more there are.
-history-modules = { $module } and { $count } more
+# them: $tool is the first's title, $count how many more there are.
+history-tools = { $tool } and { $count } more
 # Going to a step in History, which Undo takes back and Redo puts back.
 history-go-to-step = Go to Step
 # Compress History, Truncate History and Discard History, which Undo takes back and Redo
@@ -1030,18 +1030,18 @@ history-line-controls =
 history-step-name-change = Step { $number }: { $name }, { $change }
 # A change of several modules, a step each, shown as one line that opens: its name where
 # it has no note, how many modules it touched.
-history-group-modules =
+history-group-tools =
     { $count ->
         [one] { $count } module
        *[other] { $count } modules
     }
 # That line's name for screen readers: its steps' first and last numbers, its name, then
 # its modules' titles.
-history-group-name = Steps { $first } to { $last }: { $name }, { $modules }
+history-group-name = Steps { $first } to { $last }: { $name }, { $tools }
 # The modules every photo runs, shown as one line over Original that opens, and how many
 # they are.
 history-defaults = Defaults
-history-defaults-modules =
+history-defaults-tools =
     { $count ->
         [one] { $count } module every photo runs
        *[other] { $count } modules every photo runs
@@ -1080,10 +1080,10 @@ history-points =
        *[other] { $count } points
     }
 # The eye at the end of a step's line, held to see the photo without its module for that
-# moment, never saved: its name for screen readers, then its tooltip; $module is the
+# moment, never saved: its name for screen readers, then its tooltip; $tool is the
 # module's title.
-history-peek = Hold to see the photo without { $module }
-history-peek-tip = Hold to see the photo without { $module }; nothing is saved
+history-peek = Hold to see the photo without { $tool }
+history-peek-tip = Hold to see the photo without { $tool }; nothing is saved
 
 ## The curve; $control is its full name
 
@@ -1099,10 +1099,10 @@ curve-keys = Page Up and Page Down choose a point, the arrow keys move it, Inser
 # The same on a Mac, which has no Insert key and calls Backspace Delete.
 curve-keys-mac = Page Up and Page Down (Fn+↑ and Fn+↓) choose a point, the arrow keys move it, + adds one, Delete removes it and Shift+Delete removes them all.
 
-## The tone equalizer's graph of its bands; $module is the module's title
+## The tone equalizer's graph of its bands; $tool is the module's title
 
 # The graph's full name, for screen readers.
-equalizer-name = { $module }, curve
+equalizer-name = { $tool }, curve
 # Its tooltip: darktable's.
 equalizer-tip = Double-click to reset the curve.
 # What the keys do, for screen readers, with the keys spelt as printed on them.
@@ -1161,13 +1161,13 @@ picker-tip-area-quad =
     { $tip }
     { $command }+click to select an area
 
-## The active picker on the photo (docs/pickers.md, On the photo, Accessibility). $module is
+## The active picker on the photo (docs/pickers.md, On the photo, Accessibility). $tool is
 ## the module's title, $picker the picker's name: its control's label on a slider's quad,
 ## else its own; $command is the pointer's modifier as shortcuts spell it, $what the
 ## picker's own sentence
 
 # The central bar's start while a picker is on.
-picker-bar-name = { $module } · { $picker }
+picker-bar-name = { $tool } · { $picker }
 # How to use a picker measuring an area.
 picker-bar-area = Drag an area on the photo. { $command }-click switches to a point. Esc ends.
 # How to use a picker measuring a point, after its own sentence.
