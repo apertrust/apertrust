@@ -379,8 +379,8 @@ Every value is read as the text the file holds but the clocks. What cannot be re
             <rdf:Seq>
              <rdf:li>
               <rdf:Description
-                apertrust:module="exposure"
-                apertrust:moduleVersion="2"
+                apertrust:tool="exposure"
+                apertrust:toolVersion="2"
                 apertrust:kept="exposure"
                 control:exposure="1.2"/>
              </rdf:li>

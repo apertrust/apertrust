@@ -1426,8 +1426,8 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
     let sidecar = sidecar::path_for(&path);
     // A tool version above Sample's: newer, and its step still read.
     let xml = brightened("0.9.0").replace(
-        r#"apertrust:moduleVersion="1""#,
-        r#"apertrust:moduleVersion="2""#,
+        r#"apertrust:toolVersion="1""#,
+        r#"apertrust:toolVersion="2""#,
     );
     std::fs::write(&sidecar, &xml).unwrap();
     let mut driven = Driven::new(&[&Sample]);
@@ -3061,8 +3061,8 @@ fn discard_history_starts_an_unreadable_history_afresh() {
     let path = scratch("history-discard-newer");
     let sidecar = sidecar::path_for(&path);
     let xml = brightened("0.9.0").replace(
-        r#"apertrust:moduleVersion="1""#,
-        r#"apertrust:moduleVersion="2""#,
+        r#"apertrust:toolVersion="1""#,
+        r#"apertrust:toolVersion="2""#,
     );
     std::fs::write(&sidecar, &xml).unwrap();
     driven.open(&path);
@@ -3418,8 +3418,8 @@ fn the_eye_leaves_a_gesture_under_way_and_is_taken_view_only_and_opening() {
     let path = scratch("history-eye-view-only");
     let sidecar = sidecar::path_for(&path);
     let xml = brightened("0.9.0").replace(
-        r#"apertrust:moduleVersion="1""#,
-        r#"apertrust:moduleVersion="2""#,
+        r#"apertrust:toolVersion="1""#,
+        r#"apertrust:toolVersion="2""#,
     );
     std::fs::write(&sidecar, &xml).unwrap();
     let mut driven = Driven::new(&[&Sample]);

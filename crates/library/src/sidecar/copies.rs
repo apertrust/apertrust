@@ -50,7 +50,7 @@
 //!          <apertrust:entries>
 //!           <rdf:Seq>
 //!            <rdf:li>
-//!             <rdf:Description apertrust:module="exposure" … control:exposure="1.2"/>
+//!             <rdf:Description apertrust:tool="exposure" … control:exposure="1.2"/>
 //! ```
 //!
 //! A step's note is `apertrust:note`, an assistant's or a script's own words, or
@@ -428,7 +428,7 @@ impl Edits {
 /// Apertrust's own that a file of `version` does not hold.
 fn top_level(xmp: &Xmp, version: u32) -> (Vec<Property>, Vec<Problem>) {
     let own: &[&str] = if version < COPIES_VERSION {
-        &["version", "modules", "operations"]
+        &["version", "tools", "operations"]
     } else {
         &["version", "photo", "fingerprint", "copies"]
     };
@@ -705,11 +705,11 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
 /// A problem for what in a step's `apertrust:entries`, at `place`, a save would drop, by the
 /// kind of entry the text layer reads each as ([`Entry`]): an item that is no entry, with
 /// no tool's or operation's name, or both; and in a tool's entry a field other than its
-/// `module`, `moduleVersion`, `enabled`, `kept`, `auto` and `control:` fields, in an
+/// `tool`, `toolVersion`, `enabled`, `kept`, `auto` and `control:` fields, in an
 /// operation's a field other than its `operation`, `schema` and `param:` fields, of
 /// Apertrust's namespace or any other, as a newer build's, or one that is no plain text.
 fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
-    const MODULE: [&str; 5] = ["module", "moduleVersion", "enabled", "kept", "auto"];
+    const TOOL: [&str; 5] = ["tool", "toolVersion", "enabled", "kept", "auto"];
     const OPERATION: [&str; 2] = ["operation", "schema"];
     let unknown = |field: &str| Problem::UnknownField {
         place: place.to_owned(),
@@ -721,8 +721,8 @@ fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
             continue;
         };
         let named = |local: &str| own_field(fields, local).is_some_and(|name| !name.is_empty());
-        let (known, values): (&[&str], &str) = match (named("module"), named("operation")) {
-            (true, false) => (&MODULE, CONTROL_NAMESPACE),
+        let (known, values): (&[&str], &str) = match (named("tool"), named("operation")) {
+            (true, false) => (&TOOL, CONTROL_NAMESPACE),
             (false, true) => (&OPERATION, PARAM_NAMESPACE),
             (true, true) => {
                 problems.push(unknown("an entry naming both a tool and an operation"));

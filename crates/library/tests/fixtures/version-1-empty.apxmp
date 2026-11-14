@@ -6,9 +6,9 @@
     xmlns:control="https://apertrust.org/ns/xmp/control/"
     xmlns:param="https://apertrust.org/ns/xmp/param/"
     apertrust:version="1">
-   <apertrust:modules>
+   <apertrust:tools>
     <rdf:Seq/>
-   </apertrust:modules>
+   </apertrust:tools>
    <apertrust:operations>
     <rdf:Seq/>
    </apertrust:operations>

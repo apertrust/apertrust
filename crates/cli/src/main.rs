@@ -3035,7 +3035,7 @@ mod tests {
             .unwrap();
         let xml = sidecar::to_xml(&grainy, OPERATIONS, WITH_SAMPLE, "0.9.0").replacen(
             "<rdf:Seq>\n",
-            "<rdf:Seq>\n<rdf:li><rdf:Description apertrust:module=\"lens\" apertrust:moduleVersion=\"1\"/></rdf:li>\n",
+            "<rdf:Seq>\n<rdf:li><rdf:Description apertrust:tool=\"lens\" apertrust:toolVersion=\"1\"/></rdf:li>\n",
             1,
         );
         let path = sidecar::path_for(&photo);

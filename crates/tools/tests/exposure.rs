@@ -654,13 +654,13 @@ fn version_1_s_exposure_is_left_out_and_the_rest_reads() {
     ]);
     let version_2 = sidecar::to_xml(&saved, OPERATIONS, TOOLS, "0.0.0");
     let version_1 = version_2
-        .replace(r#"moduleVersion="2""#, r#"moduleVersion="1""#)
+        .replace(r#"toolVersion="2""#, r#"toolVersion="1""#)
         .replace(
             r#"control:exposure="1.5""#,
             r#"control:exposure="1.5" control:contrast="12" control:pivot="25""#,
         )
         .replace(r#"apertrust:kept=""#, r#"apertrust:kept="contrast "#);
-    assert!(version_1.contains(r#"moduleVersion="1""#), "{version_2}");
+    assert!(version_1.contains(r#"toolVersion="1""#), "{version_2}");
     assert!(version_1.contains("control:pivot"), "{version_2}");
     assert!(version_1.contains("kept=\"contrast "), "{version_2}");
     let read =
