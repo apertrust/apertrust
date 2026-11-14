@@ -18,75 +18,75 @@
 //! Tool panels from definitions). Hyphens separate the parts, ids are snake_case, and a
 //! fixed word comes before each id, so an option or a tab called `label` or `title`
 //! cannot collide with another message. The messages are in
-//! `crates/ui/locales/<locale>/modules.ftl`.
+//! `crates/ui/locales/<locale>/tools.ftl`.
 
 use std::collections::BTreeSet;
 
 use crate::definition::{ControlKind, Definition, Row, SettingRow, Slider, Unit};
 
-/// The tool's title: `module-<tool>-title`.
+/// The tool's title: `tool-<tool>-title`.
 pub fn title(tool: &str) -> String {
-    format!("module-{tool}-title")
+    format!("tool-{tool}-title")
 }
 
-/// Auto's tooltip, which names its target: `module-<tool>-auto`.
+/// Auto's tooltip, which names its target: `tool-<tool>-auto`.
 pub fn auto(tool: &str) -> String {
-    format!("module-{tool}-auto")
+    format!("tool-{tool}-auto")
 }
 
-/// A tab's title: `module-<tool>-tab-<tab>`.
+/// A tab's title: `tool-<tool>-tab-<tab>`.
 pub fn tab(tool: &str, tab: &str) -> String {
-    format!("module-{tool}-tab-{tab}")
+    format!("tool-{tool}-tab-{tab}")
 }
 
-/// A group label: `module-<tool>-group-<group>`.
+/// A group label: `tool-<tool>-group-<group>`.
 pub fn group(tool: &str, group: &str) -> String {
-    format!("module-{tool}-group-{group}")
+    format!("tool-{tool}-group-{group}")
 }
 
-/// A collapsible group's title: `module-<tool>-collapsible-<group>`.
+/// A collapsible group's title: `tool-<tool>-collapsible-<group>`.
 pub fn collapsible(tool: &str, group: &str) -> String {
-    format!("module-{tool}-collapsible-{group}")
+    format!("tool-{tool}-collapsible-{group}")
 }
 
-/// A control's short label: `module-<tool>-control-<control>-label`.
+/// A control's short label: `tool-<tool>-control-<control>-label`.
 pub fn label(tool: &str, control: &str) -> String {
-    format!("module-{tool}-control-{control}-label")
+    format!("tool-{tool}-control-{control}-label")
 }
 
 /// A control's full name, which screen readers say:
-/// `module-<tool>-control-<control>-full`.
+/// `tool-<tool>-control-<control>-full`.
 pub fn full(tool: &str, control: &str) -> String {
-    format!("module-{tool}-control-{control}-full")
+    format!("tool-{tool}-control-{control}-full")
 }
 
-/// A control's promise, its tooltip: `module-<tool>-control-<control>-promise`.
+/// A control's promise, its tooltip: `tool-<tool>-control-<control>-promise`.
 pub fn promise(tool: &str, control: &str) -> String {
-    format!("module-{tool}-control-{control}-promise")
+    format!("tool-{tool}-control-{control}-promise")
 }
 
-/// A choice's option: `module-<tool>-control-<control>-option-<option>`.
+/// A choice's option: `tool-<tool>-control-<control>-option-<option>`.
 pub fn option(tool: &str, control: &str, option: &str) -> String {
-    format!("module-{tool}-control-{control}-option-{option}")
+    format!("tool-{tool}-control-{control}-option-{option}")
 }
 
 /// A row's own words, where darktable labels its control otherwise in the mode the row
 /// shows for ([`crate::Slider::label`]): its short label, full name and promise,
-/// `module-<tool>-control-<control>-as-<words>-label`, `-full` and `-promise`.
+/// `tool-<tool>-control-<control>-as-<words>-label`, `-full` and `-promise`.
 pub fn row_words(tool: &str, control: &str, words: &str) -> [String; 3] {
     ["label", "full", "promise"]
-        .map(|part| format!("module-{tool}-control-{control}-as-{words}-{part}"))
+        .map(|part| format!("tool-{tool}-control-{control}-as-{words}-{part}"))
 }
 
 /// A tool's setting's short label, full name and promise ([`crate::Row::Setting`]):
-/// `module-<tool>-setting-<setting>-label`, `-full` and `-promise`.
+/// `tool-<tool>-setting-<setting>-label`, `-full` and `-promise`.
 pub fn setting(tool: &str, setting: &str) -> [String; 3] {
-    ["label", "full", "promise"].map(|part| format!("module-{tool}-setting-{setting}-{part}"))
+    ["label", "full", "promise"].map(|part| format!("tool-{tool}-setting-{setting}-{part}"))
 }
 
-/// A tool's setting's option: `module-<tool>-setting-<setting>-option-<option>`.
+/// A tool's setting's option: `tool-<tool>-setting-<setting>-option-<option>`.
 pub fn setting_option(tool: &str, setting: &str, option: &str) -> String {
-    format!("module-{tool}-setting-{setting}-option-{option}")
+    format!("tool-{tool}-setting-{setting}-option-{option}")
 }
 
 /// darktable's guides widget's words ([`crate::Row::Guides`]), every tool's: show
@@ -114,16 +114,16 @@ pub const PATCHES: [&str; 6] = [
 ];
 
 /// An action's short label, full name and promise ([`crate::Row::Action`]):
-/// `module-<tool>-action-<action>-label`, `-full` and `-promise`.
+/// `tool-<tool>-action-<action>-label`, `-full` and `-promise`.
 pub fn action(tool: &str, action: &str) -> [String; 3] {
-    ["label", "full", "promise"].map(|part| format!("module-{tool}-action-{action}-{part}"))
+    ["label", "full", "promise"].map(|part| format!("tool-{tool}-action-{action}-{part}"))
 }
 
 /// A colour picker's name, full name, promise and, for one that takes a point, the central
-/// bar's sentence ([`crate::Picker`]): `module-<tool>-picker-<picker>-label`, `-full`,
+/// bar's sentence ([`crate::Picker`]): `tool-<tool>-picker-<picker>-label`, `-full`,
 /// `-promise` and `-what`.
 pub fn picker(tool: &str, picker: &str) -> [String; 4] {
-    ["label", "full", "promise", "what"].map(|part| format!("module-{tool}-picker-{picker}-{part}"))
+    ["label", "full", "promise", "what"].map(|part| format!("tool-{tool}-picker-{picker}-{part}"))
 }
 
 /// The words of `picker` of `definition` that its button and the central bar use, of
@@ -147,14 +147,14 @@ pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<Stri
 }
 
 /// A preset row's short label, full name and promise:
-/// `module-<tool>-preset-<preset>-label`, `-full` and `-promise`.
+/// `tool-<tool>-preset-<preset>-label`, `-full` and `-promise`.
 pub fn preset(tool: &str, preset: &str) -> [String; 3] {
-    ["label", "full", "promise"].map(|part| format!("module-{tool}-preset-{preset}-{part}"))
+    ["label", "full", "promise"].map(|part| format!("tool-{tool}-preset-{preset}-{part}"))
 }
 
-/// A preset row's option: `module-<tool>-preset-<preset>-option-<option>`.
+/// A preset row's option: `tool-<tool>-preset-<preset>-option-<option>`.
 pub fn preset_option(tool: &str, preset: &str, option: &str) -> String {
-    format!("module-{tool}-preset-{preset}-option-{option}")
+    format!("tool-{tool}-preset-{preset}-option-{option}")
 }
 
 /// What a preset row shows while the values hold none of its options, the same in every
@@ -273,61 +273,61 @@ mod tests {
         assert_eq!(
             of(Sample.definition()),
             [
-                "module-sample-title",
-                "module-sample-tab-grain",
-                "module-sample-tab-shape",
-                "module-sample-group-grain",
-                "module-sample-group-measure",
-                "module-sample-collapsible-midtones",
+                "tool-sample-title",
+                "tool-sample-tab-grain",
+                "tool-sample-tab-shape",
+                "tool-sample-group-grain",
+                "tool-sample-group-measure",
+                "tool-sample-collapsible-midtones",
                 // A quad's picker takes its slider's label, and an area's needs no
                 // sentence of its own.
-                "module-sample-picker-brightness-full",
-                "module-sample-picker-brightness-promise",
-                "module-sample-picker-spread-label",
-                "module-sample-picker-spread-full",
-                "module-sample-picker-spread-promise",
-                "module-sample-picker-spread-what",
-                "module-sample-picker-show-label",
-                "module-sample-picker-show-full",
-                "module-sample-picker-show-promise",
-                "module-sample-picker-show-what",
-                "module-sample-control-brightness-label",
-                "module-sample-control-brightness-full",
-                "module-sample-control-brightness-promise",
-                "module-sample-control-grain-label",
-                "module-sample-control-grain-full",
-                "module-sample-control-grain-promise",
-                "module-sample-control-size-label",
-                "module-sample-control-size-full",
-                "module-sample-control-size-promise",
-                "module-sample-control-size-option-fine",
-                "module-sample-control-size-option-medium",
-                "module-sample-control-size-option-coarse",
-                "module-sample-control-method-label",
-                "module-sample-control-method-full",
-                "module-sample-control-method-promise",
-                "module-sample-control-method-option-even",
-                "module-sample-control-method-option-biased",
-                "module-sample-control-method-option-film",
-                "module-sample-control-method-option-camera",
-                "module-sample-control-bias-label",
-                "module-sample-control-bias-full",
-                "module-sample-control-bias-promise",
-                "module-sample-control-coarseness-label",
-                "module-sample-control-coarseness-full",
-                "module-sample-control-coarseness-promise",
-                "module-sample-control-sum-label",
-                "module-sample-control-sum-full",
-                "module-sample-control-sum-promise",
-                "module-sample-control-difference-label",
-                "module-sample-control-difference-full",
-                "module-sample-control-difference-promise",
-                "module-sample-preset-look-label",
-                "module-sample-preset-look-full",
-                "module-sample-preset-look-promise",
-                "module-sample-preset-look-option-untouched",
-                "module-sample-preset-look-option-grainy",
-                "module-sample-preset-look-option-camera",
+                "tool-sample-picker-brightness-full",
+                "tool-sample-picker-brightness-promise",
+                "tool-sample-picker-spread-label",
+                "tool-sample-picker-spread-full",
+                "tool-sample-picker-spread-promise",
+                "tool-sample-picker-spread-what",
+                "tool-sample-picker-show-label",
+                "tool-sample-picker-show-full",
+                "tool-sample-picker-show-promise",
+                "tool-sample-picker-show-what",
+                "tool-sample-control-brightness-label",
+                "tool-sample-control-brightness-full",
+                "tool-sample-control-brightness-promise",
+                "tool-sample-control-grain-label",
+                "tool-sample-control-grain-full",
+                "tool-sample-control-grain-promise",
+                "tool-sample-control-size-label",
+                "tool-sample-control-size-full",
+                "tool-sample-control-size-promise",
+                "tool-sample-control-size-option-fine",
+                "tool-sample-control-size-option-medium",
+                "tool-sample-control-size-option-coarse",
+                "tool-sample-control-method-label",
+                "tool-sample-control-method-full",
+                "tool-sample-control-method-promise",
+                "tool-sample-control-method-option-even",
+                "tool-sample-control-method-option-biased",
+                "tool-sample-control-method-option-film",
+                "tool-sample-control-method-option-camera",
+                "tool-sample-control-bias-label",
+                "tool-sample-control-bias-full",
+                "tool-sample-control-bias-promise",
+                "tool-sample-control-coarseness-label",
+                "tool-sample-control-coarseness-full",
+                "tool-sample-control-coarseness-promise",
+                "tool-sample-control-sum-label",
+                "tool-sample-control-sum-full",
+                "tool-sample-control-sum-promise",
+                "tool-sample-control-difference-label",
+                "tool-sample-control-difference-full",
+                "tool-sample-control-difference-promise",
+                "tool-sample-preset-look-label",
+                "tool-sample-preset-look-full",
+                "tool-sample-preset-look-promise",
+                "tool-sample-preset-look-option-untouched",
+                "tool-sample-preset-look-option-grainy",
+                "tool-sample-preset-look-option-camera",
                 "unit-ev",
                 "unit-percent",
                 "preset-custom",
@@ -404,9 +404,9 @@ mod tests {
         assert_eq!(
             words,
             [
-                "module-bilat-control-sigma_r-as-highlights-label",
-                "module-bilat-control-sigma_r-as-highlights-full",
-                "module-bilat-control-sigma_r-as-highlights-promise",
+                "tool-bilat-control-sigma_r-as-highlights-label",
+                "tool-bilat-control-sigma_r-as-highlights-full",
+                "tool-bilat-control-sigma_r-as-highlights-promise",
             ]
         );
         assert_eq!(&ids[1..4], words);
@@ -457,15 +457,15 @@ mod tests {
         assert_eq!(
             of(&CHECKER),
             [
-                "module-mixer-title",
-                "module-mixer-setting-chart-label",
-                "module-mixer-setting-chart-full",
-                "module-mixer-setting-chart-promise",
-                "module-mixer-setting-chart-option-classic",
-                "module-mixer-setting-chart-option-passport",
-                "module-mixer-control-amount-label",
-                "module-mixer-control-amount-full",
-                "module-mixer-control-amount-promise",
+                "tool-mixer-title",
+                "tool-mixer-setting-chart-label",
+                "tool-mixer-setting-chart-full",
+                "tool-mixer-setting-chart-promise",
+                "tool-mixer-setting-chart-option-classic",
+                "tool-mixer-setting-chart-option-passport",
+                "tool-mixer-control-amount-label",
+                "tool-mixer-control-amount-full",
+                "tool-mixer-control-amount-promise",
             ]
         );
     }
@@ -507,13 +507,13 @@ mod tests {
         assert_eq!(
             of(&LEVELS),
             [
-                "module-levels-title",
-                "module-levels-action-auto_tune-label",
-                "module-levels-action-auto_tune-full",
-                "module-levels-action-auto_tune-promise",
-                "module-levels-control-white-label",
-                "module-levels-control-white-full",
-                "module-levels-control-white-promise",
+                "tool-levels-title",
+                "tool-levels-action-auto_tune-label",
+                "tool-levels-action-auto_tune-full",
+                "tool-levels-action-auto_tune-promise",
+                "tool-levels-control-white-label",
+                "tool-levels-control-white-full",
+                "tool-levels-control-white-promise",
             ]
         );
     }

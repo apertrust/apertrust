@@ -1456,7 +1456,7 @@ pub enum Row {
 - each control appears in one row, or in none and only in the rows of the views covering it (decision 2's widened rule). Besides that, a number control may appear in one equalizer's row at most: the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`, a second view of them), the one widget allowed beside the controls' own rows until another needs it;
 - each coordinate and each preset row is in one row at most.
 
-**Words.** A coordinate's words are a control's (`module-<module>-control-<coordinate>-label`, `-full`, `-promise`). A preset row's are `module-<module>-preset-<preset>-label`, `-full` and `-promise`, its options `module-<module>-preset-<preset>-option-<option>`, and Custom the shared `preset-custom`.
+**Words.** A coordinate's words are a control's (`tool-<tool>-control-<coordinate>-label`, `-full`, `-promise`). A preset row's are `tool-<tool>-preset-<preset>-label`, `-full` and `-promise`, its options `tool-<tool>-preset-<preset>-option-<option>`, and Custom the shared `preset-custom`.
 
 ### In `Tool`
 

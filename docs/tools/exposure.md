@@ -64,7 +64,7 @@ Exposure steps by darktable's 0.05 EV, Shift 0.5 EV and Alt 0.005 EV, darktable'
 
 ### Tooltips
 
-These are the tooltips (`module-exposure-control-<control>-promise`), each turned into the rows named. Exposure, Highlight preservation mode, Percentile and Target level have darktable's tooltips; Mode, which has none in darktable, has words of the same kind. Nothing of theirs is ported but what E32 holds.
+These are the tooltips (`tool-exposure-control-<control>-promise`), each turned into the rows named. Exposure, Highlight preservation mode, Percentile and Target level have darktable's tooltips; Mode, which has none in darktable, has words of the same kind. Nothing of theirs is ported but what E32 holds.
 
 | Control | Tooltip | Rows |
 | --- | --- | --- |

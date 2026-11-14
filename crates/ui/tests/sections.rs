@@ -391,7 +391,7 @@ fn calibration_tabs(locale: Locale) -> Vec<String> {
         "brightness",
         "grey",
     ]
-    .map(|tab| words.text(&format!("module-channelmixerrgb-tab-{tab}")))
+    .map(|tab| words.text(&format!("tool-channelmixerrgb-tab-{tab}")))
     .to_vec()
 }
 
@@ -433,7 +433,7 @@ fn each_tab_is_as_wide_as_its_name_from_the_row_s_start() {
 fn tone_curve_tabs() -> Vec<String> {
     let words = apertrust_ui::Translator::new(Locale::EnGb);
     ["luma", "rgb", "red", "green", "blue", "advanced"]
-        .map(|tab| words.text(&format!("module-tone_curve-tab-{tab}")))
+        .map(|tab| words.text(&format!("tool-tone_curve-tab-{tab}")))
         .to_vec()
 }
 
@@ -1025,7 +1025,7 @@ fn tab_names_that_fit_keep_the_theme_s_size() {
 #[test]
 fn a_long_title_is_cut_before_the_header_s_buttons_at_the_narrowest_side_panel() {
     let words = apertrust_ui::Translator::new(Locale::Uk);
-    let title = words.text("module-highlights-title");
+    let title = words.text("tool-highlights-title");
     let shown = title.clone();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(280.0, 120.0))

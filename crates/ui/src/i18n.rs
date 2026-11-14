@@ -144,21 +144,21 @@ impl Locale {
             // The interface's own words, then the tools' (decision 28).
             Locale::EnGb | Locale::Pseudo => &[
                 include_str!("../locales/en-GB/ui.ftl"),
-                include_str!("../locales/en-GB/modules.ftl"),
+                include_str!("../locales/en-GB/tools.ftl"),
             ],
             // Only the messages American English spells differently; `bundle` adds British
             // English's for the rest.
             Locale::EnUs => &[
                 include_str!("../locales/en-US/ui.ftl"),
-                include_str!("../locales/en-US/modules.ftl"),
+                include_str!("../locales/en-US/tools.ftl"),
             ],
             Locale::Uk => &[
                 include_str!("../locales/uk/ui.ftl"),
-                include_str!("../locales/uk/modules.ftl"),
+                include_str!("../locales/uk/tools.ftl"),
             ],
             Locale::Pl => &[
                 include_str!("../locales/pl/ui.ftl"),
-                include_str!("../locales/pl/modules.ftl"),
+                include_str!("../locales/pl/tools.ftl"),
             ],
         }
     }
@@ -762,7 +762,7 @@ mod tests {
     fn american_english_spells_its_own_words_and_takes_british_english_s_others() {
         let us = Translator::new(Locale::EnUs);
         assert_eq!(us.text("tab-color"), "Color");
-        assert_eq!(us.text("module-colorbalancergb-title"), "Color balance RGB");
+        assert_eq!(us.text("tool-colorbalancergb-title"), "Color balance RGB");
         assert_eq!(us.text("action-copy-edit"), "Copy edit");
         // Its own messages are British English's too, as code that asks whether a message
         // exists sees them.
@@ -940,7 +940,7 @@ mod tests {
                 let mut args = Args::new();
                 args.set("count", 3);
                 args.set("section", "Exposure");
-                args.set("module", "Tone equalizer");
+                args.set("tool", "Tone equalizer");
                 args.set("group", "Margins");
                 args.set("control", "Contrast");
                 args.set("value", "+0.42");
@@ -1018,7 +1018,7 @@ mod tests {
                 args.set("tip", "Pick colour from the photo");
                 // The active picker: its tool and name, its own sentence, where it is on
                 // the photo in percent, and what a pick changed.
-                args.set("module", "Exposure");
+                args.set("tool", "Exposure");
                 args.set("picker", "Exposure");
                 args.set("what", "Click or drag the point on a neutral grey.");
                 for share in ["x", "y", "left", "top", "right", "bottom"] {
@@ -1037,7 +1037,7 @@ mod tests {
                 // History's groups: their steps' numbers and their tools; a day's date.
                 args.set("first", 12);
                 args.set("last", 16);
-                args.set("modules", "Exposure, Grain");
+                args.set("tools", "Exposure, Grain");
                 args.set("date", "12 November");
                 // Browse's missing recent: its label, its open kind and its name.
                 args.set("label", "Folder: 2026-10 Lisbon");

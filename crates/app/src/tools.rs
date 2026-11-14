@@ -1829,7 +1829,7 @@ fn equalizer_row(
     let drawn = equalizer_curve(tool, state.enabled, first, &values, start);
     let width = catch_unwind(AssertUnwindSafe(|| tool.curve_width(first, &values)));
     let mut args = Args::new();
-    args.set("module", words.text(&messages::title(id)));
+    args.set("tool", words.text(&messages::title(id)));
     let name = words.text_with("equalizer-name", Some(&args));
     let mut graph = Equalizer::new(&name, &bands, &names)
         .step(shown[0].step)
@@ -2369,7 +2369,7 @@ mod tests {
         let mut harness = panel(&Sample, untouched(&Sample));
         harness.run();
         harness
-            .get_by_role_and_label(Role::Slider, "module-sample-control-brightness-full")
+            .get_by_role_and_label(Role::Slider, "tool-sample-control-brightness-full")
             .focus();
         harness.run();
         // Alt steps a tenth of 0.01, under the two decimals the row shows: it moves by
@@ -2540,7 +2540,7 @@ mod tests {
 
     /// Sample's coarseness, which acts only on coarse grain (decision 30), by its full
     /// name. Sample has no messages, so its words are its message ids.
-    const COARSENESS: &str = "module-sample-control-coarseness-full";
+    const COARSENESS: &str = "tool-sample-control-coarseness-full";
 
     /// Sample's coarseness reaches up to 100 % plus the bias (decision 30): a pending bias
     /// moves its range at once and shows it pushed inside, kept, as the session will store
@@ -2617,7 +2617,7 @@ mod tests {
             state
         };
         let choose = |harness: &mut Harness<'static, Panel>, option: &str| {
-            let name = format!("module-sample-control-size-option-{option}");
+            let name = format!("tool-sample-control-size-option-{option}");
             harness.get_by_label(&name).click();
             harness.run();
         };
@@ -2664,9 +2664,9 @@ mod tests {
         // words are its message ids.
         let mut harness = panel(&Sample, untouched(&Sample));
         harness.run();
-        harness.get_by_label("module-sample-group-grain");
+        harness.get_by_label("tool-sample-group-grain");
         harness
-            .get_by_label("module-sample-control-size-option-fine")
+            .get_by_label("tool-sample-control-size-option-fine")
             .click();
         harness.run();
         assert_eq!(
@@ -2693,11 +2693,11 @@ mod tests {
 
     /// Sample's Midtones group's row. Sample has no messages, so its words are its
     /// message ids.
-    const MIDTONES: &str = "module-sample-collapsible-midtones";
+    const MIDTONES: &str = "tool-sample-collapsible-midtones";
 
     /// The method's list, and Sample's bias slider while it shows.
-    const METHOD: &str = "module-sample-control-method-full";
-    const BIAS: &str = "module-sample-control-bias-full";
+    const METHOD: &str = "tool-sample-control-method-full";
+    const BIAS: &str = "tool-sample-control-bias-full";
 
     #[test]
     fn a_collapsible_group_starts_closed_and_opens_and_closes() {
@@ -2797,7 +2797,7 @@ mod tests {
             .click();
         harness.run();
         harness
-            .get_by_label("module-sample-control-method-option-biased")
+            .get_by_label("tool-sample-control-method-option-biased")
             .click();
         harness.run();
         harness.run();
@@ -2808,7 +2808,7 @@ mod tests {
             .click();
         harness.run();
         harness
-            .get_by_label("module-sample-control-method-option-even")
+            .get_by_label("tool-sample-control-method-option-even")
             .click();
         harness.run();
         harness.run();
@@ -2838,7 +2838,7 @@ mod tests {
             .get_by_role_and_label(Role::ComboBox, METHOD)
             .click();
         harness.run();
-        let film = harness.get_by_label("module-sample-control-method-option-film");
+        let film = harness.get_by_label("tool-sample-control-method-option-film");
         assert!(film.accesskit_node().is_disabled());
         film.click();
         harness.run();
@@ -2879,9 +2879,9 @@ mod tests {
     /// until another option is chosen.
     #[test]
     fn a_choice_lists_the_photo_s_options_and_one_from_another_photo_last_and_disabled() {
-        const CAMERA: &str = "module-sample-control-method-option-camera";
-        const FILM: &str = "module-sample-control-method-option-film";
-        const EVEN: &str = "module-sample-control-method-option-even";
+        const CAMERA: &str = "tool-sample-control-method-option-camera";
+        const FILM: &str = "tool-sample-control-method-option-film";
+        const EVEN: &str = "tool-sample-control-method-option-even";
         const UNAVAILABLE: &str = "Not available for this photo";
         let open_group = |harness: &mut Harness<'static, Panel>| {
             harness
@@ -2989,7 +2989,7 @@ mod tests {
             .click();
         harness.run();
         harness
-            .get_by_label("module-sample-control-method-option-even")
+            .get_by_label("tool-sample-control-method-option-even")
             .click();
         harness.run();
         harness.run();
@@ -3000,10 +3000,10 @@ mod tests {
     fn a_row_before_every_tab_s_shows_whichever_tab_is_open() {
         let mut harness = panel(&Sample, untouched(&Sample));
         harness.run();
-        let brightness = "module-sample-control-brightness-full";
+        let brightness = "tool-sample-control-brightness-full";
         harness.get_by_role_and_label(Role::Slider, brightness);
         harness
-            .get_by_role_and_label(Role::Tab, "module-sample-tab-shape")
+            .get_by_role_and_label(Role::Tab, "tool-sample-tab-shape")
             .click();
         harness.run();
         harness.run();
@@ -3011,17 +3011,17 @@ mod tests {
         harness.get_by_role_and_label(Role::Button, MIDTONES);
         assert!(
             harness
-                .query_by_label("module-sample-control-size-option-fine")
+                .query_by_label("tool-sample-control-size-option-fine")
                 .is_none()
         );
     }
 
     /// Sample's look, a preset row, and its options. Sample has no messages, so its words
     /// are its message ids; Custom is everyone's.
-    const LOOK: &str = "module-sample-preset-look-full";
-    const UNTOUCHED: &str = "module-sample-preset-look-option-untouched";
-    const GRAINY: &str = "module-sample-preset-look-option-grainy";
-    const CAMERA: &str = "module-sample-preset-look-option-camera";
+    const LOOK: &str = "tool-sample-preset-look-full";
+    const UNTOUCHED: &str = "tool-sample-preset-look-option-untouched";
+    const GRAINY: &str = "tool-sample-preset-look-option-grainy";
+    const CAMERA: &str = "tool-sample-preset-look-option-camera";
 
     /// What the look's box shows, as screen readers hear it.
     fn look(harness: &Harness<'_, Panel>) -> Option<String> {
@@ -3065,7 +3065,7 @@ mod tests {
         let mut harness = panel(&Sample, grainy());
         harness.run();
         assert_eq!(look(&harness).as_deref(), Some(GRAINY));
-        let brightness = "module-sample-control-brightness-full";
+        let brightness = "tool-sample-control-brightness-full";
         harness
             .get_by_role_and_label(Role::Slider, brightness)
             .focus();
@@ -3139,9 +3139,9 @@ mod tests {
 
     /// Sample's pair's rows and grain's and bias's own, by their full names. Sample has no
     /// messages, so its words are its message ids.
-    const SUM: &str = "module-sample-control-sum-full";
-    const DIFFERENCE: &str = "module-sample-control-difference-full";
-    const GRAIN: &str = "module-sample-control-grain-full";
+    const SUM: &str = "tool-sample-control-sum-full";
+    const DIFFERENCE: &str = "tool-sample-control-difference-full";
+    const GRAIN: &str = "tool-sample-control-grain-full";
 
     /// What the slider `name` shows, as screen readers hear it.
     fn heard(harness: &Harness<'_, Panel>, name: &str) -> Option<String> {
@@ -3241,7 +3241,7 @@ mod tests {
         }
         assert!(
             harness
-                .query_by_label("module-sample-control-sum-promise")
+                .query_by_label("tool-sample-control-sum-promise")
                 .is_some()
         );
         // Held where the session holds them, kept as their controls are.
@@ -3281,11 +3281,11 @@ mod tests {
         assert_ne!(viewed(state)[1], -40.3);
         // Their own rows follow at once: bias's here, grain's on its tab.
         assert_eq!(
-            heard(&harness, "module-sample-control-bias-full").as_deref(),
+            heard(&harness, "tool-sample-control-bias-full").as_deref(),
             Some("83%")
         );
         harness
-            .get_by_role_and_label(Role::Tab, "module-sample-tab-grain")
+            .get_by_role_and_label(Role::Tab, "tool-sample-tab-grain")
             .click();
         harness.run();
         harness.run();
@@ -3379,7 +3379,7 @@ mod tests {
             [[80.0, -40.0], [140.0, -20.0]]
         );
         harness
-            .get_by_role_and_label(Role::Slider, "module-twin-control-u-full")
+            .get_by_role_and_label(Role::Slider, "tool-twin-control-u-full")
             .focus();
         harness.run();
         for _ in 0..2 {
@@ -3591,7 +3591,7 @@ mod tests {
     #[test]
     fn the_header_s_reset_takes_every_coordinate_back_to_its_default() {
         let mut harness = midtones(paired([150.0, -40.3]));
-        harness.get_by_label("Reset module-sample-title").click();
+        harness.get_by_label("Reset tool-sample-title").click();
         harness.run();
         assert_eq!(
             harness.state().changes,
@@ -3819,8 +3819,8 @@ mod tests {
         let mut harness = panel(&LocalContrast, untouched(&LocalContrast));
         harness.run();
         let (own, highlights) = (
-            "module-bilat-control-sigma_r-full",
-            "module-bilat-control-sigma_r-as-highlights-full",
+            "tool-bilat-control-sigma_r-full",
+            "tool-bilat-control-sigma_r-as-highlights-full",
         );
         harness.get_by_role_and_label(Role::Slider, own);
         assert!(
@@ -3861,17 +3861,17 @@ mod tests {
     fn a_row_after_every_tab_s_shows_whichever_tab_is_open() {
         let mut harness = panel(&LocalContrast, untouched(&LocalContrast));
         harness.run();
-        let mask = "module-bilat-control-mask-full";
+        let mask = "tool-bilat-control-mask-full";
         harness.get_by_role_and_label(Role::CheckBox, mask);
         harness
-            .get_by_role_and_label(Role::Tab, "module-bilat-tab-detail")
+            .get_by_role_and_label(Role::Tab, "tool-bilat-tab-detail")
             .click();
         harness.run();
         harness.run();
-        harness.get_by_role_and_label(Role::Slider, "module-bilat-control-detail-full");
+        harness.get_by_role_and_label(Role::Slider, "tool-bilat-control-detail-full");
         // After the tab's rows, as the tone equalizer's mask display.
         let detail = harness
-            .get_by_role_and_label(Role::Slider, "module-bilat-control-detail-full")
+            .get_by_role_and_label(Role::Slider, "tool-bilat-control-detail-full")
             .rect();
         let below = harness.get_by_role_and_label(Role::CheckBox, mask).rect();
         assert!(below.top() >= detail.bottom(), "{below:?} after {detail:?}");
@@ -4612,23 +4612,22 @@ mod tests {
         assert_eq!(
             pickers(&harness),
             [
-                "module-sample-picker-brightness-full",
-                "module-sample-picker-spread-full",
-                "module-sample-picker-show-full"
+                "tool-sample-picker-brightness-full",
+                "tool-sample-picker-spread-full",
+                "tool-sample-picker-show-full"
             ]
         );
         // Each tooltip is its promise, a picker of both kinds ending with the area's hint.
         let quad =
-            harness.get_by_role_and_label(Role::Button, "module-sample-picker-brightness-full");
+            harness.get_by_role_and_label(Role::Button, "tool-sample-picker-brightness-full");
         assert_eq!(
             quad.accesskit_node().description().as_deref(),
-            Some("module-sample-picker-brightness-promise")
+            Some("tool-sample-picker-brightness-promise")
         );
-        let spread =
-            harness.get_by_role_and_label(Role::Button, "module-sample-picker-spread-full");
+        let spread = harness.get_by_role_and_label(Role::Button, "tool-sample-picker-spread-full");
         let tip = spread.accesskit_node().description().unwrap_or_default();
         assert!(
-            tip.starts_with("module-sample-picker-spread-promise\n"),
+            tip.starts_with("tool-sample-picker-spread-promise\n"),
             "{tip}"
         );
 
@@ -4636,7 +4635,7 @@ mod tests {
         harness.state_mut().why = Some(why);
         harness.run();
         let quad =
-            harness.get_by_role_and_label(Role::Button, "module-sample-picker-brightness-full");
+            harness.get_by_role_and_label(Role::Button, "tool-sample-picker-brightness-full");
         assert!(quad.accesskit_node().is_disabled());
         assert_eq!(quad.accesskit_node().description().as_deref(), Some(why));
         quad.click();

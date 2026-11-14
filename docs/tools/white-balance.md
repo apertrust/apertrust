@@ -101,7 +101,7 @@ The file lists 485 models; rawler's names reach 450 of them, 21 of them corpus c
 
 darktable stores the list's position (6 on, after the five and the camera's heading), which names another preset on another camera or with another file. The id means the camera's Daylight on every photo, as decision 30 has a choice's options. The binding writes the operation's `preset` as `camera`, a sixth option standing for darktable's positions 6 on, under which colorin applies no late correction, as darktable's `commit_params` reads `preset` only as as shot to reference or not. An id the photo's camera does not list is kept, as decision 30 keeps a choice's option.
 
-**Their words.** Each id's label in sentence case and British spelling (Daylight, Cool white fluorescent, High temp. mercury-vapour fluorescent, Flash (auto mode)); a kelvin preset its temperature with the kelvin sign (2500 K). They are `module-temperature-preset-settings-option-<id>` and `module-temperature-control-preset-option-<id>`, in en-GB, uk and pl, darktable's own Ukrainian and Polish translations of its standard names a reference for the drafts. Finetune's words are a control's: `module-temperature-control-finetune-label` "Finetune", `-full` "Fine-tune of the camera's white balance setting", after darktable's tooltip, and `-promise`; its unit is `unit-mired`.
+**Their words.** Each id's label in sentence case and British spelling (Daylight, Cool white fluorescent, High temp. mercury-vapour fluorescent, Flash (auto mode)); a kelvin preset its temperature with the kelvin sign (2500 K). They are `tool-temperature-preset-settings-option-<id>` and `tool-temperature-control-preset-option-<id>`, in en-GB, uk and pl, darktable's own Ukrainian and Polish translations of its standard names a reference for the drafts. Finetune's words are a control's: `tool-temperature-control-finetune-label` "Finetune", `-full` "Fine-tune of the camera's white balance setting", after darktable's tooltip, and `-promise`; its unit is `unit-mired`.
 
 **The list** (`Tool::listed`, darktable's `_generate_preset_combo`, on a raw): one option per name, in the order the camera's entries give the names, each name's entries contiguous in the file (a test holds it), at most 50, which no camera reaches (the Coolpix P1000 has 44). After the five, the panel draws a heading with the camera's maker and model, darktable's combobox section `camera_maker camera_model`, then the options; nothing when the camera has no presets. `Tool::options("preset")` gives the five and these.
 
@@ -328,10 +328,10 @@ flowchart LR
 8. **White balance's camera presets.**
    - Deliver `CAMERA_PRESETS`, the `preset` control's options, the operation's `preset` gaining `camera` with the binding writing it, Settings' `camera`, `options("preset")`, `listed`, `preset` for a camera preset at a tuning, `matching` as [above](#the-cameras-presets-and-finetune), the words in three languages; Finetune not yet (`tuning` still `None`).
    - Tests: W10 at tuning 0 and W12.
-   - Files: `crates/tools/src/white_balance.rs`, `crates/tools/tests/white_balance.rs`, `crates/op/temperature/src/lib.rs` (`PRESETS`), `crates/ui/locales/{en-GB,uk,pl}/modules.ftl`.
+   - Files: `crates/tools/src/white_balance.rs`, `crates/tools/tests/white_balance.rs`, `crates/op/temperature/src/lib.rs` (`PRESETS`), `crates/ui/locales/{en-GB,uk,pl}/tools.ftl`.
    - Out of scope: Finetune, the picker, the CLI.
 9. **Finetune.**
    - Deliver Settings' `tuning`, the Finetune row after Settings, `Tool::tuning` and `preset` at any tuning, interpolation included, as [above](#the-cameras-presets-and-finetune); its slider held to darktable's per tuned preset with `testing::slider_differences`.
    - Tests: W10 at every tuning and W11, the X-T5's Cloudy at +5 pinned to darktable's stored 2.059603, 1 and 1.9215693; W14, darktable's panel on copies of a D850 and the X-E4, the results and screenshots in Results.
-   - Files: `crates/tools/src/white_balance.rs`, `crates/tools/tests/white_balance.rs`, `crates/ui/locales/{en-GB,uk,pl}/modules.ftl`, this file's Results.
+   - Files: `crates/tools/src/white_balance.rs`, `crates/tools/tests/white_balance.rs`, `crates/ui/locales/{en-GB,uk,pl}/tools.ftl`, this file's Results.
    - Out of scope: the button bar, the CLI's `--preset`, the reach.

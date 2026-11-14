@@ -746,12 +746,12 @@ menu-bring-all-to-front = Umieść wszystko na wierzchu
 ## Historia edycji: nazwa kroku
 
 history-reset = Resetowanie
-history-modules =
+history-tools =
     { $count ->
-        [one] { $module } i jeszcze { $count } moduł
-        [few] { $module } i jeszcze { $count } moduły
-        [many] { $module } i jeszcze { $count } modułów
-       *[other] { $module } i jeszcze { $count } modułu
+        [one] { $tool } i jeszcze { $count } moduł
+        [few] { $tool } i jeszcze { $count } moduły
+        [many] { $tool } i jeszcze { $count } modułów
+       *[other] { $tool } i jeszcze { $count } modułu
     }
 history-go-to-step = Przejście do kroku
 history-compress = Kompresja historii
@@ -791,16 +791,16 @@ history-line-controls =
        *[other] { $count } parametru
     }
 history-step-name-change = Krok { $number }: { $name }, { $change }
-history-group-modules =
+history-group-tools =
     { $count ->
         [one] { $count } moduł
         [few] { $count } moduły
         [many] { $count } modułów
        *[other] { $count } modułu
     }
-history-group-name = Kroki od { $first } do { $last }: { $name }, { $modules }
+history-group-name = Kroki od { $first } do { $last }: { $name }, { $tools }
 history-defaults = Domyślne
-history-defaults-modules =
+history-defaults-tools =
     { $count ->
         [one] { $count } moduł działający na każdym zdjęciu
         [few] { $count } moduły działające na każdym zdjęciu
@@ -837,8 +837,8 @@ history-points =
         [many] { $count } punktów
        *[other] { $count } punktu
     }
-history-peek = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $module }
-history-peek-tip = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $module }. Nic nie jest zapisywane
+history-peek = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $tool }
+history-peek-tip = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $tool }. Nic nie jest zapisywane
 
 ## Krzywa
 
@@ -849,9 +849,9 @@ curve-white-point = { $control }: punkt bieli
 curve-keys = Page Up i Page Down wybierają punkt, strzałki go przesuwają, Insert lub + dodaje punkt, Delete go usuwa, a Shift+Delete usuwa wszystkie.
 curve-keys-mac = Page Up i Page Down (Fn+↑ i Fn+↓) wybierają punkt, strzałki go przesuwają, + dodaje punkt, Delete go usuwa, a Shift+Delete usuwa wszystkie.
 
-## Wykres pasm korektora tonów; $module to nazwa modułu
+## Wykres pasm korektora tonów; $tool to nazwa modułu
 
-equalizer-name = { $module }, krzywa
+equalizer-name = { $tool }, krzywa
 equalizer-tip = Kliknij dwukrotnie, aby zresetować krzywą.
 equalizer-keys = Page Up i Page Down wybierają pasmo, strzałki je przesuwają, Delete je resetuje, a Shift+Delete resetuje wszystkie.
 equalizer-keys-mac = Page Up i Page Down (Fn+↑ i Fn+↓) wybierają pasmo, strzałki je przesuwają, Delete je resetuje, a Shift+Delete resetuje wszystkie.
@@ -895,12 +895,12 @@ picker-tip-area-quad =
     { $tip }
     { $command }+kliknięcie, aby zaznaczyć obszar
 
-## Aktywny próbnik na zdjęciu (docs/pickers.md, On the photo, Accessibility). $module to
+## Aktywny próbnik na zdjęciu (docs/pickers.md, On the photo, Accessibility). $tool to
 ## nazwa modułu, $picker nazwa próbnika: etykieta jego kontrolki na kwadracie suwaka, inaczej
 ## własna; $command to modyfikator wskaźnika, tak jak zapisują go skróty, $what własne
 ## zdanie próbnika
 
-picker-bar-name = { $module } · { $picker }
+picker-bar-name = { $tool } · { $picker }
 picker-bar-area = Przeciągnij obszar na zdjęciu. { $command }+kliknięcie przełącza na punkt. Esc kończy.
 picker-bar-point = { $what } { $command }+kliknięcie przełącza na obszar. Esc kończy.
 picker-bar-point-what = Kliknij lub przeciągnij punkt na zdjęciu.

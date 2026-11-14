@@ -1532,16 +1532,16 @@ const PNG: usize = 8;
 /// darktable's twelve export profiles in its order, by the Output colour profile tool's
 /// messages for them.
 const PROFILES: [&str; 12] = [
-    "module-colorout-control-type-option-srgb",
-    "module-colorout-control-type-option-adobe_rgb",
-    "module-colorout-control-type-option-lin_rec709",
-    "module-colorout-control-type-option-rec709",
-    "module-colorout-control-type-option-lin_rec2020",
-    "module-colorout-control-type-option-pq_rec2020",
-    "module-colorout-control-type-option-hlg_rec2020",
-    "module-colorout-control-type-option-pq_p3",
-    "module-colorout-control-type-option-hlg_p3",
-    "module-colorout-control-type-option-display_p3",
-    "module-colorout-control-type-option-prophoto_rgb",
-    "module-colorout-control-type-option-brg",
+    "tool-colorout-control-type-option-srgb",
+    "tool-colorout-control-type-option-adobe_rgb",
+    "tool-colorout-control-type-option-lin_rec709",
+    "tool-colorout-control-type-option-rec709",
+    "tool-colorout-control-type-option-lin_rec2020",
+    "tool-colorout-control-type-option-pq_rec2020",
+    "tool-colorout-control-type-option-hlg_rec2020",
+    "tool-colorout-control-type-option-pq_p3",
+    "tool-colorout-control-type-option-hlg_p3",
+    "tool-colorout-control-type-option-display_p3",
+    "tool-colorout-control-type-option-prophoto_rgb",
+    "tool-colorout-control-type-option-brg",
 ];

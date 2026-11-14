@@ -543,7 +543,7 @@ pub fn bar_words(
 ) -> Option<(String, String)> {
     let (definition, declared) = declared(tools, picker)?;
     let mut args = Args::new();
-    args.set("module", words.text(&messages::title(definition.id)));
+    args.set("tool", words.text(&messages::title(definition.id)));
     args.set("picker", name(words, definition, declared.id));
     let name = words.text_with("picker-bar-name", Some(&args));
     let mut args = Args::new();
@@ -1337,9 +1337,9 @@ mod tests {
 
     /// The pickers' buttons, by their full names: Sample has no messages, so its words are
     /// its message ids.
-    const QUAD: &str = "module-sample-picker-brightness-full";
-    const SPREAD_BUTTON: &str = "module-sample-picker-spread-full";
-    const SHOW_BUTTON: &str = "module-sample-picker-show-full";
+    const QUAD: &str = "tool-sample-picker-brightness-full";
+    const SPREAD_BUTTON: &str = "tool-sample-picker-spread-full";
+    const SHOW_BUTTON: &str = "tool-sample-picker-show-full";
 
     /// Where the panel is, and the photo, its frame a pixel a point.
     const PANEL: Rect = Rect {
@@ -1585,7 +1585,7 @@ mod tests {
             assert_eq!(toggled(&harness, button), Some(Toggled::False), "{button}");
         }
         // The row's label, at its start.
-        harness.get_by_label("module-sample-group-measure");
+        harness.get_by_label("tool-sample-group-measure");
 
         harness.get_by_role_and_label(Role::Button, QUAD).click();
         harness.run();
@@ -1600,7 +1600,7 @@ mod tests {
         assert!(photo.is_focused());
         assert_eq!(
             photo.accesskit_node().label().as_deref(),
-            Some("Picker area, module-sample-control-brightness-label")
+            Some("Picker area, tool-sample-control-brightness-label")
         );
         assert_eq!(
             photo.value().as_deref(),
@@ -1925,10 +1925,7 @@ mod tests {
         assert_eq!(update(&mut said, 700, &early), None);
         assert_eq!(said.text(), "");
         assert_eq!(update(&mut said, 700, &read), None);
-        assert_eq!(
-            said.text(),
-            "module-sample-control-brightness-label +0.50 EV"
-        );
+        assert_eq!(said.text(), "tool-sample-control-brightness-label +0.50 EV");
 
         // The picker turning off, or another on, forgets what was said and what waits.
         said.follow(Some(BRIGHTNESS));
@@ -2176,7 +2173,7 @@ mod tests {
         assert_eq!(
             bar(BRIGHTNESS, true, false),
             (
-                "module-sample-title · module-sample-control-brightness-label".to_owned(),
+                "tool-sample-title · tool-sample-control-brightness-label".to_owned(),
                 "Drag an area on the photo. Ctrl-click switches to a point. Esc ends.".to_owned()
             )
         );
@@ -2187,8 +2184,8 @@ mod tests {
         assert_eq!(
             bar(SPREAD, false, false),
             (
-                "module-sample-title · module-sample-picker-spread-label".to_owned(),
-                "module-sample-picker-spread-what Ctrl-click switches to an area. Esc ends."
+                "tool-sample-title · tool-sample-picker-spread-label".to_owned(),
+                "tool-sample-picker-spread-what Ctrl-click switches to an area. Esc ends."
                     .to_owned()
             )
         );

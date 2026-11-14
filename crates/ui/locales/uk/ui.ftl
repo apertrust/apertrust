@@ -743,12 +743,12 @@ menu-bring-all-to-front = Усі вікна на передній план
 ## Історія обробки: назва кроку
 
 history-reset = Скидання
-history-modules =
+history-tools =
     { $count ->
-        [one] { $module } та ще { $count } модуль
-        [few] { $module } та ще { $count } модулі
-        [many] { $module } та ще { $count } модулів
-       *[other] { $module } та ще { $count } модуля
+        [one] { $tool } та ще { $count } модуль
+        [few] { $tool } та ще { $count } модулі
+        [many] { $tool } та ще { $count } модулів
+       *[other] { $tool } та ще { $count } модуля
     }
 history-go-to-step = Перехід до кроку
 history-compress = Стиснення історії
@@ -788,16 +788,16 @@ history-line-controls =
        *[other] { $count } параметра
     }
 history-step-name-change = Крок { $number }: { $name }, { $change }
-history-group-modules =
+history-group-tools =
     { $count ->
         [one] { $count } модуль
         [few] { $count } модулі
         [many] { $count } модулів
        *[other] { $count } модуля
     }
-history-group-name = Кроки з { $first } по { $last }: { $name }, { $modules }
+history-group-name = Кроки з { $first } по { $last }: { $name }, { $tools }
 history-defaults = Типові
-history-defaults-modules =
+history-defaults-tools =
     { $count ->
         [one] { $count } модуль, що працює для кожного фото
         [few] { $count } модулі, що працюють для кожного фото
@@ -836,8 +836,8 @@ history-points =
         [many] { $count } точок
        *[other] { $count } точки
     }
-history-peek = Утримуйте, щоб побачити знімок без модуля: { $module }
-history-peek-tip = Утримуйте, щоб побачити знімок без модуля: { $module }. Нічого не зберігається
+history-peek = Утримуйте, щоб побачити знімок без модуля: { $tool }
+history-peek-tip = Утримуйте, щоб побачити знімок без модуля: { $tool }. Нічого не зберігається
 
 ## Крива
 
@@ -848,9 +848,9 @@ curve-white-point = { $control }: точка білого
 curve-keys = Page Up і Page Down вибирають точку, стрілки переміщують її, Insert або + додає точку, Delete видаляє її, а Shift+Delete — усі.
 curve-keys-mac = Page Up і Page Down (Fn+↑ і Fn+↓) вибирають точку, стрілки переміщують її, + додає точку, Delete видаляє її, а Shift+Delete — усі.
 
-## Графік смуг еквалайзера тонів; $module — назва модуля
+## Графік смуг еквалайзера тонів; $tool — назва модуля
 
-equalizer-name = { $module }, крива
+equalizer-name = { $tool }, крива
 equalizer-tip = Двічі клацніть, щоб скинути криву.
 equalizer-keys = Page Up і Page Down вибирають смугу, стрілки переміщують її, Delete скидає її, а Shift+Delete — усі.
 equalizer-keys-mac = Page Up і Page Down (Fn+↑ і Fn+↓) вибирають смугу, стрілки переміщують її, Delete скидає її, а Shift+Delete — усі.
@@ -894,12 +894,12 @@ picker-tip-area-quad =
     { $tip }
     { $command }+клацання, щоб вибрати область
 
-## Активна піпетка на знімку (docs/pickers.md, On the photo, Accessibility). $module — назва
+## Активна піпетка на знімку (docs/pickers.md, On the photo, Accessibility). $tool — назва
 ## модуля, $picker — назва піпетки: мітка її керування на квадраті повзунка, інакше власна;
 ## $command — модифікатор вказівника, як його пишуть скорочення, $what — власне речення
 ## піпетки
 
-picker-bar-name = { $module } · { $picker }
+picker-bar-name = { $tool } · { $picker }
 picker-bar-area = Перетягніть область на знімку. { $command }+клацання перемикає на точку. Esc завершує.
 picker-bar-point = { $what } { $command }+клацання перемикає на область. Esc завершує.
 picker-bar-point-what = Клацніть або перетягніть точку на знімку.
