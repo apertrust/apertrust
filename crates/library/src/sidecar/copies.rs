@@ -318,6 +318,13 @@ impl Edits {
         let version = version(&xmp)?;
         let (other, mut problems) = top_level(&xmp, version);
         if version < COPIES_VERSION {
+            // Its lists' entries are checked as a step's are, so a field this build does not
+            // write makes the file view-only rather than going at the next save.
+            for list in ["tools", "operations"] {
+                if let Some(node) = xmp.get(NAMESPACE, list) {
+                    entry_problems(node, &format!("the file's {list}"), &mut problems);
+                }
+            }
             let document = Document::from_xmp(&xmp, version);
             let mut edits = Edits::from_version_1(document, xml.as_bytes(), modified);
             (edits.other, edits.problems) = (other, problems);

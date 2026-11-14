@@ -1105,6 +1105,22 @@ fn a_duplicate_step_a_clock_past_the_vector_and_entries_no_seq_are_problems() {
 }
 
 #[test]
+fn a_version_1_entry_s_unknown_field_is_a_problem() {
+    let known = version_1(r#"apertrust:tool="exposure" apertrust:toolVersion="2" c:exposure="1""#);
+    assert_eq!(Edits::parse(&known, 0).unwrap().problems, []);
+    let stray = version_1(
+        r#"apertrust:tool="exposure" apertrust:toolVersion="2" apertrust:moduleVersion="2" c:exposure="1""#,
+    );
+    assert_eq!(
+        Edits::parse(&stray, 0).unwrap().problems,
+        [Problem::UnknownField {
+            place: "the file's tools".to_owned(),
+            field: "apertrust:moduleVersion".to_owned(),
+        }]
+    );
+}
+
+#[test]
 fn an_edit_s_file_is_read_with_its_modified_time() {
     let directory = tempfile::tempdir().unwrap();
     let path = path_for(&directory.path().join("IMG.ARW"));
