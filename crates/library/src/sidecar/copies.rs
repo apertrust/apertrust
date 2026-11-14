@@ -318,12 +318,25 @@ impl Edits {
         let version = version(&xmp)?;
         let (other, mut problems) = top_level(&xmp, version);
         if version < COPIES_VERSION {
-            // Its lists' entries are checked as a step's are, so a field this build does not
-            // write makes the file view-only rather than going at the next save.
-            for list in ["tools", "operations"] {
-                if let Some(node) = xmp.get(NAMESPACE, list) {
-                    entry_problems(node, &format!("the file's {list}"), &mut problems);
+            // Every list, each read as the document reads it, is checked as a step's entries
+            // are, so a field this build does not write makes the file view-only rather than
+            // going at the next save.
+            for property in &xmp.properties {
+                let list = property.name.local.as_str();
+                if property.name.namespace != NAMESPACE || !matches!(list, "tools" | "operations") {
+                    continue;
                 }
+                let place = format!("the file's {list}");
+                let node = &property.node;
+                if !matches!(node.value, Value::Array(ArrayKind::Seq, _))
+                    || !node.qualifiers.is_empty()
+                {
+                    problems.push(Problem::UnknownField {
+                        place: place.clone(),
+                        field: field_name(property),
+                    });
+                }
+                entry_problems(node, &place, &mut problems);
             }
             let document = Document::from_xmp(&xmp, version);
             let mut edits = Edits::from_version_1(document, xml.as_bytes(), modified);

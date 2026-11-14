@@ -1121,6 +1121,52 @@ fn a_version_1_entry_s_unknown_field_is_a_problem() {
 }
 
 #[test]
+fn every_version_1_list_is_checked_whatever_its_shape() {
+    let unknown = |place: &str, field: &str| Problem::UnknownField {
+        place: place.to_owned(),
+        field: field.to_owned(),
+    };
+    let file = |lists: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF_NAMESPACE}">
+            <rdf:Description rdf:about="" xmlns:apertrust="{NAMESPACE}" xmlns:c="{CONTROL_NAMESPACE}" apertrust:version="1">
+            {lists}</rdf:Description></rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    let entry = |attributes: &str| {
+        format!(r#"<rdf:Seq><rdf:li><rdf:Description {attributes}/></rdf:li></rdf:Seq>"#)
+    };
+    // An old-named entry in the operations' list.
+    let old = file(&format!(
+        "<apertrust:operations>{}</apertrust:operations>",
+        entry(r#"apertrust:module="exposure" apertrust:moduleVersion="2""#)
+    ));
+    assert_eq!(
+        Edits::parse(&old, 0).unwrap().problems,
+        [unknown("the file's operations", "an item that is no entry")]
+    );
+    // A second tools' list, its entry holding a stray field.
+    let repeated = file(&format!(
+        "<apertrust:tools>{}</apertrust:tools><apertrust:tools>{}</apertrust:tools>",
+        entry(r#"apertrust:tool="exposure" apertrust:toolVersion="2""#),
+        entry(r#"apertrust:tool="grain" apertrust:moduleVersion="2""#)
+    ));
+    assert_eq!(
+        Edits::parse(&repeated, 0).unwrap().problems,
+        [unknown("the file's tools", "apertrust:moduleVersion")]
+    );
+    // A list that is a struct, not a sequence.
+    let shape = file(
+        r#"<apertrust:tools><rdf:Description apertrust:moduleVersion="2"/></apertrust:tools>"#,
+    );
+    let problems = Edits::parse(&shape, 0).unwrap().problems;
+    assert!(
+        problems.contains(&unknown("the file's tools", "apertrust:tools")),
+        "{problems:?}"
+    );
+}
+
+#[test]
 fn an_edit_s_file_is_read_with_its_modified_time() {
     let directory = tempfile::tempdir().unwrap();
     let path = path_for(&directory.path().join("IMG.ARW"));
