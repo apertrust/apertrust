@@ -6,7 +6,7 @@ It is darktable's demosaic in the first pass (decision 2). It has darktable's pa
 
 It drives one operation, `demosaic` ([../ports/demosaic.md](../ports/demosaic.md)), which every raw runs, and owns all twelve of its parameters. Its defaults are the operation's for the photo ([README.md](README.md), rule 4), so an untouched tool sets nothing.
 
-**Status:** built, in `crates/tools/src/demosaic.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Exposure and before Highlight reconstruction, White balance and Raw black/white point: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
+**Status:** built, in `crates/tools/src/demosaic.rs`. The app draws it in the Raw tab from its definition (`docs/gui.md`, Tool panels from definitions), after Highlight reconstruction and before Input colour profile: [README.md](README.md) orders the tab by processing (decision 38).
 
 - Its rows are tests in `crates/tools/tests/demosaic.rs` and the tool's source, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.

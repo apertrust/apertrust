@@ -43,7 +43,7 @@ It follows He, Sun and Tang's dark channel prior (2011): in a haze-free scene, m
 - The **transmission** t, how much scene light survives the haze, is one less the strength times the darkest channel over A0, opened over a box and smoothed by a guided filter with the image as its guide.
 - Each pixel becomes (I − A0) / max(t, t_min) + A0, where t_min, from the distance and the haze of the haziest pixels, stops the far distance from being amplified without limit.
 
-In Apertrust it is the operation behind the first pass's Haze removal tool, in the Correct tab (decisions 2 and 38; `docs/tools/README.md`, Haze removal).
+In Apertrust it is the operation behind the first pass's Haze removal tool, in the Adjust tab (decisions 2 and 38; `docs/tools/README.md`, Haze removal).
 
 ## Pipeline
 

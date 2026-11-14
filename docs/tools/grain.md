@@ -6,7 +6,7 @@ It is darktable's grain in the first pass (decision 2). darktable's page has no 
 
 It drives one operation, `grain` ([../ports/grain.md](../ports/grain.md)), which an unedited photo does not run. It is planned while the tool is on. The tool owns all three of the operation's parameters. darktable's `channel`, which its GUI does not show and its `process()` ignores, is not ported ([README.md](README.md), Effect).
 
-**Status:** built, in `crates/tools/src/grain.rs`. The app draws it in the Effect tab after Soften, from its definition (`docs/gui.md`, Tool panels from definitions). In [README.md](README.md)'s order (decision 38) it follows Vignetting and Soften and comes before Bloom and Diffuse or sharpen, whose tools are not built yet.
+**Status:** built, in `crates/tools/src/grain.rs`. The app draws it in the Effects tab from its definition (`docs/gui.md`, Tool panels from definitions). In [README.md](README.md)'s order (decision 38) it follows Vignetting and comes before Soften and Bloom.
 
 - Its rows are tests in `crates/tools/tests/grain.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.

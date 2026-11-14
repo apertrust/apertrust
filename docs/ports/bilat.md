@@ -22,7 +22,7 @@ Algorithmically, by mode:
 - **Local laplacian filter** (Paris, Hasinoff and Kautz's, as darktable implements it with Aubry's fast approximation): the lightness of CIE Lab is remapped by a curve around each of six grey levels, and a Laplacian pyramid assembled from the six remapped images, each level's coefficient interpolated by the input's local lightness at that level.
 - **Bilateral grid:** the lightness is splatted into a bilateral grid, blurred spatially and differentiated along lightness, and the result sliced back and added to each pixel's lightness, scaled by the detail.
 
-darktable's module is "local contrast" (alias "clarity"); in Apertrust it is the Base tab's Local contrast (`docs/tools/README.md`).
+darktable's module is "local contrast" (alias "clarity"); in Apertrust it is the Adjust tab's Local contrast (`docs/tools/README.md`).
 
 ## Pipeline
 

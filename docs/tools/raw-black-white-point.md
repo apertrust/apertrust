@@ -6,7 +6,7 @@ It is darktable's raw black/white point in the first pass (decision 2). darktabl
 
 It drives one operation, `rawprepare` (raw 1, [../ports/rawprepare.md](../ports/rawprepare.md)), which every raw runs. So it adds no operation: it has no first step, and at its defaults it sets nothing and leaves the plan as it was. It owns every parameter of the operation. A change runs demosaic again, as every raw-stage control does (decision 12; [../engine.md](../engine.md), Where the viewport's scale applies).
 
-**Status:** built, in `crates/tools/src/raw_black_white_point.rs`, first in `TOOLS`. The app draws it in the Base tab, last, after White balance, from its definition (`docs/gui.md`, Tool panels from definitions).
+**Status:** built, in `crates/tools/src/raw_black_white_point.rs`, first in `TOOLS`. The app draws it in the Raw tab, first, before Highlight reconstruction, from its definition (`docs/gui.md`, Tool panels from definitions) (decision 38).
 
 - Its rows are tests in `crates/tools/tests/raw_black_white_point.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own match, so none has a proposed tolerance.

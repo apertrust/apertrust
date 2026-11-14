@@ -35,7 +35,7 @@ Algorithmically:
 2. that image is blurred by eight passes of a box mean whose radius is a percentage of 1% of the image's diagonal;
 3. the blur is mixed linearly into the input.
 
-It is the Effect tab's Soften tool (`docs/tools/README.md`), on layers too.
+It is the Effects tab's Soften tool (`docs/tools/README.md`), on layers too.
 
 ## Pipeline
 

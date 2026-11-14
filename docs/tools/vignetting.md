@@ -6,7 +6,7 @@ It is darktable's vignetting in the first pass (decision 2). darktable's page ha
 
 It drives one operation, `vignette` ([../ports/vignette.md](../ports/vignette.md), ported without dithering), which an unedited photo does not run. It is planned while the tool is on. The tool owns all eleven of the operation's parameters; `unbound`, which darktable shows no widget for, stays at the operation's default, on, darktable's.
 
-**Status:** built, in `crates/tools/src/vignetting.rs`. The app draws it in the Effect tab, first, before Soften and Grain, from its definition (`docs/gui.md`, Tool panels from definitions), as [README.md](README.md) orders the tab (decision 38).
+**Status:** built, in `crates/tools/src/vignetting.rs`. The app draws it in the Effects tab, first, before Grain, from its definition (`docs/gui.md`, Tool panels from definitions), as [README.md](README.md) orders the tab (decision 38).
 
 - Its rows are tests in `crates/tools/tests/vignetting.rs`, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.

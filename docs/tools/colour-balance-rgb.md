@@ -6,7 +6,7 @@ It is darktable's color balance rgb in the first pass (decision 2). It has darkt
 
 It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../ports/colorbalancergb.md)). An unedited photo does not run it: it is planned while the tool is on, as in darktable, where color balance rgb is off until the user turns it on (decision 32). The tool owns every one of the operation's parameters; none is fixed.
 
-**Status:** built, in `crates/tools/src/colour_balance_rgb.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Colour tab, after Output colour profile and before RGB primaries, in [README.md](README.md)'s order (decision 38).
+**Status:** built, in `crates/tools/src/colour_balance_rgb.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Adjust tab, after RGB levels and before Colour equalizer, in [README.md](README.md)'s order (decision 38).
 
 - Its rows are tests in `crates/tools/tests/colour_balance_rgb.rs`; [Results](#results) gives what they measured.
 - Contrast and its grey fulcrum are this tool's, not Exposure's (decision 2): darktable's parameters, `contrast` as darktable's percentage and `grey_fulcrum` at its 18.45 % (decision 22). Brightness is this tool's Power luminance, `midtones_y`.
