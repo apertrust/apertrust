@@ -2091,7 +2091,7 @@ Planned, with named workspaces in Phase 3 (decision 38): a built-in workspace be
 
   darktable's coloured Colour icon, the gradient at 60 %, would be an exception to the one-colour rule, which is not made.
 - **Each tool sits in darktable's group** in the scene-referred preset, and a tab lists its tools as darktable's right panel does, in pipeline order with the last tool at the top. The tools the preset puts in no group take the tab darktable's other layouts give them ([tools/README.md](tools/README.md), The darktable workspace):
-  - Base: Local contrast, the edit's tone mapper, RGB levels, RGB curve, Crop, Tone equalizer, Exposure, Orientation, Rotate and perspective, Demosaic, Highlight reconstruction, White balance, Raw black/white point;
+  - Base: Local contrast, the edit's tone mapper, RGB levels, RGB curve (the Tone curve at its place until RGB curve replaces it), Crop, Tone equalizer, Exposure, Orientation, Rotate and perspective, Demosaic, Highlight reconstruction, White balance, Raw black/white point;
   - Colour: Output colour profile, Colour balance RGB, Colour equalizer, RGB primaries, Colour calibration, Input colour profile;
   - Correct: Sharpen, Retouch (retouch layers, Phase 4), Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled);
   - Effect: Vignetting, Soften, Grain, Bloom, Diffuse or sharpen.
