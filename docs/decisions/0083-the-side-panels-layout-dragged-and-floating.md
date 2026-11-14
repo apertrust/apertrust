@@ -48,7 +48,7 @@ Apertrust never reorders the processing (principles, What we will not build; [00
 - **The layout shown** is worked out when settings are read and after each change, never per frame:
   1. each tab takes its kept lists if it has them, else its defaults; where only one of its two lists is kept, the other is its default less the ids the kept one holds; an id in both lists stays pinned, and an id twice in a list keeps its first place;
   2. an id this build does not know is skipped and left in the file, as unknown settings are;
-  3. a section this build has that no tab of the workspace holds, and that `hidden` does not name, is new: it goes into its default tab, right after the nearest section that comes before it in the default list and is in that tab now, or first if none is. A tab nobody changed shows each new build's defaults; a moved module is not new.
+  3. a section this build has that no tab of the workspace holds, and that `hidden` does not name, is new: it goes into each tab whose default list holds it (Scopes into each of the four groups), in each right after the nearest section that comes before it in that tab's default list and is in the tab now, or first if none is. A tab nobody changed shows each new build's defaults; a moved module is not new.
 - **Invariants,** held by the operations and unit-tested: a section at most once in a tab, `pinned` and `order` never sharing an id; every module in at least one tab of Edit; a section drawn in one place a frame.
 - **Version** stays 1: the keys are new, and an older build keeps them as keys it does not know and shows the defaults.
 
