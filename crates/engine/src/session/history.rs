@@ -46,6 +46,16 @@
 //! is not written, so they go into the file with the first change. Undo's fallback stops
 //! above them, as darktable's auto-applied items are no undo records; `GoTo` reaches each.
 //!
+//! `Compress` keeps the default steps and each module's last step up to the end, `Truncate`
+//! drops the person's steps after the end, neither changing what the photo shows but at
+//! end 0, and `DiscardHistory` goes to Original and compresses, so the log holds no step:
+//! each one undo record holding the log as it was, as darktable records its compress,
+//! truncate and discard (`_lib_history_truncate`, `src/libs/history.c:1189-1235`). A log
+//! they leave with no step is given the default steps again, as a new photo is, and the
+//! file is written with none, the default steps going into it with the first change. On
+//! an edit open for viewing only because of a `sidecar::Problem`, `DiscardHistory` starts
+//! the log afresh from the edit as read ([`PhotoHistory::afresh`]).
+//!
 //! A change merges into the step before it as darktable's undo merges a widget's quick
 //! repeats (`_dev_undo_start_record_target`, `src/develop/develop.c:1351-1370`): the same
 //! target, a control or a preset row, of the same source, You or Auto, with no note, made
@@ -56,6 +66,7 @@
 //! one Undo takes the merged step back whole. The times are the commands' own, as the
 //! client sent them, and the frames' publications, both handed in, so a test sets them.
 
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
@@ -99,6 +110,14 @@ pub(super) struct PhotoHistory {
     /// the writer: until then a log of default steps alone is not written
     /// ([`Self::unwritten`]).
     saved: bool,
+    /// Whether the file may hold steps a Compress, a Truncate or a Discard History took
+    /// out, leaving default steps alone not yet written: the file is written once with no
+    /// step ([`Self::cleared`]).
+    cleared: bool,
+    /// The steps a Compress, a Truncate or a Discard History took out of the log and no Undo
+    /// or Redo brought back, by id: a newer file taken in before the log without them is
+    /// written keeps them, and its end stands ([`Self::take_in`]).
+    dropped: HashSet<StepId>,
 }
 
 /// What the sidecar holds of the log as the session last read it or the writer last wrote
@@ -182,6 +201,14 @@ struct Merge {
     published: Option<Instant>,
 }
 
+/// A command that rewrites the log rather than moving its end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Rewrite {
+    Compress,
+    Truncate,
+    Discard,
+}
+
 /// What one command on the history changed, which Undo takes back and Redo puts back.
 #[derive(Debug)]
 enum Record {
@@ -199,6 +226,10 @@ enum Record {
     Moved { start: usize, end: usize },
     /// The end moved by a `GoTo` from `from` to `to`.
     GoTo { from: usize, to: usize },
+    /// The log rewritten by `what`, a Compress, a Truncate or a Discard History: `log` is the
+    /// log it is not, and `saved` whether that was in the file: while the record is done the
+    /// log before, while it is undone the log after.
+    Rewritten { what: Move, log: Log, saved: bool },
 }
 
 impl PhotoHistory {
@@ -236,6 +267,8 @@ impl PhotoHistory {
             written: None,
             merge: None,
             saved,
+            cleared: false,
+            dropped: HashSet::new(),
         }
     }
 
@@ -249,9 +282,30 @@ impl PhotoHistory {
             && steps.iter().all(|step| step.source == StepSource::Default)
     }
 
-    /// The log was handed to the writer.
+    /// Whether the file may hold steps the log no longer has, while the log holds default
+    /// steps alone never written: written once with no step, not held.
+    pub(super) fn cleared(&self) -> bool {
+        self.cleared && self.unwritten()
+    }
+
+    /// The log was handed to the writer: a log of default steps alone that clears the file
+    /// was handed with no step ([`Self::written`]), and is still unwritten.
     pub(super) fn handed(&mut self) {
-        self.saved = true;
+        if self.unwritten() {
+            self.cleared = false;
+        } else {
+            self.saved = true;
+        }
+    }
+
+    /// The log as the file is to hold it: the log, but no step for a log of default steps
+    /// alone never written, which go into the file with the first change.
+    pub(super) fn written(&self) -> Cow<'_, Log> {
+        if self.unwritten() {
+            Cow::Owned(Log::default())
+        } else {
+            Cow::Borrowed(&self.log)
+        }
     }
 
     /// Its steps described anew, as the decode's image context differs from the one they
@@ -261,7 +315,9 @@ impl PhotoHistory {
         self.changed = true;
     }
 
-    /// The log, which the sidecar saves.
+    /// The log in memory, any default steps not yet written among it; the sidecar saves
+    /// [`Self::written`].
+    #[cfg(test)]
     pub(super) fn log(&self) -> &Log {
         &self.log
     }
@@ -276,10 +332,10 @@ impl PhotoHistory {
         &self.stepped
     }
 
-    /// What the sidecar would hold of this history once written: its steps and its copy's
-    /// clock vector.
+    /// What the sidecar would hold of this history once written: its steps, none for default
+    /// steps alone never written ([`Self::written`]), and its copy's clock vector.
     pub(super) fn base(&self) -> Base {
-        Base::of(&self.log, &self.clocks)
+        Base::of(&self.written(), &self.clocks)
     }
 
     /// Takes in a newer file's `log`, with its copy's clock vector `clocks`
@@ -300,7 +356,9 @@ impl PhotoHistory {
     /// An Undo that took steps out of this log does not take them out of the newer one:
     /// with no step to lay, they come after the end, as Redo's fallback reaches them; with
     /// a step laid after them, as an edit after that Undo, they apply again beneath it,
-    /// which is a move not kept too. Returns the edit the old log's last step left, which a change not yet a step
+    /// which is a move not kept too. So is a Compress, a Truncate or a Discard History not
+    /// yet saved that took out steps the base holds: the newer log keeps them, and its end
+    /// stands. Returns the edit the old log's last step left, which a change not yet a step
     /// is moved from onto the new [`Self::stepped`], and whether every move not yet saved
     /// was kept.
     pub(super) fn take_in(&mut self, log: Log, clocks: Vec<Clock>, base: &Base) -> (Edit, bool) {
@@ -332,7 +390,13 @@ impl PhotoHistory {
             true => base.end,
             false => (self.log.steps()[..self.log.end()].last()).map(|step| step.id),
         };
-        let mut kept = true;
+        // A rewrite not yet saved: a step the base and the newer log hold that a Compress, a
+        // Truncate or a Discard History took out, and the log has not brought back.
+        let held: HashSet<StepId> = self.log.steps().iter().map(|step| step.id).collect();
+        let newer: HashSet<StepId> = theirs.iter().map(|(id, _)| *id).collect();
+        let rewritten = (base.steps.iter())
+            .any(|(id, _)| self.dropped.contains(id) && !held.contains(id) && newer.contains(id));
+        let mut kept = !rewritten;
         let mut moved = false;
         if laid {
             // A step the base applied that this log took out, by its id, by an Undo before
@@ -341,7 +405,6 @@ impl PhotoHistory {
             // out; nor was one the other side took out too, which applies nowhere; and one
             // the base had not applied, which the step laid dropped and the other side
             // redid, is the other side's move, no Undo of this session's.
-            let held: HashSet<StepId> = self.log.steps().iter().map(|step| step.id).collect();
             let applied: HashSet<(StepId, Clock)> = (log.steps()[..log.end()].iter())
                 .map(|step| (step.id, step.clock))
                 .collect();
@@ -358,7 +421,9 @@ impl PhotoHistory {
                         && !base.applied.contains(&key)
                         && !applied.contains(&key)
                 });
-            kept = !again && !lost;
+            kept &= !again && !lost;
+        } else if rewritten {
+            // Not made again on a log that holds what the rewrite took out: its end stands.
         } else if ours != base.end {
             // Where the base's end is in the newer log: the other side only added after it
             // where every step of the base is there, its end is no earlier, and no step it
@@ -404,6 +469,8 @@ impl PhotoHistory {
         self.undone.clear();
         self.merge = None;
         self.saved = true;
+        self.cleared = false;
+        self.dropped.clear();
         self.changed = true;
         (std::mem::replace(&mut self.stepped, self.log.fold()), kept)
     }
@@ -554,6 +621,11 @@ impl PhotoHistory {
                 self.log.set_end(from);
                 Record::GoTo { from, to }
             }
+            // The log as it was before, the log after held for Redo.
+            Some(Record::Rewritten { what, log, saved }) => {
+                let (log, saved) = self.swap(log, saved);
+                Record::Rewritten { what, log, saved }
+            }
             // The fallback: the end back over the step before it and its batch, which Redo
             // reverses; never over a default step, as darktable's auto-applied items are no
             // undo records.
@@ -593,6 +665,11 @@ impl PhotoHistory {
             Some(Record::GoTo { from, to }) => {
                 self.log.set_end(to);
                 Record::GoTo { from, to }
+            }
+            // The log rewritten again, the log before held for Undo.
+            Some(Record::Rewritten { what, log, saved }) => {
+                let (log, saved) = self.swap(log, saved);
+                Record::Rewritten { what, log, saved }
             }
             // The fallback: the end forward over the step after it and its batch, which Undo
             // reverses.
@@ -634,11 +711,105 @@ impl PhotoHistory {
         Ok(Some(self.moved()))
     }
 
+    /// Compress, `edit` the edit as it stands, a change not yet a step made one first, as for
+    /// Undo: the log keeps the default steps and each module's last step up to the end
+    /// ([`Log::compressed`]), a log left with no step given a default step of each of
+    /// `defaults` again. The edit it leaves, or `None` where it leaves the log as it is.
+    pub(super) fn compress(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
+        self.complete(edit, StepSource::You, None);
+        self.rewrite(self.log.compressed(), Move::Compress, defaults)
+    }
+
+    /// Truncate, as [`Self::compress`]: the person's steps after the end dropped
+    /// ([`Log::truncated`]).
+    pub(super) fn truncate(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
+        self.complete(edit, StepSource::You, None);
+        self.rewrite(self.log.truncated(), Move::Truncate, defaults)
+    }
+
+    /// Discard History, as [`Self::compress`]: going to Original and compressing, so the
+    /// log holds no step and is given the default steps again, as a new photo is. `None` for
+    /// a log of default steps alone never written with the end after them, which it would
+    /// leave as it is.
+    pub(super) fn discard(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
+        self.complete(edit, StepSource::You, None);
+        if self.unwritten() && self.log.end() == self.log.steps().len() {
+            return None;
+        }
+        self.rewrite(Log::default(), Move::DiscardHistory, defaults)
+    }
+
+    /// The log becomes `log`, which `what` made, as one undo record holding the log before,
+    /// which clears the undone records: a log with no step is given a default step of each
+    /// of `defaults` at the rewrite's clock, the end after them, written with the first
+    /// change, the file holding no step meanwhile. `None`, recording nothing, where `log` is
+    /// the log already.
+    fn rewrite(&mut self, mut log: Log, what: Move, defaults: &[&str]) -> Option<Edit> {
+        if log == self.log {
+            return None;
+        }
+        let clock = Clock::now(self.clock.as_ref(), self.machine);
+        let saved = if log.steps().is_empty() {
+            log.add_defaults(defaults, clock);
+            false
+        } else {
+            self.saved
+        };
+        let (log, saved) = self.swap(log, saved);
+        self.done.push(Record::Rewritten { what, log, saved });
+        self.undone.clear();
+        Some(self.moved_at(clock))
+    }
+
+    /// Puts `log` in the log's place, `saved` whether it was in the file, and returns the
+    /// log it replaced with whether that was: the steps it takes out noted, those it brings
+    /// back no longer, and the file cleared where it may hold steps and the log is now
+    /// default steps alone never written.
+    fn swap(&mut self, log: Log, saved: bool) -> (Log, bool) {
+        let ids: HashSet<StepId> = log.steps().iter().map(|step| step.id).collect();
+        let taken = (self.log.steps().iter()).filter(|step| !ids.contains(&step.id));
+        self.dropped.extend(taken.map(|step| step.id));
+        self.dropped.retain(|id| !ids.contains(id));
+        // Whether the file may hold steps: the log was in it, or it is still to clear.
+        self.cleared |= self.saved;
+        (
+            std::mem::replace(&mut self.log, log),
+            std::mem::replace(&mut self.saved, saved),
+        )
+    }
+
+    /// Starts the log afresh from `edit`, as Discard History does on an edit open for
+    /// viewing only because of a [`crate::sidecar::Problem`]: a default step of each of
+    /// `defaults`, as a new photo's log begins, then a step of each module and operation it
+    /// holds as far as it was read, sharing a batch, source You, noted `history-discard`,
+    /// the end the last, the modules it holds not applied left so ([`Log::afresh`]). The
+    /// file is written with it, or with no step for default steps alone, which go into it
+    /// with the first change. No undo record: the log it replaces could not be written
+    /// back. The edit it leaves.
+    pub(super) fn afresh(&mut self, edit: &Edit, defaults: &[&str]) -> Edit {
+        let clock = Clock::now(self.clock.as_ref(), self.machine);
+        let log = Log::afresh(edit, defaults, clock);
+        let saved = (log.steps().iter()).any(|step| step.source != StepSource::Default);
+        (self.dropped).extend(self.log.steps().iter().map(|step| step.id));
+        self.log = log;
+        self.saved = saved;
+        self.cleared = true;
+        self.done.clear();
+        self.undone.clear();
+        self.written = None;
+        self.moved_at(clock)
+    }
+
     /// After Undo, Redo or `GoTo`: the edit the log folds to, which the next step is
     /// measured from; nothing before merges with what follows. The move advances the
     /// copy's clock vector with a clock of its own (decision 78).
     fn moved(&mut self) -> Edit {
         let clock = Clock::now(self.clock.as_ref(), self.machine);
+        self.moved_at(clock)
+    }
+
+    /// [`Self::moved`] at `clock`, the move's own.
+    fn moved_at(&mut self, clock: Clock) -> Edit {
         self.clock = Some(clock);
         advance(&mut self.clocks, clock);
         self.stepped = self.log.fold();
@@ -659,6 +830,7 @@ impl PhotoHistory {
         let (steps, end) = (self.log.steps(), self.log.end());
         let (start, end) = match records.last() {
             Some(Record::GoTo { .. }) => return Some(Move::GoTo),
+            Some(Record::Rewritten { what, .. }) => return Some(*what),
             // The change's own steps, after the default steps it kept.
             Some(Record::Added { kept, held, .. }) if !undo => {
                 let first = held.get(*kept)?;
@@ -1111,6 +1283,34 @@ impl Engine {
         Ok(moved_to(open, moved, &self.modules))
     }
 
+    /// [`Command::Compress`], [`Command::Truncate`] or [`Command::DiscardHistory`], as `what`
+    /// names it: the log rewritten, the edit its fold, a completed change, which saves it.
+    /// `DiscardHistory` on an edit open for viewing only, which [`Self::edit_command`] lets
+    /// through only for a [`crate::sidecar::Problem`], any of them, never a newer build's
+    /// edit, starts the log afresh, the file's unreadable parts going with the old log, and
+    /// ends the view-only state.
+    pub(super) fn rewrite(&mut self, what: Rewrite) -> Result<Effect, SessionError> {
+        let defaults = crate::history::default_modules(&self.modules, self.operations);
+        let Some(open) = &mut self.open else {
+            return Ok(Effect::default());
+        };
+        if open.view_only.is_some() {
+            let afresh = open.history.afresh(&open.edit, &defaults);
+            open.view_only = None;
+            open.photo.view_only = None;
+            // What `Opened` says again: the image context the decode gave.
+            *open.photo.image = open.image.clone();
+            return Ok(moved_to(open, Some(afresh), &self.modules));
+        }
+        let edit = pending(open, &self.modules);
+        let moved = match what {
+            Rewrite::Compress => open.history.compress(&edit, &defaults),
+            Rewrite::Truncate => open.history.truncate(&edit, &defaults),
+            Rewrite::Discard => open.history.discard(&edit, &defaults),
+        };
+        Ok(moved_to(open, moved, &self.modules))
+    }
+
     /// The open photo's `History`, where it changed since it was last sent.
     pub(super) fn history_event(&mut self) -> Option<Event> {
         let open = self.open.as_mut().filter(|open| open.history.changed())?;
@@ -1138,7 +1338,8 @@ fn pending(open: &Open, modules: &[&dyn Module]) -> Edit {
     }
 }
 
-/// The open photo's edit after Undo, Redo or `GoTo` moved the end: `moved`, the log's fold,
+/// The open photo's edit after Undo, Redo, `GoTo`, Compress, Truncate or Discard History
+/// moved the end or rewrote the log: `moved`, the log's fold,
 /// rendered where it differs, and saved as a completed change, the end with it even where
 /// the edit is as it was. With nothing moved, `None`, a change made a step first saves
 /// alike.

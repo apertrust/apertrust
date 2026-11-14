@@ -2013,6 +2013,9 @@ fn named(
 ) -> Option<String> {
     match moved {
         Move::GoTo => Some(tr.text("history-go-to-step")),
+        Move::Compress => Some(tr.text("history-compress")),
+        Move::Truncate => Some(tr.text("history-truncate")),
+        Move::DiscardHistory => Some(tr.text("history-discard")),
         Move::Steps { first, count } => {
             let at = history.steps.iter().position(|s| s.id == first)?;
             let steps = history.steps.get(at..at + count)?;

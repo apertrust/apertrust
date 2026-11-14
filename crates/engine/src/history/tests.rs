@@ -689,3 +689,191 @@ fn a_change_within_the_default_steps_keeps_the_later_ones() {
     assert_eq!((log.end(), log.defaults()), (4, 3));
     assert!(log.fold().unapplied.is_empty());
 }
+
+/// The ids of `log`'s steps, and its end.
+fn ids_and_end(log: &Log) -> (Vec<u64>, usize) {
+    (
+        log.steps().iter().map(|step| step.id.0).collect(),
+        log.end(),
+    )
+}
+
+/// Compress keeps, among the steps up to the end, each module's and operation's last step,
+/// as it was; one whose entry is empty goes, as a module's reset and Reset do, and so does
+/// every step after the end. The end is the last step kept, and the log renders as before.
+#[test]
+fn compress_keeps_each_module_s_last_entry_drops_empty_ones_and_every_step_after_the_end() {
+    let one = brightened(0.5);
+    let both = grained(&one, 10.0);
+    let brighter = grained(&brightened(0.8), 10.0);
+    let ungrained = brightened(0.8);
+    let mut log = Log::default();
+    log.add(step(1, changed(&Edit::default(), &one)));
+    log.add(Step {
+        note: Some(Note::Text("Grain".to_owned())),
+        batch: Some(BatchId(9)),
+        ..step(2, changed(&one, &both))
+    });
+    log.add(step(3, changed(&both, &brighter)));
+    // Grain's reset: an empty entry, its module's last.
+    log.add(step(4, changed(&brighter, &ungrained)));
+    log.add(step(5, changed(&ungrained, &brightened(0.9))));
+    log.set_end(4);
+    let compressed = log.compressed();
+    assert_eq!(ids_and_end(&compressed), (vec![3], 1));
+    // Kept as it was: its id, clock, source, note, batch and entry.
+    assert_eq!(compressed.steps()[0], log.steps()[2]);
+    assert_eq!(compressed.fold(), log.fold());
+    // A step that is its module's last keeps its note and batch.
+    log.set_end(3);
+    let kept = log.compressed();
+    assert_eq!(ids_and_end(&kept), (vec![2, 3], 2));
+    assert_eq!(
+        (&kept.steps()[0].note, kept.steps()[0].batch),
+        (&Some(Note::Text("Grain".to_owned())), Some(BatchId(9)))
+    );
+    assert_eq!(kept.fold(), log.fold());
+    // Reset holds empty entries alone: it goes, and the steps before it it reset with it.
+    let mut reset = Log::default();
+    reset.add(step(1, changed(&Edit::default(), &one)));
+    add(&mut reset, 2, &one, &Edit::default(), &[Wrote::All]);
+    assert!(matches!(reset.steps()[1].change, Change::Reset(_)));
+    assert_eq!(ids_and_end(&reset.compressed()), (vec![], 0));
+    // At Original, nothing is kept; compressed again, a log is as it was.
+    log.set_end(0);
+    assert_eq!(log.compressed(), Log::default());
+    assert_eq!(compressed.compressed(), compressed);
+}
+
+/// Compress keeps every default step, the end's or Original's photo needing them, though a
+/// later step of its module follows, so the Defaults stay whole.
+#[test]
+fn compress_keeps_every_default_step() {
+    let mut log = Log::default();
+    log.add_defaults(&["sample", "grain"], Clock::at(1, None, MachineId::UNKNOWN));
+    let defaults: Vec<u64> = log.steps().iter().map(|step| step.id.0).collect();
+    let one = brightened(0.5);
+    log.add(step(1, changed(&Edit::default(), &one)));
+    let compressed = log.compressed();
+    assert_eq!(
+        ids_and_end(&compressed),
+        (vec![defaults[0], defaults[1], 1], 3)
+    );
+    assert_eq!(compressed.defaults(), 2);
+    assert_eq!(compressed.fold(), log.fold());
+    // Sample reset after: its last step empty, no step of the person's kept for it.
+    log.add(step(2, changed(&one, &Edit::default())));
+    assert_eq!(ids_and_end(&log.compressed()), (defaults, 2));
+}
+
+/// A log of darktable's default steps, those darktable has off until its workflow applies
+/// them among them, then the person's: Sample set, Grain set, Sample reset, and Reset.
+fn defaults_then_steps() -> Log {
+    let mut log = Log::default();
+    log.add_defaults(
+        &["temperature", "exposure", "agx"],
+        Clock::at(1, None, MachineId::UNKNOWN),
+    );
+    let one = brightened(0.5);
+    let both = grained(&one, 10.0);
+    let grain = grained(&Edit::default(), 10.0);
+    log.add(step(1, changed(&Edit::default(), &one)));
+    log.add(step(2, changed(&one, &both)));
+    log.add(step(3, changed(&both, &grain)));
+    add(&mut log, 4, &grain, &Edit::default(), &[Wrote::All]);
+    log
+}
+
+/// Compress and Truncate never change what the photo shows, at the end or at Original,
+/// wherever the end is past Original, among the default steps too, where those after it
+/// stay after it, their modules not applied; at end 0 both drop every step.
+#[test]
+fn compress_and_truncate_leave_the_photo_as_it_shows_at_the_end_and_at_original() {
+    let log = defaults_then_steps();
+    for end in 1..=log.steps().len() {
+        let mut at = log.clone();
+        at.set_end(end);
+        for (name, rewritten) in [("compress", at.compressed()), ("truncate", at.truncated())] {
+            assert_eq!(rewritten.fold(), at.fold_to(end), "{name} at {end}");
+            assert_eq!(rewritten.fold_to(0), at.fold_to(0), "{name} at {end}");
+            assert_eq!(rewritten.defaults(), 3, "{name} at {end}");
+            // The person's steps after the end gone.
+            let after = &rewritten.steps()[rewritten.end()..];
+            assert!(after.iter().all(|step| step.source == StepSource::Default));
+        }
+    }
+    let mut among = log.clone();
+    among.set_end(1);
+    let compressed = among.compressed();
+    assert_eq!((compressed.steps().len(), compressed.end()), (3, 1));
+    let unapplied: BTreeSet<String> = ["agx", "exposure"].map(str::to_owned).into();
+    assert_eq!(compressed.fold().unapplied, unapplied);
+    assert_eq!(among.truncated(), compressed);
+    let mut original = log;
+    original.set_end(0);
+    assert_eq!(original.compressed(), Log::default());
+    assert_eq!(original.truncated(), Log::default());
+}
+
+/// Truncate drops the steps after the end, every step up to it kept as it is; at Original,
+/// all of them.
+#[test]
+fn truncate_drops_the_steps_after_the_end_alone() {
+    let mut log = Log::default();
+    let edited = |id: u64| changed(&Edit::default(), &brightened(id as f32));
+    for id in 1..=4 {
+        log.add(step(id, edited(id)));
+    }
+    log.set_end(2);
+    let truncated = log.truncated();
+    assert_eq!(ids_and_end(&truncated), (vec![1, 2], 2));
+    assert_eq!(truncated.steps(), &log.steps()[..2]);
+    assert_eq!(truncated.fold(), log.fold());
+    assert_eq!(truncated.truncated(), truncated);
+    log.set_end(0);
+    assert_eq!(log.truncated(), Log::default());
+}
+
+/// An edit started afresh, as Discard History starts an unreadable history: a new photo's
+/// default steps, then a step of each module and operation it holds, source You, noted
+/// `history-discard`, sharing a batch, the end after the last, folding to the edit, with
+/// Original the untouched photo; a module not applied in it keeps its default step after
+/// the end, so it stays so. None for an edit holding nothing, with no default module.
+#[test]
+fn an_edit_started_afresh_is_the_default_steps_and_a_step_of_each_module_it_holds() {
+    let mut edit = grained(&brightened(0.5), 10.0);
+    let param = Value::Float(2.0);
+    edit.params
+        .entry("op".to_owned())
+        .or_default()
+        .set("p", param);
+    let clock = Clock::at(5, None, MachineId::UNKNOWN);
+    let defaults = ["temperature", "exposure"];
+    let log = Log::afresh(&edit, &defaults, clock);
+    assert_eq!(
+        modules_of(&log),
+        ["temperature", "exposure", "grain", "sample", "op"]
+    );
+    assert_eq!((log.end(), log.defaults()), (5, 2));
+    let batch = log.steps()[2].batch;
+    assert!(batch.is_some());
+    assert!(log.steps()[2..].iter().all(|step| {
+        step.source == StepSource::You
+            && step.note == Some(Note::discard())
+            && step.batch == batch
+            && step.clock == clock
+    }));
+    assert_eq!(log.fold(), edit);
+    let untouched: BTreeSet<String> = ["exposure".to_owned()].into();
+    assert_eq!(log.fold_to(0).unapplied, untouched);
+    // Exposure and AgX not applied in the edit as read: their default steps after the end.
+    let unapplied = Edit {
+        unapplied: ["agx", "exposure"].map(str::to_owned).into(),
+        ..Edit::default()
+    };
+    let log = Log::afresh(&unapplied, &["temperature", "exposure", "agx"], clock);
+    assert_eq!(modules_of(&log), ["temperature", "exposure", "agx"]);
+    assert_eq!(log.end(), 1);
+    assert_eq!(log.fold(), unapplied);
+    assert_eq!(Log::afresh(&Edit::default(), &[], clock), Log::default());
+}

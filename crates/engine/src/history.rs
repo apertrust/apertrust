@@ -36,6 +36,13 @@
 //! default step a module darktable leaves off until its workflow applies it is not applied
 //! ([`Log::unapplied`]), so the end within them shows the photo with the first k applied.
 //!
+//! Compress keeps the default steps and each module's last step up to the end
+//! ([`Log::compressed`]), as darktable's compress history stack; Truncate drops the person's
+//! steps after the end ([`Log::truncated`]), as its Ctrl-click on it. Neither changes what
+//! the photo shows at the end or at Original but at end 0, where both drop every step. An
+//! edit whose history cannot be read is started afresh as a new photo's default steps and
+//! a step of each module it holds ([`Log::afresh`]), as Discard History does there.
+//!
 //! Plain data, which the session keeps in memory for the photo open and the engine's
 //! `sidecar` reads and writes in version 2, with the copy's clock vector ([`advance`]).
 
@@ -133,10 +140,22 @@ impl Note {
     /// The message id of [`Note::reset`].
     pub const RESET: &str = "history-reset";
 
-    /// The note of a reset of the whole edit, Reset or Discard History.
+    /// The message id of [`Note::discard`].
+    pub const DISCARD: &str = "history-discard";
+
+    /// The note of a reset of the whole edit, Reset's step.
     pub fn reset() -> Note {
         Note::Message {
             id: Note::RESET.to_owned(),
+            args: Vec::new(),
+        }
+    }
+
+    /// The note of the steps Discard History starts an edit whose history cannot be read
+    /// afresh with ([`Log::afresh`]).
+    pub fn discard() -> Note {
+        Note::Message {
+            id: Note::DISCARD.to_owned(),
             args: Vec::new(),
         }
     }
@@ -518,6 +537,92 @@ impl Log {
         }
     }
 
+    /// The log Compress leaves, darktable's compress history stack
+    /// (`dt_history_compress_on_image`, `src/common/history.c:1193`): every default step,
+    /// wherever the end is, so the photo at each end and at Original shows what it showed;
+    /// and among the person's steps up to the end, each module's and operation's last,
+    /// with its id, clock, source, note and batch, one whose entries are all empty dropped,
+    /// Reset's among them, as an empty entry and none are the same reset state; their steps
+    /// after the end dropped, as darktable deletes the items above `history_end`
+    /// (`:1244-1255`). The end is the last step kept up to it. At end 0 nothing is kept, as
+    /// darktable deletes the whole history (`:1212-1216`).
+    pub fn compressed(&self) -> Log {
+        if self.end == 0 {
+            return Log::default();
+        }
+        let applied = &self.steps[..self.end];
+        let mut last: BTreeMap<Key<'_>, usize> = BTreeMap::new();
+        for (at, step) in applied.iter().enumerate() {
+            for entry in step.change.entries() {
+                last.insert(entry.key(), at);
+            }
+        }
+        let kept: Vec<Step> = (applied.iter().enumerate())
+            .filter(|(at, step)| {
+                step.source == StepSource::Default
+                    || (step.change.entries().iter())
+                        .any(|entry| last.get(&entry.key()) == Some(at) && !entry.is_empty())
+            })
+            .map(|(_, step)| step.clone())
+            .collect();
+        let end = kept.len();
+        Log::from_steps(kept.into_iter().chain(self.defaults_after()).collect(), end)
+    }
+
+    /// The log Truncate leaves, darktable's Ctrl-click on compress
+    /// (`dt_history_truncate_on_image`, `src/common/history.c:1348-1399`): the person's
+    /// steps after the end dropped (`:1366-1376`), every step up to it kept as it is, and
+    /// the default steps after it, so the photo shows what it showed, the end where it
+    /// is. At end 0 nothing is kept, as darktable deletes every item (`:1357-1362`).
+    pub fn truncated(&self) -> Log {
+        if self.end == 0 {
+            return Log::default();
+        }
+        let steps = (self.steps[..self.end].iter().cloned()).chain(self.defaults_after());
+        Log::from_steps(steps.collect(), self.end)
+    }
+
+    /// The default steps after the end, which leave their modules not applied there
+    /// ([`Log::unapplied`]).
+    fn defaults_after(&self) -> impl Iterator<Item = Step> + '_ {
+        (self.steps[self.end..].iter())
+            .filter(|step| step.source == StepSource::Default)
+            .cloned()
+    }
+
+    /// A fresh log of `edit`, as Discard History starts an edit whose history cannot be
+    /// read: a default step of each of `defaults` at `clock`, as a new photo's log begins
+    /// ([`Log::add_defaults`]), then a step of each module and operation the edit holds,
+    /// in [`Entry::between`]'s order, source You, noted `history-discard`
+    /// ([`Note::discard`]), sharing a batch where there are several, the end after the
+    /// last. The default steps of the modules the edit holds not applied come after the
+    /// end, so they stay not applied, and Original is the untouched photo.
+    pub fn afresh(edit: &Edit, defaults: &[&str], clock: Clock) -> Log {
+        let (after, before): (Vec<&str>, Vec<&str>) =
+            (defaults.iter()).partition(|module| edit.unapplied.contains(**module));
+        let mut log = Log::default();
+        log.add_defaults(&before, clock);
+        let changes = Change::between(&Edit::default(), edit, &[]);
+        log.add_change(changes, StepSource::You, Some(Note::discard()), clock);
+        let end = log.end;
+        for module in after {
+            let id = log.new_id();
+            log.steps.push(Step {
+                id,
+                clock,
+                source: StepSource::Default,
+                note: None,
+                batch: None,
+                change: Change::Entry(Entry::Module {
+                    module: module.to_owned(),
+                    values: ModuleValues::new(),
+                }),
+            });
+        }
+        log.end = end;
+        log
+    }
+
     /// Keeps the first `at` steps, puts `after` after them, and returns the steps it took
     /// out in their place; the end goes to `end`, at most the steps' count.
     pub fn replace_after(&mut self, at: usize, after: Vec<Step>, end: usize) -> Vec<Step> {
@@ -692,6 +797,13 @@ pub enum Move {
     Steps { first: StepId, count: usize },
     /// Take back or put back a `GoTo`: the end back where it was, or where it put it.
     GoTo,
+    /// Take back or put back a Compress: the log as it was before it, or compressed again.
+    Compress,
+    /// Take back or put back a Truncate: the log as it was before it, or truncated again.
+    Truncate,
+    /// Take back or put back a Discard History: the log as it was before it, or discarded
+    /// again, the photo given its default steps.
+    DiscardHistory,
 }
 
 /// The modules darktable has on by default with no on/off button (`hide_enable_button`),
