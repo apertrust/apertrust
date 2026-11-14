@@ -31,11 +31,11 @@ pub struct Version {
     /// How many commits lead to this one: a number that only grows along main, for what
     /// takes numbers only. `None` when a packager gives the version.
     pub build: Option<u32>,
-    /// Whether this is a development build, Apertrust Dev, with a name, an id and a user
-    /// data folder of its own (docs/settings.md, Development builds): once the history has
-    /// a release tag, a build not on one, or with changes. Before the first release tag,
-    /// and for a packager's version, never; a nightly package says so itself
-    /// (`APERTRUST_DEV`, which the `build` module reads).
+    /// Whether this is a development build, Apertrust Nightly, with a name, an id and a
+    /// user data folder of its own (docs/settings.md, Development builds): once the history
+    /// has a release tag, a build not on one, or with changes. Before the first release
+    /// tag, and for a packager's version, never; a nightly package says so itself
+    /// (`APERTRUST_NIGHTLY`, which the `build` module reads).
     pub dev: bool,
 }
 

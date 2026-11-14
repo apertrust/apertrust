@@ -20,7 +20,7 @@
 	org.apertrust.edit, an XML file, and Apertrust its owner, so a double-click opens the
 	photo. Its icon is the system's document page with the word APXMP on it
 	(UTTypeIconText), which macOS draws once the bundle is signed, as tools/package.sh
-	signs it. Apertrust Dev's rank is Alternate (packaging/dev-identity.txt).
+	signs it. Apertrust Nightly's rank is Alternate (packaging/nightly-identity.txt).
 -->
 <plist version="1.0">
 <dict>

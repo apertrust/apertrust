@@ -1073,7 +1073,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - Other tags are ignored. A release tag that is not three numbers, a shallow clone or a folder without git builds as `0.0.0`, with a warning saying why.
 - A packager sets `APERTRUST_VERSION`, used as given.
 - The banner, `--version` and About show it: each binary's `apertrust_base::program!()`, its `version`, with the commit count beside it as `build_number`.
-- A development build, Apertrust Dev, is `program!().dev`: once the history has a release tag, a build not on one (`Version::dev`, beside the version); and whatever the tags, a build with `APERTRUST_DEV=1`, as the nightly packages are. It names itself Apertrust Dev (`Program::app_name`, `app_id`) and finds Apertrust Dev's folder (`Folders::find(given, dev)`; [settings.md](settings.md), Development builds).
+- A development build, Apertrust Nightly, is `program!().dev`: once the history has a release tag, a build not on one (`Version::dev`, beside the version); and whatever the tags, a build with `APERTRUST_NIGHTLY=1`, as the nightly packages are. It names itself Apertrust Nightly (`Program::app_name`, `app_id`) and finds Apertrust Nightly's folder (`Folders::find(given, dev)`; [settings.md](settings.md), Development builds).
 
 ### Settings
 
@@ -1119,7 +1119,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - One given by flag or variable that cannot be created or written is an `Error` that stops the start, never falling back to the platform's. The platform's own failure is only warned of.
 - For a program that only reads, the CLI, `Folders::find_to_read` creates and probes nothing. One given that is missing or cannot be read is an `Error`; a missing platform folder is left missing.
 - `-d settings` logs the folder and how it was chosen (`Chosen`). `Folders::settings` is its `settings.toml`, `Folders::state` the app's `state.toml` and `Folders::starting` the app's start marker, `starting.toml` (decision 82).
-- The cache folder (decision 76) is chosen by `--cache-dir` or darktable's `--cachedir` (`CACHE_FLAGS`, read into a `Given`), then `APERTRUST_CACHE_DIR` (`CACHE_VARIABLE`, empty as unset), then `<user data>/cache` when the user data folder was given by flag or variable, then the platform's cache folder, Apertrust Dev's its own. `~` and a relative folder are taken as for the user data folder; it is never created or probed. `Folders::cache` and `Folders::cache_chosen` (`CacheChosen`) give it, and `-d settings` logs it after the user data folder. `find` and `find_to_read` take it beside the user data folder's `Given`.
+- The cache folder (decision 76) is chosen by `--cache-dir` or darktable's `--cachedir` (`CACHE_FLAGS`, read into a `Given`), then `APERTRUST_CACHE_DIR` (`CACHE_VARIABLE`, empty as unset), then `<user data>/cache` when the user data folder was given by flag or variable, then the platform's cache folder, Apertrust Nightly's its own. `~` and a relative folder are taken as for the user data folder; it is never created or probed. `Folders::cache` and `Folders::cache_chosen` (`CacheChosen`) give it, and `-d settings` logs it after the user data folder. `find` and `find_to_read` take it beside the user data folder's `Given`.
 
 ### The safe write
 

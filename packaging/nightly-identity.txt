@@ -1,0 +1,37 @@
+# Apertrust Nightly's identity, a development build's, which installs beside Apertrust
+# (docs/packaging.md, Apertrust Nightly): `tools/package.sh --nightly` replaces each
+# text left of " => " with the text right of it, wherever it occurs, in Packager.toml,
+# macos/Info.plist and the Linux desktop entry and metadata, before filling them in.
+# crates/app/tests/packaging.rs applies these lines to the same files and checks that
+# each one still matches and the result names Apertrust Nightly throughout.
+
+# Packager.toml: the name of the files and the binaries, the name shown, the id, the
+# Windows ProgIDs (the edit's in Open With alone, never .apxmp's default, which the
+# installer gives Apertrust.Edit alone), and the Linux files the package takes, written
+# by the script.
+name = "apertrust" => name = "apertrust-nightly"
+productName = "Apertrust" => productName = "Apertrust Nightly"
+identifier = "org.apertrust.Apertrust" => identifier = "org.apertrust.Apertrust.Nightly"
+{ path = "apertrust", main = true } => { path = "apertrust-nightly", main = true }
+{ path = "apertrust-cli" } => { path = "apertrust-nightly-cli" }
+name = "Apertrust.RawImage" => name = "Apertrust.Nightly.RawImage"
+name = "Apertrust.Edit" => name = "Apertrust.Nightly.Edit"
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop' => '@STAGE@/org.apertrust.Apertrust.Nightly.desktop'
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.metainfo.xml" => '@STAGE@/org.apertrust.Apertrust.Nightly.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.Nightly.metainfo.xml"
+
+# macos/Info.plist: CFBundleName and CFBundleDisplayName; and the edit's rank, Owner,
+# the one in the file, so that Apertrust Nightly never takes .apxmp from Apertrust.
+<string>Apertrust</string> => <string>Apertrust Nightly</string>
+<string>Owner</string> => <string>Alternate</string>
+
+# linux/org.apertrust.Apertrust.desktop; its icon stays Apertrust's.
+Name=Apertrust => Name=Apertrust Nightly
+Exec=apertrust --in-folder %F => Exec=apertrust-nightly --in-folder %F
+StartupWMClass=apertrust => StartupWMClass=apertrust-nightly
+
+# linux/org.apertrust.Apertrust.metainfo.xml
+<id>org.apertrust.Apertrust</id> => <id>org.apertrust.Apertrust.Nightly</id>
+<name>Apertrust</name> => <name>Apertrust Nightly</name>
+<launchable type="desktop-id">org.apertrust.Apertrust.desktop</launchable> => <launchable type="desktop-id">org.apertrust.Apertrust.Nightly.desktop</launchable>
+<binary>apertrust</binary> => <binary>apertrust-nightly</binary>
+<binary>apertrust-cli</binary> => <binary>apertrust-nightly-cli</binary>

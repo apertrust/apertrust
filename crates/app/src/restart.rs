@@ -462,10 +462,10 @@ pub(crate) mod tests {
     fn the_launcher_is_the_bundle_the_appimage_or_the_executable() {
         let mac = OperatingSystem::Mac;
         let finder = Found::default();
-        let exe = Path::new("/Applications/Apertrust Dev.app/Contents/MacOS/apertrust-dev");
+        let exe = Path::new("/Applications/Apertrust Nightly.app/Contents/MacOS/apertrust-nightly");
         let launcher = Launcher::of(exe, mac, &finder);
         assert_eq!(launcher.program, Path::new("/usr/bin/open"));
-        let bundle = "/Applications/Apertrust Dev.app";
+        let bundle = "/Applications/Apertrust Nightly.app";
         assert_eq!(launcher.first, os(&["-n", "-a", bundle, "--args"]));
         assert!(launcher.answers);
         let terminal = Found {

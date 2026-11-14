@@ -50,8 +50,8 @@ const PACKAGES: &[&str] = &["wgpu", "naga", "eframe", "egui", "rawler", "accessk
 /// Reads the versions in a binary's build script and hands them to its compiler, for
 /// `apertrust_base::program!()`, each an empty value where it has none:
 /// `APERTRUST_BUILT_VERSION`, `APERTRUST_BUILT_NUMBER`, `APERTRUST_BUILT_DEV` (`1` for a
-/// development build: [`Version::dev`], or `APERTRUST_DEV=1`, which the nightly packages
-/// set), `APERTRUST_BUILT_PACKAGES` (`wgpu=30.0.1,naga=30.0.1`) and
+/// development build: [`Version::dev`], or `APERTRUST_NIGHTLY=1`, which the nightly
+/// packages set), `APERTRUST_BUILT_PACKAGES` (`wgpu=30.0.1,naga=30.0.1`) and
 /// `APERTRUST_BUILT_SLANG`. The script runs again only when one can change
 /// ([`watch_checkout`]). Returns Apertrust's version, for what else the script stamps
 /// with it: the Windows executable's version resource.
@@ -88,8 +88,8 @@ pub fn version() -> Version {
         }
     });
     // A nightly package is a development build whatever the tags say (docs/packaging.md).
-    println!("cargo:rerun-if-env-changed=APERTRUST_DEV");
-    apertrust.dev |= env::var("APERTRUST_DEV").as_deref() == Ok("1");
+    println!("cargo:rerun-if-env-changed=APERTRUST_NIGHTLY");
+    apertrust.dev |= env::var("APERTRUST_NIGHTLY").as_deref() == Ok("1");
 
     // Cargo rebuilds the binary's package whenever this runs, whatever it hands over:
     // hence the few paths it watches.

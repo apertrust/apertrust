@@ -54,7 +54,7 @@ Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.m
 
 ## Downloads
 
-Releases and the nightly builds of Apertrust Dev are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it:
+Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it:
 
 - **macOS** refuses the disk image, and the app in it, as from an unidentified developer, or says it "is damaged and can't be opened". Before opening the disk image, remove the download's quarantine from it in Terminal; the app copied out of it then opens too:
 

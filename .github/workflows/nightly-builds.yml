@@ -1,13 +1,13 @@
 name: Nightly builds
 
-# Apertrust Dev's packages, built each night from main, each on its own platform, and
+# Apertrust Nightly's packages, built each night from main, each on its own platform, and
 # published as the `nightly` pre-release, made again on the commit built
 # (docs/packaging.md, Nightly builds). Nothing is built when main has not changed since
 # the last nightly, unless a run by hand forces it; nothing is published when any build
 # fails, or from a branch other than main.
 on:
   schedule:
-    - cron: "18 1 * * *"   # off the hour, which GitHub delays most
+    - cron: "8 0 * * *"   # off the hour, which GitHub delays most
   workflow_dispatch:
     inputs:
       force:
@@ -66,7 +66,7 @@ jobs:
       - run: cargo --version
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
-      - run: tools/package.sh --dev
+      - run: tools/package.sh --nightly
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages-macos
@@ -93,7 +93,7 @@ jobs:
           persist-credentials: false
       - run: cargo --version
       - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
-      - run: tools/package.sh --dev
+      - run: tools/package.sh --nightly
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages-windows
@@ -116,7 +116,7 @@ jobs:
           persist-credentials: false
       - run: cargo --version
       - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
-      - run: tools/package.sh --dev
+      - run: tools/package.sh --nightly
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages-linux
@@ -167,9 +167,9 @@ jobs:
       - name: Replace the nightly release
         run: |
           cat >notes.md <<EOF
-          Apertrust Dev, built from [\`${SHA:0:7}\`](https://github.com/$GH_REPO/commit/$SHA) on main on $(date -u +%Y-%m-%d).
+          Apertrust Nightly, built from [\`${SHA:0:7}\`](https://github.com/$GH_REPO/commit/$SHA) on main on $(date -u +%Y-%m-%d).
 
-          Nightly builds are untested development builds, made each night main changes. Apertrust Dev installs beside Apertrust, with its own name and settings, but it reads and writes the same edits beside your photos.
+          Nightly builds are untested development builds, made each night main changes. Apertrust Nightly installs beside Apertrust, with its own name and settings, but it reads and writes the same edits beside your photos.
 
           They are not signed: [how to open an unsigned package](https://github.com/$GH_REPO/blob/main/docs/packaging.md#unsigned-packages). \`SHA256SUMS.txt\` holds each file's SHA-256.
           EOF
