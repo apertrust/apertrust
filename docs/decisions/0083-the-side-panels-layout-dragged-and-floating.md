@@ -95,9 +95,10 @@ Apertrust never reorders the processing (principles, What we will not build; [00
 
 - **A floating section is a panel inside the app's window,** over the central panel, never an OS window: an `egui::Area` in the main window's context, below the central bar, never over the side, top or grid panel, under popups, tooltips and dialogs. It is the same section, drawn by the same function, sending the same `Change`s, solid with the popup shadow and a border. Out of the side panel by a drag over the central panel, or ⋯ › Float, which places it near the side panel's top.
 - **It belongs to no tab.** It stays visible whatever tab is shown, and no tab lists anything for it while it floats. The layout remembers the place it left: its id stays in its tabs' lists, hidden while it floats, and `floating` names the tab it left.
-- **Docking:** dropped into any tab, at a gap or on a tab's icon, it docks there, which is also a way to move it to another tab (it leaves the tab it left, other tabs keeping it). Its ×, named for the tab it left ("Return to Base"), ⋯ › Dock and Dock All Floating Panels return it to the place it left, or to its default place where that tab no longer holds it.
+- **Docking:** dropped into any tab, at a gap or on a tab's icon, it docks there, which is also a way to move it to another tab (it leaves the tab it left, other tabs keeping it). Its ×, named for the tab it left ("Return to Base"), ⋯ › Dock and Dock All Floating Panels return it to the place it left, or, where that tab no longer holds it (after Reset Tab, say, or with the tab gone), to its default place: its default tab, after its nearest default neighbour there, as a new section goes. Reset Tab never docks a floating section.
 - **Its width** starts as the side panel's and is changed at its side edges, 240 to 600 points, with the edge's keys; its height is its content's, up to the central panel's less 16 points, scrolling beyond. It keeps its distance from its corner as the window, the side panel or the grid panel change size, pushed inside where an edge would cut it; where the central panel is too small for it, it shows docked at the place it left until there is room, nothing written. A press on it brings it to the front.
 - **Keys and focus:** F6 visits floating panels after the side panel, a region named Floating panels, each to AccessKit a pane named by its section; the view's keys work as everywhere, H peeking at it too. The photo takes no click under it.
+- **With no photo open,** each section follows its own rule wherever it sits, docked in any tab or floating: a module's and Scopes' controls are drawn disabled, while Browse and the Photos tab's other sections work as ever. Every tab stays choosable.
 - **Which sections float** is the workspace's; each one's place and width are app-wide, so it comes back where it was.
 
 ### When
@@ -109,9 +110,9 @@ Steps 0 to 4 in Phase 3, with named workspaces, and step 5, the floating panels,
 | 0 | The Edit workspace's settings keys as [gui.md](../gui.md#what-the-file-looks-like) has them: `[workspaces.edit] tab`, `[side_panel.sections]`, `[side_panel.groups]`, the old `[edit]` read into them |
 | 1 | The layout model and its settings, with Processing Order and Reset Tab; the four group tabs drawn from the layout shown |
 | 2 | Moving by drag within a tab, pinning by drag included |
-| 3 | The ⋯ menu's items, the keys and the screen readers' actions and announcements |
+| 3 | The ⋯ menu's items, the keys and the screen readers' actions and announcements, but for floating's |
 | 4 | Another tab: drops on a tab, the spring-loaded tab, Move to Tab ›; any section in any tab |
-| 5 | Floating panels inside the window |
+| 5 | Floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions |
 
 Customise tabs moves onto the layout model once step 1 is built.
 

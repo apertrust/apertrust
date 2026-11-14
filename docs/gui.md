@@ -1999,11 +1999,11 @@ The side panel is resizable in width, and its scroll bar is quiet. Both are buil
 - **When the folder changes,** the photo changes with it: the photo shown is always one of the active folder's. This holds for every way the active folder changes: a folder chosen in Browse's tree or its menu's Open, Browse's recents and Open This Folder, File › Open Folder…, File › Open Recent, Locate… and a dropped folder (built: `change_folder` in `crates/app/src/main.rs`, the one place every one of them goes through).
   - The photo open is closed, its edit saved as for any photo left, the folder staying open, unless it is one of the folder now active.
   - Then the photo last active in that folder this run opens once the folder's listing holds it, as a click in the grid panel opens one (decision 77), never before. Failing that, the photo what was open last (`state.toml`) records for that folder.
-  - With neither, or one no longer in the folder, the central panel says "No photo selected" and the editing tabs are drawn disabled, as with a folder open and no photo active.
+  - With neither, or one no longer in the folder, the central panel says "No photo selected" and the editing tabs' modules are drawn disabled, as with a folder open and no photo active.
   - The last active photo is kept by folder in memory only, for the run (`Remembered`), and File › Close forgets it, as it forgets what was open last. What was open last keeps the folder and photo active at the end, which agree, or the photo still waited for when the app ends before the folder lists it.
   - File › Open… of a raw (and Open With's or a drop's raws) opens that photo with its folder, and the start's reopening opens what was open last; they choose their photo themselves.
 - **Names.** The interface has no word for a folder and an album together. The grid bar does not name the one shown: screen readers hear the folder's name and count as the thumbnails' list's name, and on screen Browse's top line names the folder opened, the tree's root, and the active folder's row in the tree has its count. Names shorten in their middle at 320 points (`middle_cut` in `apertrust-ui`, a file name keeping its extension), the tree indents 12 points a level, and the panel's width serves a deep tree.
-- **The editing tabs' states** (Base, Colour, Correct and Effect, the tabs about one photo's pixels), as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab:
+- **The editing tabs' states** (Base, Colour, Correct and Effect, the tabs about one photo's pixels), as built (`Shown` in `crates/app/src/mirror.rs`, drawn by `edit_tab` in `main.rs`), never a blank tab. Each rule is a section's, not the tab's: every tab stays choosable, and once sections move (decision 83) a section follows its own rule in any tab or floating, so Browse moved to Base still chooses photos with none open:
   - **With a photo open,** its modules with its values as the session reports them and the Scopes section with its latest reading, every control sending its command (none on a photo open for viewing only).
   - **With no photo** (none opened yet, a folder open with none chosen, after an open fails), and **from the moment another photo is asked for** (a click or Enter on a grid cell, File › Open…) until the session reports its values: every module's section as usual, each control at its definition's default, drawn disabled, with no kept marks; the resets, preset rows and buttons disabled; Scopes open or closed as it was, with no graph, since nothing is measured, and drawn disabled. The sections still open, close and change tab, which is the app's own state; nothing is sent to the session. The photo left's values and scopes reading go as the open is sent, so the click is answered at once.
   - **The switch** to the photo's values happens in one frame, as the mirror takes its values in (`Event::Values`, which the session sends with its `Opened`); its Scopes section comes with them and shows its first reading as it arrives.
@@ -2146,11 +2146,11 @@ A right-click on a module's header opens its presets, as darktable's does; on a 
 - **Its header** is the section's, with its buttons, and at its end × named for the tab it left, "Return to Base". × docks it, as ⋯ › Dock and Dock All Floating Panels do: back to the place it left, or to its default place where that tab no longer holds it.
 - **Moving and docking:** dragging its header moves it over the central panel, its edges snapping within 8 points to the central panel's and to other floating panels' edges; dragged over the side panel, it shows the insertion line, and released there it docks at that gap, in any tab, which also moves it from the tab it left to that one. Released on a tab's icon, it docks there as a drop on the icon does.
 - **Its size:** at first the side panel's width as it floats; a `PanelEdge` on each side edge, with the edge's keys, from 240 to 600 points; its height its content's, up to the central panel's less 16 points, its body scrolling beyond with the quiet scroll bar.
-- **The window and the panels:** each keeps its distance from its corner of the central panel, beside the side panel or away from it, as the window, the side panel or the grid panel change size, pushed inside where an edge would cut it; where the central panel has not 160 points of photo beside it or 200 points of height, it shows docked at the place it left until there is room again, nothing written. Under a sheet or the slideshow it is hidden and comes back as it was; with no photo its controls are disabled, as the docked ones are.
+- **The window and the panels:** each keeps its distance from its corner of the central panel, beside the side panel or away from it, as the window, the side panel or the grid panel change size, pushed inside where an edge would cut it; where the central panel has not 160 points of photo beside it or 200 points of height, it shows docked at the place it left until there is room again, nothing written. Under a sheet or the slideshow it is hidden and comes back as it was; with no photo it follows its section's rule, as docked: a module's controls disabled, Browse and the Photos tab's other sections working as ever.
 - **Focus:** F6 visits the region Floating panels after the side panel, and Tab goes through them front to back. H held over it peeks as in the side panel.
 - **Kept:** which sections float, in the workspace; each one's place and width, app-wide, so it comes back as it was; its open state, the section's one open state everywhere.
 
-**The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped, floating sections left floating; Dock All Floating Panels, in ⋮ and View › Panels; from Phase 3, Reset Workspace.
+**The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped, floating sections left floating, one whose tab no longer holds it after the reset docking later at its default place; Dock All Floating Panels, in ⋮ and View › Panels; from Phase 3, Reset Workspace.
 
 ### The photo frame
 
@@ -3444,12 +3444,12 @@ Phase 3 adds, for the interface:
   - 0, the Edit workspace's settings keys as [What the file looks like](#what-the-file-looks-like) has them, `[edit]` read into them;
   - 1, the layout model and its settings, Processing Order and Reset Tab, the four group tabs drawn from the layout shown;
   - 2, moving by drag within a tab, pinning by drag included;
-  - 3, the ⋯ menu's items, the keys and the screen readers' actions;
+  - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
   - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
 - the Export dialog, a native modal window (decision 41), in [its cards' order](#the-build-in-cards) on the session's export job (decision 56): built on the Mac, its presets, metadata and the other platforms left;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
 
-The UX pass after Phase 3 adds the layout's part 5, floating panels inside the window (decision 83).
+The UX pass after Phase 3 adds the layout's part 5, floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83).
 
 ## Product choices
 
