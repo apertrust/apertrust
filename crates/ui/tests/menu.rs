@@ -95,7 +95,18 @@ fn entries() -> Vec<Entry> {
             ],
         )
         .into(),
-        Submenu::new("help", "&Help", vec![Item::new("about", "About").into()]).into(),
+        Submenu::new(
+            "help",
+            "&Help",
+            vec![
+                Item::new("about", "About").into(),
+                // Option (Alt) shows Truncate in its place, as macOS's alternate items do.
+                Item::new("compress", "Compress")
+                    .alternate(Item::new("truncate", "Truncate the Whole Log").tip("Drops"))
+                    .into(),
+            ],
+        )
+        .into(),
     ]
 }
 
@@ -435,6 +446,119 @@ fn a_click_chooses_an_item_but_never_a_disabled_one() {
         vec![Answer::Chosen("open".to_owned())]
     );
     assert!(!menu_open(&harness, "Menu"));
+}
+
+/// Holds Option (Alt), or lets it go, from the next frame on.
+fn hold_alt(harness: &mut Harness<'_, App>, held: bool) {
+    let modifiers = if held {
+        egui::Modifiers::ALT
+    } else {
+        egui::Modifiers::NONE
+    };
+    harness.event(Event::ModifiersChanged(modifiers));
+    harness.run();
+}
+
+#[test]
+fn option_shows_an_item_s_alternate_in_its_place_and_chooses_it() {
+    let mut harness = app(true);
+    harness.run();
+    open(&mut harness, Some("help"));
+    assert_eq!(focused(&harness), "About");
+    key(&mut harness, Key::ArrowDown);
+    assert_eq!(focused(&harness), "Compress");
+    // The level's width, as its first line's.
+    let help = |harness: &Harness<'_, App>| {
+        let about = harness.get_by_role_and_label(Role::MenuItem, "About");
+        about.rect().width()
+    };
+    let width = help(&harness);
+    // Held, the alternate is the line, the focus staying on it; the level is as wide as
+    // either, so nothing moves.
+    hold_alt(&mut harness, true);
+    assert!(harness.query_by_label("Compress").is_none());
+    assert_eq!(focused(&harness), "Truncate the Whole Log");
+    assert_eq!(help(&harness), width);
+    // Let go, the item is back.
+    hold_alt(&mut harness, false);
+    assert_eq!(focused(&harness), "Compress");
+    // Enter with it held chooses the alternate.
+    hold_alt(&mut harness, true);
+    harness.key_press_modifiers(egui::Modifiers::ALT, Key::Enter);
+    harness.run();
+    assert_eq!(
+        harness.state().answers,
+        vec![Answer::Chosen("truncate".to_owned())]
+    );
+    assert!(!menu_open(&harness, "Menu"));
+    // A click with it held does too; without, the item.
+    hold_alt(&mut harness, false);
+    for (alt, chosen) in [(true, "truncate"), (false, "compress")] {
+        harness.state_mut().answers.clear();
+        open(&mut harness, Some("help"));
+        hold_alt(&mut harness, alt);
+        let name = if alt {
+            "Truncate the Whole Log"
+        } else {
+            "Compress"
+        };
+        // A click's release carries the keys held, as the window system's does.
+        let held = if alt {
+            egui::Modifiers::ALT
+        } else {
+            egui::Modifiers::NONE
+        };
+        let item = harness.get_by_role_and_label(Role::MenuItem, name);
+        item.click_modifiers(held);
+        harness.run();
+        assert_eq!(
+            harness.state().answers,
+            vec![Answer::Chosen(chosen.to_owned())]
+        );
+    }
+}
+
+/// A click chooses by Alt as the button was let go, not as Alt is by the frame's end: a
+/// release without it then Alt pressed in the same frame chooses the item, and the
+/// reverse its alternate.
+#[test]
+fn a_click_chooses_by_alt_as_the_button_was_let_go() {
+    for (at_release, after, chosen) in [
+        (egui::Modifiers::NONE, egui::Modifiers::ALT, "compress"),
+        (egui::Modifiers::ALT, egui::Modifiers::NONE, "truncate"),
+    ] {
+        let mut harness = app(true);
+        harness.run();
+        open(&mut harness, Some("help"));
+        hold_alt(&mut harness, at_release.alt);
+        let name = if at_release.alt {
+            "Truncate the Whole Log"
+        } else {
+            "Compress"
+        };
+        let at = harness
+            .get_by_role_and_label(Role::MenuItem, name)
+            .rect()
+            .center();
+        let button = |pressed, modifiers| Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers,
+        };
+        harness.event(Event::PointerMoved(at));
+        harness.event(button(true, at_release));
+        harness.run();
+        let events = &mut harness.input_mut().events;
+        events.push(button(false, at_release));
+        events.push(Event::ModifiersChanged(after));
+        harness.run();
+        assert_eq!(
+            harness.state().answers,
+            vec![Answer::Chosen(chosen.to_owned())],
+            "{at_release:?}"
+        );
+    }
 }
 
 #[test]

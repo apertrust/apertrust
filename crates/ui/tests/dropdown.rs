@@ -601,3 +601,59 @@ fn the_arrows_pass_over_a_separator() {
     key(&mut harness, Key::Enter);
     assert_eq!(harness.state().reported, [ChoiceAction::Set(3)]);
 }
+
+/// A list of `Alpha`, whose alternate is `Beta`, and `Gamma`, opened at once, and its
+/// answers.
+fn alternates() -> Harness<'static, (bool, Vec<apertrust_ui::popup::Answer>)> {
+    use apertrust_ui::popup::{self, Item, Request};
+    let mut harness = Harness::builder()
+        .with_size(vec2(400.0, 260.0))
+        .with_context_setup(|ctx| install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, (opened, answers): &mut (bool, Vec<popup::Answer>)| {
+                let ctx = ui.ctx().clone();
+                let id = egui::Id::unique("alternates");
+                if !*opened {
+                    *opened = true;
+                    let anchor =
+                        egui::Rect::from_min_size(egui::pos2(10.0, 10.0), vec2(120.0, 24.0));
+                    let items = vec![
+                        Item::new("alpha", "Alpha").alternate(Item::new("beta", "Beta")),
+                        Item::new("gamma", "Gamma"),
+                    ];
+                    popup::open(&ctx, id, Request::dropdown(anchor, "List", items));
+                }
+                popup::show(&ctx);
+                answers.extend(popup::answer(&ctx, id));
+            },
+            (false, Vec::new()),
+        );
+    harness.run();
+    harness
+}
+
+/// Enter with Alt held chooses the option shown, the highlighted one's alternate, or the
+/// one typed text leaves's; without it, the option.
+#[test]
+fn enter_with_alt_chooses_the_alternate_shown() {
+    use apertrust_ui::popup::Answer;
+    let chosen = |id: &str| vec![Answer::Chosen(id.to_owned())];
+    let mut harness = alternates();
+    harness.key_press_modifiers(egui::Modifiers::ALT, Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().1, chosen("beta"));
+    let mut harness = alternates();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().1, chosen("alpha"));
+    let mut harness = alternates();
+    type_text_in(&mut harness, "al");
+    harness.key_press_modifiers(egui::Modifiers::ALT, Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().1, chosen("beta"));
+}
+
+fn type_text_in<S>(harness: &mut Harness<'_, S>, text: &str) {
+    harness.event(Event::Text(text.to_owned()));
+    harness.run();
+}

@@ -721,6 +721,18 @@ applies = "at-once"
 page = "general"
 group = "confirmations"
 
+# Whether Discard History asks first, darktable's "ask before discarding history"
+# (ask_before_discard; docs/history.md, In the app): its Don't ask again turns it off. An
+# edit part of whose history cannot be read asks whatever it says, since nothing undoes
+# starting it afresh.
+[history.ask_before_discard]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "general"
+group = "confirmations"
+
 # Whether the app keeps this session's log in memory for its log window (docs/gui.md, The
 # log window): from the moment it is on, never written to a file by itself. Off, nothing
 # is kept and nothing listens to keep it (apertrust_base::log::Kept).

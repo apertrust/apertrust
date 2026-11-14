@@ -227,6 +227,8 @@ pub struct Settings {
     /// kept apart from the dialog's settings, since the dialog does not edit it and its
     /// Default settings do not reset it.
     pub ask_before_overwrite: bool,
+    /// Whether Discard History asks first, `history.ask_before_discard`.
+    pub ask_before_discard: bool,
 }
 
 impl Default for Settings {
@@ -264,6 +266,7 @@ impl Default for Settings {
             export: Values::default(),
             tools: Tools::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
+            ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
         }
     }
 }
@@ -348,6 +351,7 @@ impl Settings {
             export: Values::read(store),
             tools: Tools::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
+            ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
         }
     }
 
@@ -490,6 +494,9 @@ impl Settings {
         }
         if s.ask_before_overwrite != was.ask_before_overwrite {
             store.set(&EXPORT_ASK_BEFORE_OVERWRITE, s.ask_before_overwrite);
+        }
+        if s.ask_before_discard != was.ask_before_discard {
+            store.set(&HISTORY_ASK_BEFORE_DISCARD, s.ask_before_discard);
         }
     }
 }
@@ -1225,6 +1232,7 @@ mod tests {
                 tools
             },
             ask_before_overwrite: false,
+            ask_before_discard: false,
         }
     }
 
@@ -1342,6 +1350,7 @@ mod tests {
                     overridden: BTreeSet::new(),
                 },
                 ask_before_overwrite: true,
+                ask_before_discard: true,
             }
         );
         // What the app takes where nothing is kept.
@@ -1476,6 +1485,9 @@ rows = 3
 sort = \"file-name\"
 square_thumbnails = true
 thumbnails = \"large\"
+
+[history]
+ask_before_discard = false
 
 [jobs_window]
 position = [1200, 160]
@@ -2016,17 +2028,17 @@ tab_names = false
 
     /// Don't ask again turns `export.ask_before_overwrite` off in the file, where the next
     /// run reads it; with `--conf` giving the setting, the run keeps asking and the file is
-    /// not written (`alerts::Overwrite`).
+    /// not written (`alerts::Question`).
     #[test]
     fn a_yes_that_stops_the_overwrite_question_is_kept_unless_conf_gives_the_setting() {
-        use crate::alerts::{Overwrite, Purpose};
+        use crate::alerts::{Purpose, Question};
         use crate::dialog_host::Answer;
         let table = |folder: &Folder| -> Table { folder.text().parse().expect("TOML") };
 
         let folder = Folder::new("ask-overwrite");
         let (mut keeper, settings) = Keeper::open(folder.storage());
         assert!(settings.ask_before_overwrite);
-        let mut overwrite = Overwrite::new(settings.ask_before_overwrite, false);
+        let mut overwrite = Question::overwrite(settings.ask_before_overwrite, false);
         overwrite.answered(Purpose::Overwrite, Answer::Ticked(0));
         let stopped = Settings {
             ask_before_overwrite: overwrite.asks(),
@@ -2051,7 +2063,7 @@ tab_names = false
         let (mut keeper, settings) = Keeper::open_with(folder.storage(), &overrides);
         assert!(settings.ask_before_overwrite);
         assert!(keeper.overridden(&EXPORT_ASK_BEFORE_OVERWRITE));
-        let mut overwrite = Overwrite::new(settings.ask_before_overwrite, true);
+        let mut overwrite = Question::overwrite(settings.ask_before_overwrite, true);
         overwrite.answered(Purpose::Overwrite, Answer::Ticked(0));
         assert!(overwrite.asks());
         let same = Settings {

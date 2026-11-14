@@ -162,17 +162,7 @@ fn entries(lines: &[Entry], top: bool, space: &str) -> Vec<MenuEntry> {
     lines
         .iter()
         .map(|entry| match entry {
-            Entry::Item(item) => MenuEntry::Item(MenuItem {
-                id: item.id.clone(),
-                title: item.text.clone(),
-                enabled: item.enabled,
-                on: item.checked == Some(true),
-                tip: item.tip.clone(),
-                keys: item
-                    .shortcut
-                    .as_deref()
-                    .and_then(|keys| key_equivalent(keys, space)),
-            }),
+            Entry::Item(item) => MenuEntry::Item(menu_item(item, space)),
             Entry::Separator => MenuEntry::Separator,
             Entry::Submenu(submenu) => MenuEntry::Submenu {
                 title: if top {
@@ -184,6 +174,23 @@ fn entries(lines: &[Entry], top: bool, space: &str) -> Vec<MenuEntry> {
             },
         })
         .collect()
+}
+
+/// An item as AppKit's, with its alternate, which AppKit shows in its place while Option
+/// is held.
+fn menu_item(item: &popup::Item, space: &str) -> MenuItem {
+    MenuItem {
+        id: item.id.clone(),
+        title: item.text.clone(),
+        enabled: item.enabled,
+        on: item.checked == Some(true),
+        tip: item.tip.clone(),
+        keys: item
+            .shortcut
+            .as_deref()
+            .and_then(|keys| key_equivalent(keys, space)),
+        alternate: (item.alternate.as_deref()).map(|other| Box::new(menu_item(other, space))),
+    }
 }
 
 /// Keys as the Mac's keymap spells them (`Shift+Cmd+Z`, `actions::Shortcut::spell`) as
@@ -300,6 +307,7 @@ mod tests {
                     on: false,
                     tip: None,
                     keys: None,
+                    alternate: None,
                 }),
                 MenuEntry::Item(MenuItem {
                     id: "1".to_owned(),
@@ -308,6 +316,7 @@ mod tests {
                     on: true,
                     tip: None,
                     keys: None,
+                    alternate: None,
                 }),
                 MenuEntry::Item(MenuItem {
                     id: "2".to_owned(),
@@ -316,6 +325,7 @@ mod tests {
                     on: false,
                     tip: Some("Coming in a later version".to_owned()),
                     keys: None,
+                    alternate: None,
                 }),
             ]
         );
@@ -342,6 +352,9 @@ mod tests {
                 )
                 .into(),
                 Item::new("names", "Show tab names").checked(true).into(),
+                Item::new("compress", "Compress History")
+                    .alternate(Item::new("truncate", "Truncate History").tip("Drops"))
+                    .into(),
             ],
         );
         let menu = menu(&request, &look(1.0));
@@ -360,6 +373,7 @@ mod tests {
                             on: false,
                             tip: None,
                             keys: Some(keys("o", true, false, false, false)),
+                            alternate: None,
                         }),
                         MenuEntry::Separator,
                         MenuEntry::Submenu {
@@ -375,6 +389,25 @@ mod tests {
                     on: true,
                     tip: None,
                     keys: None,
+                    alternate: None,
+                }),
+                // Its alternate goes with it, for AppKit to show while Option is held.
+                MenuEntry::Item(MenuItem {
+                    id: "compress".to_owned(),
+                    title: "Compress History".to_owned(),
+                    enabled: true,
+                    on: false,
+                    tip: None,
+                    keys: None,
+                    alternate: Some(Box::new(MenuItem {
+                        id: "truncate".to_owned(),
+                        title: "Truncate History".to_owned(),
+                        enabled: true,
+                        on: false,
+                        tip: Some("Drops".to_owned()),
+                        keys: None,
+                        alternate: None,
+                    })),
                 }),
             ]
         );

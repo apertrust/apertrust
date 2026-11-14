@@ -6013,8 +6013,9 @@ mod tests {
     }
 
     /// The input patch goes as darktable's `gui_update` zeroes it (`exposure.c:707-710`):
-    /// at undo, redo, a move through history and the edit's reset, and at the module's own
-    /// reset, never another's, nor an edit of a control.
+    /// at undo, redo, a move through history, the edit's reset, and Compress, Truncate and
+    /// Discard History, and at the module's own reset, never another's, nor an edit of a
+    /// control.
     #[test]
     fn the_input_patch_goes_as_the_module_s_values_change_from_outside_a_pick() {
         use apertrust_engine::session::{Command, StepId};
@@ -6042,6 +6043,9 @@ mod tests {
                 false,
             ),
             (Command::Reset, false),
+            (Command::Compress, false),
+            (Command::Truncate, false),
+            (Command::DiscardHistory, false),
             (module("exposure"), false),
             (module("agx"), true),
             (set, true),

@@ -1297,6 +1297,8 @@ struct App {
     places: Places,
     /// Export Again, between its preview and the answer to its question.
     again: export_again::Again,
+    /// The photo Discard History was asked for, until its question is answered.
+    discarding: Option<alerts::Discarding>,
     /// Whether Quit waits for the open dialog's answer ([`hold_for_panel`]).
     quit_held: bool,
     /// The alert asked and not yet answered (`docs/gui.md`, Dialogs and alerts).
@@ -1765,7 +1767,11 @@ struct Shell {
     tools: settings::Tools,
     /// Whether Export and Export Again ask before replacing files
     /// (`export.ask_before_overwrite`).
-    overwrite: alerts::Overwrite,
+    overwrite: alerts::Question,
+    /// Whether Discard History asks first (`history.ask_before_discard`).
+    discard: alerts::Question,
+    /// Whether Discard History… ran, for the app to ask first, or send it.
+    discard_history: bool,
     /// Whether the menus are the ☰'s, drawn: on Windows and Linux (decision 39), where the
     /// frameless window has no menu bar. The Mac has its own.
     drawn_menus: bool,
@@ -1873,7 +1879,9 @@ impl Shell {
             export_again: false,
             export: settings.export.clone(),
             tools: settings.tools.clone(),
-            overwrite: alerts::Overwrite::new(settings.ask_before_overwrite, false),
+            overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
+            discard: alerts::Question::discard(settings.ask_before_discard, false),
+            discard_history: false,
             drawn_menus: os != OperatingSystem::Mac,
             menu: false,
             close_menu: false,
@@ -1930,6 +1938,7 @@ impl Shell {
             export: self.export.clone(),
             tools: self.tools.clone(),
             ask_before_overwrite: self.overwrite.asks(),
+            ask_before_discard: self.discard.asks(),
         }
     }
 
@@ -2137,9 +2146,10 @@ impl Shell {
 
     /// Carries out what the History section asked for (`history::Action`): opens or closes
     /// it, or opens a module ([`Shell::reveal`]); returns the command a step's click sends,
-    /// `GoTo`, only while the photo `takes` edits, live and not open for viewing only,
-    /// and Reset Edit for the header's reset, run as the top panel's Reset runs it. The eye
-    /// held is [`Shell::peek`]'s.
+    /// `GoTo`, and its options' Compress History and Truncate History, only while the photo
+    /// `takes` edits, live and not open for viewing only; Reset Edit for the header's
+    /// reset, run as the top panel's Reset runs it, and Discard History… for its options'
+    /// item, as Edit's runs it, which asks first. The eye held is [`Shell::peek`]'s.
     fn history_action(
         &mut self,
         action: history::Action,
@@ -2161,6 +2171,13 @@ impl Shell {
                 None
             }
             history::Action::Reset => Some(FromHistory::Run(ActionId::RESET)),
+            history::Action::Compress => {
+                takes.then_some(FromHistory::Send(Box::new(Command::Compress)))
+            }
+            history::Action::Truncate => {
+                takes.then_some(FromHistory::Send(Box::new(Command::Truncate)))
+            }
+            history::Action::Discard => Some(FromHistory::Run(ActionId::DISCARD_HISTORY)),
             // The eye held: what it hides follows the frame's, `Shell::peek`.
             history::Action::Peek(_) => None,
         }
@@ -2348,6 +2365,8 @@ impl Shell {
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
             redo: false,
+            discard: false,
+            discard_why: None,
             text: Focus::of(ctx) == Focus::Text,
             // One photo until the catalogue.
             photos: usize::from(photo),
@@ -2607,6 +2626,7 @@ impl Shell {
             Intent::Close => self.close = true,
             Intent::Export => self.export_asked = true,
             Intent::ExportAgain => self.export_again = true,
+            Intent::DiscardHistory => self.discard_history = true,
             Intent::Menu => self.menu = true,
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
@@ -2687,7 +2707,8 @@ impl Shell {
         self.log.keep = settings.log.keep;
         self.log.domains.clone_from(&settings.log.domains);
         self.overwrite =
-            alerts::Overwrite::new(settings.ask_before_overwrite, self.overwrite.held());
+            alerts::Question::overwrite(settings.ask_before_overwrite, self.overwrite.held());
+        self.discard = alerts::Question::discard(settings.ask_before_discard, self.discard.held());
         ctx.request_repaint();
     }
 }
@@ -2863,15 +2884,20 @@ impl App {
     ) -> Self {
         keep_log(&kept, &settings.log);
         let ask = &apertrust_export::settings::registry::EXPORT_ASK_BEFORE_OVERWRITE;
+        let discard = &settings::registry::HISTORY_ASK_BEFORE_DISCARD;
         // Whether each recent entry is there, asked as the window shows, off this thread,
         // so a slow share never holds a frame; again as it gains the focus and as Browse
         // comes into sight.
         let mut recents = recents;
         recents.check();
         let shell = Shell {
-            overwrite: alerts::Overwrite::new(
+            overwrite: alerts::Question::overwrite(
                 settings.ask_before_overwrite,
                 keeper.overridden(ask),
+            ),
+            discard: alerts::Question::discard(
+                settings.ask_before_discard,
+                keeper.overridden(discard),
             ),
             recents,
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
@@ -2987,6 +3013,7 @@ impl App {
             jobs_view: Vec::new(),
             places,
             again: export_again::Again::default(),
+            discarding: None,
             quit_held: false,
             alerts: alerts::Alerts::default(),
             quit: alerts::Guard::default(),
@@ -3181,12 +3208,20 @@ impl App {
     /// with it; anything else leaves the dialog as it was and drops Export Again. Quit: a yes stops the jobs that can be stopped and goes on
     /// quitting, which waits for the others; an alert that could not be shown after all
     /// leaves; anything else stays, and the next Quit asks again. Save: Try Again writes
-    /// the edit again.
-    fn alert_answered(&mut self, purpose: alerts::Purpose, answer: dialog_host::Answer) {
+    /// the edit again. Discard: a yes sends Discard History to the photo it was asked for,
+    /// opened the same way ([`alerts::discard_confirmed`]).
+    fn alert_answered(
+        &mut self,
+        purpose: alerts::Purpose,
+        answer: dialog_host::Answer,
+        ctx: &egui::Context,
+    ) {
         self.shell.overwrite.answered(purpose, answer);
+        self.shell.discard.answered(purpose, answer);
         match alerts::then(purpose, answer, &mut self.quit, &self.mirror.jobs) {
             alerts::Then::Nothing => {
                 self.again.declined();
+                self.discarding = None;
                 // The app stays: a restart asked with Quit is asked no more.
                 if purpose == alerts::Purpose::Quit {
                     self.restart.cancel();
@@ -3201,6 +3236,10 @@ impl App {
             }
             alerts::Then::RetrySave => {
                 self.send_edit(Command::RetrySave);
+            }
+            alerts::Then::Discard => {
+                let step = alerts::discard_confirmed(self.discarding.take(), self.discarded());
+                self.discard_step(step, ctx);
             }
             alerts::Then::Leave => self.quit_again = true,
             alerts::Then::Told => {}
@@ -3632,6 +3671,56 @@ impl App {
             .ask(&mut self.dialogs, alerts::Purpose::Save, &request, ctx);
     }
 
+    /// Edit › Discard History… and the History section's ⋯ item ([`alerts::discard`]): asks
+    /// first, unless the setting says not to (`history.ask_before_discard`), and sends
+    /// `DiscardHistory` on a yes ([`App::alert_answered`]). An edit open for viewing only
+    /// because part of its history cannot be read always asks, saying that what could not
+    /// be read goes too and nothing takes it back, naming its file so a copy can be kept
+    /// first (decision 78). Where the platform shows no alert, only what asks nothing runs.
+    fn discard_history(&mut self, ctx: &egui::Context) {
+        let alerts = dialog_host::platform::shows_alerts(ctx.os());
+        let step = alerts::discard(self.discarded(), self.shell.discard, alerts);
+        self.discard_step(step, ctx);
+    }
+
+    /// The photo open as Discard History… acts on it, if one is.
+    fn discarded(&self) -> Option<alerts::Discarding> {
+        let PhotoState::Open(photo) = &self.mirror.photo else {
+            return None;
+        };
+        Some(alerts::Discarding {
+            open: photo.open,
+            unreadable: unreadable(&self.mirror.photo),
+        })
+    }
+
+    /// Does what Discard History… is to do: asks, noting the photo asked for, the question
+    /// left unasked while another alert is up; sends it; or nothing.
+    fn discard_step(&mut self, step: alerts::Discard, ctx: &egui::Context) {
+        self.discarding = None;
+        match step {
+            alerts::Discard::Nothing => {}
+            alerts::Discard::Send(_) => {
+                self.send_edit(Command::DiscardHistory);
+            }
+            alerts::Discard::Ask(asked) => {
+                let PhotoState::Open(photo) = &self.mirror.photo else {
+                    return;
+                };
+                let file = file_name(&apertrust_engine::sidecar::path_for(&photo.path));
+                let held = self.shell.discard.held();
+                let request = alerts::discard_request(ctx, held, asked.unreadable, &file);
+                let purpose = alerts::Purpose::Discard;
+                match self.alerts.ask(&mut self.dialogs, purpose, &request, ctx) {
+                    dialog_host::Ask::Shown => self.discarding = Some(asked),
+                    _ => {
+                        tracing::warn!(target: "control", "discard history not asked: no alert shown")
+                    }
+                }
+            }
+        }
+    }
+
     /// What the actions' availability depends on, for the keys and the menus: the shell's,
     /// with the open dialog and the host's dialog ([`with_dialogs`]).
     fn state(&self, ctx: &egui::Context) -> State {
@@ -3668,11 +3757,14 @@ impl App {
         let resettable = self.mirror.resettable() && takes;
         let state = self.shell.state(ctx, open, resettable);
         let history = self.mirror.history.as_ref().filter(|_| takes);
+        let options = history_options(&self.mirror, self.shell.discard, ctx.os());
         State {
             shown: !self.mirror.folder.order().is_empty(),
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
+            discard: options.discard,
+            discard_why: history::discard_why(options),
             ..state
         }
     }
@@ -3750,6 +3842,9 @@ impl App {
             }
             if std::mem::take(&mut self.shell.export_again) {
                 self.export_again(ctx);
+            }
+            if std::mem::take(&mut self.shell.discard_history) {
+                self.discard_history(ctx);
             }
             if let Some(path) = self.shell.open_recent.take() {
                 self.open_folder(path);
@@ -4898,7 +4993,7 @@ impl eframe::App for App {
         self.run_actions(chosen, ctx, &[]);
         // An alert answered, before anything else it may have held.
         if let Some((purpose, answer)) = self.alerts.answered(&mut self.dialogs) {
-            self.alert_answered(purpose, answer);
+            self.alert_answered(purpose, answer, ctx);
         }
         // The main window's close button, held while a job the user started runs or the edit
         // is not on disk, for Quit to wait or ask.
@@ -5869,9 +5964,13 @@ fn edit_tab(
             .map(|state| state.module)
             .collect();
         let today = history::today();
-        let history = history::tab(
-            ui, shown, modules, &hidden, open, peek, takes, resettable, today,
-        );
+        let state = history::State {
+            editable: takes,
+            resettable,
+            options: history_options(mirror, shell.discard, ui.ctx().os()),
+            photo: mirror.photo.open(),
+        };
+        let history = history::tab(ui, shown, modules, &hidden, open, peek, state, today);
         return (Vec::new(), Vec::new(), history);
     }
     // A module's picker is pressed only on the open photo once live, and never on one
@@ -6125,6 +6224,39 @@ fn view_only_notice(words: &Translator, view_only: &ViewOnly) -> String {
             words.text_with("photo-view-only", Some(&args))
         }
         None => words.text("photo-view-only-unknown"),
+    }
+}
+
+/// What the History section's ⋯ and Edit › Discard History… can do for the mirror's photo
+/// (`history::options`): Compress and Truncate while it takes edits, Discard History also
+/// on one open for viewing only because part of its history cannot be read, once live, as
+/// the session refuses it before (decision 77). Where `os` shows no alert and Discard
+/// History would ask, with `question` on or on an unreadable edit, it cannot run, and says
+/// why ([`alerts::discard_runs`]).
+fn history_options(
+    mirror: &Mirror,
+    question: alerts::Question,
+    os: OperatingSystem,
+) -> history::Options {
+    let unreadable = unreadable(&mirror.photo) && mirror.live();
+    let options = history::options(mirror.history.as_ref(), mirror.takes_edits(), unreadable);
+    let alerts = dialog_host::platform::shows_alerts(os);
+    let no_alert = options.discard && !alerts::discard_runs(question, unreadable, alerts);
+    history::Options {
+        discard: options.discard && !no_alert,
+        no_alert,
+        ..options
+    }
+}
+
+/// Whether `photo` is open for viewing only because part of its edit's history cannot be
+/// read, a `sidecar::Problem`, which Discard History starts afresh (decision 78); never
+/// for one a newer Apertrust wrote.
+fn unreadable(photo: &PhotoState) -> bool {
+    match photo {
+        PhotoState::Open(photo) => (photo.view_only.as_ref())
+            .is_some_and(|view_only| matches!(view_only.reason, Reason::Unreadable(_))),
+        _ => false,
     }
 }
 
@@ -12052,6 +12184,9 @@ mod tests {
         /// start, never started here.
         restart: restart::Restart,
         relaunch: restart::Slot,
+        /// The photo open, as Discard History… finds it, and the one it was asked for.
+        photo: Option<alerts::Discarding>,
+        discarding: Option<alerts::Discarding>,
     }
 
     /// The open photo's edit, as `quit_edit` reads the mirror.
@@ -12116,6 +12251,30 @@ mod tests {
         }
     }
 
+    /// As `App::discard_history`, on a photo that takes edits: asked first unless the
+    /// setting says not to, when it is sent at once.
+    fn discard_history(d: &mut Dialogged, ctx: &egui::Context) {
+        let step = alerts::discard(d.photo, d.shell.discard, true);
+        discard_step(d, step, ctx);
+    }
+
+    /// As `App::discard_step`, the photo's file named `a.apxmp`.
+    fn discard_step(d: &mut Dialogged, step: alerts::Discard, ctx: &egui::Context) {
+        d.discarding = None;
+        match step {
+            alerts::Discard::Nothing => {}
+            alerts::Discard::Send(_) => d.sent.push(Command::DiscardHistory),
+            alerts::Discard::Ask(asked) => {
+                let held = d.shell.discard.held();
+                let request = alerts::discard_request(ctx, held, asked.unreadable, "a.apxmp");
+                let purpose = alerts::Purpose::Discard;
+                let shown = d.alerts.ask(&mut d.dialogs, purpose, &request, ctx);
+                assert_eq!(shown, dialog_host::Ask::Shown);
+                d.discarding = Some(asked);
+            }
+        }
+    }
+
     fn dialogged(host: FakeHost) -> Harness<'static, Dialogged> {
         let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
         let relaunch = restart::Slot::default();
@@ -12131,7 +12290,11 @@ mod tests {
                         if !hold_for_panel(id, overwrite, &mut d.quit_held) {
                             return None;
                         }
-                        let state = d.shell.state(&ctx, true, true);
+                        // A photo whose history Discard History can clear.
+                        let state = State {
+                            discard: true,
+                            ..d.shell.state(&ctx, true, true)
+                        };
                         let asking = d.alerts.pending().is_some();
                         let state = with_dialogs(state, asking, d.dialogs.shown());
                         let running = d.jobs.running();
@@ -12161,11 +12324,15 @@ mod tests {
                         if std::mem::take(&mut d.shell.export_again) {
                             export_again(d, &ctx);
                         }
+                        if std::mem::take(&mut d.shell.discard_history) {
+                            discard_history(d, &ctx);
+                        }
                         command
                     };
                     // As `App::logic` takes what happened before a frame.
                     if let Some((purpose, answer)) = d.alerts.answered(&mut d.dialogs) {
                         d.shell.overwrite.answered(purpose, answer);
+                        d.shell.discard.answered(purpose, answer);
                         match alerts::then(purpose, answer, &mut d.quit, &d.jobs) {
                             alerts::Then::Nothing => {
                                 d.again.declined();
@@ -12179,6 +12346,10 @@ mod tests {
                                 d.quit_again = true;
                             }
                             alerts::Then::RetrySave => d.sent.push(Command::RetrySave),
+                            alerts::Then::Discard => {
+                                let step = alerts::discard_confirmed(d.discarding.take(), d.photo);
+                                discard_step(d, step, &ctx);
+                            }
                             alerts::Then::Leave => d.quit_again = true,
                             alerts::Then::Told => {}
                         }
@@ -12231,6 +12402,11 @@ mod tests {
                     )
                     .finding(restart::tests::launcher),
                     relaunch,
+                    photo: Some(alerts::Discarding {
+                        open: 1,
+                        unreadable: false,
+                    }),
+                    discarding: None,
                 },
             )
     }
@@ -13287,6 +13463,92 @@ mod tests {
         }
     }
 
+    /// Edit › Discard History… asks first: a yes sends it, a no or a dismissal sends
+    /// nothing; a yes with Don't ask again ticked sends it and turns the question off, kept
+    /// in the settings, so the next one is sent at once (`history.ask_before_discard`).
+    #[test]
+    fn discard_history_asks_first_and_don_t_ask_again_sends_it_from_then_on() {
+        let discards = |harness: &Harness<'_, Dialogged>| {
+            (harness.state().sent.iter())
+                .filter(|command| **command == Command::DiscardHistory)
+                .count()
+        };
+        for (answer, sent) in [
+            (dialog_host::Answer::Pressed(1), 0),
+            (dialog_host::Answer::Dismissed, 0),
+            (dialog_host::Answer::Ticked(1), 0),
+            (dialog_host::Answer::Pressed(0), 1),
+        ] {
+            let host = with_alerts();
+            let mut harness = dialogged(host.clone());
+            harness.run();
+            press_action(&mut harness, ActionId::DISCARD_HISTORY);
+            let request = host.0.borrow().alerts[0].clone();
+            assert_eq!(request.title, "Discard this photo’s history?");
+            assert_eq!(discards(&harness), 0, "nothing until it is answered");
+            answer_alert(&host, answer);
+            harness.step();
+            assert_eq!(discards(&harness), sent, "{answer:?}");
+            assert!(harness.state().shell.discard.asks(), "{answer:?}");
+        }
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        press_action(&mut harness, ActionId::DISCARD_HISTORY);
+        answer_alert(&host, dialog_host::Answer::Ticked(0));
+        harness.step();
+        assert_eq!(discards(&harness), 1);
+        assert!(!harness.state().shell.discard.asks());
+        let ctx = harness.ctx.clone();
+        assert!(!harness.state().shell.to_settings(&ctx).ask_before_discard);
+        press_action(&mut harness, ActionId::DISCARD_HISTORY);
+        assert_eq!(discards(&harness), 2);
+        assert_eq!(host.0.borrow().alerts.len(), 1, "asked once");
+    }
+
+    /// A yes reaches only the photo it was asked for: another opened, or none, before the
+    /// answer drops it; the same photo whose history became unreadable meanwhile is asked
+    /// again, in the words that say what goes.
+    #[test]
+    fn a_yes_to_discard_history_reaches_only_the_photo_it_was_asked_for() {
+        let discards = |harness: &Harness<'_, Dialogged>| {
+            (harness.state().sent.iter())
+                .filter(|command| **command == Command::DiscardHistory)
+                .count()
+        };
+        let replaced = alerts::Discarding {
+            open: 2,
+            unreadable: false,
+        };
+        for now in [Some(replaced), None] {
+            let host = with_alerts();
+            let mut harness = dialogged(host.clone());
+            harness.run();
+            press_action(&mut harness, ActionId::DISCARD_HISTORY);
+            harness.state_mut().photo = now;
+            answer_alert(&host, dialog_host::Answer::Pressed(0));
+            harness.step();
+            assert_eq!(discards(&harness), 0, "{now:?}");
+            assert_eq!(host.0.borrow().alerts.len(), 1, "{now:?}");
+        }
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        press_action(&mut harness, ActionId::DISCARD_HISTORY);
+        harness.state_mut().photo = Some(alerts::Discarding {
+            open: 1,
+            unreadable: true,
+        });
+        answer_alert(&host, dialog_host::Answer::Pressed(0));
+        harness.step();
+        assert_eq!(discards(&harness), 0);
+        let again = host.0.borrow().alerts[1].clone();
+        assert!(again.message.contains("a.apxmp"), "{}", again.message);
+        answer_alert(&host, dialog_host::Answer::Pressed(0));
+        harness.step();
+        assert_eq!(discards(&harness), 1);
+    }
+
     /// The settings the Export dialog left, as the shell keeps them.
     fn kept(
         harness: &mut Harness<'_, Dialogged>,
@@ -13397,7 +13659,7 @@ mod tests {
         let host = with_alerts();
         let mut harness = dialogged(host.clone());
         harness.run();
-        harness.state_mut().shell.overwrite = alerts::Overwrite::new(true, true);
+        harness.state_mut().shell.overwrite = alerts::Question::overwrite(true, true);
         export_replacing(&mut harness);
         // The alert shows no box, since ticking it would do nothing.
         assert_eq!(host.0.borrow().alerts[0].suppression, None);
@@ -13452,7 +13714,7 @@ mod tests {
         let host = with_alerts();
         let mut harness = dialogged(host.clone());
         harness.run();
-        harness.state_mut().shell.overwrite = alerts::Overwrite::new(false, false);
+        harness.state_mut().shell.overwrite = alerts::Question::overwrite(false, false);
         kept(&mut harness, OnConflict::Overwrite);
         press_action(&mut harness, ActionId::EXPORT_AGAIN);
         assert_eq!(asked_alerts(&host), 0);

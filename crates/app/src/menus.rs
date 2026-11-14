@@ -313,7 +313,7 @@ pub static MENUS: [Menu; 7] = [
                 item(ActionId::APPLY_EDIT),
                 item(ActionId::COPY_APPLY_PARTS),
             ],
-            &[item(ActionId::RESET)],
+            &[item(ActionId::RESET), item(ActionId::DISCARD_HISTORY)],
             &[Entry::Action(ActionId::SETTINGS, Platforms::NotMac)],
         ],
     },
@@ -622,6 +622,9 @@ fn drawn(
                     }
                     if let Some(on) = action.checked(state) {
                         item = item.checked(on);
+                    }
+                    if let Some(why) = actions::why_unavailable(*id, state) {
+                        item = item.tip(tr.text(why));
                     }
                     entries.push(item.into());
                 }
@@ -1131,6 +1134,8 @@ mod tests {
             edited: true,
             undo: true,
             redo: true,
+            discard: true,
+            discard_why: None,
             text: false,
             photos: 2,
             opened: true,
@@ -1630,6 +1635,32 @@ mod tests {
         assert!(enabled(ActionId::UNDO, &state) && enabled(ActionId::REDO, &state));
         state.undo = false;
         assert!(!enabled(ActionId::UNDO, &state) && enabled(ActionId::REDO, &state));
+        // Discard History…, from the photo's history, resting under a modal dialog.
+        assert!(enabled(ActionId::DISCARD_HISTORY, &state));
+        state.modal = true;
+        assert!(!enabled(ActionId::DISCARD_HISTORY, &state));
+        state.modal = false;
+        state.discard = false;
+        assert!(!enabled(ActionId::DISCARD_HISTORY, &state));
+        // Where it would ask and the platform shows no alert, the drawn item says why.
+        state.discard_why = Some("history-discard-no-alert");
+        let tip = |state: &State| {
+            let menu = drawn_menu_naming(Locale::EnGb, state, &Steps::default());
+            let edit = tops(&menu)[1];
+            (edit.entries.iter())
+                .find_map(|e| match e {
+                    popup::Entry::Item(item) if item.id == ActionId::DISCARD_HISTORY.0 => {
+                        Some((item.enabled, item.tip.clone()))
+                    }
+                    _ => None,
+                })
+                .expect("in Edit")
+        };
+        let (enabled_now, why) = tip(&state);
+        assert!(!enabled_now);
+        assert!(why.is_some_and(|why| why.contains("can’t be shown here")));
+        state.discard_why = None;
+        assert_eq!(tip(&state).1, None);
         for os in PLATFORMS {
             for id in placed(os) {
                 let action = actions::action(id).expect("declared");

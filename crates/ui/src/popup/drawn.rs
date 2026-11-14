@@ -34,6 +34,8 @@
 //!   screen readers learn they exist; → or Enter opens a submenu and ← closes it; Enter or
 //!   Space chooses an item; Escape closes a level, the last giving the focus back; Tab
 //!   closes them all; a letter moves to the next line starting with it.
+//! - An item with an alternate shows it in its place while Option (Alt) is held, as
+//!   macOS's alternate items do: a click, or Enter with it held, chooses the alternate.
 //! - Under the pointer a line is chosen at once, and a submenu opens, or another closes,
 //!   once the pointer has rested on it a moment, so it can cross other lines on its way
 //!   to a submenu. A press outside closes them all.
@@ -41,6 +43,7 @@
 //!   the lines are menu items, a check box for one that can be checked, a submenu's
 //!   telling that it opens a menu and whether it is open.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use egui::accesskit::{HasPopup, Orientation, Role};
@@ -342,14 +345,17 @@ fn keys(open: &mut Open, events: Vec<Event>) -> Option<Closing> {
         let chosen = open.path[level];
         let line = chosen.and_then(|index| entries.get(index));
         match event {
-            Event::Key { key, .. } => match key {
+            Event::Key { key, modifiers, .. } => match key {
                 Key::ArrowDown => open.path[level] = step(entries, chosen, 1),
                 Key::ArrowUp => open.path[level] = step(entries, chosen, -1),
                 Key::ArrowRight | Key::Enter | Key::Space => match line {
                     Some(Entry::Submenu(submenu)) => {
                         open.path.push(step(&submenu.entries, None, 1));
                     }
-                    Some(Entry::Item(item)) if key != Key::ArrowRight && item.enabled => {
+                    Some(Entry::Item(item))
+                        if key != Key::ArrowRight && item.held(modifiers.alt).enabled =>
+                    {
+                        let item = item.held(modifiers.alt);
                         return Some((Answer::Chosen(item.id.clone()), true));
                     }
                     _ => {}
@@ -391,6 +397,7 @@ fn dropdown_keys(open: &mut Open, events: Vec<Event>) -> Option<Closing> {
                 key,
                 repeat,
                 pressed: true,
+                modifiers,
                 ..
             } => match key {
                 Key::ArrowDown | Key::ArrowUp => {
@@ -403,15 +410,20 @@ fn dropdown_keys(open: &mut Open, events: Vec<Event>) -> Option<Closing> {
                 // Once text is typed a space is part of it, from its own text event.
                 Key::Space if !open.filter.is_empty() => {}
                 Key::Enter | Key::Space => {
+                    // The option shown: its alternate where Alt is held with the key.
                     let chosen = if open.filter.is_empty() {
                         // The highlighted option, which starts on the chosen one, so a bare
                         // Enter just closes; one that cannot be chosen closes it too.
                         match open.path[0].and_then(|at| entries.get(at)) {
-                            Some(Entry::Item(item)) if item.enabled => Some(item),
+                            Some(Entry::Item(item)) if item.held(modifiers.alt).enabled => {
+                                Some(item.held(modifiers.alt))
+                            }
                             _ => return Some((Answer::Dismissed, true)),
                         }
                     } else {
                         filter::only_choice(entries, &open.filter)
+                            .map(|item| item.held(modifiers.alt))
+                            .filter(|item| item.enabled)
                     };
                     // Several matches, or none that can be chosen: darktable keeps the list
                     // open for more typing.
@@ -457,9 +469,9 @@ fn retarget(entries: &[Entry], typed: &str, highlight: &mut Option<usize>) {
 }
 
 /// Whether the popup takes `event`: text typed, or a press of any key without Ctrl, Cmd
-/// or Alt but the F-keys, so nothing under it acts on a letter typed to find a line. A key
-/// with a modifier and the F-keys stay the app's, and so does the text a press with Alt
-/// typed ([`take_keys`]).
+/// or Alt but the F-keys, so nothing under it acts on a letter typed to find a line, and
+/// Enter with Alt alone, which chooses an item's alternate. A key with a modifier and the
+/// F-keys stay the app's, and so does the text a press with Alt typed ([`take_keys`]).
 fn is_ours(event: &Event) -> bool {
     match event {
         Event::Key {
@@ -468,7 +480,8 @@ fn is_ours(event: &Event) -> bool {
             modifiers,
             ..
         } => {
-            !(modifiers.ctrl || modifiers.command || modifiers.mac_cmd || modifiers.alt)
+            !(modifiers.ctrl || modifiers.command || modifiers.mac_cmd)
+                && (!modifiers.alt || *key == Key::Enter)
                 && !is_function_key(*key)
         }
         Event::Text(_) => true,
@@ -586,8 +599,11 @@ fn draw(ctx: &Context, id: Id, open: &mut Open) -> Pointer {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                     for (index, entry) in entries.iter().enumerate() {
                         let open_below = level < deepest && open.path[level] == Some(index);
+                        // The line keeps the item's id, so the focus stays on it as Option
+                        // shows its alternate and hides it again.
+                        let held = held(entry, alt);
                         let line = Line {
-                            entry,
+                            entry: &held,
                             id: line_id(id, entry),
                             chosen: shown == Some(index),
                             open: open_below,
@@ -623,11 +639,12 @@ fn draw(ctx: &Context, id: Id, open: &mut Open) -> Pointer {
 /// What the pointer did, applied: a line clicked, or one it rests on.
 fn point(ctx: &Context, open: &mut Open, pointer: Pointer) -> Option<Closing> {
     let now = ctx.input(|i| i.time);
+    let alt = alt_clicked(ctx);
     let deepest = open.path.len() - 1;
     if let Some((level, index)) = pointer.clicked {
         match entries_of(&open.request.entries, &open.path[..level]).get(index) {
-            Some(Entry::Item(item)) if item.enabled => {
-                return Some((Answer::Chosen(item.id.clone()), true));
+            Some(Entry::Item(item)) if item.held(alt).enabled => {
+                return Some((Answer::Chosen(item.held(alt).id.clone()), true));
             }
             Some(Entry::Submenu(_)) => {
                 open.path.truncate(level + 1);
@@ -772,6 +789,36 @@ fn shown(entry: &Entry, top: bool) -> (String, Option<(usize, char)>) {
     }
 }
 
+/// Whether Alt (Option) was held for a click this frame: as the primary button was let go,
+/// by its release's own modifiers, not the input's, which a change later in the frame
+/// would have moved on; the input's where no release came, as a screen reader's click.
+fn alt_clicked(ctx: &Context) -> bool {
+    ctx.input(|i| {
+        (i.events.iter().rev())
+            .find_map(|event| match event {
+                Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers,
+                    ..
+                } => Some(modifiers.alt),
+                _ => None,
+            })
+            .unwrap_or(i.modifiers.alt)
+    })
+}
+
+/// `entry` as shown with Option (Alt) held or not, `alt`: an item's alternate in its place
+/// while it is held.
+fn held(entry: &Entry, alt: bool) -> Cow<'_, Entry> {
+    match entry {
+        Entry::Item(item) if alt && item.alternate.is_some() => {
+            Cow::Owned(Entry::Item(item.held(true).clone()))
+        }
+        _ => Cow::Borrowed(entry),
+    }
+}
+
 /// A line's widget id: the popup's with the entry's id, so the focus follows the entry.
 fn line_id(popup: Id, entry: &Entry) -> Id {
     match entry {
@@ -809,13 +856,16 @@ impl Layout {
         let mut end: f32 = 0.0;
         for entry in entries {
             match entry {
+                // An alternate takes the item's place, so the level is as wide as either.
                 Entry::Item(item) => {
-                    if item.checked.is_some() {
-                        check = Icon::Check.size() + t.spacing.s;
-                    }
-                    words_width = words_width.max(measure(&item.text, font.clone()));
-                    if let Some(keys) = &item.shortcut {
-                        end = end.max(measure(keys, key_font(t)));
+                    for item in std::iter::once(item).chain(item.alternate.as_deref()) {
+                        if item.checked.is_some() {
+                            check = Icon::Check.size() + t.spacing.s;
+                        }
+                        words_width = words_width.max(measure(&item.text, font.clone()));
+                        if let Some(keys) = &item.shortcut {
+                            end = end.max(measure(keys, key_font(t)));
+                        }
                     }
                 }
                 Entry::Submenu(_) => {

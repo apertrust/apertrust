@@ -2560,17 +2560,12 @@ pub(crate) mod tests {
                     let (history, takes) = (m.history.as_ref(), m.takes_edits());
                     let modules = m.modules();
                     let today = crate::history::today();
-                    let asked = crate::history::tab(
-                        ui,
-                        history,
-                        modules,
-                        &[],
-                        true,
-                        false,
-                        takes,
-                        false,
-                        today,
-                    );
+                    let state = crate::history::State {
+                        editable: takes,
+                        ..crate::history::State::default()
+                    };
+                    let asked =
+                        crate::history::tab(ui, history, modules, &[], true, false, state, today);
                     scene.actions.extend(asked);
                 },
                 Scene {

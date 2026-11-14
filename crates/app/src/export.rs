@@ -245,7 +245,7 @@ mod tests;
 /// Whether an export with `on_conflict` asks the overwrite question first, by the dialog's
 /// Export and by Export Again: darktable's rule (`disk.c`, `ask_user_confirmation`),
 /// On conflict Overwrite whether or not a file is there, and never Overwrite if changed.
-/// Whether it asks then is the setting's (`alerts::Overwrite`).
+/// Whether it asks then is the setting's (`alerts::Question`).
 pub fn asks_before(on_conflict: OnConflict) -> bool {
     on_conflict == OnConflict::Overwrite
 }
