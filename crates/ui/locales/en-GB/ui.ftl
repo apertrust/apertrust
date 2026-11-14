@@ -48,15 +48,15 @@ panel-width = Side panel width
 section-reset = Reset { $section }
 section-presets = { $section } presets
 section-options = { $section } options
-# The tooltip of a module's options button, drawn disabled while its menu holds nothing.
+# The tooltip of a tool's options button, drawn disabled while its menu holds nothing.
 section-options-none = No options yet
 section-toggle = Open or close { $section }. Hold H over it to see the photo without it.
 # The name of a section's tab list, for screen readers.
 section-tabs = { $section } tabs
 # The tooltip of a tab drawn disabled because nothing is behind it yet.
 section-tab-later = Coming in a later version
-# The description screen readers hear on a module section darktable leaves off on a new
-# photo while it is off (decision 32): it renders nothing until a control changes.
+# The description screen readers hear on the section of a tool darktable leaves off on a
+# new photo while it is off (decision 32): it renders nothing until a control changes.
 section-not-applied = Not applied
 # The tooltip of a choice's option drawn disabled, as one darktable lists that is not
 # ported yet.
@@ -65,7 +65,7 @@ choice-option-later = Coming in a later version
 # which this photo does not list (decision 30).
 choice-option-unavailable = Not available for this photo
 
-## A collapsible group inside a module, darktable's collapsible section
+## A collapsible group inside a tool, darktable's collapsible section
 
 # What screen readers hear after its title while controls in it are off their defaults;
 # $count is how many.
@@ -74,7 +74,7 @@ collapsible-group-set = { $count } set
 # $count how many.
 collapsible-group-tip = { $group }: { $count } set
 
-## A preset row in a module, whose options each write several of its controls, as White
+## A preset row in a tool, whose options each write several of its controls, as White
 ## balance's Mode
 
 # What its box shows while the controls hold none of its options' values; never an option
@@ -281,7 +281,7 @@ job-export-cancelled =
 
 job-cause-unreadable = the raw file cannot be read
 job-cause-edit = its edit cannot be read
-job-cause-binding = an edited module cannot be applied to the photo
+job-cause-binding = an edited tool cannot be applied to the photo
 job-cause-size = the size asked for does not fit the format
 job-cause-pattern = the file name is not valid
 job-cause-name = the file name gives this photo no name
@@ -324,9 +324,9 @@ photo-before-after = Before and after
 photo-guides = Guides
 guides-show-label = Show guides
 guides-show-full = Show guides
-guides-show-promise = Show the guide overlay while this module has focus.
+guides-show-promise = Show the guide overlay while this tool has focus.
 guides-settings-full = Change global guide settings
-guides-settings-promise = These settings apply globally, to every module that shows guide overlays.
+guides-settings-promise = These settings apply globally, to every tool that shows guide overlays.
 photo-layer = Layer: { $layer }. Change layer
 photo-new-layer = New layer
 photo-values = Values under the cursor
@@ -967,7 +967,7 @@ menu-bring-all-to-front = Bring All to Front
 
 # A step that put the whole edit back to nothing: Reset Edit.
 history-reset = Reset
-# The steps of one change that touched several modules, a step each, as Undo and Redo name
+# The steps of one change that touched several tools, a step each, as Undo and Redo name
 # them: $tool is the first's title, $count how many more there are.
 history-tools = { $tool } and { $count } more
 # Going to a step in History, which Undo takes back and Redo puts back.
@@ -982,8 +982,8 @@ history-discard = Discard History
 # it can; Create a Style…, which comes with styles; and Discard History…'s tip.
 history-options-compress = Compress History
 history-options-truncate = Truncate History
-history-compress-tip = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
-history-compress-tip-truncate = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults. Hold { $key } to truncate instead.
+history-compress-tip = Keeps each tool’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
+history-compress-tip-truncate = Keeps each tool’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults. Hold { $key } to truncate instead.
 history-truncate-tip = Removes the steps after the chosen one and keeps the rest as they are. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
 history-options-style = Create a Style…
 history-options-style-later = Styles come in a later version.
@@ -1017,9 +1017,9 @@ history-source-default = Default
 # apart; for screen readers, a control changed: its label, its value before and after.
 history-said-change = { $control }, { $before } to { $after }
 
-# The same, the control being the module's own, its label left out.
+# The same, the control being the tool's own, its label left out.
 history-said-change-alone = { $before } to { $after }
-# What changed, after a step's module in its line: several controls, how many.
+# What changed, after a step's tool in its line: several controls, how many.
 history-line-controls =
     { $count ->
         [one] { $count } control
@@ -1028,23 +1028,23 @@ history-line-controls =
 
 # A step's name for screen readers with what it changed.
 history-step-name-change = Step { $number }: { $name }, { $change }
-# A change of several modules, a step each, shown as one line that opens: its name where
-# it has no note, how many modules it touched.
+# A change of several tools, a step each, shown as one line that opens: its name where
+# it has no note, how many tools it touched.
 history-group-tools =
     { $count ->
-        [one] { $count } module
-       *[other] { $count } modules
+        [one] { $count } tool
+       *[other] { $count } tools
     }
 # That line's name for screen readers: its steps' first and last numbers, its name, then
-# its modules' titles.
+# its tools' titles.
 history-group-name = Steps { $first } to { $last }: { $name }, { $tools }
-# The modules every photo runs, shown as one line over Original that opens, and how many
+# The tools every photo runs, shown as one line over Original that opens, and how many
 # they are.
 history-defaults = Defaults
 history-defaults-tools =
     { $count ->
-        [one] { $count } module every photo runs
-       *[other] { $count } modules every photo runs
+        [one] { $count } tool every photo runs
+       *[other] { $count } tools every photo runs
     }
 # A line's name for screen readers with what it says after its name: the Defaults line's.
 history-line-name = { $name }, { $change }
@@ -1079,9 +1079,9 @@ history-points =
         [one] { $count } point
        *[other] { $count } points
     }
-# The eye at the end of a step's line, held to see the photo without its module for that
+# The eye at the end of a step's line, held to see the photo without its tool for that
 # moment, never saved: its name for screen readers, then its tooltip; $tool is the
-# module's title.
+# tool's title.
 history-peek = Hold to see the photo without { $tool }
 history-peek-tip = Hold to see the photo without { $tool }; nothing is saved
 
@@ -1099,7 +1099,7 @@ curve-keys = Page Up and Page Down choose a point, the arrow keys move it, Inser
 # The same on a Mac, which has no Insert key and calls Backspace Delete.
 curve-keys-mac = Page Up and Page Down (Fn+↑ and Fn+↓) choose a point, the arrow keys move it, + adds one, Delete removes it and Shift+Delete removes them all.
 
-## The tone equalizer's graph of its bands; $tool is the module's title
+## The tone equalizer's graph of its bands; $tool is the tool's title
 
 # The graph's full name, for screen readers.
 equalizer-name = { $tool }, curve
@@ -1148,7 +1148,7 @@ scope-empty = Nothing measured yet
 ## Colour pickers (docs/pickers.md, The picker button). $tip is the picker's own words,
 ## $command the pointer's modifier as shortcuts spell it: "Cmd" on the Mac, "Ctrl" elsewhere
 
-# A picker button's tooltip where its module gives none, darktable's "pick color from image".
+# A picker button's tooltip where its tool gives none, darktable's "pick color from image".
 picker-tip = Pick colour from the photo
 # The tooltip of a picker that takes a point or an area: its words, then darktable's
 # "ctrl+click or right-click to select an area".
@@ -1162,7 +1162,7 @@ picker-tip-area-quad =
     { $command }+click to select an area
 
 ## The active picker on the photo (docs/pickers.md, On the photo, Accessibility). $tool is
-## the module's title, $picker the picker's name: its control's label on a slider's quad,
+## the tool's title, $picker the picker's name: its control's label on a slider's quad,
 ## else its own; $command is the pointer's modifier as shortcuts spell it, $what the
 ## picker's own sentence
 

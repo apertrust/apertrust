@@ -49,12 +49,12 @@ section-not-applied = Nie zastosowano
 choice-option-later = Pojawi się w jednej z kolejnych wersji
 choice-option-unavailable = Niedostępne dla tego zdjęcia
 
-## Zwijana grupa w module, zwijana sekcja darktable
+## Zwijana grupa w narzędziu, zwijana sekcja darktable
 
 collapsible-group-set = Zmieniono: { $count }
 collapsible-group-tip = { $group }: zmieniono { $count }
 
-## Wiersz ustawień wstępnych w module, jak Tryb balansu bieli
+## Wiersz ustawień wstępnych w narzędziu, jak Tryb balansu bieli
 
 preset-custom = Własne
 preset-option-unavailable = Niedostępne dla tego zdjęcia
@@ -224,7 +224,7 @@ job-export-cancelled =
 
 job-cause-unreadable = nie można odczytać pliku raw
 job-cause-edit = nie można odczytać jego edycji
-job-cause-binding = zmienionego modułu nie można zastosować do zdjęcia
+job-cause-binding = zmienionego narzędzia nie można zastosować do zdjęcia
 job-cause-size = żądany rozmiar nie pasuje do formatu
 job-cause-pattern = nazwa pliku jest nieprawidłowa
 job-cause-name = nazwa pliku nie daje temu zdjęciu nazwy
@@ -263,9 +263,9 @@ photo-before-after = Przed i po
 photo-guides = Linie pomocnicze
 guides-show-label = Pokaż prowadnice
 guides-show-full = Pokaż prowadnice
-guides-show-promise = Pokaż nakładkę prowadnic, kiedy moduł jest aktywny.
+guides-show-promise = Pokaż nakładkę prowadnic, kiedy narzędzie jest aktywne.
 guides-settings-full = Zmień globalne ustawienia prowadnic
-guides-settings-promise = Te ustawienia są globalne i dotyczą każdego modułu, w którym występują nakładki prowadnic.
+guides-settings-promise = Te ustawienia są globalne i dotyczą każdego narzędzia, w którym występują nakładki prowadnic.
 photo-layer = Warstwa: { $layer }. Zmień warstwę
 photo-new-layer = Nowa warstwa
 photo-values = Wartości pod kursorem
@@ -748,10 +748,10 @@ menu-bring-all-to-front = Umieść wszystko na wierzchu
 history-reset = Resetowanie
 history-tools =
     { $count ->
-        [one] { $tool } i jeszcze { $count } moduł
-        [few] { $tool } i jeszcze { $count } moduły
-        [many] { $tool } i jeszcze { $count } modułów
-       *[other] { $tool } i jeszcze { $count } modułu
+        [one] { $tool } i jeszcze { $count } narzędzie
+        [few] { $tool } i jeszcze { $count } narzędzia
+        [many] { $tool } i jeszcze { $count } narzędzi
+       *[other] { $tool } i jeszcze { $count } narzędzia
     }
 history-go-to-step = Przejście do kroku
 history-compress = Kompresja historii
@@ -759,8 +759,8 @@ history-truncate = Przycięcie historii
 history-discard = Odrzucenie historii
 history-options-compress = Kompresuj historię
 history-options-truncate = Przytnij historię
-history-compress-tip = Zachowuje ostatni krok każdego modułu do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
-history-compress-tip-truncate = Zachowuje ostatni krok każdego modułu do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych. Przytrzymaj { $key }, aby zamiast tego przyciąć.
+history-compress-tip = Zachowuje ostatni krok każdego narzędzia do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
+history-compress-tip-truncate = Zachowuje ostatni krok każdego narzędzia do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych. Przytrzymaj { $key }, aby zamiast tego przyciąć.
 history-truncate-tip = Usuwa kroki po wybranym, a resztę zostawia bez zmian. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
 history-options-style = Utwórz styl…
 history-options-style-later = Style pojawią się w jednej z kolejnych wersji.
@@ -793,19 +793,19 @@ history-line-controls =
 history-step-name-change = Krok { $number }: { $name }, { $change }
 history-group-tools =
     { $count ->
-        [one] { $count } moduł
-        [few] { $count } moduły
-        [many] { $count } modułów
-       *[other] { $count } modułu
+        [one] { $count } narzędzie
+        [few] { $count } narzędzia
+        [many] { $count } narzędzi
+       *[other] { $count } narzędzia
     }
 history-group-name = Kroki od { $first } do { $last }: { $name }, { $tools }
 history-defaults = Domyślne
 history-defaults-tools =
     { $count ->
-        [one] { $count } moduł działający na każdym zdjęciu
-        [few] { $count } moduły działające na każdym zdjęciu
-        [many] { $count } modułów działających na każdym zdjęciu
-       *[other] { $count } modułu działającego na każdym zdjęciu
+        [one] { $count } narzędzie działające na każdym zdjęciu
+        [few] { $count } narzędzia działające na każdym zdjęciu
+        [many] { $count } narzędzi działających na każdym zdjęciu
+       *[other] { $count } narzędzia działającego na każdym zdjęciu
     }
 history-line-name = { $name }, { $change }
 history-day-today = Dzisiaj
@@ -837,8 +837,8 @@ history-points =
         [many] { $count } punktów
        *[other] { $count } punktu
     }
-history-peek = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $tool }
-history-peek-tip = Przytrzymaj, aby zobaczyć zdjęcie bez modułu: { $tool }. Nic nie jest zapisywane
+history-peek = Przytrzymaj, aby zobaczyć zdjęcie bez narzędzia: { $tool }
+history-peek-tip = Przytrzymaj, aby zobaczyć zdjęcie bez narzędzia: { $tool }. Nic nie jest zapisywane
 
 ## Krzywa
 
@@ -849,7 +849,7 @@ curve-white-point = { $control }: punkt bieli
 curve-keys = Page Up i Page Down wybierają punkt, strzałki go przesuwają, Insert lub + dodaje punkt, Delete go usuwa, a Shift+Delete usuwa wszystkie.
 curve-keys-mac = Page Up i Page Down (Fn+↑ i Fn+↓) wybierają punkt, strzałki go przesuwają, + dodaje punkt, Delete go usuwa, a Shift+Delete usuwa wszystkie.
 
-## Wykres pasm korektora tonów; $tool to nazwa modułu
+## Wykres pasm korektora tonów; $tool to nazwa narzędzia
 
 equalizer-name = { $tool }, krzywa
 equalizer-tip = Kliknij dwukrotnie, aby zresetować krzywą.
@@ -896,7 +896,7 @@ picker-tip-area-quad =
     { $command }+kliknięcie, aby zaznaczyć obszar
 
 ## Aktywny próbnik na zdjęciu (docs/pickers.md, On the photo, Accessibility). $tool to
-## nazwa modułu, $picker nazwa próbnika: etykieta jego kontrolki na kwadracie suwaka, inaczej
+## nazwa narzędzia, $picker nazwa próbnika: etykieta jego kontrolki na kwadracie suwaka, inaczej
 ## własna; $command to modyfikator wskaźnika, tak jak zapisują go skróty, $what własne
 ## zdanie próbnika
 

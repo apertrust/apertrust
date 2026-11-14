@@ -2566,11 +2566,11 @@ pub(crate) mod tests {
         assert_eq!(undo(1, 1, Locale::Pl).as_deref(), Some("Ekspozycja"));
         assert_eq!(
             undo(2, 3, Locale::Uk).as_deref(),
-            Some("Експозиція та ще 2 модулі")
+            Some("Експозиція та ще 2 інструменти")
         );
         assert_eq!(
             undo(2, 3, Locale::Pl).as_deref(),
-            Some("Ekspozycja i jeszcze 2 moduły")
+            Some("Ekspozycja i jeszcze 2 narzędzia")
         );
     }
 
@@ -2816,7 +2816,7 @@ pub(crate) mod tests {
             .expect("the Defaults group");
         assert_eq!(line.name, "Defaults");
         assert_eq!(line.numbers(&tr).as_deref(), Some("1\u{2013}9"));
-        assert_eq!(line.change.as_deref(), Some("9 modules every photo runs"));
+        assert_eq!(line.change.as_deref(), Some("9 tools every photo runs"));
         assert!(line.group() && !line.greyed());
         let shown: Vec<(Option<usize>, &str, Option<&str>)> = (lines.iter())
             .map(|line| (line.number(), line.name.as_str(), line.tag.as_deref()))
@@ -3882,10 +3882,7 @@ pub(crate) mod tests {
         );
         harness.run();
         let group = "Steps 1 to 9: Defaults";
-        let defaults = item(
-            &harness,
-            "Steps 1 to 9: Defaults, 9 modules every photo runs",
-        );
+        let defaults = item(&harness, "Steps 1 to 9: Defaults, 9 tools every photo runs");
         assert_eq!(defaults.accesskit_node().level(), Some(0));
         assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(false));
         assert_eq!(
@@ -4499,9 +4496,9 @@ pub(crate) mod tests {
                 .find(|line| matches!(line.place, Place::Batch { .. }))
                 .map(|line| line.name.clone())
         };
-        assert_eq!(named(Locale::EnGb).as_deref(), Some("3 modules"));
-        assert_eq!(named(Locale::Uk).as_deref(), Some("3 модулі"));
-        assert_eq!(named(Locale::Pl).as_deref(), Some("3 moduły"));
+        assert_eq!(named(Locale::EnGb).as_deref(), Some("3 tools"));
+        assert_eq!(named(Locale::Uk).as_deref(), Some("3 інструменти"));
+        assert_eq!(named(Locale::Pl).as_deref(), Some("3 narzędzia"));
         let mut harness = styled_scene(6);
         harness.run();
         let header = item(&harness, "Steps 3 to 5: Warm film");

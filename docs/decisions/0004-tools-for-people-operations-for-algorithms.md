@@ -42,13 +42,13 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 ## Consequences
 
 - **The docs, code and skills use the two terms.** Until step 4.7 lands, the sidecar keeps `apertrust:module`.
-- **The rename lands in steps,** 4.1 to 4.5 built and the rest planned, the identifiers in backticks following their own step:
+- **The rename lands in steps,** 4.1 to 4.6 built and the rest planned, the identifiers in backticks following their own step:
   - 4.1, built: a tool's settings named settings in the code, freeing the word;
   - 4.2, built: the docs say tool, the tools' pages in `docs/tools/`;
   - 4.3, built: the crate `apertrust-tools` in `crates/tools`, with the trait, its types, the session's commands and events, and the CLI's help and errors;
   - 4.4, built: the code's own names, tests and comments;
   - 4.5, built: the Fluent ids `module-…` renamed `tool-…`, in `tools.ftl`;
-  - 4.6: the words a person sees and hears, in every language: "tool", "інструмент" in Ukrainian, "narzędzie" in Polish, including the tooltips quoted from darktable, whose wording otherwise stays darktable's;
+  - 4.6, built: the words a person sees and hears, in every language: "tool", "інструмент" in Ukrainian, "narzędzie" in Polish, including the tooltips quoted from darktable, whose wording otherwise stays darktable's;
   - 4.7: the sidecar's `apertrust:tool` and `apertrust:toolVersion` in place of `apertrust:module` and `apertrust:moduleVersion` ([0048](0048-the-apxmp-format.md));
   - 4.8: the agent kit's skills, agents and commands.
 - **The sidecar keeps no reading of the old names.** Only nightly builds have written them, never a release, so after step 4.7 a file a nightly wrote opens view-only, its field unknown, until Discard History… clears its edit ([0078](0078-undo-redo-and-the-edits-history.md)). That cost is accepted while Apertrust is in early development.

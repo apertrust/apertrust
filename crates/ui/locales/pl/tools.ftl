@@ -1,4 +1,4 @@
-# Słowa modułów po polsku (docs/gui.md, Tool panels from definitions).
+# Słowa narzędzi po polsku (docs/gui.md, Tool panels from definitions).
 # Tłumaczenie komunikatów z en-GB/tools.ftl z tymi samymi zmiennymi. Wersja robocza:
 # jeszcze niesprawdzona przez rodzimego użytkownika języka.
 
@@ -188,7 +188,7 @@ tool-agx-action-auto_tune_levels-full = Ustaw poziomy automatycznie
 tool-agx-action-auto_tune_levels-promise = Ustaw ekspozycję czerni i bieli za pomocą wybranego obszaru.
 tool-agx-action-read_exposure-label = Czytaj ekspozycję
 tool-agx-action-read_exposure-full = Czytaj ekspozycję
-tool-agx-action-read_exposure-promise = Czytaj ekspozycję z metadanych i modułu Ekspozycja.
+tool-agx-action-read_exposure-promise = Czytaj ekspozycję z metadanych i narzędzia Ekspozycja.
 tool-agx-control-curve_pivot_x-label = Punkt obrotu ekspozycji względnej
 tool-agx-control-curve_pivot_x-full = Punkt obrotu ekspozycji względnej
 tool-agx-control-curve_pivot_x-promise = Ustal ekspozycję wejściową punktu obrotu w EV, względem średniej szarości.
@@ -247,7 +247,7 @@ tool-agx-control-look_original_hue_mix_ratio-full = Ochrona odcieni
 tool-agx-control-look_original_hue_mix_ratio-promise = Zwiększ, aby przyciągnąć barwy bliżej oryginalnych.
 tool-agx-control-base_primaries-label = Barwy podstawowe
 tool-agx-control-base_primaries-full = Barwy podstawowe
-tool-agx-control-base_primaries-promise = Barwy podstawowe przestrzeni kolorów, na których opierają się poniższe ustawienia. Profil eksportu używa profilu ustawionego w module Wyjściowy profil koloru.
+tool-agx-control-base_primaries-promise = Barwy podstawowe przestrzeni kolorów, na których opierają się poniższe ustawienia. Profil eksportu używa profilu ustawionego w narzędziu Wyjściowy profil koloru.
 tool-agx-control-base_primaries-option-export_profile = Profil eksportu
 tool-agx-control-base_primaries-option-working_profile = Profil roboczy
 tool-agx-control-base_primaries-option-rec2020 = Rec2020
@@ -256,7 +256,7 @@ tool-agx-control-base_primaries-option-adobe_rgb = Adobe RGB (kompatybilny)
 tool-agx-control-base_primaries-option-srgb = sRGB
 tool-agx-control-disable_primaries_adjustments-label = Wyłącz ustawienia
 tool-agx-control-disable_primaries_adjustments-full = Wyłącz ustawienia barw podstawowych
-tool-agx-control-disable_primaries_adjustments-promise = Wyłącz ustawienia czystości i obrotów, jedynie stosuj krzywą. Pamiętaj, że te nastawy są esencją modułu AgX, a bez nich rezultaty niemal zawsze będą gorsze, szczególnie w przypadku jasnych i nasyconych świateł (np. LED). Zastosowanie głównie eksperymentalne.
+tool-agx-control-disable_primaries_adjustments-promise = Wyłącz ustawienia czystości i obrotów, jedynie stosuj krzywą. Pamiętaj, że te nastawy są esencją narzędzia AgX, a bez nich rezultaty niemal zawsze będą gorsze, szczególnie w przypadku jasnych i nasyconych świateł (np. LED). Zastosowanie głównie eksperymentalne.
 tool-agx-action-reset_primaries-label = Zresetuj barwy podstawowe
 tool-agx-action-reset_primaries-full = Zresetuj barwy podstawowe
 tool-agx-action-reset_primaries-promise = Zresetuj barwy podstawowe do zdefiniowanej konfiguracji.
@@ -441,7 +441,7 @@ tool-channelmixerrgb-title = Kalibracja koloru
 tool-channelmixerrgb-tab-cat = CAT
 tool-channelmixerrgb-control-adaptation-label = Adaptacja
 tool-channelmixerrgb-control-adaptation-full = Adaptacja
-tool-channelmixerrgb-control-adaptation-promise = Metoda adaptacji oświetlenia i przestrzeń kolorów, w której działa moduł. Liniowy Bradford (1985) jest zgodny z ICC v4. CAT16 (2016) jest bardziej niezawodny i dokładny. Nieliniowy Bradford (1985) to oryginalny algorytm Bradforda: jego rezultaty bywają lepsze niż wersji liniowej, ale jest zawodny. XYZ to proste skalowanie w przestrzeni XYZ, zwykle niezalecane. Brak wyłącza adaptację i używa przestrzeni RGB potoku przetwarzania.
+tool-channelmixerrgb-control-adaptation-promise = Metoda adaptacji oświetlenia i przestrzeń kolorów, w której działa narzędzie. Liniowy Bradford (1985) jest zgodny z ICC v4. CAT16 (2016) jest bardziej niezawodny i dokładny. Nieliniowy Bradford (1985) to oryginalny algorytm Bradforda: jego rezultaty bywają lepsze niż wersji liniowej, ale jest zawodny. XYZ to proste skalowanie w przestrzeni XYZ, zwykle niezalecane. Brak wyłącza adaptację i używa przestrzeni RGB potoku przetwarzania.
 tool-channelmixerrgb-control-adaptation-option-linear_bradford = Liniowy Bradford (ICC v4)
 tool-channelmixerrgb-control-adaptation-option-cat16 = CAT16 (CIECAM16)
 tool-channelmixerrgb-control-adaptation-option-non_linear_bradford = Nieliniowy Bradford

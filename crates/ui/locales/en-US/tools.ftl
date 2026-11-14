@@ -1,4 +1,4 @@
-# The modules' words in American English (docs/gui.md, Tool panels from definitions): an
+# The tools' words in American English (docs/gui.md, Tool panels from definitions): an
 # overlay of en-GB/tools.ftl, not a copy. It holds only the messages whose words American
 # English spells differently, with en-GB's variables, among them darktable's module names,
 # which are American upstream (Color balance RGB); every other message is en-GB's.
@@ -58,7 +58,7 @@ tool-exposure-setting-area_mode-promise = Correction adjusts the exposure so tha
 ## Color calibration
 
 tool-channelmixerrgb-title = Color calibration
-tool-channelmixerrgb-control-adaptation-promise = How the illuminant is adapted, and the color space the module works in. Linear Bradford (1985) is consistent with the ICC v4 toolchain. CAT16 (2016) is more robust and accurate. Non-linear Bradford (1985) is the original Bradford: it can give better results than the linear one, but is unreliable. XYZ is a simple scaling in XYZ space, not recommended in general. None disables any adaptation and uses the pipeline's working RGB.
+tool-channelmixerrgb-control-adaptation-promise = How the illuminant is adapted, and the color space the tool works in. Linear Bradford (1985) is consistent with the ICC v4 toolchain. CAT16 (2016) is more robust and accurate. Non-linear Bradford (1985) is the original Bradford: it can give better results than the linear one, but is unreliable. XYZ is a simple scaling in XYZ space, not recommended in general. None disables any adaptation and uses the pipeline's working RGB.
 tool-channelmixerrgb-control-illuminant-promise = The light the scene was lit by, which the adaptation turns into white: a standard light, one at a temperature, the camera's own or a custom color.
 tool-channelmixerrgb-control-hue-promise = The color of the light, around the pipeline's white.
 tool-channelmixerrgb-control-gamut-promise = Brings colors outside the pipeline's gamut back inside it, the more the higher. 0 = none.
