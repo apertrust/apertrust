@@ -10,7 +10,7 @@ Apertrust should be usable from the desktop app, the command line, a browser or 
 
 **Every client reaches the engine through one session protocol** ([session-protocol.md](../session-protocol.md)): the desktop app, `apertrust-cli`, and later the web client, MCP agents and scripts. A client sends commands and receives events ([0059](0059-one-event-system.md)); it never calls into the engine's state. The engine never depends on UI code, and widgets only emit commands, so undo, agents and the remote mode behave as the app does.
 
-- **Clients speak modules, not operations** ([0004](0004-modules-for-users-operations-for-algorithms.md)): controls by module and control id, the session turning them into operation parameters.
+- **Clients speak modules, not operations** ([0004](0004-tools-for-people-operations-for-algorithms.md)): controls by module and control id, the session turning them into operation parameters.
 - **Commands are plain data,** numbered in the order sent and coalesced into batches on the engine thread ([0017](0017-threads-and-the-engines-session.md)); a refused command names itself.
 - **The library's commands are the session's too** ([0054](0054-four-layers-for-the-librarys-code.md)), so a browser client's library lives on the server.
 - **The types stay in the engine** (`apertrust_engine::session`'s `Command` and `Event`) until a client must compile them without it; then they become `apertrust-protocol`.

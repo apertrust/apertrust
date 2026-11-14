@@ -2,7 +2,7 @@
 
 ## Context
 
-A first-pass module shows darktable's controls ([0029](0029-a-module-is-darktables-page.md)). How far does each control follow darktable: its range and steps, whether it can act on this photo, which options a choice lists, and what happens when another control moves its range? A definition is static data, while darktable's widgets change with the photo and the module's values.
+A first-pass module shows darktable's controls ([0029](0029-a-tool-is-darktables-page.md)). How far does each control follow darktable: its range and steps, whether it can act on this photo, which options a choice lists, and what happens when another control moves its range? A definition is static data, while darktable's widgets change with the photo and the module's values.
 
 ## Decision
 

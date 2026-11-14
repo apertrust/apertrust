@@ -1,4 +1,4 @@
-# 0034. Layers: masked module instances in a fixed order
+# 0034. Layers: masked tool instances in a fixed order
 
 ## Context
 
