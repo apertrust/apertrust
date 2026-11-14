@@ -736,6 +736,11 @@ fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
         field: field.to_owned(),
     };
     for item in node.items().unwrap_or_default() {
+        // A qualifier on the item reaches no entry, so a save would drop it.
+        if !item.qualifiers.is_empty() {
+            problems.push(unknown("an entry with a qualifier"));
+            continue;
+        }
         let Some(fields) = item.fields() else {
             problems.push(unknown("an item that is no entry"));
             continue;

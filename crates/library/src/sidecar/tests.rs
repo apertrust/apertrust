@@ -1164,6 +1164,14 @@ fn every_version_1_list_is_checked_whatever_its_shape() {
         problems.contains(&unknown("the file's tools", "apertrust:tools")),
         "{problems:?}"
     );
+    // An entry with a qualifier, which no entry can hold.
+    let qualified = file(&format!(
+        r#"<apertrust:tools><rdf:Seq><rdf:li xml:lang="en"><rdf:Description apertrust:tool="exposure" apertrust:toolVersion="2"/></rdf:li></rdf:Seq></apertrust:tools>"#
+    ));
+    assert_eq!(
+        Edits::parse(&qualified, 0).unwrap().problems,
+        [unknown("the file's tools", "an entry with a qualifier")]
+    );
 }
 
 #[test]
