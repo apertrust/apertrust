@@ -33,8 +33,10 @@
 //!
 //! On Windows, it compiles the executable's resources with the SDK's resource compiler,
 //! through winresource: the app icon, `assets/icons/apertrust.ico`, which Explorer, the
-//! taskbar and the installer's shortcuts show, and the version resource, the build's
-//! version as File Explorer's Details tab and the installer read it (docs/packaging.md).
+//! taskbar and the installer's shortcuts show; the edit's document icon,
+//! `assets/icons/apertrust-apxmp.ico`, as icon resource 2, which the installer's ProgID for
+//! `.apxmp` names as `apertrust.exe,-2`; and the version resource, the build's version as
+//! File Explorer's Details tab and the installer read it (docs/packaging.md).
 
 use std::env;
 use std::path::Path;
@@ -61,13 +63,16 @@ fn main() {
     }
 }
 
-/// The icon and the version resource of `apertrust.exe`: its four numbers the release's
-/// and the count of commits, its strings the full version, as the banner gives it, and
-/// the name Apertrust Dev for a development build.
+/// The icons and the version resource of `apertrust.exe`: the app's icon 1, the first,
+/// which Explorer shows for the executable, and the edit's 2; the version's four numbers
+/// the release's and the count of commits, its strings the full version, as the banner
+/// gives it, and the name Apertrust Dev for a development build.
 #[cfg(windows)]
 fn windows_resources(version: &apertrust_base::build::Version) {
     let icon = "assets/icons/apertrust.ico";
+    let edit = "assets/icons/apertrust-apxmp.ico";
     println!("cargo:rerun-if-changed={icon}");
+    println!("cargo:rerun-if-changed={edit}");
     let [x, y, z, build] = version.numbers().map(u64::from);
     let numbers = x << 48 | y << 32 | z << 16 | build;
     let name = if version.dev {
@@ -78,6 +83,7 @@ fn windows_resources(version: &apertrust_base::build::Version) {
     let mut resources = winresource::WindowsResource::new();
     resources
         .set_icon(icon)
+        .set_icon_with_id(edit, "2")
         .set("ProductName", name)
         .set("FileDescription", name)
         .set("CompanyName", "Apertrust developers")

@@ -2,7 +2,7 @@
 
 Apertrust's app icon, the Slider A: a serif A, a hairline and a heavy stem on bracketed feet under a beaked apex, whose crossbar is a slider's track running past both legs, its marker held in the counter. The track breaks round the marker, and the break is a cut, painted with nothing: whatever is behind shows through it, and it sets the marker apart without colour.
 
-- **The drawing** is on a 64-unit grid: the apex at 6, the baseline at 58.5, the track straight from 3 to 61 with round ends beyond, reaching 1.5 and 62.5 (1 and 63 in the simplified drawing); in the logo its right end is straight to 57, reaching 58.5. At 32 px and below each icon is drawn from its `-small` SVG, the simplified drawing: a heavier hairline, plain slab feet, a thicker track and a larger marker.
+- **The drawing** is on a 64-unit grid: the apex at 6, the baseline at 58.5, the track straight from 3 to 61 with round ends beyond, reaching 1.5 and 62.5 (1 and 63 in the simplified drawing); in the logo its right end is straight to 57, reaching 58.5. At 32 px and below each icon is drawn from its `-small` SVG, the simplified drawing: a heavier hairline, plain slab feet, a thicker track and a larger marker; the edit's Windows icon at 16, 20 and 24 px each from its own SVG.
 - **The colours:** the A ink #1E1A16 on light grounds and cream #F4EEE2 on dark ones; the marker #D66A20 on light, #DC7028 on dark. The single-colour files draw the marker in the A's colour, the cut keeping it apart.
 
 ## SVG sources (`svg/`)
@@ -14,6 +14,7 @@ Apertrust's app icon, the Slider A: a serif A, a hairline and a heavy stem on br
 | `apertrust-macos-small.svg`, `apertrust-macos-dark-small.svg` | The same with the simplified drawing, for 32 px and below |
 | `apertrust-plate.svg`, `apertrust-plate-dark.svg` | The plates alone, full-bleed, for design tools and the web |
 | `apertrust-square.svg`, `apertrust-square-small.svg` | The Windows icon: the mark on a rounded cream plate (#FBF8F1) with an edge (#D9CDB6), so the ink A holds on a dark taskbar |
+| `apertrust-apxmp-windows.svg`, `apertrust-apxmp-windows-small.svg`, `apertrust-apxmp-windows-16.svg`, `-20.svg`, `-24.svg` | The edit's (`.apxmp`) document icon on Windows, in Windows 11's style: a white page with rounded corners, a fold at the top right and a thin grey outline, the Slider A centred, no text; the `-16`, `-20` and `-24` drawings each on its size's pixel grid, the outline, the track, the feet and the marker on whole pixels. macOS draws its own page for the edit, with the word APXMP |
 | `apertrust-linux.svg`, `apertrust-linux-small.svg` | The Linux icon: the mark on the cream plate standing on a lip of its edge colour |
 | `apertrust-mark.svg` | The mark alone, tight bounds, transparent background, ink and #D66A20: in the app, the web and docs |
 | `apertrust-mark-mono.svg` | The mark in one colour, `currentColor`, with its cut: UI, favicons, monochrome print |
@@ -36,6 +37,7 @@ Every file below is rendered from the SVGs by `tools/build-icons.sh` (the app's 
 - `apertrust.icns`: the light iconset's PNGs, as `iconutil` would pack them but without its additions.
 - `png/windows/`: 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 px, from `apertrust-square.svg` and its `-small` drawing.
 - `apertrust.ico`: the Windows icon, holding all the sizes above as PNGs.
+- `png/windows/apertrust-apxmp-*.png` and `apertrust-apxmp.ico`: the edit's document icon at the same sizes, from `apertrust-apxmp-windows.svg`, its `-small` drawing at 32 px and its `-16`, `-20` and `-24` drawings at those sizes.
 - `png/linux/hicolor/`: the freedesktop icon theme's layout, 16 to 512 px from `apertrust-linux.svg` and its `-small` drawing, and `scalable/apps/` (a copy of `apertrust-linux.svg`), each file named after the app id, `org.apertrust.Apertrust`, as the desktop file's `Icon=` names it.
 - `png/mark/`: the mark alone, 256, 512 and 1024 px high, transparent.
 
@@ -45,7 +47,7 @@ Every file below is rendered from the SVGs by `tools/build-icons.sh` (the app's 
   - on a Mac, the macOS iconset's 512 px plate, which eframe makes the Dock icon of an unbundled run;
   - on Windows, the Windows icon at 256 px;
   - elsewhere, the Linux icon at 256 px.
-- **Packages** use the platform files here instead ([docs/packaging.md](../../../../docs/packaging.md)): the `.icns` in the app bundle, the `.ico` in the Windows executable and its installer, the hicolor tree on Linux.
+- **Packages** use the platform files here instead ([docs/packaging.md](../../../../docs/packaging.md)): the `.icns` in the app bundle, the `.ico` in the Windows executable and its installer, the hicolor tree on Linux. The Windows executable also holds `apertrust-apxmp.ico`, as its icon resource 2, which the installer names as the edit's icon (`apertrust.exe,-2`).
 
 ## Metadata
 

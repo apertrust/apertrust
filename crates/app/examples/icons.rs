@@ -16,9 +16,12 @@
 
 //! Renders the app icon's platform files from its SVG sources in `assets/icons`
 //! (its README lists them): the macOS iconsets and `apertrust.icns`, the Windows sizes and
-//! `apertrust.ico`, the Linux hicolor tree named after the app id, and the mark's PNGs.
+//! `apertrust.ico`, the Linux hicolor tree named after the app id, and the mark's PNGs; and
+//! the `.apxmp` edit's document icon on Windows, `apertrust-apxmp.ico`.
 //! Each icon at 32 px and below is drawn from its `-small` SVG, the mark's simplified
-//! drawing. Run by `tools/build-icons.sh`; the files it writes are committed.
+//! drawing, but the edit's at 16, 20 and 24 px, each drawn from its own SVG (`-16`,
+//! `-20`, `-24`) on that size's pixel grid.
+//! Run by `tools/build-icons.sh`; the files it writes are committed.
 //!
 //! Every PNG is rendered by resvg at its own size, never scaled from another, and written
 //! with no chunk but the image's own, so the files carry no metadata. The `.icns` and the
@@ -49,6 +52,9 @@ const LINUX: [u32; 9] = [16, 22, 24, 32, 48, 64, 128, 256, 512];
 const MARK: [u32; 3] = [256, 512, 1024];
 /// The largest size, in pixels, drawn from an icon's `-small` SVG.
 const SMALL: u32 = 32;
+/// The sizes of the edit's Windows icon drawn on their own pixel grids, each from its
+/// `-<size>` SVG.
+const PIXEL_GRID: [u32; 3] = [16, 20, 24];
 
 fn main() {
     let icons = std::env::args_os().nth(1).map_or_else(
@@ -97,6 +103,23 @@ fn main() {
         ico.push((size, png));
     }
     write(&icons.join("apertrust.ico"), &ico_file(&ico));
+
+    // The edit's document icon on Windows, which has no page of the system's to draw on;
+    // at 16, 20 and 24 px each from a drawing of its own, on that size's pixel grid.
+    let document = icon("apertrust-apxmp-windows");
+    let mut ico = Vec::new();
+    for size in WINDOWS {
+        let png = if PIXEL_GRID.contains(&size) {
+            let own = svg(&format!("apertrust-apxmp-windows-{size}.svg"));
+            render(&own, size, size)
+        } else {
+            at(&document, size)
+        };
+        let path = icons.join(format!("png/windows/apertrust-apxmp-{size}.png"));
+        write(&path, &png);
+        ico.push((size, png));
+    }
+    write(&icons.join("apertrust-apxmp.ico"), &ico_file(&ico));
 
     let linux = icon("apertrust-linux");
     let hicolor = icons.join("png/linux/hicolor");

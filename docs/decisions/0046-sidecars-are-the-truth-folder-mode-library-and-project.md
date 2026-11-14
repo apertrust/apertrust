@@ -12,7 +12,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 
 **One photo:** `apertrust FILE` from a terminal opens that raw alone, its edit beside it as in folder mode, with no index beyond it and nothing written but its `.apxmp`. It is the only way into this mode, and it is never added to the recents.
 
-**Folder mode, built first:** File › Open Folder… or Open…, Browse's Folders in the Photos tab, `apertrust FOLDER`, or Open With and a double-click on a raw (planned). Those two open the photo's folder with that photo active: the photo opens at once and the folder lists in the background. macOS delivers them as an open-documents event; on Windows and Linux the installer's and the desktop entry's registrations pass `--in-folder`, which tells them from a terminal's `apertrust FILE`. Several files opened together from one folder open it with them selected, the first active.
+**Folder mode, built first:** File › Open Folder… or Open…, Browse's Folders in the Photos tab, `apertrust FOLDER`, or Open With and a double-click on a raw or its `.apxmp`, built. Those two open the photo's folder with that photo active, an edit its photo beside it: the photo opens at once and the folder lists in the background. macOS delivers them as an open-documents event; on Windows and Linux the installer's and the desktop entry's registrations pass `--in-folder`, which tells them from a terminal's `apertrust FILE`. Several files opened together from one folder open it with them selected, the first active.
 
 - Opening, browsing and thumbnailing write nothing beside the photos; a photo gets its `.apxmp` only once something about it changes.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes.

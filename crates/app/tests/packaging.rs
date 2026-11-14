@@ -17,15 +17,23 @@
 //! The packages' metadata in `packaging/` against the app: each platform's file types
 //! hold every extension rawler decodes and no other, so a rawler update that adds one
 //! fails here until the packages open it too, the Windows installer's template in Open
-//! With alone; the app's id is the same everywhere, Apertrust's and, as
-//! `packaging/dev-identity.txt` makes the files for `tools/package.sh --dev`, Apertrust
-//! Dev's; and the plist the binary embeds agrees with the bundle's (docs/packaging.md).
+//! With alone; Apertrust's own type, the edit (`.apxmp`), is Apertrust's on macOS and
+//! Windows, and never Apertrust Dev's; the app's id is the same everywhere, Apertrust's
+//! and, as `packaging/dev-identity.txt` makes the files for `tools/package.sh --dev`,
+//! Apertrust Dev's; and the plist the binary embeds agrees with the bundle's
+//! (docs/packaging.md).
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 const APP_ID: &str = "org.apertrust.Apertrust";
+
+/// The edit's type on macOS, which the bundle exports.
+const EDIT_TYPE: &str = "org.apertrust.edit";
+/// The edit's ProgID on Windows, Apertrust's, and Apertrust Dev's.
+const EDIT_PROGID: &str = "Apertrust.Edit";
+const DEV_EDIT_PROGID: &str = "Apertrust.Dev.Edit";
 
 /// Each extension's type on macOS: the system's where it declares one (as `mdls` reports
 /// for a file of that name), else the one `Info.plist` imports; and on Linux its MIME
@@ -190,15 +198,10 @@ fn the_bundle_opens_every_decoded_extension() {
     let wanted: BTreeSet<&str> = TYPES.iter().map(|t| t.1).collect();
     assert_eq!(plist_strings(&plist, "LSItemContentTypes"), wanted);
     // A folder dropped on the Dock icon opens, at the rank None, so the app never becomes
-    // a folder's default; nothing else is declared.
-    let types = plist
-        .split_once("<key>CFBundleDocumentTypes</key>")
-        .and_then(|(_, rest)| rest.split_once("<key>UTImportedTypeDeclarations</key>"))
-        .expect("the document types")
-        .0;
-    let documents = between(types, "\t\t<dict>", "\t\t</dict>");
-    assert_eq!(documents.len(), 2, "the raws' and the folder's");
-    let folder = documents[1];
+    // a folder's default; besides, the edit (below), and nothing else is declared.
+    let documents = documents(&plist);
+    assert_eq!(documents.len(), 3, "the raws', the edit's and the folder's");
+    let folder = documents[2];
     let pairs = between(folder, "<string>", "</string>");
     assert_eq!(pairs, ["Folder", "Viewer", "None", "public.folder"]);
 
@@ -220,6 +223,62 @@ fn the_bundle_opens_every_decoded_extension() {
         .map(|t| (t.1, t.0))
         .collect();
     assert_eq!(imported, ours, "each imported type with its extension");
+}
+
+/// The bundle's document types, `CFBundleDocumentTypes`'s dictionaries, in order.
+fn documents(plist: &str) -> Vec<&str> {
+    let types = plist
+        .split_once("<key>CFBundleDocumentTypes</key>")
+        .and_then(|(_, rest)| rest.split_once("<key>UTExportedTypeDeclarations</key>"))
+        .expect("the document types")
+        .0;
+    between(types, "\t\t<dict>", "\t\t</dict>")
+}
+
+/// The bundle owns the edit's type, which it exports: an XML file named `.apxmp`, whose
+/// icon is the system's document page with the word APXMP, no file or badge of ours.
+#[test]
+fn the_bundle_owns_the_edit_and_draws_it_as_text() {
+    let plist = read("packaging/macos/Info.plist");
+    let edit = between(documents(&plist)[1], "<string>", "</string>");
+    assert_eq!(edit, ["Apertrust edit", "Editor", "Owner", EDIT_TYPE]);
+
+    let exported = plist
+        .split_once("<key>UTExportedTypeDeclarations</key>")
+        .and_then(|(_, rest)| rest.split_once("<key>UTImportedTypeDeclarations</key>"))
+        .expect("the exported types")
+        .0;
+    let keys = between(exported, "<key>", "</key>");
+    assert_eq!(
+        keys,
+        [
+            "UTTypeIdentifier",
+            "UTTypeDescription",
+            "UTTypeConformsTo",
+            "UTTypeIcons",
+            "UTTypeIconText",
+            "UTTypeTagSpecification",
+            "public.filename-extension"
+        ]
+    );
+    let strings = between(exported, "<string>", "</string>");
+    assert_eq!(
+        strings,
+        [
+            EDIT_TYPE,
+            "Apertrust edit",
+            "public.xml",
+            "public.data",
+            "APXMP",
+            "apxmp"
+        ]
+    );
+    for icon in ["IconFile", "IconName", "Badge"] {
+        assert!(
+            !plist.contains(icon),
+            "{icon}: the system draws the edit's icon"
+        );
+    }
 }
 
 #[test]
@@ -276,16 +335,34 @@ fn open_with_passes_in_folder_before_the_files() {
     }
 }
 
+/// The extensions of the association named `name` in `config`, `Packager.toml`.
+fn association(config: &toml::Table, name: &str) -> BTreeSet<String> {
+    let associations = config["fileAssociations"].as_array().expect("associations");
+    let association = associations
+        .iter()
+        .find(|association| association["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("no association {name}"));
+    let extensions = association["extensions"].as_array().expect("a list");
+    extensions
+        .iter()
+        .map(|extension| extension.as_str().expect("text").to_owned())
+        .collect()
+}
+
+/// The edit's extension alone.
+fn apxmp() -> BTreeSet<String> {
+    BTreeSet::from(["apxmp".to_owned()])
+}
+
 #[test]
-fn the_installer_registers_every_decoded_extension() {
+fn the_installer_registers_every_decoded_extension_and_the_edit() {
     let config: toml::Table = read("packaging/Packager.toml").parse().expect("TOML");
     let associations = config["fileAssociations"].as_array().expect("associations");
-    let registered: BTreeSet<String> = associations
-        .iter()
-        .flat_map(|association| association["extensions"].as_array().expect("a list"))
-        .map(|extension| extension.as_str().expect("text").to_owned())
-        .collect();
-    assert_eq!(registered, decoded());
+    assert_eq!(associations.len(), 2, "the raws' and the edit's");
+    assert_eq!(association(&config, "Apertrust.RawImage"), decoded());
+    assert_eq!(association(&config, EDIT_PROGID), apxmp());
+    let description = associations[1]["description"].as_str();
+    assert_eq!(description, Some("Apertrust edit"));
 }
 
 /// The registry lines the installer's template writes in `section` (`Install` or
@@ -341,25 +418,94 @@ fn the_installer_offers_every_decoded_extension_in_open_with_alone() {
     let progids = r#"WriteRegNone SHCTX "Software\Classes\."#;
     let tail = r#"\OpenWithProgids" "Apertrust.RawImage""#;
     assert_eq!(extensions_in(&install, progids, tail), decoded());
+    let edit_tail = format!(r#"\OpenWithProgids" "{EDIT_PROGID}""#);
+    assert_eq!(extensions_in(&install, progids, &edit_tail), apxmp());
     let supported = r#"WriteRegNone SHCTX "${APPKEY}\SupportedTypes" "."#;
-    assert_eq!(extensions_in(&install, supported, "\""), decoded());
+    let every: BTreeSet<String> = decoded().into_iter().chain(apxmp()).collect();
+    assert_eq!(extensions_in(&install, supported, "\""), every);
 
     let uninstall = installer_lines(&template, &config, "Uninstall");
     let removed = r#"DeleteRegValue SHCTX "Software\Classes\."#;
     assert_eq!(extensions_in(&uninstall, removed, tail), decoded());
+    assert_eq!(extensions_in(&uninstall, removed, &edit_tail), apxmp());
 
-    // Never an extension's default value, the type's handler, nor FileAssociation.nsh's
-    // macros, which take it.
+    // Never a raw extension's default value, the type's handler, nor FileAssociation.nsh's
+    // macros, which take it: the edit's alone, Apertrust's own type (below).
     assert!(
         !template.contains("!insertmacro APP_"),
         "FileAssociation.nsh's macros"
     );
+    let edit_default = format!(r#"WriteRegStr SHCTX "Software\Classes\.apxmp" "" "{EDIT_PROGID}""#);
     for line in template.lines() {
         let line = line.trim();
-        if line.starts_with("WriteReg") && line.contains(r#"\Classes\.{{ext}}""#) {
-            panic!("an extension's own value: {line}");
+        let extension = [r#"\Classes\.{{ext}}""#, r#"\Classes\.apxmp""#];
+        if line.starts_with("WriteReg") && extension.iter().any(|e| line.contains(e)) {
+            assert_eq!(line, edit_default, "an extension's own value");
         }
     }
+}
+
+/// The lines of `section` in the block `{{#if (eq CONDITION) ~}}` opens, to its `{{/if`,
+/// with no comments.
+fn block<'a>(template: &'a str, section: &str, condition: &str) -> Vec<&'a str> {
+    let body = template
+        .split_once(&format!("\nSection {section}\n"))
+        .unwrap_or_else(|| panic!("no section {section}"))
+        .1
+        .split_once("\nSectionEnd")
+        .expect("the section's end")
+        .0;
+    let open = format!("{{{{#if (eq {condition}) ~}}}}");
+    let inside = between(body, &open, "{{/if");
+    assert_eq!(inside.len(), 1, "one {open} in {section}");
+    inside[0]
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with(';'))
+        .collect()
+}
+
+/// Apertrust owns the edit's extension on Windows: Apertrust.Edit, with the executable's
+/// second icon, is `.apxmp`'s default as well, which the uninstaller clears only while it
+/// is still Apertrust's. Apertrust Dev's ProgID, of another name, never takes it.
+#[test]
+fn the_installer_makes_the_edit_apertrust_s_and_takes_it_back() {
+    let template = read("packaging/windows/installer.nsi");
+    let name = format!(r#"association.name "{EDIT_PROGID}""#);
+    assert_eq!(
+        block(&template, "Install", &name),
+        [format!(
+            r#"WriteRegStr SHCTX "Software\Classes\.apxmp" "" "{EDIT_PROGID}""#
+        )]
+    );
+    assert_eq!(
+        block(&template, "Uninstall", &name),
+        [
+            r#"ReadRegStr $R0 SHCTX "Software\Classes\.apxmp" """#.to_owned(),
+            format!(r#"${{If}} $R0 == "{EDIT_PROGID}""#),
+            r#"DeleteRegValue SHCTX "Software\Classes\.apxmp" """#.to_owned(),
+            "${EndIf}".to_owned(),
+        ]
+    );
+
+    // The edit's ProgID, Apertrust's or Apertrust Dev's, shows the executable's icon 2,
+    // which crates/app/build.rs embeds; the raws' its icon 1, the first.
+    let icon = |index: &str| {
+        let exe = r#"$\"$INSTDIR\${MAINBINARYNAME}.exe$\""#;
+        let key = r#"Software\Classes\\{{association.name}}\DefaultIcon"#;
+        format!(r#"WriteRegStr SHCTX "{key}" "" "{exe},{index}""#)
+    };
+    let edit = block(
+        &template,
+        "Install",
+        r#"association.extensions.[0] "apxmp""#,
+    );
+    assert_eq!(edit, [icon("-2"), "{{else ~}}".to_owned(), icon("0")]);
+    let build = read("crates/app/build.rs");
+    assert!(build.contains(r#"let edit = "assets/icons/apertrust-apxmp.ico";"#));
+    assert!(build.contains(r#".set_icon_with_id(edit, "2")"#));
+    let ico = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/icons/apertrust-apxmp.ico");
+    assert!(ico.is_file(), "{}", ico.display());
 }
 
 /// The program as a build names it, a development build or not.
@@ -424,6 +570,11 @@ fn every_dev_identity_line_still_matches() {
             "{from:?} in none of {DEV_FILES:?}: packaging/dev-identity.txt is stale"
         );
     }
+    // The edit's rank, replaced wherever it occurs, is the one Owner.
+    let owner = "<string>Owner</string>";
+    assert!(dev_identity().iter().any(|(from, _)| from == owner));
+    let count: usize = files.iter().map(|text| text.matches(owner).count()).sum();
+    assert_eq!(count, 1, "{owner} is the edit's rank alone");
 }
 
 /// Apertrust Dev's packages name it by its own id, name, binaries and Open With entry, so
@@ -452,9 +603,12 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
         [("apertrust-dev", true), ("apertrust-dev-cli", false)]
     );
     let associations = config["fileAssociations"].as_array().expect("associations");
-    for association in associations {
-        assert_eq!(association["name"].as_str(), Some("Apertrust.Dev.RawImage"));
-    }
+    let names: Vec<&str> = associations
+        .iter()
+        .map(|association| association["name"].as_str().expect("a ProgID"))
+        .collect();
+    // Its edit's ProgID is not Apertrust's, which alone the installer makes the default.
+    assert_eq!(names, ["Apertrust.Dev.RawImage", DEV_EDIT_PROGID]);
     assert_eq!(
         config["deb"]["desktopTemplate"].as_str(),
         Some(format!("@STAGE@/{id}.desktop").as_str())
@@ -471,6 +625,10 @@ fn apertrust_dev_is_named_by_its_own_id_in_every_package() {
         let pair = format!("<key>{key}</key>\n\t<string>Apertrust Dev</string>");
         assert!(plist.contains(&pair), "{key}");
     }
+    // It opens edits, never taking them from Apertrust.
+    let edit = between(documents(&plist)[1], "<string>", "</string>");
+    assert_eq!(edit, ["Apertrust edit", "Editor", "Alternate", EDIT_TYPE]);
+    assert!(!plist.contains("Owner"));
 
     let desktop = as_dev("packaging/linux/org.apertrust.Apertrust.desktop");
     for line in ["Name=Apertrust Dev", "Exec=apertrust-dev --in-folder %F"] {
