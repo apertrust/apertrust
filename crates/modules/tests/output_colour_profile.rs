@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Output colour profile's invariants (`docs/modules/output-colour-profile.md`,
+//! Output colour profile's invariants (`docs/tools/output-colour-profile.md`,
 //! Invariants), one test per row, each named after its row: O0, O1, O3 to O5. The small
 //! raw and the synthetic sweep run on CI's software GPUs; the raw.pixls.us corpus runs
 //! locally, with `APERTRUST_RAW_CORPUS` naming it:

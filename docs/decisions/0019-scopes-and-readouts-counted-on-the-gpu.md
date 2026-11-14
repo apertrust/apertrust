@@ -2,7 +2,7 @@
 
 ## Context
 
-The Scopes section shows what the viewport's frame holds (a histogram, a waveform, an RGB parade, a vectorscope, what clips), and some module panels draw data the engine computes during rendering, the tone equalizer's mask histogram first. Whole-image results stay on the GPU ([0015](0015-whole-image-passes.md)), the engine thread never waits on the GPU ([0017](0017-threads-and-the-engines-session.md)), and modules have no engine types ([0028](0028-tools-bound-to-operations.md)). How are these counted and handed to a client?
+The Scopes section shows what the viewport's frame holds (a histogram, a waveform, an RGB parade, a vectorscope, what clips), and some tool panels draw data the engine computes during rendering, the tone equalizer's mask histogram first. Whole-image results stay on the GPU ([0015](0015-whole-image-passes.md)), the engine thread never waits on the GPU ([0017](0017-threads-and-the-engines-session.md)), and tools have no engine types ([0028](0028-tools-bound-to-operations.md)). How are these counted and handed to a client?
 
 ## Decision
 
@@ -17,12 +17,12 @@ The Scopes section shows what the viewport's frame holds (a histogram, a wavefor
 - `Event::Scopes(Reading)`, plain data: the totals, each graph's `u32` counts, the frame's size, the GPU time and latency, and `through`, which `Frame::through` also carries, so a client pairs a reading with its frame.
 - A failure turns the scopes off for the session, reported once (`SessionError::Scopes`); the frame is published all the same.
 
-**Readouts** (planned): what an operation measures of the photo for its module's panel, as darktable's GUI computes from its preview pipe.
+**Readouts** (planned): what an operation measures of the photo for its tool's panel, as darktable's GUI computes from its preview pipe.
 
 - The operation declares them: `Manifest::readouts`; `Prepared::readouts`, a `ReadoutPass` each, one pass of its kernel binding its counts buffer as `Resource::Readout`, never among `Prepared::passes`, so no export, tile, golden case or derivative sees it; `Operation::readout(id, words)`, the counts decoded on the CPU into `ReadoutValue::Histogram`.
-- Planned in the viewport only; dispatched while a client asks for it by module and its key, a whole-image result's, has changed, so a band drag counts nothing.
+- Planned in the viewport only; dispatched while a client asks for it by tool and its key, a whole-image result's, has changed, so a band drag counts nothing.
 - Read back through the scopes' staging pair, one helper both use; a failure turns readouts off, never the frame (`SessionError::Readouts`).
-- `Command::Readouts(Vec<ReadoutId { module, readout }>)`, by module, never by operation; `Event::Readout(ReadoutReading { module, readout, through, value })`, `None` while the module's operation is not planned.
+- `Command::Readouts(Vec<ReadoutId { module, readout }>)`, by tool, never by operation; `Event::Readout(ReadoutReading { module, readout, through, value })`, `None` while the tool's operation is not planned.
 - The tone equalizer's `mask_histogram` first: darktable's 512 bins over −10 to +6 EV, sent as its 256 over −8 to 0 EV, the pixels and the 5th and 95th percentiles. RGB levels' and RGB curve's input histograms follow.
 
 ## Options considered

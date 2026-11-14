@@ -1,14 +1,14 @@
 # Demosaic
 
-Module `demosaic`, version 1. It works on the background only and has no Auto.
+Tool `demosaic`, version 1. It works on the background only and has no Auto.
 
 It is darktable's demosaic in the first pass (decision 2). It has darktable's page, which has no tabs or presets and one collapsible section: the controls in `gui_init`'s order under darktable's labels in British spelling, each row shown where darktable's `gui_changed` shows it (decision 29).
 
-It drives one operation, `demosaic` ([../ports/demosaic.md](../ports/demosaic.md)), which every raw runs, and owns all twelve of its parameters. Its defaults are the operation's for the photo ([README.md](README.md), rule 4), so an untouched module sets nothing.
+It drives one operation, `demosaic` ([../ports/demosaic.md](../ports/demosaic.md)), which every raw runs, and owns all twelve of its parameters. Its defaults are the operation's for the photo ([README.md](README.md), rule 4), so an untouched tool sets nothing.
 
-**Status:** built, in `crates/modules/src/demosaic.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Module panels from definitions), after Exposure and before Highlight reconstruction, White balance and Raw black/white point: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
+**Status:** built, in `crates/modules/src/demosaic.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Exposure and before Highlight reconstruction, White balance and Raw black/white point: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
 
-- Its rows are tests in `crates/modules/tests/demosaic.rs` and the module's source, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/modules/tests/demosaic.rs` and the tool's source, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -97,13 +97,13 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | D4 | What is not ported | Every method but RCD and Markesteijn 1-pass; colour smoothing and match greens but Disabled; LMMSE refine Basic; capture sharpen on; dual and edge threshold and capture sharpening's sliders at their ranges' ends | The edit | Each command refused as not ported, the edit as it was | Exact | CPU |
 | D5 | The rows and lists darktable shows | Each of the seventeen methods, capture sharpen off and on; each sensor: Bayer, X-Trans, Bayer4, monochrome and an image that is not a raw | The rows shown; the method's list (`Module::options`); `available` | darktable's `gui_changed` restated: each row shown exactly where darktable shows it, the capture group only while capture sharpen is on and never for a passthrough; darktable's `gui_init` restated: each sensor's methods in its combobox's order, holding the photo's default, every method listed for some sensor; the method unavailable only on a monochrome sensor, where it lists one; every control unavailable on an image that is not a raw | Exact | CPU; the panel, for a Bayer raw and an X-Trans raw |
 
-D3 is how the module matches darktable. An untouched module binds nothing, so the operation runs its defaults, darktable's `reload_defaults` for the sensor as the test restates it. `raw-run` checks the operation at those parameters against darktable-cli demosaicing with the method Apertrust gives it.
+D3 is how the tool matches darktable. An untouched tool binds nothing, so the operation runs its defaults, darktable's `reload_defaults` for the sensor as the test restates it. `raw-run` checks the operation at those parameters against darktable-cli demosaicing with the method Apertrust gives it.
 
 Neither asks darktable for its own default method, so the restatement is what D3 holds to. `raw-run` measures a mean difference of 8e-9 to 8e-7 on the Bayer raws and 2e-8 to 3e-7 on the X-Trans ones ([../ports/demosaic.md](../ports/demosaic.md), Results). No golden case moves a demosaic parameter, since no other method is ported.
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/demosaic.rs` and the module's source. The small-raw and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/modules/tests/demosaic.rs` and the tool's source. The small-raw and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -114,7 +114,7 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/demosaic.rs` and the m
 | D4 | Holds, exactly: each command refused as not ported, the edit unchanged |
 | D5 | Holds for all seventeen methods with capture sharpen off and on, and for each sensor's list (`d5_each_sensor_lists_darktable_s_methods`); the panel too (below) |
 
-D3 in detail: `apertrust-golden raw-run`, on darktable's test raws and on the 29 corpus raws darktable loads, gives the Bayer raws that pass within 8.2e-9 to 9.0e-8 of darktable on average, and the X-Trans ones within 2.7e-8 to 1.4e-7. The two lossy Sony ARWs, `hlrecovery.arw` and `mire1.cr2` fail, as they do without the module.
+D3 in detail: `apertrust-golden raw-run`, on darktable's test raws and on the 29 corpus raws darktable loads, gives the Bayer raws that pass within 8.2e-9 to 9.0e-8 of darktable on average, and the X-Trans ones within 2.7e-8 to 1.4e-7. The two lossy Sony ARWs, `hlrecovery.arw` and `mire1.cr2` fail, as they do without the tool.
 
 D5 in the panel (`demosaic_draws_darktable_s_rows_for_the_photo_s_method`):
 
@@ -141,11 +141,11 @@ What darktable's page has or does that the panel does not yet:
 5. **The quads:** dual threshold's, contrast sensitivity's and corner boost's mask views (showmask), and radius's quad that computes it from the sensor's data, come with what they run; their rows never show while their methods and capture sharpening are not ported.
 6. **Contrast sensitivity's default** ([Deliberate differences](#deliberate-differences)).
 7. **The page for an image that is not a raw:** darktable shows "not applicable" in place of the controls; the panel draws them disabled.
-8. **The module's tooltip,** darktable's "reconstruct full RGB pixels from a sensor color filter array reading": a definition implies no message for the module's own tooltip.
+8. **The tool's tooltip,** darktable's "reconstruct full RGB pixels from a sensor color filter array reading": a definition implies no message for the tool's own tooltip.
 
 ## Deliberate differences
 
-Where the module's defaults are not darktable's, following the operation's (`docs/ports/demosaic.md`, Deliberate differences):
+Where the tool's defaults are not darktable's, following the operation's (`docs/ports/demosaic.md`, Deliberate differences):
 
 - **Contrast sensitivity** starts at 0.4, the params' default. darktable's `reload_defaults` computes `cs_thrs` from the photo (`_get_variance_threshold`, `src/iop/demosaicing/capture.c`, line 49): 0.07 lower for a raw white point above 4096, then 0.012 lower for each 100 ISO below 600 and higher above, the ISO taken within 100 to 1000.
 
@@ -161,6 +161,6 @@ Where the module's defaults are not darktable's, following the operation's (`doc
 - **What is not ported:** the method's and the two lists' options not ported are listed and refused, as Vignetting's Dithering. Dual and edge threshold, LMMSE refine and capture sharpening's six controls are not ported at all, taking only their defaults, as Exposure's deflicker controls, since no ported method reads them.
 - **Defaults:** the operation's for the photo: darktable's `reload_defaults` for the method, the operation's 0.4 for contrast sensitivity ([Deliberate differences](#deliberate-differences)).
 - **Rows:** D0 to D5. No first step, since every raw runs demosaic, and no order row, since only the method can move.
-- **The panel's test:** in `crates/app/src/modules.rs`, beside every other module's.
+- **The panel's test:** in `crates/app/src/modules.rs`, beside every other tool's.
 - **Row ids:** D, for Demosaic.
 - **In `MODULES`:** after Raw black/white point and Highlight reconstruction, and before AgX.

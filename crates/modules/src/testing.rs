@@ -913,7 +913,7 @@ pub fn pickers_on_sliders(definition: &Definition) -> Vec<DarktablePicker> {
 
 /// darktable's slider for one control or setting, as its params and `gui_init`
 /// leave it, in the parameter's own units: a row of a module's slider table
-/// (`docs/modules/README.md`, Sliders against darktable), which [`slider_differences`]
+/// (`docs/tools/README.md`, Sliders against darktable), which [`slider_differences`]
 /// holds the module's definition to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DarktableSlider {

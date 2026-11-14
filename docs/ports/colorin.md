@@ -6,7 +6,7 @@ Status: ported. The kernel is `slang/colorin.slang` in `crates/op/colorin`, its 
 
 ## Purpose
 
-Takes the demosaiced image from the camera's own RGB, its filters' primaries, to the working space, linear Rec2020, where every later operation works. For a raw it uses the camera's matrix, XYZ to camera RGB under D65. In the first pass the Input colour profile module, darktable's input color profile, owns every colorin parameter, the camera profile included (`docs/modules/README.md`).
+Takes the demosaiced image from the camera's own RGB, its filters' primaries, to the working space, linear Rec2020, where every later operation works. For a raw it uses the camera's matrix, XYZ to camera RGB under D65. In the first pass the Input colour profile tool, darktable's input color profile, owns every colorin parameter, the camera profile included (`docs/tools/README.md`).
 
 ## Pipeline
 

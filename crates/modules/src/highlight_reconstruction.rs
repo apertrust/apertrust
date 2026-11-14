@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Highlight reconstruction (`docs/modules/highlight-reconstruction.md`): darktable's
+//! Highlight reconstruction (`docs/tools/highlight-reconstruction.md`): darktable's
 //! highlight reconstruction as the user edits with it, in the first pass (decision 2):
 //! darktable's page, every control in `gui_init`'s order under its labels, each shown for
 //! the methods darktable shows it for (`gui_changed`). It has no tabs, groups or presets of
@@ -27,7 +27,7 @@
 //!   `Module::options` lands (decision 30): then each photo lists darktable's own, clip
 //!   highlights alone and the default on an image that is not a raw or a four-colour
 //!   sensor's raw, and a stored method the photo lacks binds as darktable's `gui_changed`
-//!   rewrites it (`docs/modules/highlight-reconstruction.md`, Controls).
+//!   rewrites it (`docs/tools/highlight-reconstruction.md`, Controls).
 //! - **Clipping threshold,** 0 to 2 with darktable's three decimals: where clipping starts,
 //!   as a fraction of each colour's white point.
 //! - **With segmentation based:** Combine, Candidating and Rebuild, and with a rebuild
@@ -39,11 +39,11 @@
 //!   the method and the threshold, which the module owns.
 //!
 //! It drives `highlights`, which every raw runs, so the threshold starts at the
-//! operation's default for the photo (rule 4 of `docs/modules/README.md`, decision 21),
+//! operation's default for the photo (rule 4 of `docs/tools/README.md`, decision 21),
 //! the lower of 1 and the raw's linear response limit, as darktable's `reload_defaults`
 //! has it, and the binding sets it only while the control is off it. darktable's showmask
 //! buttons beside Clipping threshold, Combine, Candidating and Strength wait for the
-//! renderer's quad (`docs/modules/highlight-reconstruction.md`, Gaps).
+//! renderer's quad (`docs/tools/highlight-reconstruction.md`, Gaps).
 //!
 //! A change runs demosaic again, as every raw-stage control does (decision 12).
 
@@ -634,7 +634,7 @@ mod tests {
     }
 
     /// darktable's highlight reconstruction sliders (`src/iop/highlights.c`, the
-    /// params and `gui_init`), in its parameters' units: `docs/modules/highlight-
+    /// params and `gui_init`), in its parameters' units: `docs/tools/highlight-
     /// reconstruction.md`'s slider table. None has a soft range.
     const DARKTABLE: [DarktableSlider; 7] = [
         // `dt_bauhaus_slider_set_digits(g->clip, 3)`.

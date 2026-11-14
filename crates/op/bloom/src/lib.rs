@@ -19,7 +19,7 @@
 //! thresholded into lights, blurred over the whole image by darktable's box mean
 //! (`src/common/box_filters.cc`, shared in the colour library) in whole-image passes,
 //! and screen-blended onto the lightness by a per-pixel `main`. The Bloom module
-//! (`docs/modules/README.md`). See `docs/ports/bloom.md`.
+//! (`docs/tools/README.md`). See `docs/ports/bloom.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
 //! it, and the session plans it only while a module's binding sets one of its

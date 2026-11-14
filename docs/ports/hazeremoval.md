@@ -17,7 +17,7 @@ The reference is darktable's CPU path. Its OpenCL path is `process_cl()` with `d
 - 24 whole-image passes estimate the ambient light, the image's depth and the filtered transmission on the GPU with no readback. They are one run, whose first pass alone reads the input (decision 15).
 - One per-pixel pass, `main`, removes the haze. It exports `hazeremoval_backward` and `hazeremoval_forward_diff`.
 - In the untiled viewport the estimate comes from the full resolution, and the transmission is downscaled for `main` (Neighbourhood and scale).
-- The operation is in `OPERATIONS` at camera RGB 14 with `default_enabled` off, so the default pipeline is unchanged. It is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the first pass's Haze removal module (`docs/modules/haze-removal.md`).
+- The operation is in `OPERATIONS` at camera RGB 14 with `default_enabled` off, so the default pipeline is unchanged. It is planned while its switched tool is on, from a write of one of its controls to its reset (decision 32): the first pass's Haze removal tool (`docs/tools/haze-removal.md`).
 
 Not ported: darktable's compatibility mode (its old quick select) and its fixed windows. Both serve only edits made before darktable 3.x's params versions 2 and 3 (Deliberate differences, 1 and 2).
 
@@ -35,7 +35,7 @@ Both pass `Tolerance::DARKTABLE`.
 
 ## Purpose
 
-Haze removal takes atmospheric haze out of a photo, or adds it. Distant parts of a hazy scene are washed out towards the haze's colour; the module restores their contrast and colour in proportion to how hazy each region is, up to a distance the user sets.
+Haze removal takes atmospheric haze out of a photo, or adds it. Distant parts of a hazy scene are washed out towards the haze's colour; the tool restores their contrast and colour in proportion to how hazy each region is, up to a distance the user sets.
 
 It follows He, Sun and Tang's dark channel prior (2011): in a haze-free scene, most local patches have a pixel with one dark channel, so the darkest channel over a patch measures the haze there.
 
@@ -43,7 +43,7 @@ It follows He, Sun and Tang's dark channel prior (2011): in a haze-free scene, m
 - The **transmission** t, how much scene light survives the haze, is one less the strength times the darkest channel over A0, opened over a box and smoothed by a guided filter with the image as its guide.
 - Each pixel becomes (I − A0) / max(t, t_min) + A0, where t_min, from the distance and the haze of the haziest pixels, stops the far distance from being amplified without limit.
 
-In Apertrust it is the operation behind the first pass's Haze removal module, in the Correct tab (decisions 2 and 38; `docs/modules/README.md`, Haze removal).
+In Apertrust it is the operation behind the first pass's Haze removal tool, in the Correct tab (decisions 2 and 38; `docs/tools/README.md`, Haze removal).
 
 ## Pipeline
 
@@ -52,7 +52,7 @@ In Apertrust it is the operation behind the first pass's Haze removal module, in
 - **Domain:** scene-referred, linear in and out.
 - **Input and output:** RGBA, `default_colorspace()` `IOP_CS_RGB`: camera RGB before colorin, demosaiced and white balanced by temperature. Output in the same space.
 - **Assumes earlier modules:** demosaic; white balance, so that haze is roughly neutral and the darkest channel means the same in every hue. Its depth estimate, the logarithm of the haze level, depends on the image's exposure, so exposure after it does not commute with it, nor does colorin's late white balance correction.
-- **Layer support:** yes (`docs/modules/README.md`). An instance estimates A0, the depth and the transmission from its own whole input.
+- **Layer support:** yes (`docs/tools/README.md`). An instance estimates A0, the depth and the transmission from its own whole input.
 - **darktable's tiling:** `tiling_callback()` sets no overlap (`overlap = 0`). When darktable tiles the module, each tile estimates its own A0 and depth and filters without its neighbours, with seams at the tiles' edges. darktable-cli's export of the tests' 10 MP image does not tile (its `-d pipe` shows one `process` over 3908×2602). Apertrust never tiles the estimate (Neighbourhood and scale).
 
 ## Parameters
@@ -268,7 +268,7 @@ On the corpus each raw is developed up to haze removal by an export and measured
 - A drag of strength or distance runs `main` alone, not the whole-image passes, which only a change of the strength's sign runs again, since it orders the transmission's filters. On the M4 at 2400×1600 from the 7R V's 61 MP raw, a strength drag runs 6 passes instead of 29: 12.6 to 16.1 ms from submission to done, against 33 to 40.
 - A resize of the 7R V's viewport runs `plane_downscale` and `main`: 22 to 34 ms from submission to done in place, against 395 to 463 ms for the whole estimate.
 
-**Planned:** an operation ported between demosaic and haze removal reaches the estimate through the 100% view's round, an engine change made before the first of their modules ships; orientation offers it with geometry after haze removal. Until each is built, the viewport estimates at its own scale there, logged under `-d pipe`, as it does in a tiled viewport.
+**Planned:** an operation ported between demosaic and haze removal reaches the estimate through the 100% view's round, an engine change made before the first of their tools ships; orientation offers it with geometry after haze removal. Until each is built, the viewport estimates at its own scale there, logged under `-d pipe`, as it does in a tiled viewport.
 
 ### At the viewport's own scale
 
@@ -335,18 +335,18 @@ One export can take haze removal's first round of tiles at full resolution and t
 
 **At its defaults** (strength 0.2, distance 0.2) the operation is not an identity on any pixel where the transmission falls below 1, which is nearly every pixel.
 
-**At strength 0** the transmission is 1 everywhere and each value becomes (I − A0) + A0: the input within one rounding at A0's magnitude, at most `f32::EPSILON` for an A0 below 1 (a GPU test holds it). The module's first step is the operation planned at a strength of 0 (`docs/modules/haze-removal.md`, row Z1).
+**At strength 0** the transmission is 1 everywhere and each value becomes (I − A0) + A0: the input within one rounding at A0's magnitude, at most `f32::EPSILON` for an A0 below 1 (a GPU test holds it). The tool's first step is the operation planned at a strength of 0 (`docs/tools/haze-removal.md`, row Z1).
 
 ## Tool binding notes
 
-The first pass's Haze removal module (`crates/modules/src/haze_removal.rs`, `docs/modules/haze-removal.md`) mirrors darktable's:
+The first pass's Haze removal tool (`crates/modules/src/haze_removal.rs`, `docs/tools/haze-removal.md`) mirrors darktable's:
 
 - Strength and distance, on darktable's page, under darktable's labels and ranges, with darktable's tooltips ("amount of haze reduction", "limit haze removal up to a specific spatial depth"). Distance shows three decimals, as darktable's slider.
 - `compatibility_mode` and `adaptive` have no widget in darktable and are fixed, off and on.
 - darktable defines no presets for the module.
 - Both parameters are the kernel's own units; no transfer function.
 
-The module is switched (decision 32): off until a control changes, then on with darktable's 0.2 and 0.2, the module's defaults and this schema's, until its reset. Its first step, darktable's new instance, is measured as row Z1.
+The tool is switched (decision 32): off until a control changes, then on with darktable's 0.2 and 0.2, the tool's defaults and this schema's, until its reset. Its first step, darktable's new instance, is measured as row Z1.
 
 ## Gradients
 

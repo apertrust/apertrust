@@ -19,7 +19,7 @@ During the migration ([0002](0002-rewrite-darktable-first-then-apertrusts-own-wa
 **Following a new release is its own piece of work:**
 
 1. Re-render the golden references with the new release's darktable-cli.
-2. Review each ported module's upstream changes, the diff between the two tags, and follow their bug fixes and behaviour changes.
+2. Review each ported darktable module's upstream changes, the diff between the two tags, and follow their bug fixes and behaviour changes.
 3. Rerun the checks.
 4. Update the constant, each manifest's provenance and each port spec's header.
 

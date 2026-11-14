@@ -26,4 +26,4 @@ The app's display shader, which only draws the frame and has no derivatives, is 
 
 - A kernel change needs `slangc`, and the regenerated WGSL is reviewed with the change.
 - Hooks regenerate and validate the WGSL after an edit to a `.slang` file.
-- Porting a module includes its derivative entry points and the gradient check, or a recorded, understood gap in its port spec. The raw stage has none ([0011](0011-a-differentiable-pipeline-and-matching-a-reference-photo.md)).
+- Porting a tool includes its derivative entry points and the gradient check, or a recorded, understood gap in its port spec. The raw stage has none ([0011](0011-a-differentiable-pipeline-and-matching-a-reference-photo.md)).

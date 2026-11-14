@@ -104,7 +104,7 @@ The kernel runs it in two passes: `across` writes each needed input row's sums f
 
 ## Tool binding notes
 
-No module owns the size: it is the Export dialog's Set size rows (`docs/gui.md`, The Export dialog) and darktable-cli's flags, `apertrust-cli export --width W --height H --hq true|false --upscale true|false`, darktable-cli's defaults 0, 0, true and false. **What is an identity:** a scale of 1, which plans no resample. The CLI has no scale mode, as darktable-cli has none.
+No tool owns the size: it is the Export dialog's Set size rows (`docs/gui.md`, The Export dialog) and darktable-cli's flags, `apertrust-cli export --width W --height H --hq true|false --upscale true|false`, darktable-cli's defaults 0, 0, true and false. **What is an identity:** a scale of 1, which plans no resample. The CLI has no scale mode, as darktable-cli has none.
 
 ## Gradients
 

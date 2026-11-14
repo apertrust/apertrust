@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Exposure (`docs/modules/exposure.md`): darktable's exposure module as the user
+//! Exposure (`docs/tools/exposure.md`): darktable's exposure module as the user
 //! edits with it, in the first pass (decision 2): darktable's page, its controls in
 //! `gui_init`'s order under its labels, with no tabs.
 //!
@@ -793,7 +793,7 @@ mod tests {
     }
 
     /// darktable's exposure sliders (`src/iop/exposure.c`, the params and
-    /// `gui_init`), in its parameters' units: `docs/modules/exposure.md`'s slider table.
+    /// `gui_init`), in its parameters' units: `docs/tools/exposure.md`'s slider table.
     /// None shows a factor; Percentile's "%" format gives none, its range above ±10.
     const DARKTABLE: [DarktableSlider; 5] = [
         DarktableSlider::new("exposure", (-18.0, 18.0), 3).soft(-3.0, 4.0),

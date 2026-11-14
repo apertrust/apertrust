@@ -17,7 +17,7 @@ Ported. The kernel is `slang/rawprepare.slang` in `crates/op/rawprepare`, with i
 - **Against darktable:** with the same parameters, the kernel matches darktable within 7.2e-7 on 30 raws (Results).
 - **Defaults:** rawler's crop and levels, which differ from darktable's own on most cameras (Defaults, decision 23).
 - **GPUs:** checked on one, the Apple M4.
-- **Module:** Raw black/white point is built ([../modules/raw-black-white-point.md](../modules/raw-black-white-point.md); Tool binding notes).
+- **Tool:** Raw black/white point is built ([../tools/raw-black-white-point.md](../tools/raw-black-white-point.md); Tool binding notes).
 
 ## Purpose
 
@@ -25,7 +25,7 @@ The first operation of the raw stage. It cuts the sensor's readout down to the d
 
 It scales each photosite so the sensor's black is 0 and its white point 1: `(raw - black) / (white - black)`. There is a black level for each of the four positions of the 2×2 pattern of row and column parities on the sensor.
 
-Everything after it, white balance, highlight reconstruction and demosaic, assumes that scale. In the first pass its levels are the Raw black/white point module's, in the Base tab.
+Everything after it, white balance, highlight reconstruction and demosaic, assumes that scale. In the first pass its levels are the Raw black/white point tool's, in the Base tab.
 
 ## Pipeline
 
@@ -140,15 +140,15 @@ The darktable-compatible measurement reproduces darktable's exactly on rawspeed'
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Raw black/white point module is darktable's: the four black levels, the white point and flat field correction as controls, the crop margins fixed (`docs/modules/README.md`).
+In the first pass (decision 2) the Raw black/white point tool is darktable's: the four black levels, the white point and flat field correction as controls, the crop margins fixed (`docs/tools/README.md`).
 
-The module is built (`crates/modules/src/raw_black_white_point.rs`, [../modules/raw-black-white-point.md](../modules/raw-black-white-point.md)). It owns every parameter:
+The tool is built (`crates/modules/src/raw_black_white_point.rs`, [../tools/raw-black-white-point.md](../tools/raw-black-white-point.md)). It owns every parameter:
 
-- each level's control is named as its parameter and starts at this operation's default for the photo, which the module restates from the image context as `defaults` reads it, its tests holding the two together;
+- each level's control is named as its parameter and starts at this operation's default for the photo, which the tool restates from the image context as `defaults` reads it, its tests holding the two together;
 - it sets a level only off that default;
 - it never sets flat field, which takes only off, or the crop margins.
 
-The module shows the black levels and white point, as darktable's does, in raw units. The crop is the sensor's geometry and gets no control. A change re-runs demosaic (decision 12).
+The tool shows the black levels and white point, as darktable's does, in raw units. The crop is the sensor's geometry and gets no control. A change re-runs demosaic (decision 12).
 
 ## Gradients
 

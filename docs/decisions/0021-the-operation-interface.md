@@ -15,7 +15,7 @@ What exact shape does an operation take, so that the engine can plan, tile, cach
 - A value set from the CLI, a script, MCP or the session protocol outside its range is **refused** (`OutOfRange`, with its `min` and `max`), so a mistake shows and an agent can correct itself.
 - A value loaded from a saved edit is **clamped with a warning**, so a photo always opens.
 
-**Defaults** are darktable's scene-referred ones where they differ from its introspection defaults (AgX's, for example), so an unedited photo renders as darktable renders it. `defaults(image)` gives those that come from the file, as darktable's `reload_defaults` does: a raw's crop and levels, the as-shot white balance, demosaic's method by sensor, exposure's +0.7 EV with the camera's bias compensated. Intents such as "as shot" belong to modules, not operation parameters.
+**Defaults** are darktable's scene-referred ones where they differ from its introspection defaults (AgX's, for example), so an unedited photo renders as darktable renders it. `defaults(image)` gives those that come from the file, as darktable's `reload_defaults` does: a raw's crop and levels, the as-shot white balance, demosaic's method by sensor, exposure's +0.7 EV with the camera's bias compensated. Intents such as "as shot" belong to tools, not operation parameters.
 
 **Images:** `prepare` receives the image it gets and returns the one it produces, size and format (the 16-bit mosaic, an f32 mosaic or RGBA f32). Each stage takes only its own formats. The engine gives each operation an output buffer of that image, reusing a working buffer of the same size and format that is not its input. An operation whose output has no pixels is refused at planning (`PlanError::Empty`).
 

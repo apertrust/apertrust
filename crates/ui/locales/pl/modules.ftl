@@ -1,8 +1,8 @@
-# Słowa modułów po polsku (docs/gui.md, Module panels from definitions).
+# Słowa modułów po polsku (docs/gui.md, Tool panels from definitions).
 # Tłumaczenie komunikatów z en-GB/modules.ftl z tymi samymi zmiennymi. Wersja robocza:
 # jeszcze niesprawdzona przez rodzimego użytkownika języka.
 
-## Punkt czerni/bieli raw (docs/modules/raw-black-white-point.md): terminy z polskiego
+## Punkt czerni/bieli raw (docs/tools/raw-black-white-point.md): terminy z polskiego
 ## tłumaczenia darktable.
 
 module-rawprepare-title = Punkt czerni/bieli raw
@@ -27,7 +27,7 @@ module-rawprepare-control-flat_field-promise = Korekcja płaskiego pola w celu s
 module-rawprepare-control-flat_field-option-off = Wyłączone
 module-rawprepare-control-flat_field-option-embedded = Osadzone mapowanie wzmocnienia
 
-## Ratowanie prześwietleń (docs/modules/highlight-reconstruction.md): terminy z polskiego
+## Ratowanie prześwietleń (docs/tools/highlight-reconstruction.md): terminy z polskiego
 ## tłumaczenia darktable.
 
 module-highlights-title = Ratowanie prześwietleń
@@ -86,7 +86,7 @@ module-highlights-control-scales-option-px_1024 = 1024 piksele (bardzo powolne)
 module-highlights-control-scales-option-px_2048 = 2048 pikseli (niesamowicie powolne)
 module-highlights-control-scales-option-px_4096 = 4096 pikseli (niesamowicie powolne)
 
-## Demozaikowanie (docs/modules/demosaic.md): terminy z polskiego tłumaczenia
+## Demozaikowanie (docs/tools/demosaic.md): terminy z polskiego tłumaczenia
 ## darktable, dwie podpowiedzi metody, dla sensorów Bayera i X-Trans, w jednej.
 
 module-demosaic-title = Demozaikowanie
@@ -160,7 +160,7 @@ module-demosaic-control-cs_center-label = Ostry środek
 module-demosaic-control-cs_center-full = Ostrość wyjściowa, ostry środek
 module-demosaic-control-cs_center-promise = Dostosuj do ostrego centrum obrazu.
 
-## AgX (docs/modules/agx.md): terminy z polskiego tłumaczenia darktable, z dwiema
+## AgX (docs/tools/agx.md): terminy z polskiego tłumaczenia darktable, z dwiema
 ## zmianami: poprawiona literówka w „Wzmocnienie czystości niebieskiego” (darktable:
 ## „wzmownienie”) i „Ochrona odcieni” bez „(hue)”.
 
@@ -308,7 +308,7 @@ module-agx-control-blue_outset-promise = Odtworzenie czystości niebieskiego, g�
 module-agx-control-blue_unrotation-label = Odwrócenie obrotu niebieskiego
 module-agx-control-blue_unrotation-full = Odwrócenie obrotu niebieskiego
 module-agx-control-blue_unrotation-promise = Odwróć przesunięcie koloru w niebieskościach.
-## Wyjściowy profil koloru (docs/modules/output-colour-profile.md): terminy z polskiego
+## Wyjściowy profil koloru (docs/tools/output-colour-profile.md): terminy z polskiego
 ## tłumaczenia darktable.
 
 module-colorout-title = Wyjściowy profil koloru
@@ -328,7 +328,7 @@ module-colorout-control-type-option-display_p3 = Display P3 RGB
 module-colorout-control-type-option-prophoto_rgb = Liniowy ProPhoto RGB
 module-colorout-control-type-option-brg = BRG (do testów)
 
-## Balans bieli (docs/modules/white-balance.md)
+## Balans bieli (docs/tools/white-balance.md)
 
 module-temperature-title = Balans bieli
 module-temperature-preset-settings-label = Ustawienia
@@ -368,7 +368,7 @@ module-temperature-control-various-label = Szmaragdowy
 module-temperature-control-various-full = Współczynnik szmaragdowego
 module-temperature-control-various-promise = Przez co mnożone są szmaragdowe fotodiody raw czujnika czterokolorowego.
 
-## Orientacja (docs/modules/orientation.md)
+## Orientacja (docs/tools/orientation.md)
 
 module-flip-title = Orientacja
 module-flip-control-orientation-label = Przekształć
@@ -396,7 +396,7 @@ module-flip-action-flip_vertically-label = Odwróć w pionie
 module-flip-action-flip_vertically-full = Odwróć w pionie
 module-flip-action-flip_vertically-promise = Odbij obraz lustrzanie od góry do dołu.
 
-## Ekspozycja (docs/modules/exposure.md)
+## Ekspozycja (docs/tools/exposure.md)
 
 module-exposure-title = Ekspozycja
 module-exposure-auto = Ustawia Ekspozycję tak, aby tony zdjęcia skupiały się wokół szarości średniej. Zablokowana Ekspozycja pozostaje bez zmian.
@@ -435,7 +435,7 @@ module-exposure-setting-lightness-promise = Pożądana docelowa ekspozycja po ma
 module-exposure-picker-exposure-full = Ekspozycja: pobierz ze zdjęcia
 module-exposure-picker-exposure-promise = Ustawia korektę ekspozycji na podstawie zaznaczonego obszaru.
 
-## Kalibracja koloru (docs/modules/colour-calibration.md)
+## Kalibracja koloru (docs/tools/colour-calibration.md)
 
 module-channelmixerrgb-title = Kalibracja koloru
 module-channelmixerrgb-tab-cat = CAT
@@ -634,7 +634,7 @@ module-channelmixerrgb-setting-patch_scale-label = Skala pól
 module-channelmixerrgb-setting-patch_scale-full = Skala pól wzornika
 module-channelmixerrgb-setting-patch_scale-promise = Jaką część każdego pola odczytać od jego środka: mniej, gdy ramka wzornika jest niedokładna lub rzuca cienie.
 
-## Korektor tonów (docs/modules/tone-equalizer.md): terminy z polskiego tłumaczenia
+## Korektor tonów (docs/tools/tone-equalizer.md): terminy z polskiego tłumaczenia
 ## darktable.
 
 module-toneequal-title = Korektor tonów
@@ -711,7 +711,7 @@ module-toneequal-setting-display_exposure_mask-label = Wyświetl maskę ekspozyc
 module-toneequal-setting-display_exposure_mask-full = Wyświetl maskę ekspozycji
 module-toneequal-setting-display_exposure_mask-promise = Pokazuje w miejscu zdjęcia maskę, według której działają pasma.
 
-## Balans kolorów RGB (docs/modules/colour-balance-rgb.md): terminy z polskiego
+## Balans kolorów RGB (docs/tools/colour-balance-rgb.md): terminy z polskiego
 ## tłumaczenia darktable.
 
 module-colorbalancergb-title = Balans kolorów RGB
@@ -841,7 +841,7 @@ module-colorbalancergb-picker-white_fulcrum-promise = Pobierz kolor ze zdjęcia
 module-colorbalancergb-picker-grey_fulcrum-full = Punkt szarości kontrastu: pobierz ze zdjęcia
 module-colorbalancergb-picker-grey_fulcrum-promise = Pobierz kolor ze zdjęcia
 
-## Krzywa tonalna (docs/modules/tone-curve.md)
+## Krzywa tonalna (docs/tools/tone-curve.md)
 
 module-tone_curve-title = Krzywa tonalna
 module-tone_curve-tab-luma = Jasność
@@ -863,7 +863,7 @@ module-tone_curve-control-preserve_colour-option-sum_rgb = Suma RGB
 module-tone_curve-control-preserve_colour-option-norm_rgb = Norma RGB
 module-tone_curve-control-preserve_colour-option-basic_power = Potęga podstawowa
 
-## Usuwanie zamglenia (docs/modules/haze-removal.md): terminy z polskiego tłumaczenia
+## Usuwanie zamglenia (docs/tools/haze-removal.md): terminy z polskiego tłumaczenia
 ## darktable.
 
 module-hazeremoval-title = Usuwanie zamglenia
@@ -874,7 +874,7 @@ module-hazeremoval-control-distance-label = Odległość
 module-hazeremoval-control-distance-full = Odległość
 module-hazeremoval-control-distance-promise = Ogranicz usuwanie zamglenia do konkretnego przestrzennego zakresu.
 
-## Barwy podstawowe RGB (docs/modules/rgb-primaries.md): terminy z polskiego
+## Barwy podstawowe RGB (docs/tools/rgb-primaries.md): terminy z polskiego
 ## tłumaczenia darktable.
 
 module-primaries-title = Barwy podstawowe RGB
@@ -903,7 +903,7 @@ module-primaries-control-achromatic_tint_purity-label = Czystość barwy zafarbu
 module-primaries-control-achromatic_tint_purity-full = Czystość barwy zafarbu
 module-primaries-control-achromatic_tint_purity-promise = Czystość barwy zafarbu.
 
-## Ziarno (docs/modules/grain.md): terminy z polskiego tłumaczenia darktable.
+## Ziarno (docs/tools/grain.md): terminy z polskiego tłumaczenia darktable.
 
 module-grain-title = Ziarno
 module-grain-control-scale-label = Szorstkość
@@ -916,7 +916,7 @@ module-grain-control-midtones_bias-label = Przewaga tonów średnich
 module-grain-control-midtones_bias-full = Przewaga tonów średnich
 module-grain-control-midtones_bias-promise = Wartość przesunięcia tonów średnich do modelowania odpowiedzi papieru fotograficznego. Im większa wartość, tym bardziej wyraźny zanik ziarna w cieniach i światłach.
 
-## Zmiękczenie (docs/modules/soften.md): terminy z polskiego tłumaczenia darktable.
+## Zmiękczenie (docs/tools/soften.md): terminy z polskiego tłumaczenia darktable.
 
 module-soften-title = Zmiękczenie
 module-soften-control-size-label = Rozmiar
@@ -932,7 +932,7 @@ module-soften-control-amount-label = Miks
 module-soften-control-amount-full = Miks
 module-soften-control-amount-promise = Miksowanie efektu.
 
-## Winietowanie (docs/modules/vignetting.md): terminy z polskiego tłumaczenia darktable.
+## Winietowanie (docs/tools/vignetting.md): terminy z polskiego tłumaczenia darktable.
 
 module-vignette-title = Winietowanie
 module-vignette-control-scale-label = Start zanikania

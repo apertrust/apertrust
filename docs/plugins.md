@@ -1,8 +1,8 @@
 # Plugins
 
-How an operation plugs into the engine: the operation interface in `apertrust-plugin`, one crate per operation, manifests and parameter schemas, the passes an operation runs, and how third-party plugins are to load. The pipeline that runs them is [engine.md](engine.md); the modules people edit with, bound to operations' parameters, are its [module layer](engine.md#the-module-layer) and [modules/README.md](modules/README.md). Each crate's state is in [crates.md](crates.md).
+How an operation plugs into the engine: the operation interface in `apertrust-plugin`, one crate per operation, manifests and parameter schemas, the passes an operation runs, and how third-party plugins are to load. The pipeline that runs them is [engine.md](engine.md); the tools people edit with, bound to operations' parameters, are its [tool layer](engine.md#the-tool-layer) and [tools/README.md](tools/README.md). Each crate's state is in [crates.md](crates.md).
 
-Every operation, built-in or third-party, is a native plugin behind one interface (decision 20). An operation is what darktable's iop is without its GUI; the GUI's job goes to modules, which bind to the parameters of one or more operations (decision 4). darktable's modules are never loaded; darktable's code is the reference for reimplementing them.
+Every operation, built-in or third-party, is a native plugin behind one interface (decision 20). An operation is what darktable's iop is without its GUI; the GUI's job goes to tools, which bind to the parameters of one or more operations (decision 4). darktable's modules are never loaded; darktable's code is the reference for reimplementing them.
 
 **Status.** Built: the interface, and every built-in operation as a compile-time plugin in a crate of its own, listed in `apertrust-operations`, under the rules below. Planned: readouts, and third-party plugins as declarative packages.
 
@@ -10,14 +10,14 @@ Every operation, built-in or third-party, is a native plugin behind one interfac
 
 | Part | Purpose |
 | --- | --- |
-| Manifest | ID, version, domain (scene or display), slot (a stage and an order number, darktable's where Apertrust keeps darktable's place; decision 22), layer support, differentiable flag, neighbourhood radius at full resolution (a fixed reach, the default of `Operation::reach`, decision 13), and `default_enabled`: whether an unedited photo runs it, or only a module's binding adds it (decision 28) |
+| Manifest | ID, version, domain (scene or display), slot (a stage and an order number, darktable's where Apertrust keeps darktable's place; decision 22), layer support, differentiable flag, neighbourhood radius at full resolution (a fixed reach, the default of `Operation::reach`, decision 13), and `default_enabled`: whether an unedited photo runs it, or only a tool's binding adds it (decision 28) |
 | Parameter schema | Operation parameters with ranges, units and meaning; versioned, with migrations |
 | Kernels | Slang source, with one entry point per pass and, outside the raw stage, the derivative entry points (decision 21), and its generated WGSL |
 | Setup | `prepare`: from the parameters and the image's context to uniforms and tables, as darktable's `commit_params` does |
 | Tests | Golden cases, the gradient check and invariant tests |
 | Provenance | The darktable module, its source files and the release it was ported from |
 
-The engine builds the pipeline from manifests: the operations an unedited photo runs, and the others while a module's binding sets them. The UI builds module panels from module definitions, and MCP exposes the modules.
+The engine builds the pipeline from manifests: the operations an unedited photo runs, and the others while a tool's binding sets them. The UI builds tool panels from tool definitions, and MCP exposes them as MCP tools.
 
 ## One crate per operation
 
@@ -68,7 +68,7 @@ After demosaic, whole-image passes form runs: the passes that read the operation
 
 ## Readouts
 
-Readouts (decision 19), apart from the passes, are what an operation measures of the photo for its module's panel, as darktable's GUI does from its preview pipe. Planned:
+Readouts (decision 19), apart from the passes, are what an operation measures of the photo for its tool's panel, as darktable's GUI does from its preview pipe. Planned:
 
 - The manifest lists their ids (`Manifest::readouts`).
 - `prepare` returns, beside its passes, a `ReadoutPass` for each: one pass of its kernel binding what its passes bind and a counts buffer (`Resource::Readout`), writing nothing else, its uniforms only what it reads.
@@ -94,7 +94,7 @@ Decision 21. The image context carries:
 - the developed image's size and the processing scale, so spatial operations scale their radii as darktable does with `roi->scale`;
 - for a raw, the camera's metadata: sensor size, CFA, black levels, white point, as-shot white balance, D65 matrix, crop, exposure bias and a DNG's linear response limit (highlights' default threshold);
 - the camera's identity as darktable's (decision 24): `make`, `model` (the main name, an alias resolved), `alias` (the name the file's camera has) and `iso`, each in darktable's spelling (decision 27), by which denoise finds its noise profile;
-- planned: the camera's white balance presets from darktable's `wb_presets.json`, `white_balance_presets`, in the file's order, which temperature's defaults and the White balance module read (decision 27);
+- planned: the camera's white balance presets from darktable's `wb_presets.json`, `white_balance_presets`, in the file's order, which temperature's defaults and the White balance tool read (decision 27);
 - the lens corrections the raw carries, `lens_correction`, as darktable's `exif_correction_type` and `exif_correction_data` hold them (decision 25);
 - the pipe's output profile as matrices to and from XYZ D50 (`output_profile`, decision 26). colorout reports it through `Operation::output_profile(params)`, and the planner collects it before any `prepare`; `None`, without colorout, means the working profile. It is the edit's in the viewport and an export's chosen one in that export, read by filmic rgb's v6 and v7 and AgX's "export profile", never by `defaults` or a binding.
 
@@ -122,7 +122,7 @@ Shared colour maths is in `apertrust-color`, with the numerical helpers ports sh
 ## Loading
 
 1. **Built-in operations are compile-time plugins:** each is its own crate, and `apertrust-operations` lists them explicitly. The engine depends only on `apertrust-plugin`; the binaries hand it the list. Modular, type-safe, with no loading at run time.
-2. **Third-party plugins come later as declarative packages:** manifest, schema and WGSL kernels as data, with any CPU-side logic (lookup tables, statistics for Auto) as a sandboxed WebAssembly component, and a module definition that binds the package's parameters. Portable across platforms and safe to install.
+2. **Third-party plugins come later as declarative packages:** manifest, schema and WGSL kernels as data, with any CPU-side logic (lookup tables, statistics for Auto) as a sandboxed WebAssembly component, and a tool definition that binds the package's parameters. Portable across platforms and safe to install.
    Built-in kernels write their workgroup memory before reading it, kept by review and the tests, not by a check, and the engine does not zero it (decision 80). A third-party kernel is reviewed by no one here, so whether the engine zeroes its workgroup memory is decided with third-party loading.
 3. **No native shared-library plugins:** Rust has no stable ABI, packaging would be per platform, and a faulty plugin could crash the app.
 
@@ -133,7 +133,7 @@ Shared colour maths is in `apertrust-color`, with the numerical helpers ports sh
 - Kernels never write a local at a run-time index, which FXC fails or may fail to compile; the engine checks a plugin's kernels at load (decision 10).
 - Schema versions and migrations are mandatory, so old edits keep their look. A schema version rises for a removal or a change, never for an addition, which an older build finds in an edit and opens for viewing only (decision 43; [Edits in another user data folder](settings.md#edits-in-another-user-data-folder)).
 - Only differentiable plugins take part in reference matching and other optimisation features.
-- One owning module per parameter holds across plugins: a module that owns a parameter another module owns, or one that does not exist, is reported as failed and left out (decision 28).
+- One owning tool per parameter holds across plugins: a tool that owns a parameter another tool owns, or one that does not exist, is reported as failed and left out (decision 28).
 
 ## darktable's role
 

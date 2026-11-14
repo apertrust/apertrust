@@ -10,7 +10,7 @@ Golden result (case `bloom`, darktable test 0050-bloom, mire1.cr2, 3908×2602, A
 
 The Orton effect for the photographer ("apply Orton effect for a dreamy ethereal look", darktable's description): the bright parts of the image glow into their surroundings, a soft, luminous haze around highlights.
 
-Algorithmically, the Lab lightness is scaled by the strength and every pixel below the threshold dropped, the remaining lights are blurred by eight passes of a box mean as wide as the size, and the blur is screen-blended onto the lightness. It is the Effect tab's Bloom module (`docs/modules/README.md`), on layers too.
+Algorithmically, the Lab lightness is scaled by the strength and every pixel below the threshold dropped, the remaining lights are blurred by eight passes of a box mean as wide as the size, and the blur is screen-blended onto the lightness. It is the Effect tab's Bloom tool (`docs/tools/README.md`), on layers too.
 
 ## Pipeline
 
@@ -138,9 +138,9 @@ Every pass is `[numthreads(16, 16, 1)]`. Scratch: two buffers of the whole image
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Bloom module is darktable's and owns every parameter (`docs/modules/README.md`): Size, Threshold and Strength, under darktable's labels and in its order, each shown as a percentage. darktable has no presets for bloom.
+In the first pass (decision 2) the Bloom tool is darktable's and owns every parameter (`docs/tools/README.md`): Size, Threshold and Strength, under darktable's labels and in its order, each shown as a percentage. darktable has no presets for bloom.
 
-- **What is an identity:** no setting is. The lights are the lightness scaled by at least `2^0.01`, so even at strength 0 and threshold 100 a pixel above L 99.3 blooms, and every pixel above 100. The operation leaves a pixel unchanged only where no pixel within `8 · radius` of it reaches the threshold. So the Bloom module is switched (decision 32): untouched while off, its controls at darktable's 20 %, 90 % and 25 %, any change turning it on with them and its reset turning it off. An off module looks as any other, with no dimming and no power button.
+- **What is an identity:** no setting is. The lights are the lightness scaled by at least `2^0.01`, so even at strength 0 and threshold 100 a pixel above L 99.3 blooms, and every pixel above 100. The operation leaves a pixel unchanged only where no pixel within `8 · radius` of it reaches the threshold. So the Bloom tool is switched (decision 32): untouched while off, its controls at darktable's 20 %, 90 % and 25 %, any change turning it on with them and its reset turning it off. An off tool looks as any other, with no dimming and no power button.
 - **Derivatives:** bloom declares no gradient slot (decision 11). Component 0 of its derivative entry points carries `main`'s derivative with respect to the strength with the pixels past the threshold held, which is not the whole render's (Gradients).
 
 ## Gradients

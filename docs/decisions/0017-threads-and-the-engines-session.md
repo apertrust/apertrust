@@ -13,12 +13,12 @@ How are the desktop app's threads organised, how does a frame reach the window, 
 - **rayon** for CPU work such as encoding; **tokio** only for I/O and the server.
 - Channels between them. The UI thread waits only for its turn at the submit gate and a surface reconfigure's own wait ([0018](0018-one-submit-gate-for-the-engine-and-the-window.md)).
 
-**The session:** `Session::start` takes the GPU, the operations, the modules, the engine's budget and `wake`, and yields events without waiting.
+**The session:** `Session::start` takes the GPU, the operations, the tools, the engine's budget and `wake`, and yields events without waiting.
 
 - Commands are numbered as they are sent. The thread takes every command that has arrived and renders the latest state once, so a 30-step drag sent at once renders fewer than 30 times.
 - Each values report says how many commands it includes (`through`), so the app shows a value it set until a report includes it and a slider never jumps back to one reported late.
 - `wake` is the only UI hook the engine has, the app's `request_repaint`; the CLI and a server drive the same session.
-- The binaries hand the session the operations and modules (`apertrust_operations::OPERATIONS`, `apertrust_modules::MODULES`), so the engine depends on no operation crate.
+- The binaries hand the session the operations and tools (`apertrust_operations::OPERATIONS`, `apertrust_modules::MODULES`), so the engine depends on no operation crate.
 - Events go out through one outbox ([0059](0059-one-event-system.md)).
 
 **Frames:** each frame is copied into whichever of two display storage buffers was not published last; a published buffer is never written while it is the latest. The app's paint callback draws one triangle over egui's viewport, each fragment reading its own pixel by window position, so nothing is sampled, decoding sRGB first where the window's format encodes itself. The copy costs one pass and two frame-sized buffers (2 × 61 MB at 2400×1600).

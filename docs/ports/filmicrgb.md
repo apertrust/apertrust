@@ -6,7 +6,7 @@ Status: ported.
 
 - **Code:** the kernel is `slang/filmicrgb.slang` in `crates/op/filmicrgb`, its setup `src/setup.rs`, its manifest and schema `src/lib.rs`.
 - **Coverage:** everything darktable offers a new instance: the five colour sciences, v3 (2019) to v7 (2023), darktable's default; every norm, the legacy euclidean one included; the hard, soft and safe curves of the toe and the shoulder; the display targets, custom middle grey; and the highlight reconstruction, its noise in all three distributions, its wavelets in RGB and its iterations on ratios. Only spline v1 and v2 return `NotPorted`: no widget sets them, and only a params version 5 edit holds them (Parameter versions).
-- **Planning:** in `OPERATIONS` at darktable's v5.0 place, working space 46.0, with `default_enabled` off: nothing plans it until an edit can choose it as its tone mapper (decision 33, planned with the Filmic RGB module).
+- **Planning:** in `OPERATIONS` at darktable's v5.0 place, working space 46.0, with `default_enabled` off: nothing plans it until an edit can choose it as its tone mapper (decision 33, planned with the Filmic RGB tool).
 - **Checks:** the eight golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
 
 Golden results, Apple M4, each case a one-instance plan of the engine (decision 15):
@@ -30,7 +30,7 @@ Filmic rgb is one of darktable's three scene-referred tone mappers, beside sigmo
 
 Algorithmically, a logarithmic encoding maps the scene's black and white relative exposures to [0, 1]; a spline, linear over a latitude around middle grey with polynomial or rational toe and shoulder, maps that to display values, which a power ("hardness") takes to linear display light. Five colour sciences say how the curve meets colour: per channel or on a norm of the pixel, with a desaturation at the extremes (v3 to v5), or with a gamut mapping in Filmlight's Yrg against the display (v6, v7). Highlight reconstruction inpaints clipped areas with noise and diffuses it with an à trous B-spline wavelet decomposition, in RGB and then on the pixels' ratios.
 
-In the first pass it is the Filmic RGB module, a tone mapper of its own in the Base tab, one tone mapper per edit (decision 2; `docs/modules/README.md`, Filmic RGB).
+In the first pass it is the Filmic RGB tool, a tone mapper of its own in the Base tab, one tone mapper per edit (decision 2; `docs/tools/README.md`, Filmic RGB).
 
 ## Pipeline
 
@@ -89,8 +89,8 @@ darktable params version 6, 116 bytes: eighteen `float`s, then eleven four-byte 
 | Type of noise | `noise_distribution` | enum | 0 uniform, 1 gaussian, 2 poissonian | gaussian | The inpainted noise's distribution | Filmic RGB: Options |
 | Contrast in shadows | `shadows` | enum | 0 hard (4th-order polynomial), 1 soft (3rd-order), 2 safe (rational) | hard | The toe's curve | Filmic RGB: Options |
 | Contrast in highlights | `highlights` | enum | as `shadows` | hard | The shoulder's curve | Filmic RGB: Options |
-| | `compensate_icc_black` | bool | | false | Not read by the reference release at all, and no widget | fixed (`docs/modules/README.md`) |
-| | `spline_version` | enum | 0 v1 (2019), 1 v2 (2020), 2 v3 (2021) | v3 | How the nodes follow from contrast and latitude; no widget | fixed at v3 (`docs/modules/README.md`, rule 12) |
+| | `compensate_icc_black` | bool | | false | Not read by the reference release at all, and no widget | fixed (`docs/tools/README.md`) |
+| | `spline_version` | enum | 0 v1 (2019), 1 v2 (2020), 2 v3 (2021) | v3 | How the nodes follow from contrast and latitude; no widget | fixed at v3 (`docs/tools/README.md`, rule 12) |
 | Enable highlight reconstruction | `enable_highlight_reconstruction` | bool | | false | | Filmic RGB: Reconstruct |
 
 The schema's choice names come from darktable's descriptions, as sigmoid's do: `none`, `max_rgb`, `luminance_y`, `rgb_power_norm`, `rgb_euclidean_norm_legacy`, `rgb_euclidean_norm`; `v3_2019`, `v4_2020`, `v5_2021`, `v6_2022`, `v7_2023`; `uniform`, `gaussian`, `poissonian`; `hard`, `soft`, `safe`; `v1_2019`, `v2_2020`, `v3_2021`.
@@ -110,7 +110,7 @@ The schema's choice names come from darktable's descriptions, as sigmoid's do: `
 
 **`convert_to_spline_v3`**, for versions 1 to 4: the spline of the old settings (Setup) gives the new ones. With the nodes' `toe_log = min(x₁, x₂)`, `shoulder_log = max(x₃, x₂)` and display values likewise against `y₂`, the safety margin `m = 0.01 (y₄ − y₀)`: `contrast = (shoulder_display − toe_display) / (shoulder_log − toe_log)`; a toe below `y₀ + m` or a shoulder above `y₄ − m` is moved to it along that slope; then `contrast ·= 8 / (white_source − black_source)` and `·= hardness · y₂^(hardness − 1)`; `latitude = clamp((shoulder_display − toe_display) / (y₄ − y₀ − 2m), 0, 0.99)`; the balance from where the shoulder (or the toe) sits against the latitude's reference positions, `±0.5 (1 − …)`; for spline v1 also the black and white targets, `y^hardness · 100`, since v1 did not take the targets through the power. The fields are written in percent (`latitude`, `balance` times 100).
 
-`ports.rs` migrates every version as darktable does: test 0014 is version 1, 0037 version 4 (internal version 2020), 0092 version 5, the others version 6. Since the migration converts every spline to v3 but version 5's, a spline v1 or v2 reaches processing only through a version 5 edit (darktable 3.6 to 4.0), never from darktable's interface, which has no widget for it: `prepare` refuses it (`NotPorted`, rule 12 of `docs/modules/README.md`), with a test. The spline code for v1 and v2 is still ported, since the migration needs it.
+`ports.rs` migrates every version as darktable does: test 0014 is version 1, 0037 version 4 (internal version 2020), 0092 version 5, the others version 6. Since the migration converts every spline to v3 but version 5's, a spline v1 or v2 reaches processing only through a version 5 edit (darktable 3.6 to 4.0), never from darktable's interface, which has no widget for it: `prepare` refuses it (`NotPorted`, rule 12 of `docs/tools/README.md`), with a test. The spline code for v1 and v2 is still ported, since the migration needs it.
 
 ## Setup on the CPU (`commit_params`)
 
@@ -202,7 +202,7 @@ Bindings 12 and 13 swap scratch buffers from scale to scale, as darktable's `LF_
 
 While reconstruction is off, `prepare` gives `main` alone, with two scratch buffers of 16 bytes for the bindings it then never reads.
 
-**The reconstruction's cost:** 71 whole-image passes over image-sized buffers, about 0.55 s a render of 3908×2602 on the M4. It is measured when the Filmic RGB module is built (Phase 3): each scale's vertical blurs are fused if that pays, and the passes are skipped when the count of clipped pixels is under darktable's 10, read through a readout (decision 19).
+**The reconstruction's cost:** 71 whole-image passes over image-sized buffers, about 0.55 s a render of 3908×2602 on the M4. It is measured when the Filmic RGB tool is built (Phase 3): each scale's vertical blurs are fused if that pays, and the passes are skipped when the count of clipped pixels is under darktable's 10, read through a readout (decision 19).
 
 ## Neighbourhood and scale
 
@@ -246,16 +246,16 @@ While reconstruction is off, `prepare` gives `main` alone, with two scratch buff
 - **The B-spline sums, the noise's functions and the GPU's `pow`, `log₂` and `exp`** (Precision): the last bits.
 - **Spline v1 and v2 are refused** (`NotPorted`, Parameter versions): only a version 5 edit holds them.
 - **The whole image at every pipe's scale** (Neighbourhood and scale), where darktable's darkroom processes the visible region: principle 2's same processing at each scale, not a departure from darktable's export.
-- **Not ported (GUI only):** the mask display, the graph, the pickers and auto tune, the auto hardness and the dynamic range scaling, which act on parameters in the interface; they belong to the Filmic RGB module.
+- **Not ported (GUI only):** the mask display, the graph, the pickers and auto tune, the auto hardness and the dynamic range scaling, which act on parameters in the interface; they belong to the Filmic RGB tool.
 
 ## Tool binding notes
 
-In the first pass the Filmic RGB module is darktable's page (`docs/modules/README.md`, Filmic RGB): content tabs Scene, Reconstruct, Look, Display and Options, darktable's controls under its labels.
+In the first pass the Filmic RGB tool is darktable's page (`docs/tools/README.md`, Filmic RGB): content tabs Scene, Reconstruct, Look, Display and Options, darktable's controls under its labels.
 
-- **Units:** the module stores darktable's values and units (EV, percentages as darktable stores them, the hardness as a power). Interface behaviours darktable runs on a change (`gui_changed`): with Auto adjust hardness on, the hardness follows `_compute_output_power` whenever the exposures, the grey or the scaling move; Dynamic range scaling scales both exposures by `(new − old) / (old + 100)`; a new grey source moves both exposures by `log₂(old / new)`; moving Threshold or Transition turns reconstruction on. They are the module's to reproduce, since the operation never reads `auto_hardness` or `security_factor`.
+- **Units:** the tool stores darktable's values and units (EV, percentages as darktable stores them, the hardness as a power). Interface behaviours darktable runs on a change (`gui_changed`): with Auto adjust hardness on, the hardness follows `_compute_output_power` whenever the exposures, the grey or the scaling move; Dynamic range scaling scales both exposures by `(new − old) / (old + 100)`; a new grey source moves both exposures by `log₂(old / new)`; moving Threshold or Transition turns reconstruction on. They are the tool's to reproduce, since the operation never reads `auto_hardness` or `security_factor`.
 - **Defaults and presets:** a new instance's values are darktable's (`Operation::defaults`, with `reload_defaults`'s exposure shift on raws). darktable's only preset, "scene-referred default", auto-applied in its filmic workflow, stores the defaults (NULL params).
 - **What is an identity:** none; a tone mapper needs none, since exactly one runs per edit (decision 2).
-- **Derivatives:** four directions in parameter space, contrast, hardness, latitude and saturation (Gradients), the module's controls of the same names; a binding that wants others, the black or white exposure, needs them as directions, and the reconstruction's threshold held.
+- **Derivatives:** four directions in parameter space, contrast, hardness, latitude and saturation (Gradients), the tool's controls of the same names; a binding that wants others, the black or white exposure, needs them as directions, and the reconstruction's threshold held.
 
 ## Gradients
 

@@ -8,16 +8,16 @@ During the migration a port renders what darktable's export renders ([0061](0061
 
 **A port departs from darktable only where a difference is agreed, and its spec lists each one** (`docs/ports/<module>.md`, Deliberate differences).
 
-- Where an agreed difference changes what the export renders, darktable's behaviour stays behind a setting only the golden harness reaches, never in a schema, an edit or a module, so the cases still check everything else against darktable; the difference's size is measured and stated in the spec and the published results.
+- Where an agreed difference changes what the export renders, darktable's behaviour stays behind a setting only the golden harness reaches, never in a schema, an edit or a tool, so the cases still check everything else against darktable; the difference's size is measured and stated in the spec and the published results.
 - Differences within a case's tolerance (fp32 redesigns, guards, evaluation order), and choices where darktable's own result is not reproducible, are not departures.
 - The rule belongs to the migration: after it a processing change is a baseline change ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)).
 
-**The agreed differences,** each listed in its spec or module page:
+**The agreed differences,** each listed in its spec or tool page:
 
 - grain: a seed stored in the edit, its default darktable's file-name hash, one stored value darktable does not have (planned; `docs/ports/grain.md`);
 - vignetting: the raised-cosine fall-off of darktable's GPU path, where darktable's CPU path is linear without dithering (planned; `docs/ports/vignette.md`);
-- AgX: dynamic range scaling as the pickers' and Read exposure's margin only, never writing into the range, and Curve y gamma left alone by Keep the pivot on the diagonal (`docs/modules/agx.md`);
-- pickers: a picked value held at its parameter's `$MIN` or `$MAX` where the module's own rule leaves it past them, and Colour balance RGB's picked hue wrapped onto 0° to 360° ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md); `docs/pickers.md`);
+- AgX: dynamic range scaling as the pickers' and Read exposure's margin only, never writing into the range, and Curve y gamma left alone by Keep the pivot on the diagonal (`docs/tools/agx.md`);
+- pickers: a picked value held at its parameter's `$MIN` or `$MAX` where the tool's own rule leaves it past them, and Colour balance RGB's picked hue wrapped onto 0° to 360° ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md); `docs/pickers.md`);
 - the tone equalizer: none yet.
 
 **Every smaller view follows the export at its scale,** never darktable's darkroom or preview pipe:

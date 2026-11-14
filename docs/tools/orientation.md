@@ -1,14 +1,14 @@
 # Orientation
 
-Module `flip`, version 1. It works on the background only and has no Auto.
+Tool `flip`, version 1. It works on the background only and has no Auto.
 
 It is darktable's orientation in the first pass (decision 2), its page as darktable draws it: no tabs, sections or sliders, its transform label, a reset label of the stored orientation, with darktable's four buttons on the same line, rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically (`gui_init`, `flip.c:596`), and under it darktable's guides widget, show guides with the global guide settings button at its end (`dt_guides_init_module_widget`, `src/gui/guides.c`). darktable's default group is base, so it is in the Base tab, after Exposure and before Demosaic, in darktable's order (decision 38).
 
-It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip.md)), which every photo runs, so it adds no operation. It owns its one parameter, darktable's stored orientation. Its default is darktable's, auto: the photo's own orientation from its EXIF data, so an untouched photo shows the right way up and the module sets nothing. A photo the right way up has no orientation in its plan at all (the port's Setup on the CPU).
+It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip.md)), which every photo runs, so it adds no operation. It owns its one parameter, darktable's stored orientation. Its default is darktable's, auto: the photo's own orientation from its EXIF data, so an untouched photo shows the right way up and the tool sets nothing. A photo the right way up has no orientation in its plan at all (the port's Setup on the CPU).
 
-**Status:** built, in `crates/modules/src/orientation.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Module panels from definitions).
+**Status:** built, in `crates/modules/src/orientation.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions).
 
-- Its rows are tests in `crates/modules/tests/orientation.rs` and the module's source; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/modules/tests/orientation.rs` and the tool's source; [Results](#results) gives what they measured.
 - Every row is exact, so none has a proposed tolerance.
 - Measures and test images are in [README.md](README.md).
 
@@ -31,20 +31,20 @@ It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip
 
 Each tooltip and screen-reader name is the button's full name, darktable's `rotate 90 degrees CCW` and `CW` and its flips in British English. darktable's buttons also tell crop to follow the turn (`_crop_callback`), which comes with crop.
 
-**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the module's guides come: Apertrust's guides overlay (the central bar's Guides) is global, and the panel has no module focus yet.
+**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the central bar's Guides) is global, and the panel has no tool focus yet.
 
 **Commands.**
 
 - The buttons send `SetControl { module: "flip", control: "orientation", value: … }`, the value their action computes; a script sends the same, and `apertrust-cli edit --set flip.orientation=rotate_cw_90` does too.
-- `--param flip.orientation=…` is refused, since the module owns it.
+- `--param flip.orientation=…` is refused, since the tool owns it.
 
-**Presets:** darktable's auto (its auto-applied preset, the module's default), no rotation, flip horizontally, flip vertically, rotate by -90 degrees, rotate by 90 degrees and rotate by 180 degrees (`init_presets`), each one value, waiting for the header's presets menu. darktable's header shows "auto" after the module's name while the auto preset's orientation applies; Apertrust's section header shows no such label yet.
+**Presets:** darktable's auto (its auto-applied preset, the tool's default), no rotation, flip horizontally, flip vertically, rotate by -90 degrees, rotate by 90 degrees and rotate by 180 degrees (`init_presets`), each one value, waiting for the header's presets menu. darktable's header shows "auto" after the module's name while the auto preset's orientation applies; Apertrust's section header shows no such label yet.
 
-The words are darktable's label, button names and the guides widget's in British English, capitalised as the other modules' are; Ukrainian and Polish from darktable's `uk.po` and `pl.po` at the tag. The promise is darktable's module description, "flip or rotate image by step of 90 degrees"; the buttons' promises are Apertrust's drafts.
+The words are darktable's label, button names and the guides widget's in British English, capitalised as the other tools' are; Ukrainian and Polish from darktable's `uk.po` and `pl.po` at the tag. The promise is darktable's module description, "flip or rotate image by step of 90 degrees"; the buttons' promises are Apertrust's drafts.
 
 ## Invariants
 
-The rows every first-pass table has (decision 22; [README.md](README.md), Rows every table has), but the first step, since every photo runs `flip`, and order, since the module has one control; then auto on a turned raw, the binding, layers, darktable's match and the buttons.
+The rows every first-pass table has (decision 22; [README.md](README.md), Rows every table has), but the first step, since every photo runs `flip`, and order, since the tool has one control; then auto on a turned raw, the binding, layers, darktable's match and the buttons.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ F5's render is the port's: its golden cases are darktable-cli's renders of tests
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/orientation.rs` and the module's source; the rows run on CI's software GPUs too.
+Measured on the Apple M4 (Metal) by `crates/modules/tests/orientation.rs` and the tool's source; the rows run on CI's software GPUs too.
 
 | Row | Result |
 | --- | --- |
@@ -79,7 +79,7 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/orientation.rs` and th
 
 ## Gaps
 
-1. **Show guides** waits for the module's guides: an overlay while the module has focus, and the global guide settings the button opens.
+1. **Show guides** waits for the tool's guides: an overlay while the tool has focus, and the global guide settings the button opens.
 2. **The presets** wait for the header's presets menu, and the header's "auto" label for a label in Apertrust's section header.
 3. **Crop following a turn** (`_crop_callback`) comes with crop.
 
@@ -91,7 +91,7 @@ None: the page is darktable's.
 
 - **Control id:** `orientation`, darktable's params field and the operation's parameter; option ids the operation's choices, so the binding needs no table.
 - **The default:** auto, darktable's, rather than the photo's orientation itself: the edit holds nothing until the user turns the photo, and the photo's own orientation stays the camera's.
-- **The buttons:** a button row (`Row::Buttons`) and `Module::action`, the generic piece another module's buttons reuse: a pure function of the values shown and the photo, its writes sent as `SetControl`, so no new command and no stored state.
+- **The buttons:** a button row (`Row::Buttons`) and `Module::action`, the generic piece another tool's buttons reuse: a pure function of the values shown and the photo, its writes sent as `SetControl`, so no new command and no stored state.
 - **Rows:** F0 to F6; no first step, since every photo runs `flip`, and no order row, since there is one control.
 - **Row ids:** F, for flip.
 - **In `MODULES`:** after White balance, before Exposure.

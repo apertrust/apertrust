@@ -7,7 +7,7 @@ Status: ported.
 - **Code:** the kernel is `slang/agx.slang` in `crates/op/agx`, its setup `src/setup.rs`, with shared helpers in `apertrust-color` (`src/lib.rs` and `slang/color.slang`).
 - **Coverage:** every setting of params version 7 except base primaries "export profile", which returns `NotPorted`.
 - **Checks:** all four golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
-- **Module:** AgX, darktable's page in the Base tab, owning every parameter ([../modules/agx.md](../modules/agx.md)). A module set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
+- **Tool:** AgX, darktable's page in the Base tab, owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
 
 Golden result, Apple M4:
 
@@ -26,7 +26,7 @@ AgX is the tone mapper: it turns scene-referred light, unbounded and with mid-gr
 
 It encodes each RGB channel in log2 around mid-grey and maps it through a sigmoid-like curve with a linear section around a pivot. It does so in a "rendering" RGB space whose primaries are inset towards white and rotated, so the per-channel curve desaturates bright colours. After the curve, a second set of primaries restores purity and undoes the rotation, and the input's hue can be partly restored.
 
-In Apertrust it is the background's tone mapper, run once (architecture decision 33), and in the first pass (decision 2) a module of its own, AgX, the tone mapper in the Base tab, one tone mapper per edit.
+In Apertrust it is the background's tone mapper, run once (architecture decision 33), and in the first pass (decision 2) a tool of its own, AgX, the tone mapper in the Base tab, one tone mapper per edit.
 
 ## Pipeline
 
@@ -40,7 +40,7 @@ In Apertrust it is the background's tone mapper, run once (architecture decision
 
 darktable params version 7, 144 bytes, 36 four-byte fields in this order: `look_lift`, `look_slope`, `look_brightness`, `look_saturation`, `look_original_hue_mix_ratio`, `range_black_relative_ev`, `range_white_relative_ev`, `dynamic_range_scaling`, `curve_pivot_x`, `curve_pivot_y_linear_output`, `curve_contrast_around_pivot`, `curve_linear_ratio_below_pivot`, `curve_linear_ratio_above_pivot`, `curve_toe_power`, `curve_shoulder_power`, `curve_gamma` (f32), `auto_gamma` (gboolean, i32), `curve_target_display_black_ratio`, `curve_target_display_white_ratio` (f32), `base_primaries` (enum, i32), `disable_primaries_adjustments` (i32), `red_inset`, `red_rotation`, `green_inset`, `green_rotation`, `blue_inset`, `blue_rotation`, `master_outset_ratio`, `master_unrotation_ratio`, `red_outset`, `red_unrotation`, `green_outset`, `green_unrotation`, `blue_outset`, `blue_unrotation` (f32), `completely_reverse_primaries` (i32).
 
-Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_scene_referred_default_params` in a scene-referred workflow; `agx::Settings::scene_referred_default`, checked field for field against test 0186's stored params); where the introspection `$DEFAULT` differs, it is given in brackets. The AgX module, the tone mapper of its own in the Base tab, owns every parameter, one control each, as darktable's Settings and Primaries tabs show them, its show curve, advanced curve parameters and look sections collapsible groups, and `dynamic_range_scaling` a control on the Settings tab, not ported, as darktable shows it (decision 29; `docs/modules/README.md`, AgX).
+Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_scene_referred_default_params` in a scene-referred workflow; `agx::Settings::scene_referred_default`, checked field for field against test 0186's stored params); where the introspection `$DEFAULT` differs, it is given in brackets. The AgX tool, the tone mapper of its own in the Base tab, owns every parameter, one control each, as darktable's Settings and Primaries tabs show them, its show curve, advanced curve parameters and look sections collapsible groups, and `dynamic_range_scaling` a control on the Settings tab, not ported, as darktable shows it (decision 29; `docs/tools/README.md`, AgX).
 
 | Name | darktable field | Type | Range | Default | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -158,7 +158,7 @@ The sigmoid's argument is never negative: in the toe both `x − toe_tx` and `to
 - **The sigmoid:** `t^p` overflows fp32 for large arguments, which only extreme settings reach (master caps the shoulder power at 10 for HDR for this reason). The kernel uses `t · (1 + t^p)^(−1/p)` for `t ≤ 1` and the equal `(1 + t^−p)^(−1/p)` above.
 - **NaN:** darktable maps NaN input to 0 (`isnan`). The kernel cannot rely on NaN checks; Apertrust sanitises at operation boundaries, and the kernel keeps only the ±1e6 clamp.
 - **Logarithms and divisions:** `log2` sees at least ε; the slope, the range (at least 0.2 EV), the transitions' x distances (at least ε) and the luminance ratio (`Y_n > ε`) are all guarded in darktable's own maths.
-- **Auto gamma** is unbounded in the reference release: pivot target output 1 gives γ = 0 and an infinite 1/γ, and a pivot near 1 a huge γ. Master clamps it to [0.01, 100] (3526ecc350), and so does the port; only golden cases can turn it on, since no module exposes it.
+- **Auto gamma** is unbounded in the reference release: pivot target output 1 gives γ = 0 and an infinite 1/γ, and a pivot near 1 a huge γ. Master clamps it to [0.01, 100] (3526ecc350), and so does the port; only golden cases can turn it on, since no tool exposes it.
 - **Hue rounding:** `t − floor(t)` rounds to exactly 1.0 for `t` within about 3e-8 below 0. darktable's `dt_HSV_2_RGB` then falls into its last sector with f = 0 and renders red as magenta. The port treats hue 1 as hue 0 (Deliberate differences).
 - **A singular outbound matrix.** The way out inverts `base_out · outset_to_xyz` with `mat3SSEinv`, and that matrix is singular wherever the white lies on the line through two outbound primaries, so it is no mix of them with the third. Two surfaces of the settings reach it, inside the sliders' ranges:
   - *An outbound primary on the white*: a master purity boost times a purity boost of 1 makes that primary's scaling 0, reached by any master purity boost from 1/0.99 up (200% with a boost of 50%, 125% with 80%). One primary there leaves the white no share of the other two, and two make the primaries' own matrix singular, which `rgb_to_xyz_from_chromaticities` turns to 0.
@@ -205,7 +205,7 @@ None that change results. `agx.cl` reduces the hue difference with `x − rint(x
 
 ## Tool binding notes
 
-- **In the first pass** (decision 2) the AgX module is darktable's, built ([../modules/agx.md](../modules/agx.md)): its controls are the parameters above under darktable's labels, the pivot stored in EV as darktable's slider shows it, dynamic range scaling a control not ported, and darktable's looks are its presets in the header's presets menu, each setting the range too, as darktable's do. AgX is one of the tone mappers, modules of their own, one per edit; sigmoid and filmic rgb join as they are ported.
+- **In the first pass** (decision 2) the AgX tool is darktable's, built ([../tools/agx.md](../tools/agx.md)): its controls are the parameters above under darktable's labels, the pivot stored in EV as darktable's slider shows it, dynamic range scaling a control not ported, and darktable's looks are its presets in the header's presets menu, each setting the range too, as darktable's do. AgX is one of the tone mappers, tools of their own, one per edit; sigmoid and filmic rgb join as they are ported.
 - The port renders whatever a sidecar sets: test 0175 carries pivot target output 0.22, gamma 2.3 and target black and white 0.0015 and 0.9485.
 - A purity boost of 50% at a master purity boost of 200% (any product of 1), or reverse rotations turning two primaries opposite each other, blacks the image out (Precision; darktable shows noise there), and close to either the colours are boosted without bound. The defaults (master purity boost 100%, master rotation reversal 0) are far from both: a purity boost reaches the first only with the master purity boost above 101%, and the second needs green's and blue's reverse rotations, times the master rotation reversal, turned about 39° (sRGB) to 55° (Rec2020) further apart, so a master rotation reversal of at least about 65% to 92%, or reverse all with green's and blue's rotations that far apart.
 
@@ -234,7 +234,7 @@ Other non-smooth spots, where finite differences straddle a kink: the log encodi
 **Planned with reference matching in Phase 3:**
 
 - **The range and the curve.** Black and white exposure, toe and shoulder power and start act through the coefficients the CPU sets up, so the kernel cannot differentiate them yet. The curve's setup becomes a `[Differentiable]` Slang function evaluated in the kernel (the log-domain `_scale` keeps it fp32-safe), so the curve controls' derivatives come from autodiff, not from a Jacobian of the CPU setup.
-- **The input.** Every upstream module's gradient reaches the output through AgX, so end-to-end optimisation needs AgX's derivative with respect to its input pixel. The derivative interface gains input-derivative entry points, per-pixel operations first, AgX among them; for a per-pixel operation reverse mode needs no scatter, and `agx_tone_curve` becomes differentiable. Spatial operations record their gap as understood (decision 11).
+- **The input.** Every upstream operation's gradient reaches the output through AgX, so end-to-end optimisation needs AgX's derivative with respect to its input pixel. The derivative interface gains input-derivative entry points, per-pixel operations first, AgX among them; for a per-pixel operation reverse mode needs no scatter, and `agx_tone_curve` becomes differentiable. Spatial operations record their gap as understood (decision 11).
 
 ## Test plan
 

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Vignetting's invariants (`docs/modules/vignetting.md`, Invariants), one test per row,
+//! Vignetting's invariants (`docs/tools/vignetting.md`, Invariants), one test per row,
 //! each named after its row: a switched module's (decision 32), V0 off, V1 the first
 //! step, on at darktable's defaults, V2 moved and reset, V3 the order, V4 the darktable
 //! match, V7 on at darktable's defaults on the CPU and V8 version 1's edits; V5, on a
@@ -54,7 +54,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_be
 
 const VIGNETTE: &str = "vignette";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18. One row, over a colour raw's context with an exposure bias
 /// of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {

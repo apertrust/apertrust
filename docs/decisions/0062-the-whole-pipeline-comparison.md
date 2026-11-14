@@ -13,7 +13,7 @@ Each port passing its own case does not prove that the whole pipeline renders as
 - **What is measured** is the engine's output before `apertrust-cli export` rounds it to 8 bits, clipped to 0 to 1 as a PNG is, against darktable's 16-bit PNG, by CIEDE2000 per pixel within the declared image. 8-bit rounding alone costs a mean of about 0.2, so the tolerance does not bound the shipped 8-bit file.
 - **The tolerance:** a mean ΔE2000 of at most 0.01, ten times what the pipeline gives where the decoders agree, and at most 0.01% of pixels over 2.3, darktable's own maximum, since rounding tips the occasional demosaic direction choice and AgX makes a few such pixels visible. The 99th percentile is reported.
 - **The scope:** the samples both decoders read as colour mosaics, 29 of the 40. The other 11 skip only for their listed reason (`EXPECTED_SKIPS`): rawler cannot decode it, it is not a colour mosaic, or darktable-cli's loader rejects it. Any other error or skip fails the run; the list comes from the corpus manifest, so a missing sample fails too.
-- **At a size:** `pipeline IMAGE --width W --height H [--hq BOOL]` compares an export at a size with darktable-cli's at the same size, measured without a bound, and `--add CASE` puts a golden case's module on both sides.
+- **At a size:** `pipeline IMAGE --width W --height H [--hq BOOL]` compares an export at a size with darktable-cli's at the same size, measured without a bound, and `--add CASE` puts a golden case's operation on Apertrust's side and darktable's module on the other.
 
 The current results are in AGENTS.md and the roadmap: Sony's two lossy ARWs fail until rawler seeds their dither as rawspeed does ([0023](0023-rawler-its-camera-data-fixed-upstream.md)).
 

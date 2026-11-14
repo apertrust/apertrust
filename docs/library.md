@@ -77,7 +77,7 @@ Built first, and partly built.
   - Built, as a drop of the files opens them: looked at off the interface's thread, a file that opens nothing refused with an alert in the window, and waiting for a modal dialog to go. Selecting the others with the first waits for the grid panel's selection (Phase 3), and the notice for notices (step 12).
 - Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
-- Browse, the Photos tab's first module, has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in Browse's options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
+- Browse, the Photos tab's first tool, has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in Browse's options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
 - Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, of the same form as a library's (planned, decision 73).
 - Import… (planned) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it.
 - It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
@@ -162,7 +162,7 @@ darktable's library is kept feature by feature, with 24 deviations, each for a r
 - a reject that keeps the stars; ratings and labels as history steps;
 - change detection always on, an edit changed on two machines kept as a second virtual copy, metadata combining; cloud conflict copies found and handled;
 - a content fingerprint; no locks or database on shared storage; offline drives marked, never skulls; no background download of a cloud file;
-- Folders, Albums and Smart albums in place of the collect module;
+- Folders, Albums and Smart albums in place of the collect tool;
 - darktable's automatic `darktable|…` tags not written, their facts properties of the index;
 - Import never rewriting a sidecar; names compared in one Unicode form;
 - the selection the session's; the import time only in each machine's cache; local copies keyed by fingerprint;
@@ -170,7 +170,7 @@ darktable's library is kept feature by feature, with 24 deviations, each for a r
 
 ### In the window
 
-Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid panel shows and describes the photos in it. Its modules are Browse, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Browse keeps one name in every mode, its top line showing what is open: in folder mode the open folder ("Folder: Wedding 2026-10"), its count on its row in Folders' tree, in a library or a project its name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
+Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid panel shows and describes the photos in it. Its tools are Browse, pinned, then Filters, Keywords, Metadata and Styles ([gui.md](gui.md#the-side-panel)). Browse keeps one name in every mode, its top line showing what is open: in folder mode the open folder ("Folder: Wedding 2026-10"), its count on its row in Folders' tree, in a library or a project its name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
 
 **The sections by mode:**
 
@@ -181,9 +181,9 @@ Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid 
 | A library | Its roots' trees | Its albums, nested | Its smart albums, over the library or inside an album |
 | A project | Its folders, with their roles marked: Capture, Selects, Output, Trash | Its albums, which group photos without moving them | Its smart albums, saved searches within the project |
 
-- **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in Browse's options: Make This Folder a Library…, New Library… on the open folder, in place. The module's top, what is open with its recents and ＋, is the same in every mode.
+- **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in Browse's options: Make This Folder a Library…, New Library… on the open folder, in place. The tool's top, what is open with its recents and ＋, is the same in every mode.
 - **Filters in folder mode** (decision 73, Phase 3, planned) run over the open folder's index in memory, not smart albums: nothing is written beside the photos, and Save as Smart Album leads to Make This Folder a Library…. A filter that hides selected photos leaves only the shown ones selected.
-- **Keywords** are one module, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
+- **Keywords** are one tool, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
 - **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
 
 - **Built:** one photo from a terminal ([One photo](#one-photo)), with Browse's Open This Folder; `apertrust FOLDER`; Open With and a double-click, the files' folder opened with the first active; File › Open Folder…, File › Open… and drag and drop onto the window ([gui.md](gui.md#file)), View › Browse (L), and the Photos tab's Browse, in folder mode's form: its top line, what is open, listing the recents kept in the user data folder's `state.toml`, with ＋ and ⋯, and Folders alone, the tree of the folder opened, its root fixed at the top with its count and nothing above it, its subfolders, a click on one making it the active folder, the tree and the recents unchanged; the grid panel showing the active folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, or its file name until it comes or where there is none, its marks from its edit state ([Edit states](#edit-states)); the central panel's empty states, one quiet line with nothing open; File › Open Recent with Clear Menu, File › Close, and what was open last reopened at the start, its photo active once listed (`library.reopen_last`). Open… and a drop of raws open the first raw at once and, as a way in, its folder behind it as the tree's root; where that folder is the root already, they choose the root if another folder of its tree is active, and change nothing if it is; selecting the others with it waits for the grid panel's selection (Phase 3). A dropped folder opens as Open Folder… opens one.
@@ -192,7 +192,7 @@ Decisions 37, 46 and 73. The Photos tab of the side panel chooses what the grid 
 
 ## The code
 
-Decision 54. The library's code is one crate, `apertrust-library`, with no GPU and no engine. It depends on quick-xml, thiserror, blake3, chrono, machine-uid, getrandom, tracing, `apertrust-base`'s `fs` part and `apertrust-raw` (for its list of raw extensions alone), never on the engine, the modules, the plugin interface or wgpu.
+Decision 54. The library's code is one crate, `apertrust-library`, with no GPU and no engine. It depends on quick-xml, thiserror, blake3, chrono, machine-uid, getrandom, tracing, `apertrust-base`'s `fs` part and `apertrust-raw` (for its list of raw extensions alone), never on the engine, the tools, the plugin interface or wgpu.
 
 ### Four layers
 
@@ -213,7 +213,7 @@ flowchart TB
     storage -.-> server
 ```
 
-| Layer | Its one job | Module | State |
+| Layer | Its one job | Tool | State |
 | --- | --- | --- | --- |
 | 1. Files | Bytes in, values out, and back: the `.apxmp` text layer with the comparison of two copies, over the XMP layer, and the library's TOML files (`Name.aplibrary` or `Name.approject`, and `.apertrust/`'s roots, albums, smart albums and keywords); no folders listed, no threads; every call into a root's files through the storage interface | `sidecar`, `xmp`; `files`; below them `storage` and `apertrust_base::fs` | `sidecar` (version 1) and `xmp` built; `files`, the comparison and `storage` planned |
 | 2. Model | The open `Library` (a folder, a library or a project), its roots, photos, virtual copies, albums, smart albums and keywords; every change applied here, written through layer 1, reported as events | `model` | Planned |
@@ -244,7 +244,7 @@ flowchart LR
     library --> raw["apertrust-raw<br/>extensions"]
 ```
 
-- **The engine** depends on the library for `sidecar` and `ops`. Its own `sidecar` module is the typed reading and writing of an edit on top of the library's text layer, with the module definitions ([engine.md](engine.md#edits)). Its session re-exports `ops` as `session::library`, with `LibraryCommand` and `LibraryEvent`, and serves them ([The API](#the-api)).
+- **The engine** depends on the library for `sidecar` and `ops`. Its own `sidecar` module is the typed reading and writing of an edit on top of the library's text layer, with the tool definitions ([engine.md](engine.md#edits)). Its session re-exports `ops` as `session::library`, with `LibraryCommand` and `LibraryEvent`, and serves them ([The API](#the-api)).
 - **The app** reaches the library only through the session: `Command::Library` out, `Event::Library` in.
 - **The CLI** runs the library in its own process, with no lock between it and a running app ([The CLI](#the-cli)).
 - The library never depends on the engine, so a client could one day compile its types without it (decision 58).
@@ -392,7 +392,7 @@ From decision 54 and the steps; none of these names exist in the code yet.
 - **Commands,** about forty, in five groups: open and organise; bring in and take out (`Import`, `ImportLibrary`, `ExportAsProject`); browse (`Show` and `Page`, while today the client keeps the photos listed); describe photos, ratings to snapshots and groups, and the keyword list's rename, move, delete and edit, each a cancellable job writing every sidecar that holds the keyword, one undo step (decision 73); files (Move to `MakeAvailableOffline`).
 - **Events,** about twenty, reporting every change whoever made it: `PhotosChanged`, `Diverged`, `RootOffline`, `InCloud` and `ViewOnly` among them; `CollectionChanged` first, one per change with darktable's reason and property, a fact or a notice by its kind (decision 59, step 5's later part).
 - **Notices for the user,** `Event::Notice`, with step 12 ([events.md](events.md#notices-for-the-user)).
-- **The whole of `LibraryCommand` and `LibraryEvent`** in the session protocol with step 35; MCP's tools generated from `LibraryCommand`'s schema, read and write apart, off until the person allows them and read-only unless writes are allowed (principle 8), in Phase 6.
+- **The whole of `LibraryCommand` and `LibraryEvent`** in the session protocol with step 35; MCP tools generated from `LibraryCommand`'s schema, read and write apart, off until the person allows them and read-only unless writes are allowed (principle 8), in Phase 6.
 
 ## Listing and the index
 
@@ -452,11 +452,11 @@ Decisions 47 and 53, layer 3 in memory, `crates/library/src/index.rs`. `Index::b
 - **`Index`:** its `photos`, each an `index::Entry` in name order; its `orphans`; its `subfolders` in `browser_order`; the listing's `summary`; whether it was `cancelled`; how long it took (`elapsed`), a `-d perf` line.
 - **`index::Entry`:** the raw's `name` and `FileStat`, the sidecar's `FileStat` where it has one (`file`), and its `sidecar`.
 - **`index::Sidecar`:** `None`, no sidecar; `Read(Edit)`; `Unreadable(reason)`, which is that photo's alone to report, the rest indexed; or `NotRead`, the build cancelled before it.
-- **`index::Edit`:** the file's `version`; `file_hash`, the BLAKE3 of the file's bytes, which changes whenever the file does and means the same on every machine and build (not the thumbnail key, which hashes the edit it holds, so another build rewriting the same edit differently does not invalidate them); `edited`, whether some module's last entry up to a copy's end is not empty, a fold of its log as text (`Edits::edited`; a version 1 file's entries are a step each), or it is a newer Apertrust's, whose layout this build may not read and so may not call empty; and `view_only`, the `Newer` that makes it open for viewing only. A `sidecar::Problem` is not told here: the photo finds it as it opens.
+- **`index::Edit`:** the file's `version`; `file_hash`, the BLAKE3 of the file's bytes, which changes whenever the file does and means the same on every machine and build (not the thumbnail key, which hashes the edit it holds, so another build rewriting the same edit differently does not invalidate them); `edited`, whether some tool's last entry up to a copy's end is not empty, a fold of its log as text (`Edits::edited`; a version 1 file's entries are a step each), or it is a newer Apertrust's, whose layout this build may not read and so may not call empty; and `view_only`, the `Newer` that makes it open for viewing only. A `sidecar::Problem` is not told here: the photo finds it as it opens.
 - **`Index::counts`:** the photos with an edit, those that open view-only and the unreadable sidecars, as `Counts`.
 - **Cancelling** is a closure the build asks between calls into the folder, from the calling thread and the readers', and while it waits for the listing. A cancelled build returns at once, never waiting for a listing stuck in a call, says so, and marks the sidecars it had not reached `NotRead`. A reader that panics makes that photo's sidecar unreadable, and the thread goes on with its share.
 
-Ratings and other metadata in the index, and changes made outside, are planned. So are its **rules** (decision 73): the Filters module's groups with their counts, darktable's collect rules and filters, over the open folder in Phase 3 and reused by smart albums and the library's cache in Phase 5. Camera, lens and exposure come with the capture times, in the same read.
+Ratings and other metadata in the index, and changes made outside, are planned. So are its **rules** (decision 73): the Filters tool's groups with their counts, darktable's collect rules and filters, over the open folder in Phase 3 and reused by smart albums and the library's cache in Phase 5. Camera, lens and exposure come with the capture times, in the same read.
 
 ### Edit states
 
@@ -487,7 +487,7 @@ Decision 47.
 
 | Data | Where | Why |
 | --- | --- | --- |
-| Module values, layers, mask shapes, history, virtual copies, snapshots, ratings and metadata | `.apxmp` | Small, text, inspectable |
+| Tool values, layers, mask shapes, history, virtual copies, snapshots, ratings and metadata | `.apxmp` | Small, text, inspectable |
 | Generative fill and AI erase results | `.apdata` | Generated pixels cannot be reproduced exactly |
 | Refined AI masks, painted brush masks | `.apdata` | Raster data a person made, expensive or impossible to regenerate |
 | Click-to-select embeddings, depth maps, search embeddings, thumbnails | Each machine's cache | Recomputable, so never carried in sidecars |
@@ -497,23 +497,23 @@ Decision 47.
 Decisions 28 and 48, built. `.apxmp` is XMP: attributes for values, one `rdf:Description` per entry, numbers in their shortest exact form.
 
 - **Version 0** held operation parameters only, with no compatibility promise; it still opens.
-- **Version 1** holds each module the edit touches with its version, its controls and its marks, and operation parameters only where no module owns them, on operations an unedited photo runs. It still reads, as one virtual copy of a step of each entry; the engine writes [version 2](#version-2), with the history. What each entry means, how it is read, migrated, clamped and saved is the engine's ([engine.md](engine.md#edits)).
-- **The namespaces** are on the project's domain: `sidecar::NAMESPACE`, `https://apertrust.org/ns/xmp/`, for Apertrust's own properties; `sidecar::CONTROL_NAMESPACE`, `.../xmp/control/`, for module controls by their ids; `sidecar::PARAM_NAMESPACE`, `.../xmp/param/`, for operation parameters by their schema names.
+- **Version 1** holds each tool the edit touches with its version, its controls and its marks, and operation parameters only where no tool owns them, on operations an unedited photo runs. It still reads, as one virtual copy of a step of each entry; the engine writes [version 2](#version-2), with the history. What each entry means, how it is read, migrated, clamped and saved is the engine's ([engine.md](engine.md#edits)).
+- **The namespaces** are on the project's domain: `sidecar::NAMESPACE`, `https://apertrust.org/ns/xmp/`, for Apertrust's own properties; `sidecar::CONTROL_NAMESPACE`, `.../xmp/control/`, for tool controls by their ids; `sidecar::PARAM_NAMESPACE`, `.../xmp/param/`, for operation parameters by their schema names.
 
-**The text layer** is the library's `sidecar` module, layer 1, `crates/library/src/sidecar.rs`. It knows the file's structure and nothing of what the values mean, so it depends on no engine, GPU, module or operation crate:
+**The text layer** is the library's `sidecar` module, layer 1, `crates/library/src/sidecar.rs`. It knows the file's structure and nothing of what the values mean, so it depends on no engine, GPU, tool or operation crate:
 
 - `sidecar::Document`, version 1's file as text: its `version` (1 for a document made to be written, as tests and fixtures make one), the `build` that wrote it from `x:xmptk`, and its `entries`, each a `sidecar::Entry`: `Module` (its id, version as written, `kept` and `auto` marks and `control:` attributes) or `Operation` (its id, schema and `param:` attributes), every value as the text the file holds, in the file's order.
-- `Document::parse` reads one through the XMP layer, and `sidecar::read` reads a file; `Document::to_xml` writes one, the modules' entries first and then the operations', in a layout that never varies, so a file read and written back is the same bytes. A fixture folder (`crates/library/tests/fixtures/*.apxmp`) is written back byte for byte.
+- `Document::parse` reads one through the XMP layer, and `sidecar::read` reads a file; `Document::to_xml` writes one, the tools' entries first and then the operations', in a layout that never varies, so a file read and written back is the same bytes. A fixture folder (`crates/library/tests/fixtures/*.apxmp`) is written back byte for byte.
 - `SidecarError`: `Io`, `Xml` (not XMP), `NotAnEdit` (no `apertrust:version`) and `Version`, a version that is no whole number, which refuses to open. In version 2, what cannot be read as written, a clock or a note, is a `sidecar::Problem` in `Edits::problems`, the rest of the file read.
-- The engine turns the entries into an `Edit` and back with the module definitions; this module never sees a number, a choice or a parameter's range.
+- The engine turns the entries into an `Edit` and back with the tool definitions; this module never sees a number, a choice or a parameter's range.
 
 ### Newer edits
 
 Decisions 43 and 52. An edit holding anything a save would drop is never overwritten by an older build: it opens for viewing only, saying which version wrote it.
 
-- `sidecar::Newer` says why, never by comparing builds' versions, which development builds on different branches do not order: `Version`, a file version above `COPIES_VERSION`, 2, which `Edits::newer` tells from the file alone; `ModuleVersion`, a module version above its definition's; `Module`, a module this build neither has nor has retired; `Enabled`, a module's `apertrust:enabled` this build cannot keep, on a module it does not switch or with a value other than `true` (decision 32). The last three only the module definitions can tell, so the engine finds them.
+- `sidecar::Newer` says why, never by comparing builds' versions, which development builds on different branches do not order: `Version`, a file version above `COPIES_VERSION`, 2, which `Edits::newer` tells from the file alone; `ModuleVersion`, a tool version above its definition's; `Module`, a tool this build neither has nor has retired; `Enabled`, a tool's `apertrust:enabled` this build cannot keep, on a tool it does not switch or with a value other than `true` (decision 32). The last three only the tool definitions can tell, so the engine finds them.
 - `sidecar::ViewOnly` is the error such an edit carries, with the `build` that wrote it (`sidecar::writer`) and its `Reason`: `Newer`, or `Unreadable`, a `sidecar::Problem`, what of a version 2 file's history cannot be read as written, which opens it for viewing only too, its caption saying so rather than naming a newer build ([history.md](history.md#in-the-sidecar)).
-- The index reports `Newer` from the file alone, so a folder's grid marks such a photo before it is opened; the engine adds what the module definitions tell as the photo opens ([engine.md](engine.md#edits-a-newer-apertrust-wrote)). Anything else a save would drop, metadata included, is to make the photo view-only too ([engine.md](engine.md#what-a-save-may-drop), planned).
+- The index reports `Newer` from the file alone, so a folder's grid marks such a photo before it is opened; the engine adds what the tool definitions tell as the photo opens ([engine.md](engine.md#edits-a-newer-apertrust-wrote)). Anything else a save would drop, metadata included, is to make the photo view-only too ([engine.md](engine.md#what-a-save-may-drop), planned).
 
 ### Safe writes
 
@@ -543,12 +543,12 @@ Decision 47. Version 2 holds the parts below, in decision 48's style, written th
 
 **Its history,** per virtual copy, an ordered list of steps, as darktable's XMP holds `darktable:history`; the library's step 9, designed in full in [history.md](history.md) (decision 78).
 
-- **A step** is one module's change, a completed change of several modules a step of each sharing a batch id, a control's quick repeats merged (decision 78): a random id; its clock; its source and an optional note; the module it touched with its stored values after it, or, for Reset, each module it reset, a reset that turns a switched module off being the entry `off` (decision 32); the ratings, reject, labels, keywords and metadata it set; and a batch's id, so Undo finds the batch in every photo after a restart (decision 37).
-- **The end** (`apertrust:end`) is the last step applied, by its id, darktable's `history_end`. The edit is, for each module, its values at its last step up to the end, otherwise its defaults, off if it is switched.
+- **A step** is one tool's change, a completed change of several tools a step of each sharing a batch id, a control's quick repeats merged (decision 78): a random id; its clock; its source and an optional note; the tool it touched with its stored values after it, or, for Reset, each tool it reset, a reset that turns a switched tool off being the entry `off` (decision 32); the ratings, reject, labels, keywords and metadata it set; and a batch's id, so Undo finds the batch in every photo after a restart (decision 37).
+- **The end** (`apertrust:end`) is the last step applied, by its id, darktable's `history_end`. The edit is, for each tool, its values at its last step up to the end, otherwise its defaults, off if it is switched.
 - **Undo and Redo** take back the session's undo records while the photo is open, otherwise they move the end; a change after Undo drops the later steps, which Undo brings back while the photo is open ([history.md](history.md#behaviour)).
-- **Compress History** drops the person's steps after the end, keeps for each module and field its last entry with its step id and clock, and every default step, so the photo shows what it showed, and advances the copy's clock vector with a clock of its own, so a copy still holding the folded steps is known to be older. Undo puts the log back while the photo is open. Each move of the end, Undo, Redo and going to a step, advances the clock vector likewise.
-- **Reset** is a step that resets the edit, the log kept. **Discard History…** (decision 78; built, in Edit and the History section's ⋯) is darktable's discard, the session's `DiscardHistory`: it clears the history and resets the edit, as going to Original and then Compress, asking first, and is undone within the session. It is the one command allowed on an edit view-only because of a `sidecar::Problem`, where it writes a fresh log of a new photo's default steps and a step of each module the edit holds as far as it was read, sharing a batch, noted `history-discard`, and ends the view-only state.
-- **Only the log is stored,** never the edit's state beside it, which could disagree with it. A step is about 720 bytes as written, one module's step of two controls set and kept, so 1,000 steps are about 0.7 MB ([history.md](history.md#in-the-sidecar)).
+- **Compress History** drops the person's steps after the end, keeps for each tool and field its last entry with its step id and clock, and every default step, so the photo shows what it showed, and advances the copy's clock vector with a clock of its own, so a copy still holding the folded steps is known to be older. Undo puts the log back while the photo is open. Each move of the end, Undo, Redo and going to a step, advances the clock vector likewise.
+- **Reset** is a step that resets the edit, the log kept. **Discard History…** (decision 78; built, in Edit and the History section's ⋯) is darktable's discard, the session's `DiscardHistory`: it clears the history and resets the edit, as going to Original and then Compress, asking first, and is undone within the session. It is the one command allowed on an edit view-only because of a `sidecar::Problem`, where it writes a fresh log of a new photo's default steps and a step of each tool the edit holds as far as it was read, sharing a batch, noted `history-discard`, and ends the view-only state.
+- **Only the log is stored,** never the edit's state beside it, which could disagree with it. A step is about 720 bytes as written, one tool's step of two controls set and kept, so 1,000 steps are about 0.7 MB ([history.md](history.md#in-the-sidecar)).
 
 **Its snapshots,** per virtual copy, each with an id, a name, its clock and the edit it shows, whole, as one compressed step, so Compress cannot break one. Restore Snapshot is a step. The library's step 16 adds them to the history's API and its tab's Snapshots section ([history.md](history.md)). (darktable's are a point in the history, in memory, ten at most.)
 
@@ -564,9 +564,9 @@ Decision 47. Version 2 holds the parts below, in decision 48's style, written th
 
 **Its photo groups,** by id, so they survive a rebuild.
 
-**The session's undo and history are this log** ([history.md](history.md); [engine.md](engine.md#history-and-undo)), first in the session's memory and saved here since the library's step 9.5, on version 2's text layer (step 8.2), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. Before each write the writer compares the file's size and modified time, and the session takes a newer file in, laying its steps not yet saved on it ([history.md](history.md#behaviour)). A version 1 sidecar is read as one virtual copy whose history is a step of each of its modules, sharing a batch; version 0 still opens. The text layer is to gain the comparison of two copies ([Comparing two copies](#comparing-two-copies)); the engine keeps the typed reading with the module definitions ([engine.md](engine.md#version-2)).
+**The session's undo and history are this log** ([history.md](history.md); [engine.md](engine.md#history-and-undo)), first in the session's memory and saved here since the library's step 9.5, on version 2's text layer (step 8.2), so reopening a photo brings Undo and Redo back and a crash loses at most the gesture in flight. Before each write the writer compares the file's size and modified time, and the session takes a newer file in, laying its steps not yet saved on it ([history.md](history.md#behaviour)). A version 1 sidecar is read as one virtual copy whose history is a step of each of its tools, sharing a batch; version 0 still opens. The text layer is to gain the comparison of two copies ([Comparing two copies](#comparing-two-copies)); the engine keeps the typed reading with the tool definitions ([engine.md](engine.md#version-2)).
 
-**Never overwritten by an older build** (decisions 43 and 52): an edit holding anything a save would drop opens for viewing only, metadata included. That is a newer file or module version, a module this build neither knows nor has retired, or, at the edit's own versions, a control, value, operation, parameter or element it cannot keep.
+**Never overwritten by an older build** (decisions 43 and 52): an edit holding anything a save would drop opens for viewing only, metadata included. That is a newer file or tool version, a tool this build neither knows nor has retired, or, at the edit's own versions, a control, value, operation, parameter or element it cannot keep.
 
 ### The binary sidecar, `.apdata`
 
@@ -628,11 +628,11 @@ Decision 52, planned (steps 10 to 13).
   - the same vector: nothing to do;
   - one at or below the other for every machine: that copy is only older, and the newer replaces it;
   - neither, and both changed the edit: the copy whose latest clock is later, its clock vector included, stays, and the other becomes a new virtual copy with its own history, named after its machine and time ("From MacBook, 5 Nov 14:02"; in folder mode "From another computer"), the activity saying so. A copy whose only change was an Undo, a Truncate or a Compress counts as later by that move's clock (decision 78).
-- **Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step, in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on the other never splits a photo. A module-by-module merge comes later, as a setting.
+- **Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step, in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on the other never splits a photo. A tool-by-tool merge comes later, as a setting.
 - **A virtual copy only one side has** is kept; one a side deleted stays deleted if the deletion is later than the other side's last step on it.
 - **When copies are compared:**
   - before every write, the writer reading the file again if it changed since this machine last read it, and writing only if the bytes differ;
-  - when a sidecar changes outside Apertrust, the active photo taking a newer edit, a module being dragged staying the person's;
+  - when a sidecar changes outside Apertrust, the active photo taking a newer edit, a tool being dragged staying the person's;
   - for conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp`, and whose `apertrust:photo` and fingerprint match a photo there, is compared, kept 30 days in the user data folder's `conflict-copies/` and removed, its content deciding, not its name (decision 76);
   - for a server root, whenever this machine and the server exchange a sidecar, the server being one more copy ([A server](#a-server));
   - later, silent winners: each machine keeping in its user data folder the last copy of each sidecar it wrote (decision 76), and iCloud's hidden versions.
@@ -670,7 +670,7 @@ flowchart LR
 - **The container's base system** counts as the platform, as a distribution's libraries do; only what Apertrust compiles into the server follows decision 5.
 - **Thumbnails** of a server root are the desktop's, made from the local copies or the raws as it reads them, as for any folder.
 - **What it gives over a NAS share:** away from home, one protocol made for the network's latency where SMB needs a VPN and pays its latency on every call; listing from the server's index rather than a call per file (21.6 s for 2,825 files over SMB, [Listing in bulk](#listing-in-bulk)); one place every machine, and later a mobile app, syncs with.
-- **Later, Shared Project** for a studio shoot (decision 71), by File › Share Project… and Join Shared Project…: several people in one project at once, the host the NAS or a desktop running the same server, changes pushed to every machine within about 2 s on a local network, the owner managing the structure and the collaborators editing and culling, merged module by module and never locked, with a follow mode and a sync panel.
+- **Later, Shared Project** for a studio shoot (decision 71), by File › Share Project… and Join Shared Project…: several people in one project at once, the host the NAS or a desktop running the same server, changes pushed to every machine within about 2 s on a local network, the owner managing the structure and the collaborators editing and culling, merged tool by tool and never locked, with a follow mode and a sync panel.
 
 ## A library's cache
 

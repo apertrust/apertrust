@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Grain (`docs/modules/grain.md`): darktable's grain as the user edits with it, in
+//! Grain (`docs/tools/grain.md`): darktable's grain as the user edits with it, in
 //! the first pass (decision 2): darktable's page, its three sliders in `gui_init`'s order
 //! under its labels, coarseness, strength and mid-tones bias. It has no tabs, groups or
 //! presets of its own, and works on the background only.
@@ -341,7 +341,7 @@ mod tests {
     const SCALE: (f32, f32) = ((20.0 / 213.2_f64) as f32, (6400.0 / 213.2_f64) as f32);
 
     /// darktable's grain sliders (`src/iop/grain.c`, the params and `gui_init`), in
-    /// its parameters' units: `docs/modules/grain.md`'s slider table.
+    /// its parameters' units: `docs/tools/grain.md`'s slider table.
     const DARKTABLE: [DarktableSlider; 3] = [
         // `dt_bauhaus_slider_set_factor(g->scale, GRAIN_SCALE_FACTOR)`, no digits, " ISO".
         DarktableSlider::new("scale", SCALE, 0).shown_as(213.2, 0.0),

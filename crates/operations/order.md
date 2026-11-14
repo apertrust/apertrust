@@ -1,6 +1,6 @@
 # Operation order
 
-Every built operation's slot, in pipeline order: the stage it reads and its number (decisions 21 and 22), whether an unedited photo runs it, its place in darktable's v5.0 order (`src/common/iop_order.c`, `v50_order`), and the module that drives it, of the first pass's modules, darktable's (decision 2, [modules/README.md](../../docs/modules/README.md)). The rules for choosing a slot are in [engine.md, Order](../../docs/engine.md#order).
+Every built operation's slot, in pipeline order: the stage it reads and its number (decisions 21 and 22), whether an unedited photo runs it, its place in darktable's v5.0 order (`src/common/iop_order.c`, `v50_order`), and the tool that drives it, of the first pass's tools, darktable's (decision 2, [tools/README.md](../../docs/tools/README.md)). The rules for choosing a slot are in [engine.md, Order](../../docs/engine.md#order).
 
 `crates/operations/tests/order.rs` reads this table and holds every built-in operation's manifest to it, so it changes with the manifests. It lives beside the test, in the crate, so that nothing under `docs/` is read by code and every edit to the documentation skips the code's checks (decision 70); an edit here runs them.
 

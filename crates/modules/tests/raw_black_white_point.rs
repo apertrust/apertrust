@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Raw black/white point's invariants (`docs/modules/raw-black-white-point.md`,
+//! Raw black/white point's invariants (`docs/tools/raw-black-white-point.md`,
 //! Invariants), one test per row, each named after its row: R0 to R3, the rows a
 //! first-pass table has (decision 22) for a module over an operation every raw runs, so
 //! with no first step, and R4, a white point at or below a black level. The small raw runs

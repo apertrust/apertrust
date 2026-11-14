@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Tone curve's invariants (`docs/modules/tone-curve.md`, Invariants) that apply to the
+//! Tone curve's invariants (`docs/tools/tone-curve.md`, Invariants) that apply to the
 //! Luma curve, one test per row, each named after its row: T0, T1, T4 to T8, T11, T16
 //! and T17, T4 and T5 for each Preserve colours option. The synthetic ramp and sweep run
 //! on CI's software GPUs:
@@ -48,7 +48,7 @@ use common::{
     profile, raw_context, small_raw, sweep,
 };
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then the greys whose lightness is each of `lightness`, as the curve's axis
 /// reads them. One row.
 fn ramp_with(lightness: &[f32]) -> (Picture, ImageContext) {
@@ -360,9 +360,9 @@ fn t4_luma_points_render_as_drawn() {
 /// T4 with Preserve colours on sum or norm. Their measure of a grey v is 3v and √3·v, so
 /// the grey renders C(3v)/3 and C(√3·v)/√3, not C(v), the curve the panel draws. Measured
 /// on T4's curves, the worst of each: 0.073 to 0.19 of the axis off with sum, 0.044 to
-/// 0.10 with norm, both largest on contrast high (docs/modules/tone-curve.md, Results).
+/// 0.10 with norm, both largest on contrast high (docs/tools/tone-curve.md, Results).
 #[test]
-#[ignore = "fails its bound with Preserve colours on sum and norm, whose greys do not render as the curve drawn: the user decides (docs/modules/tone-curve.md, T4 and T17)"]
+#[ignore = "fails its bound with Preserve colours on sum and norm, whose greys do not render as the curve drawn: the user decides (docs/tools/tone-curve.md, T4 and T17)"]
 fn t4_luma_points_render_as_drawn_with_sum_and_norm() {
     t4_holds(&GREYS_SCALED);
 }
@@ -590,9 +590,9 @@ fn t7_a_point_added_in_the_shadows_moves_the_curve_within_its_proposed_bound() {
 /// adding a point re-derives the monotone Hermite tangents of its neighbours, so the
 /// segments beside it reshape. Measured: up to 0.062 of the axis on contrast compression
 /// at 0.5, 0.050 and 0.046 on the one-point curve at 0.5 and 0.9, 0.0100023 on contrast
-/// high at 0.9 (docs/modules/tone-curve.md, Results).
+/// high at 0.9 (docs/tools/tone-curve.md, Results).
 #[test]
-#[ignore = "fails its proposed bound of 0.01, by up to 0.062 of the axis: the user decides (docs/modules/tone-curve.md, T7)"]
+#[ignore = "fails its proposed bound of 0.01, by up to 0.062 of the axis: the user decides (docs/tools/tone-curve.md, T7)"]
 fn t7_adding_a_point_on_a_curve_moves_it_within_its_proposed_bound() {
     let failures: Vec<_> = points_added_on_curves()
         .into_iter()

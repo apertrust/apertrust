@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Apertrust's modules (architecture decisions 4 and 28): what the user edits with. A
-//! module is one editing task, as the modules README lists them (`docs/modules/README.md`),
+//! module is one editing task, as the modules README lists them (`docs/tools/README.md`),
 //! with its controls, its tabs and maybe Auto; an operation is one of the engine's
 //! algorithms. A module implements [`Module`]:
 //!
@@ -133,7 +133,7 @@ pub trait Module: Send + Sync {
     /// The parameters of [`Self::owns`] no control sets, which the module holds at the
     /// operation's value for the photo, as Raw black/white point holds the raw's crop
     /// margins and Colour calibration darktable's version 3 (rule 12 of
-    /// `docs/modules/README.md`): a client asking to set one is told the module fixes it,
+    /// `docs/tools/README.md`): a client asking to set one is told the module fixes it,
     /// not that it sets it. None, as provided.
     fn fixed(&self) -> &'static [Owned] {
         &[]
@@ -295,7 +295,7 @@ pub trait Module: Send + Sync {
 
     /// The other controls darktable's GUI writes when `control` takes the value `values`
     /// now holds, `values` being every control, the edit's over the defaults (decision
-    /// 27; `docs/modules/README.md`, rule 13): Colour calibration's `x`, `y` and
+    /// 27; `docs/tools/README.md`, rule 13): Colour calibration's `x`, `y` and
     /// `temperature` when its illuminant changes, so every control describing the light
     /// describes the same one; White balance's `preset` user modified when a coefficient
     /// moves. Each within its range, and never `control` itself, nor another control the

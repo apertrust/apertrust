@@ -35,7 +35,7 @@ Raw decoding uses rawler, a decoder in Rust from the dnglab project (decision 23
 
 - **Against RawSpeed,** darktable's decoder, on 40 raw.pixls.us samples: rawler decoded 36 and RawSpeed 29. Wherever both decode a mosaic, the raw values are identical, apart from Sony's lossy ARWs, where both dither Sony's tone curve but seed the dither from different bits of each row.
 - **Canon CR3:** rawler reads it; RawSpeed cannot, and darktable uses LibRaw for it.
-- **Golden tests** of modules take darktable's own renders as input, so the decoder adds nothing to their ΔE.
+- **Golden tests** of ports take darktable's own renders as input, so the decoder adds nothing to their ΔE.
 - **Licence and build:** rawler is LGPL-2.1, compatible with GPLv3, and pure Rust, so it builds wherever Rust does, Windows with MSVC included.
 - **Metadata:** it also reads EXIF, ratings and lenses from maker notes; the metadata spike checks how far that goes.
 - **A corpus test** pins its output on the 40 samples, so each rawler update is deliberate.
@@ -47,7 +47,7 @@ Distortion, chromatic aberration and vignetting corrections use lensfun's lens d
 
 - **It is what darktable's lens correction module uses,** so corrections match darktable in the golden tests and the same database applies.
 - **The database updates on its own,** so new lenses need no app release. Its licence, CC BY-SA, and the library's, LGPL, are both compatible with GPLv3.
-- **Embedded corrections come first.** Correction data some cameras store in their raws is supported alongside lensfun, as in darktable's lens module, including how it chooses between the two sources; the module lets the user pick the source (`docs/ports/lens.md`).
+- **Embedded corrections come first.** Correction data some cameras store in their raws is supported alongside lensfun, as in darktable's lens module, including how it chooses between the two sources; the tool lets the user pick the source (`docs/ports/lens.md`).
 - **Where the embedded data comes from:** Sony's raw IFD, Fujifilm's FujiIFD and maker note, OM System's maker note, and a DNG's OpcodeList3. `apertrust-raw` reads them over rawler's public TIFF and maker-note parsers, with darktable's checks, into the image context's `Camera::lens_correction`, as darktable stores them; the operation computes everything from them (decision 25).
 - **Why not lensfun itself:** it needs GLib, and darktable's GPU path asks it for a corrected coordinate for every pixel on the CPU, then uploads the map, about 1.4 GB per render at 60 MP. Porting the lookup keeps the database, and the models on the GPU keep the pipeline GPU-resident and differentiable.
 

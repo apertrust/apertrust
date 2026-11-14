@@ -14,7 +14,7 @@ darktable at the reference release, commit 20891f6c6f. The reference is darktabl
 
 Ported: the whole module, which has one algorithm and no modes, in Slang (`crates/op/primaries`), with its manifest, schema and `prepare` (`Primaries`). Checked on one GPU, the Apple M4.
 
-It is in `OPERATIONS` with `default_enabled` off, as darktable has rgb primaries off until the user turns it on. It is planned while its switched module is on, from a write of one of its controls to its reset (decision 32). The module, RGB primaries, is built (`docs/modules/rgb-primaries.md`).
+It is in `OPERATIONS` with `default_enabled` off, as darktable has rgb primaries off until the user turns it on. It is planned while its switched tool is on, from a write of one of its controls to its reset (decision 32). The tool, RGB primaries, is built (`docs/tools/rgb-primaries.md`).
 
 ## Results
 
@@ -43,7 +43,7 @@ Algorithmically it is one 3×3 matrix:
 2. the white is moved towards a hue the same way;
 3. the pixel's RGB, read as amounts of the new primaries that add up to the new white, goes back to the working space.
 
-It is the RGB primaries module in the Colour tab (`docs/modules/README.md`, RGB primaries), darktable's module in the first pass (decision 2).
+It is the RGB primaries tool in the Colour tab (`docs/tools/README.md`, RGB primaries), darktable's module in the first pass (decision 2).
 
 ## Pipeline
 
@@ -133,7 +133,7 @@ Every row adds up to 1, so greys stay grey: white goes to white whatever the pri
 
 darktable does the same. Its render of test 0152's sidecar with the module at its defaults applies this matrix (fitted from the render, within 3e-8), and the port's defaults match that render within a ΔE2000 mean of 0.0000, max 0.0002 (a local check, not a case).
 
-So a module's first step, which adds the operation (decision 28), moves colours that are not grey as darktable's first step does: on the case's input, a ΔE2000 mean of 0.028, p95 0.117, max 0.380.
+So a tool's first step, which adds the operation (decision 28), moves colours that are not grey as darktable's first step does: on the case's input, a ΔE2000 mean of 0.028, p95 0.117, max 0.380.
 
 ## Neighbourhood and scale
 
@@ -175,11 +175,11 @@ None in the maths: `process_cl` computes the same matrix on the CPU, transposes 
   - darktable's values there are not reproducible: rounding in its f32 determinant, inverted into entries of order 10⁸ that depend on how its binary rounds.
   - The setup takes the decision `mat3SSEinv` was written to make, with the determinant in f64, where the rounding is 1e-15: the zero matrix. The size: black against values of order 10⁸.
   - The kernel's derivative entry points read the setup's decision rather than their own f32 determinant, so their derivatives are 0 there, as `main`'s output is constant.
-- **No GUI:** the hue and purity sliders' painted stops (`_paint_hue_slider`, `_paint_purity_slider`) are interface, the module's to draw.
+- **No GUI:** the hue and purity sliders' painted stops (`_paint_hue_slider`, `_paint_purity_slider`) are interface, the tool's to draw.
 
 ## Tool binding notes
 
-In the first pass (decision 2) the RGB primaries module is darktable's and owns all eight parameters. It is built (`crates/modules/src/rgb_primaries.rs`, `docs/modules/rgb-primaries.md`), each control shown with darktable's slider factor and offset. darktable's page has no tabs, no collapsible groups and no presets: eight sliders in this order (`gui_init`):
+In the first pass (decision 2) the RGB primaries tool is darktable's and owns all eight parameters. It is built (`crates/modules/src/rgb_primaries.rs`, `docs/tools/rgb-primaries.md`), each control shown with darktable's slider factor and offset. darktable's page has no tabs, no collapsible groups and no presets: eight sliders in this order (`gui_init`):
 
 | Control | Parameter | Shown as | Soft range | Tooltip |
 | --- | --- | --- | --- | --- |
@@ -192,10 +192,10 @@ In the first pass (decision 2) the RGB primaries module is darktable's and owns 
 | tint hue | `achromatic_tint_hue` | degrees | none: −180° to 180° | tint hue |
 | tint purity | `achromatic_tint_purity` | %, 100 × purity | 0% to 20% | tint purity |
 
-- **Off until a control changes** (decision 32): the module's defaults are darktable's, hues 0, purities 1, the tint's purity 0, and while it is off the operation is not planned and the photo is unchanged. Its first step, on at those defaults, adds the operation, with the red leak above (Per pixel), as darktable's first step does.
-- **The tint's hue changes nothing while its purity is 0** (the module's row P6). darktable draws it as any other slider, and so does the module.
+- **Off until a control changes** (decision 32): the tool's defaults are darktable's, hues 0, purities 1, the tint's purity 0, and while it is off the operation is not planned and the photo is unchanged. Its first step, on at those defaults, adds the operation, with the red leak above (Per pixel), as darktable's first step does.
+- **The tint's hue changes nothing while its purity is 0** (the tool's row P6). darktable draws it as any other slider, and so does the tool.
 - **A primary's hue typed past a neighbour's direction at purity 100%**, the others untouched, blacks the image out (Precision; darktable shows noise there). The soft range of ±20° keeps a drag far from it; only a typed value or a wide drag reaches it.
-- **Units:** the schema is in darktable's units, radians and plain ratios. The module shows degrees and percentages as darktable does.
+- **Units:** the schema is in darktable's units, radians and plain ratios. The tool shows degrees and percentages as darktable does.
 - **Hue's ends:** −π and π give the same matrix, so the hue sliders wrap without a jump.
 - **Derivatives:** any four of the eight per dispatch, through the uniform's gradient slots (Gradients).
 

@@ -17,7 +17,7 @@
 
 //! Film grain, ported from darktable (`src/iop/grain.c`): simplex noise at each
 //! pixel's position added to Lab lightness through a photographic paper's response. The
-//! Grain module (`docs/modules/README.md`). See `docs/ports/grain.md`.
+//! Grain module (`docs/tools/README.md`). See `docs/ports/grain.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
 //! it, and the session plans it only while a module's binding sets one of its

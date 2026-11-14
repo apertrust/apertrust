@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Colour calibration (`docs/modules/colour-calibration.md`): darktable's color
+//! Colour calibration (`docs/tools/colour-calibration.md`): darktable's color
 //! calibration as its page has it, every tab, the CAT tab first (decision 27).
 //!
 //! - **CAT:** the adaptation, unavailable while the illuminant is as shot in camera, which
@@ -46,7 +46,7 @@
 //! nothing, and the module adds no operation, so it has no first step.
 //! darktable shows its saturation algorithm (`version`) only for an edit made with an
 //! older one, which no Apertrust edit is, so the module owns it with no control and leaves
-//! it at version 3 (`docs/modules/README.md`, rule 12).
+//! it at version 3 (`docs/tools/README.md`, rule 12).
 
 use apertrust_color::Adaptation;
 use apertrust_color::illuminants::{self, Illuminant, TEMPERATURE_RANGE};
@@ -501,7 +501,7 @@ static CHECKER: [Row; 1] = [Row::Group {
 static DEFINITION: Definition = Definition {
     id: "channelmixerrgb",
     version: 1,
-    // Background only until Phase 4's layers (`docs/modules/colour-calibration.md`).
+    // Background only until Phase 4's layers (`docs/tools/colour-calibration.md`).
     layers: false,
     auto: false,
     switched: false,
@@ -1013,7 +1013,7 @@ mod tests {
     }
 
     /// darktable's color calibration sliders (`src/iop/channelmixerrgb.c`, the params
-    /// and `gui_init`), in its parameters' units: `docs/modules/colour-calibration.md`'s
+    /// and `gui_init`), in its parameters' units: `docs/tools/colour-calibration.md`'s
     /// slider table.
     const DARKTABLE: [DarktableSlider; 26] = [
         // The CAT tab. `temperature`, from params, `TEMP_MIN` to `TEMP_MAX`, its soft range

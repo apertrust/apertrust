@@ -6,7 +6,7 @@ Status: ported.
 
 - **Coverage:** every continuous parameter (coarseness, strength, mid-tones bias) and both of darktable's noise paths, the single position at full resolution and the 21-position lattice it averages away from it, in Slang (`crates/op/grain`), with its manifest and schema.
 - **The offset** darktable derives from the file name is no parameter: the golden cases set darktable's through `Settings`, and the operation renders every image at a provisional offset of 0. Planned: a seed stored in the edit (Deliberate differences).
-- **Planning:** in `OPERATIONS` with `default_enabled` off: an unedited photo does not run it, and it is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the Grain module (`docs/modules/grain.md`).
+- **Planning:** in `OPERATIONS` with `default_enabled` off: an unedited photo does not run it, and it is planned while its switched tool is on, from a write of one of its controls to its reset (decision 32): the Grain tool (`docs/tools/grain.md`).
 - **Checks:** darktable's grain is deterministic, and the port reproduces it: five golden cases pass with a mean ΔE2000 below 0.001.
 
 Golden result (five cases, four on test 0059's mire1.cr2, 3908×2602, one on hlrecovery.arw, 5492×3672, Apple M4, 48-byte pass header): every case passes, ΔE2000 mean 0.0008 at most, max 0.095 at most (Results). Gradients: the golden check passes the strength on four cases and on the synthetic sweep, at worst 3.8e-3, forward and reverse mode within 2.3e-6; the coarseness and the mid-tones bias, which that check cannot resolve, follow a float64 model per pixel in a GPU test, on at least 99.6% of pixels within 1%, through the lattice too (Gradients).
@@ -15,7 +15,7 @@ Golden result (five cases, four on test 0059's mire1.cr2, 3908×2602, one on hlr
 
 Film grain for the photographer: a fine, irregular texture over the image, its size set like a film's speed in ISO, stronger in the mid-tones than in the shadows and highlights, as silver grain prints on photographic paper.
 
-Algorithmically, three octaves of Gustavson's 3D simplex noise at the pixel's position, normalised by the image's shorter side, are scaled by the strength and passed through a photographic paper's response, a logistic density curve that the mid-tones bias makes steeper, to a change of Lab lightness. It is the Effect tab's Grain module (background only, `docs/modules/README.md`), display-referred, after the tone mapper.
+Algorithmically, three octaves of Gustavson's 3D simplex noise at the pixel's position, normalised by the image's shorter side, are scaled by the strength and passed through a photographic paper's response, a logistic density curve that the mid-tones bias makes steeper, to a change of Lab lightness. It is the Effect tab's Grain tool (background only, `docs/tools/README.md`), display-referred, after the tone mapper.
 
 ## Pipeline
 
@@ -23,7 +23,7 @@ Algorithmically, three octaves of Gustavson's 3D simplex noise at the pixel's po
 - **Domain:** display-referred. darktable's description: "non-linear, Lab, display-referred" in, out and in processing; "creative" purpose. Test 0059 has no tone mapper, so there it runs on scene-referred values; the `grain-agx` case runs it after AgX, where Apertrust will.
 - **Input and output:** darktable's grain is a Lab module (`default_colorspace` returns `IOP_CS_LAB`): its pipe converts the working space to Lab before it, with the working profile's matrix to XYZ D50 and `dt_XYZ_to_Lab`, and back after it. Apertrust's pipeline stays in working RGB, linear Rec2020, so the kernel makes both conversions itself, with the same matrices (`WorkingProfile::linear_rec2020`) and darktable's Lab formulas, in the shared colour library (`xyz_to_lab_d50` and `lab_to_xyz_d50` in `color.slang`, the CPU twins in `crates/color`). Only L changes; a and b stay, and alpha passes through.
 - **Assumes earlier modules:** nothing about colour. Its noise assumes the size of its input at full resolution, darktable's `piece->buf_in`: the image after any crop or geometry module before it, as for vignette.
-- **Layer support:** background only, as the Grain module is, though the operation is per pixel and could run on a layer.
+- **Layer support:** background only, as the Grain tool is, though the operation is per pixel and could run on a layer.
 
 ## Parameters
 
@@ -132,10 +132,10 @@ None: darktable has no OpenCL grain, and runs it on the CPU even with OpenCL on.
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Grain module is darktable's: coarseness, strength and mid-tones bias. The module is switched (decision 32): off until a control changes, then on with darktable's 25 %, 1600 ISO and 100 %, until its reset.
+In the first pass (decision 2) the Grain tool is darktable's: coarseness, strength and mid-tones bias. The tool is switched (decision 32): off until a control changes, then on with darktable's 25 %, 1600 ISO and 100 %, until its reset.
 
 - **The offset** has no control: provisionally 0 for every image, until the planned seed (Deliberate differences).
-- **Strength 0 is not a no-op** in the operation: darktable's lookup at `u = 0` moves lightness by 1.3e-4 L at mid-tones bias 0, 1.15e-3 L at 50 and 1.2e-3 L at 100, and the kernel keeps it. The module is switched (decision 32): off until a control changes, and then it renders whatever it holds, a strength of 0 included, as darktable's does.
+- **Strength 0 is not a no-op** in the operation: darktable's lookup at `u = 0` moves lightness by 1.3e-4 L at mid-tones bias 0, 1.15e-3 L at 50 and 1.2e-3 L at 100, and the kernel keeps it. The tool is switched (decision 32): off until a control changes, and then it renders whatever it holds, a strength of 0 included, as darktable's does.
 
 ## Gradients
 

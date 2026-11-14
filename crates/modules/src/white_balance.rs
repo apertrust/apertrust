@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! White balance (`docs/modules/white-balance.md`): darktable's white balance module
+//! White balance (`docs/tools/white-balance.md`): darktable's white balance module
 //! as its page has it, over the raw-stage `temperature` operation (decision 27), on one
 //! untitled tab:
 //!
@@ -40,7 +40,7 @@
 //! `preset` user modified, as darktable's `gui_changed` and `_temp_tint_callback` do
 //! ([`Module::follow`]), so colorin's late correction runs only with "as shot to
 //! reference" and the as-shot coefficients. The button bar, the camera's presets with
-//! Finetune and the picker come later (`docs/modules/white-balance.md`, Gaps).
+//! Finetune and the picker come later (`docs/tools/white-balance.md`, Gaps).
 
 use apertrust_color::white_balance::{Matrices, TEMPERATURE_RANGE, TINT_RANGE};
 use apertrust_plugin::{Camera, ImageContext, Value};
@@ -386,7 +386,7 @@ fn as_shot(image: &ImageContext) -> [f32; 4] {
 /// `_temp_params_from_array` stores them: from the colour matrix, the fourth 1, which
 /// darktable's is not a number on a three-colour sensor; without a matrix every one 1,
 /// `_calculate_bogus_daylight_wb`'s, darktable's camera Daylight preset being the one
-/// fallback Apertrust lacks (`docs/modules/white-balance.md`, Gaps).
+/// fallback Apertrust lacks (`docs/tools/white-balance.md`, Gaps).
 fn daylight(image: &ImageContext) -> [f32; 4] {
     match matrix(image) {
         Some(matrix) => {
@@ -524,7 +524,7 @@ mod tests {
     }
 
     /// darktable's white balance sliders (`src/iop/temperature.c`, the params and
-    /// `gui_init`), in its parameters' units: `docs/modules/white-balance.md`'s slider
+    /// `gui_init`), in its parameters' units: `docs/tools/white-balance.md`'s slider
     /// table.
     const DARKTABLE: [DarktableSlider; 5] = [
         // `scale_k`: `dt_bauhaus_slider_new_with_range_and_feedback(…, 1901, 25000, 0,

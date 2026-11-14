@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Orientation's invariants (`docs/modules/orientation.md`, Invariants), one test per
+//! Orientation's invariants (`docs/tools/orientation.md`, Invariants), one test per
 //! row, each named after its row: F0 to F2, F4 and F5. F3, each option written as the
 //! operation's choice, and F6, darktable's buttons, are unit tests in
 //! `crates/modules/src/orientation.rs`. The small

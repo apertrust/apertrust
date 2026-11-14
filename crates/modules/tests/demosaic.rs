@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Demosaic's invariants (`docs/modules/demosaic.md`, Invariants), one test per row, each
+//! Demosaic's invariants (`docs/tools/demosaic.md`, Invariants), one test per row, each
 //! named after its row: D0 to D4. Demosaic works on the mosaic, so every row renders a
 //! raw: the small Bayer raw and a small X-Trans one on CI's software GPUs, and the
 //! raw.pixls.us corpus locally, with `APERTRUST_RAW_CORPUS` naming it:

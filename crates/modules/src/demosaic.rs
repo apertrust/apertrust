@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Demosaic (`docs/modules/demosaic.md`): darktable's demosaic as the user edits
+//! Demosaic (`docs/tools/demosaic.md`): darktable's demosaic as the user edits
 //! with it, in the first pass (decision 2): darktable's page, its controls in
 //! `gui_init`'s order under its labels. The method; then the rows darktable shows only
 //! for some methods, as its `gui_changed` does: dual threshold for the dual methods, edge
@@ -23,7 +23,7 @@
 //! collapsible group.
 //!
 //! It drives `demosaic`, which every raw runs, and owns every parameter of it. Its
-//! defaults are the operation's for the photo (`docs/modules/README.md`, rule 4):
+//! defaults are the operation's for the photo (`docs/tools/README.md`, rule 4):
 //! darktable's `reload_defaults`, RCD for a Bayer sensor and Markesteijn 1-pass for an
 //! X-Trans one, VNG4 for four colours and Monochrome for a raw with no colour filters,
 //! neither of which the engine renders. Only RCD and Markesteijn 1-pass are ported, and
@@ -926,7 +926,7 @@ mod tests {
     }
 
     /// darktable's demosaic sliders (`src/iop/demosaic.c`, the params and
-    /// `gui_init`), in its parameters' units: `docs/modules/demosaic.md`'s slider table.
+    /// `gui_init`), in its parameters' units: `docs/tools/demosaic.md`'s slider table.
     /// None has a soft range; sharp centre's "%" multiplies by 100, its range within ±10.
     const DARKTABLE: [DarktableSlider; 7] = [
         DarktableSlider::new("dual_thrs", (0.0, 1.0), 2),

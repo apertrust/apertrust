@@ -38,4 +38,4 @@ Object masks, denoise and AI erase need neural network inference on the person's
 ## Consequences
 
 - The AI spike sets which models ship by default.
-- A model's results enter edits as ordinary module values or `.apdata` entries ([0049](0049-the-apdata-file-as-darktables-dtdata.md)).
+- A model's results enter edits as ordinary tool values or `.apdata` entries ([0049](0049-the-apdata-file-as-darktables-dtdata.md)).

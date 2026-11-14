@@ -1,4 +1,4 @@
-# The modules' words in American English (docs/gui.md, Module panels from definitions): an
+# The modules' words in American English (docs/gui.md, Tool panels from definitions): an
 # overlay of en-GB/modules.ftl, not a copy. It holds only the messages whose words American
 # English spells differently, with en-GB's variables, among them darktable's module names,
 # which are American upstream (Color balance RGB); every other message is en-GB's.

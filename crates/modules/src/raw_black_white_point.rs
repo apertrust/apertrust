@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Raw black/white point (`docs/modules/raw-black-white-point.md`): darktable's raw
+//! Raw black/white point (`docs/tools/raw-black-white-point.md`): darktable's raw
 //! black/white point as the user edits with it, in the first pass (decision 2):
 //! darktable's page, its four black levels and its white point in `gui_init`'s order under
 //! its labels, then flat field correction. It has no tabs, groups or presets of its own,
@@ -26,7 +26,7 @@
 //! the sensor's 2×2 pattern of row and column parities, row parity × 2 + column parity.
 //!
 //! It drives `rawprepare`, which every raw runs, so each level starts at the operation's
-//! default for the photo (rule 4 of `docs/modules/README.md`, decision 21), the raw's own
+//! default for the photo (rule 4 of `docs/tools/README.md`, decision 21), the raw's own
 //! black levels and white point as darktable's `reload_defaults` takes them from the
 //! decoder, and the binding sets a parameter only while its control is off it. Flat field
 //! correction lists darktable's two options, disabled and the embedded GainMap, which is
@@ -485,7 +485,7 @@ mod tests {
     }
 
     /// darktable's raw black/white point sliders (`src/iop/rawprepare.c`, the params
-    /// and `gui_init`), in its parameters' units: `docs/modules/raw-black-white-point.md`'s
+    /// and `gui_init`), in its parameters' units: `docs/tools/raw-black-white-point.md`'s
     /// slider table. Each is `dt_bauhaus_slider_from_params` over a `uint16_t`, 0 to
     /// `UINT16_MAX`, no digits and a step of 1, with `dt_bauhaus_slider_set_soft_max(…,
     /// 16384)`. The crop's four, shown only under darktable's preference, are not shown.

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Colour calibration's invariants (`docs/modules/colour-calibration.md`, Invariants), one
+//! Colour calibration's invariants (`docs/tools/colour-calibration.md`, Invariants), one
 //! test per row, each named after its row. The synthetic ramp and sweep and a small raw
 //! run on CI's software GPUs; the raw.pixls.us corpus runs locally, with
 //! `APERTRUST_RAW_CORPUS` naming it:

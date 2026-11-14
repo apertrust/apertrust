@@ -20,7 +20,7 @@
 //! through a local laplacian filter (`src/common/locallaplacian.c`), darktable's default,
 //! or a bilateral grid (`src/common/bilateral.c`), each built over the whole image in
 //! whole-image passes and read by a per-pixel `main`. The Local contrast module
-//! (`docs/modules/README.md`). See `docs/ports/bilat.md`.
+//! (`docs/tools/README.md`). See `docs/ports/bilat.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
 //! it, and the session plans it only while a module's binding sets one of its

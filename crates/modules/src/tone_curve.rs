@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Tone curve (`docs/modules/tone-curve.md`): curves drawn over the photo's tones, before
+//! Tone curve (`docs/tools/tone-curve.md`): curves drawn over the photo's tones, before
 //! the tone mapper at darktable's place (decision 22), on lightness axes with middle grey
 //! at 0.5.
 //!
@@ -284,7 +284,7 @@ pub fn luma(points: &[[f32; 2]], preserve: u32) -> Vec<Setting> {
 ///
 /// It is the curve a grey's luminance goes through. With Preserve colours on sum or norm,
 /// a grey's measure is 3 or √3 times its value, so greys do not render as it draws
-/// (`docs/modules/tone-curve.md`, T17).
+/// (`docs/tools/tone-curve.md`, T17).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LumaCurve {
     /// Each point in linear values with the curve's slope there.
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn it_has_no_slider_as_darktable_s_rgb_curve_has_none() {
         // darktable's rgb curve draws its curve, lists and a toggle (`src/iop/rgbcurve.c`,
-        // `gui_init`): `docs/modules/tone-curve.md`'s slider table is empty.
+        // `gui_init`): `docs/tools/tone-curve.md`'s slider table is empty.
         let differences =
             crate::testing::slider_differences(&ToneCurve, &DEFINITION.defaults(), &[]);
         assert!(differences.is_empty(), "{differences:#?}");

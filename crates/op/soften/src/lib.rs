@@ -19,7 +19,7 @@
 //! pixel's HSL saturation and lightness are scaled and clipped, the result blurred over
 //! the whole image by darktable's box mean (`src/common/box_filters.cc`, shared in the
 //! colour library) in whole-image passes, and mixed into the input by a per-pixel
-//! `main`. The Soften module (`docs/modules/README.md`). See `docs/ports/soften.md`.
+//! `main`. The Soften module (`docs/tools/README.md`). See `docs/ports/soften.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
 //! it, and the session plans it only while a module's binding sets one of its

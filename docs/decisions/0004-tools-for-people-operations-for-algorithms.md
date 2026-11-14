@@ -42,9 +42,9 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 ## Consequences
 
 - **The docs, code and skills use the two terms.** Until the rename's step for each lands, the code keeps its names: the crate `apertrust-modules` in `crates/modules`, the `Module` trait and its types, the Fluent ids `module-<id>-…` and the sidecar's `apertrust:module`.
-- **The rename lands in steps,** each planned, the identifiers in backticks following their own step:
+- **The rename lands in steps,** 4.2 built and the rest planned, the identifiers in backticks following their own step:
   - 4.1: a tool's settings named settings in the code, freeing the word;
-  - 4.2: the docs say tool, `docs/modules/` moved to `docs/tools/`;
+  - 4.2, built: the docs say tool, the tools' pages in `docs/tools/`;
   - 4.3: `apertrust-modules` renamed `apertrust-tools` in `crates/tools`, with the trait, its types, the session's commands and events, and the CLI's help and errors;
   - 4.4: the code's own names, tests and comments;
   - 4.5: the Fluent ids `module-…` renamed `tool-…`, in `tools.ftl`;

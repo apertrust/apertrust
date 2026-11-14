@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Soften's invariants (`docs/modules/soften.md`, Invariants), one test per row, each
+//! Soften's invariants (`docs/tools/soften.md`, Invariants), one test per row, each
 //! named after its row: a switched module's (decision 32), S0 off, S1 the first step, on
 //! at darktable's defaults, S2 moved and reset, S3 the order, S4 the darktable match, S7
 //! on at darktable's defaults on the CPU and S8 version 1's edits; S5, on a layer, waits
@@ -56,7 +56,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_be
 
 const SOFTEN: &str = "soften";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18. One row, over a colour raw's context with an exposure bias
 /// of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {

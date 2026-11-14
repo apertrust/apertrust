@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Vignetting (`docs/modules/vignetting.md`): darktable's vignetting as the user
+//! Vignetting (`docs/tools/vignetting.md`): darktable's vignetting as the user
 //! edits with it, in the first pass (decision 2): darktable's page, its controls in
 //! `gui_init`'s order under its labels. Fall-off start, fall-off radius, brightness and
 //! saturation; then, under the position / form label, the horizontal and vertical
@@ -339,7 +339,7 @@ mod tests {
     }
 
     /// darktable's vignetting sliders (`src/iop/vignette.c`, the params and
-    /// `gui_init`), in its parameters' units: `docs/modules/vignetting.md`'s slider table.
+    /// `gui_init`), in its parameters' units: `docs/tools/vignetting.md`'s slider table.
     /// None has a soft range, a factor or an offset: `dt_bauhaus_slider_set_format`'s
     /// "%" multiplies by nothing on a range that passes 10.
     const DARKTABLE: [DarktableSlider; 8] = [

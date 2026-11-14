@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Haze removal's invariants (`docs/modules/haze-removal.md`, Invariants), one test per
+//! Haze removal's invariants (`docs/tools/haze-removal.md`, Invariants), one test per
 //! row, each named after its row: a switched module's (decision 32), Z0 off, Z1 the
 //! first step, on at darktable's defaults, Z2 moved and reset, Z3 the order, Z4 the
 //! darktable match, Z7 on at darktable's defaults on the CPU and Z8 version 1's edits; Z5,
@@ -59,7 +59,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, decoded, each_corpus_raw, 
 
 const HAZEREMOVAL: &str = "hazeremoval";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18. One row, over a colour raw's context with an exposure bias
 /// of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {

@@ -6,7 +6,7 @@ Status: **ported.**
 
 - **Where:** the kernel is `slang/sigmoid.slang` in `crates/op/sigmoid`, its setup `src/setup.rs`, its manifest and schema `src/lib.rs`.
 - **What:** every setting of params version 3: both colour processings (per channel, darktable's default, and RGB ratio), the hue preservation and the primaries section with all five base primaries, so `prepare` returns `NotPorted` for nothing. Where darktable's f32 curve breaks down at the ranges' corners, the kernel renders its breakdown.
-- **In the pipeline:** in `OPERATIONS` at darktable's v5.0 place, working space 45.3, with `default_enabled` off. Nothing plans it until an edit can choose it as its tone mapper (decision 33), planned with the Sigmoid module.
+- **In the pipeline:** in `OPERATIONS` at darktable's v5.0 place, working space 45.3, with `default_enabled` off. Nothing plans it until an edit can choose it as its tone mapper (decision 33), planned with the Sigmoid tool.
 - **Checks:** the five golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
 
 Golden results, Apple M4:
@@ -35,7 +35,7 @@ Algorithmically it is a generalised log-logistic curve, `white · (F / (P + F))^
 - **Per channel** (darktable's default): in a space whose primaries are inset towards white and rotated, with the middle channel's hue partly restored.
 - **RGB ratio:** to the channels' mean, scaling the pixel, with a hyperbolic chroma compression into the display's range.
 
-In the first pass it is the Sigmoid module, a tone mapper of its own in the Base tab, one tone mapper per edit (decision 2; `docs/modules/README.md`, Sigmoid).
+In the first pass it is the Sigmoid tool, a tone mapper of its own in the Base tab, one tone mapper per edit (decision 2; `docs/tools/README.md`, Sigmoid).
 
 ## Pipeline
 
@@ -278,17 +278,17 @@ None that change results. `sigmoid.cl` computes the per-channel curve on a `floa
   - The setup refuses with the determinant in f64 and uses the zero matrix, as the AgX port does for its singular outbound settings (`docs/ports/agx.md`) and the rgb primaries port for its own (`docs/ports/primaries.md`).
   - The size: black against darktable's undefined values, a few f32 steps of a rotation wide, and on the first surface at none of the rotation sliders' values (tenths of a degree). The output is constant there, so its derivatives are 0. RGB ratio reads no matrix and is unchanged.
 - **Params version 4 refused**, where darktable silently renders its defaults.
-- **Not ported (GUI only):** the module's widgets and their soft ranges, which belong to the Sigmoid module.
+- **Not ported (GUI only):** the tool's widgets and their soft ranges, which belong to the Sigmoid tool.
 
 ## Tool binding notes
 
-In the first pass (decisions 2 and 29) the Sigmoid module is darktable's page (`docs/modules/README.md`, Sigmoid): no content tabs. Its controls, in darktable's `gui_init` order and under its labels:
+In the first pass (decisions 2 and 29) the Sigmoid tool is darktable's page (`docs/tools/README.md`, Sigmoid): no content tabs. Its controls, in darktable's `gui_init` order and under its labels:
 
 - On the page: Contrast (`middle_grey_contrast`, soft range 0.7 to 3, three digits), Skew (`contrast_skewness`), Colour processing (per channel, RGB ratio), Preserve hue (`hue_preservation`, as %, shown only for per channel).
 - **Primaries**, a collapsible group shown only for per channel: Base primaries (the five), red, green and blue attenuation (`*_inset` shown as %, factor 100, soft range 0 to 50%, one digit) and rotation (`*_rotation` shown in degrees, factor 180/π, one digit), Recover purity (`purity`, %, no digits).
 - **Display luminance**, a collapsible group: Target black (`display_black_target`, %, soft range 0 to 1%, four digits), Target white (`display_white_target`, %, soft range 50 to 100%).
 
-The module stores darktable's values and units (radians, fractions, percentages as darktable stores each); the degrees and percentages are display factors, exact changes of unit.
+The tool stores darktable's values and units (radians, fractions, percentages as darktable stores each); the degrees and percentages are display factors, exact changes of unit.
 
 **Presets** (`init_presets`), each with the targets at 100% and 0.0152%:
 
@@ -300,11 +300,11 @@ The module stores darktable's values and units (radians, fractions, percentages 
 | Reinhard | 1.0 | 0 | RGB ratio | | none |
 | smooth | 1.5 | −0.2 | per channel | 0% | insets 0.1, 0.1 and 0.15, rotations 2°, −1° and −3°, purity 0, base primaries Rec2020 |
 
-The scene-referred default is darktable's auto-applied preset in its sigmoid workflow, so Apertrust's default for the module.
+The scene-referred default is darktable's auto-applied preset in its sigmoid workflow, so Apertrust's default for the tool.
 
 Green and blue rotations turned opposite each other (green −21.97° and blue +21.97° over Display P3, ∓19.42° over sRGB, or any pair as far apart) black the per-channel image out (Precision; darktable shows values far outside the display there), and close to it colours are boosted without bound. Of the sliders' values (tenths of a degree) none reaches it, and the nearest give matrix entries of about 1e3. The defaults, rotations 0, are far from it, and Rec2020, the working profile and Adobe RGB never reach it.
 
-The operation at its defaults is no identity; as a tone mapper it needs none. Exactly one tone mapper runs on the background, the one the edit chooses (decision 33), and the module at its defaults is darktable's scene-referred default. An edit choosing it is planned with the Sigmoid module.
+The operation at its defaults is no identity; as a tone mapper it needs none. Exactly one tone mapper runs on the background, the one the edit chooses (decision 33), and the tool at its defaults is darktable's scene-referred default. An edit choosing it is planned with the Sigmoid tool.
 
 ## Gradients
 
@@ -363,4 +363,4 @@ Other non-smooth spots, where finite differences straddle a kink and per-pixel g
   - on either singular surface (green and blue turned opposite each other over Display P3 and sRGB, and three outbound primaries on one line over sRGB) the outbound matrix is 0 and the uniform finite, where the plain inverse has entries over 1e7 or is NaN, and a slider's value nearby is inverted normally.
 - **In `ports.rs`:** each case reads as darktable stores it (versions 1 and 3, the active entry of test 0151, test 0182's defaults); version 4 is refused; every case's inputs come through the operation's `prepare` from schema values as from the setup, every slot moves them, both processings have a case.
 - **On the GPU** (`crates/golden/tests/sigmoid.rs`, run in CI): greys follow darktable's curve within 1e-4 relative from 2^−20 to 2^10, and middle grey stays, in both processings at every case's settings; at the three breakdowns above, greys from 0 and 2^−40 to 2^60 and 1e30 render darktable's white or black in both processings; output and both derivative modes are finite at extreme inputs and settings; the derivatives match finite differences with each pixel's own channel weights (Gradients).
-- **The whole pipeline:** not in it, since nothing plans sigmoid yet; once an edit can choose it, the module's first-step invariants are its own.
+- **The whole pipeline:** not in it, since nothing plans sigmoid yet; once an edit can choose it, the tool's first-step invariants are its own.

@@ -1,4 +1,4 @@
-# The modules' words in British English, the source language (docs/gui.md, Module panels
+# The modules' words in British English, the source language (docs/gui.md, Tool panels
 # from definitions). Each id follows from the module's definition in apertrust-modules:
 #   module-<module>-title, module-<module>-auto, module-<module>-tab-<tab>,
 #   module-<module>-group-<group>, module-<module>-collapsible-<group>,
@@ -11,7 +11,7 @@
 # crates/modules/tests checks that every id a built-in module implies is here; Ukrainian
 # (uk) and Polish (pl) translate each one.
 
-## Raw black/white point (docs/modules/raw-black-white-point.md): darktable's raw
+## Raw black/white point (docs/tools/raw-black-white-point.md): darktable's raw
 ## black/white point, its labels and tooltips in British English.
 
 module-rawprepare-title = Raw black/white point
@@ -36,7 +36,7 @@ module-rawprepare-control-flat_field-promise = Raw flat field correction to comp
 module-rawprepare-control-flat_field-option-off = Disabled
 module-rawprepare-control-flat_field-option-embedded = Embedded GainMap
 
-## Highlight reconstruction (docs/modules/highlight-reconstruction.md): darktable's
+## Highlight reconstruction (docs/tools/highlight-reconstruction.md): darktable's
 ## highlight reconstruction, its labels and tooltips in British English.
 
 module-highlights-title = Highlight reconstruction
@@ -95,7 +95,7 @@ module-highlights-control-scales-option-px_1024 = 1024 px (very slow)
 module-highlights-control-scales-option-px_2048 = 2048 px (insanely slow)
 module-highlights-control-scales-option-px_4096 = 4096 px (insanely slow)
 
-## Demosaic (docs/modules/demosaic.md): darktable's demosaic, its labels and tooltips in
+## Demosaic (docs/tools/demosaic.md): darktable's demosaic, its labels and tooltips in
 ## British English, the method's two tooltips, for Bayer and X-Trans sensors, in one.
 
 module-demosaic-title = Demosaic
@@ -169,7 +169,7 @@ module-demosaic-control-cs_center-label = Sharp centre
 module-demosaic-control-cs_center-full = Capture sharpen sharp centre
 module-demosaic-control-cs_center-promise = Adjust to the sharp image centre.
 
-## AgX (docs/modules/agx.md): darktable's AgX, its labels and tooltips in British English.
+## AgX (docs/tools/agx.md): darktable's AgX, its labels and tooltips in British English.
 ## A full name says which group a short label is in, as darktable's shortcuts do.
 
 module-agx-title = AgX
@@ -317,7 +317,7 @@ module-agx-control-blue_outset-promise = Restore the purity of blue, mostly in m
 module-agx-control-blue_unrotation-label = Blue reverse rotation
 module-agx-control-blue_unrotation-full = Blue reverse rotation
 module-agx-control-blue_unrotation-promise = Reverse the colour shift in blues.
-## Output colour profile (docs/modules/output-colour-profile.md): darktable's output color
+## Output colour profile (docs/tools/output-colour-profile.md): darktable's output color
 ## profile, its label and its profiles' names in British English. darktable's tooltip
 ## names the folders it loads ICC files from, which Apertrust does not read yet.
 
@@ -338,7 +338,7 @@ module-colorout-control-type-option-display_p3 = Display P3 RGB
 module-colorout-control-type-option-prophoto_rgb = Linear ProPhoto RGB
 module-colorout-control-type-option-brg = BRG (for testing)
 
-## White balance (docs/modules/white-balance.md): darktable's white balance, its labels
+## White balance (docs/tools/white-balance.md): darktable's white balance, its labels
 ## and tooltips in British English.
 
 module-temperature-title = White balance
@@ -379,7 +379,7 @@ module-temperature-control-various-label = Emerald
 module-temperature-control-various-full = Emerald coefficient
 module-temperature-control-various-promise = What a four-colour sensor's emerald photosites are multiplied by.
 
-## Orientation (docs/modules/orientation.md): darktable's orientation, its label, its
+## Orientation (docs/tools/orientation.md): darktable's orientation, its label, its
 ## buttons and its orientations by darktable's names in British English. darktable shows
 ## the stored orientation under its Transform label only as the photo itself.
 
@@ -409,7 +409,7 @@ module-flip-action-flip_vertically-label = Flip vertically
 module-flip-action-flip_vertically-full = Flip vertically
 module-flip-action-flip_vertically-promise = Mirror the image top to bottom.
 
-## Exposure (docs/modules/exposure.md): darktable's exposure, its labels and tooltips in
+## Exposure (docs/tools/exposure.md): darktable's exposure, its labels and tooltips in
 ## British English. The promises of Exposure, Compensate camera exposure and Black level
 ## correction are its invariants table's.
 
@@ -451,7 +451,7 @@ module-exposure-setting-lightness-promise = The desired target exposure after ma
 module-exposure-picker-exposure-full = Exposure: pick from the photo
 module-exposure-picker-exposure-promise = Sets the exposure adjustment using the selected area.
 
-## Colour calibration (docs/modules/colour-calibration.md): darktable's color calibration,
+## Colour calibration (docs/tools/colour-calibration.md): darktable's color calibration,
 ## every tab, the CAT tab first. Its words are darktable's, the adaptation's and the area
 ## colour mapping's promises its tooltips; darktable gives its other CAT controls none, so
 ## their promises say what each describes.
@@ -655,7 +655,7 @@ module-channelmixerrgb-setting-patch_scale-label = Patch scale
 module-channelmixerrgb-setting-patch_scale-full = Colour checker patch scale
 module-channelmixerrgb-setting-patch_scale-promise = How much of each patch is read, from its centre: less where the chart's frame is loose or casts shadows.
 
-## Tone equalizer (docs/modules/tone-equalizer.md): darktable's tone equalizer, its labels
+## Tone equalizer (docs/tools/tone-equalizer.md): darktable's tone equalizer, its labels
 ## and tooltips in British English. A band's full name adds darktable's word for its tones;
 ## darktable gives a band no tooltip, so its promise says which tones it corrects.
 
@@ -735,7 +735,7 @@ module-toneequal-setting-display_exposure_mask-label = Display exposure mask
 module-toneequal-setting-display_exposure_mask-full = Display exposure mask
 module-toneequal-setting-display_exposure_mask-promise = Shows the mask the bands act on in place of the photo.
 
-## Colour balance RGB (docs/modules/colour-balance-rgb.md): darktable's color balance rgb,
+## Colour balance RGB (docs/tools/colour-balance-rgb.md): darktable's color balance rgb,
 ## its labels and tooltips in British English. A full name says which group a short label
 ## is in, as darktable's shortcuts do.
 
@@ -868,7 +868,7 @@ module-colorbalancergb-picker-white_fulcrum-promise = Pick colour from the photo
 module-colorbalancergb-picker-grey_fulcrum-full = Contrast grey fulcrum: pick from the photo
 module-colorbalancergb-picker-grey_fulcrum-promise = Pick colour from the photo
 
-## Tone curve (docs/modules/tone-curve.md)
+## Tone curve (docs/tools/tone-curve.md)
 
 module-tone_curve-title = Tone curve
 module-tone_curve-tab-luma = Luma
@@ -891,7 +891,7 @@ module-tone_curve-control-preserve_colour-option-sum_rgb = Sum RGB
 module-tone_curve-control-preserve_colour-option-norm_rgb = Norm RGB
 module-tone_curve-control-preserve_colour-option-basic_power = Basic power
 
-## Haze removal (docs/modules/haze-removal.md): darktable's haze removal, its labels and
+## Haze removal (docs/tools/haze-removal.md): darktable's haze removal, its labels and
 ## tooltips in British English.
 
 module-hazeremoval-title = Haze removal
@@ -902,7 +902,7 @@ module-hazeremoval-control-distance-label = Distance
 module-hazeremoval-control-distance-full = Distance
 module-hazeremoval-control-distance-promise = Limit haze removal up to a specific spatial depth.
 
-## RGB primaries (docs/modules/rgb-primaries.md): darktable's rgb primaries, its labels
+## RGB primaries (docs/tools/rgb-primaries.md): darktable's rgb primaries, its labels
 ## and tooltips in British English.
 
 module-primaries-title = RGB primaries
@@ -931,7 +931,7 @@ module-primaries-control-achromatic_tint_purity-label = Tint purity
 module-primaries-control-achromatic_tint_purity-full = Tint purity
 module-primaries-control-achromatic_tint_purity-promise = Tint purity.
 
-## Grain (docs/modules/grain.md): darktable's grain, its labels and tooltips in British
+## Grain (docs/tools/grain.md): darktable's grain, its labels and tooltips in British
 ## English.
 
 module-grain-title = Grain
@@ -945,7 +945,7 @@ module-grain-control-midtones_bias-label = Mid-tones bias
 module-grain-control-midtones_bias-full = Mid-tones bias
 module-grain-control-midtones_bias-promise = Amount of mid-tones bias from the photographic paper response modelling. The greater the bias, the more pronounced the fall-off of the grain in shadows and highlights.
 
-## Soften (docs/modules/soften.md): darktable's soften, its labels and tooltips in
+## Soften (docs/tools/soften.md): darktable's soften, its labels and tooltips in
 ## British English.
 
 module-soften-title = Soften
@@ -962,7 +962,7 @@ module-soften-control-amount-label = Mix
 module-soften-control-amount-full = Mix
 module-soften-control-amount-promise = The mix of effect.
 
-## Vignetting (docs/modules/vignetting.md): darktable's vignetting, its labels and tooltips
+## Vignetting (docs/tools/vignetting.md): darktable's vignetting, its labels and tooltips
 ## in British English.
 
 module-vignette-title = Vignetting

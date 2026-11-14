@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Orientation (`docs/modules/orientation.md`): darktable's orientation as the user edits
+//! Orientation (`docs/tools/orientation.md`): darktable's orientation as the user edits
 //! with it, in the first pass (decision 2). It drives `flip`, which every photo runs, and
 //! owns its one parameter, darktable's stored orientation, auto by default, the photo's
 //! own orientation from its EXIF data, so an untouched photo shows the right way up and

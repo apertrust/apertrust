@@ -18,7 +18,7 @@ flowchart LR
     p3 --> mobile["Mobile"]
 ```
 
-**Where things stand.** Phase 0's gate has passed. Phase 1's engine renders 27 of its 29 test raws as darktable does; two wait for a fix in the raw decoder. The desktop app's Phase 2 is well under way: it opens and edits one photo with sixteen migrated modules, and opens a folder. The migration from darktable is planned to be complete at the end of Phase 3.
+**Where things stand.** Phase 0's gate has passed. Phase 1's engine renders 27 of its 29 test raws as darktable does; two wait for a fix in the raw decoder. The desktop app's Phase 2 is well under way: it opens and edits one photo with sixteen migrated tools, and opens a folder. The migration from darktable is planned to be complete at the end of Phase 3.
 
 ## The plan at a glance
 
@@ -28,8 +28,8 @@ Thin vertical slices, each ending in something usable and testable, with early g
 | --- | --- | --- | --- | --- |
 | 0. Foundations and spikes | Prove the core bet cheaply | Three ported kernels within ΔE tolerance; viewport latency acceptable; the Slang decision made | 3–5 weeks | Done |
 | 1. Engine and CLI | Render a raw correctly with no UI | Every raw.pixls.us sample both decoders read as a colour mosaic, 29 of the 40, renders as `apertrust-cli export` does before rounding to 8 bits within a mean ΔE2000 of 0.01 of darktable's 16-bit render, at most 0.01% of pixels over 2.3, with Apertrust's crop and levels on both sides (decisions 23 and 62) | 5–7 weeks | 27 of 29 pass |
-| 2. GUI minimum | Edit one photo end to end with the first pass's modules | Open, edit, save a sidecar, reopen with the same look; every first-pass module at its defaults leaves the render byte for byte as it was | 5–7 weeks | Under way |
-| 3. Core editing complete | Usable for daily editing, and the editor sets the sliders | About 15 scene-referred operations work on real photos (rawprepare, white balance, highlight reconstruction, demosaic, input colour, exposure, color calibration, sigmoid or AgX, color balance rgb, tone equalizer, denoise, lens correction, crop, output colour); the matching test reproduces the reference on real photo pairs within its threshold; the migration complete, every first-pass module in the app and passing its golden comparisons, Apertrust's own renders the baselines from then on (decision 2) | 7–10 weeks, plus the matching slice | Started early in places |
+| 2. GUI minimum | Edit one photo end to end with the first pass's tools | Open, edit, save a sidecar, reopen with the same look; every first-pass tool at its defaults leaves the render byte for byte as it was | 5–7 weeks | Under way |
+| 3. Core editing complete | Usable for daily editing, and the editor sets the sliders | About 15 scene-referred operations work on real photos (rawprepare, white balance, highlight reconstruction, demosaic, input colour, exposure, color calibration, sigmoid or AgX, color balance rgb, tone equalizer, denoise, lens correction, crop, output colour); the matching test reproduces the reference on real photo pairs within its threshold; the migration complete, every first-pass tool in the app and passing its golden comparisons, Apertrust's own renders the baselines from then on (decision 2) | 7–10 weeks, plus the matching slice | Started early in places |
 | UX pass, after 3 | Controls people find and predict | The usability tests meet the principles' first targets | Not estimated yet | — |
 | Mobile, after 3 | Edit on phones and tablets | Set when the phase is planned | Not estimated yet | — |
 | 4. Layers and masks | Local editing | Sky and subject edits work as designed, range masks evaluated on the background included | 5–7 weeks | — |
@@ -42,7 +42,7 @@ A version usable for daily editing, at the end of Phase 3, is roughly 6 to 9 mon
 ### Go/no-go gates
 
 1. **After Phase 0, about a month in:** do AI-assisted ports match darktable's quality, and does the viewport feel fast? If not, stop; the month still yields tools and knowledge useful for darktable. **Passed.**
-2. **After Phase 2:** does a photo edited with the first pass's modules render as darktable renders it, as fast as the viewport spike promised? The UX bet is the UX pass's gate, and the matching test Phase 3's.
+2. **After Phase 2:** does a photo edited with the first pass's tools render as darktable renders it, as fast as the viewport spike promised? The UX bet is the UX pass's gate, and the matching test Phase 3's.
 3. **After Phase 3:** is Apertrust replacing darktable or a commercial editor in daily use? If not for its author, not for anyone. And does the editor set the sliders, the matching test passing on real photo pairs (decision 11)?
 4. **After the UX pass:** does editing feel better than darktable on real photos? Usability tests with photographers new to Apertrust, from darktable and from commercial raw editors, measure the principles' first targets: 4 of 5 get an edit they are happy with within 15 minutes, and 4 of 5 predict what a slider will do before moving it. The tests confirm or revise the targets ([principles.md](principles.md), How we will know it works).
 
@@ -50,7 +50,7 @@ A version usable for daily editing, at the end of Phase 3, is roughly 6 to 9 mon
 
 - Product choices follow [principles.md](principles.md) (decision 1).
 - The same porting workflow for every darktable port (decision 2): spec from darktable's source, Slang kernel, golden tests, provenance in the manifest.
-- Project conventions written down for agents: widgets only emit commands; fp32 kernels; no reliance on NaN checks; one owning module per parameter; a module that is off, or untouched, a no-op, with its test; invariant tests for every module.
+- Project conventions written down for agents: widgets only emit commands; fp32 kernels; no reliance on NaN checks; one owning tool per parameter; a tool that is off, or untouched, a no-op, with its test; invariant tests for every tool.
 - [decisions/](decisions/README.md) as the decision log: every architectural choice is recorded there, one file each.
 - Regular testing on the homelab GPUs (NVIDIA, AMD, Apple at minimum) with self-hosted runners, not only on software rendering.
 - Image-quality results published where photographers can see them (decision 1; [testing.md](testing.md)).
@@ -59,8 +59,8 @@ A version usable for daily editing, at the end of Phase 3, is roughly 6 to 9 mon
 
 A major part of Apertrust is built on darktable's trusted colour science. The plan has two stages.
 
-1. **The migration, Phases 0 to 3.** darktable's processing and editing modules are rewritten for the GPU, one module at a time, each with its controls under darktable's labels. The golden-image tests compare every migrated step with darktable's own render, and a step counts as migrated only when it matches. Nothing of darktable is loaded or linked: the code is Apertrust's, written from darktable's source. The migration is complete when the first pass's modules, [listed below](#the-migrated-modules), are all in the app and pass their comparisons, at the end of Phase 3.
-2. **Apertrust's own way, after the migration.** Once the whole project is migrated, Apertrust evolves on its own: usability work on the interface, layers, editing towards a goal. Its own renders become its baselines from then, and edits made with the migrated modules keep rendering exactly as before.
+1. **The migration, Phases 0 to 3.** darktable's processing and editing modules are rewritten for the GPU, one module at a time, each with its controls under darktable's labels. The golden-image tests compare every migrated step with darktable's own render, and a step counts as migrated only when it matches. Nothing of darktable is loaded or linked: the code is Apertrust's, written from darktable's source. The migration is complete when the first pass's tools, [listed below](#the-migrated-tools), are all in the app and pass their comparisons, at the end of Phase 3.
+2. **Apertrust's own way, after the migration.** Once the whole project is migrated, Apertrust evolves on its own: usability work on the interface, layers, editing towards a goal. Its own renders become its baselines from then, and edits made with the migrated tools keep rendering exactly as before.
 
 ## Phase 0: foundations and spikes
 
@@ -92,7 +92,7 @@ Goal: render a raw correctly, with no interface. Migration: the eight steps ever
 
 ## Phase 2: the desktop app, one photo end to end
 
-Goal: open, edit, save and reopen a photo with the first pass's modules. Migration: a module in the app for every step already migrated, and the modules most edits use. Exit criterion: a photo reopens with the same look, and every first-pass module at its defaults leaves the render exactly as it was. Gate: a photo edited with these modules renders as darktable renders it, as fast as the viewport spike promised.
+Goal: open, edit, save and reopen a photo with the first pass's tools. Migration: a tool in the app for every step already migrated, and the tools most edits use. Exit criterion: a photo reopens with the same look, and every first-pass tool at its defaults leaves the render exactly as it was. Gate: a photo edited with these tools renders as darktable renders it, as fast as the viewport spike promised.
 
 ### The window and the shell
 
@@ -119,20 +119,20 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 ### Editing
 
 - [x] The viewport with app-managed colour.
-- [x] The module layer with bindings (`apertrust-modules`, decision 28) and `.apxmp` version 1.
-- [x] A module panel drawn from each module's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
+- [x] The tool layer with bindings (`apertrust-modules`, decision 28) and `.apxmp` version 1.
+- [x] A tool panel drawn from each tool's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
 - [x] Edits save themselves after each change.
-- [x] Sixteen migrated modules, listed [below](#the-migrated-modules), each darktable's module with its parameters as controls (decision 2, [modules/README.md](modules/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
+- [x] Sixteen migrated tools, listed [below](#the-migrated-tools), each darktable's module with its parameters as controls (decision 2, [tools/README.md](tools/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
 - [x] The side panel's tabs are darktable's scene-referred groups (decision 38): Base, Colour, Correct and Effect, between Photos and History.
-- [ ] Phase 2's modules are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
-  - [ ] Input colour profile and Colour equalizer as modules (their processing is ported).
+- [ ] Phase 2's tools are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
+  - [ ] Input colour profile and Colour equalizer as tools (their processing is ported).
   - [ ] Rotate and perspective, ported.
   - [ ] Denoise (profiled), ported, with darktable's noise profiles.
-- [x] Switched modules (decision 32): modules darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
+- [x] Switched tools (decision 32): tools darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
 - [ ] Undo, redo and the History tab, with the history saved in the sidecar as its log of steps (decisions 47 and 78; [history.md](history.md), [the library's step 9](#the-librarys-steps)).
 - [ ] Tools, not modules (decision 4):
   - [ ] 4.1 A tool's settings named settings in the code.
-  - [ ] 4.2 The docs say tool; `docs/modules/` moved to `docs/tools/`.
+  - [x] 4.2 The docs say tool, the tools' pages in `docs/tools/`.
   - [ ] 4.3 `apertrust-tools` in `crates/tools`, with its public names and the CLI's help.
   - [ ] 4.4 The code's own names, tests and comments.
   - [ ] 4.5 The Fluent ids `tool-…`, in `tools.ftl`.
@@ -145,19 +145,19 @@ Goal: open, edit, save and reopen a photo with the first pass's modules. Migrati
 
 ### Pickers
 
-darktable's colour pickers and its Colour picker module, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
+darktable's colour pickers and its Colour picker, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
 
 - [x] 79.1 The reduction kernel on the frame and the Colour picker's picker through the session, regions mapped through the geometry.
-- [x] 79.2 Module pickers in the modules crate: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` and its checks.
-- [x] 79.3 Module pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
+- [x] 79.2 Tool pickers in `apertrust-modules`: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` and its checks.
+- [x] 79.3 Tool pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.
 - [x] 79.6 The app: quads and picker rows, the marks over the photo, the central bar's words, the pointer, the keys and focus, the live region.
 - [x] 79.7 Exposure's picker: its pick in correction and measure modes, the area exposure mapping's settings in settings, the patches and the L readout.
-- [ ] 79.8 to 79.11 Each other module's pickers: White balance, Colour calibration, Colour balance RGB and AgX.
+- [ ] 79.8 to 79.11 Each other tool's pickers: White balance, Colour calibration, Colour balance RGB and AgX.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
-- [ ] 79.16 The Colour picker module, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
+- [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
 
 ### Scopes
 
@@ -205,7 +205,7 @@ Each job reports everything its row in the jobs window shows, in its own events,
 
 ## Phase 3: core editing complete
 
-Goal: usable for daily editing, and the editor sets the sliders for a goal. Migration: the first pass's remaining modules, completing it. Exit criteria: about 15 modules work on real photos (raw black and white points, white balance, highlight reconstruction, demosaic, input colour profile, exposure, colour calibration, sigmoid or AgX as the tone mapper, colour balance RGB, the tone equalizer, denoise, lens correction, crop and output colour profile); a command-line test matches a reference photo on real photo pairs; and the migration is complete. Gate: is Apertrust replacing another editor in its author's daily use?
+Goal: usable for daily editing, and the editor sets the sliders for a goal. Migration: the first pass's remaining tools, completing it. Exit criteria: about 15 tools work on real photos (raw black and white points, white balance, highlight reconstruction, demosaic, input colour profile, exposure, colour calibration, sigmoid or AgX as the tone mapper, colour balance RGB, the tone equalizer, denoise, lens correction, crop and output colour profile); a command-line test matches a reference photo on real photo pairs; and the migration is complete. Gate: is Apertrust replacing another editor in its author's daily use?
 
 ### Matching a reference photo
 
@@ -215,15 +215,15 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 
 - [x] Haze removal, RGB primaries and Soften (built ahead of this phase).
 - [ ] Local contrast and Bloom (their processing is ported).
-- [ ] RGB levels and RGB curve as modules (their processing is ported), the built Tone curve reshaped into RGB curve, with their pickers (79.12 and 79.13).
+- [ ] RGB levels and RGB curve as tools (their processing is ported), the built Tone curve reshaped into RGB curve, with their pickers (79.12 and 79.13).
 - [ ] Sigmoid and Filmic RGB as tone mappers, one per edit (their processing is ported; decision 33).
 - [ ] Lens correction (from the corrections the raw carries, then Lensfun's), chromatic aberrations and crop.
 - [ ] Diffuse or sharpen, and sharpen.
 - [ ] darktable's presets and styles; copy and apply an edit.
 - [ ] Before and after, and warnings.
 - [ ] Colour calibration's colour checker, darktable's, with its chart data and fit.
-- [ ] Show mask: one way to see a module's mask on the photo, for every module with a mask button, never saved in the edit.
-- [ ] Every module's values stored as darktable's sliders round them, so the processing gets darktable's parameters bit for bit.
+- [ ] Show mask: one way to see a tool's mask on the photo, for every tool with a mask button, never saved in the edit.
+- [ ] Every tool's values stored as darktable's sliders round them, so the processing gets darktable's parameters bit for bit.
 - [ ] Software GPUs: large images' scratch bound in windows (decision 15), lifting the size limits of Local contrast, Bloom, Soften, Colour equalizer, Filmic RGB and Haze removal.
 
 ### Export
@@ -241,7 +241,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decisions 46, 47, 52 and 53), and metadata through the XMP layer (decision 50).
 
 - [ ] Ratings, a reject and colour labels, set from the caption under the photo and its keys and written to the `.apxmp`, so photos can be culled in folder mode before the Library ([gui.md](gui.md#the-caption-under-the-photo)).
-- [ ] Keywords and darktable's metadata fields, in the Keywords and Metadata modules; darktable's ratings, labels and keywords read from its XMP files.
+- [ ] Keywords and darktable's metadata fields, in the Keywords and Metadata tools; darktable's ratings, labels and keywords read from its XMP files.
 - [ ] Filters over the open folder, by rating, label, date, camera, keywords and the rest (decision 73).
 - [ ] Culling in the Photo layout with the grid panel and the caption's ratings, with no Grid layout; the selected photos side by side, up to 11 and a 12th cell for the rest (decision 37).
 - [ ] Rating, Apply edit and Export on every selected photo, with one undo.
@@ -261,7 +261,7 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
 
 ### The migration complete
 
-- [ ] Every module of the first pass in the app and matching darktable's render in its golden comparisons. From here on, Apertrust's own renders are its baselines.
+- [ ] Every tool of the first pass in the app and matching darktable's render in its golden comparisons. From here on, Apertrust's own renders are its baselines.
 
 ## The UX pass
 
@@ -280,7 +280,7 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 Goal: local editing.
 
 - [ ] Spikes first: the layer graph (15 layers, 100 brush strokes and 5 AI parts at 60 MP), masks on the GPU, shapes through the geometry, AI parts through ONNX Runtime (decision 34).
-- [ ] Layers as masked instances of modules (decision 34, [layers.md](layers.md)): filled layers and opacity first, a slider scaled in its own unit; darktable's blend modes.
+- [ ] Layers as masked instances of tools (decision 34, [layers.md](layers.md)): filled layers and opacity first, a slider scaled in its own unit; darktable's blend modes.
 - [ ] Gradients and shapes, then Feather and Edge, range parts, the brush, paths and a mask overlay, combined top to bottom, ported from darktable's master (decision 74).
 - [ ] Colour calibration's adaptation on a masked layer, for mixed light.
 - [ ] Retouch layers, heal and clone, darktable's retouch ported from its master (decision 74), then AI erase.
@@ -366,16 +366,16 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 7.** Bulk listing (`getattrlistbulk`, `FindFirstFileExW`, `statx`; in an `apertrust-fs` crate only if it needs FFI that safe crates do not cover), timed against step 1 on the NAS; spike L1 folded in.
 - [ ] **Step 8.** Sidecar version 2's identity and clocks: the photo's name and fingerprint, its virtual copies (one at first) with ids and clock vectors, the machine id; version 1 still read. Written through the XMP layer. Built in two parts where history needs them (decision 78; [history.md](history.md#step-8-first-in-two-parts)):
   - [x] 8.1, before 9.1: the hybrid logical clock and the machine id (`apertrust_library::clock`);
-  - [x] 8.2, before 9.5: the clocks' drift bound, another machine's clock read more than 5 minutes past the wall clock ignored (decision 47); version 2's text layer (`sidecar::Edits`) with the photo's identity and fingerprint, and its virtual copies, each with its id, number, name, clock vector, log and end, each time an XMP Date (ISO 16684-1:2019); version 1 read as a step of each module, sharing a batch; a fixture with a history that ExifTool and exiv2 read without error.
-- [ ] **Step 9.** Undo, redo and the edit's history (decision 78; each part's scope in [history.md](history.md#the-plan)), one pull request each, after switched modules (decision 32, [Editing](#editing)), which history relies on throughout:
-  - [x] 9.1: the log in the session's memory, each completed change a step of each module it touched, several sharing a batch that Undo and Redo move whole, `Reset` one step, `Undo` and `Redo` with the undo records, `Event::History` with its build time and size measured (its JSON over budget at 1,000 steps, so the remote protocol takes the planned fallback, [history.md](history.md#the-history-event)); the file still version 1;
+  - [x] 8.2, before 9.5: the clocks' drift bound, another machine's clock read more than 5 minutes past the wall clock ignored (decision 47); version 2's text layer (`sidecar::Edits`) with the photo's identity and fingerprint, and its virtual copies, each with its id, number, name, clock vector, log and end, each time an XMP Date (ISO 16684-1:2019); version 1 read as a step of each tool, sharing a batch; a fixture with a history that ExifTool and exiv2 read without error.
+- [ ] **Step 9.** Undo, redo and the edit's history (decision 78; each part's scope in [history.md](history.md#the-plan)), one pull request each, after switched tools (decision 32, [Editing](#editing)), which history relies on throughout:
+  - [x] 9.1: the log in the session's memory, each completed change a step of each tool it touched, several sharing a batch that Undo and Redo move whole, `Reset` one step, `Undo` and `Redo` with the undo records, `Event::History` with its build time and size measured (its JSON over budget at 1,000 steps, so the remote protocol takes the planned fallback, [history.md](history.md#the-history-event)); the file still version 1;
   - [x] 9.2: `GoTo` and `Step`, and the app's changes of several commands, the tone equalizer's release and band reset, as one `Step`;
   - [x] 9.3: consecutive changes merged as darktable's undo merges them;
   - [x] 9.4: Edit › Undo and Redo and their keys, naming what they would do;
-  - [x] 9.5: history saved in version 2 with its end and clock vector, Undo and Redo back after reopening, a newer file taken in before a write, an edit with an unreadable history open for viewing only with its own caption, `apertrust-cli edit` adding a step of each module, the crash test and the 1,000-step measurements on the M4's SSD (read in 6 to 16 ms, written in 12 to 22 ms; over SMB still to measure);
-  - [x] 9.6: the History tab: its lines, numbers, tags and tooltips, a click going to a step or to Original, Shift-click on a step opening its module, Reset in its header, and a module this build does not know listed by its stored name; what each line changed, the control with a direction, on a rail with the undone steps marked; a batch one closed group, opened by its chevron or →, a batch's line going to its last step; a heading over each day's steps; the keys of a tree; the header staying at the tab's top as the list scrolls;
+  - [x] 9.5: history saved in version 2 with its end and clock vector, Undo and Redo back after reopening, a newer file taken in before a write, an edit with an unreadable history open for viewing only with its own caption, `apertrust-cli edit` adding a step of each tool, the crash test and the 1,000-step measurements on the M4's SSD (read in 6 to 16 ms, written in 12 to 22 ms; over SMB still to measure);
+  - [x] 9.6: the History tab: its lines, numbers, tags and tooltips, a click going to a step or to Original, Shift-click on a step opening its tool, Reset in its header, and a tool this build does not know listed by its stored name; what each line changed, the control with a direction, on a rail with the undone steps marked; a batch one closed group, opened by its chevron or →, a batch's line going to its last step; a heading over each day's steps; the keys of a tree; the header staying at the tab's top as the list scrolls;
   - [x] The default steps: a photo with no history given a default step of each of darktable's default modules, written with the first change, Undo stopping above them, `GoTo` one showing the photo with the first k applied, numbered in the History tab as one closed group, Defaults ([history.md](history.md#original-and-the-default-steps));
-  - [x] 9.7: its eye, `Hide`: held, a peek at the photo without a module, as if reset, with no step and nothing saved;
+  - [x] 9.7: its eye, `Hide`: held, a peek at the photo without a tool, as if reset, with no step and nothing saved;
   - [x] 9.8: Compress History, Truncate History as its alternate while Option (Alt) is held, and Discard History…, asking first with Don't ask again, in the History section's ⋯ and Edit, their commands in the engine;
   - [x] 9.9: `apertrust-cli edit --note`, and `apertrust-cli history` listing the history in words and moving it: `--undo`, `--redo`, `--go-to`, `--compress`, `--truncate` and `--discard`.
 - [x] **Step 9b.** The ways in (decisions 37, 46 and 73). Built: Open With and a double-click opening the photo's folder with it active, the photo at once and the folder listed behind it (macOS's open-documents event, a drop on the Dock icon among them; `--in-folder` from the installer's and the desktop entry's registrations, [packaging.md](packaging.md#opening-a-raw-from-the-system)), looked at off the interface's thread and refused with the alert in the window as a drop is; `apertrust FILE` from a terminal opening one photo alone, nothing written but its edit, never in the recents, the grid panel holding it by itself and Browse's Folders holding Open This Folder, and `apertrust FOLDER` opening folder mode, a library's or project's file refused until Phase 5; the tab `photos`; Browse in folder mode, its top line listing the recents with Locate… and Remove from the List, ＋, ⋯ with Show in Finder, and Folders as the tree of the folder opened, its root fixed and a click choosing the active folder, each row's Show in Folder and a subfolder's own subfolders listed as it opens (`LibraryCommand::Subfolders`); File › Open… for one or more raws, the first opened with its folder behind it, a library's or project's file greyed out in its dialog until Phase 5, and Browse's ＋ running it; drag and drop onto the window, a folder as Open Folder…, raws as Open…, the first of several, anything else refused with an alert, nothing under a modal dialog, the photo and the grid panel outlined while something hovers; View › Browse (`show-browse`, L) choosing the first tab holding Browse. Selecting the other raws chosen, dropped or opened with the app waits for the grid panel's selection (Phase 3), and the notice for files from several folders for notices (step 12).
@@ -388,8 +388,8 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 12.** Two virtual copies on divergence, named after the computer and time; spike L4's harness. Notices that are not jobs (`Event::Notice`) come with it, shown as darktable's `dt_control_log` shows its messages ([gui.md](gui.md#the-jobs-window)).
 - [ ] **Step 13.** Conflict copies found by content, handled by step 12's rule, moved into the user data folder's `conflict-copies/` and removed 30 days later, never in the cache (decision 76); their count and size on Settings › Storage.
 - [ ] **Step 14.** Ratings, the reject and colour labels as history steps, combining field by field, written as darktable writes them, its labels and reject beside the standard XMP rating, so they read both ways; their details are settled as it is built.
-- [ ] **Step 15.** Keywords and darktable's metadata fields, combining likewise; darktable's XMP read for ratings, labels and keywords while a photo has no `.apxmp` (decision 51); the Keywords module, its list the folder's keywords with their properties and Recent in the user data folder's `keywords.toml`, and the Metadata module, darktable's image information and metadata editor in one (decision 73).
-- [ ] **Step 15b.** Filters in folder mode (decision 73): the index's rules and counts over the open folder, the Filters module; first file name, rating, colour label, history, date taken and file type, then camera, lens and exposure read with the capture times, then keywords and the metadata fields.
+- [ ] **Step 15.** Keywords and darktable's metadata fields, combining likewise; darktable's XMP read for ratings, labels and keywords while a photo has no `.apxmp` (decision 51); the Keywords tool, its list the folder's keywords with their properties and Recent in the user data folder's `keywords.toml`, and the Metadata tool, darktable's image information and metadata editor in one (decision 73).
+- [ ] **Step 15b.** Filters in folder mode (decision 73): the index's rules and counts over the open folder, the Filters tool; first file name, rating, colour label, history, date taken and file type, then camera, lens and exposure read with the capture times, then keywords and the metadata fields.
 - [ ] **Step 16.** Snapshots saved in the sidecar, each its edit whole, with History's Snapshots section ([history.md](history.md)).
 - [ ] **Step 17.** Photo groups: raw and JPEG by base name, groups made by hand by id in the sidecars, the G toggle.
 - [ ] **Step 18.** Renames outside Apertrust: orphan sidecars re-paired by fingerprint; Edits without a photo.
@@ -413,7 +413,7 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 32.** Import library… of a library: one album with its albums inside, by copy or reference, keywords by path, Keep both or Link, the cost first, the notice on the old one.
 - [ ] **Step 33.** Cloud files, after spike L3: the flags on Windows and macOS, materialisation off on macOS, cloud marks, Make Available Offline.
 - [ ] **Step 34.** Silent winners: each machine's last-written copy of each sidecar in the user data folder (decision 76); iCloud's hidden versions through `NSFileVersion`.
-- [ ] **Step 35.** The whole of `LibraryCommand` and `LibraryEvent` in the session protocol, and `apertrust-cli library`'s commands; MCP's tools in Phase 6.
+- [ ] **Step 35.** The whole of `LibraryCommand` and `LibraryEvent` in the session protocol, and `apertrust-cli library`'s commands; MCP tools in Phase 6.
 
 **Phase 5, after the library, the project:**
 
@@ -425,15 +425,15 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 41.** Export as Project…, by copy or reference.
 - [ ] **Step 42.** Project templates, saved into the user data folder and offered by New Project….
 
-**Later:** the module-by-module merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Photos tab's Location; presence notes; the server with sync (Phase 7, decision 71); Shared Project for a studio shoot, hosted on the server or on the tethering computer, with changes pushed and merged module by module (decision 71); scripting.
+**Later:** the tool-by-tool merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Photos tab's Location; presence notes; the server with sync (Phase 7, decision 71); Shared Project for a studio shoot, hosted on the server or on the tethering computer, with changes pushed and merged tool by tool (decision 71); scripting.
 
 **Spikes:** L1, listing, folded into step 7; L2, the cache's engine, step 21; L3, cloud folders on macOS and Windows, before step 33; L4, two versions, the convergence harness built with step 12.
 
-## The migrated modules
+## The migrated tools
 
-What the migration brings over from darktable, one module each. "Processing" is the algorithm rewritten for the GPU and matched to darktable's render; "module" is the panel you edit with in the app.
+What the migration brings over from darktable, one module each. "Processing" is the algorithm rewritten for the GPU and matched to darktable's render; "Tool" is the panel you edit with in the app.
 
-| darktable module | Processing | Module | Phase |
+| darktable module | Processing | Tool | Phase |
 | --- | --- | --- | --- |
 | raw black/white point | [x] | [x] | 1, 2 |
 | white balance | [x] | [x] | 1, 2 |
@@ -471,4 +471,4 @@ Left out on purpose: darktable's deprecated modules, and modules that do another
 
 ## Not planned
 
-From [principles.md](principles.md), What we will not build: reordering the processing, several copies of a module outside layers, expert and legacy modules; accounts, subscriptions, cloud processing or telemetry; generative image content. Video is not planned yet.
+From [principles.md](principles.md), What we will not build: reordering the processing, several copies of a tool outside layers, expert and legacy tools; accounts, subscriptions, cloud processing or telemetry; generative image content. Video is not planned yet.

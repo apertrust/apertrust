@@ -501,7 +501,7 @@ impl Settings {
     }
 }
 
-/// The modules' settings (decision 29; `docs/settings.md`, A module's settings): each kept
+/// The modules' settings (decision 29; `docs/pickers.md`, A tool's settings): each kept
 /// setting of [`apertrust_modules::settings::registry`], by its module and its id there,
 /// as the value its row (`Row::Setting`) shows and the picker's commands carry. Kept by
 /// the app as darktable keeps its darktablerc, never in an edit, and sent with

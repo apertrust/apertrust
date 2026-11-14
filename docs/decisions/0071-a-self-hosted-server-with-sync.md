@@ -44,7 +44,7 @@ Many photographers keep their photos on a NAS. A share over SMB lists slowly (21
 - **The host** is the NAS's server, or a desktop app running the same server code: the tethering computer, sharing its project with no NAS.
 - **Changes are pushed:** the server tells every connected machine of a change as it is made, within about 2 s on a good local network, instead of at the next exchange. The local network first; over the Internet later.
 - **Roles per account:** the owner manages the project's structure (import, captures, folders, roles, albums, moves and renames) and the tethering; a collaborator edits, rates, labels, keywords and makes virtual copies.
-- **Merged, never locked:** decision 52's comparison, with its module-by-module merge, planned as a setting, coming in for this, so two people editing one photo's different modules both land and nobody waits on a lock ([0052](0052-comparing-two-copies-of-a-sidecar.md)).
+- **Merged, never locked:** decision 52's comparison, with its tool-by-tool merge, planned as a setting, coming in for this, so two people editing one photo's different tools both land and nobody waits on a lock ([0052](0052-comparing-two-copies-of-a-sidecar.md)).
 - **Follow mode** shows the newest capture as it arrives; a sync panel shows who is connected and how far behind each machine is.
 
 **Open questions:**

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Soften (`docs/modules/soften.md`): darktable's soften as the user edits with it,
+//! Soften (`docs/tools/soften.md`): darktable's soften as the user edits with it,
 //! in the first pass (decision 2): darktable's page, its four sliders in `gui_init`'s
 //! order under its labels, size, saturation, brightness and mix. It has no tabs, groups or
 //! presets of its own.
@@ -285,7 +285,7 @@ mod tests {
     }
 
     /// darktable's soften sliders (`src/iop/soften.c`, the params and `gui_init`):
-    /// `docs/modules/soften.md`'s slider table. Each `dt_bauhaus_slider_set_format(…, "%")`
+    /// `docs/tools/soften.md`'s slider table. Each `dt_bauhaus_slider_set_format(…, "%")`
     /// is over a hard maximum of 100, beyond ±10, so it adds no factor of 100; each keeps
     /// the two digits `dt_bauhaus_slider_from_params` gives its range.
     const DARKTABLE: [DarktableSlider; 4] = [
