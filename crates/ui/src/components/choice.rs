@@ -72,7 +72,7 @@ use crate::popup::{self, Answer, Item, Request};
 use crate::{Icon, Theme, theme, translator};
 
 /// How a dropdown row looks (decision 42). Not the definitions'
-/// `apertrust_modules::ChoiceStyle`, a list or segments: a module panel draws a list in
+/// `apertrust_tools::ChoiceStyle`, a list or segments: a module panel draws a list in
 /// this row's Blended style.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChoiceStyle {

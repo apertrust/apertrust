@@ -108,7 +108,7 @@ None in the result: `whitebalance_1f` and `whitebalance_1f_xtrans` multiply by `
 
 ## Tool binding notes
 
-White balance, darktable's white balance module, owns every parameter (decision 27; `docs/tools/white-balance.md`, `docs/tools/README.md`). It is built (`crates/modules/src/white_balance.rs`).
+White balance, darktable's white balance module, owns every parameter (decision 27; `docs/tools/white-balance.md`, `docs/tools/README.md`). It is built (`crates/tools/src/white_balance.rs`).
 
 - **Settings** writes the four coefficients and `preset` together, as darktable's `_preset_tune_callback` does.
 - **Moving a coefficient, temperature or tint** writes `preset` user modified, as darktable's `gui_changed` does. So the late correction runs only with "as shot to reference" and the as-shot coefficients, the states darktable reaches.

@@ -48,8 +48,8 @@ use apertrust_engine::picker::{DEFAULT_AREA, DEFAULT_POINT};
 use apertrust_engine::session::{
     Command, ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
 };
-use apertrust_modules::pick::{Patch, Shown};
-use apertrust_modules::{ControlKind, Definition, Module, PickerKind, Row, messages};
+use apertrust_tools::pick::{Patch, Shown};
+use apertrust_tools::{ControlKind, Definition, PickerKind, Row, Tool, messages};
 use apertrust_ui::Translator;
 use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace};
 use apertrust_ui::i18n::Args;
@@ -237,10 +237,10 @@ impl Picked {
             self.seen = None;
             return None;
         };
-        let PickerRef::Module { module, .. } = reading.picker else {
+        let PickerRef::Tool { tool: module, .. } = reading.picker else {
             return None;
         };
-        let shown = reading.module.as_ref()?.picked.as_ref()?;
+        let shown = reading.tool.as_ref()?.picked.as_ref()?;
         let seen = (module, shown.clone());
         if self.seen.as_ref() == Some(&seen) {
             return None;
@@ -282,7 +282,7 @@ impl Picked {
             | Command::Compress
             | Command::Truncate
             | Command::DiscardHistory => Some(None),
-            Command::ResetModule { module } => Some(Some(module.clone())),
+            Command::ResetTool { tool: module } => Some(Some(module.clone())),
             _ => None,
         }
     }
@@ -354,7 +354,7 @@ pub struct Showing {
 
 impl Showing {
     /// What `command` shows, its picker among `modules`.
-    pub fn of(command: &PickerCommand, modules: &[&dyn Module]) -> Showing {
+    pub fn of(command: &PickerCommand, modules: &[&dyn Tool]) -> Showing {
         let asked = match *command {
             PickerCommand::On { picker, area, .. } => {
                 let kind = declared(modules, picker).map(|(_, declared)| declared.kind);
@@ -460,7 +460,7 @@ pub fn completes_edit(command: &PickerCommand, active: Option<PickerRef>) -> boo
         PickerCommand::On { picker, .. } => Some(*picker),
         _ => active,
     };
-    matches!(picker, Some(PickerRef::Module { .. })) && completes(command)
+    matches!(picker, Some(PickerRef::Tool { .. })) && completes(command)
 }
 
 /// Whether a picker of `kind` turned on with `area` measures an area: one kind, that
@@ -501,10 +501,14 @@ fn mac_right_click(modifiers: Modifiers, mac: bool) -> bool {
 
 /// A module's picker and its definition, among `modules`.
 fn declared<'m>(
-    modules: &'m [&'m dyn Module],
+    modules: &'m [&'m dyn Tool],
     picker: PickerRef,
-) -> Option<(&'m Definition, &'static apertrust_modules::Picker)> {
-    let PickerRef::Module { module, picker } = picker else {
+) -> Option<(&'m Definition, &'static apertrust_tools::Picker)> {
+    let PickerRef::Tool {
+        tool: module,
+        picker,
+    } = picker
+    else {
         return None;
     };
     let found = modules.iter().find(|m| m.definition().id == module)?;
@@ -536,7 +540,7 @@ pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String
 /// picker's, whose words come with its module.
 pub fn bar_words(
     words: &Translator,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     picker: PickerRef,
     area: bool,
     mac: bool,
@@ -1168,7 +1172,7 @@ impl Said {
         now: Instant,
         reading: Option<&PickerReading>,
         values: &Values,
-        modules: &[&dyn Module],
+        modules: &[&dyn Tool],
         words: &Translator,
     ) -> Option<Duration> {
         let rest = self.rest.as_ref()?;
@@ -1185,13 +1189,13 @@ impl Said {
 
 /// The controls of `picker`'s module, as `values` show them.
 fn module_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, ControlValue)> {
-    let PickerRef::Module { module, .. } = picker else {
+    let PickerRef::Tool { tool: module, .. } = picker else {
         return Vec::new();
     };
     values
-        .modules
+        .tools
         .iter()
-        .find(|state| state.module == module)
+        .find(|state| state.tool == module)
         .map(|state| {
             state
                 .controls
@@ -1208,7 +1212,7 @@ fn said(
     reading: &PickerReading,
     before: &[(&'static str, ControlValue)],
     values: &Values,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     words: &Translator,
 ) -> String {
     let now = module_values(reading.picker, values);
@@ -1303,11 +1307,11 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use apertrust_engine::session::{
-        ControlState, FrameReading, ModuleState, PickKeys, PickerCommand, PickerReading, PickerRef,
-        Region, Values,
+        ControlState, FrameReading, PickKeys, PickerCommand, PickerReading, PickerRef, Region,
+        ToolState, Values,
     };
-    use apertrust_modules::testing::Sample;
-    use apertrust_modules::{ControlValue, Module};
+    use apertrust_tools::testing::Sample;
+    use apertrust_tools::{ControlValue, Tool};
     use apertrust_ui::{Builtin, Locale, Theme};
     use egui::accesskit::{Action, ActionData, ActionRequest, Role, Toggled, TreeId};
     use egui::os::OperatingSystem;
@@ -1316,22 +1320,22 @@ mod tests {
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
     use super::*;
-    use crate::modules::{self, Change, Panels};
+    use crate::tools::{self, Change, Panels};
 
-    static MODULES: &[&dyn Module] = &[&Sample];
+    static TOOLS: &[&dyn Tool] = &[&Sample];
 
     /// `testing::Sample`'s pickers: brightness's quad, an area; and the row's spread and
     /// show, each a point or an area.
-    const BRIGHTNESS: PickerRef = PickerRef::Module {
-        module: "sample",
+    const BRIGHTNESS: PickerRef = PickerRef::Tool {
+        tool: "sample",
         picker: "brightness",
     };
-    const SPREAD: PickerRef = PickerRef::Module {
-        module: "sample",
+    const SPREAD: PickerRef = PickerRef::Tool {
+        tool: "sample",
         picker: "spread",
     };
-    const SHOW: PickerRef = PickerRef::Module {
-        module: "sample",
+    const SHOW: PickerRef = PickerRef::Tool {
+        tool: "sample",
         picker: "show",
     };
 
@@ -1368,7 +1372,7 @@ mod tests {
 
     impl Scene {
         fn send(&mut self, command: PickerCommand, ctx: &egui::Context) {
-            let showing = Showing::of(&command, MODULES);
+            let showing = Showing::of(&command, TOOLS);
             self.number += 1;
             showing.sent(
                 self.number,
@@ -1398,8 +1402,8 @@ mod tests {
             })
             .collect();
         Values {
-            modules: vec![ModuleState {
-                module: definition.id,
+            tools: vec![ToolState {
+                tool: definition.id,
                 enabled: true,
                 edited: false,
                 hidden: false,
@@ -1428,17 +1432,17 @@ mod tests {
                     let colours = &t.colors;
                     (ui.painter()).rect_filled(ctx.content_rect(), 0.0, colours.photo_surround);
                     ui.painter().rect_filled(PANEL, 0.0, colours.panel);
-                    let pickers = modules::Pickers {
+                    let pickers = tools::Pickers {
                         drawn: &["sample"],
                         on: scene.mirror.active(),
                         enabled: true,
                         why: None,
-                        ..modules::Pickers::NONE
+                        ..tools::Pickers::NONE
                     };
-                    let state = &scene.values.modules[0];
+                    let state = &scene.values.tools[0];
                     let changes = ui
                         .scope_builder(UiBuilder::new().max_rect(PANEL), |ui| {
-                            modules::section(
+                            tools::section(
                                 ui,
                                 &Sample,
                                 state,
@@ -1460,7 +1464,10 @@ mod tests {
                             keys,
                         } = change
                         {
-                            let picker = PickerRef::Module { module, picker };
+                            let picker = PickerRef::Tool {
+                                tool: module,
+                                picker,
+                            };
                             scene.send(pressed(picker, action, keys, Vec::new()), &ctx);
                         }
                     }
@@ -1478,7 +1485,7 @@ mod tests {
                     let Some((picker, region)) = shown else {
                         return;
                     };
-                    let PickerRef::Module { picker: id, .. } = picker else {
+                    let PickerRef::Tool { picker: id, .. } = picker else {
                         return;
                     };
                     let words = apertrust_ui::translator(&ctx);
@@ -1520,7 +1527,7 @@ mod tests {
             through,
             picker,
             region,
-            module: None,
+            tool: None,
             frame: Some(FrameReading {
                 rgb: [[0.6, 0.5, 0.4]; 3],
                 lab: [[0.0; 3]; 3],
@@ -1908,14 +1915,14 @@ mod tests {
         said.moved(3, now, BRIGHTNESS, &values);
         // A later step of the same drag keeps what the values were as it began.
         said.moved(4, now + Duration::from_millis(100), BRIGHTNESS, &values);
-        let brightness = &mut values.modules[0].controls[0];
+        let brightness = &mut values.tools[0].controls[0];
         assert_eq!(brightness.control, "brightness");
         brightness.value = ControlValue::Number(0.5);
         let at = |ms| now + Duration::from_millis(ms);
         let read = reading(BRIGHTNESS, DEFAULT_AREA, 4);
         let early = reading(BRIGHTNESS, DEFAULT_AREA, 3);
         let update =
-            |said: &mut Said, ms, read| said.update(at(ms), Some(read), &values, MODULES, &words);
+            |said: &mut Said, ms, read| said.update(at(ms), Some(read), &values, TOOLS, &words);
         assert_eq!(
             update(&mut said, 400, &read),
             Some(Duration::from_millis(200))
@@ -1966,7 +1973,7 @@ mod tests {
             Instant::now(),
             reading.as_ref(),
             &scene.values,
-            MODULES,
+            TOOLS,
             &words,
         );
         harness.run();
@@ -2008,7 +2015,7 @@ mod tests {
         let values = values();
         let (mut mirror, mut said) = (Mirror::default(), Said::default());
         let send = |number, command: PickerCommand, mirror: &mut Mirror, said: &mut Said| {
-            Showing::of(&command, MODULES).sent(number, mirror, said, &values, &ctx);
+            Showing::of(&command, TOOLS).sent(number, mirror, said, &values, &ctx);
         };
         send(
             1,
@@ -2028,7 +2035,7 @@ mod tests {
         mirror.apply(2, Some(reading(SHOW, Region::Point([0.3, 0.3]), 2)));
         let later = Instant::now() + RESTS + Duration::from_millis(100);
         assert_eq!(
-            said.update(later, mirror.reading(), &values, MODULES, &words),
+            said.update(later, mirror.reading(), &values, TOOLS, &words),
             None
         );
         assert_eq!(said.text(), "mean RGB 153, 128, 102");
@@ -2172,7 +2179,7 @@ mod tests {
     #[test]
     fn the_central_bar_names_the_picker_and_says_how_to_use_it() {
         let words = Translator::new(Locale::EnGb);
-        let bar = |picker, area, mac| bar_words(&words, MODULES, picker, area, mac).unwrap();
+        let bar = |picker, area, mac| bar_words(&words, TOOLS, picker, area, mac).unwrap();
         assert_eq!(
             bar(BRIGHTNESS, true, false),
             (
@@ -2193,7 +2200,7 @@ mod tests {
             )
         );
         assert_eq!(
-            bar_words(&words, MODULES, PickerRef::ColourPicker, true, false),
+            bar_words(&words, TOOLS, PickerRef::ColourPicker, true, false),
             None
         );
     }

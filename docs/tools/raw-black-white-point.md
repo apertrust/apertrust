@@ -6,9 +6,9 @@ It is darktable's raw black/white point in the first pass (decision 2). darktabl
 
 It drives one operation, `rawprepare` (raw 1, [../ports/rawprepare.md](../ports/rawprepare.md)), which every raw runs. So it adds no operation: it has no first step, and at its defaults it sets nothing and leaves the plan as it was. It owns every parameter of the operation. A change runs demosaic again, as every raw-stage control does (decision 12; [../engine.md](../engine.md), Where the viewport's scale applies).
 
-**Status:** built, in `crates/modules/src/raw_black_white_point.rs`, first in `MODULES`. The app draws it in the Base tab, last, after White balance, from its definition (`docs/gui.md`, Tool panels from definitions).
+**Status:** built, in `crates/tools/src/raw_black_white_point.rs`, first in `TOOLS`. The app draws it in the Base tab, last, after White balance, from its definition (`docs/gui.md`, Tool panels from definitions).
 
-- Its rows are tests in `crates/modules/tests/raw_black_white_point.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/raw_black_white_point.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own match, so none has a proposed tolerance.
 - The [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
@@ -35,7 +35,7 @@ Control ids are the operation's parameter names, darktable's with the array's in
 
 A black level is the black of one position of the sensor's 2×2 pattern of row and column parities, row parity × 2 + column parity, on the sensor rather than the crop (`docs/ports/rawprepare.md`, Per pixel). The operation scales each photosite to `(raw − black) / (white − black)`.
 
-A script sends `SetControl { module: "rawprepare", control: "raw_white_point", value: 16000 }`, and `apertrust-cli edit --set rawprepare.raw_white_point=16000` does the same. `--param rawprepare.raw_white_point=16000` is refused, since the tool owns it, and `--param rawprepare.left=4` as fixed by the tool, which gives the crop no control (below). An edit that holds `rawprepare` values at operation level, under `param:`, loses them with a warning when it is read, and they are gone from the file after its next save.
+A script sends `SetControl { tool: "rawprepare", control: "raw_white_point", value: 16000 }`, and `apertrust-cli edit --set rawprepare.raw_white_point=16000` does the same. `--param rawprepare.raw_white_point=16000` is refused, since the tool owns it, and `--param rawprepare.left=4` as fixed by the tool, which gives the crop no control (below). An edit that holds `rawprepare` values at operation level, under `param:`, loses them with a warning when it is read, and they are gone from the file after its next save.
 
 **Every default is the photo's** (rule 4 of [README.md](README.md), decision 21): the operation's own default for the photo, which is darktable's `reload_defaults` over rawler's levels (decision 23).
 
@@ -59,7 +59,7 @@ The words are darktable's labels and tooltips from its `en@truecase` catalogue, 
 
 Audited against darktable's `src/iop/rawprepare.c`, its params and `gui_init`, and against darktable's panel as it draws them for a Fujifilm X-T5 raw: "black level 0" to "black level 3" at 1020 and "white point" at 16383, whole numbers ([README.md](README.md), Sliders against darktable).
 
-`its_sliders_are_darktable_s`, in `crates/modules/src/raw_black_white_point.rs`, holds the definition to this table.
+`its_sliders_are_darktable_s`, in `crates/tools/src/raw_black_white_point.rs`, holds the definition to this table.
 
 | Slider | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -78,7 +78,7 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | R0 | None: every control at its default for the photo, written at it or kept there | | The tool's defaults against the operation's for the photo; `bind`; the plan's instances and cache keys; the frame, on one pipeline that a level one step off its default passes through first | Every default is the operation's; `bind` returns nothing; instances, keys and frames as with no edit | Exact | The small raw through the export and the viewport; every corpus raw (defaults, instances and keys) |
-| R1 | Each control, moved and reset | From the photo's defaults: Black level 0 and Black level 3 up one step, White point down one; every black up 16; the white point down by a twentieth; every level at once; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan's operations and cache keys; the frame | Each move changes the frame; each reset as R0 | Exact | The small raw through the export and the viewport; 90D through the viewport and the export |
+| R1 | Each control, moved and reset | From the photo's defaults: Black level 0 and Black level 3 up one step, White point down one; every black up 16; the white point down by a twentieth; every level at once; each reset control by control (`ResetControl`) and by the header's reset (`ResetTool`) | The plan's operations and cache keys; the frame | Each move changes the frame; each reset as R0 | Exact | The small raw through the export and the viewport; 90D through the viewport and the export |
 | R2 | Two controls, in either order | Black level 0 up 8 with White point down 100; Black level 3 up 4 with Black level 1 up 2 | Frame | The same whichever was set first | Exact | The small raw through the export; 90D through the viewport and the export |
 | R3 | Every level, the darktable match | darktable's own levels for each raw on which `apertrust-golden raw-defaults` recovers a level of darktable's that is not Apertrust's: the 40D (`mire1.cr2`), the M50, the R6 Mark II, the Z 9, the OM-1 Mark II, the K-3 Mark III and the NX1, set as the tool's controls over Apertrust's levels for the raw | The parameters the edit renders; the history entry `raw-run` would write for them (`golden::raw_stage::rawprepare_from`); the kernel's inputs through the operation's `prepare` | Apertrust's levels as defaults; darktable's history entry and `commit_params` bit for bit (below) | Exact | The levels, on the CPU; the seven raws, for the defaults |
 | R4 | White point at or below a black level | White point at the black, 0 on the small raw; Black level 0 at 100 with White point at 100; Black level 0 at 100 and Black level 3 at 200 with White point at 50 | The raw stage's output, demosaic's, before the frame's clamps could hide a value | Every value finite: the operation keeps each divisor at one level (`docs/ports/rawprepare.md`, Deliberate differences), where darktable's is 0 or negative | Exact | The small raw through the export and the viewport |
@@ -95,7 +95,7 @@ R3 is how the tool matches darktable. `apertrust-golden raw-run` holds the opera
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/raw_black_white_point.rs`. The small raw's rows and R3's levels run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, and R3's with `APERTRUST_TEST_IMAGES` as well, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/raw_black_white_point.rs`. The small raw's rows and R3's levels run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, and R3's with `APERTRUST_TEST_IMAGES` as well, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -147,12 +147,12 @@ What darktable's page has or does that the panel does not yet:
 
 - **Tool id:** `rawprepare`, darktable's operation name (rule 1).
 - **Control ids:** the operation's parameter names, darktable's with the array's index as a suffix (`raw_black_level_separate_0`), so `--set` names what darktable's history names, as RGB primaries' and Grain's do.
-- **The defaults:** the operation's for the photo, restated in the tool from the image context, as Exposure restates the camera bias's clamp. Tests hold the restatement to the operation's own on every kind of black pattern and on the corpus. `Base`, which a binding has, is not available to `Module::defaults`.
+- **The defaults:** the operation's for the photo, restated in the tool from the image context, as Exposure restates the camera bias's clamp. Tests hold the restatement to the operation's own on every kind of black pattern and on the corpus. `Base`, which a binding has, is not available to `Tool::defaults`.
 - **A level as a number:** a number control stepping by 1 with no decimals, bound as the nearest whole number, as the Tone equalizer's Filter diffusion is. The panel sends whole numbers, and a fractional value from a script binds as darktable's slider rounds a typed one.
 - **Flat field correction:** a choice of darktable's two options, Embedded GainMap not ported, and unavailable on every photo, since darktable shows it only for a raw with usable gain maps and rawler reads none. The control as a whole is not marked not ported (`Control::unported`), since its parameter's off value is ported.
-- **The crop margins:** owned with no control, at the raw's values, so nothing sets them; `--param` is refused as for a parameter the tool fixes (`Module::fixed`). Every operation parameter has exactly one owning tool (AGENTS.md; `tool-bindings`).
+- **The crop margins:** owned with no control, at the raw's values, so nothing sets them; `--param` is refused as for a parameter the tool fixes (`Tool::fixed`). Every operation parameter has exactly one owning tool (AGENTS.md; `tool-bindings`).
 - **An image that is not a raw:** every control unavailable, drawn disabled, where darktable shows a page with a sentence in place of the sliders.
-- **Order in `MODULES`:** first, so the session reports it and an edit saves it first.
+- **Order in `TOOLS`:** first, so the session reports it and an edit saves it first.
 - **Words:** darktable's labels and tooltips from its `en@truecase` catalogue, the tooltips its labels where `gui_init` sets them so; Ukrainian and Polish from its `uk.po` and `pl.po` at the tag, capitalised. Polish keeps darktable's "Korekta płaskich obszarów" for the label and "korekcja płaskiego pola" in the tooltip.
 - **Row ids:** R, for Raw black/white point.
 - **The rows:** R0 to R4. No first step, as the tool adds no operation, and no layer row, as it works on the background only; R4 for the operation's guard on a white point at or below a black level.

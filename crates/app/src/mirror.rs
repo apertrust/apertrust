@@ -49,19 +49,19 @@ use std::time::{Duration, Instant};
 
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
-    ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, ModuleState,
-    OpenPreview, Photo, PresetState, PreviewSource, SessionError, Values,
+    ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, OpenPreview,
+    Photo, PresetState, PreviewSource, SessionError, ToolState, Values,
 };
 use apertrust_engine::{edit, sidecar};
-use apertrust_modules::Module;
 use apertrust_plugin::ImageContext;
+use apertrust_tools::Tool;
 use apertrust_ui::components::SaveState;
 
 use crate::folder::{self, FolderState};
 use crate::jobs;
-use crate::modules::Pending;
 use crate::pickers;
 use crate::scopes::Scopes;
+use crate::tools::Pending;
 
 /// What the app must do in reply to an event, that the mirror cannot: it touches egui, the
 /// dialog host or the platform.
@@ -120,7 +120,7 @@ impl Shown {
 /// The session as the app last heard of it.
 pub struct Mirror {
     /// The modules the session was started with, whose views show the pending values.
-    modules: &'static [&'static dyn Module],
+    modules: &'static [&'static dyn Tool],
     pub photo: PhotoState,
     /// The modules' controls and the unowned parameters as the engine last reported them,
     /// with the pending ones in their place (`docs/gui.md`, A frame); with no photo, and
@@ -181,12 +181,12 @@ pub struct Mirror {
 
 impl Mirror {
     /// The modules the session was started with.
-    pub fn modules(&self) -> &'static [&'static dyn Module] {
+    pub fn modules(&self) -> &'static [&'static dyn Tool] {
         self.modules
     }
 
     /// The mirror before any event: no photo, every module untouched, the jobs as given.
-    pub fn new(modules: &'static [&'static dyn Module], jobs: jobs::Mirror) -> Mirror {
+    pub fn new(modules: &'static [&'static dyn Tool], jobs: jobs::Mirror) -> Mirror {
         let untouched = untouched(modules);
         Mirror {
             modules,
@@ -232,13 +232,13 @@ impl Mirror {
     /// Reset applies as a step (decision 78). Its edit's `edited` alone stays what the
     /// folder marks as edited.
     pub fn resettable(&self) -> bool {
-        let unapplied = |state: &ModuleState| {
+        let unapplied = |state: &ToolState| {
             !state.enabled
                 && (self.modules.iter()).any(|module| {
-                    module.definition().id == state.module && !module.definition().switched
+                    module.definition().id == state.tool && !module.definition().switched
                 })
         };
-        self.values.edited || self.values.modules.iter().any(unapplied)
+        self.values.edited || self.values.tools.iter().any(unapplied)
     }
 
     /// The raw at `path` is asked for by the open numbered `open`, `now`: nothing of the
@@ -526,7 +526,7 @@ impl Mirror {
         {
             return;
         }
-        if !matches!(error, SessionError::Module { .. } | SessionError::Scopes(_)) {
+        if !matches!(error, SessionError::Tool { .. } | SessionError::Scopes(_)) {
             tracing::error!(target: "pipe", "{error}");
         }
         // The scopes are off for the session: their last reading stops showing.
@@ -575,7 +575,7 @@ impl Mirror {
 /// match and a view's coordinates are the module's view of them, both on the no-photo
 /// image ([`PhotoState::image`]); a row whose module cannot say reads Custom, and a view
 /// whose module cannot is left out, as the session leaves it out.
-fn untouched(modules: &[&dyn Module]) -> Values {
+fn untouched(modules: &[&dyn Tool]) -> Values {
     let image = PhotoState::None.image();
     let states = modules.iter().map(|module| {
         let definition = module.definition();
@@ -625,8 +625,8 @@ fn untouched(modules: &[&dyn Module]) -> Values {
                 });
             }
         }
-        ModuleState {
-            module: definition.id,
+        ToolState {
+            tool: definition.id,
             enabled: !definition.switched,
             edited: false,
             hidden: false,
@@ -636,7 +636,7 @@ fn untouched(modules: &[&dyn Module]) -> Values {
         }
     });
     Values {
-        modules: states.collect(),
+        tools: states.collect(),
         settings: Vec::new(),
         edited: false,
         through: 0,
@@ -771,7 +771,7 @@ pub struct Picture {
 /// Every control, coordinate and preset option of `values` drawn disabled, as a photo's
 /// values are until it is live (decision 77), each keeping its value and mark.
 fn read_only(values: &mut Values) {
-    for module in &mut values.modules {
+    for module in &mut values.tools {
         for control in &mut module.controls {
             control.available = false;
         }
@@ -888,7 +888,7 @@ impl Saving {
     fn reported(&mut self, values: &Values) {
         let before = self.report.as_ref().map_or(0, |report| report.through);
         let same = self.report.as_ref().is_some_and(|report| {
-            (report.modules == values.modules)
+            (report.tools == values.tools)
                 && (report.settings == values.settings)
                 && (report.edited, report.extent) == (values.edited, values.extent)
         });
@@ -939,7 +939,7 @@ impl Saving {
 pub fn reported(
     mut reported: Values,
     pending: &mut Vec<(u64, Pending)>,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     image: &ImageContext,
 ) -> Values {
     pending.retain(|(number, _)| *number > reported.through);
@@ -953,10 +953,10 @@ pub fn reported(
 /// control set shows as kept, as the session keeps it, one reset its default, released,
 /// and a lossless view's coordinates and controls move together. `image` is what the
 /// module's view reads.
-pub fn show(values: &mut Values, change: &Pending, modules: &[&dyn Module], image: &ImageContext) {
+pub fn show(values: &mut Values, change: &Pending, modules: &[&dyn Tool], image: &ImageContext) {
     let id = change.module();
     let module = modules.iter().find(|module| module.definition().id == id);
-    let state = values.modules.iter_mut().find(|state| state.module == id);
+    let state = values.tools.iter_mut().find(|state| state.tool == id);
     let (Some(module), Some(state)) = (module, state) else {
         return;
     };
@@ -1144,7 +1144,7 @@ pub(crate) mod tests {
             image: Box::new(ImageContext::full(84, 62)),
         };
         let values = Event::Values(Values {
-            modules: Vec::new(),
+            tools: Vec::new(),
             settings: Vec::new(),
             edited: false,
             through: 4,
@@ -1184,7 +1184,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_value_set_stays_until_a_report_includes_it() {
-        use apertrust_engine::session::{ControlState, ModuleState};
+        use apertrust_engine::session::{ControlState, ToolState};
 
         let control = |id, value: f32, mark| ControlState {
             control: id,
@@ -1195,8 +1195,8 @@ pub(crate) mod tests {
             options: Vec::new(),
             range: None,
         };
-        let exposure = |black, black_mark, exposure, exposure_mark| ModuleState {
-            module: "exposure",
+        let exposure = |black, black_mark, exposure, exposure_mark| ToolState {
+            tool: "exposure",
             enabled: true,
             edited: black != 0.0 || exposure != 0.0,
             hidden: false,
@@ -1208,7 +1208,7 @@ pub(crate) mod tests {
             views: Vec::new(),
         };
         let report = |black, value, through| Values {
-            modules: vec![exposure(black, None, value, Some(Mark::Kept))],
+            tools: vec![exposure(black, None, value, Some(Mark::Kept))],
             settings: Vec::new(),
             edited: true,
             through,
@@ -1217,7 +1217,7 @@ pub(crate) mod tests {
         };
         let image = ImageContext::full(84, 62);
         let mirror = |report, pending: &mut Vec<_>| {
-            reported(report, pending, apertrust_modules::MODULES, &image)
+            reported(report, pending, apertrust_tools::TOOLS, &image)
         };
         let set_black = |value| Pending::Control {
             module: "exposure",
@@ -1239,10 +1239,10 @@ pub(crate) mod tests {
             ),
         ];
         let shown = mirror(report(0.05, 1.0, 4), &mut pending);
-        assert_eq!(shown.modules, [exposure(0.2, Some(Mark::Kept), 0.0, None)]);
+        assert_eq!(shown.tools, [exposure(0.2, Some(Mark::Kept), 0.0, None)]);
         assert_eq!(pending.len(), 3);
         let shown = mirror(report(0.2, 0.0, 7), &mut pending);
-        assert_eq!(shown.modules, [exposure(0.2, None, 0.0, Some(Mark::Kept))]);
+        assert_eq!(shown.tools, [exposure(0.2, None, 0.0, Some(Mark::Kept))]);
         assert!(pending.is_empty());
 
         // The marker and the header's reset show at once too.
@@ -1255,12 +1255,12 @@ pub(crate) mod tests {
                     kept: false,
                 },
             ),
-            (9, Pending::ResetModule { module: "exposure" }),
+            (9, Pending::ResetTool { module: "exposure" }),
         ];
         let shown = mirror(report(0.2, 1.0, 7), &mut pending[..1].to_vec());
-        assert_eq!(shown.modules, [exposure(0.2, None, 1.0, None)]);
+        assert_eq!(shown.tools, [exposure(0.2, None, 1.0, None)]);
         let shown = mirror(report(0.2, 1.0, 7), &mut pending);
-        assert_eq!(shown.modules, [exposure(0.0, None, 0.0, None)]);
+        assert_eq!(shown.tools, [exposure(0.0, None, 0.0, None)]);
     }
 
     // Feeding `apply` event sequences: the mirror and the reactions it returns.
@@ -1282,10 +1282,10 @@ pub(crate) mod tests {
 
     /// The exposure module with Exposure at `exposure`, reported after `through` commands.
     pub(crate) fn report(exposure: f32, through: u64) -> Values {
-        use apertrust_engine::session::{ControlState, ModuleState};
+        use apertrust_engine::session::{ControlState, ToolState};
         Values {
-            modules: vec![ModuleState {
-                module: "exposure",
+            tools: vec![ToolState {
+                tool: "exposure",
                 enabled: true,
                 edited: exposure != 0.0,
                 hidden: false,
@@ -1319,11 +1319,11 @@ pub(crate) mod tests {
 
     /// The Exposure the widgets show.
     fn shown(mirror: &Mirror) -> ControlValue {
-        mirror.values.modules[0].controls[0].value.clone()
+        mirror.values.tools[0].controls[0].value.clone()
     }
 
     pub(crate) fn mirror() -> Mirror {
-        Mirror::new(apertrust_modules::MODULES, jobs::Mirror::new(None))
+        Mirror::new(apertrust_tools::TOOLS, jobs::Mirror::new(None))
     }
 
     /// A change sent as `number`, as the app sends it: shown at once, and the edit not
@@ -1666,8 +1666,8 @@ pub(crate) mod tests {
     fn the_mirror_keeps_the_photo_s_picker() {
         use apertrust_engine::session::{PickerReading, PickerRef, Region};
 
-        let exposure = PickerRef::Module {
-            module: "exposure",
+        let exposure = PickerRef::Tool {
+            tool: "exposure",
             picker: "exposure",
         };
         let reading = |through| Event::Picker {
@@ -1676,7 +1676,7 @@ pub(crate) mod tests {
                 through,
                 picker: exposure,
                 region: Region::Area([0.02, 0.02, 0.98, 0.98]),
-                module: None,
+                tool: None,
                 frame: None,
             }),
         };
@@ -1770,14 +1770,14 @@ pub(crate) mod tests {
 
     /// Whether `values` are every module's, untouched and unavailable, as with no photo.
     fn untouched_all(values: &Values) -> bool {
-        let ids: Vec<&str> = apertrust_modules::MODULES
+        let ids: Vec<&str> = apertrust_tools::TOOLS
             .iter()
             .map(|module| module.definition().id)
             .collect();
-        let shown: Vec<&str> = values.modules.iter().map(|state| state.module).collect();
-        let controls = values.modules.iter().flat_map(|state| &state.controls);
-        let coordinates = values.modules.iter().flat_map(|state| &state.views);
-        let presets = values.modules.iter().flat_map(|state| &state.presets);
+        let shown: Vec<&str> = values.tools.iter().map(|state| state.tool).collect();
+        let controls = values.tools.iter().flat_map(|state| &state.controls);
+        let coordinates = values.tools.iter().flat_map(|state| &state.views);
+        let presets = values.tools.iter().flat_map(|state| &state.presets);
         ids == shown
             && !values.edited
             && controls.clone().all(|c| c.value == c.default)
@@ -1795,14 +1795,14 @@ pub(crate) mod tests {
         assert!(!m.takes_edits() && !m.shown().editable());
         assert!(untouched_all(&m.values));
         // Each control at its definition's default, whatever the photo would make it.
-        for (module, state) in apertrust_modules::MODULES.iter().zip(&m.values.modules) {
+        for (module, state) in apertrust_tools::TOOLS.iter().zip(&m.values.tools) {
             for (control, shown) in module.definition().controls.iter().zip(&state.controls) {
                 assert_eq!(shown.value, control.default(), "{}", control.id);
             }
         }
         // A lossless view's coordinates are there to draw, as White balance's temperature
         // and tint are.
-        let temperature = m.values.modules.iter().find(|s| s.module == "temperature");
+        let temperature = m.values.tools.iter().find(|s| s.tool == "temperature");
         assert!(temperature.is_some_and(|state| !state.views.is_empty()));
     }
 
@@ -1835,7 +1835,7 @@ pub(crate) mod tests {
         // Its values replace them in one apply.
         m.apply(Event::Values(report(0.5, 3)));
         assert_eq!(m.shown(), Shown::Photo { editable: true });
-        assert_eq!(m.values.modules.len(), 1);
+        assert_eq!(m.values.tools.len(), 1);
         assert_eq!(shown(&m), ControlValue::Number(0.5));
         assert!(m.takes_edits());
     }
@@ -1907,10 +1907,10 @@ pub(crate) mod tests {
     fn reset_is_available_while_a_default_module_is_not_applied() {
         let mut mirror = mirror();
         assert!(!mirror.values.edited);
-        assert!(mirror.values.modules.iter().any(|state| !state.enabled));
+        assert!(mirror.values.tools.iter().any(|state| !state.enabled));
         assert!(!mirror.resettable());
-        let exposure = (mirror.values.modules.iter_mut())
-            .find(|state| state.module == "exposure")
+        let exposure = (mirror.values.tools.iter_mut())
+            .find(|state| state.tool == "exposure")
             .unwrap();
         exposure.enabled = false;
         assert!(mirror.resettable());
@@ -2224,7 +2224,7 @@ pub(crate) mod tests {
         m.apply(Event::Values(not_live(1.5, 6)));
         assert_eq!(m.shown(), Shown::Opening);
         assert!(!m.takes_edits() && !m.shown().editable() && !m.live());
-        let exposure = &m.values.modules[0].controls[0];
+        let exposure = &m.values.tools[0].controls[0];
         assert_eq!(exposure.value, ControlValue::Number(1.5));
         assert!(!exposure.available);
         assert_eq!(m.opening_name().as_deref(), Some("a.ARW"));
@@ -2246,7 +2246,7 @@ pub(crate) mod tests {
         assert_eq!(m.apply(Event::Frame(gpu_frame(7).unwrap())), []);
         assert_eq!(m.shown(), Shown::Photo { editable: true });
         assert!(m.takes_edits() && m.live());
-        assert!(m.values.modules[0].controls[0].available);
+        assert!(m.values.tools[0].controls[0].available);
         assert_eq!(m.picture(), None);
         assert_eq!(m.opening_name(), None);
         assert!(!m.rendering(now + RENDERING_AFTER));
@@ -2362,7 +2362,7 @@ pub(crate) mod tests {
             let session = apertrust_engine::session::testing::start(
                 gpu,
                 apertrust_operations::OPERATIONS,
-                apertrust_modules::MODULES,
+                apertrust_tools::TOOLS,
                 "0.4.0+12~g1a2b3c4",
                 move || {
                     let _ = woken.send(());
@@ -2427,7 +2427,7 @@ pub(crate) mod tests {
 
         /// Exposure's `control` as the session last reported it.
         fn exposure(&self, control: &str) -> Option<ControlValue> {
-            let state = (self.mirror.values.modules.iter()).find(|m| m.module == "exposure")?;
+            let state = (self.mirror.values.tools.iter()).find(|m| m.tool == "exposure")?;
             let shown = state.controls.iter().find(|c| c.control == control)?;
             Some(shown.value.clone())
         }
@@ -2448,14 +2448,14 @@ pub(crate) mod tests {
         live.open(&path);
         live.until_live();
         let set = |control: &str, value| Command::SetControl {
-            module: "exposure".to_owned(),
+            tool: "exposure".to_owned(),
             control: control.to_owned(),
             value: ControlValue::Number(value),
             done: true,
         };
         // A new photo's default steps, then the two changes'.
-        let n = apertrust_engine::history::default_modules(
-            apertrust_modules::MODULES,
+        let n = apertrust_engine::history::default_tools(
+            apertrust_tools::TOOLS,
             apertrust_operations::OPERATIONS,
         )
         .len();
@@ -2523,14 +2523,14 @@ pub(crate) mod tests {
         live.until_live();
         // Two steps, on two controls, so they never merge.
         let set = |control: &str, value| Command::SetControl {
-            module: "exposure".to_owned(),
+            tool: "exposure".to_owned(),
             control: control.to_owned(),
             value: ControlValue::Number(value),
             done: true,
         };
         // After a new photo's default steps.
-        let n = apertrust_engine::history::default_modules(
-            apertrust_modules::MODULES,
+        let n = apertrust_engine::history::default_tools(
+            apertrust_tools::TOOLS,
             apertrust_operations::OPERATIONS,
         )
         .len();
@@ -2658,7 +2658,7 @@ pub(crate) mod tests {
         let xml = apertrust_engine::sidecar::to_xml(
             &apertrust_engine::edit::Edit::default(),
             apertrust_operations::OPERATIONS,
-            apertrust_modules::MODULES,
+            apertrust_tools::TOOLS,
             "9.0.0",
         )
         .replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);

@@ -10,7 +10,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 **From darktable:** `dt_iop_gui_changed` enables a module on every slider and combobox callback, without comparing values, so a click at the same value turns an off module on; its history stores `enabled` with the parameters.
 
-**The edit:** `ModuleValues::enabled`, the tool's own state beside its values and marks, written in `.apxmp` version 1 as `apertrust:enabled="true"` on an on tool's entry, absent meaning off. An off tool holds no value off its defaults; reading repairs one that does, as on with a warning. `enabled` on a tool this build does not switch makes the photo view-only.
+**The edit:** `ToolValues::enabled`, the tool's own state beside its values and marks, written in `.apxmp` version 1 as `apertrust:enabled="true"` on an on tool's entry, absent meaning off. An off tool holds no value off its defaults; reading repairs one that does, as on with a warning. `enabled` on a tool this build does not switch makes the photo view-only.
 
 **Planning:** `edit::instances` plans an optional operation while a switched tool owning one of its parameters is on. It is bound with its values off its defaults, possibly none, so the operation runs at its own defaults, which `check::switched_defaults` holds equal to the tool's: on at darktable's defaults is darktable's new instance.
 
@@ -18,13 +18,13 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 - Any write of a control turns a switched tool on, whatever the value: `SetControl` on a control or a view's coordinate, `ApplyPreset`, their follow writes, and Auto and pickers when they come; a picker turned on turns its tool on as darktable's does, before any write ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)). A script turns a tool on at its defaults by setting a control to its default.
 - `ResetControl` and `Keep` never turn one on, and leave an on tool on.
-- `ResetModule` clears its values and marks and turns it off; `Reset` turns every tool off.
+- `ResetTool` clears its values and marks and turns it off; `Reset` turns every tool off.
 
-**Reported:** `ModuleState::enabled`, true for a tool not switched, but while the history's end lies before its default step and darktable leaves it off until its workflow applies it ([0078](0078-undo-redo-and-the-edits-history.md)), and for a switched one while on; `ModuleState::edited`, whether its reset would change the render; `Values::edited` counting an on switched tool.
+**Reported:** `ToolState::enabled`, true for a tool not switched, but while the history's end lies before its default step and darktable leaves it off until its workflow applies it ([0078](0078-undo-redo-and-the-edits-history.md)), and for a switched one while on; `ToolState::edited`, whether its reset would change the render; `Values::edited` counting an on switched tool.
 
 **The panel shows nothing more:** no dimming and no power button. The section looks as usual at darktable's defaults; the kept marker beside a changed control and the header's reset, available only while the tool is edited or a change is pending, are the only cues. Screen readers hear "Not applied" in the section's description while it is off (`section-not-applied`).
 
-**Rows every switched tool's table has:** off renders as no edit, exactly; on at darktable's defaults binds the operation's defaults exactly; the first step, the tool on at darktable's defaults, measured and reported without a bound; a move then `ResetModule` renders as no edit, a move then `ResetControl` as on at darktable's defaults; an older edit migrates to the parameters it bound. No row at zero.
+**Rows every switched tool's table has:** off renders as no edit, exactly; on at darktable's defaults binds the operation's defaults exactly; the first step, the tool on at darktable's defaults, measured and reported without a bound; a move then `ResetTool` renders as no edit, a move then `ResetControl` as on at darktable's defaults; an older edit migrates to the parameters it bound. No row at zero.
 
 **Old edits:** a tool that becomes switched raises its version, and its migration turns an old edit's tool on where a value was off the old defaults, writing those defaults where darktable's differ, and drops the values of one that rendered nothing, so each edit binds what it bound.
 
@@ -41,5 +41,5 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 ## Consequences
 
-- Built: Grain, Soften, Vignetting and Haze removal at darktable's defaults, each version 2 with its migration; Colour balance RGB, RGB primaries and the Tone equalizer switched at the defaults they have, version 2 too; the panel's reset and description; a test holding the switched tools to those darktable leaves off, every tool over optional operations but the Tone curve, which is to become RGB curve. Planned: `apertrust-cli edit --reset MODULE`.
+- Built: Grain, Soften, Vignetting and Haze removal at darktable's defaults, each version 2 with its migration; Colour balance RGB, RGB primaries and the Tone equalizer switched at the defaults they have, version 2 too; the panel's reset and description; a test holding the switched tools to those darktable leaves off, every tool over optional operations but the Tone curve, which is to become RGB curve. Planned: `apertrust-cli edit --reset TOOL`.
 - Colour balance rgb, as in darktable, runs only while its tool is on, so an unedited photo has no gamut mapping darktable's lacks; its first step brings that mapping, measured and reported.

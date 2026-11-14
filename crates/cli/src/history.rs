@@ -30,14 +30,13 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use apertrust_engine::history::{
-    Clock, Described, HistoryStep, Log, MachineId, Note, StepSource, advance, default_modules,
-    latest,
+    Clock, Described, HistoryStep, Log, MachineId, Note, StepSource, advance, default_tools, latest,
 };
 use apertrust_engine::sidecar::{self, Reason, ViewOnly};
 use apertrust_engine::{edit::Edit, raw};
 use apertrust_library::clock::format_when;
-use apertrust_modules::{ControlValue, Module};
 use apertrust_plugin::{ImageContext, Operation};
+use apertrust_tools::{ControlValue, Tool};
 
 /// `history FILE` and its moves, one at most.
 #[derive(Debug, clap::Args)]
@@ -62,7 +61,7 @@ pub struct Moves {
     /// steps stay, for --redo; the next edit drops them.
     #[arg(long, value_name = "N")]
     go_to: Option<usize>,
-    /// Keep the default steps and, of the steps up to the end, each module's last, as
+    /// Keep the default steps and, of the steps up to the end, each tool's last, as
     /// darktable's compress history stack; the steps after the end are dropped. The photo
     /// shows what it showed, but at Original, where every step is dropped.
     #[arg(long)]
@@ -112,7 +111,7 @@ pub fn run(
     photo: &Path,
     chosen: Option<Move>,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Module],
+    modules: &[&'static dyn Tool],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
@@ -172,7 +171,7 @@ pub fn make(
     photo: &Path,
     chosen: Move,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Module],
+    modules: &[&'static dyn Tool],
 ) -> Result<Made> {
     prepare(photo, chosen, operations, modules)?.write()
 }
@@ -191,7 +190,7 @@ pub struct Prepared<'a> {
     clocks: Vec<Clock>,
     said: String,
     operations: &'a [&'static dyn Operation],
-    modules: &'a [&'static dyn Module],
+    modules: &'a [&'static dyn Tool],
 }
 
 /// Reads the edit saved beside `photo` and makes `chosen` on its log, to be written.
@@ -202,7 +201,7 @@ pub fn prepare<'a>(
     photo: &'a Path,
     chosen: Move,
     operations: &'a [&'static dyn Operation],
-    modules: &'a [&'static dyn Module],
+    modules: &'a [&'static dyn Tool],
 ) -> Result<Prepared<'a>> {
     let path = sidecar::path_for(photo);
     let read = crate::stamp(&path)?;
@@ -379,10 +378,10 @@ pub fn moved(log: &Log, chosen: Move) -> Result<Moved> {
 fn started_afresh(
     edit: &Edit,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Module],
+    modules: &[&'static dyn Tool],
     clock: Clock,
 ) -> (Log, String) {
-    let defaults = default_modules(modules, operations);
+    let defaults = default_tools(modules, operations);
     let afresh = Log::afresh(edit, &defaults, clock);
     let defaults_alone = (afresh.steps().iter()).all(|step| step.source == StepSource::Default);
     if defaults_alone && afresh.end() == afresh.steps().len() {
@@ -608,8 +607,8 @@ fn line(step: &HistoryStep) -> String {
         return step.source.name().to_owned();
     };
     match changed(step) {
-        Some(changed) => format!("{} {changed}", module.module),
-        None => module.module.to_string(),
+        Some(changed) => format!("{} {changed}", module.tool),
+        None => module.tool.to_string(),
     }
 }
 
@@ -634,7 +633,7 @@ fn changed(step: &HistoryStep) -> Option<String> {
                 }
                 _ => None,
             };
-            let control = Some(one.control).filter(|control| *control != module.module);
+            let control = Some(one.control).filter(|control| *control != module.tool);
             match (control, arrow) {
                 (Some(control), Some(arrow)) => Some(format!("{control} {arrow}")),
                 (Some(control), None) => Some(control.to_owned()),

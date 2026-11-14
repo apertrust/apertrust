@@ -29,7 +29,7 @@
 //! [`Event::Picker`] when they change what a client shows: after the frame they measured.
 //!
 //! The session applies a module's reading itself, through the module's pure
-//! [`apertrust_modules::Module::pick`]: the first after the picker turns on and each after
+//! [`apertrust_tools::Tool::pick`]: the first after the picker turns on and each after
 //! its region moves, never one an edit upstream caused, a drag's readings one gesture. A
 //! failure turns the pickers off for the session, never the frame.
 
@@ -37,17 +37,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use apertrust_modules::pick::Picked;
-use apertrust_modules::{ControlValue, Controls, Picker, PickerKind};
 use apertrust_plugin::{Format, ImageContext, ImageDesc};
+use apertrust_tools::pick::Picked;
+use apertrust_tools::{ControlValue, Controls, Picker, PickerKind};
 
 use crate::compute::ComputeError;
 use crate::edit::{self, EditError, panic_message};
 use crate::history::{StepSource, Wrote};
 use crate::picker::{
-    self, Cfa, DEFAULT_AREA, DEFAULT_POINT, FrameReading, Geometries, Group, Layout, ModuleReading,
-    PickKeys, PickerCommand, PickerReading, PickerRef, Place, Reading, Recorded, Reducer, Region,
-    Stats,
+    self, Cfa, DEFAULT_AREA, DEFAULT_POINT, FrameReading, Geometries, Group, Layout, PickKeys,
+    PickerCommand, PickerReading, PickerRef, Place, Reading, Recorded, Reducer, Region, Stats,
+    ToolReading,
 };
 use crate::pipeline::{Instance, Plan, Probe};
 
@@ -74,7 +74,7 @@ pub(super) struct Pickers {
     /// The reading last sent while the active picker is on.
     sent: Option<PickerReading>,
     /// The active picker's latest module part and frame part.
-    module: Option<ModuleReading>,
+    module: Option<ToolReading>,
     frame: Option<FrameReading>,
     /// The settings each module's pickers read, as the client last sent them.
     settings: BTreeMap<&'static str, Vec<(&'static str, ControlValue)>>,
@@ -602,7 +602,10 @@ impl Engine {
                 }
                 return Ok(PickerEffect::default());
             }
-            PickerCommand::Settings { module, settings } => {
+            PickerCommand::Settings {
+                tool: module,
+                settings,
+            } => {
                 return self.picker_settings(module, settings, events);
             }
             PickerCommand::On {
@@ -712,8 +715,8 @@ impl Engine {
             ..Default::default()
         };
         let mut module = None;
-        if let PickerRef::Module {
-            module: id,
+        if let PickerRef::Tool {
+            tool: id,
             picker: name,
         } = picker
         {
@@ -726,7 +729,7 @@ impl Engine {
             if !open.hidden.is_empty() {
                 return Err(SessionError::Hidden);
             }
-            let found = edit::module(&self.modules, id).map_err(|_| SessionError::UnknownPicker)?;
+            let found = edit::tool(&self.modules, id).map_err(|_| SessionError::UnknownPicker)?;
             let declared = found
                 .definition()
                 .picker(name)
@@ -791,7 +794,7 @@ impl Engine {
                 // is a history item, saved with the log.
                 if applies {
                     if let Some(open) = &mut self.open {
-                        let wrote = vec![Wrote::Module(found.definition().id.to_owned())];
+                        let wrote = vec![Wrote::Tool(found.definition().id.to_owned())];
                         open.history.wrote(None, wrote, std::time::Instant::now());
                         open.unsaved = true;
                     }
@@ -860,7 +863,7 @@ impl Engine {
         settings: Vec<(&'static str, ControlValue)>,
         events: &mut Vec<Event>,
     ) -> Result<PickerEffect, SessionError> {
-        let module = edit::module(&self.modules, id)?;
+        let module = edit::tool(&self.modules, id)?;
         check_settings(module.definition().pickers, &settings)?;
         let id = module.definition().id;
         let changed: BTreeSet<&str> = settings.iter().map(|(setting, _)| *setting).collect();
@@ -1336,7 +1339,7 @@ impl Engine {
                 }
             }
         }
-        self.pickers.module = Some(ModuleReading {
+        self.pickers.module = Some(ToolReading {
             input: reading.map(|reading| reading.input),
             output: reading.and_then(|reading| reading.output),
             picked: match &picked {
@@ -1369,7 +1372,7 @@ impl Engine {
         reading: &Reading,
         due: Due,
     ) -> Result<Option<Picked>, SessionError> {
-        let module = edit::module(&self.modules, id)?;
+        let module = edit::tool(&self.modules, id)?;
         let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
         let values = open.edit.every(module, &open.image);
         let settings = self.pickers.settings.get(id).cloned().unwrap_or_default();
@@ -1392,7 +1395,7 @@ impl Engine {
         }));
         let picked = picked.map_err(|panic| {
             SessionError::Edit(EditError::PickFailed {
-                module: id,
+                tool: id,
                 picker: picker.id,
                 message: panic_message(panic.as_ref()),
             })
@@ -1426,7 +1429,7 @@ impl Engine {
     ) -> Result<bool, SessionError> {
         self.end_gesture();
         let changed = self.change(|edit, modules, _, image| {
-            edit.pick(edit::module(modules, id)?, picker, &picked.writes, image)
+            edit.pick(edit::tool(modules, id)?, picker, &picked.writes, image)
         })?;
         if changed && let Some(open) = &mut self.open {
             open.gesture = None;
@@ -1503,17 +1506,12 @@ impl Engine {
             through,
             picker,
             region,
-            module: pickers.module.clone(),
+            tool: pickers.module.clone(),
             frame: pickers.frame,
         };
         let changed = pickers.sent.as_ref().is_none_or(|sent| {
-            (sent.picker, sent.region, &sent.module, sent.frame)
-                != (
-                    reading.picker,
-                    reading.region,
-                    &reading.module,
-                    reading.frame,
-                )
+            (sent.picker, sent.region, &sent.tool, sent.frame)
+                != (reading.picker, reading.region, &reading.tool, reading.frame)
         });
         if changed {
             pickers.sent = Some(reading.clone());

@@ -24,9 +24,9 @@
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::BUDGET;
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Plan};
-use apertrust_modules::MODULES;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, Format, ImageContext, ImageDesc, ParamValues, Pattern};
+use apertrust_tools::TOOLS;
 
 /// lavapipe's limits: 128 MiB in one binding, buffers up to 2 GiB as wgpu caps them on
 /// Mesa, and WebGPU's largest offset alignment.
@@ -146,7 +146,7 @@ impl Geometry {
 
 /// The default pipeline: what an empty edit renders.
 fn defaults(image: &ImageContext) -> Vec<Instance<'static>> {
-    edit::instances(&Edit::default(), OPERATIONS, MODULES, image)
+    edit::instances(&Edit::default(), OPERATIONS, TOOLS, image)
         .all()
         .unwrap()
 }

@@ -8,10 +8,10 @@ It drives one operation, `hazeremoval` ([../ports/hazeremoval.md](../ports/hazer
 
 darktable's two flags, `compatibility_mode` and `adaptive`, which `gui_changed` sets off and on whenever a slider moves, have no widget and are no parameter of the port. It renders as a new instance does, compatibility mode off and adaptive windows on (rule 12 of [README.md](README.md); the port's Parameters).
 
-**Status:** built, in `crates/modules/src/haze_removal.rs`. The app draws it in the Correct tab from its definition (`docs/gui.md`, Tool panels from definitions), alone there so far.
+**Status:** built, in `crates/tools/src/haze_removal.rs`. The app draws it in the Correct tab from its definition (`docs/gui.md`, Tool panels from definitions), alone there so far.
 
 - In [README.md](README.md)'s order, darktable's (decision 38), it follows Sharpen and Retouch and comes before Chromatic aberrations, Lens correction and Denoise (profiled), whose tools are not built yet.
-- Its rows are tests in `crates/modules/tests/haze_removal.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/haze_removal.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -34,7 +34,7 @@ The strength says how much haze to remove, a negative strength adding haze: the 
 
 The distance says how far into the scene: the transmission never falls below t_min = exp(−distance × depth), so a smaller distance leaves the far scene alone.
 
-The promises, the tooltips, are darktable's in British English: "Amount of haze reduction." and "Limit haze removal up to a specific spatial depth." A script sends `SetControl { module: "hazeremoval", control: "strength", value: 0.4, done: true }`, and `apertrust-cli edit --set hazeremoval.strength=0.4` does the same.
+The promises, the tooltips, are darktable's in British English: "Amount of haze reduction." and "Limit haze removal up to a specific spatial depth." A script sends `SetControl { tool: "hazeremoval", control: "strength", value: 0.4, done: true }`, and `apertrust-cli edit --set hazeremoval.strength=0.4` does the same.
 
 **Off until a control is written** (rule 4 of [README.md](README.md)). Both controls start at darktable's 0.2, the operation's own, so the binding writes each only while it is off it. A strength of 0, once on, changes each value by one rounding at most (the port's Deliberate differences), as darktable's does.
 
@@ -42,7 +42,7 @@ The promises, the tooltips, are darktable's in British English: "Amount of haze 
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/hazeremoval.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). `its_sliders_are_darktable_s`, in `crates/modules/src/haze_removal.rs`, holds the definition to this table.
+Audited against darktable's `src/iop/hazeremoval.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). `its_sliders_are_darktable_s`, in `crates/tools/src/haze_removal.rs`, holds the definition to this table.
 
 | Slider | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ A switched tool's rows (decision 32; [README.md](README.md), Rows every table ha
 | --- | --- | --- | --- | --- | --- | --- |
 | Z0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that haze removal joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
 | Z1 | The first step | The tool on at darktable's defaults, a strength and a distance of 0.2: a control written at its default | Frame, ΔE2000 against no edit | darktable's behaviour, darktable's new instance removing haze | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
-| Z2 | Each control, moved and reset | Strength +0.5, −0.3, and 0.2, a write at its default; Distance 0.8 alone; Strength 0.4 with Distance 0.8; both at test 0166's 0.9 and 0.8; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as Z1's; the tool's reset turns it off and renders as no edit, haze removal leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
+| Z2 | Each control, moved and reset | Strength +0.5, −0.3, and 0.2, a write at its default; Distance 0.8 alone; Strength 0.4 with Distance 0.8; both at test 0166's 0.9 and 0.8; each reset control by control (`ResetControl`) and by the header's reset (`ResetTool`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as Z1's; the tool's reset turns it off and renders as no edit, haze removal leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
 | Z3 | Two controls, in either order | Strength 0.6 and Distance 0.5; Strength −0.4 and Distance 0.1 | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | Z4 | Every control, the darktable match | The values of darktable's tests 0026 and 0166, the golden cases `hazeremoval` and `hazeremoval-v2`, each field as it is | The parameters the tool binds, and the passes the operation's `prepare` gives for them | darktable's parameters as the golden harness reads them, and so the passes it checks against darktable's render | Exact: every parameter bit for bit, every pass's uniform bytes the same | The cases' parameters, on the CPU |
 | Z5 | Each control on a layer, Phase 4 | Z2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As Z2 | Sweep |
@@ -75,7 +75,7 @@ Z4 holds the tool's controls set to those settings to bind those parameters. On 
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/haze_removal.rs`. The synthetic rows and Z4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS` and the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/haze_removal.rs`. The synthetic rows and Z4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS` and the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -112,7 +112,7 @@ What darktable's page has or does that the panel does not yet:
 - **Control ids:** darktable's parameter names, `strength` and `distance`, so `--set` and scripts name what darktable's history names, as RGB primaries' do. They are darktable's labels too.
 - **When the operation is planned:** while the tool is on (decision 32), from the first write of a control until the tool's reset, whatever the controls hold.
 - **What binds:** each control only while off its default, darktable's 0.2, the operation's own.
-- **The distance at a strength of 0:** enabled, as darktable draws it (no `gtk_widget_set_sensitive`). `Module::available` is kept for what darktable's own GUI disables (decision 30).
+- **The distance at a strength of 0:** enabled, as darktable draws it (no `gtk_widget_set_sensitive`). `Tool::available` is kept for what darktable's own GUI disables (decision 30).
 - **Units and decimals:** darktable's: the parameters as they are, the strength's two decimals and the distance's three. darktable's slider shows no percentage.
 - **Row ids:** Z, for haZe removal, D left for the detail tools (denoise, diffuse or sharpen).
 - **The files' names:** by the tool's English name, `haze_removal.rs` and this page, `haze-removal.md`, apart from the operation's `hazeremoval` (the `tool-bindings` skill).

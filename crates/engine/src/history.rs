@@ -54,8 +54,8 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_library::clock::{Clock, MachineId};
-use apertrust_modules::{Base, ControlValue, Controls, Mark, Module, ModuleValues};
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
+use apertrust_tools::{Base, ControlValue, Controls, Mark, Tool, ToolValues};
 
 use crate::edit::Edit;
 
@@ -165,9 +165,9 @@ impl Note {
 /// step that holds it; empty, the reset state.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Entry {
-    Module {
-        module: String,
-        values: ModuleValues,
+    Tool {
+        tool: String,
+        values: ToolValues,
     },
     /// Parameters no module owns, while `Set` exists.
     Operation {
@@ -197,8 +197,8 @@ impl Entry {
         for module in modules {
             let state = module_state(after, module);
             if module_state(before, module) != state {
-                entries.push(Entry::Module {
-                    module: module.to_owned(),
+                entries.push(Entry::Tool {
+                    tool: module.to_owned(),
                     values: state.cloned().unwrap_or_default(),
                 });
             }
@@ -222,14 +222,14 @@ impl Entry {
     /// Whether it holds nothing: the reset state.
     pub fn is_empty(&self) -> bool {
         match self {
-            Entry::Module { values, .. } => values.is_empty(),
+            Entry::Tool { values, .. } => values.is_empty(),
             Entry::Operation { params, .. } => params.iter().next().is_none(),
         }
     }
 
     pub(crate) fn key(&self) -> Key<'_> {
         match self {
-            Entry::Module { module, .. } => Key::Module(module),
+            Entry::Tool { tool: module, .. } => Key::Module(module),
             Entry::Operation { operation, .. } => Key::Operation(operation),
         }
     }
@@ -237,10 +237,16 @@ impl Entry {
     /// Lays it on `edit`: its state, or none for an empty entry.
     fn apply(&self, edit: &mut Edit) {
         match self {
-            Entry::Module { module, values } if values.is_empty() => {
+            Entry::Tool {
+                tool: module,
+                values,
+            } if values.is_empty() => {
                 edit.modules.remove(module);
             }
-            Entry::Module { module, values } => {
+            Entry::Tool {
+                tool: module,
+                values,
+            } => {
                 edit.modules.insert(module.clone(), values.clone());
             }
             Entry::Operation { operation, .. } if self.is_empty() => {
@@ -254,7 +260,7 @@ impl Entry {
 }
 
 /// The module's state in `edit`, none where it holds nothing.
-fn module_state<'e>(edit: &'e Edit, module: &str) -> Option<&'e ModuleValues> {
+fn module_state<'e>(edit: &'e Edit, module: &str) -> Option<&'e ToolValues> {
     edit.modules.get(module).filter(|values| !values.is_empty())
 }
 
@@ -268,7 +274,7 @@ fn params_state<'e>(edit: &'e Edit, operation: &str) -> Option<&'e ParamValues> 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Wrote {
     /// A module, by a control set or reset, a keep, a preset row or its reset.
-    Module(String),
+    Tool(String),
     /// An operation's unowned parameters, by `Set`.
     Operation(String),
     /// Every module and operation: `Reset`.
@@ -278,7 +284,7 @@ pub enum Wrote {
 impl Wrote {
     fn key(&self) -> Option<Key<'_>> {
         match self {
-            Wrote::Module(module) => Some(Key::Module(module)),
+            Wrote::Tool(module) => Some(Key::Module(module)),
             Wrote::Operation(operation) => Some(Key::Operation(operation)),
             Wrote::All => None,
         }
@@ -410,7 +416,7 @@ impl Log {
             .filter(|step| step.source == StepSource::Default)
             .flat_map(|step| step.change.entries())
             .filter_map(|entry| match entry {
-                Entry::Module { module, .. }
+                Entry::Tool { tool: module, .. }
                     if !on_by_default(module) && !before.contains(&entry.key()) =>
                 {
                     Some(module.clone())
@@ -437,9 +443,9 @@ impl Log {
                 source: StepSource::Default,
                 note: None,
                 batch: None,
-                change: Change::Entry(Entry::Module {
-                    module: (*module).to_owned(),
-                    values: ModuleValues::new(),
+                change: Change::Entry(Entry::Tool {
+                    tool: (*module).to_owned(),
+                    values: ToolValues::new(),
                 }),
             });
         }
@@ -613,9 +619,9 @@ impl Log {
                 source: StepSource::Default,
                 note: None,
                 batch: None,
-                change: Change::Entry(Entry::Module {
-                    module: module.to_owned(),
-                    values: ModuleValues::new(),
+                change: Change::Entry(Entry::Tool {
+                    tool: module.to_owned(),
+                    values: ToolValues::new(),
                 }),
             });
         }
@@ -786,15 +792,15 @@ pub struct HistoryStep {
     /// reset, in the step's order; an operation's unowned parameters under the operation's
     /// id, its controls the parameters. A module or an operation this build does not know,
     /// as a newer build may have written, is listed by its stored name with no control.
-    pub changes: Vec<ModuleChange>,
+    pub changes: Vec<ToolChange>,
 }
 
 /// What a step changed of one module.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ModuleChange {
+pub struct ToolChange {
     /// The module's id, or the operation's for its unowned parameters; borrowed for one
     /// this build knows, owned for one it does not.
-    pub module: Cow<'static, str>,
+    pub tool: Cow<'static, str>,
     /// Before and after, where the step turned a switched module on or off.
     pub enabled: Option<[bool; 2]>,
     /// Each control whose value or mark changed, in the definition's order.
@@ -858,11 +864,11 @@ fn on_by_default(module: &str) -> bool {
 /// groups: the modules on by default with no on/off button, those with one, and those its
 /// workflow auto-applies, each in the pipe's order, by the first operation each module
 /// owns.
-pub fn default_modules(
-    modules: &[&'static dyn Module],
+pub fn default_tools(
+    modules: &[&'static dyn Tool],
     operations: &[&'static dyn Operation],
 ) -> Vec<&'static str> {
-    let position = |module: &dyn Module| {
+    let position = |module: &dyn Tool| {
         (module.owns().iter())
             .filter_map(|owned| {
                 (operations.iter()).position(|operation| operation.manifest().id == owned.operation)
@@ -910,7 +916,7 @@ impl Described {
     pub fn steps(
         &mut self,
         log: &Log,
-        modules: &[&'static dyn Module],
+        modules: &[&'static dyn Tool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> Vec<Arc<HistoryStep>> {
@@ -956,18 +962,18 @@ impl Described {
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
-        modules: &[&'static dyn Module],
+        modules: &[&'static dyn Tool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
-    ) -> ModuleChange {
+    ) -> ToolChange {
         self.known(before, entry, modules, operations, image)
             .unwrap_or_else(|| {
-                let (Entry::Module { module: name, .. }
+                let (Entry::Tool { tool: name, .. }
                 | Entry::Operation {
                     operation: name, ..
                 }) = entry;
-                ModuleChange {
-                    module: Cow::Owned(name.clone()),
+                ToolChange {
+                    tool: Cow::Owned(name.clone()),
                     enabled: None,
                     controls: Vec::new(),
                 }
@@ -980,12 +986,15 @@ impl Described {
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
-        modules: &[&'static dyn Module],
+        modules: &[&'static dyn Tool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
-    ) -> Option<ModuleChange> {
+    ) -> Option<ToolChange> {
         match entry {
-            Entry::Module { module, values } => {
+            Entry::Tool {
+                tool: module,
+                values,
+            } => {
                 let module = *modules.iter().find(|m| m.definition().id == module)?;
                 let definition = module.definition();
                 // A module's code may panic, as its binding is guarded against: its
@@ -994,16 +1003,16 @@ impl Described {
                     catch_unwind(AssertUnwindSafe(|| module.defaults(image)))
                         .unwrap_or_else(|_| definition.defaults())
                 });
-                let empty = ModuleValues::new();
+                let empty = ToolValues::new();
                 let before = match before {
-                    Some(Entry::Module { values, .. }) => values,
+                    Some(Entry::Tool { values, .. }) => values,
                     _ => &empty,
                 };
                 let enabled = (definition.switched && before.enabled() != values.enabled())
                     .then_some([before.enabled(), values.enabled()]);
                 let controls = (definition.controls.iter())
                     .filter_map(|control| {
-                        let value = |values: &ModuleValues| {
+                        let value = |values: &ToolValues| {
                             (values.get(control.id).or_else(|| defaults.get(control.id)))
                                 .cloned()
                                 .unwrap_or_else(|| control.default())
@@ -1018,8 +1027,8 @@ impl Described {
                         })
                     })
                     .collect();
-                Some(ModuleChange {
-                    module: Cow::Borrowed(definition.id),
+                Some(ToolChange {
+                    tool: Cow::Borrowed(definition.id),
                     enabled,
                     controls,
                 })
@@ -1049,8 +1058,8 @@ impl Described {
                         })
                     })
                     .collect();
-                Some(ModuleChange {
-                    module: Cow::Borrowed(id),
+                Some(ToolChange {
+                    tool: Cow::Borrowed(id),
                     enabled: None,
                     controls,
                 })

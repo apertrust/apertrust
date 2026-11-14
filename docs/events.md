@@ -79,13 +79,13 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 
 **What `Values` holds** (decisions 17, 27, 28 and 30). For each tool, in the tools' order:
 
-- its controls, each with its value, its default for the photo, its marks (kept, Auto) and whether it can change the photo (`Module::available`, recomputed after each change; a choice whose photo lists only the option it holds is unavailable);
-- for a number, its range, track and step for the tool's values (`ControlState::range`, from `Module::range`; the definition's where the tool's code panics or gives one that does not hold, warned of once);
+- its controls, each with its value, its default for the photo, its marks (kept, Auto) and whether it can change the photo (`Tool::available`, recomputed after each change; a choice whose photo lists only the option it holds is unavailable);
+- for a number, its range, track and step for the tool's values (`ControlState::range`, from `Tool::range`; the definition's where the tool's code panics or gives one that does not hold, warned of once);
 - for a choice, the options this photo lists (`ControlState::options`, computed once as the photo opens; every option where the tool's code fails, warned of once);
 - each preset row's matching option (`PresetState`) and each view's coordinates (`CoordinateState`, [engine.md](engine.md#preset-rows-and-lossless-views));
 - whether the tool is edited.
 
-Then come `settings`, the parameters no tool owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Whether each tool is on, `ModuleState::enabled`, a switched tool counting as edited while on (decision 32). Whether the History tab's eye hides each tool from the view, `ModuleState::hidden` (decision 78), its controls, `enabled` and `edited` staying the edit's; a `Hide` that changes it is answered by `Values`.
+Then come `settings`, the parameters no tool owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Whether each tool is on, `ToolState::enabled`, a switched tool counting as edited while on (decision 32). Whether the History tab's eye hides each tool from the view, `ToolState::hidden` (decision 78), its controls, `enabled` and `edited` staying the edit's; a `Hide` that changes it is answered by `Values`.
 
 Last, `live` (decision 77): whether the photo is live and commands on the edit are taken, false from `Opened` until its raw is decoded and uploaded, true from the batch of its first live frame ([A photo opening](#a-photo-opening)).
 
@@ -205,7 +205,7 @@ The others stand alone:
 
 | Error | What it means |
 | --- | --- |
-| `Module` | A tool left out of the session at its start, or out of the render until it binds again |
+| `Tool` | A tool left out of the session at its start, or out of the render until it binds again |
 | `Save { path, through }` | A write that failed; the edit stays in memory and is written again |
 | `Plan`, `Compute`, `Gpu` | A render that failed; the frame is not shown |
 | `Scopes` | The scopes off for the rest of the session, never the frame |

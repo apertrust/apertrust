@@ -30,12 +30,12 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{BUDGET, ExportError, Exported, Tiling, export, export_at};
 use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Resample};
-use apertrust_modules::MODULES;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{
     Camera, Format, Geometry, ImageContext, ImageDesc, Kernel, Manifest, NotPorted, Operation,
     OutputProfile, ParamValues, Pattern, Prepared, Schema, Value,
 };
+use apertrust_tools::TOOLS;
 
 #[rustfmt::skip]
 const X_TRANS: [u32; 36] = [
@@ -115,7 +115,7 @@ impl Raw {
 
     /// The default pipeline an unedited photo runs.
     fn instances(&self) -> Vec<Instance<'static>> {
-        edit::instances(&Edit::default(), OPERATIONS, MODULES, &self.image())
+        edit::instances(&Edit::default(), OPERATIONS, TOOLS, &self.image())
             .all()
             .unwrap()
     }

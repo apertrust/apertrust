@@ -48,8 +48,8 @@ use apertrust_export::disk::{self, Claimed, Disk, Foreseen};
 pub use apertrust_export::disk::{Action, Blocked, Preflight, Why};
 use apertrust_export::variables::{DateTime, Pattern, PatternError, Size, Unavailable, Values};
 use apertrust_export::{ExportSettings, Places};
-use apertrust_modules::Module;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
+use apertrust_tools::Tool;
 
 use crate::edit::{self, Edit};
 use crate::export_job::{self, Live, SizeError};
@@ -223,7 +223,7 @@ impl Active {
 /// What a preview job runs with, owned: its body borrows nothing of the engine thread's.
 pub(crate) struct Run {
     pub operations: &'static [&'static dyn Operation],
-    pub modules: Vec<&'static dyn Module>,
+    pub tools: Vec<&'static dyn Tool>,
     pub limits: Limits,
     pub photos: Vec<PathBuf>,
     pub settings: ExportSettings,
@@ -385,7 +385,7 @@ impl Run {
             crop: size(active.image.width, active.image.height),
         };
         let settings = &self.settings;
-        let bound = edit::instances(&active.edit, self.operations, &self.modules, &active.image);
+        let bound = edit::instances(&active.edit, self.operations, &self.tools, &active.image);
         let result = match bound.all() {
             Err(error) => Err(SizeProblem::Failed(error.to_string())),
             Ok(instances) => export_job::size(
@@ -563,9 +563,9 @@ mod tests {
     use apertrust_export::png;
     use apertrust_export::settings::OnConflict;
     use apertrust_export::size::Request;
-    use apertrust_modules::testing::{self as modules, Sample};
     use apertrust_operations::OPERATIONS;
     use apertrust_plugin::Format as Pixels;
+    use apertrust_tools::testing::{self as modules, Sample};
 
     use super::*;
     use crate::export_job::testing::{Hold, path_in};
@@ -574,7 +574,7 @@ mod tests {
     use crate::session::open::{self, Metadata, Mosaic};
     use crate::session::{Command, Session, SessionError, TEST_WAIT};
 
-    const MODULES: &[&dyn Module] = &[&Sample];
+    const TOOLS: &[&dyn Tool] = &[&Sample];
 
     /// A folder of the test's own, empty.
     fn scratch(name: &str) -> PathBuf {
@@ -612,7 +612,7 @@ mod tests {
     fn run(photos: Vec<PathBuf>, settings: ExportSettings, active: Option<Active>) -> Run {
         Run {
             operations: OPERATIONS,
-            modules: MODULES.to_vec(),
+            tools: TOOLS.to_vec(),
             limits: Limits::NONE,
             photos,
             settings,
@@ -1122,7 +1122,7 @@ mod tests {
         let session = Session::spawn(
             gpu.clone(),
             OPERATIONS,
-            MODULES,
+            TOOLS,
             "0.4.0+12~g1a2b3c4",
             pipeline::BUDGET,
             None,

@@ -22,7 +22,7 @@ The Scopes section shows what the viewport's frame holds (a histogram, a wavefor
 - The operation declares them: `Manifest::readouts`; `Prepared::readouts`, a `ReadoutPass` each, one pass of its kernel binding its counts buffer as `Resource::Readout`, never among `Prepared::passes`, so no export, tile, golden case or derivative sees it; `Operation::readout(id, words)`, the counts decoded on the CPU into `ReadoutValue::Histogram`.
 - Planned in the viewport only; dispatched while a client asks for it by tool and its key, a whole-image result's, has changed, so a band drag counts nothing.
 - Read back through the scopes' staging pair, one helper both use; a failure turns readouts off, never the frame (`SessionError::Readouts`).
-- `Command::Readouts(Vec<ReadoutId { module, readout }>)`, by tool, never by operation; `Event::Readout(ReadoutReading { module, readout, through, value })`, `None` while the tool's operation is not planned.
+- `Command::Readouts(Vec<ReadoutId { tool, readout }>)`, by tool, never by operation; `Event::Readout(ReadoutReading { tool, readout, through, value })`, `None` while the tool's operation is not planned.
 - The tone equalizer's `mask_histogram` first: darktable's 512 bins over −10 to +6 EV, sent as its 256 over −8 to 0 EV, the pixels and the 5th and 95th percentiles. RGB levels' and RGB curve's input histograms follow.
 
 ## Options considered

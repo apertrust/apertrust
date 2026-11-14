@@ -184,7 +184,7 @@ pub enum Owner {
     Export,
     /// A module's setting, by the module's id (decision 29), kept by the client and sent
     /// with the commands that use it.
-    Module(&'static str),
+    Tool(&'static str),
 }
 
 /// A setting's kind, with what the kind holds. Whole numbers and folders come with the
@@ -202,7 +202,7 @@ pub enum Kind {
         length: Option<u32>,
     },
     /// Values of one kind keyed by another registry's ids: `actions`, `sections`,
-    /// `modules` or `groups`.
+    /// `tools` or `groups`.
     Table {
         by: &'static str,
         of: &'static Kind,

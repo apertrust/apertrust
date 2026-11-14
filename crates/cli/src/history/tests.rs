@@ -17,11 +17,11 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use apertrust_engine::history::{ControlChange, Entry, ModuleChange, StepId};
+use apertrust_engine::history::{ControlChange, Entry, StepId, ToolChange};
 use apertrust_library::sidecar as text;
 
 use super::*;
-use crate::{EditArgs, FlagOrder, MODULES, OPERATIONS, SetFlags};
+use crate::{EditArgs, FlagOrder, OPERATIONS, SetFlags, TOOLS};
 
 /// A folder of a test's own holding a photo, `IMG.ARW`, which is no raw, removed when the
 /// test ends.
@@ -54,7 +54,7 @@ impl Photo {
 
     /// The log the sidecar holds, as the engine reads it.
     fn log(&self) -> Log {
-        (crate::saved(&self.path(), OPERATIONS, MODULES).unwrap())
+        (crate::saved(&self.path(), OPERATIONS, TOOLS).unwrap())
             .expect("a sidecar")
             .log
     }
@@ -80,7 +80,7 @@ impl Photo {
                 order: FlagOrder::default(),
             },
             OPERATIONS,
-            MODULES,
+            TOOLS,
         )
         .unwrap();
     }
@@ -117,7 +117,7 @@ fn modules_of(log: &Log) -> Vec<&str> {
     (log.steps().iter())
         .flat_map(|step| step.change.entries())
         .map(|entry| match entry {
-            Entry::Module { module, .. } => module.as_str(),
+            Entry::Tool { tool: module, .. } => module.as_str(),
             Entry::Operation { operation, .. } => operation.as_str(),
         })
         .collect()
@@ -132,7 +132,7 @@ fn edit_gives_a_photo_with_no_history_its_default_steps_first() {
     let photo = Photo::new("defaults");
     photo.edit(&["exposure.exposure=1"], None);
     let log = photo.log();
-    let defaults = default_modules(MODULES, OPERATIONS);
+    let defaults = default_tools(TOOLS, OPERATIONS);
     let mut modules = defaults.clone();
     modules.push("exposure");
     assert_eq!(modules_of(&log), modules);
@@ -155,7 +155,7 @@ fn edit_gives_a_photo_with_no_history_its_default_steps_first() {
 #[test]
 fn clear_at_original_applies_the_modules_not_applied() {
     let photo = Photo::edited("clear");
-    make(&photo.path(), Move::GoTo(0), OPERATIONS, MODULES).unwrap();
+    make(&photo.path(), Move::GoTo(0), OPERATIONS, TOOLS).unwrap();
     crate::edit(
         &photo.path(),
         EditArgs {
@@ -167,11 +167,11 @@ fn clear_at_original_applies_the_modules_not_applied() {
             order: FlagOrder::default(),
         },
         OPERATIONS,
-        MODULES,
+        TOOLS,
     )
     .unwrap();
     let log = photo.log();
-    let defaults = default_modules(MODULES, OPERATIONS);
+    let defaults = default_tools(TOOLS, OPERATIONS);
     assert_eq!((log.steps().len(), log.end()), (10, 10));
     assert_eq!(modules_of(&log)[..9], defaults[..]);
     let reset = &log.steps()[9];
@@ -194,7 +194,7 @@ fn edit_s_note_is_stored_as_written_and_listed() {
     let warmer = text::Note::Text("Warmer look".to_owned());
     assert_eq!(noted[9..], [None, Some(&warmer), Some(&warmer), None]);
     let log = photo.log();
-    let steps = Described::default().steps(&log, MODULES, OPERATIONS, &ImageContext::full(0, 0));
+    let steps = Described::default().steps(&log, TOOLS, OPERATIONS, &ImageContext::full(0, 0));
     let listed = listing("IMG.ARW", &steps, log.end());
     assert!(
         listed.contains("11–12  2 steps · \"Warmer look\"\n"),
@@ -231,7 +231,7 @@ fn each_move_writes_what_the_engine_s_log_functions_make() {
     ];
     for (chosen, expected) in expect {
         let (before, bytes, clock) = (photo.log(), photo.bytes(), mine(&photo.edits()));
-        let made = make(&photo.path(), chosen, OPERATIONS, MODULES).unwrap();
+        let made = make(&photo.path(), chosen, OPERATIONS, TOOLS).unwrap();
         match expected(&before) {
             Some(expected) => {
                 assert!(made.written, "{chosen:?}");
@@ -257,7 +257,7 @@ fn each_move_writes_what_the_engine_s_log_functions_make() {
     // Discard left no step: the end empty, nothing to discard, compress or undo.
     assert_eq!(photo.edits().copies[0].end, "");
     for chosen in [Move::Discard, Move::Compress, Move::Truncate, Move::Undo] {
-        let made = make(&photo.path(), chosen, OPERATIONS, MODULES).unwrap();
+        let made = make(&photo.path(), chosen, OPERATIONS, TOOLS).unwrap();
         assert!(!made.written, "{chosen:?}");
     }
 }
@@ -285,7 +285,7 @@ fn refused_moves_leave_the_file_as_it_is() {
     assert!(xml.contains("lens2"));
     std::fs::write(photo.sidecar(), &xml).unwrap();
     for chosen in all {
-        let refused = make(&photo.path(), chosen, OPERATIONS, MODULES).unwrap_err();
+        let refused = make(&photo.path(), chosen, OPERATIONS, TOOLS).unwrap_err();
         let view_only = (refused.downcast_ref::<ViewOnly>()).expect("a newer Apertrust's");
         assert!(matches!(view_only.reason, Reason::Newer(_)), "{chosen:?}");
         assert_eq!(photo.bytes(), xml.as_bytes(), "{chosen:?}");
@@ -299,7 +299,7 @@ fn refused_moves_leave_the_file_as_it_is() {
         1,
     );
     std::fs::write(photo.sidecar(), &xml).unwrap();
-    let read = crate::saved(&photo.path(), OPERATIONS, MODULES)
+    let read = crate::saved(&photo.path(), OPERATIONS, TOOLS)
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -307,12 +307,12 @@ fn refused_moves_leave_the_file_as_it_is() {
         Some(Reason::Unreadable(_))
     ));
     for chosen in &all[..5] {
-        let refused = make(&photo.path(), *chosen, OPERATIONS, MODULES).unwrap_err();
+        let refused = make(&photo.path(), *chosen, OPERATIONS, TOOLS).unwrap_err();
         let said = format!("{refused:#}");
         assert!(said.contains("only --discard"), "{chosen:?}: {said}");
         assert_eq!(photo.bytes(), xml.as_bytes(), "{chosen:?}");
     }
-    let made = make(&photo.path(), Move::Discard, OPERATIONS, MODULES).unwrap();
+    let made = make(&photo.path(), Move::Discard, OPERATIONS, TOOLS).unwrap();
     assert!(made.written);
     // Afresh: the default steps, then a step of each module the edit holds as read, in a
     // batch, noted `history-discard`, the end the last; nothing left that cannot be read.
@@ -320,7 +320,7 @@ fn refused_moves_leave_the_file_as_it_is() {
     assert!(edits.problems.is_empty(), "{:?}", edits.problems);
     let log = photo.log();
     assert_eq!(log, made.log);
-    let defaults = default_modules(MODULES, OPERATIONS);
+    let defaults = default_tools(TOOLS, OPERATIONS);
     assert_eq!(modules_of(&log)[..defaults.len()], defaults[..]);
     let fresh = &log.steps()[defaults.len()..];
     assert_eq!(
@@ -335,7 +335,7 @@ fn refused_moves_leave_the_file_as_it_is() {
     // A step the log does not have.
     let photo = Photo::edited("unknown");
     let bytes = photo.bytes();
-    let refused = make(&photo.path(), Move::GoTo(14), OPERATIONS, MODULES).unwrap_err();
+    let refused = make(&photo.path(), Move::GoTo(14), OPERATIONS, TOOLS).unwrap_err();
     assert_eq!(
         refused.to_string(),
         "no step 14: the history has 13 steps; 0 is Original"
@@ -349,31 +349,31 @@ fn refused_moves_leave_the_file_as_it_is() {
 fn undo_stops_above_a_default_step_redo_applied() {
     let photo = Photo::new("afresh");
     // An edit as read with AgX not applied: its end before AgX's default step, the last.
-    let defaults = default_modules(MODULES, OPERATIONS);
+    let defaults = default_tools(TOOLS, OPERATIONS);
     assert_eq!(defaults.last(), Some(&"agx"));
     let clock = Clock::now(None, MachineId::current());
     let mut read = Log::default();
     read.add_defaults(&defaults, clock);
     read.set_end(defaults.len() - 1);
     let mut edit = read.fold();
-    let exposure = apertrust_engine::edit::module(MODULES, "exposure").unwrap();
+    let exposure = apertrust_engine::edit::tool(TOOLS, "exposure").unwrap();
     let number = ControlValue::Number(1.0);
     (edit.set_control(exposure, "exposure", number, &ImageContext::full(0, 0))).unwrap();
     let log = Log::afresh(&edit, &defaults, clock);
     let (steps, end) = (log.steps().len(), log.end());
     let file = sidecar::Edits::new("test");
-    let modules = (OPERATIONS, MODULES);
+    let modules = (OPERATIONS, TOOLS);
     sidecar::write_log(&photo.sidecar(), &file, &log, &[clock], modules, "test").unwrap();
-    let made = make(&photo.path(), Move::Redo, OPERATIONS, MODULES).unwrap();
+    let made = make(&photo.path(), Move::Redo, OPERATIONS, TOOLS).unwrap();
     assert_eq!(made.log.end(), end + 1);
     assert_eq!(made.log.end(), steps);
-    let made = make(&photo.path(), Move::Undo, OPERATIONS, MODULES).unwrap();
+    let made = make(&photo.path(), Move::Undo, OPERATIONS, TOOLS).unwrap();
     assert_eq!(
         (made.written, made.said.as_str()),
         (false, "Nothing to undo")
     );
     let described =
-        Described::default().steps(&made.log, MODULES, OPERATIONS, &ImageContext::full(0, 0));
+        Described::default().steps(&made.log, TOOLS, OPERATIONS, &ImageContext::full(0, 0));
     let listed = listing("IMG.ARW", &described, made.log.end());
     // The end's line, past the Defaults group, tagged as a default step.
     let line = (listed.lines())
@@ -392,7 +392,7 @@ fn undo_stops_above_a_default_step_redo_applied() {
 /// no step, as a new photo's.
 #[test]
 fn discard_keeps_default_steps_not_applied_in_an_unreadable_history() {
-    let defaults = default_modules(MODULES, OPERATIONS);
+    let defaults = default_tools(TOOLS, OPERATIONS);
     let exposure = defaults.iter().position(|id| *id == "exposure").unwrap();
     for end in [exposure, defaults.len()] {
         let photo = Photo::new(&format!("partial-{end}"));
@@ -401,21 +401,21 @@ fn discard_keeps_default_steps_not_applied_in_an_unreadable_history() {
         log.add_defaults(&defaults, clock);
         log.set_end(end);
         let file = sidecar::Edits::new("test");
-        let modules = (OPERATIONS, MODULES);
+        let modules = (OPERATIONS, TOOLS);
         sidecar::write_log(&photo.sidecar(), &file, &log, &[clock], modules, "test").unwrap();
         // The vector's clock, after the steps', with a counter that is no number.
         let xml = String::from_utf8(photo.bytes()).unwrap();
         let (steps, vector) = xml.split_at(xml.find("<apertrust:clocks>").unwrap());
         let vector = vector.replacen("apertrust:counter=\"", "apertrust:counter=\"x", 1);
         std::fs::write(photo.sidecar(), format!("{steps}{vector}")).unwrap();
-        let read = crate::saved(&photo.path(), OPERATIONS, MODULES)
+        let read = crate::saved(&photo.path(), OPERATIONS, TOOLS)
             .unwrap()
             .unwrap();
         assert!(matches!(
             read.view_only().map(|v| v.reason),
             Some(Reason::Unreadable(_))
         ));
-        let made = make(&photo.path(), Move::Discard, OPERATIONS, MODULES).unwrap();
+        let made = make(&photo.path(), Move::Discard, OPERATIONS, TOOLS).unwrap();
         assert!(made.written);
         assert!(photo.edits().problems.is_empty());
         let written = photo.log();
@@ -438,7 +438,7 @@ fn discard_keeps_default_steps_not_applied_in_an_unreadable_history() {
 fn a_file_changed_after_it_was_read_is_not_written_over() {
     let photo = Photo::edited("changed");
     let path = photo.path();
-    let prepared = prepare(&path, Move::Undo, OPERATIONS, MODULES).unwrap();
+    let prepared = prepare(&path, Move::Undo, OPERATIONS, TOOLS).unwrap();
     // Another program's edit meanwhile.
     photo.edit(&["exposure.exposure=2"], None);
     let theirs = photo.bytes();
@@ -452,7 +452,7 @@ fn a_file_changed_after_it_was_read_is_not_written_over() {
 }
 
 /// A step as a client is told it, at `minute` past 10:00 on 14 November 2026 UTC.
-fn told(source: StepSource, minute: u64, changes: Vec<ModuleChange>) -> Arc<HistoryStep> {
+fn told(source: StepSource, minute: u64, changes: Vec<ToolChange>) -> Arc<HistoryStep> {
     Arc::new(HistoryStep {
         id: StepId(minute),
         clock: Clock::at(
@@ -469,9 +469,9 @@ fn told(source: StepSource, minute: u64, changes: Vec<ModuleChange>) -> Arc<Hist
 
 /// What a step changed of one module: each of `controls`, a number from its first to its
 /// second, or a choice where the two are none.
-fn module(id: &'static str, controls: &[(&'static str, Option<(f32, f32)>)]) -> ModuleChange {
-    ModuleChange {
-        module: Cow::Borrowed(id),
+fn module(id: &'static str, controls: &[(&'static str, Option<(f32, f32)>)]) -> ToolChange {
+    ToolChange {
+        tool: Cow::Borrowed(id),
         enabled: None,
         controls: (controls.iter())
             .map(|&(control, numbers)| {

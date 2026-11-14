@@ -179,7 +179,7 @@ None in the maths: `process_cl` computes the same matrix on the CPU, transposes 
 
 ## Tool binding notes
 
-In the first pass (decision 2) the RGB primaries tool is darktable's and owns all eight parameters. It is built (`crates/modules/src/rgb_primaries.rs`, `docs/tools/rgb-primaries.md`), each control shown with darktable's slider factor and offset. darktable's page has no tabs, no collapsible groups and no presets: eight sliders in this order (`gui_init`):
+In the first pass (decision 2) the RGB primaries tool is darktable's and owns all eight parameters. It is built (`crates/tools/src/rgb_primaries.rs`, `docs/tools/rgb-primaries.md`), each control shown with darktable's slider factor and offset. darktable's page has no tabs, no collapsible groups and no presets: eight sliders in this order (`gui_init`):
 
 | Control | Parameter | Shown as | Soft range | Tooltip |
 | --- | --- | --- | --- | --- |

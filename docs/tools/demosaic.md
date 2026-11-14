@@ -6,9 +6,9 @@ It is darktable's demosaic in the first pass (decision 2). It has darktable's pa
 
 It drives one operation, `demosaic` ([../ports/demosaic.md](../ports/demosaic.md)), which every raw runs, and owns all twelve of its parameters. Its defaults are the operation's for the photo ([README.md](README.md), rule 4), so an untouched tool sets nothing.
 
-**Status:** built, in `crates/modules/src/demosaic.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Exposure and before Highlight reconstruction, White balance and Raw black/white point: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
+**Status:** built, in `crates/tools/src/demosaic.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Exposure and before Highlight reconstruction, White balance and Raw black/white point: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
 
-- Its rows are tests in `crates/modules/tests/demosaic.rs` and the tool's source, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/demosaic.rs` and the tool's source, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -48,7 +48,7 @@ The method lists darktable's methods in the order its lists give them:
 | Bayer4, three | VNG4 and the two Bayer passthroughs |
 | Monochrome, one | Monochrome |
 
-Each option's id is the operation's choice of that name, X-Trans's passthroughs `passthrough_monochrome_xtrans` and `photosite_color_xtrans`, and the binding writes the operation's choice by its name. The definition holds all seventeen, so an edit means the same on every photo. The method lists the sensor's alone, as darktable's four comboboxes do, one shown per sensor (`Module::options`, decision 30).
+Each option's id is the operation's choice of that name, X-Trans's passthroughs `passthrough_monochrome_xtrans` and `photosite_color_xtrans`, and the binding writes the operation's choice by its name. The definition holds all seventeen, so an edit means the same on every photo. The method lists the sensor's alone, as darktable's four comboboxes do, one shown per sensor (`Tool::options`, decision 30).
 
 The method is live, its unported methods drawn disabled, as Exposure's Mode lists its automatic option. On a monochrome sensor, listing only the method it holds, it is unavailable (decision 30), though the engine renders no such raw. A raw with no colour filters is taken as darktable's monochrome sraw; a linear raw has none either, and the image context cannot yet tell the two apart (`docs/ports/demosaic.md`, Open questions).
 
@@ -67,13 +67,13 @@ The method is live, its unported methods drawn disabled, as Exposure's Mode list
 
 So a Bayer raw shows Method, Colour smoothing, Match greens and Capture sharpen, and an X-Trans raw Method, Colour smoothing and Capture sharpen, as darktable's panel does ([D5](#invariants)). Capture sharpen takes only off, so its group never shows. On an image that is not a raw, where darktable's page says demosaic does not apply, every control is unavailable.
 
-The promises, the tooltips, are darktable's in British English: "How many colour smoothing median steps after demosaicing", "Green channels matching method. Only applies for some old sensors", "Capture sharpen recovers details lost due to in-camera blurring…", and the like. The method's are its two, for Bayer and X-Trans sensors, in one ([Gaps](#gaps), 3). A script sends `SetControl { module: "demosaic", control: "demosaicing_method", value: …, done: true }`, which takes the sensor's ported method and refuses every unported one and every other sensor's.
+The promises, the tooltips, are darktable's in British English: "How many colour smoothing median steps after demosaicing", "Green channels matching method. Only applies for some old sensors", "Capture sharpen recovers details lost due to in-camera blurring…", and the like. The method's are its two, for Bayer and X-Trans sensors, in one ([Gaps](#gaps), 3). A script sends `SetControl { tool: "demosaic", control: "demosaicing_method", value: …, done: true }`, which takes the sensor's ported method and refuses every unported one and every other sensor's.
 
 **Presets:** darktable's demosaic has none.
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/demosaic.c`, its params and `gui_init`, and against its panel as darktable draws it for a Fujifilm X-Trans raw: method Markesteijn 1-pass, color smoothing disabled, the capture sharpen toggle ([README.md](README.md), Sliders against darktable). `its_sliders_are_darktable_s`, in `crates/modules/src/demosaic.rs`, holds the definition to this table. None of these rows shows while its method or capture sharpening is not ported.
+Audited against darktable's `src/iop/demosaic.c`, its params and `gui_init`, and against its panel as darktable draws it for a Fujifilm X-Trans raw: method Markesteijn 1-pass, color smoothing disabled, the capture sharpen toggle ([README.md](README.md), Sliders against darktable). `its_sliders_are_darktable_s`, in `crates/tools/src/demosaic.rs`, holds the definition to this table. None of these rows shows while its method or capture sharpening is not ported.
 
 | Slider | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -91,11 +91,11 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | D0 | None: every control at its default, written at the photo's or kept there | | `bind`; the plan's instances and cache keys; the frame | `bind` returns nothing; instances, keys and frames as with no edit | Exact | The small Bayer raw and a small X-Trans raw through the export and the viewport; every corpus raw |
-| D1 | The method, moved and reset | The other sensor's ported method: Markesteijn 1-pass on a Bayer raw, RCD on an X-Trans one, set on a photo of that sensor, as an edit from it holds it; reset by `ResetControl` and by `ResetModule` | Whether this photo takes it as a command; the method the binding writes; the plan's operations and cache keys; the frame | Refused here (`NotListed`) and kept when the edit holds it; the other method written; the operation falls back to the photo's own, as darktable's `commit_params` does, so the frame and its keys are no edit's, and so once reset | Exact | The small raws through the export and the viewport; the 90D and the X-T5 through the viewport and the export |
+| D1 | The method, moved and reset | The other sensor's ported method: Markesteijn 1-pass on a Bayer raw, RCD on an X-Trans one, set on a photo of that sensor, as an edit from it holds it; reset by `ResetControl` and by `ResetTool` | Whether this photo takes it as a command; the method the binding writes; the plan's operations and cache keys; the frame | Refused here (`NotListed`) and kept when the edit holds it; the other method written; the operation falls back to the photo's own, as darktable's `commit_params` does, so the frame and its keys are no edit's, and so once reset | Exact | The small raws through the export and the viewport; the 90D and the X-T5 through the viewport and the export |
 | D2 | On a layer | | The definition | Background only: never offered on a layer, as demosaic acts on the mosaic | Exact | CPU |
 | D3 | The darktable match | None | The method an unedited photo, and each untouched edit, renders | darktable's `reload_defaults`, restated: RCD (5) on a Bayer sensor, Markesteijn 1-pass (1025) on an X-Trans one, VNG4 on a Bayer4 one and Monochrome on a monochrome one in the unit tests, every other parameter darktable's default but contrast sensitivity ([Deliberate differences](#deliberate-differences)); `apertrust-golden raw-run` holds the operation at those parameters to darktable's demosaic run with the same method | Exact | The small raws; every corpus raw |
 | D4 | What is not ported | Every method but RCD and Markesteijn 1-pass; colour smoothing and match greens but Disabled; LMMSE refine Basic; capture sharpen on; dual and edge threshold and capture sharpening's sliders at their ranges' ends | The edit | Each command refused as not ported, the edit as it was | Exact | CPU |
-| D5 | The rows and lists darktable shows | Each of the seventeen methods, capture sharpen off and on; each sensor: Bayer, X-Trans, Bayer4, monochrome and an image that is not a raw | The rows shown; the method's list (`Module::options`); `available` | darktable's `gui_changed` restated: each row shown exactly where darktable shows it, the capture group only while capture sharpen is on and never for a passthrough; darktable's `gui_init` restated: each sensor's methods in its combobox's order, holding the photo's default, every method listed for some sensor; the method unavailable only on a monochrome sensor, where it lists one; every control unavailable on an image that is not a raw | Exact | CPU; the panel, for a Bayer raw and an X-Trans raw |
+| D5 | The rows and lists darktable shows | Each of the seventeen methods, capture sharpen off and on; each sensor: Bayer, X-Trans, Bayer4, monochrome and an image that is not a raw | The rows shown; the method's list (`Tool::options`); `available` | darktable's `gui_changed` restated: each row shown exactly where darktable shows it, the capture group only while capture sharpen is on and never for a passthrough; darktable's `gui_init` restated: each sensor's methods in its combobox's order, holding the photo's default, every method listed for some sensor; the method unavailable only on a monochrome sensor, where it lists one; every control unavailable on an image that is not a raw | Exact | CPU; the panel, for a Bayer raw and an X-Trans raw |
 
 D3 is how the tool matches darktable. An untouched tool binds nothing, so the operation runs its defaults, darktable's `reload_defaults` for the sensor as the test restates it. `raw-run` checks the operation at those parameters against darktable-cli demosaicing with the method Apertrust gives it.
 
@@ -103,7 +103,7 @@ Neither asks darktable for its own default method, so the restatement is what D3
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/demosaic.rs` and the tool's source. The small-raw and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/demosaic.rs` and the tool's source. The small-raw and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -161,6 +161,6 @@ Where the tool's defaults are not darktable's, following the operation's (`docs/
 - **What is not ported:** the method's and the two lists' options not ported are listed and refused, as Vignetting's Dithering. Dual and edge threshold, LMMSE refine and capture sharpening's six controls are not ported at all, taking only their defaults, as Exposure's deflicker controls, since no ported method reads them.
 - **Defaults:** the operation's for the photo: darktable's `reload_defaults` for the method, the operation's 0.4 for contrast sensitivity ([Deliberate differences](#deliberate-differences)).
 - **Rows:** D0 to D5. No first step, since every raw runs demosaic, and no order row, since only the method can move.
-- **The panel's test:** in `crates/app/src/modules.rs`, beside every other tool's.
+- **The panel's test:** in `crates/app/src/tools.rs`, beside every other tool's.
 - **Row ids:** D, for Demosaic.
-- **In `MODULES`:** after Raw black/white point and Highlight reconstruction, and before AgX.
+- **In `TOOLS`:** after Raw black/white point and Highlight reconstruction, and before AgX.

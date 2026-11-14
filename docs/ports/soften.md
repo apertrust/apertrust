@@ -228,7 +228,7 @@ So a drag of the mix leaves every whole-image pass's key unchanged and reruns `m
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Soften tool is darktable's and owns every parameter (`docs/tools/README.md`; `crates/modules/src/soften.rs`, `docs/tools/soften.md`):
+In the first pass (decision 2) the Soften tool is darktable's and owns every parameter (`docs/tools/README.md`; `crates/tools/src/soften.rs`, `docs/tools/soften.md`):
 
 - Size, Saturation, Brightness and Mix, under darktable's labels and in its order (`gui_init`);
 - Size, Saturation and Mix shown as percentages and Brightness in EV;

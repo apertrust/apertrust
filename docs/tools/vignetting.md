@@ -6,9 +6,9 @@ It is darktable's vignetting in the first pass (decision 2). darktable's page ha
 
 It drives one operation, `vignette` ([../ports/vignette.md](../ports/vignette.md), ported without dithering), which an unedited photo does not run. It is planned while the tool is on. The tool owns all eleven of the operation's parameters; `unbound`, which darktable shows no widget for, stays at the operation's default, on, darktable's.
 
-**Status:** built, in `crates/modules/src/vignetting.rs`. The app draws it in the Effect tab, first, before Soften and Grain, from its definition (`docs/gui.md`, Tool panels from definitions), as [README.md](README.md) orders the tab (decision 38).
+**Status:** built, in `crates/tools/src/vignetting.rs`. The app draws it in the Effect tab, first, before Soften and Grain, from its definition (`docs/gui.md`, Tool panels from definitions), as [README.md](README.md) orders the tab (decision 38).
 
-- Its rows are tests in `crates/modules/tests/vignetting.rs`, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/vignetting.rs`, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -49,7 +49,7 @@ Control ids are the operation's parameter names, darktable's but for the centre'
 
 The promises, the tooltips, are darktable's in British English: "The radii scale of vignette for start of fall-off", "Strength of effect on brightness", "Horizontal offset of centre of the effect", "Shape factor: 0 produces a rectangle, 1 a circle or ellipse, 2 a diamond", "Enable to have the ratio automatically follow the image size", and the like.
 
-A script sends `SetControl { module: "vignette", control: "brightness", value: -0.5, done: true }`, and `apertrust-cli edit --set vignette.brightness=-0.5` does the same.
+A script sends `SetControl { tool: "vignette", control: "brightness", value: -0.5, done: true }`, and `apertrust-cli edit --set vignette.brightness=-0.5` does the same.
 
 **Presets:** darktable's lomo (fall-off from 40 % over 100 %, brightness −1, saturation +0.5, the ratio fixed at 1, shape 1), planned with the header's presets menu.
 
@@ -57,7 +57,7 @@ A script sends `SetControl { module: "vignette", control: "brightness", value: -
 
 Audited against darktable's `src/iop/vignette.c`, its params and `gui_init`, and against its panel as darktable draws it: fall-off start 80.00%, fall-off radius 50.00%, brightness and saturation −0.500, then position / form, the centres +0.000, shape 1.00, the automatic ratio toggle, width/height ratio 1.000, dithering off ([README.md](README.md), Sliders against darktable).
 
-`its_sliders_are_darktable_s`, in `crates/modules/src/vignetting.rs`, holds the definition to this table.
+`its_sliders_are_darktable_s`, in `crates/tools/src/vignetting.rs`, holds the definition to this table.
 
 | Slider | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -77,11 +77,11 @@ No control's unit is Apertrust's: every value is darktable's parameter as it is,
 | --- | --- | --- | --- | --- | --- | --- |
 | V0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that the vignette joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
 | V1 | The first step | The tool on at darktable's defaults, brightness and saturation −0.5: a control written at its default | Frame, ΔE2000 against no edit | darktable's behaviour, darktable's new instance darkening and desaturating towards the corners | Measured and reported, without a bound (decision 22) | Ramp, sweep, the small raw; every corpus raw |
-| V2 | Each control, moved and reset | Brightness −0.5, a write at its default; fall-off start 40 % alone; saturation +0.3 with fall-off start 40 %; fall-off radius 100 % with brightness −1; the centre, the shape and a positive brightness; automatic ratio with saturation −0.43; every control at test 0045's values; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as V1's; the tool's reset turns it off and renders as no edit, the vignette leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
+| V2 | Each control, moved and reset | Brightness −0.5, a write at its default; fall-off start 40 % alone; saturation +0.3 with fall-off start 40 %; fall-off radius 100 % with brightness −1; the centre, the shape and a positive brightness; automatic ratio with saturation −0.43; every control at test 0045's values; each reset control by control (`ResetControl`) and by the header's reset (`ResetTool`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as V1's; the tool's reset turns it off and renders as no edit, the vignette leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
 | V3 | Two controls, in either order | Brightness −0.6 and fall-off start 40 %; saturation +0.3 and automatic ratio; brightness −0.81 and shape 3.7 | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | V4 | Every control, the darktable match | The values of the golden cases `vignette` (test 0045, dithering off), `vignette-autoratio`, `vignette-narrow`, `vignette-star` and `vignette-white`: darktable's fields as they are | The parameters the tool binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters, and the inputs the golden harness checks against darktable's render | Bit for bit, every parameter and every settings word; the gradient slots, which only the derivative entry points read and the harness chooses per case, apart | The cases' parameters, on the CPU |
 | V5 | Each control on a layer, Phase 4 | V2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As V2 | Sweep |
-| V6 | Width/height ratio, while automatic ratio is on | 0.5 and 1.6, with brightness −0.6 | Whether it is available (`Module::available`); the frame's pixels | Unavailable, and the same frame whatever it holds; with automatic ratio off, available, and the frames differ | Exact, the pixels | Sweep; the panel, on the CPU |
+| V6 | Width/height ratio, while automatic ratio is on | 0.5 and 1.6, with brightness −0.6 | Whether it is available (`Tool::available`); the frame's pixels | Unavailable, and the same frame whatever it holds; with automatic ratio off, available, and the frames differ | Exact, the pixels | Sweep; the panel, on the CPU |
 | V7 | On at darktable's defaults | Every control's default made explicit; the tool on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind the vignette's own exactly, `unbound` on among them; on at its defaults the vignette is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
 | V8 | Version 1's edits | Version 1 entries read from `.apxmp`: saturation +0.3 with fall-off start 40 %; brightness −0.5; test 0045's strengths and shape; and fall-off start 40 % with automatic ratio, both strengths at 0, and nothing | The tool's state; the vignette's parameters, resolved over its schema | Those with a strength off 0 read on and bind what version 1 bound, the other strength 0 and `unbound` on; the others read off, their values dropped, the vignette not planned | Exact | The CPU |
 
@@ -91,7 +91,7 @@ The sixth case, `vignette-clip`, clips (`unbound` off), which the tool never doe
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/vignetting.rs`. The synthetic rows and V4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/vignetting.rs`. The synthetic rows and V4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -133,6 +133,6 @@ What darktable's page has or does that the panel does not yet:
 - **Switched** (decision 32): off until a control is written, every default darktable's, brightness and saturation −0.5 among them, and `unbound` at the operation's default, on. An untouched tool never changes the image.
 - **Dithering:** a list with Off live and the two noises not ported, as Exposure's Mode lists its automatic option, so the row shows what darktable's does. Option ids are `off`, `output_8bit` and `output_16bit`, since an id starts with a letter, each the operation's choice at the same place. The map from option to choice comes with the noises' port; the binding sets none until then.
 - **Rows:** a switched tool's, V0 to V4, V7 and V8, and V6. V4 covers the five cases the tool can reach; `vignette-clip` needs `unbound` as a control, which darktable does not show.
-- **The panel's tests:** in `crates/app/src/modules.rs`, beside every other tool's, since the renderer is the app's and `apertrust-modules` depends on neither egui nor the app. The session's availability report is tested on `testing::Sample` (decision 30).
+- **The panel's tests:** in `crates/app/src/tools.rs`, beside every other tool's, since the renderer is the app's and `apertrust-tools` depends on neither egui nor the app. The session's availability report is tested on `testing::Sample` (decision 30).
 - **Row ids:** V, for Vignetting.
 - **The files' names:** by the tool's English name, `vignetting.rs` and this table, `vignetting.md`, apart from the operation's `vignette` (the `tool-bindings` skill).

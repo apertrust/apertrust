@@ -71,8 +71,8 @@ use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId};
-use apertrust_modules::{Module, ModuleValues};
 use apertrust_plugin::{ImageContext, Operation};
+use apertrust_tools::{Tool, ToolValues};
 
 use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
@@ -856,7 +856,7 @@ impl PhotoHistory {
     pub(super) fn fact(
         &mut self,
         through: u64,
-        modules: &[&'static dyn Module],
+        modules: &[&'static dyn Tool],
         operations: &'static [&'static dyn Operation],
         image: &ImageContext,
     ) -> History {
@@ -879,7 +879,7 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
     match command {
         Command::SetControl { done, .. } => done.then_some((StepSource::You, None)),
         Command::ResetControl { .. }
-        | Command::ResetModule { .. }
+        | Command::ResetTool { .. }
         | Command::Keep { .. }
         | Command::ApplyPreset { .. } => Some((StepSource::You, None)),
         // Its step is noted `history-reset` as it is made.
@@ -899,18 +899,18 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
 fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
     if wrote.contains(&Wrote::All) {
         let entries = (unapplied.iter())
-            .map(|module| Entry::Module {
-                module: module.clone(),
-                values: ModuleValues::new(),
+            .map(|module| Entry::Tool {
+                tool: module.clone(),
+                values: ToolValues::new(),
             })
             .collect();
         return vec![Change::Reset(entries)];
     }
     (wrote.iter())
         .find_map(|wrote| match wrote {
-            Wrote::Module(module) => Some(Change::Entry(Entry::Module {
-                module: module.clone(),
-                values: ModuleValues::new(),
+            Wrote::Tool(module) => Some(Change::Entry(Entry::Tool {
+                tool: module.clone(),
+                values: ToolValues::new(),
             })),
             _ => None,
         })
@@ -924,7 +924,7 @@ fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
 fn resets(command: &Command) -> Vec<Wrote> {
     match command {
         Command::Reset => vec![Wrote::All],
-        Command::ResetModule { module } => vec![Wrote::Module(module.clone())],
+        Command::ResetTool { tool: module } => vec![Wrote::Tool(module.clone())],
         Command::Step { commands, .. } => commands.iter().flat_map(resets).collect(),
         _ => Vec::new(),
     }
@@ -941,7 +941,7 @@ fn goes_on(command: &Command) -> bool {
 pub(super) fn gesture_of(command: &Command) -> Option<(&str, StepSource, Option<&Note>)> {
     match command {
         Command::SetControl {
-            module,
+            tool: module,
             done: false,
             ..
         } => Some((module, StepSource::You, None)),
@@ -950,7 +950,7 @@ pub(super) fn gesture_of(command: &Command) -> Option<(&str, StepSource, Option<
             note,
             commands,
         } if commands.iter().all(goes_on) => match commands.last()? {
-            Command::SetControl { module, .. } => Some((module, *source, note.as_ref())),
+            Command::SetControl { tool: module, .. } => Some((module, *source, note.as_ref())),
             _ => None,
         },
         _ => None,
@@ -960,11 +960,11 @@ pub(super) fn gesture_of(command: &Command) -> Option<(&str, StepSource, Option<
 /// Whether `command` writes `module`: names it, or, as `Reset`, writes every module.
 fn writes(command: &Command, module: &str) -> bool {
     match command {
-        Command::SetControl { module: named, .. }
-        | Command::ResetControl { module: named, .. }
-        | Command::ResetModule { module: named }
-        | Command::Keep { module: named, .. }
-        | Command::ApplyPreset { module: named, .. } => named == module,
+        Command::SetControl { tool: named, .. }
+        | Command::ResetControl { tool: named, .. }
+        | Command::ResetTool { tool: named }
+        | Command::Keep { tool: named, .. }
+        | Command::ApplyPreset { tool: named, .. } => named == module,
         Command::Reset => true,
         _ => false,
     }
@@ -975,11 +975,11 @@ fn writes(command: &Command, module: &str) -> bool {
 /// [`Engine::apply_step`], which knows which of its commands changed the edit.
 fn wrote(command: &Command) -> Vec<Wrote> {
     match command {
-        Command::SetControl { module, .. }
-        | Command::ResetControl { module, .. }
-        | Command::ResetModule { module }
-        | Command::Keep { module, .. }
-        | Command::ApplyPreset { module, .. } => vec![Wrote::Module(module.clone())],
+        Command::SetControl { tool: module, .. }
+        | Command::ResetControl { tool: module, .. }
+        | Command::ResetTool { tool: module }
+        | Command::Keep { tool: module, .. }
+        | Command::ApplyPreset { tool: module, .. } => vec![Wrote::Tool(module.clone())],
         Command::Set { operation, .. } => vec![Wrote::Operation(operation.clone())],
         Command::Reset => vec![Wrote::All],
         _ => Vec::new(),
@@ -993,13 +993,22 @@ fn wrote(command: &Command) -> Vec<Wrote> {
 fn target(command: &Command) -> Option<Target> {
     match command {
         Command::SetControl {
-            module, control, ..
+            tool: module,
+            control,
+            ..
         }
-        | Command::ResetControl { module, control } => Some(Target::Control {
+        | Command::ResetControl {
+            tool: module,
+            control,
+        } => Some(Target::Control {
             module: module.clone(),
             control: control.clone(),
         }),
-        Command::ApplyPreset { module, preset, .. } => Some(Target::Preset {
+        Command::ApplyPreset {
+            tool: module,
+            preset,
+            ..
+        } => Some(Target::Preset {
             module: module.clone(),
             preset: preset.clone(),
         }),
@@ -1017,7 +1026,7 @@ fn in_step(command: &Command) -> bool {
         command,
         Command::SetControl { .. }
             | Command::ResetControl { .. }
-            | Command::ResetModule { .. }
+            | Command::ResetTool { .. }
             | Command::Keep { .. }
             | Command::ApplyPreset { .. }
             | Command::Set { .. }
@@ -1076,7 +1085,7 @@ impl Engine {
         };
         let (releases, goes_on) = match (&command, gesture_of(&command)) {
             (_, Some((module, source, note))) => (false, same(module, source, note)),
-            (Command::SetControl { module, .. }, None) => {
+            (Command::SetControl { tool: module, .. }, None) => {
                 (same(module, StepSource::You, None), false)
             }
             // A `Step` takes in the gesture whose module its commands write, of its source
@@ -1289,7 +1298,7 @@ impl Engine {
     /// edit, starts the log afresh, the file's unreadable parts going with the old log, and
     /// ends the view-only state.
     pub(super) fn rewrite(&mut self, what: Rewrite) -> Result<Effect, SessionError> {
-        let defaults = crate::history::default_modules(&self.modules, self.operations);
+        let defaults = crate::history::default_tools(&self.modules, self.operations);
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
@@ -1321,7 +1330,7 @@ impl Engine {
 /// Whether the only change of `open`'s edit not yet a step is the clamp a move of the end or
 /// the photo's open made of the log's fold, which never becomes a step of its own: else an
 /// Undo would take back that clamp's step and land where it began, never past it.
-pub(super) fn clamp_only(open: &Open, modules: &[&dyn Module]) -> bool {
+pub(super) fn clamp_only(open: &Open, modules: &[&dyn Tool]) -> bool {
     let mut clamped = open.history.stepped().clone();
     clamped.clamp_read(modules, &open.image);
     clamped == open.edit
@@ -1329,7 +1338,7 @@ pub(super) fn clamp_only(open: &Open, modules: &[&dyn Module]) -> bool {
 
 /// The edit a move of the end makes a step of first, as a change not yet a step: `open`'s,
 /// or the log's fold where its only change is a clamp ([`clamp_only`]).
-fn pending(open: &Open, modules: &[&dyn Module]) -> Edit {
+fn pending(open: &Open, modules: &[&dyn Tool]) -> Edit {
     if clamp_only(open, modules) {
         open.history.stepped().clone()
     } else {
@@ -1342,7 +1351,7 @@ fn pending(open: &Open, modules: &[&dyn Module]) -> Edit {
 /// rendered where it differs, and saved as a completed change, the end with it even where
 /// the edit is as it was. With nothing moved, `None`, a change made a step first saves
 /// alike.
-fn moved_to(open: &mut Open, moved: Option<Edit>, modules: &[&dyn Module]) -> Effect {
+fn moved_to(open: &mut Open, moved: Option<Edit>, modules: &[&dyn Tool]) -> Effect {
     let Some(mut edit) = moved else {
         return Effect {
             save: true,

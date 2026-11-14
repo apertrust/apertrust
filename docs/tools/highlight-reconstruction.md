@@ -6,9 +6,9 @@ It is darktable's highlight reconstruction in the first pass (decision 2). darkt
 
 It drives one operation, `highlights` (raw 4, [../ports/highlights.md](../ports/highlights.md)), which every raw runs, with inpaint opposed its one method ported. So it adds no operation: it has no first step, and at its defaults it sets nothing and leaves the plan as it was. It owns every parameter of the operation, the method and the clipping threshold. A change runs demosaic again, as every raw-stage control does (decision 12; [../engine.md](../engine.md), Where the viewport's scale applies).
 
-**Status:** built, in `crates/modules/src/highlight_reconstruction.rs`, in `MODULES` after Raw black/white point. The app draws it in the Base tab after Demosaic and before White balance (decision 38), from its definition (`docs/gui.md`, Tool panels from definitions).
+**Status:** built, in `crates/tools/src/highlight_reconstruction.rs`, in `TOOLS` after Raw black/white point. The app draws it in the Base tab after Demosaic and before White balance (decision 38), from its definition (`docs/gui.md`, Tool panels from definitions).
 
-- Its rows are tests in `crates/modules/tests/highlight_reconstruction.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/highlight_reconstruction.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own match, so none has a proposed tolerance.
 - The [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
@@ -51,7 +51,7 @@ darktable's enum's last value, reconstruct colour, is listed for no sensor, so t
 
 **For now** the tool lists darktable's Bayer list on every photo. So an X-Trans raw shows guided laplacians too, disabled as on a Bayer raw. Method stays enabled on a colour raw, as darktable's combobox is, though it has one option to choose, as Exposure's Mode does.
 
-**Planned:** the tool lists each photo's own through `Module::options` (decision 30: a choice lists the options darktable lists for the photo). Then:
+**Planned:** the tool lists each photo's own through `Tool::options` (decision 30: a choice lists the options darktable lists for the photo). Then:
 
 - **each photo lists darktable's methods,** as in the table above;
 - **Method defaults to clip highlights** where darktable's `reload_defaults` does, an image that is not a raw or a four-colour sensor's raw, and to inpaint opposed elsewhere;
@@ -64,7 +64,7 @@ darktable's enum's last value, reconstruct colour, is listed for no sensor, so t
 
 Its default is the operation's for the photo (rule 4, decision 21), darktable's `reload_defaults`: the lower of 1 and the raw's linear response limit, a DNG's LinearResponseLimit, 1 when the raw records none, at least 0. The tool cannot call the operation's `defaults`, so it restates it from the image context (`threshold`). Its unit tests hold the two together on limits below, at and above 1, below 0 and not finite, and K0 on every corpus raw. The binding sets `clip` only while the control is off it, as it is.
 
-A script sends `SetControl { module: "highlights", control: "clip", value: 0.95 }`, and `apertrust-cli edit --set highlights.clip=0.95` does the same. `--param highlights.clip=0.95` is refused, since the tool owns it.
+A script sends `SetControl { tool: "highlights", control: "clip", value: 0.95 }`, and `apertrust-cli edit --set highlights.clip=0.95` does the same. `--param highlights.clip=0.95` is refused, since the tool owns it.
 
 **The other methods' controls**, segmentation based's and guided laplacians', are darktable's page too (rule 3). Their rows follow the method, and within segmentation based the rebuild mode, as darktable's `gui_changed` shows its widgets; Noise level has a row under each method that shows it.
 
@@ -82,7 +82,7 @@ The words are darktable's labels and tooltips from its `en@truecase` catalogue, 
 
 Audited against darktable's `src/iop/highlights.c`, its params and `gui_init`, and against darktable's panel as it draws it for a raw: "method" at "inpaint opposed" and "clipping threshold" at "1.000", the track at its middle, with the showmask button ([README.md](README.md), Sliders against darktable). darktable's side is in its parameters' units, with the factor its slider shows them by.
 
-`its_sliders_are_darktable_s`, in `crates/modules/src/highlight_reconstruction.rs`, holds the definition to this table.
+`its_sliders_are_darktable_s`, in `crates/tools/src/highlight_reconstruction.rs`, holds the definition to this table.
 
 | Slider | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -114,7 +114,7 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | K0 | None: every control at its default for the photo, written at it or kept there | | The tool's defaults against the operation's for the photo; `bind`; the plan's instances and cache keys; the frame, on one pipeline that the threshold one step off its default passes through first | Every default is the operation's; `bind` returns nothing; instances, keys and frames as with no edit | Exact | The small raw through the export and the viewport; every corpus raw (defaults, instances and keys) |
-| K1 | Clipping threshold, moved and reset | From the photo's default: one step down and one up, down by 0.5, where far more photosites count as clipped, and up by 1, to 2, where none does; each reset by `ResetControl` and by the header's reset (`ResetModule`) | The plan's operations and cache keys; the frame | Each move changes the frame; each reset as K0 | Exact | The small raw through the export and the viewport; 90D through the viewport and the export |
+| K1 | Clipping threshold, moved and reset | From the photo's default: one step down and one up, down by 0.5, where far more photosites count as clipped, and up by 1, to 2, where none does; each reset by `ResetControl` and by the header's reset (`ResetTool`) | The plan's operations and cache keys; the frame | Each move changes the frame; each reset as K0 | Exact | The small raw through the export and the viewport; 90D through the viewport and the export |
 | K2 | Order | Clipping threshold down 0.05 with Raw black/white point's White point down 100, either first; and the threshold set through a value 0.3 above first | Frame | The same whichever came first, and whatever the threshold held before | Exact | The small raw through the export; 90D through the viewport and the export |
 | K3 | Clipping threshold, the darktable match | 0, 0.5, 0.9, 0.987, 1, 1.3 and 2, on a photo with no linear response limit and one whose limit is 0.9 | The default; the parameters the edit renders; the history entry `apertrust-golden raw-run` writes for them; the kernel's clipping levels through the operation's `prepare` | darktable's default, parameters and clipping levels, bit for bit (below) | Exact | The values, on the CPU; every corpus raw, for the default |
 
@@ -128,7 +128,7 @@ K3 is how the tool matches darktable. `apertrust-golden raw-run` writes the para
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/highlight_reconstruction.rs`. The small raw's rows and K3's values run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/highlight_reconstruction.rs`. The small raw's rows and K3's values run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -152,7 +152,7 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/highlight_reconstructi
 What darktable's page has or does that the panel does not yet:
 
 1. **The showmask buttons** beside Clipping threshold, Combine, Candidating and Strength: the renderer draws no quad of that kind yet, and the false-colour views they toggle need the engine to render a mask. They store nothing, so no edit waits on them.
-2. **The method's list per sensor,** planned through `Module::options` (decision 30). darktable leaves guided laplacians out of an X-Trans raw's list, lists two methods for a linear raw and clip highlights alone for an image that is not a raw or a four-colour sensor's raw. Until the tool gives each photo its own list, it lists the Bayer list there too, every method but inpaint opposed disabled, as every method not ported is. What changes then is under [Controls](#controls): each photo's list, clip highlights as the default where darktable's is, `gui_changed`'s rewrites for a stored method the photo does not list, and Method unavailable where one option is listed. The image context has to tell a linear raw from a monochrome one first.
+2. **The method's list per sensor,** planned through `Tool::options` (decision 30). darktable leaves guided laplacians out of an X-Trans raw's list, lists two methods for a linear raw and clip highlights alone for an image that is not a raw or a four-colour sensor's raw. Until the tool gives each photo its own list, it lists the Bayer list there too, every method but inpaint opposed disabled, as every method not ported is. What changes then is under [Controls](#controls): each photo's list, clip highlights as the default where darktable's is, `gui_changed`'s rewrites for a stored method the photo does not list, and Method unavailable where one option is listed. The image context has to tell a linear raw from a monochrome one first.
 3. **The other methods,** and their controls with them, wait for their ports (decision 51): reconstruct in LCh, clip highlights, segmentation based and guided laplacians.
 4. **The tool's tooltip,** darktable's "avoid magenta highlights and try to recover highlights colors": a definition implies no message for the tool's own tooltip, as for Grain.
 5. **A drag's frame time.** A change restarts the viewport at the uploaded mosaic and runs highlight reconstruction's statistic and demosaic at full resolution, as Raw black/white point's do (`docs/tools/raw-black-white-point.md`, Gaps).
@@ -160,14 +160,14 @@ What darktable's page has or does that the panel does not yet:
 ## Design choices
 
 - **Tool id and control ids:** `highlights`, darktable's operation name (rule 1), and darktable's parameter names. The method's options take the operation's choice ids; Rebuild's and the diameter's take darktable's descriptions as ids (`flat_generic`, `px_128`).
-- **The method's options:** darktable's list for a Bayer raw, in its order, on every photo for now, until each photo lists darktable's own through `Module::options` (decision 30; [Controls](#controls)). Reconstruct colour is left out, as darktable lists it for no sensor.
+- **The method's options:** darktable's list for a Bayer raw, in its order, on every photo for now, until each photo lists darktable's own through `Tool::options` (decision 30; [Controls](#controls)). Reconstruct colour is left out, as darktable lists it for no sensor.
 - **The other methods' controls:** controls not ported, at darktable's defaults, in rows following their method as `gui_changed` shows them, owning no parameter until their methods come, as the `tool-bindings` skill's rule 6 allows.
 - **Noise level:** one control in two rows, one under each method that shows it, never shown at once, with the control's own words, as the `tool-bindings` skill's rule 3 and `docs/engine.md`'s tool layer allow. One row under a condition of both methods is something `Row::When` cannot say.
 - **The default threshold:** the operation's for the photo, restated in the tool from the image context, as Raw black/white point restates its levels, with tests holding the restatement to the operation's own.
 - **Method's availability:** enabled on a colour raw, as darktable's combobox is, though only inpaint opposed can be chosen, as Exposure's Mode.
 - **A photo that is not a colour raw:** every control unavailable, drawn disabled, where darktable shows "not applicable" for a monochrome raw and a list of clip highlights alone for an image that is not a raw.
 - **The showmask buttons:** left out until the renderer draws such a quad.
-- **Order in `MODULES`:** after Raw black/white point.
+- **Order in `TOOLS`:** after Raw black/white point.
 - **Words:** darktable's labels and tooltips from its `en@truecase` catalogue, a tooltip's lines joined, with British spelling ("colour", "favour", "power lines"); Ukrainian and Polish from its `uk.po` and `pl.po` at the tag, capitalised. The Polish draft corrects darktable's `pl.po` where it is wrong:
   - "wiąż się" to "wiąże się";
   - Combine's tooltip without its second sentence, about a mask button, which translates an older msgid;

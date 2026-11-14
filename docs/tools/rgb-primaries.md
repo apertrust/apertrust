@@ -6,10 +6,10 @@ It is darktable's rgb primaries in the first pass (decision 2). darktable's page
 
 It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries.md)), which an unedited photo does not run. The operation is planned while the tool is on, as in darktable, where rgb primaries is off until the user turns it on (decision 32). The tool owns all eight of the operation's parameters; none is fixed.
 
-**Status:** built, in `crates/modules/src/rgb_primaries.rs`. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), after Colour balance RGB and before Colour calibration.
+**Status:** built, in `crates/tools/src/rgb_primaries.rs`. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), after Colour balance RGB and before Colour calibration.
 
 - In [README.md](README.md)'s order (decision 38) the colour equalizer, whose tool is not built yet, comes between Colour balance RGB and it.
-- Its rows are tests in `crates/modules/tests/rgb_primaries.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/rgb_primaries.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -42,7 +42,7 @@ Each step is darktable's, what `dt_bauhaus_slider_get_step` gives over the soft 
 
 A hue turns its primary about the white, and a purity moves it towards the white or past the gamut's edge. The tint moves the white towards its hue by its purity, a fraction of the way to the gamut's edge, so greys take that hue.
 
-The promises, the tooltips, are darktable's in British English: a primary's hue "Shifts red towards yellow or magenta" and the like, its purity "Red primary purity", and the tint's its labels, as darktable's tooltips are. A script sends `SetControl { module: "primaries", control: "red_hue", value: 10, done: true }`, and `apertrust-cli edit --set primaries.red_hue=10` does the same.
+The promises, the tooltips, are darktable's in British English: a primary's hue "Shifts red towards yellow or magenta" and the like, its purity "Red primary purity", and the tint's its labels, as darktable's tooltips are. A script sends `SetControl { tool: "primaries", control: "red_hue", value: 10, done: true }`, and `apertrust-cli edit --set primaries.red_hue=10` does the same.
 
 **The tint's hue changes nothing while its purity is 0** (row P6), and stays enabled there, as darktable's does: darktable draws it as any other slider.
 
@@ -50,7 +50,7 @@ The promises, the tooltips, are darktable's in British English: a primary's hue 
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/primaries.c`, its params, `_setup_hue_slider`, `_setup_purity_slider` and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's side is in its parameters' units, with the factor and offset its slider shows them by; Apertrust's is the table above, in the units shown. `its_sliders_are_darktable_s`, in `crates/modules/src/rgb_primaries.rs`, holds the definition to this table, and the binding's factor and offset to darktable's.
+Audited against darktable's `src/iop/primaries.c`, its params, `_setup_hue_slider`, `_setup_purity_slider` and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's side is in its parameters' units, with the factor and offset its slider shows them by; Apertrust's is the table above, in the units shown. `its_sliders_are_darktable_s`, in `crates/tools/src/rgb_primaries.rs`, holds the definition to this table, and the binding's factor and offset to darktable's.
 
 | Sliders | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ A switched tool's rows (decision 32; [README.md](README.md), Rows every table ha
 | --- | --- | --- | --- | --- | --- | --- |
 | P0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that rgb primaries joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
 | P1 | The first step | The tool on at darktable's defaults, the operation's: a control written at its default | Frame, ΔE2000 against no edit: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: at its defaults the operation's matrix leaks red into blue and green, B + 0.0024 (R − B) and G + 0.000025 (R − G), greys untouched, as darktable's does (`docs/ports/primaries.md`, Per pixel) | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
-| P2 | Each control, moved and reset | Red hue 0°, a write at its default; red hue +10°; Green purity +25 %; Blue hue −15° with Blue purity −30 %; Tint hue 120° with Tint purity 10 %; all eight at test 0152's values as its sliders show them; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as P1's; the tool's reset turns it off and renders as no edit, rgb primaries leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
+| P2 | Each control, moved and reset | Red hue 0°, a write at its default; red hue +10°; Green purity +25 %; Blue hue −15° with Blue purity −30 %; Tint hue 120° with Tint purity 10 %; all eight at test 0152's values as its sliders show them; each reset control by control (`ResetControl`) and by the header's reset (`ResetTool`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as P1's; the tool's reset turns it off and renders as no edit, rgb primaries leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
 | P3 | Two controls, in either order | Red hue 9.5° and Tint purity 13.4 %; Green purity +23.5 % and Blue hue 13.1° | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | P4 | Every control, the darktable match | The values of darktable's test 0152-rgb-primaries, the golden case `primaries`: each field × factor + offset, unrounded | The parameters the tool binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters, and so the inputs the golden harness checks against darktable's render | One f32 step on a parameter and on a setting's uniform word; 2.4e-7, two f32 steps of 1, on a matrix entry; every other word exact | The case's parameters, on the CPU |
 | P5 | Each control on a layer, Phase 4 | P2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As P2 | Sweep |
@@ -85,7 +85,7 @@ Its first step, P1, is the operation's own behaviour at its defaults, which the 
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/rgb_primaries.rs`. The synthetic rows and P4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS` and the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/rgb_primaries.rs`. The synthetic rows and P4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS` and the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |

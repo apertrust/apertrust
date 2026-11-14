@@ -323,7 +323,7 @@ On test 0145's X-T3 data, emulated in f32 at 6240 × 4160 (the case's real size 
 
 The readout shows the description of the `modify_flags` value with those bits ("all", "distortion & TCA", …). Upstream changed this after the reference release (6eca513300, "do not report distortion for chromatic aberration alone"); the port follows the reference release.
 
-The operation crate offers `corrections_done(params, image)`, a pure port of the reference release's `_check_corrections_md` (decision 25). The engine's session, which holds the operations, computes it when the tool's values or the photo change and reports it with the tool's state. The renderer draws the `modify_flags` option those bits name. `apertrust-modules` stays free of operation crates (decision 28).
+The operation crate offers `corrections_done(params, image)`, a pure port of the reference release's `_check_corrections_md` (decision 25). The engine's session, which holds the operations, computes it when the tool's values or the photo change and reports it with the tool's state. The renderer draws the `modify_flags` option those bits name. `apertrust-tools` stays free of operation crates (decision 28).
 
 ## Per pixel (`process`, `_process_md`)
 
@@ -438,7 +438,7 @@ Two behaviours that could differ follow darktable: the clamping and mirroring at
 
 The first pass's Lens correction tool mirrors darktable's page (`docs/tools/README.md`, Lens correction; decisions 2 and 29), in `gui_init`'s order:
 
-- **Correction method** (`method`), always: embedded metadata, Lensfun database (drawn disabled until its port), only manual vignette (ported with the manual vignette; it is the same gain and a copy, so it costs no maths of its own, and the tool lists it, rule 8). darktable lists embedded metadata only while the photo carries corrections (`reload_defaults` rebuilds the list), and so does the tool (`Module::options`, decision 30). On a photo without corrections it lists Lensfun database and only manual vignette, and its method is Lensfun, darktable's default there: drawn disabled, "not ported yet", until Lensfun's port, and the tool makes no correction on such a photo.
+- **Correction method** (`method`), always: embedded metadata, Lensfun database (drawn disabled until its port), only manual vignette (ported with the manual vignette; it is the same gain and a copy, so it costs no maths of its own, and the tool lists it, rule 8). darktable lists embedded metadata only while the photo carries corrections (`reload_defaults` rebuilds the list), and so does the tool (`Tool::options`, decision 30). On a photo without corrections it lists Lensfun database and only manual vignette, and its method is Lensfun, darktable's default there: drawn disabled, "not ported yet", until Lensfun's port, and the tool makes no correction on such a photo.
 - **Corrections** (`modify_flags`) and the **corrections done** readout (Setup, The corrections done), hidden for only manual vignette: darktable's eight options in its enum's order.
 - **Embedded metadata:** "use latest algorithm" is not shown (rule 12).
 - **Fine-tuning**, a collapsible group closed at first, under darktable's conditions (`gui_changed`):

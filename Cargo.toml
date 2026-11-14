@@ -12,10 +12,10 @@ members = [
     "crates/export",
     "crates/golden",
     "crates/library",
-    "crates/modules",
     "crates/operations",
     "crates/plugin",
     "crates/raw",
+    "crates/tools",
     "crates/ui",
     "crates/op/*",
 ]
@@ -36,7 +36,6 @@ apertrust-engine = { path = "crates/engine" }
 apertrust-export = { path = "crates/export" }
 apertrust-golden = { path = "crates/golden" }
 apertrust-library = { path = "crates/library" }
-apertrust-modules = { path = "crates/modules" }
 apertrust-op-agx = { path = "crates/op/agx" }
 apertrust-op-bilat = { path = "crates/op/bilat" }
 apertrust-op-bloom = { path = "crates/op/bloom" }
@@ -64,6 +63,7 @@ apertrust-op-vignette = { path = "crates/op/vignette" }
 apertrust-operations = { path = "crates/operations" }
 apertrust-plugin = { path = "crates/plugin" }
 apertrust-raw = { path = "crates/raw" }
+apertrust-tools = { path = "crates/tools" }
 apertrust-ui = { path = "crates/ui" }
 
 anyhow = "1.0.104"

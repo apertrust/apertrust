@@ -18,7 +18,7 @@ How are the desktop app's threads organised, how does a frame reach the window, 
 - Commands are numbered as they are sent. The thread takes every command that has arrived and renders the latest state once, so a 30-step drag sent at once renders fewer than 30 times.
 - Each values report says how many commands it includes (`through`), so the app shows a value it set until a report includes it and a slider never jumps back to one reported late.
 - `wake` is the only UI hook the engine has, the app's `request_repaint`; the CLI and a server drive the same session.
-- The binaries hand the session the operations and tools (`apertrust_operations::OPERATIONS`, `apertrust_modules::MODULES`), so the engine depends on no operation crate.
+- The binaries hand the session the operations and tools (`apertrust_operations::OPERATIONS`, `apertrust_tools::TOOLS`), so the engine depends on no operation crate.
 - Events go out through one outbox ([0059](0059-one-event-system.md)).
 
 **Frames:** each frame is copied into whichever of two display storage buffers was not published last; a published buffer is never written while it is the latest. The app's paint callback draws one triangle over egui's viewport, each fragment reading its own pixel by window position, so nothing is sampled, decoding sRGB first where the window's format encodes itself. The copy costs one pass and two frame-sized buffers (2 × 61 MB at 2400×1600).

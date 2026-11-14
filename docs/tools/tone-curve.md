@@ -15,14 +15,14 @@ It drives one `rgbcurve` instance. An unedited photo does not run it, so it is p
 - The rows measure at the tool's input and output.
 - Measures and test images are in [README.md](README.md).
 
-**Built: the Luma curve and Preserve colours,** in `crates/modules/src/tone_curve.rs`. The tool renderer draws it with the design system's curve in the app's Base tab, at RGB curve's place: first of the built tools there, before the Tone equalizer (decision 38). What is built:
+**Built: the Luma curve and Preserve colours,** in `crates/tools/src/tone_curve.rs`. The tool renderer draws it with the design system's curve in the app's Base tab, at RGB curve's place: first of the built tools there, before the Tone equalizer (decision 38). What is built:
 
 - **Controls:** `luma_points` holds the points between the curve's ends, up to 18, x at least 0.0025 apart and as far from the ends (as `rgbcurve` and the curve widget keep them), none by default, the identity. The ends stay at (0, 0) and (1, 1) and are not stored: the binding adds them as the curve's first and last nodes (decision 31). The panel draws them as points that do not move.
 - **Preserve colours:** `preserve_colour` is one choice over six of `rgbcurve`'s norms (`docs/ports/rgbcurve.md`, Tool binding notes): luminance the default, then max RGB, average RGB, sum RGB, norm RGB and basic power, by the port's names (`luminance`, `max_rgb`, `average_rgb`, `sum_rgb`, `norm_rgb`, `basic_power`).
 - **Tabs:** Luma, RGB, Red, Green, Blue and Advanced, Preserve colours on the Advanced tab. RGB, Red, Green and Blue have no rows, so the panel draws them disabled; they give way to RGB curve's mode and channel tabs when the tool becomes RGB curve.
 - **Binding:** one `rgbcurve` instance, linked, monotone Hermite, middle grey compensated, through (0, 0), the points and (1, 1), preserving colours by the choice. Nothing while the curve is straight, every point on the diagonal, whatever Preserve colours holds. The tool owns every `rgbcurve` parameter.
-- **What the panel draws** is the curve `rgbcurve` renders for greys read by their value, on lightness axes (`Module::curve`, `tone_curve::LumaCurve`): the nodes made linear, darktable's monotone Hermite tangents and darktable's power law past the last, read back as lightness. A straight curve draws the diagonal exactly, so a point added on it keeps it straight. With Preserve colours on sum or norm, greys do not render as drawn (T4 and T17, below); what to draw then is open.
-- **Rows:** T0, T1, T4 to T8, T11, T16 and T17 are tests in `crates/modules/tests/tone_curve.rs`, T4, T5 and T17 for each Preserve colours option ([Results](#results)).
+- **What the panel draws** is the curve `rgbcurve` renders for greys read by their value, on lightness axes (`Tool::curve`, `tone_curve::LumaCurve`): the nodes made linear, darktable's monotone Hermite tangents and darktable's power law past the last, read back as lightness. A straight curve draws the diagonal exactly, so a point added on it keeps it straight. With Preserve colours on sum or norm, greys do not render as drawn (T4 and T17, below); what to draw then is open.
+- **Rows:** T0, T1, T4 to T8, T11, T16 and T17 are tests in `crates/tools/tests/tone_curve.rs`, T4, T5 and T17 for each Preserve colours option ([Results](#results)).
 
 ## Controls
 
@@ -48,13 +48,13 @@ It drives one `rgbcurve` instance. An unedited photo does not run it, so it is p
 - Double-click on the curve's background resets the curve, one undo step.
 - The accessible value reads the curve, the number of points and the selected point.
 
-A script sends `SetControl` with the whole list, such as `{ module: "tone_curve", control: "luma_points", value: [[0.25, 0.2], [0.75, 0.8]] }`. The edit stores points as `x,y` pairs.
+A script sends `SetControl` with the whole list, such as `{ tool: "tone_curve", control: "luma_points", value: [[0.25, 0.2], [0.75, 0.8]] }`. The edit stores points as `x,y` pairs.
 
 ### Sliders against darktable
 
 Audited against darktable's `src/iop/rgbcurve.c` ([README.md](README.md), Sliders against darktable). Its `gui_init` draws the curve, three lists (the mode, the interpolation and preserve colours) and a toggle, and no slider. The built Luma curve has none either, so there is nothing to compare.
 
-`it_has_no_slider_as_darktable_s_rgb_curve_has_none`, in `crates/modules/src/tone_curve.rs`, holds the definition to that: a slider added to it fails the test until its row of darktable's is written there and here.
+`it_has_no_slider_as_darktable_s_rgb_curve_has_none`, in `crates/tools/src/tone_curve.rs`, holds the definition to that: a slider added to it fails the test until its row of darktable's is written there and here.
 
 ## Invariants
 
@@ -76,7 +76,7 @@ Rows that measure the tool's output against its input plan the tool's operations
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/tone_curve.rs`, the Luma curve's rows only; they run on CI's software GPUs too. The corpus raws and the chart the rows name are not run yet.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/tone_curve.rs`, the Luma curve's rows only; they run on CI's software GPUs too. The corpus raws and the chart the rows name are not run yet.
 
 Where a row fails, its proposed bound stays in an ignored test while it is open, and CI checks the parts of it that hold; the bound itself is unchanged (decision 30).
 

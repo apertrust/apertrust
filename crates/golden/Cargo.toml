@@ -24,10 +24,10 @@ apertrust-base = { workspace = true, features = ["log"] }
 apertrust-color.workspace = true
 apertrust-engine.workspace = true
 apertrust-export.workspace = true
-apertrust-modules.workspace = true
 apertrust-operations.workspace = true
 apertrust-plugin.workspace = true
 apertrust-raw.workspace = true
+apertrust-tools.workspace = true
 tracing.workspace = true
 
 [build-dependencies]

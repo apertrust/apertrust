@@ -6,11 +6,11 @@ It is darktable's color calibration as its page has it, every tab, the CAT tab f
 
 Every colour raw runs the operation (decision 27), so the tool adds none. It has no first step, and at its defaults it sets nothing and leaves the plan, the cache keys and the frame as they were.
 
-**Status:** built, every tab, in `crates/modules/src/colour_calibration.rs`. It is in `MODULES` after Exposure. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), after RGB primaries and before Input colour profile, whose tool is not built yet (decision 38).
+**Status:** built, every tab, in `crates/tools/src/colour_calibration.rs`. It is in `TOOLS` after Exposure. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), after RGB primaries and before Input colour profile, whose tool is not built yet (decision 38).
 
 - As shot is darktable's `reload_defaults`, snapped to daylight or Planckian where darktable snaps ([As shot](#as-shot)).
-- The adaptation is unavailable while as shot in camera is chosen, through `Module::available` of the values (decision 30).
-- Every row below is a test in `crates/modules/tests/colour_calibration.rs`; [Results](#results) gives what they measured.
+- The adaptation is unavailable while as shot in camera is chosen, through `Tool::available` of the values (decision 30).
+- Every row below is a test in `crates/tools/tests/colour_calibration.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own match. Two proposed bounds are open (decision 30): C5's on the hue, which fails at low chroma, and C1's on an illuminant reset control by control.
 - The [design choices](#design-choices) are settled. Measures and test images are in [README.md](README.md).
 
@@ -45,7 +45,7 @@ Each control is darktable's parameter as it is:
 | Grey | `grey_r`, `grey_g`, `grey_b`; `grey_normalise` | `grey_0` to `grey_2`; `normalize_grey` | As Colourfulness, its track over 0 to 1 | 0; off |
 | Under every tab: Calibrate with a colour checker, a collapsible group, closed at first | Chart, Optimise for, Patch scale | None: darktable's settings for its colour checker, kept in its darktablerc (`darkroom/modules/channelmixerrgb/colorchecker`, `optimization`, `safety`), never in an edit (rule 12). Each is a `Row::Setting`, drawn disabled at darktable's default until the colour checker is built | darktable's seven charts; none, neutral, saturated, skin and soil, foliage, sky and water colours, average ΔE, maximum ΔE; 0 to 1, three decimals | The first chart, none, 0.5 |
 
-"Input R, G and B" are the adaptation space's channels, CAT16's LMS by default, not working RGB's, as in darktable (`docs/ports/channelmixerrgb.md`, Parameters). A script sends `SetControl { module: "channelmixerrgb", control: "grey_g", value: 1 }`, and `apertrust-cli edit --set channelmixerrgb.grey_g=1` makes a photo grey. `--param channelmixerrgb.grey_1` is refused, since the tool owns it.
+"Input R, G and B" are the adaptation space's channels, CAT16's LMS by default, not working RGB's, as in darktable (`docs/ports/channelmixerrgb.md`, Parameters). A script sends `SetControl { tool: "channelmixerrgb", control: "grey_g", value: 1 }`, and `apertrust-cli edit --set channelmixerrgb.grey_g=1` makes a photo grey. `--param channelmixerrgb.grey_1` is refused, since the tool owns it.
 
 **Owned with no control:** `version`, darktable's saturation algorithm, at version 3. darktable shows its combobox only for an edit made with an older algorithm (`gui_update` hides it at version 3). No Apertrust edit is one, since no darktable edit is imported (decision 51) and versions 1 and 2 are not ported. Rule 12 leaves such a control out, its parameter at darktable's current value. The tool owns it, so no other path sets it.
 
@@ -64,8 +64,8 @@ An edit that holds one of its parameters as an operation parameter, set through 
   - Choosing an illuminant, an F or LED source or a temperature writes `x` and `y` to the light it describes (`illuminant_to_xy`), unless the illuminant is custom or as shot in camera. It writes `temperature` to the light's correlated colour temperature (`_check_if_close_to_daylight`), unless it is D, Planckian or as shot in camera.
   - Editing hue or chroma writes `temperature` (`xy_to_CCT`, `CCT_reverse_lookup` below 3000 K).
   - Choosing as shot in camera first writes `x` and `y` from the camera, at the camera's reference where the raw stage leaves the image (`find_temperature_from_raw_coeffs` with no correction), the temperature `_check_if_close_to_daylight` gives it, and the adaptation CAT16.
-  - Each is in the same change as the control, one render and one write (the session has no history yet). Each is kept unless it writes the control's default for the photo, which resets it, and none rewrites the control the command set (`Module::follow`, applied by `Edit::follow`).
-- **Leaving a light.** A switch from daylight to custom keeps the light, as in darktable, and so does leaving as shot in camera. darktable reads the camera's light again then, which choosing it wrote already: `Module::follow` is given the values after the change, not the illuminant before it ([Design choices](#design-choices)). With the features Apertrust has, the two differ only where a script moved `x`, `y` or the adaptation while as shot in camera was chosen. darktable reaches two more:
+  - Each is in the same change as the control, one render and one write (the session has no history yet). Each is kept unless it writes the control's default for the photo, which resets it, and none rewrites the control the command set (`Tool::follow`, applied by `Edit::follow`).
+- **Leaving a light.** A switch from daylight to custom keeps the light, as in darktable, and so does leaving as shot in camera. darktable reads the camera's light again then, which choosing it wrote already: `Tool::follow` is given the values after the change, not the illuminant before it ([Design choices](#design-choices)). With the features Apertrust has, the two differ only where a script moved `x`, `y` or the adaptation while as shot in camera was chosen. darktable reaches two more:
   - a preset, a style or a pasted edit that sets as shot in camera over another light, which leaving it then replaces with the camera's; Apertrust has no presets, styles or pasting for the tool yet;
   - a white balance changed while as shot in camera is chosen, since darktable's camera light follows `temperature`'s coefficients (`custom_wb`), where Apertrust's is read at the camera's reference. White balance reaches this, and its page records it as a gap (`white-balance.md`, Gaps): `camera_light` assumes the reference coefficients, `custom_wb` 1, and `follow` cannot see `temperature`'s values.
 
@@ -94,7 +94,7 @@ It also decides what a reset of the illuminant gives (C1). Where As shot is cust
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/channelmixerrgb.c`, its params and `gui_init`'s `NOTEBOOK_PAGE` ([README.md](README.md), Sliders against darktable). Every slider shows its parameter as it is, with no factor or format, and three digits (`dt_bauhaus_slider_set_digits(…, 3)`, and `dt_bauhaus_slider_new_with_range`'s for the patch scale). `its_sliders_are_darktable_s`, in `crates/modules/src/colour_calibration.rs`, holds the definition to this table.
+Audited against darktable's `src/iop/channelmixerrgb.c`, its params and `gui_init`'s `NOTEBOOK_PAGE` ([README.md](README.md), Sliders against darktable). Every slider shows its parameter as it is, with no factor or format, and three digits (`dt_bauhaus_slider_set_digits(…, 3)`, and `dt_bauhaus_slider_new_with_range`'s for the patch scale). `its_sliders_are_darktable_s`, in `crates/tools/src/colour_calibration.rs`, holds the definition to this table.
 
 | Sliders | darktable: range, soft range | Digits | darktable's step | Apertrust: range, track | Decimals, step | Differs |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -117,7 +117,7 @@ A first-pass table (decision 22): the rows every table has, and darktable's matc
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | C0 | None: every control at its default, written or kept | | `bind`; the tool's defaults against the operation's for the photo; the plan's instances and cache keys; the frame | `bind` returns nothing; every default is the operation's; instances, keys and frames as with no edit | Exact | Ramp, sweep; the small raw through the export and the viewport; every corpus raw (defaults, instances and keys) |
-| C1 | Each control, moved and reset, as the session does both, with their follow writes | A weight on each tab; a weight with its Normalise channels on the G, Colourfulness, Brightness and Grey tabs; every mixer control at once; on the CAT tab the adaptation XYZ and none, same as pipeline, A, D, E, Planckian at 3200 K, F11, LED B1, a custom light, gamut compression 4, and 0 with clipping off; each reset by `ResetControl` and by `ResetModule` | Frame | Changes when moved; as C0 once reset (proposed; an illuminant's move reset control by control keeps its light, Results) | Exact | Sweep (the mixer's), whose synthetic light is D50's; the small raw through the viewport (all) |
+| C1 | Each control, moved and reset, as the session does both, with their follow writes | A weight on each tab; a weight with its Normalise channels on the G, Colourfulness, Brightness and Grey tabs; every mixer control at once; on the CAT tab the adaptation XYZ and none, same as pipeline, A, D, E, Planckian at 3200 K, F11, LED B1, a custom light, gamut compression 4, and 0 with clipping off; each reset by `ResetControl` and by `ResetTool` | Frame | Changes when moved; as C0 once reset (proposed; an illuminant's move reset control by control keeps its light, Results) | Exact | Sweep (the mixer's), whose synthetic light is D50's; the small raw through the viewport (all) |
 | C2 | Order | Two controls, each set first, as the session sets them, with their follow writes: Input G on R with Input B on Colourfulness, Input R on Grey with its Normalise channels, Input R on Brightness with Input B on G, D with gamut compression, the adaptation XYZ with clipping off, F with Input G on R | Frame | The same whichever came first | Exact | Sweep |
 | C3 | On a layer | | The definition | Background only: never offered on a layer (Phase 4 adds layers) | Exact | CPU |
 | C4 | darktable's match | Each `channelmixerrgb` golden case's parameters, the CAT tab's with the mixer, colourfulness, brightness, grey and normalisations, set as the tool's controls | The parameters the edit renders | darktable's own for the case, `version` included, so the case's render against darktable is the tool's | Exact; the cases' `Tolerance::DARKTABLE` | CPU; the eleven golden cases |
@@ -129,7 +129,7 @@ C4 is how the darktable match is covered: each control is its parameter, so the 
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/colour_calibration.rs`; the synthetic and CPU rows run on CI's software GPUs too, the corpus rows with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/colour_calibration.rs`; the synthetic and CPU rows run on CI's software GPUs too, the corpus rows with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -169,7 +169,7 @@ C6 in detail: all 81 changes of the illuminant from one to another after the def
 - **Control ids:** `<tab>_r`, `_g`, `_b` and `<tab>_normalise`, by the tab's English name (`colourfulness_r` for `saturation_0`), so a script reads as the panel does. darktable's `normalize_R` is no snake_case id.
 - **Row ids:** C, for Colour calibration.
 - **The CAT tab's ids:** the controls take darktable's parameter names, `illum_fluo` and `illum_led` among them. The options take short ids of darktable's labels (`pipeline`, `planckian`, `camera`, `non_linear_bradford`, `none`), the illuminant bound by darktable's value. The tool's settings are `area_mode`, `channel_mixing` and `target_lightness`, `target_hue`, `target_chroma`, apart from the view's `hue` and `chroma`.
-- **Leaving as shot in camera:** the camera's light is not read again. `Module::follow` is given the values after the change (decision 27), and choosing as shot in camera already wrote the camera's light and CAT16, so leaving it gives darktable's light in every state the features Apertrust has reach ([Follow writes](#controls), above). Mirroring darktable where a script moved `x`, `y` or the adaptation would need `follow` to be given the control's previous value, as darktable's `gui_changed(self, w, previous)` is: an interface change.
+- **Leaving as shot in camera:** the camera's light is not read again. `Tool::follow` is given the values after the change (decision 27), and choosing as shot in camera already wrote the camera's light and CAT16, so leaving it gives darktable's light in every state the features Apertrust has reach ([Follow writes](#controls), above). Mirroring darktable where a script moved `x`, `y` or the adaptation would need `follow` to be given the control's previous value, as darktable's `gui_changed(self, w, previous)` is: an interface change.
 - **Hue or chroma's temperature:** written whenever `x` or `y` moves, as `_illum_xy_callback` writes it whenever the view is edited, whatever the illuminant. darktable's GUI shows the view for custom only, so a script moving `x` under daylight moves the temperature daylight reads.
 - **A temperature out of the control's range:** held to 1667 to 25000 K, as the operation's defaults hold one, so a follow write is always one the control takes.
 - **Follow writes refused:** the tool's failure, `EditError::FollowFailed`: the whole change is refused and the edit stays as it was, as with a preset's option its tool gets wrong.
@@ -179,6 +179,6 @@ C6 in detail: all 81 changes of the illuminant from one to another after the def
 
 ## Phases
 
-- **Built (Phase 2):** the six tabs, and the CAT tab with follow writes and the widened `x` and `y`, with C0 to C7 (decision 27); C7's availability through `Module::available` of the values (decision 30). Neither the CLI's `edit` nor the app's pending display applies follow writes yet: the CLI reads no image context, so `--set channelmixerrgb.illuminant=d` stores the illuminant alone, and the app shows a follow write once the session reports it.
+- **Built (Phase 2):** the six tabs, and the CAT tab with follow writes and the widened `x` and `y`, with C0 to C7 (decision 27); C7's availability through `Tool::available` of the values (decision 30). Neither the CLI's `edit` nor the app's pending display applies follow writes yet: the CLI reads no image context, so `--set channelmixerrgb.illuminant=d` stores the illuminant alone, and the app shows a follow write once the session reports it.
 - **With the picker and on-photo controls:** the colour checker: its frame on the photo, the ΔE readout, Validate, Recompute and Accept, its settings kept in settings, and rows for what Accept writes. darktable closes the section on every `gui_update`, and opening it starts profiling (`_start_profiling_callback`: the module takes focus, turns on and frames the chart on the preview). So the group's open state there is the colour checker's, not only the panel's. Open until the colour checker is built: whether opening the group starts it, as in darktable, or a button does, and whether the group then stays closed after every change as darktable's does.
 - **Phase 3:** darktable's presets, the grey where it runs as built ([Design choices](#design-choices), Where the grey runs).

@@ -18,10 +18,10 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
-use apertrust_modules::exposure::Exposure;
-use apertrust_modules::{ControlValue, Mark, testing};
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::Value;
+use apertrust_tools::exposure::Exposure;
+use apertrust_tools::{ControlValue, Mark, testing};
 
 use super::*;
 use crate::history::{HistoryStep, StepId};
@@ -44,7 +44,7 @@ impl Random {
 /// command does.
 fn change(edit: &mut Edit, random: &mut Random) -> Wrote {
     let module = ["a", "b", "c"][random.below(3) as usize].to_owned();
-    let wrote = Wrote::Module(module.clone());
+    let wrote = Wrote::Tool(module.clone());
     match random.below(12) {
         0..=3 => {
             let value = ControlValue::Number(random.below(4) as f32);
@@ -93,7 +93,7 @@ fn tidy(edit: &Edit) -> Edit {
 fn write(history: &mut PhotoHistory, wrote: Wrote, at: &mut Instant, random: &mut Random) {
     let pick = random.below(3) as usize;
     let target = match &wrote {
-        Wrote::Module(module) => {
+        Wrote::Tool(module) => {
             let control = |control: &str| Target::Control {
                 module: module.clone(),
                 control: control.to_owned(),
@@ -678,7 +678,7 @@ fn with_b(edit: &Edit, x: f32) -> Edit {
 }
 
 fn module(id: &str) -> Wrote {
-    Wrote::Module(id.to_owned())
+    Wrote::Tool(id.to_owned())
 }
 
 /// A change of two modules is a step of each, in the order written, of its source and note,
@@ -739,7 +739,7 @@ fn a_batch_s_step_is_merged_into_by_none() {
     assert!(steps[0].batch.is_some());
     assert!(matches!(
         &steps[0].change,
-        Change::Entry(Entry::Module { module, .. }) if module == "exposure"
+        Change::Entry(Entry::Tool { tool: module, .. }) if module == "exposure"
     ));
     history.wrote(
         Some(exposure()),
@@ -1006,7 +1006,7 @@ fn a_cancelled_gesture_is_forgotten() {
 #[ignore = "a measurement, run on its own in release"]
 fn the_fact_s_budgets() {
     let image = testing::image();
-    let modules = apertrust_modules::MODULES;
+    let modules = apertrust_tools::TOOLS;
     for steps in [200, 1000] {
         let mut history = reopened(&Edit::default());
         let ev = |i: usize| -1.0 + (i % 300) as f32 * 0.01;
@@ -1142,8 +1142,8 @@ fn step_json(out: &mut String, step: &HistoryStep) {
             .map_or("null".to_owned(), |[a, b]| format!("[{a},{b}]"));
         write!(
             out,
-            r#"{{"module":"{}","enabled":{enabled},"controls":["#,
-            change.module
+            r#"{{"tool":"{}","enabled":{enabled},"controls":["#,
+            change.tool
         )
         .unwrap();
         for (index, control) in change.controls.iter().enumerate() {

@@ -19,10 +19,10 @@ apertrust-base = { workspace = true, features = ["cache", "folders", "log"] }
 apertrust-engine.workspace = true
 apertrust-export.workspace = true
 apertrust-library.workspace = true
-apertrust-modules.workspace = true
 apertrust-operations.workspace = true
 apertrust-plugin.workspace = true
 apertrust-raw.workspace = true
+apertrust-tools.workspace = true
 tracing.workspace = true
 # The adapters' kinds and backends `gpu` lists, as the engine's instance gives them.
 wgpu.workspace = true
@@ -33,7 +33,7 @@ apertrust-base = { workspace = true, features = ["build"] }
 
 [dev-dependencies]
 # Its `testing::Sample` module, for the flags' tests.
-apertrust-modules = { workspace = true, features = ["testing"] }
+apertrust-tools = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

@@ -143,7 +143,7 @@ use apertrust_base::settings::{
 };
 use apertrust_engine::session::ControlValue;
 use apertrust_engine::settings as engine;
-use apertrust_modules::{ControlKind, MODULES, Row, SettingRow};
+use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
 use apertrust_ui::components::{
     Channel, GridBarAction, GridPosition, Marker, ScopeView, Sort, ThumbnailSize,
 };
@@ -502,7 +502,7 @@ impl Settings {
 }
 
 /// The modules' settings (decision 29; `docs/pickers.md`, A tool's settings): each kept
-/// setting of [`apertrust_modules::settings::registry`], by its module and its id there,
+/// setting of [`apertrust_tools::settings::registry`], by its module and its id there,
 /// as the value its row (`Row::Setting`) shows and the picker's commands carry. Kept by
 /// the app as darktable keeps its darktablerc, never in an edit, and sent with
 /// `PickerCommand::On` and `Settings`. One `--conf` gives keeps its value for the run, as
@@ -607,10 +607,10 @@ impl ToolSettings {
 
 /// Each kept module setting: its module's id, its row and its declaration.
 fn kept() -> impl Iterator<Item = (&'static str, &'static SettingRow, &'static dyn Declared)> {
-    MODULES.iter().flat_map(|module| {
+    TOOLS.iter().flat_map(|module| {
         let id = module.definition().id;
         module.definition().rows().filter_map(move |row| match row {
-            Row::Setting(setting) => apertrust_modules::settings::setting(id, setting.id)
+            Row::Setting(setting) => apertrust_tools::settings::setting(id, setting.id)
                 .map(|declared| (id, setting, declared)),
             _ => None,
         })
@@ -865,7 +865,7 @@ pub struct ViewState {
 fn registries() -> Vec<&'static dyn Declared> {
     let engine = engine::registry::ALL.iter();
     let export = apertrust_export::settings::registry::ALL.iter();
-    let modules = apertrust_modules::settings::registry::ALL.iter();
+    let modules = apertrust_tools::settings::registry::ALL.iter();
     registry::ALL
         .iter()
         .chain(engine)
@@ -1375,7 +1375,7 @@ mod tests {
     /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
-        let modules = apertrust_modules::settings::registry::ALL.iter();
+        let modules = apertrust_tools::settings::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
         let reopen = LIBRARY_REOPEN_LAST.id;
         registry::ALL

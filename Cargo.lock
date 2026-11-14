@@ -272,9 +272,9 @@ dependencies = [
  "apertrust-display",
  "apertrust-engine",
  "apertrust-export",
- "apertrust-modules",
  "apertrust-operations",
  "apertrust-plugin",
+ "apertrust-tools",
  "apertrust-ui",
  "bytemuck",
  "chrono",
@@ -317,10 +317,10 @@ dependencies = [
  "apertrust-engine",
  "apertrust-export",
  "apertrust-library",
- "apertrust-modules",
  "apertrust-operations",
  "apertrust-plugin",
  "apertrust-raw",
+ "apertrust-tools",
  "clap",
  "directories",
  "pollster 1.0.1",
@@ -359,10 +359,10 @@ dependencies = [
  "apertrust-color",
  "apertrust-export",
  "apertrust-library",
- "apertrust-modules",
  "apertrust-operations",
  "apertrust-plugin",
  "apertrust-raw",
+ "apertrust-tools",
  "bytemuck",
  "chrono",
  "getrandom 0.4.3",
@@ -397,10 +397,10 @@ dependencies = [
  "apertrust-color",
  "apertrust-engine",
  "apertrust-export",
- "apertrust-modules",
  "apertrust-operations",
  "apertrust-plugin",
  "apertrust-raw",
+ "apertrust-tools",
  "base64",
  "clap",
  "flate2",
@@ -423,22 +423,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
-]
-
-[[package]]
-name = "apertrust-modules"
-version = "0.0.0"
-dependencies = [
- "apertrust-base",
- "apertrust-color",
- "apertrust-engine",
- "apertrust-golden",
- "apertrust-operations",
- "apertrust-plugin",
- "apertrust-raw",
- "apertrust-ui",
- "pollster 1.0.1",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -674,6 +658,22 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 1.2.0+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "apertrust-tools"
+version = "0.0.0"
+dependencies = [
+ "apertrust-base",
+ "apertrust-color",
+ "apertrust-engine",
+ "apertrust-golden",
+ "apertrust-operations",
+ "apertrust-plugin",
+ "apertrust-raw",
+ "apertrust-ui",
+ "pollster 1.0.1",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

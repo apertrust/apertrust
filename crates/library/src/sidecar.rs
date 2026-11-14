@@ -124,13 +124,13 @@ pub enum Newer {
     Version(u32),
     /// A module version above its definition's, or one that is no whole number, as
     /// written; its controls read by name.
-    ModuleVersion {
-        module: String,
+    ToolVersion {
+        tool: String,
         version: String,
         has: u32,
     },
     /// A module this build neither has nor has retired, left out.
-    Module(String),
+    Tool(String),
     /// A module whose `apertrust:enabled` this build cannot keep (decision 32): one it
     /// does not switch, or a value other than `true`, whose state a save would lose.
     Enabled(String),
@@ -145,24 +145,21 @@ impl fmt::Display for Newer {
                     "is version {version}, newer than this build's {COPIES_VERSION}"
                 )
             }
-            Newer::ModuleVersion {
-                module,
+            Newer::ToolVersion {
+                tool: module,
                 version,
                 has,
             } => write!(
                 f,
                 "holds {module} version {version}, newer than this build's {has}"
             ),
-            Newer::Module(module) => {
-                write!(
-                    f,
-                    "holds the module {module}, which this build does not have"
-                )
+            Newer::Tool(module) => {
+                write!(f, "holds the tool {module}, which this build does not have")
             }
             Newer::Enabled(module) => {
                 write!(
                     f,
-                    "turns the module {module} on, which this build does not switch"
+                    "turns the tool {module} on, which this build does not switch"
                 )
             }
         }
@@ -289,8 +286,8 @@ pub fn read_fingerprint(path: &Path) -> io::Result<String> {
 /// as the text the file holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
-    Module {
-        module: String,
+    Tool {
+        tool: String,
         /// Its `apertrust:moduleVersion` as written.
         version: Option<String>,
         /// The ids in `apertrust:kept`.
@@ -317,7 +314,7 @@ impl Entry {
     /// module, no parameter of an operation; a step's empty entry, the reset state.
     pub fn is_empty(&self) -> bool {
         match self {
-            Entry::Module {
+            Entry::Tool {
                 kept,
                 auto,
                 enabled,
@@ -332,7 +329,7 @@ impl Entry {
     /// text: modules first, then operations, each by its id.
     fn key(&self) -> (u8, &str) {
         match self {
-            Entry::Module { module, .. } => (0, module),
+            Entry::Tool { tool: module, .. } => (0, module),
             Entry::Operation { operation, .. } => (1, operation),
         }
     }
@@ -400,7 +397,7 @@ impl Document {
         let (modules, operations): (Vec<&Entry>, Vec<&Entry>) = self
             .entries
             .iter()
-            .partition(|entry| matches!(entry, Entry::Module { .. }));
+            .partition(|entry| matches!(entry, Entry::Tool { .. }));
         let list = |local: &str, entries: Vec<&Entry>| {
             Property::new(
                 Name::new("apertrust", NAMESPACE, local),
@@ -499,8 +496,8 @@ fn entry_node(entry: &Entry) -> Node {
         Property::simple(Name::new(prefix, namespace, local), text)
     };
     match entry {
-        Entry::Module {
-            module,
+        Entry::Tool {
+            tool: module,
             version,
             kept,
             auto,
@@ -574,8 +571,8 @@ fn entry(fields: &[Property]) -> Option<Entry> {
         }
     }
     if !module.is_empty() {
-        Some(Entry::Module {
-            module,
+        Some(Entry::Tool {
+            tool: module,
             version,
             kept,
             auto,
