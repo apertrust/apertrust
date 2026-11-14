@@ -752,6 +752,9 @@ history-modules =
        *[other] { $module } i jeszcze { $count } modułu
     }
 history-go-to-step = Przejście do kroku
+history-compress = Kompresja historii
+history-truncate = Przycięcie historii
+history-discard = Odrzucenie historii
 
 ## Sekcja Historia na karcie Historia panelu bocznego
 

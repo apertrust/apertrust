@@ -968,6 +968,11 @@ history-reset = Reset
 history-modules = { $module } and { $count } more
 # Going to a step in History, which Undo takes back and Redo puts back.
 history-go-to-step = Go to Step
+# Compress History, Truncate History and Discard History, which Undo takes back and Redo
+# puts back; the steps Discard History starts an unreadable history afresh with.
+history-compress = Compress History
+history-truncate = Truncate History
+history-discard = Discard History
 
 ## The History section in the side panel's History tab (docs/history.md)
 

@@ -296,7 +296,9 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
     let after = ids(history);
     match next {
         None => assert_eq!(moved, None, "{context}"),
-        Some(Move::GoTo) => assert!(moved.is_some(), "{context}"),
+        Some(Move::GoTo | Move::Compress | Move::Truncate | Move::DiscardHistory) => {
+            assert!(moved.is_some(), "{context}");
+        }
         Some(Move::Steps { first, count }) => {
             assert!(moved.is_some() && count > 0, "{context}");
             // Steps added put back or taken out move the default steps they kept with them.
@@ -325,6 +327,100 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
         }
     }
     moved
+}
+
+/// Over random histories of changes, some merged, batches, Undo and `GoTo`, Compress and
+/// Truncate leave what the photo shows as it was, at the end and at Original, wherever the
+/// end is past Original, among the default steps too, and keep the default steps whole; at
+/// end 0, and Discard History anywhere, leave no step, the default steps given again, the
+/// photo its defaults. Undo puts the log back as it was, its steps and its end, and Redo
+/// makes it again, each once.
+#[test]
+fn compress_truncate_and_discard_are_undone_and_redone_whole() {
+    let mut rewrites = [0; 3];
+    // How many rewrites had the end among the default steps, and at Original.
+    let (mut among, mut original) = (0, 0);
+    for seed in 1..=60 {
+        let mut random = Random(0x2545_f491_4f6c_dd1d ^ seed);
+        let defaults = if seed > 30 { DEFAULTS } else { &[] };
+        let mut history = reopened_with(&Edit::default(), defaults);
+        let mut edit = Edit::default();
+        let mut at = Instant::now();
+        for round in 0..8 {
+            for _ in 0..6 {
+                match random.below(4) {
+                    0 | 1 => {
+                        let wrote = change(&mut edit, &mut random);
+                        write(&mut history, wrote, &mut at, &mut random);
+                        history.complete(&edit, StepSource::You, None);
+                    }
+                    2 => {
+                        if let Some(undone) = history.undo(&edit) {
+                            edit = undone;
+                        }
+                    }
+                    _ => {
+                        let steps = history.log.steps();
+                        let at = random.below(steps.len() as u64 + 1) as usize;
+                        let step = at.checked_sub(1).map(|at| steps[at].id);
+                        if let Ok(Some(gone)) = history.go_to(&edit, step) {
+                            edit = gone;
+                        }
+                    }
+                }
+                edit.unapplied = history.unapplied(&edit);
+            }
+            let context = format!("seed {seed}, round {round}");
+            let (log, end) = (history.log.clone(), history.log.end());
+            let which = random.below(3) as usize;
+            let rewritten = match which {
+                0 => history.compress(&edit, defaults),
+                1 => history.truncate(&edit, defaults),
+                _ => history.discard(&edit, defaults),
+            };
+            let Some(rewritten) = rewritten else {
+                assert_eq!(history.log, log, "{context}");
+                continue;
+            };
+            rewrites[which] += 1;
+            let made = history.log.clone();
+            let what = [Move::Compress, Move::Truncate, Move::DiscardHistory][which];
+            assert_eq!(history.next(true), Some(what), "{context}");
+            match which {
+                0 | 1 if end > 0 => {
+                    if end < log.defaults() {
+                        among += 1;
+                    }
+                    assert_eq!(rewritten, log.fold(), "{context}");
+                    assert_eq!(made.fold_to(0), log.fold_to(0), "{context}");
+                    assert_eq!(made.defaults(), log.defaults(), "{context}");
+                }
+                _ => {
+                    if which < 2 {
+                        original += 1;
+                    }
+                    assert_eq!(made.defaults(), defaults.len(), "{context}");
+                    assert_eq!(made.end(), made.steps().len(), "{context}");
+                    assert_eq!(tidy(&rewritten), Edit::default(), "{context}");
+                }
+            }
+            // Undo: the log as it was; Redo: as the rewrite made it, its default steps' ids
+            // among it.
+            let undone = history.undo(&rewritten).expect("undone");
+            assert_eq!(history.log, log, "{context}");
+            assert_eq!(tidy(&undone), tidy(&log.fold()), "{context}");
+            assert_eq!(history.next(false), Some(what), "{context}");
+            let redone = history.redo(&undone).expect("redone");
+            assert_eq!(history.log, made, "{context}");
+            assert_eq!(redone, rewritten, "{context}");
+            edit = redone;
+        }
+    }
+    assert!(rewrites.iter().all(|&count| count > 0), "{rewrites:?}");
+    assert!(
+        among > 0 && original > 0,
+        "{among} among, {original} at Original"
+    );
 }
 
 /// Whether `end` is at the end of a change's steps: Original, or the step before it the
@@ -988,6 +1084,9 @@ fn json(history: &History) -> String {
             format!(r#"{{"Steps":{{"first":"{first}","count":{count}}}}}"#)
         }
         Some(Move::GoTo) => r#""GoTo""#.to_owned(),
+        Some(Move::Compress) => r#""Compress""#.to_owned(),
+        Some(Move::Truncate) => r#""Truncate""#.to_owned(),
+        Some(Move::DiscardHistory) => r#""DiscardHistory""#.to_owned(),
         None => "null".to_owned(),
     };
     write!(

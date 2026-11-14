@@ -749,6 +749,9 @@ history-modules =
        *[other] { $module } та ще { $count } модуля
     }
 history-go-to-step = Перехід до кроку
+history-compress = Стиснення історії
+history-truncate = Обрізання історії
+history-discard = Відкидання історії
 
 ## Розділ «Історія» на вкладці «Історія» бічної панелі
 

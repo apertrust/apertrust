@@ -1400,6 +1400,9 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
             Command::Undo,
             Command::Redo,
             Command::GoTo { step: None },
+            Command::Compress,
+            Command::Truncate,
+            Command::DiscardHistory,
             Command::Step {
                 source: StepSource::You,
                 note: None,
@@ -1416,7 +1419,7 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
     begun.recv_timeout(TEST_WAIT).expect("the decode begins");
     let events = driven.run(commands());
     let refused = failures(&events);
-    assert_eq!(refused.len(), 4, "{events:?}");
+    assert_eq!(refused.len(), 7, "{events:?}");
     assert!(refused.iter().all(|e| matches!(e, SessionError::NotLive)));
     assert!(histories(&events).is_empty());
     permit.send(()).unwrap();
@@ -1436,7 +1439,7 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
     assert_eq!(history(&opened).steps.len(), 1);
     let events = driven.run(commands());
     let refused = failures(&events);
-    assert_eq!(refused.len(), 4, "{events:?}");
+    assert_eq!(refused.len(), 7, "{events:?}");
     assert!(
         refused
             .iter()
@@ -2804,5 +2807,442 @@ fn a_move_made_again_on_a_newer_file_advances_the_clock_vector() {
         written.clocks(),
         theirs.clocks()
     );
+    remove(&path);
+}
+
+// -- Compress, Truncate and Discard History (9.8) -----------------------------------------
+
+/// The ids of `history`'s steps and its end.
+fn shown(history: &History) -> (Vec<StepId>, usize) {
+    let ids = history.steps.iter().map(|step| step.id).collect();
+    (ids, history.end)
+}
+
+/// The sidecar of `path` read back with `modules`, once every write is done: it holds the
+/// log as the session is to write it, the default steps not yet written left out, and the
+/// copy's clock vector, with no problem.
+fn assert_saved(driven: &Driven, path: &Path, modules: &[&dyn Module]) -> sidecar::Loaded {
+    driven.writes();
+    let read = sidecar::read(&sidecar::path_for(path), OPERATIONS, modules, &[]).unwrap();
+    let open = driven.engine.open.as_ref().unwrap();
+    assert_eq!(read.log, *open.history.written());
+    assert_eq!(read.clocks(), open.history.clocks());
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    read
+}
+
+/// Compress keeps, among the steps up to the end, each module's last, and drops the steps
+/// after the end: the edit as it was, nothing rendered, the file holding the steps kept
+/// and its clock vector advanced. Undo puts the log back as it was, its steps and its end,
+/// and Redo compresses it again, each saved. A log compressed already changes nothing.
+#[test]
+fn compress_keeps_each_module_s_last_step_and_undo_brings_the_log_back() {
+    let path = scratch("history-compress");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    let mut times = Times::new();
+    for value in [0.25, 0.5] {
+        let at = times.apart();
+        driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
+    }
+    driven.run_at(times.apart(), [amount(30.0, true)]);
+    driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(0.75), true)],
+    );
+    // The end on Soften's step, the third, Sample's last after it.
+    let ids = fold_ids(&driven);
+    driven.run([Command::GoTo { step: Some(ids[2]) }]);
+    driven.writes();
+    let edited = edit(&driven);
+    let clock = saved(&path).clocks()[0];
+    let compressed = driven.run([Command::Compress]);
+    assert_eq!(kinds(&compressed), ["values", "history"]);
+    let after = history(&compressed);
+    assert_eq!(shown(after), (vec![ids[1], ids[2]], 2));
+    assert_eq!((after.undo, after.redo), (Some(Move::Compress), None));
+    assert_eq!(edit(&driven), edited);
+    let read = assert_saved(&driven, &path, SAVING);
+    assert!(read.clocks()[0] > clock);
+    // Undo: every step back, the end where it was.
+    let undone = driven.run([Command::Undo]);
+    let back = history(&undone);
+    assert_eq!(shown(back), (ids.clone(), 3));
+    assert_eq!(
+        (back.undo, back.redo),
+        (Some(Move::GoTo), Some(Move::Compress))
+    );
+    assert_eq!(edit(&driven), edited);
+    assert_saved(&driven, &path, SAVING);
+    let redone = driven.run([Command::Redo]);
+    assert_eq!(shown(history(&redone)), (vec![ids[1], ids[2]], 2));
+    assert_saved(&driven, &path, SAVING);
+    // Nothing more to compress: no record, nothing written.
+    let again = driven.run([Command::Compress]);
+    assert!(histories(&again).is_empty(), "{again:?}");
+    assert!(driven.writes().is_empty());
+    remove(&path);
+}
+
+/// Truncate drops the steps after the end, the rest kept as they are; Undo brings them
+/// back, Redo drops them again, each saved. At Original it drops every step.
+#[test]
+fn truncate_drops_the_steps_after_the_end_and_undo_brings_them_back() {
+    let path = scratch("history-truncate");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    let mut times = Times::new();
+    for value in [0.25, 0.5, 0.75] {
+        let at = times.apart();
+        driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
+    }
+    let ids = fold_ids(&driven);
+    driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    let truncated = driven.run([Command::Truncate]);
+    let after = history(&truncated);
+    assert_eq!(shown(after), (vec![ids[0]], 1));
+    assert_eq!(after.undo, Some(Move::Truncate));
+    assert_eq!(brightness(&truncated), ControlValue::Number(0.25));
+    assert_saved(&driven, &path, SAVING);
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(shown(history(&undone)), (ids.clone(), 1));
+    assert_eq!(history(&undone).redo, Some(Move::Truncate));
+    assert_saved(&driven, &path, SAVING);
+    driven.run([Command::Redo]);
+    assert_saved(&driven, &path, SAVING);
+    // At Original, every step.
+    driven.run([Command::GoTo { step: None }]);
+    let emptied = driven.run([Command::Truncate]);
+    assert_eq!(shown(history(&emptied)), (vec![], 0));
+    assert_eq!(edit(&driven), Edit::default());
+    let read = assert_saved(&driven, &path, SAVING);
+    assert!(read.log.steps().is_empty());
+    remove(&path);
+}
+
+/// Compress right after Reset leaves no step: Reset's entries are all empty, and every
+/// module it reset has no other last step.
+#[test]
+fn compress_right_after_reset_leaves_an_empty_history() {
+    let path = scratch("history-compress-reset");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.run([amount(30.0, true)]);
+    driven.run([Command::Reset]);
+    let compressed = driven.run([Command::Compress]);
+    assert_eq!(shown(history(&compressed)), (vec![], 0));
+    assert_eq!(edit(&driven), Edit::default());
+    let read = assert_saved(&driven, &path, SAVING);
+    assert!(read.log.steps().is_empty());
+    // Undo brings back the steps and the Reset.
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(history(&undone).steps.len(), 3);
+    assert_eq!(edit(&driven), Edit::default());
+    remove(&path);
+}
+
+/// Soften beside darktable's default modules of [`DEFAULTS`].
+const DISCARDING: &[&dyn Module] = &[&Soften, &WhiteBalance, &Exposure, &ColourCalibration];
+
+/// Discard History clears the log and resets the edit, as going to Original and then
+/// Compress: the photo, with no history, is given its default steps again, the file
+/// holding no step until the first change. Undo brings every step back, the end where it
+/// was, and Redo discards again, each saved; reopened, the photo is given its default
+/// steps. On a photo with default steps alone never written, nothing.
+#[test]
+fn discard_history_gives_the_default_steps_again_and_undo_restores_the_log() {
+    let path = scratch("history-discard");
+    let mut driven = Driven::new(DISCARDING);
+    let opened = driven.open(&path);
+    let defaults = shown(history(&opened)).0;
+    assert_eq!(defaults.len(), 3);
+    let untouched = frame(&driven.gpu, &opened);
+    let nothing = driven.run([Command::DiscardHistory]);
+    assert!(histories(&nothing).is_empty(), "{nothing:?}");
+    assert!(driven.writes().is_empty());
+    let edited = driven.run([amount(30.0, true)]);
+    let steps = shown(history(&edited));
+    assert_eq!(steps.1, 4);
+    assert_saved(&driven, &path, DISCARDING);
+    let discarded = driven.run([Command::DiscardHistory]);
+    assert_eq!(kinds(&discarded), ["values", "history", "frame"]);
+    let after = history(&discarded);
+    assert_eq!(after.end, 3);
+    assert!((after.steps.iter()).all(|step| step.source == StepSource::Default));
+    assert!((after.steps.iter()).all(|step| !steps.0.contains(&step.id)));
+    assert_eq!((after.undo, after.redo), (Some(Move::DiscardHistory), None));
+    assert_eq!(softened(values(&discarded)), softened(values(&opened)));
+    assert!(frame(&driven.gpu, &discarded) == untouched);
+    // The file holds no step: the default steps go into it with the first change.
+    let read = assert_saved(&driven, &path, DISCARDING);
+    assert_eq!((read.log.steps().len(), read.log.end()), (0, 0));
+    // Undo: the log as it was, saved.
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(shown(history(&undone)), steps);
+    assert_eq!(history(&undone).redo, Some(Move::DiscardHistory));
+    assert!(frame(&driven.gpu, &undone) == frame(&driven.gpu, &edited));
+    assert_eq!(assert_saved(&driven, &path, DISCARDING).log.end(), 4);
+    let redone = driven.run([Command::Redo]);
+    assert_eq!(history(&redone).end, 3);
+    let read = assert_saved(&driven, &path, DISCARDING);
+    assert!(read.log.steps().is_empty());
+    // Reopened, a photo with no history: its default steps given again, nothing written.
+    let reopened = driven.open(&path);
+    let again = history(&reopened);
+    assert_eq!((again.steps.len(), again.end), (3, 3));
+    assert!((again.steps.iter()).all(|step| step.source == StepSource::Default));
+    let changed = driven.run([amount(20.0, true)]);
+    assert_eq!(history(&changed).end, 4);
+    assert_eq!(
+        assert_saved(&driven, &path, DISCARDING).log.steps().len(),
+        4
+    );
+    remove(&path);
+}
+
+/// An edit part of whose history cannot be read opens for viewing only; Discard History is
+/// the one command it takes: a fresh log of a step of each module the edit holds as read,
+/// sharing a batch, source You, noted `history-discard`, the end the last, `Opened` sent
+/// again before its values, editable, and the file written with the fresh log, which reads
+/// with no problem. One a newer Apertrust wrote refuses it.
+#[test]
+fn discard_history_starts_an_unreadable_history_afresh() {
+    let path = scratch("history-discard-unreadable");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.run([amount(30.0, true)]);
+    driven.writes();
+    let xml = std::fs::read_to_string(&sidecar).unwrap();
+    let damaged = xml.replacen(
+        r#"apertrust:source="you""#,
+        r#"apertrust:source="robot""#,
+        1,
+    );
+    std::fs::write(&sidecar, &damaged).unwrap();
+    let opened = driven.open(&path);
+    let Some(Event::Opened(photo)) = opened.first() else {
+        unreachable!()
+    };
+    let view_only = photo.view_only.as_ref().expect("view-only");
+    assert!(matches!(view_only.reason, sidecar::Reason::Unreadable(_)));
+    let discarded = driven.run([Command::DiscardHistory]);
+    assert!(failures(&discarded).is_empty(), "{discarded:?}");
+    let opened_at = (discarded.iter()).position(|e| matches!(e, Event::Opened(_)));
+    let values_at = (discarded.iter()).position(|e| matches!(e, Event::Values(_)));
+    assert!(
+        opened_at.is_some() && opened_at < values_at,
+        "{discarded:?}"
+    );
+    let Some(Event::Opened(photo)) = opened_at.map(|at| &discarded[at]) else {
+        unreachable!()
+    };
+    assert_eq!(photo.view_only, None);
+    let fresh = history(&discarded);
+    assert_eq!((fresh.steps.len(), fresh.end), (2, 2));
+    let batch = fresh.steps[0].batch;
+    assert!(batch.is_some());
+    assert!(fresh.steps.iter().all(|step| {
+        step.source == StepSource::You && step.note == Some(Note::discard()) && step.batch == batch
+    }));
+    let values = values(&discarded);
+    assert_eq!(softened(values), ControlValue::Number(30.0));
+    assert!(control(values, "sample", "brightness").available);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    let read = assert_saved(&driven, &path, SAVING);
+    assert_eq!(read.view_only(), None);
+    assert_eq!(read.edit, edit(&driven));
+    // Editable from then on.
+    let changed = driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+    assert!(failures(&changed).is_empty(), "{changed:?}");
+    assert_eq!(history(&changed).end, 3);
+    assert_saved(&driven, &path, SAVING);
+    remove(&path);
+
+    // A newer build's edit: refused, nothing written.
+    let path = scratch("history-discard-newer");
+    let sidecar = sidecar::path_for(&path);
+    let xml = brightened("0.9.0").replace(
+        r#"apertrust:moduleVersion="1""#,
+        r#"apertrust:moduleVersion="2""#,
+    );
+    std::fs::write(&sidecar, &xml).unwrap();
+    driven.open(&path);
+    let refused = driven.run([Command::DiscardHistory]);
+    assert!(
+        matches!(failures(&refused)[..], [SessionError::ViewOnly(_)]),
+        "{refused:?}"
+    );
+    assert!(!refused.iter().any(|e| matches!(e, Event::Opened(_))));
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml);
+    remove(&path);
+}
+
+/// A Compress not yet saved when another program added a step: the newer log keeps the
+/// steps it took out, so it is not kept, its end stands and the person is told; the
+/// session's log is then the newer one.
+#[test]
+fn a_compress_not_yet_saved_over_another_program_s_step_is_not_kept_and_told() {
+    let path = scratch("history-compress-newer");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    two_steps(&mut driven);
+    add_elsewhere(&path, 40.0);
+    let compressed = driven.run([Command::Compress]);
+    assert_eq!(history(&compressed).steps.len(), 1);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(
+        matches!(failures(&taken)[..], [SessionError::MoveNotKept { .. }]),
+        "{taken:?}"
+    );
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (3, 3));
+    assert_eq!(softened(values(&taken)), ControlValue::Number(40.0));
+    remove(&path);
+}
+
+/// Compress and Truncate with the end among the default steps keep those after it, so the
+/// modules darktable leaves off until its workflow applies them stay not applied: nothing
+/// is rendered, and the file holds the default steps at that end.
+#[test]
+fn compress_and_truncate_among_the_default_steps_change_nothing_shown() {
+    let path = scratch("history-compress-defaults");
+    let mut driven = Driven::new(DISCARDING);
+    let opened = driven.open(&path);
+    let defaults = shown(history(&opened)).0;
+    driven.run([amount(30.0, true)]);
+    let first = driven.run([Command::GoTo {
+        step: Some(defaults[0]),
+    }]);
+    assert!(!on(&first, "exposure"));
+    for command in [Command::Compress, Command::Truncate] {
+        let rewritten = driven.run([command]);
+        assert_eq!(kinds(&rewritten), ["values", "history"], "{rewritten:?}");
+        assert!(!on(&rewritten, "exposure") && !on(&rewritten, "channelmixerrgb"));
+        assert_eq!(shown(history(&rewritten)), (defaults.clone(), 1));
+        driven.run([Command::Undo]);
+    }
+    driven.run([Command::Redo]);
+    let read = assert_saved(&driven, &path, DISCARDING);
+    assert_eq!((read.log.steps().len(), read.log.end()), (3, 1));
+    assert_eq!(read.edit, edit(&driven));
+    remove(&path);
+}
+
+/// Discard History on an unreadable history whose end lies among the default steps: the
+/// fresh log begins with a new photo's default steps, those of the modules not applied
+/// after the end, so nothing changes on screen and Original is the untouched photo; with
+/// default steps alone, the file is written with no step.
+#[test]
+fn discard_history_afresh_keeps_the_modules_not_applied() {
+    let path = scratch("history-discard-unreadable-defaults");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(DISCARDING);
+    let opened = driven.open(&path);
+    let defaults = shown(history(&opened)).0;
+    driven.run([amount(30.0, true)]);
+    driven.run([Command::GoTo {
+        step: Some(defaults[0]),
+    }]);
+    driven.writes();
+    let xml = std::fs::read_to_string(&sidecar).unwrap();
+    let damaged = xml.replacen(
+        r#"apertrust:source="you""#,
+        r#"apertrust:source="robot""#,
+        1,
+    );
+    assert_ne!(damaged, xml);
+    std::fs::write(&sidecar, &damaged).unwrap();
+    let viewed = driven.open(&path);
+    assert!(matches!(viewed.first(), Some(Event::Opened(p)) if p.view_only.is_some()));
+    let discarded = driven.run([Command::DiscardHistory]);
+    assert!(failures(&discarded).is_empty(), "{discarded:?}");
+    // The same edit, the same frame: nothing rendered.
+    assert_eq!(kinds(&discarded), ["values", "history"], "{discarded:?}");
+    assert!(!on(&discarded, "exposure") && !on(&discarded, "channelmixerrgb"));
+    let fresh = history(&discarded);
+    assert_eq!((fresh.steps.len(), fresh.end), (3, 1));
+    assert!((fresh.steps.iter()).all(|step| step.source == StepSource::Default));
+    let read = assert_saved(&driven, &path, DISCARDING);
+    assert!(read.log.steps().is_empty());
+    remove(&path);
+}
+
+/// A Compress Undo took back, then a `GoTo` and a change dropping a step the file holds,
+/// is no rewrite not yet saved: another program's step taken in tells nothing.
+#[test]
+fn a_compress_undone_is_not_told_when_a_newer_file_is_taken_in() {
+    let path = scratch("history-compress-undone-newer");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    let mut times = Times::new();
+    for value in [0.25, 0.5, 0.75] {
+        let at = times.apart();
+        driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
+    }
+    let ids = fold_ids(&driven);
+    driven.run([Command::Compress]);
+    driven.run([Command::Undo]);
+    driven.run([Command::GoTo { step: Some(ids[0]) }]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    let after = history(&taken);
+    assert_eq!((after.steps.len(), after.end), (3, 3));
+    assert_eq!(after.steps[0].id, ids[0]);
+    remove(&path);
+}
+
+/// Another program's file part of whose history cannot be read, found before a write, makes
+/// the photo view-only; nothing is written over it until Discard History, whose write is
+/// compared with that file, not the one before it: the fresh log written, the photo
+/// editable from then on, nothing taken in again.
+#[test]
+fn discard_history_writes_over_an_unreadable_file_taken_in() {
+    let path = scratch("history-discard-unreadable-newer");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    add_elsewhere(&path, 40.0);
+    let xml = std::fs::read_to_string(&sidecar).unwrap();
+    let damaged = xml.replacen(
+        r#"apertrust:source="you""#,
+        r#"apertrust:source="robot""#,
+        1,
+    );
+    assert_ne!(damaged, xml);
+    std::fs::write(&sidecar, &damaged).unwrap();
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert!(matches!(taken.first(), Some(Event::Opened(p)) if p.view_only.is_some()));
+    // View-only: no change, and nothing written over the file.
+    let refused = driven.run([set("brightness", ControlValue::Number(1.0), true)]);
+    assert!(matches!(
+        failures(&refused)[..],
+        [SessionError::ViewOnly(_)]
+    ));
+    assert!(driven.writes().is_empty());
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), damaged);
+    // Discard History: written at once, the photo editable.
+    let discarded = driven.run([Command::DiscardHistory]);
+    assert!(failures(&discarded).is_empty(), "{discarded:?}");
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    assert!(driven.engine.newer_file(false).is_empty());
+    let read = assert_saved(&driven, &path, SAVING);
+    assert_eq!(read.view_only(), None);
+    assert_eq!(softened(values(&discarded)), ControlValue::Number(40.0));
+    let changed = driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+    assert!(failures(&changed).is_empty(), "{changed:?}");
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
     remove(&path);
 }

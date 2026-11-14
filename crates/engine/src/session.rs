@@ -49,7 +49,9 @@
 //! several sharing a batch, kept in memory for the photo open (decision 78,
 //! [`crate::history`]), which [`Command::Undo`] and [`Command::Redo`] move through,
 //! darktable's undo records first, a batch whole, and [`Command::GoTo`] moves the end of;
-//! [`Command::Step`] makes several commands one change of its source and note. The client is
+//! [`Command::Compress`], [`Command::Truncate`] and [`Command::DiscardHistory`] rewrite it,
+//! each an undo record of its own; [`Command::Step`] makes several commands one change of
+//! its source and note. The client is
 //! told it as [`Event::History`]. What is saved is the log, in the sidecar's version 2, with
 //! its end, so reopening the photo brings Undo and Redo back. Before each write the writer
 //! compares the file's size and modified time with those the session last read or wrote:
@@ -60,7 +62,8 @@
 //! read, opens for viewing only (decisions 43 and 48, [`sidecar::ViewOnly`]): it renders
 //! what this build reads, [`Photo::view_only`] says why and which build wrote the edit, no
 //! control is reported available, every command that would change the edit is refused,
-//! and its file is never written.
+//! and its file is never written; but where it was for a [`sidecar::Problem`],
+//! [`Command::DiscardHistory`] starts its log afresh from the edit as read, which ends it.
 //!
 //! Once a client asks for the scopes ([`Command::Scopes`], decision 19), each frame is
 //! counted on the GPU ([`crate::scopes`]) right after its copy into the display buffer,
@@ -257,6 +260,34 @@ pub enum Command {
     /// in the log is refused ([`SessionError::UnknownStep`]); the end where it is already
     /// changes nothing. The edit then saves as a completed change does.
     GoTo { step: Option<StepId> },
+    /// Compress History, darktable's compress history stack (decision 78): every default
+    /// step kept; among the person's steps up to the end, each module's last kept with its
+    /// id, clock, source, note and batch, one whose entry is empty dropped, Reset's among
+    /// them; their steps after the end dropped. It makes no step, the end is then the last
+    /// step kept up to it, and the photo shows what it showed, at the end and at Original.
+    /// At end 0 every step goes, and the log, with no step, is given the default steps
+    /// again, as a new photo is, the file written with none. A change not
+    /// yet a step is made one first. Undo puts the log back as it was, Redo compresses it
+    /// again; one that leaves the log as it is changes nothing. The edit then saves as a
+    /// completed change does.
+    Compress,
+    /// Truncate History, darktable's Ctrl-click on compress: the person's steps after the end
+    /// dropped, every step up to it and the default steps after it kept as they are, all of
+    /// them at end 0, as [`Command::Compress`] otherwise.
+    Truncate,
+    /// Discard History, darktable's discard: the history cleared and the edit reset, as
+    /// going to Original and then [`Command::Compress`] does, one undo record that Undo
+    /// takes back while the photo is open. The photo, with no history, is given its default
+    /// steps again, as a new photo is, the file written with no step until the first
+    /// change. On a photo open for viewing only because of a [`sidecar::Problem`]
+    /// ([`sidecar::Reason::Unreadable`]), the one command on the edit taken: the log
+    /// starts afresh, a new photo's default steps, then a step of each module the edit
+    /// holds as far as it was read, sharing a batch, source You, noted `history-discard`
+    /// ([`Note::discard`]), the end the last, a module not applied left so; the photo is
+    /// then editable, `Opened` sent again, and the file written with the fresh log, what it
+    /// held that could not be read dropped with it. Refused on one a newer Apertrust wrote
+    /// ([`SessionError::ViewOnly`]).
+    DiscardHistory,
     /// Several commands on the edit as one change of `source` with `note` (decision 78), a
     /// history step of each module they write, in the order written, sharing a batch where
     /// there are several, as the app sends its changes of several commands and an assistant
@@ -896,8 +927,10 @@ pub enum SessionError {
     },
     /// Another program moved the end of the history of the live photo's sidecar at `path`
     /// or dropped part of it, so the session's Undo, Redo or Go to since its last save is
-    /// not kept: the other's end stands (`docs/history.md`, Behaviour).
-    #[error("another program changed the history in {}: the last Undo, Redo or Go to was not kept", path.display())]
+    /// not kept: the other's end stands (`docs/history.md`, Behaviour). So is a Compress,
+    /// a Truncate or a Discard History not yet saved: the other's log keeps what it took
+    /// out.
+    #[error("another program changed the history in {}: the last Undo, Redo, Go to, Compress, Truncate or Discard History was not kept", path.display())]
     MoveNotKept { path: PathBuf },
     /// Another program kept changing the live photo's sidecar while the photo closed, each
     /// write the session made finding it changed again: the edit's steps since its last save
@@ -2599,11 +2632,23 @@ impl Engine {
                     self.clear_hold = Some(hold);
                     Ok(())
                 }
-                command => self.apply_edit(command, at).map(|effect| {
-                    render |= effect.render;
-                    save |= effect.save;
-                    cancelled |= effect.cancelled;
-                }),
+                command => {
+                    let viewing = self.open.as_ref().is_some_and(|o| o.view_only.is_some());
+                    let applied = self.apply_edit(command, at).map(|effect| {
+                        render |= effect.render;
+                        save |= effect.save;
+                        cancelled |= effect.cancelled;
+                    });
+                    // Discard History started a view-only edit's log afresh: `Opened` again,
+                    // editable, before its values.
+                    if let Some(open) = &self.open
+                        && viewing
+                        && open.view_only.is_none()
+                    {
+                        events.push(Event::Opened(open.photo.clone()));
+                    }
+                    applied
+                }
             };
             match result {
                 Ok(()) => {
@@ -2696,8 +2741,12 @@ impl Engine {
         if self.opening.is_some() && edits {
             return Err(SessionError::NotLive);
         }
+        // Discard History is taken on an edit part of whose history cannot be read, never
+        // on one a newer Apertrust wrote (decision 78).
         if let Some(view_only) = self.open.as_ref().and_then(|open| open.view_only.as_ref())
             && edits
+            && !(command == Command::DiscardHistory
+                && matches!(view_only.reason, sidecar::Reason::Unreadable(_)))
         {
             return Err(SessionError::ViewOnly(view_only.clone()));
         }
@@ -2836,6 +2885,9 @@ impl Engine {
             Command::Undo => return self.undo(false),
             Command::Redo => return self.undo(true),
             Command::GoTo { step } => return self.go_to(step),
+            Command::Compress => return self.rewrite(history::Rewrite::Compress),
+            Command::Truncate => return self.rewrite(history::Rewrite::Truncate),
+            Command::DiscardHistory => return self.rewrite(history::Rewrite::Discard),
             Command::Step { commands, .. } => return self.apply_step(commands),
             Command::Open(_)
             | Command::Close
@@ -2962,8 +3014,9 @@ impl Engine {
         {
             // A log of default steps alone, never in the file, waits for the first change
             // (decision 78): handed over as one the file holds, answered and not written,
-            // wherever its end.
-            let held = if open.history.unwritten() {
+            // wherever its end; but written with no step where it took the place of steps
+            // the file may hold, by Compress, Truncate or Discard History.
+            let held = if open.history.unwritten() && !open.history.cleared() {
                 true
             } else {
                 open.history.handed();
@@ -3140,7 +3193,8 @@ impl Engine {
         let before = open.edit.clone();
         if let Some(view_only) = loaded.view_only() {
             tracing::warn!(target: "pipe", "{name} changed, now for viewing only: {view_only}");
-            let unsaved = (open.history.base() != *base && !open.history.unwritten())
+            let unsaved = (open.history.base() != *base
+                && (!open.history.unwritten() || open.history.cleared()))
                 || !history::clamp_only(open, &self.modules);
             if unsaved {
                 events.push(Event::Failed(SessionError::NotSaved {
@@ -3150,6 +3204,17 @@ impl Engine {
                 }));
             }
             let clocks = loaded.clocks().to_vec();
+            // Part of its history cannot be read: the file the writer compares from now on,
+            // and lays Discard History's fresh log on, the only write it takes while
+            // view-only. A newer build's is never written, so the stamp before it stays.
+            if matches!(view_only.reason, sidecar::Reason::Unreadable(_)) {
+                self.writer
+                    .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
+                let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
+                open.file = loaded.file;
+                open.file.photo = photo;
+                open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+            }
             open.history = history::PhotoHistory::read(loaded.log, clocks, &[]);
             open.edit = loaded.edit;
             open.view_only = Some(view_only.clone());
@@ -4075,15 +4140,16 @@ impl Open {
     }
 
     /// The sidecar as `build` writes it: the log and its end, with the copy's clock vector,
-    /// laid on the file as read ([`sidecar::log_xml`]).
+    /// laid on the file as read ([`sidecar::log_xml`]); no step for default steps alone not
+    /// yet written.
     fn xml(
         &self,
         operations: &[&'static dyn Operation],
         modules: &[&'static dyn Module],
         build: &str,
     ) -> String {
-        let (log, clocks) = (self.history.log(), self.history.clocks());
-        sidecar::log_xml(&self.file, log, clocks, (operations, modules), build)
+        let (log, clocks) = (self.history.written(), self.history.clocks());
+        sidecar::log_xml(&self.file, &log, clocks, (operations, modules), build)
     }
 
     /// Follows the gesture under way through `command`, a change to the edit about to
