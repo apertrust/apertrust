@@ -57,7 +57,7 @@ Apertrust never reorders the processing (principles, What we will not build; [00
 - **Every section can be reordered on screen, processing modules included.** A tab starts in darktable's order, the last module at the top, and keeps it until the person moves something. This departs from darktable, whose drag of a processing module's header changes the pipeline order (`src/develop/imageop.c`); Apertrust's changes only what is shown. A utility section's drag is darktable's own (`src/libs/lib.c`).
 - **Guaranteed three ways:** the layout lives in the app's `Shell` and its settings, and no session command carries it; the engine never depends on the app; and `pipeline::plan` sorts instances by their manifest's slot whatever order it gets them in. Tested: a move, a float and a dock send no command, and the sidecar, history and render stay byte for byte the same.
 - **So the departure is never misread:** a processing module's drag says "Moves it in this tab only. Processing order stays fixed." under the lifted header; Ctrl+Shift with the drag, darktable's gesture, does what a plain drag does; the side panel's ⋮ has **Processing Order**, checked while the tab's processing modules are in pipeline order, which sorts them back among the places they hold, utilities and pins untouched.
-- **Layout moves are not edits:** no step in the edit's history ([0078](0078-undo-redo-and-the-edits-history.md)), never undone by Undo. The ways back are the opposite move, Processing Order, the ⋮'s Reset Tab (its two lists removed from settings, so its defaults apply again), Dock All Floating Panels, and from Phase 3 Reset Workspace.
+- **Layout moves are not edits:** no step in the edit's history ([0078](0078-undo-redo-and-the-edits-history.md)), never undone by Undo. The ways back are the opposite move, Processing Order, the ⋮'s Reset Tab, Dock All Floating Panels, and from Phase 3 Reset Workspace. Reset Tab puts the tab back as it shipped: its two lists are removed from settings, so its defaults apply again, and a section it brings back leaves any other tab whose defaults lack it, so a move out of the tab is undone while a section shipped in several tabs, Scopes, stays in each; a section the reset takes out of the tab and no other tab holds goes to its default place, as a new section does.
 
 ### Dragging a header
 
@@ -88,7 +88,7 @@ Apertrust never reorders the processing (principles, What we will not build; [00
 ### Another tab
 
 - **A drop on a tab's icon** puts a processing module at its pipeline place among the tab's processing modules, by its nearest neighbour there; a utility at the top of the scrolling list; unpinned. The spring-loaded tab places it exactly.
-- **A move never copies:** the section leaves the tab it was dragged from, never its last tab in Edit. A section in several tabs, such as Scopes, moves out of the tab it was dragged from only.
+- **A move never copies:** the section leaves the tab it was dragged from and lands in another, so a module whose only tab that was can move as any section can, and every module stays in a tab of Edit. A section in several tabs, such as Scopes, moves out of the tab it was dragged from only.
 - **Any section in any tab:** the side panel draws every tab's sections by id through one dispatcher (a module, Browse, Scopes, History, later the rest). `reveal`, View › Browse's "first tab holding Browse" and the Scopes counts follow the layout, not the constants: Scopes are counted whenever they are shown and open, in a tab or floating.
 
 ### Floating
