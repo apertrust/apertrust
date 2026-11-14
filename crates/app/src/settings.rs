@@ -1912,7 +1912,7 @@ size = [1280, 800]
     /// file keeps its own; the others change as ever.
     #[test]
     fn a_tool_setting_conf_gives_keeps_its_value_for_the_run() {
-        let folder = Folder::new("module-settings-conf");
+        let folder = Folder::new("tool-settings-conf");
         let text = "version = 1\n[tools.exposure]\nlightness = 30.0\n";
         std::fs::write(folder.settings(), text).expect("written");
         let overrides = conf(&["tools.exposure.area_mode=measure"]).expect("read");
