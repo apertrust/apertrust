@@ -2,7 +2,7 @@
 
 ## Context
 
-In what order do operations run, and which run on a photo nobody has edited? darktable lets users reorder modules and has several order lists; Apertrust keeps one fixed order ([0034](0034-layers-masked-module-instances-in-a-fixed-order.md)) and mirrors darktable's processing in the first pass ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)), so that an unedited photo renders as darktable renders it.
+In what order do operations run, and which run on a photo nobody has edited? darktable lets users reorder modules and has several order lists; Apertrust keeps one fixed order ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)) and mirrors darktable's processing in the first pass ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)), so that an unedited photo renders as darktable renders it.
 
 ## Decision
 
@@ -29,9 +29,9 @@ In what order do operations run, and which run on a photo nobody has edited? dar
 | agx | working space 45.5 | darktable's scene-referred default |
 | colorout | display 70 | sRGB |
 
-Every other operation runs only while a module sets it ([0028](0028-modules-bound-to-operations.md), [0032](0032-modules-off-until-first-touched.md)); colour balance rgb, the tone equalizer and the rest are off on a new photo, as in darktable. A test holds the enabled set to exactly these nine.
+Every other operation runs only while a module sets it ([0028](0028-tools-bound-to-operations.md), [0032](0032-tools-off-until-first-touched.md)); colour balance rgb, the tone equalizer and the rest are off on a new photo, as in darktable. A test holds the enabled set to exactly these nine.
 
-**The chain is linear** until layers make it a graph ([0034](0034-layers-masked-module-instances-in-a-fixed-order.md)). Per-pixel runs fuse between spatial and whole-image passes ([0008](0008-a-gpu-resident-fp32-pipeline-on-wgpu.md)); at darktable's place the tone equalizer's mask passes make one break, after exposure.
+**The chain is linear** until layers make it a graph ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)). Per-pixel runs fuse between spatial and whole-image passes ([0008](0008-a-gpu-resident-fp32-pipeline-on-wgpu.md)); at darktable's place the tone equalizer's mask passes make one break, after exposure.
 
 ## Options considered
 

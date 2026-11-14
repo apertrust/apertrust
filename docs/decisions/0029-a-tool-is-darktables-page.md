@@ -1,4 +1,4 @@
-# 0029. A module is darktable's page
+# 0029. A tool is darktable's page
 
 ## Context
 

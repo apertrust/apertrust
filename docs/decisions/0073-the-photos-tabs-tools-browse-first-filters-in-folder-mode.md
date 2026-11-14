@@ -1,4 +1,4 @@
-# 0073. The Photos tab's modules: Browse first, filters in folder mode
+# 0073. The Photos tab's tools: Browse first, filters in folder mode
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 ## Context
 
-Operations need facts about the camera beyond the mosaic: a DNG's colour matrix, the camera's name and ISO to find a noise profile, the lens corrections a raw carries, the camera's white balance presets. darktable reads these in its own ways and matches its data files by its own spellings. Where do they come from, in what form, and who reads them, when operations and modules may not depend on each other ([0028](0028-modules-bound-to-operations.md))?
+Operations need facts about the camera beyond the mosaic: a DNG's colour matrix, the camera's name and ISO to find a noise profile, the lens corrections a raw carries, the camera's white balance presets. darktable reads these in its own ways and matches its data files by its own spellings. Where do they come from, in what form, and who reads them, when operations and modules may not depend on each other ([0028](0028-tools-bound-to-operations.md))?
 
 ## Decision
 

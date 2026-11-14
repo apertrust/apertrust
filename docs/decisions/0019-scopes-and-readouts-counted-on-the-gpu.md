@@ -2,7 +2,7 @@
 
 ## Context
 
-The Scopes section shows what the viewport's frame holds (a histogram, a waveform, an RGB parade, a vectorscope, what clips), and some module panels draw data the engine computes during rendering, the tone equalizer's mask histogram first. Whole-image results stay on the GPU ([0015](0015-whole-image-passes.md)), the engine thread never waits on the GPU ([0017](0017-threads-and-the-engines-session.md)), and modules have no engine types ([0028](0028-modules-bound-to-operations.md)). How are these counted and handed to a client?
+The Scopes section shows what the viewport's frame holds (a histogram, a waveform, an RGB parade, a vectorscope, what clips), and some module panels draw data the engine computes during rendering, the tone equalizer's mask histogram first. Whole-image results stay on the GPU ([0015](0015-whole-image-passes.md)), the engine thread never waits on the GPU ([0017](0017-threads-and-the-engines-session.md)), and modules have no engine types ([0028](0028-tools-bound-to-operations.md)). How are these counted and handed to a client?
 
 ## Decision
 
@@ -37,4 +37,4 @@ The Scopes section shows what the viewport's frame holds (a histogram, a wavefor
 ## Consequences
 
 - On the M4 at 2400×1600 the count takes 0.64 to 0.67 ms of GPU time with the totals or histogram, 1.25 ms with the waveform.
-- Open: scopes and readouts of a zoomed viewport, which need a small whole-image pipe; a readout with an argument (the cursor); how a reading drives an Auto. A reading over an area is a picker's, the engine's own reduction rather than an operation's readout, read back through the same staging pair ([0079](0079-colour-pickers-one-api-for-modules-and-the-colour-picker.md)), which also restricts the scopes' count to the Colour picker's selection on request.
+- Open: scopes and readouts of a zoomed viewport, which need a small whole-image pipe; a readout with an argument (the cursor); how a reading drives an Auto. A reading over an area is a picker's, the engine's own reduction rather than an operation's readout, read back through the same staging pair ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)), which also restricts the scopes' count to the Colour picker's selection on request.
