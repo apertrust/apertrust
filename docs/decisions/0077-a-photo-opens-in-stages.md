@@ -2,9 +2,9 @@
 
 ## Context
 
-Opening a photo is one step on the engine thread: the raw decoded (135 to 245 ms at 61 MP on the M4), uploaded, its sidecar read, its kernels compiled (38 to 303 ms), its first frame rendered (302 to 388 ms for the 61 MP Sony 7R V). Until all of it is done the central panel says "Opening …" and the side panel shows every module at its defaults, drawn disabled; `Opened`, `Values` and the first `Frame` then come together. On WARP the first open compiles the viewport's kernels in 0.9 s on a Ryzen 7 8845HS ([0080](0080-workgroup-memory-written-before-it-is-read-and-not-zeroed.md)).
+Opening a photo is one step on the engine thread: the raw decoded (135 to 245 ms at 61 MP on the M4), uploaded, its sidecar read, its kernels compiled (38 to 303 ms), its first frame rendered (302 to 388 ms for the 61 MP Sony 7R V). Until all of it is done the central panel says "Opening …" and the side panel shows every tool at its defaults, drawn disabled; `Opened`, `Values` and the first `Frame` then come together. On WARP the first open compiles the viewport's kernels in 0.9 s on a Ryzen 7 8845HS ([0080](0080-workgroup-memory-written-before-it-is-read-and-not-zeroed.md)).
 
-Opening should feel instant, in three stages: at once a picture of the photo, within milliseconds its module values, then the live frame. That raises four questions:
+Opening should feel instant, in three stages: at once a picture of the photo, within milliseconds its tool values, then the live frame. That raises four questions:
 
 - how the picture and the early values reach clients, within decision 59's facts and notices;
 - what the session does with an edit before the pipeline is live;
@@ -19,7 +19,7 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 
 | Stage | When | Central panel | Side panel | Events |
 | --- | --- | --- | --- | --- |
-| 1. The picture | The click's frame, then within tens of milliseconds | The best picture in hand, its own shape fitted to the room, unmarked | Every module at its defaults, drawn disabled, as now | `OpenPreview` |
+| 1. The picture | The click's frame, then within tens of milliseconds | The best picture in hand, its own shape fitted to the room, unmarked | Every tool at its defaults, drawn disabled, as now | `OpenPreview` |
 | 2. The values | Milliseconds after the `Open` | The same picture, in the place the live frame will cover | The photo's values from its sidecar, drawn disabled | `Opened`, `Values { live: false }` |
 | 3. Live | Once the raw is decoded, uploaded and rendered | The live frame, in one swap, the picture fading out over it in 120 ms unless the system asks for reduced motion; then scopes | The values, enabled | `Values { live: true }`, then `Frame` |
 

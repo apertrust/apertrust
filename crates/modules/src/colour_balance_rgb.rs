@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Colour balance RGB (`docs/modules/colour-balance-rgb.md`): darktable's color
+//! Colour balance RGB (`docs/tools/colour-balance-rgb.md`): darktable's color
 //! balance rgb as the user edits with it, in the first pass (decision 2): darktable's
 //! page, its controls in `gui_init`'s order under its labels.
 //!
@@ -39,7 +39,7 @@
 //! has them; the renderer draws a quad once what it runs is built. Left out until the renderer
 //! can draw them: the luminance
 //! ranges' graph and the fall-offs' and the mask fulcrum's mask display; and the mask
-//! preview's settings, which are the app's (`docs/modules/README.md`, rule 12).
+//! preview's settings, which are the app's (`docs/tools/README.md`, rule 12).
 
 use apertrust_plugin::{ImageContext, Value};
 
@@ -522,7 +522,7 @@ mod tests {
     const UNIT: (f32, f32) = (0.0, 1.0);
 
     /// darktable's color balance rgb sliders (`src/iop/colorbalancergb.c`, the
-    /// params and `gui_init`), in its parameters' units: `docs/modules/colour-balance-rgb.md`'s
+    /// params and `gui_init`), in its parameters' units: `docs/tools/colour-balance-rgb.md`'s
     /// slider table.
     const DARKTABLE: [DarktableSlider; 32] = [
         degrees("hue_angle", (-180.0, 180.0)),

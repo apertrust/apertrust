@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The raw.pixls.us corpus for the rows that run locally (`docs/modules/README.md`, Test
+//! The raw.pixls.us corpus for the rows that run locally (`docs/tools/README.md`, Test
 //! images), with `APERTRUST_RAW_CORPUS` naming it: each raw the pipeline takes, decoded
 //! and uploaded, and benches over them. A test file includes it after `common` with
 //! `mod corpus;`.

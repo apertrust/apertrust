@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Highlight reconstruction's invariants (`docs/modules/highlight-reconstruction.md`,
+//! Highlight reconstruction's invariants (`docs/tools/highlight-reconstruction.md`,
 //! Invariants), one test per row, each named after its row: K0 to K3, the rows a
 //! first-pass table has (decision 22) for a module over an operation every raw runs, so
 //! with no first step. The small raw, which clips in a corner, runs on CI's software GPUs,

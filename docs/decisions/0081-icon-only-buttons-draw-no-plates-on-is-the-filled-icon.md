@@ -2,7 +2,7 @@
 
 ## Context
 
-Buttons with words show hover and press on a plate (`button`, `button_hover`, `button_pressed`), and the bars' quiet buttons show one only while touched. A module's header has icon buttons 14 points wide, a control high, 4 points apart, and a plate that narrow under the pointer reads as a sliver, not a button; a plate or a box for On beside plate-free neighbours reads as a different control. The question is how an icon-only button shows hover, press and On, the same way everywhere.
+Buttons with words show hover and press on a plate (`button`, `button_hover`, `button_pressed`), and the bars' quiet buttons show one only while touched. A tool's header has icon buttons 14 points wide, a control high, 4 points apart, and a plate that narrow under the pointer reads as a sliver, not a button; a plate or a box for On beside plate-free neighbours reads as a different control. The question is how an icon-only button shows hover, press and On, the same way everywhere.
 
 ## Decision
 

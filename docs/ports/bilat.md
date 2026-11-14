@@ -22,7 +22,7 @@ Algorithmically, by mode:
 - **Local laplacian filter** (Paris, Hasinoff and Kautz's, as darktable implements it with Aubry's fast approximation): the lightness of CIE Lab is remapped by a curve around each of six grey levels, and a Laplacian pyramid assembled from the six remapped images, each level's coefficient interpolated by the input's local lightness at that level.
 - **Bilateral grid:** the lightness is splatted into a bilateral grid, blurred spatially and differentiated along lightness, and the result sliced back and added to each pixel's lightness, scaled by the detail.
 
-darktable's module is "local contrast" (alias "clarity"); in Apertrust it is the Base tab's Local contrast (`docs/modules/README.md`).
+darktable's module is "local contrast" (alias "clarity"); in Apertrust it is the Base tab's Local contrast (`docs/tools/README.md`).
 
 ## Pipeline
 
@@ -179,10 +179,10 @@ That is an accepted limit of software GPUs (decision 7) until image-shaped scrat
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Local contrast module is darktable's and owns every parameter (`docs/modules/README.md`): Mode, Detail (shown as darktable shows it, 100 % more than the parameter: `detail` 0 is 100 %, darktable's default 0.25 is 125 % and 1.0 is 200 %), and by mode Coarseness and Contrast (`sigma_s`, `sigma_r`) or Highlights, Shadows and Midtone range (`sigma_r`, `sigma_s`, `midtone`), one row per mode for the two shared parameters, under darktable's labels. darktable's presets: "clarity" (local laplacian, detail 0.33, highlights and shadows 0, mid-tone range 0.5) and "HDR local tone-mapping" (detail 1, highlights and shadows 0, mid-tone range 0.25).
+In the first pass (decision 2) the Local contrast tool is darktable's and owns every parameter (`docs/tools/README.md`): Mode, Detail (shown as darktable shows it, 100 % more than the parameter: `detail` 0 is 100 %, darktable's default 0.25 is 125 % and 1.0 is 200 %), and by mode Coarseness and Contrast (`sigma_s`, `sigma_r`) or Highlights, Shadows and Midtone range (`sigma_r`, `sigma_s`, `midtone`), one row per mode for the two shared parameters, under darktable's labels. darktable's presets: "clarity" (local laplacian, detail 0.33, highlights and shadows 0, mid-tone range 0.5) and "HDR local tone-mapping" (detail 1, highlights and shadows 0, mid-tone range 0.25).
 
-- **What is an identity:** the local laplacian filter at highlights and shadows 1 (100 %) and detail 0 (100 % shown), within rounding; the bilateral grid at detail 0, on every pixel of non-negative lightness. darktable's defaults (detail 125 %, highlights and shadows 50 %) change the image. The Local contrast module is switched (decision 32; `docs/modules/README.md`, rule 4): off, and not planned, until a control changes, then on with those defaults, until its reset; no preset "darktable's default".
-- **Changing the mode in darktable's interface** copies the other mode's sliders into `sigma_r` and `sigma_s` (`gui_changed`): the values the hidden sliders hold, 20 and 50 for the bilateral grid and 50 % for the local laplacian's highlights and shadows while the instance has been in the other mode (`gui_update`). The module's binding reproduces that, since the two parameters mean different things in each mode.
+- **What is an identity:** the local laplacian filter at highlights and shadows 1 (100 %) and detail 0 (100 % shown), within rounding; the bilateral grid at detail 0, on every pixel of non-negative lightness. darktable's defaults (detail 125 %, highlights and shadows 50 %) change the image. The Local contrast tool is switched (decision 32; `docs/tools/README.md`, rule 4): off, and not planned, until a control changes, then on with those defaults, until its reset; no preset "darktable's default".
+- **Changing the mode in darktable's interface** copies the other mode's sliders into `sigma_r` and `sigma_s` (`gui_changed`): the values the hidden sliders hold, 20 and 50 for the bilateral grid and 50 % for the local laplacian's highlights and shadows while the instance has been in the other mode (`gui_update`). The tool's binding reproduces that, since the two parameters mean different things in each mode.
 - **Derivatives:** `detail` is the first gradient slot; then `sigma_s`, `sigma_r` and `midtone` (Gradients).
 
 ## Gradients

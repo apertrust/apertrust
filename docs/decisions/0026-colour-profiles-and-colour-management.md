@@ -14,12 +14,12 @@ How does Apertrust turn camera RGB into its working space and the working space 
 
 - colorout reports it through `Operation::output_profile(params)`, which the planner collects from every instance before any `prepare`; the last that answers gives the pipe's profile.
 - A plan without colorout gets `None`, the working profile. A profile without a matrix gives sRGB's matrices, as darktable puts sRGB's in place of one.
-- Operations that gamut-map against the output (filmic rgb's v6 and v7, AgX's "export profile") read it; neither `defaults(image)` nor a module's binding does.
+- Operations that gamut-map against the output (filmic rgb's v6 and v7, AgX's "export profile") read it; neither `defaults(image)` nor a tool's binding does.
 
 **Which profile each pipe uses:**
 
 - **An export:** the edit's profile, or the export's chosen one, which overrides colorout's `type` for that export only, never the edit (planned with the export dialog's profile and the CLI's). AgX's "export profile" then reads the edit's own profile, as darktable's does.
-- **The viewport and stills:** the edit's output profile, never the display's, so the screen soft-proofs the export and the viewport computes what the export does. The display path converts colorout's output to the display. Until it converts from any profile, the Output colour profile module lets an edit choose only sRGB.
+- **The viewport and stills:** the edit's output profile, never the display's, so the screen soft-proofs the export and the viewport computes what the export does. The display path converts colorout's output to the display. Until it converts from any profile, the Output colour profile tool lets an edit choose only sRGB.
 
 **Display colour, in two tiers behind one abstraction:**
 

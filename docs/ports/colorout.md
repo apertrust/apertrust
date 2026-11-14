@@ -7,11 +7,11 @@ Status: ported.
 - **Code:** the kernel is `slang/colorout.slang` in `crates/op/colorout`, its setup `src/lib.rs`.
 - **Coverage:** sRGB, linear Rec2020 and linear Rec709 as output; other profiles and ICC files return `NotPorted`. It reports the pipe's output profile through `Operation::output_profile` (decision 26), sRGB's for a type without a matrix.
 - **Checks:** unit tests, the engine's tests and the CLI's exports; a golden check against darktable's sRGB export is planned.
-- **Module:** the Output colour profile module owns both parameters (`docs/modules/output-colour-profile.md`), so `--param` sets neither. Its Export profile writes `type`, an edit choosing only sRGB until the display path converts from the edit's profile (decision 26), and it fixes `intent` at perceptual.
+- **Tool:** the Output colour profile tool owns both parameters (`docs/tools/output-colour-profile.md`), so `--param` sets neither. Its Export profile writes `type`, an edit choosing only sRGB until the display path converts from the edit's profile (decision 26), and it fixes `intent` at perceptual.
 
 ## Purpose
 
-Takes the finished image from the working space, linear Rec2020, to the output's colour space and encoding: sRGB for the CLI's PNGs. Its settings belong to the Output colour profile module, darktable's (decision 2).
+Takes the finished image from the working space, linear Rec2020, to the output's colour space and encoding: sRGB for the CLI's PNGs. Its settings belong to the Output colour profile tool, darktable's (decision 2).
 
 ## Pipeline
 
@@ -21,7 +21,7 @@ Takes the finished image from the working space, linear Rec2020, to the output's
 
 ## Parameters
 
-darktable params version 5: `type` (profile type, default sRGB), `filename`, `intent`. Apertrust leaves out the file name. Both belong to the Output colour profile module, which shows `type` as Export profile and fixes `intent`, shown by darktable only under a preference that is off by default. darktable's export overrides the type with the export's profile; the CLI uses colorout's.
+darktable params version 5: `type` (profile type, default sRGB), `filename`, `intent`. Apertrust leaves out the file name. Both belong to the Output colour profile tool, which shows `type` as Export profile and fixes `intent`, shown by darktable only under a preference that is off by default. darktable's export overrides the type with the export's profile; the CLI uses colorout's.
 
 **The pipe's output profile** (decision 26): colorout implements `Operation::output_profile(params)`, the matrices to and from XYZ D50 of its `type`, which the planner puts into the image context for every operation's `prepare`, as darktable's `commit_params` publishes the pipe's output profile (`dt_ioppr_set_pipe_output_profile_info`). A type without a matrix reports sRGB's, which darktable puts in place of a profile without one, Lab's included, so the pipe always has a profile; here that is every type `prepare` refuses as not ported. In an export with a profile of its own, that profile reaches colorout as its `type` for that export only, as darktable's export sets `p->type = pipe->icc_type`; the viewport and stills keep the edit's, never the display's, which darktable's darkroom uses (principle 2).
 

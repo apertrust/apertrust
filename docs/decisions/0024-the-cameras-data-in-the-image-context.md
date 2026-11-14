@@ -2,11 +2,11 @@
 
 ## Context
 
-Operations need facts about the camera beyond the mosaic: a DNG's colour matrix, the camera's name and ISO to find a noise profile, the lens corrections a raw carries, the camera's white balance presets. darktable reads these in its own ways and matches its data files by its own spellings. Where do they come from, in what form, and who reads them, when operations and modules may not depend on each other ([0028](0028-tools-bound-to-operations.md))?
+Operations need facts about the camera beyond the mosaic: a DNG's colour matrix, the camera's name and ISO to find a noise profile, the lens corrections a raw carries, the camera's white balance presets. darktable reads these in its own ways and matches its data files by its own spellings. Where do they come from, in what form, and who reads them, when operations and tools may not depend on each other ([0028](0028-tools-bound-to-operations.md))?
 
 ## Decision
 
-**`apertrust-raw` reads the camera's data and `apertrust-engine::raw` copies it into `apertrust_plugin::Camera`, part of the image context, as plain data.** Every operation, every module's binding and the app's pending display see the same values.
+**`apertrust-raw` reads the camera's data and `apertrust-engine::raw` copies it into `apertrust_plugin::Camera`, part of the image context, as plain data.** Every operation, every tool's binding and the app's pending display see the same values.
 
 **A DNG's camera matrix, as darktable derives it** (`dt_exif_read`):
 
@@ -22,7 +22,7 @@ Operations need facts about the camera beyond the mosaic: a DNG's colour matrix,
 
 **Lens corrections** the raw carries, as darktable stores them (`Camera::lens_correction`, an enum of darktable's Sony, Fujifilm, DNG and Olympus types holding `dt_image_correction_data_t`'s values after darktable's checks), read over rawler's public parsers ([0025](0025-lens-correction.md)). Every table and the automatic scale stay in the operation.
 
-**White balance presets** (planned): `apertrust-raw` embeds darktable's `data/wb_presets.json` and parses it once with serde_json, by darktable's reading rules (names lowercased, a missing `tuning` read as 0), looks the camera up by `make` and `alias`, then `model`, and carries its entries in the file's order (`Camera::white_balance_presets`) for the temperature operation and the White balance module ([0027](0027-both-of-darktables-white-balances.md)).
+**White balance presets** (planned): `apertrust-raw` embeds darktable's `data/wb_presets.json` and parses it once with serde_json, by darktable's reading rules (names lowercased, a missing `tuning` read as 0), looks the camera up by `make` and `alias`, then `model`, and carries its entries in the file's order (`Camera::white_balance_presets`) for the temperature operation and the White balance tool ([0027](0027-both-of-darktables-white-balances.md)).
 
 **darktable's data files** live verbatim in the top-level `data/`, each embedded and parsed once by the crate that reads it, a test holding its SHA-256 ([0045](0045-a-top-level-data-folder.md)): `noiseprofiles.json` by the denoise operation, `wb_presets.json` by `apertrust-raw`.
 

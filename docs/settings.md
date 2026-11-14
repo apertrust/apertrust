@@ -35,7 +35,7 @@ A setting holds:
   - `app`: read by the desktop app alone;
   - `engine`: read by every process that runs the engine, the app, the CLI and later the server;
   - `export`: the Export dialog's last settings (decision 56), kept by the app and read by the CLI's `export`;
-  - `module:<id>`: a module's setting (decision 29), kept by the client and sent with the commands that use it;
+  - `module:<id>`: a tool's setting (decision 29), kept by the client and sent with the commands that use it;
 - **`kind`** and its fields:
   - boolean;
   - number: `min`, `max`, `step`, `decimals` (how many it is kept and shown with), `unit`, the id of the words it is shown with (`unit-<unit>`, as `mib`), and `factor`, what it is multiplied by where it is shown, as darktable's slider factor (`scale`, kept as 1.1, shows as 110 %); or, in place of `min`, `above`, what it must be more than, as a size's parts must be more than 0;
@@ -52,12 +52,12 @@ A setting holds:
 
 **Built so far:** the boolean, number, choice, text, list and table kinds; `default`, `optional`, `owner`, `applies`, `page`, `group`, `requires` and `platforms`, for the graphics API; a number's `above`, for the window's size and scale factor, and its `unit` and `factor`, for the interface's size and the memory budget; and each owner's `ALL`, every setting it owns, the registry its store reads. Whole numbers and folders come with the first setting that needs one.
 
-**Words** stay in Fluent, by ids that follow from the id, as a module's do: `setting-<id>-label`, `-full`, `-promise` and `-option-<option>`, the id's dots and underscores as hyphens, with `settings-page-<page>` and `settings-group-<group>`. A module's setting keeps its module's, `module-<module>-setting-<setting>-…` (decision 29). The schema holds no English.
+**Words** stay in Fluent, by ids that follow from the id, as a tool's do: `setting-<id>-label`, `-full`, `-promise` and `-option-<option>`, the id's dots and underscores as hyphens, with `settings-page-<page>` and `settings-group-<group>`. A tool's setting keeps its tool's, `module-<module>-setting-<setting>-…` (decision 29). The schema holds no English.
 
 **How it becomes code:**
 
 - **A choice names its Rust type** instead of listing its options, so no type is declared twice. The options come from the type through `Choice`, a small trait in `apertrust-base`: each value's stable id and every value in the dialog's order, as associated constants. The generated code checks the default against them in a constant, so a default no value has fails the build. A computed default calls a function the owner's crate defines under the setting's name, so a missing one fails the build too.
-- **Each owner's crate generates its own settings** in its `build.rs`: the app's for `owner = "app"`, the engine's for `engine`, `apertrust-export`'s for `export`, the modules' for `module:<id>`. They are typed statics written into `OUT_DIR`, not committed:
+- **Each owner's crate generates its own settings** in its `build.rs`: the app's for `owner = "app"`, the engine's for `engine`, `apertrust-export`'s for `export`, `apertrust-modules`'s for `module:<id>`. They are typed statics written into `OUT_DIR`, not committed:
   - `settings.get(&SCALE)` and `settings.set(&SCALE, value)` are checked by the compiler;
   - the engine's generated code never sees the app's types;
   - each static carries its place in the file, so the dialog orders every owner's settings as the file does, and its doc comment names its line in the schema.
@@ -67,7 +67,7 @@ A setting holds:
   - It refuses at build time, naming the line: an unknown field, a field or value wrong for the kind, an unknown owner, kind or `applies`, a page the dialog does not have, a group without its page or a page without its group, a duplicate id, a default outside its range, and a missing default on a setting that is not `optional`. What rustc refuses in the generated code, it leaves to rustc: a choice's default none of its type's ids, a type that is no `Choice`, two ids with one name in Rust.
 - **The registry** is the statics generated from the schema, taken together: what code, the store, `--conf` and the dialog read, as the actions registry is.
 - **Other readers:** docs, the web client, scripts and MCP read the schema file itself.
-- **Tests:** every id unique; every default within its range; every choice's type matching its default (the build's check); every message of a setting on a page, or of a module's setting, present in en-GB, uk and pl; and a version-1 `settings.toml` of every key read and written back byte for byte.
+- **Tests:** every id unique; every default within its range; every choice's type matching its default (the build's check); every message of a setting on a page, or of a tool's setting, present in en-GB, uk and pl; and a version-1 `settings.toml` of every key read and written back byte for byte.
 
 **Why a schema file rather than Rust declarations:** one file lists every setting of every owner, in the dialog's order, where Rust declarations would sit in three crates; a change to a setting is a change to data, reviewed as such; and docs, scripts, the web client and MCP read it without compiling Rust. The generated code is small, regenerated on every build and points back to the schema, and it makes typed statics, not widgets, so the dialog is still drawn from data at run time.
 
@@ -97,7 +97,7 @@ A setting holds:
 
 Where edits are kept is not a setting: each library and each root's id file decide it, never the user data folder (decision 47; [Edits in another user data folder](#edits-in-another-user-data-folder)).
 
-**A module's settings** live under `[tools.<module>]`, in the schema with `owner = "module:<id>"` once what uses them is built, generated by `apertrust-modules`' `build.rs` into `apertrust_modules::settings::registry`. The module's `Row::Setting` keeps its kind, darktable's range, options and default (decision 29), and finds its setting by its id, `tools.<module>.<setting>`; a test holds the two to agree. One with no setting yet is drawn disabled at its default, since nothing keeps its value. Built: Exposure's area exposure mapping, `tools.exposure.area_mode` and `tools.exposure.lightness` ([pickers.md](pickers.md#a-modules-settings)). The app's store reads them with its own; the CLI runs no picker and reads none.
+**A tool's settings** live under `[tools.<module>]`, in the schema with `owner = "module:<id>"` once what uses them is built, generated by `apertrust-modules`' `build.rs` into `apertrust_modules::settings::registry`. The tool's `Row::Setting` keeps its kind, darktable's range, options and default (decision 29), and finds its setting by its id, `tools.<module>.<setting>`; a test holds the two to agree. One with no setting yet is drawn disabled at its default, since nothing keeps its value. Built: Exposure's area exposure mapping, `tools.exposure.area_mode` and `tools.exposure.lightness` ([pickers.md](pickers.md#a-tools-settings)). The app's store reads them with its own; the CLI runs no picker and reads none.
 
 **`state.toml`**, beside `settings.toml`, holds the recents, Open Recent's list, and what was open last, which name photos' places and so stay out of settings (the app's `recents`, `crates/app/src/recents.rs`; the CLI reads and writes nothing of it):
 
@@ -129,7 +129,7 @@ path = "/Users/me/Pictures/Wedding"
 
 - **Precedence:** a flag of its own (`--adapter`, `--backend`, `--max-binding`), then `--conf`, then the file, then the default, and for `engine.backend` wgpu's `WGPU_BACKEND` before them all. Each value is logged under `-d settings` with where it came from (`WGPU_BACKEND`, `--adapter`, `--backend`, `--conf`, file, default). An empty `--adapter` takes wgpu's choice over the file's.
 - **An adapter typed for this run** that is not there, by `--adapter` or `--conf`, is an error: what was typed for this run is never ignored, as a user data folder given explicitly never falls back.
-- **`--conf`'s form:** `KEY=VALUE` or `--conf=KEY=VALUE`, repeatable, the last for a key counting; in the app for its settings, the engine's, the export settings and the modules' settings (`tools.*`), in the CLI for the engine's and the export settings, global there.
+- **`--conf`'s form:** `KEY=VALUE` or `--conf=KEY=VALUE`, repeatable, the last for a key counting; in the app for its settings, the engine's, the export settings and the tools' settings (`tools.*`), in the CLI for the engine's and the export settings, global there.
 - **Checked before the user data folder is looked for,** so a key no setting the program reads has, or a value its kind cannot read, stops the start, naming it, where darktable ignores either.
 - **An empty value,** `KEY=`, is the empty text for a text setting (`engine.adapter=` takes wgpu's choice) and refused for any other kind, where darktable drops it.
 - **Read by the setting's kind** with the file's rules: a number out of range at the nearer end, with a warning; a choice by its id; a text and a choice as typed, `~` included; anything else as TOML writes it, a list as `[1280, 800]`.
@@ -154,7 +154,7 @@ path = "/Users/me/Pictures/Wedding"
 
 **Why "base":** it names a layer, as Chromium's `//base` (logging, the command line, files, the version) does. Not "common", which invites a grab bag, as darktable's `src/common/` became; not "core", confusable with the engine.
 
-**Why the generator is in a crate:** a build script cannot use its own package's code, so a generator that the build scripts of the app, the engine and the modules share is a crate of its own; its refusals need tests, which a build script cannot hold; and `apertrust-ui` implements `Choice` for the theme and the language, so the trait sits in a crate below both the design system and the app.
+**Why the generator is in a crate:** a build script cannot use its own package's code, so a generator that the build scripts of the app, the engine and `apertrust-modules` share is a crate of its own; its refusals need tests, which a build script cannot hold; and `apertrust-ui` implements `Choice` for the theme and the language, so the trait sits in a crate below both the design system and the app.
 
 **Few crates** (decision 65): new code goes into a module of an existing crate, base's behind a feature (`jobs`, `fs`) or the library's (`sidecar`, `listing`, `index`). A crate of its own needs a reason: `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary such as an operation's (decision 20). So the safe write is `apertrust_base::fs` and the sidecar's text layer `apertrust_library::sidecar`, and `apertrust-fs` is made only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover safely.
 
@@ -164,13 +164,13 @@ path = "/Users/me/Pictures/Wedding"
 
 - the app's, in its `build.rs`;
 - the engine's, in `apertrust-engine`'s, as `apertrust_engine::settings`, whose `Options::read` builds `GpuOptions` and the budget from a store;
-- the modules', in `apertrust-modules`', as `apertrust_modules::settings::registry`, Exposure's first;
+- the tools', in `apertrust-modules`', as `apertrust_modules::settings::registry`, Exposure's first;
 - the export settings, the Export dialog's, in `apertrust-export`'s, a third owner, `export` (decision 56): `apertrust_export::settings::registry`, written by the app, which keeps the dialog's last settings there as darktable keeps its conf, and read by the CLI's store with the engine's, its `export` taking the format's options from it, as darktable-cli reads darktablerc.
 
 **The engine never opens a folder or reads a file of settings.** The binaries read the store and hand it plain options.
 
 - **The CLI** reads its user data folder's engine and export settings and never writes settings. It finds the folder with `Folders::find_to_read`, which creates and probes nothing, and its store is `Store::read_only`. A test runs it on files of every kind, damaged and newer included, and finds each byte for byte as it was, nothing set aside and no temporary file removed. Only the commands that run the engine (`gpu`, `preview`, `export`) open the store.
-- **The app** opens one store on its registry and the engine's, the export's and the modules' settings (`tools.*`) together, so their keys share its file and are never unknown to it.
+- **The app** opens one store on its registry and the engine's, the export's and the tools' settings (`tools.*`) together, so their keys share its file and are never unknown to it.
 - **The golden harness** reads none, so no result depends on a person's folder. It turns on base's log alone, opens no store, and takes `GpuOptions::default()` and `pipeline::BUDGET`, which a test of the engine holds equal to these settings' defaults.
 - **Remotely** (Phase 7), engine settings are the server's folder's, and a client's own settings are the client's.
 
@@ -228,9 +228,9 @@ No other platform folder is used, XDG's data and state folders among them, so on
 
 **No build overwrites an edit a newer Apertrust wrote,** in any folder ([engine.md](engine.md), Edits, What a save may drop). Newer is told by what the edit holds, never by comparing builds' versions, which development builds on different branches do not order. It is anything in the edit that this build would drop on saving:
 
-- a newer file version or module version;
-- a module this build neither knows nor has retired;
-- at a module's own version: a control it lacks, or a value it cannot read or keep (an option it lacks, an option or control not ported, a number out of range);
+- a newer file version or tool version;
+- a tool this build neither knows nor has retired;
+- at a tool's own version: a control it lacks, or a value it cannot read or keep (an option it lacks, an option or control not ported, a number out of range);
 - an operation it lacks, a schema version above its own, or at its own schema a parameter it lacks;
 - an entry repeated, or any element or attribute it does not write.
 
@@ -238,10 +238,10 @@ Then:
 
 - the photo opens for viewing only, rendered from what this build reads, its controls disabled, saying which version wrote it;
 - a file version it cannot read at all refuses to open, naming the version;
-- what it knows an older build wrote is dropped with a warning, and the photo stays editable: a module Apertrust has retired, as the built Tone curve's `tone_curve` once it becomes RGB curve (decision 2), what an older module or schema version held that this one lacks, a parameter a module now owns, an optional operation's parameters, and version 0;
+- what it knows an older build wrote is dropped with a warning, and the photo stays editable: a tool Apertrust has retired, as the built Tone curve's `tone_curve` once it becomes RGB curve (decision 2), what an older tool or schema version held that this one lacks, a parameter a tool now owns, an optional operation's parameters, and version 0;
 - every edit records the build that wrote it, decision 44's version rather than `Cargo.toml`'s.
 
-**Versions rise for removals and changes, never for additions.** A module's version, an operation's schema version and the file's version rise when what an older build wrote would read differently or not at all: a control, option or parameter removed or renamed, a range narrowed, a default changed, a meaning or binding changed, or a layout an older build would misread.
+**Versions rise for removals and changes, never for additions.** A tool's version, an operation's schema version and the file's version rise when what an older build wrote would read differently or not at all: a control, option or parameter removed or renamed, a range narrowed, a default changed, a meaning or binding changed, or a layout an older build would misread.
 
 - The migration keeps the look. While no released edit can hold the value, it may instead drop it with a warning, as Exposure's version 2 will drop the Contrast and Pivot it held at version 1.
 - An addition whose default keeps old edits' look raises nothing: a build without it finds it in the edit and opens the photo for viewing only.
@@ -249,7 +249,7 @@ Then:
 
 **Held by tests:**
 
-- a committed record of each module's stored controls and of the operation parameters an edit can store (those no module owns, of operations an unedited photo runs). It fails a removal or change until the version rises, an addition until the record is blessed, and a module or operation recorded but neither built in nor retired;
+- a committed record of each tool's stored controls and of the operation parameters an edit can store (those no tool owns, of operations an unedited photo runs). It fails a removal or change until the version rises, an addition until the record is blessed, and a tool or operation recorded but neither built in nor retired;
 - a committed version-1 sidecar that reads with no warning and writes back byte for byte.
 
 ## The Settings dialog
@@ -265,7 +265,7 @@ Drawn on nine pages, as darktable's preferences: General, Import, Photos, Editin
 - **Hand-built pages** for what rows cannot hold: Shortcuts, the keymap editor; Storage, the user data and cache folders, each with how it was chosen, read-only, since a folder is chosen before the app starts, and the cache's sizes, settings and Clear ([cache.md](cache.md#settings--storage)); Presets; AI's models. Where edits are kept is no setting: each library's file and each root's id file say (decision 47).
 - **A page that holds nothing yet** is listed dimmed and cannot be chosen. Built: General, Photos, Editing, Processing and Storage, its folders and the cache's contents built by hand beside its rows from the schema ([cache.md](cache.md#settings--storage)); Import, Shortcuts, Presets and AI are dimmed.
 - **A row whose `requires` is off** is drawn disabled, as a row `--conf` sets is, with nothing said under it: the Storage page's Cache limit while Limit the cache's size is off.
-- What the app remembers on its own (the window's placement, the sections open, the scopes' view, the tab shown, the side panel's layout, each tab's pinned and scrolling sections and which float, under `[workspaces.<id>]`, and the floating panels' places, `side_panel.floating` (decision 83, planned; [gui.md](gui.md#what-the-file-looks-like)), the grid panel's position, size, sort, thumbnails and whether they show their captions, `grid_panel.labels`, the grid bar's Labels, the page Settings last showed, `settings_window.page`, and the log window's place, its size and the folder its Save to file… last wrote to, `log_window.*`) is never shown, and a module's settings are drawn in its module.
+- What the app remembers on its own (the window's placement, the sections open, the scopes' view, the tab shown, the side panel's layout, each tab's pinned and scrolling sections and which float, under `[workspaces.<id>]`, and the floating panels' places, `side_panel.floating` (decision 83, planned; [gui.md](gui.md#what-the-file-looks-like)), the grid panel's position, size, sort, thumbnails and whether they show their captions, `grid_panel.labels`, the grid bar's Labels, the page Settings last showed, `settings_window.page`, and the log window's place, its size and the folder its Save to file… last wrote to, `log_window.*`) is never shown, and a tool's settings are drawn in its tool.
 - **Square thumbnails,** `grid_panel.square_thumbnails` (a boolean, off by default, applied at once; [gui.md](gui.md#the-cell)), is the Photos page's row, under Thumbnails; `--conf grid_panel.square_thumbnails=true` turns it on for a run.
 - **Raw thumbnails from,** `library.raw_thumbnails_from`, darktable's `plugins/lighttable/thumbnail_raw_min_level` ("for unaltered images, use raw file instead of embedded JPEG from size") with its options and default, is the Photos page's second row, under Thumbnails, its help saying what it does for photos with no edit and that edited photos always show their edit: owner `engine`, a choice of `apertrust_library::ops::RawThumbnails`, kept by darktable's own strings (`always`, `small`, `VGA`, `720p`, `1080p`, `WQXGA`, `4K`, `5K`, `6K`, `8K`, `never`, `auto`), `never` by default, applied at once. The app hands it to the session as it starts and as Settings changes it (`LibraryCommand::RawThumbnails`); what each option does is [library.md](library.md#thumbnails)'s.
 - darktable's seven tabs hold lighttable and darkroom state that one view does not have, so they are not mirrored row for row: Apertrust mirrors darktable's modules, not its shell.

@@ -1,16 +1,16 @@
 # AgX
 
-Module `agx`, version 1. It works on the background only until layers come; with them a layer may choose it as its own tone mapper, replacing the background's within the layer's mask (decision 33). It has no Auto.
+Tool `agx`, version 1. It works on the background only until layers come; with them a layer may choose it as its own tone mapper, replacing the background's within the layer's mask (decision 33). It has no Auto.
 
 It is darktable's AgX in the first pass (decision 2), the tone mapper of the Base tab. It has darktable's page: the Settings and Primaries tabs, the controls in `gui_init`'s order under darktable's labels in British spelling, and darktable's three collapsible sections as collapsible groups. Each row shows where darktable's `gui_changed` shows it (decision 29).
 
-It drives one operation, `agx` ([../ports/agx.md](../ports/agx.md)), which every photo runs, and owns all 35 of its parameters, each with its control. Its defaults are the operation's, darktable's scene-referred defaults ([README.md](README.md), rule 4), so an untouched module sets nothing.
+It drives one operation, `agx` ([../ports/agx.md](../ports/agx.md)), which every photo runs, and owns all 35 of its parameters, each with its control. Its defaults are the operation's, darktable's scene-referred defaults ([README.md](README.md), rule 4), so an untouched tool sets nothing.
 
-**Status:** built, in `crates/modules/src/agx.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Module panels from definitions), first, before the Tone curve: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
+**Status:** built, in `crates/modules/src/agx.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), first, before the Tone curve: [README.md](README.md) orders the tab as darktable does, the last in the pipeline at the top (decision 38).
 
-- Its rows are tests in `crates/modules/tests/agx.rs` and the module's source, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/modules/tests/agx.rs` and the tool's source, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
-- One tone mapper per edit, with sigmoid and filmic rgb as modules, is planned separately.
+- One tone mapper per edit, with sigmoid and filmic rgb as tools, is planned separately.
 - Measures and test images are in [README.md](README.md).
 
 ## Controls
@@ -65,7 +65,7 @@ Each primary's attenuation and its rotation alternate, red, green then blue, as 
 
 darktable's pivot slider shows `curve_pivot_x`, the pivot's place in the range from 0 to 1, as an exposure. Its factor is the range's width and its offset its black, so it reads from black to white relative exposure, 0 EV at the default range. When the range moves, darktable's `_update_pivot_x` rewrites `curve_pivot_x` so the pivot keeps its exposure, inside the new range.
 
-The module stores the pivot in EV, as the slider shows it. Its binding writes `curve_pivot_x` from it and the range whenever any of the three is off its default: `(clamp(pivot, black, white) − black) / (white − black)`, in f32 as darktable computes both. So moving the range keeps the pivot's exposure ([A5](#invariants)).
+The tool stores the pivot in EV, as the slider shows it. Its binding writes `curve_pivot_x` from it and the range whenever any of the three is off its default: `(clamp(pivot, black, white) − black) / (white − black)`, in f32 as darktable computes both. So moving the range keeps the pivot's exposure ([A5](#invariants)).
 
 Its slider is darktable's for the range (`Module::range`, decision 30):
 
@@ -79,7 +79,7 @@ A pivot that a move of the range leaves outside is clamped to the range's nearer
 
 - **Dynamic range scaling** is darktable's safety margin for its pickers and Read exposure, which scale the range they compute by it. No render reads it, so the operation has no parameter for it ([../ports/agx.md](../ports/agx.md), Parameters). It is a control, as darktable shows it, not ported (`Control::unported`): it takes only its default, +10 %, and is drawn disabled. When it moves, darktable's `gui_changed` also rescales black and white relative exposure by `(1 + new) / (1 + previous)`. That is a write from one quantity into another that depends on the value it had, which rule 13 and decision 30 leave out ([Gaps](#gaps), 2).
 - **The base primaries' Export profile** is listed, drawn disabled and refused, as the operation returns `NotPorted` for it until AgX reads the image context's output profile (decision 26).
-- **The four actions,** Auto tune levels (darktable's picker setting both exposures from an area), Read exposure (its camera button, setting them from the metadata and the Exposure module), Reset primaries (its menu of Blender-like, Smooth and Unmodified primaries) and Set from above (copying the primaries before tone mapping to after it, insensitive while Reverse all is on), are rows of their own, drawn disabled until what they run is built (`Row::Action`).
+- **The four actions,** Auto tune levels (darktable's picker setting both exposures from an area), Read exposure (its camera button, setting them from the metadata and the Exposure tool), Reset primaries (its menu of Blender-like, Smooth and Unmodified primaries) and Set from above (copying the primaries before tone mapping to after it, insensitive while Reverse all is on), are rows of their own, drawn disabled until what they run is built (`Row::Action`).
 - **The pickers** on white and black relative exposure and on the pivot's two controls are declared in the definition, `white`, `black`, `pivot` and `pivot_output`, area pickers denoised, each named by its slider's quad (`Quad::Picker(id)`), as darktable's page has them ([pickers.md](../pickers.md#declaring-pickers)); the renderer draws a quad once what it runs is built.
 
 The promises, the tooltips, are darktable's in British English: "Relative exposure above mid-grey (white point)", "Contrast in highlights. Higher values keep the slope nearly constant for longer, at the cost of a more sudden drop near white", and the like. Where a short label is ambiguous, its full name says which group it is in: Look slope, Curve contrast. A script sends `SetControl { module: "agx", control: "curve_pivot_x", value: 1.0, done: true }`, the pivot at +1 EV over mid-grey.
@@ -91,9 +91,9 @@ The Ukrainian and Polish words are darktable's translations, drafts awaiting nat
 
 The Polish file departs from darktable's po twice, as its header says: a typo fixed in Blue purity boost, and "(hue)" dropped from Preserve hue.
 
-**Operation parameters in an edit.** The module owns every `agx` parameter, so `apertrust-cli --param` refuses them; its help names colorin's `type`, which no module owns yet, as its example. An edit that holds one as an operation parameter loses it with a warning when read ("the module agx owns it now; left out") and stays editable.
+**Operation parameters in an edit.** The tool owns every `agx` parameter, so `apertrust-cli --param` refuses them; its help names colorin's `type`, which no tool owns yet, as its example. An edit that holds one as an operation parameter loses it with a warning when read ("the tool agx owns it now; left out") and stays editable.
 
-**Presets:** darktable's, by its names: unmodified base primaries, blender-like base and punchy, sigmoid-like default and smooth, smooth; the scene-referred default is the module's defaults. They wait for the header's presets menu ([Gaps](#gaps), 7).
+**Presets:** darktable's, by its names: unmodified base primaries, blender-like base and punchy, sigmoid-like default and smooth, smooth; the scene-referred default is the tool's defaults. They wait for the header's presets menu ([Gaps](#gaps), 7).
 
 ### Sliders against darktable
 
@@ -138,15 +138,15 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | A6 | What is not ported | Base primaries Export profile; dynamic range scaling 20 % | The edit | Each refused as not ported, the edit as it was; dynamic range scaling marked unported, so reported unavailable | Exact | CPU |
 | A7 | The pivot's range follows the input range (decision 30) | The pivot at −5 EV, then black to −4 EV; the pivot to −5 EV; black back to −10 EV | The edit; `curve_pivot_x` | Black's move stores the pivot at −4 EV, kept, in the same change, binding `curve_pivot_x` 0; −5 EV refused as outside −4 to +6.5 EV; black's return leaves the pivot at −4 EV, as darktable's `_update_pivot_x` leaves it | Exact | CPU |
 
-A4 is how the module matches darktable. An untouched module binds nothing, so the operation runs its defaults, darktable's scene-referred ones, which the operation's tests hold to test 0186's stored parameters field for field. A module set to a golden case's values renders those parameters, which `apertrust-golden run` checks against darktable-cli's render.
+A4 is how the tool matches darktable. An untouched tool binds nothing, so the operation runs its defaults, darktable's scene-referred ones, which the operation's tests hold to test 0186's stored parameters field for field. A tool set to a golden case's values renders those parameters, which `apertrust-golden run` checks against darktable-cli's render.
 
 A control stores the value its slider shows (README, Sliders against darktable), and the binding gives the parameter back as `value / factor`, in f32. For a few parameters that division steps over darktable's f32: no f32 percentage gives 0.6613 over 100, only 0.66129994 or 0.66130006.
 
-darktable reaches them because its slider rounds a value set through it, dragged or typed, to its digits. `_slider_set_normalized` (`src/bauhaus/bauhaus.c`) stores `roundf(base · x) / base`, `base` 10^digits × its factor, then places it in the slider's range and reads it back, so 66.13 % is stored as 0.6613. A4 restates that path and holds it to the three values, so the one-step gap is the binding's, not darktable's arithmetic. Planned before the end of Phase 3, for every module: each binding rounds a value as darktable's slider does, `roundf(base · x) / base`, so stored parameters are darktable's bit for bit, and the rows, A4's among them, are updated.
+darktable reaches them because its slider rounds a value set through it, dragged or typed, to its digits. `_slider_set_normalized` (`src/bauhaus/bauhaus.c`) stores `roundf(base · x) / base`, `base` 10^digits × its factor, then places it in the slider's range and reads it back, so 66.13 % is stored as 0.6613. A4 restates that path and holds it to the three values, so the one-step gap is the binding's, not darktable's arithmetic. Planned before the end of Phase 3, for every tool: each binding rounds a value as darktable's slider does, `roundf(base · x) / base`, so stored parameters are darktable's bit for bit, and the rows, A4's among them, are updated.
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/agx.rs`, the module's source and the panel's test. The synthetic and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/modules/tests/agx.rs`, the tool's source and the panel's test. The synthetic and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -184,17 +184,17 @@ What darktable's page has or does that the panel does not yet:
 3. **Keep the pivot on the diagonal's write.** While it is on, darktable's `gui_changed` writes Curve y gamma, hidden, to the gamma it computes, so turning it off leaves that gamma; here Curve y gamma keeps the value it had, a deliberate difference ([below](#deliberate-differences)).
 4. **The actions and the pickers** come with what they run, the pickers as [pickers.md](../pickers.md) designs them (decision 79, its pull request 79.11), Auto tune levels a `Row::Pickers`: the pickers on the exposures and the pivot, Auto tune levels, Read exposure, Reset primaries's menu and Set from above. darktable draws Read exposure as a camera button on Auto tune levels' line; here each is a row of its own.
 5. **The primaries' painted tracks,** darktable's gradients of each primary's hue and purity, wait for the renderer, as RGB primaries' do.
-6. **The curve's warnings:** darktable paints a warning quad on Shoulder power and Toe power when the curve has lost its S shape and the fallback curves take over, under its preference to show them, on by default; it needs a warning quad and the curve's coefficients restated in the module.
+6. **The curve's warnings:** darktable paints a warning quad on Shoulder power and Toe power when the curve has lost its S shape and the fallback curves take over, under its preference to show them, on by default; it needs a warning quad and the curve's coefficients restated in the tool.
 7. **darktable's presets** wait for the header's presets menu.
-8. **A slider's own reset.** darktable's attenuation, rotation, purity boost and reverse rotation sliders reset to 0 on a double-click, and its two master sliders to 100 %, while its module reset gives the scene-referred defaults; a control has one default here, the operation's (rule 4), which both a double-click and the module's reset give.
+8. **A slider's own reset.** darktable's attenuation, rotation, purity boost and reverse rotation sliders reset to 0 on a double-click, and its two master sliders to 100 %, while its tool reset gives the scene-referred defaults; a control has one default here, the operation's (rule 4), which both a double-click and the tool's reset give.
 9. **The quads' tooltips** ("pick the white point", the pivot pickers' explanations) come with the pickers.
-10. **The module's tooltip,** darktable's "applies a tone mapping curve. inspired by Blender's AgX tone mapper": a definition implies no message for the module's own tooltip.
+10. **The tool's tooltip,** darktable's "applies a tone mapping curve. inspired by Blender's AgX tone mapper": a definition implies no message for the tool's own tooltip.
 
 darktable's optional curve tab and its preference to show Look always open are preferences off by default (rule 12): the curve's sections stay on Settings and Look is a collapsible group.
 
 ## Deliberate differences
 
-- **A slider's own reset** ([Gaps](#gaps), 8): the module's default, where darktable's primaries sliders reset to 0 and its masters to 100 %.
+- **A slider's own reset** ([Gaps](#gaps), 8): the tool's default, where darktable's primaries sliders reset to 0 and its masters to 100 %.
 - **Curve y gamma under Keep the pivot on the diagonal** ([Gaps](#gaps), 3): it keeps the value it had, where darktable's `gui_changed` writes it with the gamma it computes from the pivot and the range, a write between controls of different quantities, which rule 13 refuses since they must commute.
 - **Dynamic range scaling writes nothing into the range** ([Gaps](#gaps), 2): once the pickers and Read exposure come, it is their margin only, where darktable's rescales black and white relative exposure as it moves.
 
@@ -202,7 +202,7 @@ darktable's optional curve tab and its preference to show Look always open are p
 
 - **Control ids:** the operation's parameter names, as darktable's history names them, `curve_pivot_x` for the pivot in EV among them.
 - **The pivot's range:** darktable's, the input range, its track the same and its step darktable's for the width, through `Module::range`. A pivot a range's move leaves outside is clamped and stored (decision 30).
-- **Dynamic range scaling:** a control not ported, taking only +10 %, drawn disabled. darktable stores it in the edit, so it is no module setting, and the port spec does not port it; darktable's write into the range is refused by rule 13 ([Gaps](#gaps), 2).
+- **Dynamic range scaling:** a control not ported, taking only +10 %, drawn disabled. darktable stores it in the edit, so it is no setting, and the port spec does not port it; darktable's write into the range is refused by rule 13 ([Gaps](#gaps), 2).
 - **The four actions:** rows of their own kind, `Row::Action`: an action of darktable's that writes controls and is never stored, drawn disabled by the design system's `ActionRow` until what it runs is built.
 - **Show curve:** a collapsible group with no rows, which `Definition::check` takes, drawn disabled and closed with a titled tab's "to come" tooltip until a read-only graph row exists (`CollapsibleGroup::disabled`).
 - **A4's bound:** bit for bit wherever the binding's `value / factor` reaches darktable's parameter from some value of the control. One f32 step for the three it reaches from none, each proved so and each reached by darktable's slider path, with the frame they render measured. Bindings that round as darktable's slider does are planned before the end of Phase 3 ([Invariants](#invariants)).

@@ -20,4 +20,4 @@ Layers' masks follow darktable's Flexi masks ([0034](0034-layers-masked-tool-ins
 
 - `docs/ports/masks.md` names the master commit in its header, as other ports name the reference release.
 - The golden harness gains a second darktable-cli for the masks' cases (planned with Phase 4).
-- Decision 3's rule is unchanged for the migration's modules.
+- Decision 3's rule is unchanged for the migration's tools.

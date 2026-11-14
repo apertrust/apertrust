@@ -20,7 +20,7 @@ It builds on darktable's colour science. The first phases migrate darktable's pr
 These are the project's goals. The first is in place today; the others are planned for later phases.
 
 - **Measured image quality.** Processing steps are checked by automated tests on every change, and the same edit should give the same picture on any supported computer.
-- **Predictable controls.** Each slider has a written description of what it changes and what it leaves alone, with tests that check it. A module that is off leaves the photo as it was.
+- **Predictable controls.** Each slider has a written description of what it changes and what it leaves alone, with tests that check it. A tool that is off leaves the photo as it was.
 - **Help towards a result.** Later phases add ways to describe or show the result you want, such as a reference photo or a consistent look across a series, and let Apertrust suggest slider values that you can then adjust.
 - **Local and private.** Any learning from your own edits stays on your computer.
 - **Scripting and assistants.** Scripts and AI assistants work through the same sliders and history as you do.
@@ -36,7 +36,7 @@ Everything runs locally: no account, no cloud, no subscription. Edits are saved 
 - **Ease:**
   - start from a good picture;
   - every control keeps to what it says;
-  - one module for each tool, its depth inside it.
+  - one tool for each task, its depth inside it.
 - **Help:**
   - show or tell the goal, and the editor sets the sliders;
   - help is visible, reversible and yours to accept.
@@ -48,7 +48,7 @@ The full principles, who Apertrust is for and what it will not do are in [docs/p
 Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.md) has the details, phase by phase.
 
 - **The engine** renders raw files through the eight processing steps every photo needs, and matches darktable's render at a mean ΔE2000 of about 0.001 on 27 of the 29 comparable raw.pixls.us samples. Two lossy Sony formats wait for a decoder fix.
-- **The desktop app** opens and edits one photo with sixteen migrated modules, saves the edit after each change, shows the scopes and opens a folder. On the Mac it exports through a native Export dialog.
+- **The desktop app** opens and edits one photo with sixteen migrated tools, saves the edit after each change, shows the scopes and opens a folder. On the Mac it exports through a native Export dialog.
 - **The command line** edits, exports JPEG and PNG at darktable's sizes with file names from darktable's variables, and lists a folder.
 - **Platforms:** macOS (Metal), Windows (Direct3D 12) and Linux (Vulkan) pass CI, with software GPUs where there is no hardware one.
 
@@ -106,7 +106,7 @@ cargo run --release -p apertrust -- photo.ARW                                   
 - [docs/architecture.md](docs/architecture.md): the design in overview, linking each area's document.
 - [docs/decisions/](docs/decisions/README.md): every decision behind it.
 - [docs/engine.md](docs/engine.md): the processing pipeline.
-- [docs/modules/README.md](docs/modules/README.md): the editing modules, one per darktable module, which are built, and the rules they follow.
+- [docs/tools/README.md](docs/tools/README.md): the editing tools, one per darktable module, which are built, and the rules they follow.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute, and the checks a change must pass.
 - [AI_POLICY.md](AI_POLICY.md): how AI-assisted contributions are treated.
 - [SECURITY.md](SECURITY.md): how to report a vulnerability privately.

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! AgX's invariants (`docs/modules/agx.md`, Invariants), one test per row, each named
+//! AgX's invariants (`docs/tools/agx.md`, Invariants), one test per row, each named
 //! after its row: A0 to A7, the rows a first-pass table has (decision 22) but the first
 //! step, since every photo runs AgX, with the pivot's coordinates, what is not ported and
 //! the pivot's range following the input range (decision 30). The synthetic ramp and
@@ -51,7 +51,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_be
 
 const AGX: &str = "agx";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18, mid-grey, the pivot's input. One row, over a colour raw's
 /// context with an exposure bias of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {
@@ -415,7 +415,7 @@ fn edit_for(darktable: &[(&'static str, Value)]) -> Edit {
 /// The parameters of the golden cases the binding reaches from no value of its control:
 /// none of the f32 values within 64 steps of darktable's value as its slider shows it
 /// gives the parameter back through the binding's `value / factor`. A control stores the
-/// value as shown (`docs/modules/README.md`, Sliders against darktable), and division by
+/// value as shown (`docs/tools/README.md`, Sliders against darktable), and division by
 /// 100 or by `RAD_2_DEG` steps over some f32s: 66.13 % gives 0.66129994 or 0.66130006,
 /// never darktable's 0.6613. darktable reaches it because its slider rounds a value set
 /// through it to its digits ([`stored_by_darktable`]), so the gap is the binding's. Each

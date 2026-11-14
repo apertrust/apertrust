@@ -22,7 +22,7 @@ Four operations change an image's geometry, all after demosaic: lens correction 
 
 **Bounds:** darktable's lens correction clamps each position to its input region and mirrors taps at its edges, and rotate and perspective mirrors there too, the region taken from the untiled output's requirement. The geometry interface gives each instance those bounds, the same in every tile and pipe, and a tile's region holds every tap clamped to them (planned with the warps).
 
-**Points:** the engine composes each geometry's maps between the original image, any instance and the frame, as darktable's `dt_dev_distort_transform_plus`. A command answers point queries; each frame carries the output extent, its region and scale, and the focused module's input-to-frame map while the chain after it is affine, so the crop frame follows a drag with no round trip. A picker's area is kept in the original image's coordinates and mapped to its operation's input by its four corners, sorted, the two lowest and the two highest averaged on each axis, as darktable's `dt_color_picker_box` does ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)). Layers' masks are kept in the original image's coordinates and mapped forward, a raster warped by the geometry's own kernel.
+**Points:** the engine composes each geometry's maps between the original image, any instance and the frame, as darktable's `dt_dev_distort_transform_plus`. A command answers point queries; each frame carries the output extent, its region and scale, and the focused tool's input-to-frame map while the chain after it is affine, so the crop frame follows a drag with no round trip. A picker's area is kept in the original image's coordinates and mapped to its operation's input by its four corners, sorted, the two lowest and the two highest averaged on each axis, as darktable's `dt_color_picker_box` does ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)). Layers' masks are kept in the original image's coordinates and mapped forward, a raster warped by the geometry's own kernel.
 
 **Order of work**, smallest first: the engine's geometry with test-only operations (built); orientation, on by default from the EXIF orientation as darktable's flip is; crop, with no pass; rotate and perspective; lens correction. Each deferral goes to the first card that needs it:
 
@@ -32,12 +32,12 @@ Four operations change an image's geometry, all after demosaic: lens correction 
 
 ## Options considered
 
-- Geometry as a closed list of transforms the engine evaluates: every module's region rules rewritten in the engine.
+- Geometry as a closed list of transforms the engine evaluates: every tool's region rules rewritten in the engine.
 - A coordinate map computed on the GPU: planning would read it back.
 - Warps at full resolution before the downscale: a 61 MP warp on every drag.
 - Hardware bilinear sampling, or unfiltered textures unless measured faster with identical results on every backend.
 - Strips with windows computed from the geometry: useless for a quarter turn.
-- Maps computed in the app: two implementations of each module's geometry.
+- Maps computed in the app: two implementations of each tool's geometry.
 
 ## Consequences
 

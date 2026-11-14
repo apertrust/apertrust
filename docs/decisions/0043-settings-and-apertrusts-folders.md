@@ -8,7 +8,7 @@ Settings are read by the app, the engine, the export and later the server, the w
 
 **One settings schema in TOML,** `data/settings.schema.toml` ([0045](0045-a-top-level-data-folder.md)), as darktable declares its settings in `darktableconfig.xml.in`. Each table is one setting, its header the permanent dotted id of its key in `settings.toml` (`scale`, `side_panel.width`, `engine.memory_budget`), with:
 
-- `owner`: `app`, `engine` (every process that runs the engine), `export` (the Export dialog's settings, [0056](0056-export-as-an-engine-job.md)) or `module:<id>` (a module's setting);
+- `owner`: `app`, `engine` (every process that runs the engine), `export` (the Export dialog's settings, [0056](0056-export-as-an-engine-job.md)) or `module:<id>` (a tool's setting);
 - `kind` and its fields: boolean, number (`min` or `above`, `max`, `step`, `decimals`, `unit`, `factor`), choice, text, list, or a table keyed by another registry's ids; whole numbers and folders come with the first setting that needs one;
 - `default`, or `"computed"` in Rust, or `optional = true` for a value only its owner keeps;
 - `page` and `group` in the Settings dialog, `applies` (`at-once`, `next-photo`, `after-restart`) and `platforms`;

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The bench the modules' invariant tests share: the GPU, a colour raw's image context,
-//! the synthetic images (`docs/modules/README.md`, Test images) and a small raw, a bench
+//! the synthetic images (`docs/tools/README.md`, Test images) and a small raw, a bench
 //! rendering edits through one pipeline as the session does, and the jump between two
 //! frames. Each test file includes it with `mod common;` and defines its own [`Measure`],
 //! what its rows read.
@@ -123,7 +123,7 @@ fn greys(steps: usize) -> impl Iterator<Item = [f32; 4]> {
     (0..steps).map(|i| grey((-16.0 + i as f32 / 16.0).exp2()))
 }
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, [`RAMP_STEPS`] of them, then the greys `then`, which each test file
 /// chooses. One row.
 pub fn ramp(then: &[f32], bias: f32) -> (Picture, ImageContext) {

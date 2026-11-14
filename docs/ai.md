@@ -63,9 +63,9 @@ Zero-copy means both devices use the same GPU memory allocation. On Vulkan, exte
 
 ## Agents
 
-**MCP** through `rmcp` is a thin adapter over the session protocol (decision 58). Its MCP tools cover listing images, reading modules and their controls, setting module values, histograms and rendering previews; MCP tools can return images, so agents can see their edits.
+**MCP** through `rmcp` is a thin adapter over the session protocol (decision 58). Its MCP tools cover listing images, reading tools and their controls, setting tool values, histograms and rendering previews; MCP tools can return images, so agents can see their edits.
 
-**Assistants are a core capability, not the headline** (decision 1, principle 8). Scripts and AI assistants work through the same modules, layers, history and undo as a person, and nothing they can do is hidden from the editor. What they change appears in the history as ordinary module values with a short note on what they did, and one undo reverts it. They check their results by measurement, such as histograms or the distance to a target, before showing them, and they connect only when the user allows it.
+**Assistants are a core capability, not the headline** (decision 1, principle 8). Scripts and AI assistants work through the same tools, layers, history and undo as a person, and nothing they can do is hidden from the editor. What they change appears in the history as ordinary tool values with a short note on what they did, and one undo reverts it. They check their results by measurement, such as histograms or the distance to a target, before showing them, and they connect only when the user allows it.
 
 ## The differentiable pipeline
 
@@ -73,22 +73,22 @@ The pipeline is differentiable-ready from the start: every differentiable kernel
 
 **What it is.** Besides computing the output image from the slider values, a differentiable pipeline can compute how the output would change if each slider moved a little. Those rates of change are gradients. With them, an optimiser can adjust every slider in the edit at once towards a target, converging in a few dozen small renders instead of trial and error. It is the mechanism used to train neural networks; here the "network" is the editing pipeline and the "weights" are ordinary slider values.
 
-**Why it matters.** The result is editable module settings, not a black-box filter. An AI style transfer produces pixels; a differentiable pipeline produces "exposure +0.4, contrast +12, these curve points, this colour grading", which the user can tweak like any other edit.
+**Why it matters.** The result is editable tool values, not a black-box filter. An AI style transfer produces pixels; a differentiable pipeline produces "exposure +0.4, contrast +12, these curve points, this colour grading", which the user can tweak like any other edit.
 
 **What it enables** (principle 7):
 
-- Match a reference look, producing real module settings.
+- Match a reference look, producing real tool values.
 - Consistent batch edits across a series shot under changing light.
 - Better Auto buttons that optimise exposure, white balance and tone towards defined targets.
 - Matching two cameras, so one body renders like another.
 - Agent-driven edits: an agent turns "warmer, with more open shadows" into a target, and the optimiser finds precise slider values.
-- Learning from examples, on the photographer's own computer: a look from a few of their edits, a preset from before-and-after pairs, or a 3D LUT turned into editable module settings.
+- Learning from examples, on the photographer's own computer: a look from a few of their edits, a preset from before-and-after pairs, or a 3D LUT turned into editable tool values.
 
-**What the user keeps** (principles 7 and 8). The optimiser moves only the sliders the user has not set; those stay fixed until the user releases them. Matching has a strength control. The result is ordinary module values in the history, with a short note on what was done, and one undo reverts it.
+**What the user keeps** (principles 7 and 8). The optimiser moves only the sliders the user has not set; those stay fixed until the user releases them. Matching has a strength control. The result is ordinary tool values in the history, with a short note on what was done, and one undo reverts it.
 
 **The matching slice** (decisions 1 and 11) is Phase 3's first engine work: a command-line test that matches a reference photo. It fits the editable settings of operations after demosaic through their kernels' derivative entry points, at preview resolution, and reports how close the result comes on real photo pairs; its pass threshold is set with the test ([principles.md](principles.md), How we will know it works). It proves the one promise no other editor makes, and it is cheap: every differentiable kernel already exports derivatives that pass the gradient check. The raw stage has none (decision 21), and the slice does not need them. It still needs derivatives with respect to each kernel's input pixel, so that gradients chain through the pipeline, which no kernel exports yet, and a pipe that runs the backward passes ([engine.md](engine.md#later-phases)).
 
-**What darktable has instead.** darktable's pipeline is plain forward computation in C and OpenCL. It has per-module fitting tools: auto pickers in exposure, sigmoid, filmic and the tone equalizer that use image statistics; colour checker profiling in color calibration, which fits a matrix to a chart; and darktable-chart, which builds a style from a raw and JPEG pair. Each solves one narrow problem in one module; none can optimise all sliders across the whole edit. Commercial editors' Auto features, as far as we know, use trained models that predict slider values rather than optimising through the pipeline.
+**What darktable has instead.** darktable's pipeline is plain forward computation in C and OpenCL. It has per-module fitting aids: auto pickers in exposure, sigmoid, filmic and the tone equalizer that use image statistics; colour checker profiling in color calibration, which fits a matrix to a chart; and darktable-chart, which builds a style from a raw and JPEG pair. Each solves one narrow problem in one module; none can optimise all sliders across the whole edit. Commercial editors' Auto features, as far as we know, use trained models that predict slider values rather than optimising through the pipeline.
 
 **How it works.** Slang's automatic differentiation generates gradient kernels from the normal kernels. Computing gradients costs roughly two to three times a normal render plus memory for intermediates, but optimisation runs at preview resolution (around 512 px), so it stays fast. Interactive editing only ever runs the normal forward pipeline.
 

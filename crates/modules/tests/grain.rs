@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Grain's invariants (`docs/modules/grain.md`, Invariants), one test per row, each
+//! Grain's invariants (`docs/tools/grain.md`, Invariants), one test per row, each
 //! named after its row: a switched module's (decision 32), G0 off, G1 the first step, on
 //! at darktable's defaults, G2 moved and reset, G3 the order, G4 the darktable match, G6
 //! on at darktable's defaults on the CPU and G7 version 1's edits; G5 is withdrawn. The
@@ -56,7 +56,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_be
 
 const GRAIN: &str = "grain";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18. One row, over a colour raw's context with an exposure bias
 /// of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {

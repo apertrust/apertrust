@@ -6,7 +6,7 @@ Technically it is:
 
 - **a Rust engine on wgpu,** a GPU-resident, scene-referred fp32 pipeline whose kernels are written in Slang and compiled to WGSL, with derivatives that let it set the sliders;
 - **darktable's trusted colour science,** migrated first, module by module, and then evolved on its own (decision 2);
-- **modules over operations:** people edit modules, the first pass darktable's modules as darktable has them; the engine runs operations, each bound to one owning module;
+- **tools over operations:** people edit tools, the first pass darktable's modules as darktable has them; the engine runs operations, each bound to one owning tool;
 - **one session protocol** that every client speaks: the egui desktop app, the command line, and later the browser, MCP agents and scripts;
 - **sidecars as the truth,** an `.apxmp` beside each photo, with folder mode first and libraries and projects later, never a database;
 - **ONNX Runtime** with its WebGPU execution provider for AI, and MCP for assistants, both later.
@@ -29,7 +29,7 @@ This document is the overview: what the parts are and how they fit. Each area's 
 
 ## At a glance
 
-Every client reaches the engine through one session protocol, at the level of modules. The session, in the engine, turns module values into operation parameters through each module's binding, serves the library's commands, and runs long work as jobs (decisions 4, 28, 54 and 57).
+Every client reaches the engine through one session protocol, at the level of tools. The session, in the engine, turns tool values into operation parameters through each tool's binding, serves the library's commands, and runs long work as jobs (decisions 4, 28, 54 and 57).
 
 ```mermaid
 flowchart TB
@@ -43,7 +43,7 @@ flowchart TB
     protocol["<b>Session protocol</b><br/>commands in, events out<br/>in-process today; IPC, WebSocket or WebTransport later"]
     subgraph session["Session · the engine thread"]
         direction LR
-        modules["<b>Modules</b><br/>White balance, Exposure, AgX, …<br/>bound to operation parameters"]
+        tools["<b>Tools</b><br/>White balance, Exposure, AgX, …<br/>bound to operation parameters"]
         jobs["<b>Jobs</b><br/>export, a folder's reading, …"]
     end
     subgraph engine["Engine · Rust, no UI dependencies"]
@@ -97,14 +97,14 @@ flowchart LR
 - **No CPU path** (decision 7). Without a hardware GPU the same kernels run on a software one, lavapipe or WARP; what cannot bind there is refused, naming the pass. Details: [engine.md, Software GPUs](engine.md#software-gpus).
 - **Rust, and no C or C++** compiled in or shipped unless no Rust option exists (decision 5); ONNX Runtime the one exception, and the platform's own libraries, loaded at run time, outside the rule. Details: [dependencies.md](dependencies.md).
 - **darktable as the migration's reference, then Apertrust's own way** (decisions 2 and 3). Each darktable module is ported from the reference release's source, never loaded or linked, and judged by ΔE2000 against darktable-cli; once the whole first pass is in, at the end of Phase 3, Apertrust's own renders are the baselines. Details: [testing.md](testing.md).
-- **Modules over operations** (decision 4). A module is what people edit; an operation is one engine algorithm and never appears in the interface; each operation parameter has exactly one owning module. A module at its defaults, or off, leaves the render byte for byte as it was. Details: [engine.md, The module layer](engine.md#the-module-layer), [modules/README.md](modules/README.md).
+- **Tools over operations** (decision 4). A tool is what people edit; an operation is one engine algorithm and never appears in the interface; each operation parameter has exactly one owning tool. A tool at its defaults, or off, leaves the render byte for byte as it was. Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md](tools/README.md).
 - **Sidecars are the truth** (decision 46). Edits, ratings and albums live in files people can see and copy; a library's cache is per machine and rebuilt from them. Details: [library.md](library.md).
 - **Widgets only emit commands** (decision 58). No client touches engine state; the engine never depends on UI code ([below](#the-engineui-boundary)).
 - **Data files in `data/`** (decision 45), darktable's verbatim, each embedded at build time by the one crate that parses it, never read from an installed folder. Details: [engine.md, Data files](engine.md#data-files).
 
 ## The engine–UI boundary
 
-The session protocol is commands in and events out, at the level of modules (decision 28), independent of transport: in-process today, later IPC, WebSocket or WebTransport, or behind MCP (decision 58). Clients send module values; the session turns them into operation parameters through the modules' bindings and hands those to the pipeline, so every client, the CLI and MCP included, sees the same modules and none translates module values itself. Each event is a fact or a notice, numbered against the commands, sent through one outbox and taken in by one reducer per client (decision 59). This keeps undo, MCP and the remote web mode working.
+The session protocol is commands in and events out, at the level of tools (decision 28), independent of transport: in-process today, later IPC, WebSocket or WebTransport, or behind MCP (decision 58). Clients send tool values; the session turns them into operation parameters through the tools' bindings and hands those to the pipeline, so every client, the CLI and MCP included, sees the same tools and none translates tool values itself. Each event is a fact or a notice, numbered against the commands, sent through one outbox and taken in by one reducer per client (decision 59). This keeps undo, MCP and the remote web mode working.
 
 Details: [session-protocol.md](session-protocol.md) (the commands, their numbering and batching, the transports, the remote queue, `Sync` and versioning, the library's commands, and what stays out) and [events.md](events.md) (every event, its order and delivery).
 
@@ -119,7 +119,7 @@ The server and MCP parts are library crates used by these two executables, not s
 
 ## Crates
 
-**The dependency rule.** The engine depends on `apertrust-plugin`, `apertrust-color`, `apertrust-raw`, `apertrust-modules`, `apertrust-base`, `apertrust-export`, whose writers and disk rules its export job uses, and `apertrust-library`, whose commands its session serves and whose `sidecar` module is the `.apxmp` format's text layer (decision 54). It never depends on an operation crate or a client: the binaries hand it `apertrust-operations` and the built-in modules (decision 20). Few crates: new code goes into a module of an existing crate unless it needs `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary (decision 65; [settings.md, Where it lives](settings.md#where-it-lives)).
+**The dependency rule.** The engine depends on `apertrust-plugin`, `apertrust-color`, `apertrust-raw`, `apertrust-modules`, `apertrust-base`, `apertrust-export`, whose writers and disk rules its export job uses, and `apertrust-library`, whose commands its session serves and whose `sidecar` module is the `.apxmp` format's text layer (decision 54). It never depends on an operation crate or a client: the binaries hand it `apertrust-operations` and the built-in tools (decision 20). Few crates: new code goes into a module of an existing crate unless it needs `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary (decision 65; [settings.md, Where it lives](settings.md#where-it-lives)).
 
 | Crate | Owns | From |
 | --- | --- | --- |
@@ -132,9 +132,9 @@ The server and MCP parts are library crates used by these two executables, not s
 | `apertrust-base` | What every program sets up as it starts: logging and the banner, the version, folders, settings, the safe write, jobs and, planned, the disk cache (decision 76), each behind a feature ([settings.md](settings.md#where-it-lives)) | Phase 2 |
 | `apertrust-export` | What an export writes and where, with no GPU: the export settings, darktable's size computation and variables, the file-on-disk rules, the JPEG and PNG writers (decision 56) | Phase 2 |
 | `apertrust-display` | The window's platform code where wgpu and winit stop: display colour ([gui.md](gui.md#display-colour)), the window frame (decision 39), the Mac's native popup menus (decision 40), dialogs and alerts (decision 41); an FFI crate allowed `unsafe` | Phase 0 |
-| `apertrust-modules` | Module definitions, bindings, transfer functions, their values and the built-in modules, depending on `apertrust-plugin`, `apertrust-color` and `apertrust-base`'s settings part, for the statics of its modules' settings (decisions 28 and 43), and on no egui, wgpu, engine or operation crate | Phase 2 |
+| `apertrust-modules` | Tool definitions, bindings, transfer functions, their values and the built-in tools, depending on `apertrust-plugin`, `apertrust-color` and `apertrust-base`'s settings part, for the statics of its tools' settings (decisions 28 and 43), and on no egui, wgpu, engine or operation crate | Phase 2 |
 | `apertrust-library` | Folder mode, libraries and projects in four layers (decision 54): the `.apxmp` text layer and the XMP layer, the library's TOML files, the model, one `Index`, and the operations; no GPU and no engine dependency; reached through the session protocol, never read by a client directly | Phase 2 |
-| `apertrust-ui` | The design system: tokens and themes, fonts, icons, components and their gallery, translation in an egui-free `i18n` module; no engine or module types ([gui.md](gui.md), decision 36) | Phase 2 |
+| `apertrust-ui` | The design system: tokens and themes, fonts, icons, components and their gallery, translation in an egui-free `i18n` module; no engine or tool types ([gui.md](gui.md), decision 36) | Phase 2 |
 | `apertrust`, `apertrust-cli` | The desktop app and the headless binary | Phase 0 |
 | `apertrust-golden` | The golden-image harness: per-operation cases and the whole-pipeline test | Phase 0 |
 | `apertrust-fs` | Planned only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover: bulk listing, cloud placeholders' flags, macOS's materialisation turned off, later `NSFileVersion`; an FFI crate allowed `unsafe` (decisions 53 and 65) | Phase 2, if needed |
@@ -163,17 +163,17 @@ Every operation, built-in or third-party, is a plugin behind one interface: a ma
 
 Details: [plugins.md](plugins.md), with the order in [engine.md, Order](engine.md#order) and each operation's slot in [crates/operations/order.md](../crates/operations/order.md).
 
-### Modules
+### Tools
 
-`apertrust-modules` describes each module as static data, darktable's page with its tabs and collapsible groups, and binds it to operation parameters with a pure function the session runs (decisions 28 to 33). Preset rows, lossless views and curves are other views of the same stored values; one tone mapper is planned per edit.
+`apertrust-modules` describes each tool as static data, darktable's page with its tabs and collapsible groups, and binds it to operation parameters with a pure function the session runs (decisions 28 to 33). Preset rows, lossless views and curves are other views of the same stored values; one tone mapper is planned per edit.
 
-Details: [engine.md, The module layer](engine.md#the-module-layer), [modules/README.md](modules/README.md) for every module of the first pass and its invariants.
+Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md](tools/README.md) for every tool of the first pass and its invariants.
 
 ### The desktop interface
 
 One egui interface for the desktop and the browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the side panel's Photos tab chooses the photos, the centre shows the photo, the grid panel is always there (decision 37). The side panel's tabs start as darktable's groups (decision 38); a person moves, pins and floats sections by dragging their headers, display order only, kept in the workspace's settings, the floating panels inside the window (decision 83, planned). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); the viewport's colour is managed by the app, by the system later for HDR.
 
-Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#display-colour), [The shell](gui.md#the-shell), [Module panels from definitions](gui.md#module-panels-from-definitions), and the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK) for how it looks.
+Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#display-colour), [The shell](gui.md#the-shell), [Tool panels from definitions](gui.md#tool-panels-from-definitions), and the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK) for how it looks.
 
 ### Settings and folders
 
@@ -195,13 +195,13 @@ The library is built in steps, folder mode first ([roadmap.md, The library's ste
 
 ### History and undo
 
-Each virtual copy's history is one log of steps, a step being one module's change with its source and note, as darktable's history item, a change of several modules a step of each sharing a batch that Undo and Redo move whole and Reset one step, and Undo and Redo take back the session's undo records, as darktable's, or move the log's end. Built (steps 9.1 to 9.7, 9.8 in the engine, and 9.9): the log in the session's memory, saved in the sidecar so Undo survives reopening the photo, `Undo`, `Redo`, `GoTo`, `Reset` as one step, `Step` making several commands one change of a source and note, a control's quick repeats merged into one step as darktable's undo merges them, a new photo's default steps, `Compress`, `Truncate` and `DiscardHistory`, one `History` fact every client of a session draws, the app's Edit › Undo and Redo and History tab with its eye, and `apertrust-cli edit --note` and `history` working on the sidecar through the same engine functions. Planned: the app's Compress history and Discard History… (decisions 47 and 78).
+Each virtual copy's history is one log of steps, a step being one tool's change with its source and note, as darktable's history item, a change of several tools a step of each sharing a batch that Undo and Redo move whole and Reset one step, and Undo and Redo take back the session's undo records, as darktable's, or move the log's end. Built (steps 9.1 to 9.7, 9.8 in the engine, and 9.9): the log in the session's memory, saved in the sidecar so Undo survives reopening the photo, `Undo`, `Redo`, `GoTo`, `Reset` as one step, `Step` making several commands one change of a source and note, a control's quick repeats merged into one step as darktable's undo merges them, a new photo's default steps, `Compress`, `Truncate` and `DiscardHistory`, one `History` fact every client of a session draws, the app's Edit › Undo and Redo and History tab with its eye, and `apertrust-cli edit --note` and `history` working on the sidecar through the same engine functions. Planned: the app's Compress history and Discard History… (decisions 47 and 78).
 
 Details: [history.md](history.md).
 
 ### Colour pickers
 
-One active picker per session, a module's or the Colour picker module's, and stored samples beside it. Built: 79.1, the Colour picker module's own picker through the session, its region kept through the geometry and measured on the frame; 79.2, each module's pickers declared in its definition with `Module::pick`; 79.3, module pickers in the engine, measured at their operation in the render or a sample-only render and applied through the module's `pick`; the rest planned. The engine reduces the area on the GPU at the module's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the module's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
+One active picker per session, a tool's or the Colour picker's, and stored samples beside it. Built: 79.1, the Colour picker's own picker through the session, its region kept through the geometry and measured on the frame; 79.2, each tool's pickers declared in its definition with `Module::pick`; 79.3, tool pickers in the engine, measured at their operation in the render or a sample-only render and applied through the tool's `pick`; the rest planned. The engine reduces the area on the GPU at the tool's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the tool's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
 
 Details: [pickers.md](pickers.md).
 
@@ -213,19 +213,19 @@ Details: [engine.md, Export jobs](engine.md#export-jobs), [gui.md, The Export di
 
 ### Layers
 
-Planned for Phase 4: a layer is masked module instances at their normal pipeline positions, in a fixed order, not compositing on top of the finished image, so local edits keep darktable's scene-referred quality (decision 34).
+Planned for Phase 4: a layer is masked tool instances at their normal pipeline positions, in a fixed order, not compositing on top of the finished image, so local edits keep darktable's scene-referred quality (decision 34).
 
 Details: [layers.md](layers.md), with the scene and display domains.
 
 ### AI, agents and matching
 
-Models run through ONNX Runtime's WebGPU execution provider, vendor providers as optional packs (decision 60). Agents connect through MCP, a thin client of the session protocol, and change the photo only through modules, in the history like a person's edits. The pipeline's derivatives are to fit editable module settings to a reference photo, Phase 3's first engine work (decision 11).
+Models run through ONNX Runtime's WebGPU execution provider, vendor providers as optional packs (decision 60). Agents connect through MCP, a thin client of the session protocol, and change the photo only through tools, in the history like a person's edits. The pipeline's derivatives are to fit editable tool values to a reference photo, Phase 3's first engine work (decision 11).
 
 Details: [ai.md](ai.md).
 
 ### Testing
 
-During the migration, every ported operation is compared with darktable-cli by ΔE2000 with its own tolerance, the whole pipeline is compared on the raw.pixls.us corpus, gradients are checked against finite differences, and every module's invariants are tests (decisions 61 to 63).
+During the migration, every ported operation is compared with darktable-cli by ΔE2000 with its own tolerance, the whole pipeline is compared on the raw.pixls.us corpus, gradients are checked against finite differences, and every tool's invariants are tests (decisions 61 to 63).
 
 Details: [testing.md](testing.md), the `golden-tests` skill.
 
@@ -313,11 +313,11 @@ Apertrust builds a raw editor on darktable's trusted colour science, with a disc
 | [principles.md](principles.md) | What Apertrust is and how it should feel to use | — |
 | [roadmap.md](roadmap.md) | The plan: the phases with their exit criteria, effort and gates, what is built and what remains, the library's steps | — |
 | [decisions/](decisions/README.md) | Every architecture decision, one file each, and the current state by area | — |
-| [engine.md](engine.md) | The GPU and kernels, the pipeline (planning, regions, geometry, pipes, caching, tiling), the session and threads, jobs, export jobs, edits, the module layer, data files, software GPUs | [Yes](engine.md#open-questions) |
+| [engine.md](engine.md) | The GPU and kernels, the pipeline (planning, regions, geometry, pipes, caching, tiling), the session and threads, jobs, export jobs, edits, the tool layer, data files, software GPUs | [Yes](engine.md#open-questions) |
 | [plugins.md](plugins.md) | The operation interface, operation crates, manifests and schemas, passes, slots, the image context, loading third-party plugins | — |
 | [session-protocol.md](session-protocol.md) | The commands every client sends, their numbers and batches, transports, remote clients, the web and tablets | [Yes](session-protocol.md#open-questions) |
 | [events.md](events.md) | Every event the session sends, their order and delivery, and the app's one reducer | — |
-| [gui.md](gui.md) | The desktop app's interface: why egui, display colour, the design system, translation, the window, menus, popups, dialogs, the shell, module panels, keys, settings, accessibility, tests | [Yes](gui.md#open-questions) |
+| [gui.md](gui.md) | The desktop app's interface: why egui, display colour, the design system, translation, the window, menus, popups, dialogs, the shell, tool panels, keys, settings, accessibility, tests | [Yes](gui.md#open-questions) |
 | [settings.md](settings.md) | The settings schema, the store, `--conf`, the user data folders, edits in another folder | — |
 | [library.md](library.md) | Folder mode, libraries and projects, sidecars, the XMP layer, finding photos, several computers, the library's API | [Yes](library.md#open-questions) |
 | [layers.md](layers.md) | Layers and masks, and the scene and display domains | — |
@@ -326,7 +326,7 @@ Apertrust builds a raw editor on darktable's trusted colour science, with a disc
 | [dependencies.md](dependencies.md) | How a dependency is chosen and tracked, the main libraries, the licence | — |
 | [packaging.md](packaging.md) | The packages on each platform, what they hold, how to build one, the unsigned state and signing to come | — |
 | [crates.md](crates.md) | Each crate's state, built and planned | — |
-| [modules/](modules/README.md) | Every module of the first pass, its rules, and each module's page with its invariants | — |
+| [tools/](tools/README.md) | Every tool of the first pass, its rules, and each tool's page with its invariants | — |
 | `docs/ports/` | One spec per darktable port, from darktable's source, with its deliberate differences | — |
 
 ## Implementation plan

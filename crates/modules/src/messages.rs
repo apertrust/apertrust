@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! A module's words, as message ids that follow from its ids (decision 28, `docs/gui.md`,
-//! Module panels from definitions). Hyphens separate the parts, ids are snake_case, and a
+//! Tool panels from definitions). Hyphens separate the parts, ids are snake_case, and a
 //! fixed word comes before each id, so an option or a tab called `label` or `title`
 //! cannot collide with another message. The messages are in
 //! `crates/ui/locales/<locale>/modules.ftl`.

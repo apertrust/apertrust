@@ -21,7 +21,7 @@ It runs at darktable's place, camera RGB 24.0 (decision 22; Pipeline), and rende
 
 `prepare` returns `NotPorted` for the guided filter and the averaged guided filter, which are planned (Planned), as are the iterated mask in row strips and the pass kind's rename. The whole-image passes are keyed apart from `main`, so a band change in the viewport runs `main` alone (`docs/engine.md`, Caching).
 
-The operation is in `OPERATIONS` with `default_enabled` off, so the default pipeline is unchanged. It is planned while its switched module is on, from a write of one of its controls to its reset (decision 32): the first pass's Tone equalizer (`docs/modules/tone-equalizer.md`).
+The operation is in `OPERATIONS` with `default_enabled` off, so the default pipeline is unchanged. It is planned while its switched tool is on, from a write of one of its controls to its reset (decision 32): the first pass's Tone equalizer (`docs/tools/tone-equalizer.md`).
 
 Golden result (seven cases on tests 0080, 0129, 0131, 0133 and 0134's `mire1.cr2`, in the tests' own module order with colorin an identity, 3908×2602, Apple M4): ΔE2000 mean 0.0004, max 0.0015 at most, within the port's own tolerance of mean 0.01 and max 0.05 (Results).
 
@@ -52,7 +52,7 @@ In Apertrust it is a tonal control that works on layers, so it acts on scene-ref
 
 darktable params version 2, 72 bytes, 18 four-byte fields in this order: `noise`, `ultra_deep_blacks`, `deep_blacks`, `blacks`, `shadows`, `midtones`, `highlights`, `whites`, `speculars`, `blending`, `smoothing`, `feathering`, `quantization`, `contrast_boost`, `exposure_boost` (f32), `details` (enum, i32), `method` (enum, i32), `iterations` (i32).
 
-Defaults are the introspection's; toneequal has no `reload_defaults()`, and darktable leaves the module off by default. In the first pass the Tone equalizer module owns every parameter (Tool binding notes).
+Defaults are the introspection's; toneequal has no `reload_defaults()`, and darktable leaves the module off by default. In the first pass the Tone equalizer tool owns every parameter (Tool binding notes).
 
 | Name | darktable field | Type | Range | Default | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -145,7 +145,7 @@ These come from numpy restatements of darktable's f32 solve (with sequential sum
 
 `prepare` in `crates/op/toneequal/src/setup.rs`:
 
-- **The fit** (`fit` and `Curve` in `apertrust_color::tone_equalizer`, which the setup and the Tone equalizer module's band graph share, decision 65). The same 9 × 8 least squares, with `y_i = 2^gain_i` and the centres of darktable's f32 constants, solved in f64 by a Householder QR factorisation of `A` itself rather than by Cholesky on `AᵀA` (Design choices, 2).
+- **The fit** (`fit` and `Curve` in `apertrust_color::tone_equalizer`, which the setup and the Tone equalizer tool's band graph share, decision 65). The same 9 × 8 least squares, with `y_i = 2^gain_i` and the centres of darktable's f32 constants, solved in f64 by a Householder QR factorisation of `A` itself rather than by Cholesky on `AᵀA` (Design choices, 2).
   - `A`'s condition is the square root of `AᵀA`'s, 2.2e5 at the slider's top, so the fit holds to about 1e-11 there, and the weights are rounded to f32 once.
   - Against the f32 solve restated in Rust on test 0131's bands it differs by less than 1e-4 EV at σ = 1.2 and 1e-3 EV at √2 (`the_fit_matches_darktables_where_darktable_is_reproducible`).
   - Like `pseudo_solve` it can fail, returning `None` where the triangle has a zero pivot or a weight is not a number. Only a σ of 0 or one that is not a number gives that: over the schema's smoothing range it never fails, and `prepare` would refuse such a curve rather than hand the kernel weights that are not numbers.
@@ -270,7 +270,7 @@ Deriche's second-order recursive filter, order 0, in f32, columns first, then ro
 
 ### 11. Mask display (GUI)
 
-`display_luminance_mask`: grey `√(clamp((L − 2^−8) / (1 − 2^−8), 0, 1))`, alpha copied, and the pipe set to pass the result through to the screen. In Apertrust this becomes the module's mask preview, darktable's Display exposure mask, a view mode rather than part of the edit (Planned).
+`display_luminance_mask`: grey `√(clamp((L − 2^−8) / (1 − 2^−8), 0, 1))`, alpha copied, and the pipe set to pass the result through to the screen. In Apertrust this becomes the tool's mask preview, darktable's Display exposure mask, a view mode rather than part of the edit (Planned).
 
 ## Per pixel (`apply_toneequalizer`)
 
@@ -509,7 +509,7 @@ The operation renders darktable's curve, its ripple at zero bands included (deci
 - **Grid sides are at least 1** (Precision), where darktable's grid is empty below 4 pixels on a side.
 - **Not ported (GUI only):** the luminance cache and its hashes; the on-image cursor readout and scroll editing; the auto-adjust wands for exposure and contrast compensation; the mask display, which becomes the mask preview (Planned).
 - **The mask's histogram and its deciles**, which darktable's GUI computes from the preview pipe's mask (`compute_log_histogram_and_stats`), become a readout of the operation, `mask_histogram`: its own pass in the viewport, counting the mask `main` uses into darktable's 512 bins, read back by the session and decoded with darktable's arithmetic into the graph's 256 bins and the 5th and 95th percentiles (decision 19; `docs/engine.md`, Readouts). Planned.
-- **The curve graph**, with its drag's `set_new_params_interactive`, is the module's panel's (`docs/modules/tone-equalizer.md`, In the panel).
+- **The curve graph**, with its drag's `set_new_params_interactive`, is the tool's panel's (`docs/tools/tone-equalizer.md`, In the panel).
 
 ## Tool binding notes
 
@@ -518,14 +518,14 @@ The operation renders darktable's curve, its ripple at zero bands included (deci
 - the nine bands on Simple;
 - curve smoothing and mask exposure and contrast compensation on Advanced;
 - the luminance estimator, preserve details, filter diffusion, smoothing diameter, edges refinement and mask quantization on Masking, each owned by it;
-- darktable's band graph, a lossless view of the bands, a row of the Advanced tab (decision 2; `docs/modules/README.md`, Lossless views).
+- darktable's band graph, a lossless view of the bands, a row of the Advanced tab (decision 2; `docs/tools/README.md`, Lossless views).
 
-The module is darktable's whole tone equalizer, so the guided filters join it with their port (Planned).
+The tool is darktable's whole tone equalizer, so the guided filters join it with their port (Planned).
 
 - **Bands by EV, not by name** (Parameters). The bands sit at mask −8 to 0 EV; a pixel's mask EV is `log2(n) + exposure_boost`, plus the contrast stretch for the non-averaged filters. A neutral grey `v` therefore sits at `log2 v + k + exposure_boost`, with `k` = 0 for average, lightness, max, power norm and geometric mean, +0.79 for the euclidean norm and +1.58 for the sum. With Exposure putting mid-grey at 0.18 (−2.47 EV), the default euclidean norm puts it at −1.68 EV, between the −2 and −1 EV bands, and anything from +1.7 EV above mid-grey upward shares the 0 EV band's correction.
 - **darktable's on-image editing:** a step of `s` EV at mask EV `E₀` adds `s · exp(−(μ_i − E₀)² / (σ⁴/2))` EV to band i (for σ = √2, a Gaussian of 1 EV standard deviation). darktable then refits and stores the fitted curve's values at the nine nodes, clamped to ±2 EV; the band graph's drag follows it.
 - **The bands interact.** Neighbouring Gaussians overlap (σ = √2 EV against 8/7 EV spacing) and the fit is least squares over all nine, so a band's gain moves the curve over about ±2 EV and slightly beyond. The invariants table should test what stays fixed on rendered values, not on band values.
-- **Off is a no-op** with the instance absent (`docs/layers.md`, Sequencing: only adjusted controls create instances). The module is switched (decision 32): off, the operation is out of the plan; a control's first change turns it on until its reset, and switches darktable's ripple on everywhere at once, up to 0.025 EV at the default smoothing, which the first-step row measures and reports without a bound, as darktable's behaviour (`tool-bindings`).
+- **Off is a no-op** with the instance absent (`docs/layers.md`, Sequencing: only adjusted controls create instances). The tool is switched (decision 32): off, the operation is out of the plan; a control's first change turns it on until its reset, and switches darktable's ripple on everywhere at once, up to 0.025 EV at the default smoothing, which the first-step row measures and reports without a bound, as darktable's behaviour (`tool-bindings`).
 - **EIGF is exposure-independent** (Masking paths, 6): with it, `exposure_boost` only slides the bands, so a binding can treat it as a band offset. The guided filter smooths shadows more than highlights.
 - **Presets** (`init_presets`), all with darktable's RGB scene blend colour space. They are the Tone equalizer's presets.
 
@@ -561,7 +561,7 @@ How:
   - `exposure_boost` and `contrast_boost` act through the whole-image filter in every mode but "no", where `exposure_boost` is per pixel and could be added. For averaged EIGF it is an exact shift (Masking paths, 6) and could be added by applying it after the filter, a restructuring left for later.
   - `blending` is truncated to an integer radius; `iterations`, `details` and `method` are discrete; `quantization` is a floor.
   - `smoothing` acts through the CPU solve; moving the 8 × 8 Cholesky into a differentiable Slang setup function, with fully unrolled loops to satisfy decision 10, would bring it in.
-  - No derivative with respect to the input image, as for every module so far.
+  - No derivative with respect to the input image, as for every operation so far.
 - **Non-smooth spots** where finite differences can straddle a kink: the correction's clamp to [0.25, 4] (an optimiser would use a soft clamp in the log domain, such as `2 · tanh(log2(c) / 2)` EV); the mask's clamp to [−8, 0] EV (zero derivative of the correction with respect to the mask outside, but the band gradients stay); the `2^−16` floors; and, for derivatives with respect to the mask settings if they come, the max and min estimators, the absolute values, quantisation's floor and the integer radius.
 - **Traps:** no `pow` (the geometric mean uses `pow0`), no table read chosen by a branch (the direct curve has none).
 - **The check:** `gradient` on each case and with `--synthetic`, below 1% against finite differences and forward against reverse within 1e-4 per pixel. `perturbed_inputs` moves the band gains by the step along the direction and fits the curve again, so the finite differences take in the whole setup, the f64 directions included. The case images populate all four bands; the synthetic sweep's levels, 0.001 to 4, reach −10 to +2 EV.
@@ -698,7 +698,7 @@ Together they cover all seven estimators and all five filters, with and without 
 - **Finite output** for very bright, zero and negative input, in every mode: inputs from 0 to 3e37, negative and mixed, bands at ±2 EV, mask exposures at ±16 EV.
 - **The viewport against the export** (decision 15; `docs/engine.md`, Pipes). Principle 2 asks that smaller views use the same processing, scaled down; the mask is recomputed at the viewport's scale, the same processing at that scale, so it is close, not exact.
   - The target, on mire1 and corpus raws, for each filtered golden case's settings: the viewport render at 2400×1600 fitted and at 1/2, 1/4 and 1/8 against the export downscaled by the engine's box filter, mean ΔE2000, less the same comparison for the same edit with the mask compensated exactly as the filtered mode compensates it, contrast included, then left unfiltered (the per-pixel gap any nonlinear operation shows after the downscale). At most 0.15 at 2400×1600 and 1/2, and at most 0.4 at 1/4 and 1/8; and at 2400×1600 within `Tolerance::DARKTABLE`'s mean, 0.767. No maximum: the per-pixel gap alone reaches 3.6 to 11 at hard edges.
-  - That baseline is not `details` = no, which ignores contrast compensation as darktable's does, so it needs a setting only the tests reach, never in the schema, an edit or a module: a test-only operation, `CompensatedUnfiltered`, that the test plans in the operation's place.
+  - That baseline is not `details` = no, which ignores contrast compensation as darktable's does, so it needs a setting only the tests reach, never in the schema, an edit or a tool: a test-only operation, `CompensatedUnfiltered`, that the test plans in the operation's place.
   - Measured on mire1 for tests 0080, 0129 and 0133 and the five iterations: the filter's share is −0.063 to +0.006 at every scale and the whole gap at 2400×1600 at most 0.131 (`the_viewport_follows_the_export`, ignored as it needs the integration images; Results).
   - The target is provisional for tests 0079, 0130 and 0132, the guided filters', until each is measured. The corpus raws wait for a test through the whole pipeline.
 
@@ -706,7 +706,7 @@ Together they cover all seven estimators and all five filters, with and without 
 
 The choices this port settles, each with its reason:
 
-1. **The zero bands render darktable's curve**, its ripple included (decision 22), as decision 32 accepts colour balance rgb's gamut mapping. Off, the module leaves the operation out of the plan, so the photo is untouched; on at its defaults, the operation renders the ripple everywhere, up to 0.025 EV at the default smoothing (decision 32). No schema parameter or hidden setting turns the ripple off.
+1. **The zero bands render darktable's curve**, its ripple included (decision 22), as decision 32 accepts colour balance rgb's gamut mapping. Off, the tool leaves the operation out of the plan, so the photo is untouched; on at its defaults, the operation renders the ripple everywhere, up to 0.025 EV at the default smoothing (decision 32). No schema parameter or hidden setting turns the ripple off.
 2. **The band fit is least squares in f64 by Householder QR** of the 9 × 8 matrix, rounded to f32 once. darktable's f32 Cholesky, restated, is reproduced by no restatement above σ ≈ 1.6 and fails from 1.98. The normal equations in f64 would square the condition, to 4.9e10 at the slider's top, and hold to about 1e-6 there rather than 1e-11.
 3. **The smoothing range is darktable's slider**, 0.6306887 to 2.5227547, its ends as `smoothing_callback` computes them in f32, correctly rounded, as the schema's hard limits, with 1 to 2 as the soft range for a control. Above 2.0 the weights reach ±1,000 and the GPU's f32 evaluation loses up to 8e-4 EV (8e-5 at 2.0). No golden case reaches above 1.5 (Test plan).
 4. **The curve is evaluated directly**, not read from darktable's 80,001-entry table (Deliberate differences): about 1e-4 EV, smooth in the bands for the derivatives, and no table to upload. The table, rounded as darktable reads it, would match darktable to the last bit but give the derivatives a staircase.
@@ -719,7 +719,7 @@ The choices this port settles, each with its reason:
 
 ## Planned
 
-- **The guided filter and the averaged guided filter** (GPU plan), with their golden cases `toneequal-gf`, `toneequal-lightness` and `toneequal-sum`, the edited case `toneequal-gf-iterations` and the box mean. The Tone equalizer module lists them disabled until then.
+- **The guided filter and the averaged guided filter** (GPU plan), with their golden cases `toneequal-gf`, `toneequal-lightness` and `toneequal-sum`, the edited case `toneequal-gf-iterations` and the box mean. The Tone equalizer tool lists them disabled until then.
 - **The iterated mask in row strips** (decision 15's choice C of EIGF's iterations): scratch laid out as an image whose window's base is in the pass header. Until then an export of more than one iteration above about 33 MP is refused on lavapipe, naming `eigf_mask` (Notes, Scratch).
 - **A first round per run** for an operation whose whole-image passes form several runs, in the engine: such an operation, or one that does not override `Operation::tiles_whole_image_passes`, runs whole with every operation before it, and a first round holds one instance's scratch, by operation ID. Needed when an operation with several runs must tile at sizes that do not fit whole.
 - **The pass kind's rename**, `PassKind::Reduction` to `WholeImage` (decision 15), a mechanical change across the plugin crate, the engine and the operations.
@@ -727,6 +727,6 @@ The choices this port settles, each with its reason:
 - **The mask histogram readout**, `mask_histogram` (Deliberate differences; decision 19).
 - **Crop and the mask**, with crop's port in Phase 3 (Neighbourhood and scale).
 - **A quantised golden case:** darktable's own result at quantised settings depends on its binary's rounding at pixels on a quantisation step: on mire1, 2 to 3 pixels of 10 million with one iteration, 0.16% with five (Precision; Results). `Tolerance` has a mean and a max only, so no quantised case can pass. Planned: a golden tolerance kind allowing a share of pixels over the max, as the exit test allows 0.01% over 2.3 (decision 62), recorded as a baseline decision since it loosens a tolerance (`golden-tests`), and a case at one iteration with quantisation 0.5.
-- **The mask preview,** an engine feature in Phase 3: one viewport-only "show mask" mechanism for every module with a mask button (the tone equalizer, haze removal, highlight reconstruction, colour balance rgb). The session sets a flag for the instance whose mask the module shows, and the engine shows that operation's mask output, bypassing the operations after it as darktable's passthrough does; never in the edit or its sidecar, and in a cache entry of its own.
+- **The mask preview,** an engine feature in Phase 3: one viewport-only "show mask" mechanism for every tool with a mask button (the tone equalizer, haze removal, highlight reconstruction, colour balance rgb). The session sets a flag for the instance whose mask the tool shows, and the engine shows that operation's mask output, bypassing the operations after it as darktable's passthrough does; never in the edit or its sidecar, and in a cache entry of its own.
 - **The wands, the on-image picker and scroll editing** (Phase 3): the wands' maths ported as pure Rust functions with the mask histogram readout; the picker and scroll editing, which need a mask readback at the cursor, the refit loop and cursor handling, with the on-photo controls. How a wand turns the readout into values is settled with the first Auto (`docs/engine.md`, Open questions, Auto).
 - **Masks on layers** (Phase 4): a layer's instance would build its mask from an image the background instance, and lower layers, already changed (decision 34), so its bands would fall on other tones than the same slider's on the background, and every layer would add its own whole-image grid passes. It is settled with layers and the import of darktable's masked instances, likely per instance as darktable computes each instance's mask from its own input, so that imported edits render exactly. Meanwhile the grid code stays shareable between instances.

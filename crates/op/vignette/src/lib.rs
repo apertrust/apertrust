@@ -17,7 +17,7 @@
 
 //! Vignetting, ported from darktable (`src/iop/vignette.c`): darkening or
 //! lightening, and desaturating or saturating, towards the image's edges, in a
-//! superellipse around a centre. The Vignette module (`docs/modules/README.md`). See
+//! superellipse around a centre. The Vignette module (`docs/tools/README.md`). See
 //! `docs/ports/vignette.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run

@@ -1,8 +1,8 @@
-# Слова модулів українською (docs/gui.md, Module panels from definitions).
+# Слова модулів українською (docs/gui.md, Tool panels from definitions).
 # Переклад повідомлень з en-GB/modules.ftl з тими самими змінними. Чернетка: ще не
 # перевірена носієм мови.
 
-## Точки чорного і білого в raw (docs/modules/raw-black-white-point.md): терміни з
+## Точки чорного і білого в raw (docs/tools/raw-black-white-point.md): терміни з
 ## українського перекладу darktable.
 
 module-rawprepare-title = Точки чорного і білого в raw
@@ -27,7 +27,7 @@ module-rawprepare-control-flat_field-promise = Корекція плоского
 module-rawprepare-control-flat_field-option-off = Вимкнено
 module-rawprepare-control-flat_field-option-embedded = Вбудована GainMap
 
-## Відновлення переекспонованого (docs/modules/highlight-reconstruction.md): терміни з
+## Відновлення переекспонованого (docs/tools/highlight-reconstruction.md): терміни з
 ## українського перекладу darktable.
 
 module-highlights-title = Відновлення переекспонованого
@@ -86,7 +86,7 @@ module-highlights-control-scales-option-px_1024 = 1024 px (дуже повіль
 module-highlights-control-scales-option-px_2048 = 2048 px (неймовірно повільно)
 module-highlights-control-scales-option-px_4096 = 4096 px (неймовірно повільно)
 
-## Демозаїкізація (docs/modules/demosaic.md): терміни з українського перекладу
+## Демозаїкізація (docs/tools/demosaic.md): терміни з українського перекладу
 ## darktable, дві підказки методу, для матриць Баєра і X-Trans, в одній.
 
 module-demosaic-title = Демозаїкізація
@@ -160,7 +160,7 @@ module-demosaic-control-cs_center-label = Різкий центр
 module-demosaic-control-cs_center-full = Збільшення різкості знімка, різкий центр
 module-demosaic-control-cs_center-promise = Коригування того, що ми вважаємо різким центром зображення.
 
-## AgX (docs/modules/agx.md): терміни з українського перекладу darktable; розділ Look
+## AgX (docs/tools/agx.md): терміни з українського перекладу darktable; розділ Look
 ## тут «Вигляд», де переклад darktable має «Крива».
 
 module-agx-title = AgX
@@ -307,7 +307,7 @@ module-agx-control-blue_outset-promise = Відновити чистоту си�
 module-agx-control-blue_unrotation-label = Зворотне обертання синього
 module-agx-control-blue_unrotation-full = Зворотне обертання синього
 module-agx-control-blue_unrotation-promise = Скасувати колірний зсув у синіх тонах.
-## Вихідний колірний профіль (docs/modules/output-colour-profile.md): терміни з
+## Вихідний колірний профіль (docs/tools/output-colour-profile.md): терміни з
 ## українського перекладу darktable.
 
 module-colorout-title = Вихідний колірний профіль
@@ -327,7 +327,7 @@ module-colorout-control-type-option-display_p3 = Display P3 RGB
 module-colorout-control-type-option-prophoto_rgb = Лінійний ProPhoto RGB
 module-colorout-control-type-option-brg = BRG (для тестування)
 
-## Баланс білого (docs/modules/white-balance.md)
+## Баланс білого (docs/tools/white-balance.md)
 
 module-temperature-title = Баланс білого
 module-temperature-preset-settings-label = Налаштування
@@ -367,7 +367,7 @@ module-temperature-control-various-label = Смарагдовий
 module-temperature-control-various-full = Коефіцієнт смарагдового
 module-temperature-control-various-promise = На що множаться смарагдові фотосайти чотириколірного сенсора raw.
 
-## Орієнтація (docs/modules/orientation.md)
+## Орієнтація (docs/tools/orientation.md)
 
 module-flip-title = Орієнтація
 module-flip-control-orientation-label = Трансформації
@@ -395,7 +395,7 @@ module-flip-action-flip_vertically-label = Віддзеркалити за ве�
 module-flip-action-flip_vertically-full = Віддзеркалити за вертикаллю
 module-flip-action-flip_vertically-promise = Віддзеркалити зображення згори донизу.
 
-## Експозиція (docs/modules/exposure.md)
+## Експозиція (docs/tools/exposure.md)
 
 module-exposure-title = Експозиція
 module-exposure-auto = Встановлює Експозицію так, щоб тони знімка розташувалися навколо середнього сірого. Зафіксована Експозиція не змінюється.
@@ -434,7 +434,7 @@ module-exposure-setting-lightness-promise = Бажана цільова експ
 module-exposure-picker-exposure-full = Експозиція: узяти зі знімка
 module-exposure-picker-exposure-promise = Задає корекцію експозиції за виділеною ділянкою.
 
-## Калібрування кольору (docs/modules/colour-calibration.md)
+## Калібрування кольору (docs/tools/colour-calibration.md)
 
 module-channelmixerrgb-title = Калібрування кольору
 module-channelmixerrgb-tab-cat = CAT
@@ -633,7 +633,7 @@ module-channelmixerrgb-setting-patch_scale-label = Масштаб зразків
 module-channelmixerrgb-setting-patch_scale-full = Масштаб зразків мішені
 module-channelmixerrgb-setting-patch_scale-promise = Яку частину кожного зразка читати від його центру: менше, якщо рамка мішені неточна або відкидає тіні.
 
-## Еквалайзер тонів (docs/modules/tone-equalizer.md): терміни з українського перекладу
+## Еквалайзер тонів (docs/tools/tone-equalizer.md): терміни з українського перекладу
 ## darktable.
 
 module-toneequal-title = Еквалайзер тонів
@@ -710,7 +710,7 @@ module-toneequal-setting-display_exposure_mask-label = Показати маск
 module-toneequal-setting-display_exposure_mask-full = Показати маску експозиції
 module-toneequal-setting-display_exposure_mask-promise = Показує на місці знімка маску, за якою діють смуги.
 
-## Колірний баланс RGB (docs/modules/colour-balance-rgb.md): терміни з українського
+## Колірний баланс RGB (docs/tools/colour-balance-rgb.md): терміни з українського
 ## перекладу darktable.
 
 module-colorbalancergb-title = Колірний баланс RGB
@@ -840,7 +840,7 @@ module-colorbalancergb-picker-white_fulcrum-promise = Узяти колір зі
 module-colorbalancergb-picker-grey_fulcrum-full = Опорна точка контрасту сірого: узяти зі знімка
 module-colorbalancergb-picker-grey_fulcrum-promise = Узяти колір зі знімка
 
-## Тонова крива (docs/modules/tone-curve.md)
+## Тонова крива (docs/tools/tone-curve.md)
 
 module-tone_curve-title = Тонова крива
 module-tone_curve-tab-luma = Яскравість
@@ -862,7 +862,7 @@ module-tone_curve-control-preserve_colour-option-sum_rgb = Сума RGB
 module-tone_curve-control-preserve_colour-option-norm_rgb = Норма RGB
 module-tone_curve-control-preserve_colour-option-basic_power = Базовий степеневий
 
-## Видалення серпанку (docs/modules/haze-removal.md): терміни з українського перекладу
+## Видалення серпанку (docs/tools/haze-removal.md): терміни з українського перекладу
 ## darktable.
 
 module-hazeremoval-title = Видалення серпанку
@@ -873,7 +873,7 @@ module-hazeremoval-control-distance-label = Відстань
 module-hazeremoval-control-distance-full = Відстань
 module-hazeremoval-control-distance-promise = Обмежити видалення серпанку до певної просторової глибини.
 
-## Основні кольори RGB (docs/modules/rgb-primaries.md): терміни з українського
+## Основні кольори RGB (docs/tools/rgb-primaries.md): терміни з українського
 ## перекладу darktable.
 
 module-primaries-title = Основні кольори RGB
@@ -902,7 +902,7 @@ module-primaries-control-achromatic_tint_purity-label = Величина змі�
 module-primaries-control-achromatic_tint_purity-full = Величина зміщення точки білого
 module-primaries-control-achromatic_tint_purity-promise = Величина зміщення точки білого.
 
-## Зерно (docs/modules/grain.md): терміни з українського перекладу darktable.
+## Зерно (docs/tools/grain.md): терміни з українського перекладу darktable.
 
 module-grain-title = Зерно
 module-grain-control-scale-label = Зернистість
@@ -915,7 +915,7 @@ module-grain-control-midtones_bias-label = Зміщення середніх т�
 module-grain-control-midtones_bias-full = Зміщення середніх тонів
 module-grain-control-midtones_bias-promise = Величина зміщення середніх тонів відповідно до моделювання відгуку фотопаперу. Чим більше зміщення, тим виразніше зменшення зернистості в тінях і світлих тонах.
 
-## Пом'якшення (docs/modules/soften.md): терміни з українського перекладу darktable.
+## Пом'якшення (docs/tools/soften.md): терміни з українського перекладу darktable.
 
 module-soften-title = Пом'якшення
 module-soften-control-size-label = Розмір
@@ -931,7 +931,7 @@ module-soften-control-amount-label = Інтенсивність
 module-soften-control-amount-full = Інтенсивність
 module-soften-control-amount-promise = Суміш ефектів.
 
-## Віньєтування (docs/modules/vignetting.md): терміни з українського перекладу darktable.
+## Віньєтування (docs/tools/vignetting.md): терміни з українського перекладу darktable.
 
 module-vignette-title = Віньєтування
 module-vignette-control-scale-label = Початок зони затемнення

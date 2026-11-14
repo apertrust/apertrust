@@ -19,7 +19,7 @@
 //! `src/common/guided_filter.c` and `src/common/box_filters.cc`): He, Sun and Tang's
 //! dark channel prior, with the ambient light, the image's depth and the filtered
 //! transmission computed by whole-image passes on the GPU (decision 15). The
-//! first pass's Haze removal module drives it (`docs/modules/README.md`). See
+//! first pass's Haze removal module drives it (`docs/tools/README.md`). See
 //! `docs/ports/hazeremoval.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run

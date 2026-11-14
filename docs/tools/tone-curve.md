@@ -1,10 +1,10 @@
 # Tone curve
 
-Module `tone_curve`, version 1. It works on layers and has no Auto.
+Tool `tone_curve`, version 1. It works on layers and has no Auto.
 
 It drives one `rgbcurve` instance. An unedited photo does not run it, so it is planned only while the curve is off the identity (decision 28). The identity curve is untouched.
 
-**Decision 2** (rewrite first, improve later): the first pass shows darktable's RGB curve and RGB levels as modules of their own ([README.md](README.md)). The built Luma curve below becomes RGB curve's linked curve, as separate work, planned:
+**Decision 2** (rewrite first, improve later): the first pass shows darktable's RGB curve and RGB levels as tools of their own ([README.md](README.md)). The built Luma curve below becomes RGB curve's linked curve, as separate work, planned:
 
 - `luma_points` becomes its points, `preserve_colour` its preserve colours, and `LumaCurve` the curve it draws.
 - `tone_curve` then joins `RETIRED`, so an edit holding it loses those values with a warning (decision 43).
@@ -12,15 +12,15 @@ It drives one `rgbcurve` instance. An unedited photo does not run it, so it is p
 **Status:** the curve runs at darktable's place, `rgbcurve` at 42, before the tone mapper (decision 22).
 
 - A tolerance or a choice marked proposed is open.
-- The rows measure at the module's input and output.
+- The rows measure at the tool's input and output.
 - Measures and test images are in [README.md](README.md).
 
-**Built: the Luma curve and Preserve colours,** in `crates/modules/src/tone_curve.rs`. The module renderer draws it with the design system's curve in the app's Base tab, at RGB curve's place: first of the built modules there, before the Tone equalizer (decision 38). What is built:
+**Built: the Luma curve and Preserve colours,** in `crates/modules/src/tone_curve.rs`. The tool renderer draws it with the design system's curve in the app's Base tab, at RGB curve's place: first of the built tools there, before the Tone equalizer (decision 38). What is built:
 
 - **Controls:** `luma_points` holds the points between the curve's ends, up to 18, x at least 0.0025 apart and as far from the ends (as `rgbcurve` and the curve widget keep them), none by default, the identity. The ends stay at (0, 0) and (1, 1) and are not stored: the binding adds them as the curve's first and last nodes (decision 31). The panel draws them as points that do not move.
 - **Preserve colours:** `preserve_colour` is one choice over six of `rgbcurve`'s norms (`docs/ports/rgbcurve.md`, Tool binding notes): luminance the default, then max RGB, average RGB, sum RGB, norm RGB and basic power, by the port's names (`luminance`, `max_rgb`, `average_rgb`, `sum_rgb`, `norm_rgb`, `basic_power`).
-- **Tabs:** Luma, RGB, Red, Green, Blue and Advanced, Preserve colours on the Advanced tab. RGB, Red, Green and Blue have no rows, so the panel draws them disabled; they give way to RGB curve's mode and channel tabs when the module becomes RGB curve.
-- **Binding:** one `rgbcurve` instance, linked, monotone Hermite, middle grey compensated, through (0, 0), the points and (1, 1), preserving colours by the choice. Nothing while the curve is straight, every point on the diagonal, whatever Preserve colours holds. The module owns every `rgbcurve` parameter.
+- **Tabs:** Luma, RGB, Red, Green, Blue and Advanced, Preserve colours on the Advanced tab. RGB, Red, Green and Blue have no rows, so the panel draws them disabled; they give way to RGB curve's mode and channel tabs when the tool becomes RGB curve.
+- **Binding:** one `rgbcurve` instance, linked, monotone Hermite, middle grey compensated, through (0, 0), the points and (1, 1), preserving colours by the choice. Nothing while the curve is straight, every point on the diagonal, whatever Preserve colours holds. The tool owns every `rgbcurve` parameter.
 - **What the panel draws** is the curve `rgbcurve` renders for greys read by their value, on lightness axes (`Module::curve`, `tone_curve::LumaCurve`): the nodes made linear, darktable's monotone Hermite tangents and darktable's power law past the last, read back as lightness. A straight curve draws the diagonal exactly, so a point added on it keeps it straight. With Preserve colours on sum or norm, greys do not render as drawn (T4 and T17, below); what to draw then is open.
 - **Rows:** T0, T1, T4 to T8, T11, T16 and T17 are tests in `crates/modules/tests/tone_curve.rs`, T4, T5 and T17 for each Preserve colours option ([Results](#results)).
 
@@ -58,21 +58,21 @@ Audited against darktable's `src/iop/rgbcurve.c` ([README.md](README.md), Slider
 
 ## Invariants
 
-Rows that measure the module's output against its input plan the module's operations alone on the test image, with no AgX before them, so the curve sees the ramp as it is. Rows that measure the frame run the whole pipeline, AgX included, as an edit does.
+Rows that measure the tool's output against its input plan the tool's operations alone on the test image, with no AgX before them, so the curve sees the ramp as it is. Rows that measure the frame run the whole pipeline, AgX included, as an edit does.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | T0 | None: the curve at the identity | | `bind`; the plan's instances and cache keys; the frame | `bind` returns nothing; instances, keys and frames as with no edit | Exact | Every image |
-| T1 | Luma's first step | `rgbcurve` at the identity, linked, luminance, explicit | Module output against its input; frame, ΔE2000 against T0's | No pixel changes beyond the curve's precision | Module output within 1e-5, relative above 1; frame max ≤ 0.01 (proposed) | Every image |
-| T4 | Luma points | darktable's presets "contrast medium (linear)", "contrast high (linear)" and "contrast compression", and one point at (0.25, 0.35) | Module output: each pixel's luminance on the axis | Renders as drawn: through each point, and between points as the curve's CPU twin | 2e-4 at the points, 1e-4 between them, in axis units (proposed) | Ramp; 90D |
-| T5 | Luma points | As T4 | Module output: each pixel's RGB over its input's | One factor per pixel: hue and saturation are kept | Channel spread ≤ 1e-6 relative, on pixels with luminance over 1e-6 (proposed) | Sweep; chart |
-| T6 | Luma points | Any curve whose points rise left to right | Module output, on the ramp | Tones keep their order; nothing overshoots between points | Exact order | Ramp |
-| T7 | Adding a point | A point on the identity; a point on each of T4's curves at x 0.1, 0.5 and 0.9 | Module output, before and after | On the identity, no change. On a curve, the curve moves by at most 0.01 of the axis anywhere, as the interpolation reshapes the neighbouring segments | 1e-5; 0.01 (proposed; measure before confirming) | Ramp |
+| T1 | Luma's first step | `rgbcurve` at the identity, linked, luminance, explicit | Tool output against its input; frame, ΔE2000 against T0's | No pixel changes beyond the curve's precision | Tool output within 1e-5, relative above 1; frame max ≤ 0.01 (proposed) | Every image |
+| T4 | Luma points | darktable's presets "contrast medium (linear)", "contrast high (linear)" and "contrast compression", and one point at (0.25, 0.35) | Tool output: each pixel's luminance on the axis | Renders as drawn: through each point, and between points as the curve's CPU twin | 2e-4 at the points, 1e-4 between them, in axis units (proposed) | Ramp; 90D |
+| T5 | Luma points | As T4 | Tool output: each pixel's RGB over its input's | One factor per pixel: hue and saturation are kept | Channel spread ≤ 1e-6 relative, on pixels with luminance over 1e-6 (proposed) | Sweep; chart |
+| T6 | Luma points | Any curve whose points rise left to right | Tool output, on the ramp | Tones keep their order; nothing overshoots between points | Exact order | Ramp |
+| T7 | Adding a point | A point on the identity; a point on each of T4's curves at x 0.1, 0.5 and 0.9 | Tool output, before and after | On the identity, no change. On a curve, the curve moves by at most 0.01 of the axis anywhere, as the interpolation reshapes the neighbouring segments | 1e-5; 0.01 (proposed; measure before confirming) | Ramp |
 | T8 | Removing a point | Drag one off, then undo; remove the only point | Frame | Undo restores it; removing the only point returns to T0 | Exact | Ramp |
 | T11 | Points, as commands | x out of order or closer than 0.0025, 19 points | The command's result; `bind` | Refused, and the widget never sends them; `bind` never returns nodes `rgbcurve`'s `prepare` refuses | Exact | CPU |
 | T16 | Extremes | Curves to 0 and to 1, points 0.0025 apart, a step from 0 to 1 | Frame | Finite everywhere | No NaN or infinity | Sweep; extended ramp |
-| T17 | Preserve colours | Each of the six options with T4's curves: luminance, max RGB (the largest channel), average RGB (the channels' mean), sum RGB (their sum), norm RGB (√(r² + g² + b²)) and basic power ((r³ + g³ + b³) / (r² + g² + b²)) | Module output: the option's measure of each pixel, before and after, read in f64 | The curve acts on that measure: the output's measure is the curve, as `rgbcurve` evaluates it on linear values, of the input's, and T4 and T5 hold with the option. Sum and norm measure a grey v as 3v and √3·v, so with them a grey renders C(3v)/3 and C(√3·v)/√3, not the curve drawn, and T4 cannot hold | Within 1e-5, relative, on pixels whose measure is over 1e-6 (proposed); T4's and T5's own | Ramp; sweep |
-| T20 | The curve on a layer, Phase 4 | T4's curves on a full-mask layer at 100 % | Module output inside the mask | Changes the image as the same curve does on the background | As T4 | Ramp |
+| T17 | Preserve colours | Each of the six options with T4's curves: luminance, max RGB (the largest channel), average RGB (the channels' mean), sum RGB (their sum), norm RGB (√(r² + g² + b²)) and basic power ((r³ + g³ + b³) / (r² + g² + b²)) | Tool output: the option's measure of each pixel, before and after, read in f64 | The curve acts on that measure: the output's measure is the curve, as `rgbcurve` evaluates it on linear values, of the input's, and T4 and T5 hold with the option. Sum and norm measure a grey v as 3v and √3·v, so with them a grey renders C(3v)/3 and C(√3·v)/√3, not the curve drawn, and T4 cannot hold | Within 1e-5, relative, on pixels whose measure is over 1e-6 (proposed); T4's and T5's own | Ramp; sweep |
+| T20 | The curve on a layer, Phase 4 | T4's curves on a full-mask layer at 100 % | Tool output inside the mask | Changes the image as the same curve does on the background | As T4 | Ramp |
 
 ## Results
 
@@ -83,14 +83,14 @@ Where a row fails, its proposed bound stays in an ignored test while it is open,
 | Row | Result |
 | --- | --- |
 | T0 | Holds, exactly. `bind` sets nothing for the default written out, for points on the diagonal, each with every Preserve colours option, and for the controls kept at their defaults. Frames, instances and cache keys as with no edit on the ramp and the sweep, and on a small synthetic Bayer raw through the export and the viewport pipes, each on one pipeline that `rgbcurve` joins and leaves on the way |
-| T1 | Holds. The module's output within 1.9e-6 of its input on the ramp, 2.6e-6 on the extended ramp and 1.1e-6 on the sweep, relative above 1. The frame against no edit, with `rgbcurve` before AgX at darktable's 42 (decision 22): a max ΔE2000 of 7.2e-5 on the small raw, 3.9e-5 on the ramp, 9.4e-5 on the sweep |
+| T1 | Holds. The tool's output within 1.9e-6 of its input on the ramp, 2.6e-6 on the extended ramp and 1.1e-6 on the sweep, relative above 1. The frame against no edit, with `rgbcurve` before AgX at darktable's 42 (decision 22): a max ΔE2000 of 7.2e-5 on the small raw, 3.9e-5 on the ramp, 9.4e-5 on the sweep |
 | T4 | Holds on the ramp with luminance, max RGB, average RGB and basic power. **With sum RGB and norm RGB it fails**, as T17 says it must (below) |
 | T5 | Holds on the sweep with every option, for T4's curves: a channel spread of at most 1.2e-7 |
 | T6 | Holds on the ramp, for T4's curves and a steep S: every grey's output in order, and none past the heights of the points either side |
 | T7 | On the identity, holds exactly: the point is on the diagonal, so nothing is planned. **On a curve it fails its proposed bound of 0.01** (below) |
-| T8 | Holds, exactly: removing the only point renders as no edit; setting it again, as undo will, renders as before; resetting the control and the module render as no edit. Undo itself waits for the history |
+| T8 | Holds, exactly: removing the only point renders as no edit; setting it again, as Undo does, renders as before; resetting the control and the tool render as no edit |
 | T11 | Holds: 19 points, x out of order or 0.002 apart, a point on an end or closer to one than 0.0025, a coordinate outside 0 to 1 and NaN are refused; 18 points, and the curves above with Preserve colours options, bind to nodes `rgbcurve`'s setup takes. The ends do not move: the renderer sends nothing when one is dragged or moved by the keys. The widget's own tests hold that it never sends what is refused |
-| T16 | Holds: curves to 0 and to 1 between their ends, a falling curve, points the gap apart and a step from 0 to 1, with every Preserve colours option, render finite at the module's output and in the frame, on the sweep and the extended ramp |
+| T16 | Holds: curves to 0 and to 1 between their ends, a falling curve, points the gap apart and a step from 0 to 1, with every Preserve colours option, render finite at the tool's output and in the frame, on the sweep and the extended ramp |
 | T17 | Holds with every option: each option's measure of the output is the curve of its measure of the input within 5.0e-7 on the ramp and 5.7e-7 on the sweep, but luminance, 3.5e-6 on the sweep's out-of-gamut blues (hue 250°, saturation 1.1), where luminance's terms nearly cancel in the kernel's f32. It is T4 that sum and norm fail |
 
 **T4 in detail.** The curves are darktable's "contrast medium (linear)", "contrast high (linear)" and "contrast compression", and the one point at (0.25, 0.35).
@@ -108,7 +108,7 @@ The ignored tests that keep the failing bounds: `t7_adding_a_point_on_a_curve_mo
 ## Phases
 
 - **Phase 2:** the Luma curve with Preserve colours, built, with rows T0, T1, T4 to T8, T11, T16 and T17.
-- **Then:** the module becomes RGB curve's linked curve (decision 2).
+- **Then:** the tool becomes RGB curve's linked curve (decision 2).
 - **Phase 4:** layers, with T20.
 
 The curve widget is built: `Curve` in `apertrust-ui` (`docs/gui.md`, The curve). It differs from the proposals under In the panel and from scripts in five places, each open, with its options in `docs/gui.md`:

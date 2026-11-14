@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The module panel renderer (`docs/gui.md`, Module panels from definitions; decision 28):
+//! The module panel renderer (`docs/gui.md`, Tool panels from definitions; decision 28):
 //! any module's section, drawn from its definition and the session mirror's values, with
 //! no code of the module's own.
 //!

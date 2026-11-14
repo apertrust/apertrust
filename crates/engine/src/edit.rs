@@ -539,7 +539,7 @@ impl Edit {
         values
     }
 
-    /// The module's follow writes (decision 27; `docs/modules/README.md`, rule 13) for a
+    /// The module's follow writes (decision 27; `docs/tools/README.md`, rule 13) for a
     /// change from `before` that set `set`, the controls a command wrote ([`written`]):
     /// for each of them whose value the change moved, in the definition's order, what
     /// [`Module::follow`] gives on `image`, a later control's write over an earlier one's,

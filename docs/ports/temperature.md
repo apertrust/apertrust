@@ -21,7 +21,7 @@ Ported. The kernel is `slang/temperature.slang` in `crates/op/temperature`, with
 
 The second operation of the raw stage. It multiplies each photosite by its filter colour's coefficient, so a neutral surface reads the same in red, green and blue before demosaic and highlight reconstruction, which both work better on balanced data. By default the coefficients are the camera's as-shot white balance, normalised so green is 1.
 
-In the first pass it is darktable's white balance module's, White balance (`docs/modules/white-balance.md`, decision 27). Colour calibration after demosaic adapts the light, as in darktable's scene-referred workflow. A White balance drag runs the raw stage and demosaic again (decision 12).
+In the first pass it is darktable's white balance module's, White balance (`docs/tools/white-balance.md`, decision 27). Colour calibration after demosaic adapts the light, as in darktable's scene-referred workflow. A White balance drag runs the raw stage and demosaic again (decision 12).
 
 ## Pipeline
 
@@ -39,7 +39,7 @@ darktable params version 4, 20 bytes: `red`, `green`, `blue`, `various` (f32), `
 | --- | --- | --- | --- | --- | --- | --- |
 | Red, green, blue | `red`, `green`, `blue` | f32 | 0 to 8 | the as-shot coefficients over green's | White balance (Channel coefficients; temperature and tint a view of them) | The multiplier of each filter colour's photosites |
 | Fourth colour | `various` | f32 | 0 to 8 | the fourth as-shot coefficient, or 1 | White balance (Emerald, not ported) | The fourth colour of a four-colour sensor; unused on red, green and blue ones |
-| Preset | `preset` | choice: `as_shot`, `spot`, `user`, `d65`, `d65_late`, and `camera` (planned, decision 27), darktable's values 6 on, a camera preset's position in its list | | `d65_late` with a colour matrix, `as_shot` without, as in darktable (decision 27) | White balance (Settings; the module stores which camera preset by name and writes `camera` for any) | Where the coefficients came from. `d65_late`, "as shot to reference", tells colorin to correct towards the camera's D65 reference; every other value, `camera` included, tells it nothing |
+| Preset | `preset` | choice: `as_shot`, `spot`, `user`, `d65`, `d65_late`, and `camera` (planned, decision 27), darktable's values 6 on, a camera preset's position in its list | | `d65_late` with a colour matrix, `as_shot` without, as in darktable (decision 27) | White balance (Settings; the tool stores which camera preset by name and writes `camera` for any) | Where the coefficients came from. `d65_late`, "as shot to reference", tells colorin to correct towards the camera's D65 reference; every other value, `camera` included, tells it nothing |
 
 Without a camera, the defaults are darktable's for an image that is not a raw: every coefficient 1, `as_shot`.
 
@@ -108,18 +108,18 @@ None in the result: `whitebalance_1f` and `whitebalance_1f_xtrans` multiply by `
 
 ## Tool binding notes
 
-White balance, darktable's white balance module, owns every parameter (decision 27; `docs/modules/white-balance.md`, `docs/modules/README.md`). It is built (`crates/modules/src/white_balance.rs`).
+White balance, darktable's white balance module, owns every parameter (decision 27; `docs/tools/white-balance.md`, `docs/tools/README.md`). It is built (`crates/modules/src/white_balance.rs`).
 
 - **Settings** writes the four coefficients and `preset` together, as darktable's `_preset_tune_callback` does.
 - **Moving a coefficient, temperature or tint** writes `preset` user modified, as darktable's `gui_changed` does. So the late correction runs only with "as shot to reference" and the as-shot coefficients, the states darktable reaches.
 - **Temperature and tint** are darktable's model of the coefficients through the camera's matrix, a view of them.
 - **`various`** is a control not ported, in no row. Settings writes it with the other three coefficients, as darktable's `_temp_params_from_array` does: the fourth as-shot coefficient or 1, this operation's default.
 
-Planned (decision 27; `docs/modules/white-balance.md`, The camera's presets and Finetune):
+Planned (decision 27; `docs/tools/white-balance.md`, The camera's presets and Finetune):
 
 - the camera's white balance presets from darktable's `wb_presets.json`, carried verbatim at `data/wb_presets.json` (decision 45), with Finetune;
 - `apertrust-raw` parses the file and carries the camera's presets in the image context, which this operation's `defaults` read for `_find_coeffs`' fallback;
-- the module stores a camera preset by darktable's name where darktable stores its position in the list, and binds `preset` as `camera`.
+- the tool stores a camera preset by darktable's name where darktable stores its position in the list, and binds `preset` as `camera`.
 
 The picker (from image area) is White balance's, designed in [pickers.md](../pickers.md) (decision 79): the means of the mosaic's CFA colours over the area, at temperature's input.
 

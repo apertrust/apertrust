@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! What the switched modules' rows share (decision 32; `docs/modules/README.md`, Rows
+//! What the switched modules' rows share (decision 32; `docs/tools/README.md`, Rows
 //! every table has): the module off, kept or untouched, on at darktable's defaults, and
 //! an edit its version 1 saved, read through the engine's sidecar reader as a photo opens
 //! it. Each switched module's test file includes it with `mod switched;`.

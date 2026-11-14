@@ -2,7 +2,7 @@
 
 ## Context
 
-darktable balances white in two modules: white balance, over the raw-stage `temperature` before demosaic, and color calibration, whose CAT tab adapts the scene's illuminant after input colour. Its scene-referred workflow runs both, the first at the camera's reference and the second doing the adaptation. Two modules for one task confuse people, but the first pass mirrors darktable ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)), and improvements come after the migration.
+darktable balances white in two modules: white balance, over the raw-stage `temperature` before demosaic, and color calibration, whose CAT tab adapts the scene's illuminant after input colour. Its scene-referred workflow runs both, the first at the camera's reference and the second doing the adaptation. Two tools for one task confuse people, but the first pass mirrors darktable ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)), and improvements come after the migration.
 
 ## Decision
 
@@ -20,9 +20,9 @@ darktable balances white in two modules: white balance, over the raw-stage `temp
 
 **Colour calibration's CAT tab**, in darktable's `gui_init` order: the adaptation, unavailable with the illuminant "as shot in camera"; the illuminant (darktable's nine), its F or LED source, its temperature (1667 to 25000 K, soft 3000 to 7000), or a custom light's hue and chroma (a lossless view of `x` and `y`, chroma soft 100 and hard 300); gamut compression (0 to 12, soft 4); clip negative RGB from gamut; the closed area colour mapping group. Every illuminant row is hidden with adaptation none. Chroma's reach widens the operation's `x` to −0.1 to 1.2 and `y` to 0.0001 to 2, `prepare` scaling the pair back where its sum passes 0.9999. Its R, G, B, Colourfulness, Brightness and Grey tabs are darktable's too.
 
-**Follow writes:** where darktable's GUI writes other parameters with a control, the module gives them through `Module::follow` in the same change ([0031](0031-views-and-curves-of-the-same-stored-values.md)): an illuminant, its source or temperature writing `x`, `y` and the temperature; hue or chroma writing the temperature; a coefficient, temperature or tint writing `preset` user modified, which turns the late correction off. darktable's session memory (the last daylight and Planckian temperatures, user-modified coefficients) is not mirrored.
+**Follow writes:** where darktable's GUI writes other parameters with a control, the tool gives them through `Module::follow` in the same change ([0031](0031-views-and-curves-of-the-same-stored-values.md)): an illuminant, its source or temperature writing `x`, `y` and the temperature; hue or chroma writing the temperature; a coefficient, temperature or tint writing `preset` user modified, which turns the late correction off. darktable's session memory (the last daylight and Planckian temperatures, user-modified coefficients) is not mirrored.
 
-**The trouble messages** are darktable's, computed by the session from both modules' values: "white balance applied twice" on White balance and "white balance module error" on Colour calibration while Colour calibration adapts and `temperature` is off the camera's reference.
+**The trouble messages** are darktable's, computed by the session from both tools' values: "white balance applied twice" on White balance and "white balance tool error" on Colour calibration while Colour calibration adapts and `temperature` is off the camera's reference.
 
 **Not mirrored:** the hidden Finetune slider's last value and the narrowing of its track within a session; a preset's fourth channel; the two preset entries above the operation's 8, refused. Mirrored and reported upstream: darktable's dead daylight fallback, under which camera reference stays 1, 1, 1 for a camera without a matrix.
 

@@ -20,7 +20,7 @@
 //! nodes each, with darktable's guided filter, which first smooths the chromaticity the
 //! hue is read from and then spreads the saturation and brightness corrections over
 //! areas of one colour, on darktable's recursive Gaussian (`src/common/gaussian.c`,
-//! shared in the colour library). The Colour equalizer module (`docs/modules/README.md`).
+//! shared in the colour library). The Colour equalizer module (`docs/tools/README.md`).
 //! See `docs/ports/colorequal.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run

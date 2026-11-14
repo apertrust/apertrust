@@ -6,7 +6,7 @@ Source: darktable (the reference release, commit 20891f6c6f), `src/iop/rgblevels
 
 Ported. Every mode is in Slang (`crates/op/rgblevels`), with its manifest and schema: linked and independent channels, and all seven ways of preserving colours.
 
-- The operation is in `OPERATIONS` with `default_enabled` off. An unedited photo does not run it, and the session plans it only while a module's binding sets one of its parameters (decision 28). The RGB levels module will (decision 2).
+- The operation is in `OPERATIONS` with `default_enabled` off. An unedited photo does not run it, and the session plans it only while a tool's binding sets one of its parameters (decision 28). The RGB levels tool will (decision 2).
 - `prepare` takes the levels darktable's own invariant allows, 0 ≤ black ≤ grey ≤ white with white above black, and returns `NotPorted` for any other.
 - The kernel copies darktable's table within its first 4 entries above black, to match darktable, and evaluates the curve beyond (Deliberate differences).
 
@@ -137,15 +137,15 @@ flowchart TD
   - a grey outside black and white.
 
   Unused channels are not checked: darktable reads only the first channel's levels when linked.
-- **No auto levels, pickers or histogram:** they are GUI, for the RGB levels module (Tool binding notes).
+- **No auto levels, pickers or histogram:** they are GUI, for the RGB levels tool (Tool binding notes).
 
 ## Tool binding notes
 
-In the first pass (decision 2) the RGB levels module is darktable's: mode, black, grey and white levels with R, G and B tabs while independent, and preserve colours (`docs/modules/README.md`).
+In the first pass (decision 2) the RGB levels tool is darktable's: mode, black, grey and white levels with R, G and B tabs while independent, and preserve colours (`docs/tools/README.md`).
 
-- **Grey point:** darktable's handles move grey with black and white, keeping its relative position (`drag_start_percentage`), and so the power; the module keeps darktable's behaviour.
-- **Preserve colours:** every norm stays, a choice of the module as in darktable, as for RGB curve (`docs/ports/rgbcurve.md`, Tool binding notes). Both operations take darktable's `dt_iop_rgb_norms_t`, here `RgbNorm` in `apertrust-color`, and its kernel twin `rgb_norm` in `color.slang`. Every norm is checked by a golden case here too.
-- **Auto levels** is GUI in darktable. On the preview pipe, `process()` takes the minimum and maximum of the input's non-negative channels (independent, or linked without a norm) or its non-negative norm, over the image or a drawn region. It clamps them to [0, 1], and sets black and white to them and grey to their middle, a power of 1. In Apertrust it would be an Auto for the module's levels: a reduction over the module's input (decision 15) that the binding reads, not part of this operation.
+- **Grey point:** darktable's handles move grey with black and white, keeping its relative position (`drag_start_percentage`), and so the power; the tool keeps darktable's behaviour.
+- **Preserve colours:** every norm stays, a choice of the tool as in darktable, as for RGB curve (`docs/ports/rgbcurve.md`, Tool binding notes). Both operations take darktable's `dt_iop_rgb_norms_t`, here `RgbNorm` in `apertrust-color`, and its kernel twin `rgb_norm` in `color.slang`. Every norm is checked by a golden case here too.
+- **Auto levels** is GUI in darktable. On the preview pipe, `process()` takes the minimum and maximum of the input's non-negative channels (independent, or linked without a norm) or its non-negative norm, over the image or a drawn region. It clamps them to [0, 1], and sets black and white to them and grey to their middle, a power of 1. In Apertrust it would be an Auto for the tool's levels: a reduction over the tool's input (decision 15) that the binding reads, not part of this operation.
 - **Pickers:** darktable's black, grey and white pickers set a point to the picked area's mean, keeping black below grey and white above it by FLT_EPSILON, and grey between them. They are the binding's. A picked area's mean can lie below 0 (negative channels) or above 1, which `prepare` and the schema refuse. The schema keeps darktable's 0 to 1, as its handles do. A picked point is stored by darktable's rule (`rgblevels.c:774-838`): the first channel's mean (`*self->picked_color`, `:786`), applied only when it differs from the last picked; black takes it unless it is above grey, then grey − `FLT_EPSILON`; grey takes it only between black and white, otherwise left unchanged; white takes it unless it is below grey, then grey + `FLT_EPSILON`; its one other bound the parameter's 0 to 1 ([pickers.md](../pickers.md#what-a-pick-writes), decision 79).
 - **Presets:** darktable has none.
 - **The default levels are not a no-op on every pixel.**
@@ -153,7 +153,7 @@ In the first pass (decision 2) the RGB levels module is darktable's: mode, black
   - Below that, where darktable's table rounds every value to 16 bits, they round a channel or norm down to darktable's entry, a multiple of 1/65536.
   - In the channel modes they turn a negative channel to 0, and with a norm they turn a pixel whose norm is 0 or less to black, as darktable does.
 
-  So the operation is left out of the plan while its levels are the defaults, as `edit::instances` does (decision 28), and as RGB curve's is while its curve is straight; its no-op invariant test is the binding's. The RGB levels module becomes a switched module (decision 32): off until a control changes, then on until its reset, the default levels then rendering as darktable's do.
+  So the operation is left out of the plan while its levels are the defaults, as `edit::instances` does (decision 28), and as RGB curve's is while its curve is straight; its no-op invariant test is the binding's. The RGB levels tool becomes a switched tool (decision 32): off until a control changes, then on until its reset, the default levels then rendering as darktable's do.
 
 ## Gradients
 

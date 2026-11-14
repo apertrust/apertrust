@@ -1,15 +1,15 @@
 # Colour balance RGB
 
-Module `colorbalancergb`, version 2. It works on layers, has no Auto and is switched (decision 32).
+Tool `colorbalancergb`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
 It is darktable's color balance rgb in the first pass (decision 2). It has darktable's page: the Master, 4 ways and Masks tabs as content tabs, and the controls in `gui_init`'s order under darktable's labels in British spelling (decision 29).
 
-It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../ports/colorbalancergb.md)). An unedited photo does not run it: it is planned while the module is on, as in darktable, where color balance rgb is off until the user turns it on (decision 32). The module owns every one of the operation's parameters; none is fixed.
+It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../ports/colorbalancergb.md)). An unedited photo does not run it: it is planned while the tool is on, as in darktable, where color balance rgb is off until the user turns it on (decision 32). The tool owns every one of the operation's parameters; none is fixed.
 
-**Status:** built, in `crates/modules/src/colour_balance_rgb.rs`. The app draws it from its definition (`docs/gui.md`, Module panels from definitions) in the Colour tab, after Output colour profile and before RGB primaries, in [README.md](README.md)'s order (decision 38).
+**Status:** built, in `crates/modules/src/colour_balance_rgb.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Colour tab, after Output colour profile and before RGB primaries, in [README.md](README.md)'s order (decision 38).
 
 - Its rows are tests in `crates/modules/tests/colour_balance_rgb.rs`; [Results](#results) gives what they measured.
-- Contrast and its grey fulcrum are this module's, not Exposure's (decision 2): darktable's parameters, `contrast` as darktable's percentage and `grey_fulcrum` at its 18.45 % (decision 22). Brightness is this module's Power luminance, `midtones_y`.
+- Contrast and its grey fulcrum are this tool's, not Exposure's (decision 2): darktable's parameters, `contrast` as darktable's percentage and `grey_fulcrum` at its 18.45 % (decision 22). Brightness is this tool's Power luminance, `midtones_y`.
 - The first step is row B1, measured and reported without a bound (decision 22).
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
@@ -54,7 +54,7 @@ The promises, the tooltips, are darktable's tooltips in British English; the per
 
 `contrast` is Yrg luminance's power around `grey_fulcrum`, `1 + contrast`, at constant Yrg chromaticity; `grey_fulcrum` 18.45 % keeps RGB grey 0.1744 fixed, and RGB 0.18 is 19.04 % (`docs/ports/colorbalancergb.md`, Tool binding notes). A script sends `SetControl { module: "colorbalancergb", control: "contrast", value: 20, done: true }`, and `apertrust-cli edit --set colorbalancergb.contrast=20` does the same.
 
-**Presets:** none yet. darktable's basic colourfulness presets (legacy, natural skin, vibrant colours, standard; the legacy one JzAzBz, the others darktable UCS) come with the header's presets menu (Phase 3), all of whose values the module takes.
+**Presets:** none yet. darktable's basic colourfulness presets (legacy, natural skin, vibrant colours, standard; the legacy one JzAzBz, the others darktable UCS) come with the header's presets menu (Phase 3), all of whose values the tool takes.
 
 ### Sliders against darktable
 
@@ -83,20 +83,20 @@ The tracks span the soft ranges, so Global offset chroma's drag runs over 1 %, C
 
 ## Invariants
 
-A switched module's rows (decision 32; [README.md](README.md), Rows every table has). No control's unit is Apertrust's: the percentages are darktable's own display of its factors, and B4 holds the module's values to darktable's parameters.
+A switched tool's rows (decision 32; [README.md](README.md), Rows every table has). No control's unit is Apertrust's: the percentages are darktable's own display of its factors, and B4 holds the tool's values to darktable's parameters.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
-| B0 | None: the module off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that colour balance rgb joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
-| B1 | The first step | The module on at darktable's defaults, the operation's: a control written at its default | Frame, ΔE2000 against no edit: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: the operation's gamut mapping, its Yrg chroma clip and its clips of negative channels act at any setting, as darktable's do | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
-| B2 | Each control, moved and reset | Contrast 0 %, a write at its default; contrast +20 %; Global brilliance −20 %; Global offset hue 120° with chroma 5 %; the formula JzAzBz; Global vibrance, Shadows lift luminance, Contrast grey fulcrum, White fulcrum and the formula together; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the module stays on and renders as B1's; the module's reset turns it off and renders as no edit, colour balance rgb leaving the plan | Exact | Ramp; the small raw through the viewport; 90D through the viewport and the export |
+| B0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that colour balance rgb joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
+| B1 | The first step | The tool on at darktable's defaults, the operation's: a control written at its default | Frame, ΔE2000 against no edit: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: the operation's gamut mapping, its Yrg chroma clip and its clips of negative channels act at any setting, as darktable's do | Measured and reported, without a bound (decision 22) | Ramp, sweep; the chart; every corpus raw |
+| B2 | Each control, moved and reset | Contrast 0 %, a write at its default; contrast +20 %; Global brilliance −20 %; Global offset hue 120° with chroma 5 %; the formula JzAzBz; Global vibrance, Shadows lift luminance, Contrast grey fulcrum, White fulcrum and the formula together; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as B1's; the tool's reset turns it off and renders as no edit, colour balance rgb leaving the plan | Exact | Ramp; the small raw through the viewport; 90D through the viewport and the export |
 | B3 | Two controls, in either order | Contrast +20 % and Global saturation −30 %; JzAzBz and Global brilliance +10 % | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
-| B4 | Every control, the darktable match | The values of darktable's tests 0083 (params version 4, JzAzBz) and 0093-colorbalancergb-ucs (version 5, darktable UCS), the golden cases `colorbalancergb` and `colorbalancergb-ucs` | The parameters the module binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters, and so the inputs the golden harness checks against darktable's render | One f32 step on a parameter; two f32 steps, 2.4e-7 relative, on a uniform word; the gamut table exact | The two cases' parameters, on the CPU |
+| B4 | Every control, the darktable match | The values of darktable's tests 0083 (params version 4, JzAzBz) and 0093-colorbalancergb-ucs (version 5, darktable UCS), the golden cases `colorbalancergb` and `colorbalancergb-ucs` | The parameters the tool binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters, and so the inputs the golden harness checks against darktable's render | One f32 step on a parameter; two f32 steps, 2.4e-7 relative, on a uniform word; the gamut table exact | The two cases' parameters, on the CPU |
 | B5 | Each control on a layer, Phase 4 | B2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As B2 | Ramp |
-| B6 | On at darktable's defaults | Every control's default made explicit; the module on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind the operation's own exactly, its two grey fulcrums within one f32 step, as a percentage divided by 100 lands (`check::ONE_STEP_FROM_DEFAULT`); on at its defaults colour balance rgb is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
-| B7 | Version 1's edits | Version 1 entries read from `.apxmp`: Contrast +20 %; Global vibrance +30 % and Contrast grey fulcrum 30 % with Contrast 0 %; the formula JzAzBz; and Contrast 0 % alone, and nothing | The module's state; the parameters bound | Those with a value off its default read on and bind what version 1 bound; the others read off, their values dropped, colour balance rgb not planned | Exact | The CPU |
+| B6 | On at darktable's defaults | Every control's default made explicit; the tool on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind the operation's own exactly, its two grey fulcrums within one f32 step, as a percentage divided by 100 lands (`check::ONE_STEP_FROM_DEFAULT`); on at its defaults colour balance rgb is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
+| B7 | Version 1's edits | Version 1 entries read from `.apxmp`: Contrast +20 %; Global vibrance +30 % and Contrast grey fulcrum 30 % with Contrast 0 %; the formula JzAzBz; and Contrast 0 % alone, and nothing | The tool's state; the parameters bound | Those with a value off its default read on and bind what version 1 bound; the others read off, their values dropped, colour balance rgb not planned | Exact | The CPU |
 
-B4 is how the module matches darktable. The golden cases check the operation against darktable-cli at the cases' settings, means of 0.0057 and 0.0018 ΔE2000 (`docs/ports/colorbalancergb.md`). B4 holds the module's controls, set to those settings, to bind exactly those parameters.
+B4 is how the tool matches darktable. The golden cases check the operation against darktable-cli at the cases' settings, means of 0.0057 and 0.0018 ΔE2000 (`docs/ports/colorbalancergb.md`). B4 holds the tool's controls, set to those settings, to bind exactly those parameters.
 
 Its first step, B1, is the operation's own behaviour at its defaults, which the port matched to darktable's at those defaults within a mean ΔE2000 of 0.0016, max 0.0106, a local check (`docs/ports/colorbalancergb.md`, Per pixel).
 
@@ -106,9 +106,9 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/colour_balance_rgb.rs`
 
 | Row | Result |
 | --- | --- |
-| B0 | Holds, exactly. Frames byte-identical to no edit, the module off and untouched or with every control kept, on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that colour balance rgb joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
+| B0 | Holds, exactly. Frames byte-identical to no edit, the tool off and untouched or with every control kept, on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that colour balance rgb joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
 | B1 | darktable's behaviour: neutral and moderately saturated colours stay, colours near the gamut's edge move; corpus means of 0.0000 to 0.0274 ΔE2000 (below) |
-| B2 | Holds, exactly, on the ramp and on the small raw through the viewport, and on the 90D through the viewport and the export: every move changes the frame, a write at the default among them; reset control by control, the module renders as on at darktable's defaults; the module's reset renders as no edit |
+| B2 | Holds, exactly, on the ramp and on the small raw through the viewport, and on the 90D through the viewport and the export: every move changes the frame, a write at the default among them; reset control by control, the tool renders as on at darktable's defaults; the tool's reset renders as no edit |
 | B3 | Holds, exactly, on the sweep and on the 90D through the viewport and the export |
 | B4 | Holds. Test 0083's kernel inputs are the golden case's byte for byte; test 0093's are within 7.5e-8 relative, one f32 step from a percentage's division, its gamut table exact |
 | B6 | Holds |
@@ -144,10 +144,10 @@ So darktable UCS leaves neutral and moderately saturated colours where they were
 What darktable's page has that the panel does not draw yet. A row the definition cannot hold is left out of it until it can; one it can hold, as the pickers, is in it, drawn once what it runs is built:
 
 1. **The luminance ranges' graph,** darktable's read-only graph of the three masks, first under Luminance ranges on the Masks tab. The design system's closed registry has no such widget, and the renderer draws no custom row but the curve.
-2. **The pickers** ([pickers.md](../pickers.md), decision 79, its pull request 79.10) on the four hue sliders (darktable's "pick opposite colour from image", Ctrl+click the colour itself) and on White fulcrum and Contrast grey fulcrum. They are declared in the definition, `global_hue`, `shadows_hue`, `midtones_hue`, `highlights_hue`, `white_fulcrum` and `grey_fulcrum`, each named by its slider's quad (`Quad::Picker(id)`), so it holds darktable's page whole, but the renderer draws no quad until what it runs is built (`docs/gui.md`, Module panels from definitions: a quad with nothing behind it).
+2. **The pickers** ([pickers.md](../pickers.md), decision 79, its pull request 79.10) on the four hue sliders (darktable's "pick opposite colour from image", Ctrl+click the colour itself) and on White fulcrum and Contrast grey fulcrum. They are declared in the definition, `global_hue`, `shadows_hue`, `midtones_hue`, `highlights_hue`, `white_fulcrum` and `grey_fulcrum`, each named by its slider's quad (`Quad::Picker(id)`), so it holds darktable's page whole, but the renderer draws no quad until what it runs is built (`docs/gui.md`, Tool panels from definitions: a quad with nothing behind it).
 3. **The mask display** quads on Shadows fall-off, Mask middle-grey fulcrum and Highlights fall-off, which show a range's mask on the photo as a checkerboard. The definition's `Quad` has no showmask yet, and the mask preview is a view mode, later ([README.md](README.md), rule 10).
-4. **Mask preview settings,** darktable's last section label with its two checkerboard colours and size: darktable's settings, the mask preview's app settings when it comes (rule 12). The size could be drawn disabled as a `Row::Setting` (`docs/gui.md`, Module panels from definitions), but not the two colours, since a module's setting has no colour kind.
-5. **Tooltips with no message:** darktable's tabs' ("global grading", "selective color grading", "isolate luminances"), and a module tooltip mentioning the first step's shift, which [README.md](README.md) asks for: a definition implies no message for either, so this document says it (B1).
+4. **Mask preview settings,** darktable's last section label with its two checkerboard colours and size: darktable's settings, the mask preview's app settings when it comes (rule 12). The size could be drawn disabled as a `Row::Setting` (`docs/gui.md`, Tool panels from definitions), but not the two colours, since a tool's setting has no colour kind.
+5. **Tooltips with no message:** darktable's tabs' ("global grading", "selective color grading", "isolate luminances"), and a tool tooltip mentioning the first step's shift, which [README.md](README.md) asks for: a definition implies no message for either, so this document says it (B1).
 6. **Tracks:** darktable paints a wheel's chroma track in that wheel's hue, which a track following another control's value would need; the luminance and saturation bands are drawn plain meanwhile.
 
 darktable changes no row's range by mode in this module, so the renderer's missing per-mode ranges (`docs/gui.md`, What the renderer still lacks) do not touch it.
@@ -159,5 +159,5 @@ darktable changes no row's range by mode in this module, so the renderer's missi
 - **Percentages:** stored as shown, the binding dividing by 100 in f32.
 - **Steps:** darktable's, from its soft ranges.
 - **Row ids:** B, for colour Balance RGB, leaving C for Colour calibration.
-- **The files' names:** by the module's English name, as the `tool-bindings` skill has it for every module: the source and tests `colour_balance_rgb.rs`, snake_case, this page kebab-case, apart from the operation's `colorbalancergb`.
-- **Exposure's Contrast in an edit:** left out with a warning when read. Exposure stays version 1, and nothing migrates to this module, since no released edit holds it.
+- **The files' names:** by the tool's English name, as the `tool-bindings` skill has it for every tool: the source and tests `colour_balance_rgb.rs`, snake_case, this page kebab-case, apart from the operation's `colorbalancergb`.
+- **Exposure's Contrast in an edit:** left out with a warning when read. Exposure stays version 1, and nothing migrates to this tool, since no released edit holds it.

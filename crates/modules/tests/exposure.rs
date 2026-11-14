@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Exposure's invariants (`docs/modules/exposure.md`, Invariants), one test per row, each
+//! Exposure's invariants (`docs/tools/exposure.md`, Invariants), one test per row, each
 //! named after its row. The synthetic ramp and sweep run on CI's software GPUs. The
 //! raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it:
 //!
@@ -26,7 +26,7 @@
 //! balanced: their rows plan the operations from exposure on and leave colorin out,
 //! colour calibration adapting from D50 (`common::Bench::keep`), over a colour raw's
 //! image context with the exposure bias the row names, so the relative controls are
-//! tested over a base that is not zero (`docs/modules/README.md`). A row reads the
+//! tested over a base that is not zero (`docs/tools/README.md`). A row reads the
 //! scene, the image entering AgX; Exposure's own output, the image leaving the exposure
 //! operation; or the frame, colorout's output before it is rounded to 8 bits, clipped to
 //! 0 to 1 as a PNG holds it.
@@ -69,7 +69,7 @@ fn landing(image: &ImageContext, scene: f64) -> f32 {
     (scene * (white - f64::from(black)) + f64::from(black)) as f32
 }
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, RGB 0.18 and 0.1744, then the inputs `image`'s default exposure brings to
 /// those two. One row.
 fn ramp(bias: f32) -> (Picture, ImageContext) {

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Output colour profile (`docs/modules/output-colour-profile.md`): darktable's
+//! Output colour profile (`docs/tools/output-colour-profile.md`): darktable's
 //! output color profile as the user edits with it, in the first pass (decision 2):
 //! darktable's page, one control, Export profile, listing darktable's export profiles in
 //! the order its `dt_colorspaces_init` numbers them. It has no tabs, groups or presets,
@@ -24,7 +24,7 @@
 //! default is the operation's, darktable's sRGB (web-safe), on every photo, so an
 //! untouched module sets nothing. darktable's output intent shows only while its
 //! preference forcing LittleCMS 2 for export is on, off by default, so it is not shown
-//! (rule 12 of `docs/modules/README.md`): the module fixes it at perceptual.
+//! (rule 12 of `docs/tools/README.md`): the module fixes it at perceptual.
 //!
 //! The operation ports sRGB, linear Rec709 and linear Rec2020, but the viewport draws
 //! colorout's output as sRGB, so an edit can choose only sRGB until the display path
@@ -35,7 +35,7 @@
 //! refused drawn disabled.
 //! darktable also lists the ICC files in its `color/out` folders, which the operation
 //! does not read: the definition holds darktable's built-in profiles alone
-//! (`docs/modules/output-colour-profile.md`, Gaps).
+//! (`docs/tools/output-colour-profile.md`, Gaps).
 
 use apertrust_color::PROFILE_TYPES;
 use apertrust_plugin::{ImageContext, Value};

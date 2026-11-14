@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! RGB primaries (`docs/modules/rgb-primaries.md`): darktable's rgb primaries as
+//! RGB primaries (`docs/tools/rgb-primaries.md`): darktable's rgb primaries as
 //! the user edits with it, in the first pass (decision 2): darktable's page, its eight
 //! sliders in `gui_init`'s order under its labels, red, green and blue hue and purity,
 //! then the tint's hue and purity. It has no tabs, groups or presets.
@@ -362,7 +362,7 @@ mod tests {
     }
 
     /// darktable's rgb primaries sliders (`src/iop/primaries.c`, the params and
-    /// `gui_init`), in its parameters' units: `docs/modules/rgb-primaries.md`'s slider
+    /// `gui_init`), in its parameters' units: `docs/tools/rgb-primaries.md`'s slider
     /// table.
     const DARKTABLE: [DarktableSlider; 8] = [
         hue("red_hue"),

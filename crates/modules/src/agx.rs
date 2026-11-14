@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! AgX (`docs/modules/agx.md`): darktable's AgX as the user edits with it, in the
+//! AgX (`docs/tools/agx.md`): darktable's AgX as the user edits with it, in the
 //! first pass (decision 2), the tone mapper of the Base tab: darktable's page, its
 //! controls in `gui_init`'s order under its labels.
 //!
@@ -40,7 +40,7 @@
 //! same change, as `_update_pivot_x` stores it.
 //!
 //! It drives `agx`, which every photo runs, so each control starts at the operation's
-//! default (rule 4 of `docs/modules/README.md`), darktable's scene-referred defaults, and
+//! default (rule 4 of `docs/tools/README.md`), darktable's scene-referred defaults, and
 //! the binding sets a parameter only while its control is off it, the pivot's while it or
 //! the range is. Dynamic range scaling, which only darktable's pickers and Read exposure
 //! read, is not ported, nor is the base primaries' export profile: both are drawn disabled
@@ -873,7 +873,7 @@ mod tests {
     const PURITY: (f32, f32) = (0.0, 0.99);
 
     /// darktable's AgX sliders (`src/iop/agx.c`, the params and `gui_init`), in its
-    /// parameters' units: `docs/modules/agx.md`'s slider table. The pivot's is as
+    /// parameters' units: `docs/tools/agx.md`'s slider table. The pivot's is as
     /// darktable draws it at the default range, −10 to +6.5 EV, its factor the range's
     /// width and its offset the black ([`pivot_slider`] at others).
     const DARKTABLE: [DarktableSlider; 32] = [
@@ -917,7 +917,7 @@ mod tests {
         DarktableSlider::new(PIVOT, UNIT, 2).shown_as(white - black, black)
     }
 
-    /// Every slider is darktable's at the defaults (`docs/modules/agx.md`, Sliders against
+    /// Every slider is darktable's at the defaults (`docs/tools/agx.md`, Sliders against
     /// darktable).
     #[test]
     fn its_sliders_are_darktable_s() {

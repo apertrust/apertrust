@@ -1221,7 +1221,7 @@ fn offered(locale: Locale, debug: bool) -> bool {
 /// The modules each tab shows, by id: each in darktable's group, those darktable puts in
 /// none in the group its other layouts give them, and listed as darktable's right panel
 /// lists them, in pipeline order with the last module at the top (decision 38,
-/// `docs/modules/README.md`). Customise tabs edits these lists once settings keep them
+/// `docs/tools/README.md`). Customise tabs edits these lists once settings keep them
 /// (`docs/gui.md`, The shell).
 const TAB_MODULES: [&[&str]; TABS.len()] = [
     &[],

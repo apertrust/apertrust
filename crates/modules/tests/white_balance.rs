@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! White balance's invariants (`docs/modules/white-balance.md`, Invariants), one test per
+//! White balance's invariants (`docs/tools/white-balance.md`, Invariants), one test per
 //! row, each named after its row. The small raw runs on CI's software GPUs, the CPU rows
 //! everywhere; the raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS` naming
 //! it:

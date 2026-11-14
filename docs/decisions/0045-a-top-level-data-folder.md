@@ -17,7 +17,7 @@ Some files are data rather than code: the settings schema, which build scripts a
 
 ## Options considered
 
-- Each file in its consumer's crate: `wb_presets.json` has two consumers (the temperature operation's defaults and the White balance module, which cannot depend on each other), and the schema has readers outside Rust.
+- Each file in its consumer's crate: `wb_presets.json` has two consumers (the temperature operation's defaults and the White balance tool, which cannot depend on each other), and the schema has readers outside Rust.
 - A crate of `include_str!` constants: a crate without code that every layer depends on.
 - Reading the files at run time from an installed folder: renders can differ between machines, and an install path is needed on three platforms before packaging.
 - Compressing now: saves about 5 MB a binary, not yet worth the code.

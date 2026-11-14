@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Tone equalizer's invariants (`docs/modules/tone-equalizer.md`, Invariants), one
+//! The Tone equalizer's invariants (`docs/tools/tone-equalizer.md`, Invariants), one
 //! test per row, each named after its row: a switched module's (decision 32), Q0 off, Q1
 //! the first step, on at darktable's defaults, Q2 moved and reset, Q3 the order, Q4 the
 //! darktable match, Q6 on at darktable's defaults on the CPU and Q7 version 1's edits; Q5,
@@ -63,7 +63,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, decoded, each_corpus_raw, 
 
 const TONE_EQUALIZER: &str = "toneequal";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18. One row, over a colour raw's context with an exposure bias
 /// of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {

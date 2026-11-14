@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Haze removal (`docs/modules/haze-removal.md`): darktable's haze removal as the
+//! Haze removal (`docs/tools/haze-removal.md`): darktable's haze removal as the
 //! user edits with it, in the first pass (decision 2): darktable's page, its two sliders
 //! in `gui_init`'s order under its labels, Strength and Distance. It has no tabs, groups
 //! or presets of its own.
@@ -224,7 +224,7 @@ mod tests {
     }
 
     /// darktable's haze removal sliders (`src/iop/hazeremoval.c`, the params and
-    /// `gui_init`): `docs/modules/haze-removal.md`'s slider table. Both from params, with
+    /// `gui_init`): `docs/tools/haze-removal.md`'s slider table. Both from params, with
     /// no soft range, factor or offset; the distance with three digits.
     const DARKTABLE: [DarktableSlider; 2] = [
         DarktableSlider::new(STRENGTH, (-1.0, 1.0), 2),

@@ -176,7 +176,7 @@ fn every_fixed_parameter_is_one_its_module_owns() {
 /// The switched modules (decision 32): those darktable leaves off on a new photo, each
 /// over operations an unedited photo does not run. The Tone curve, over the optional
 /// `rgbcurve`, is not among them: it is to be reshaped into RGB curve, darktable's module,
-/// which is switched as it is built (`docs/modules/README.md`, Planned changes).
+/// which is switched as it is built (`docs/tools/README.md`, Planned changes).
 const SWITCHED: [&str; 7] = [
     "toneequal",
     "colorbalancergb",

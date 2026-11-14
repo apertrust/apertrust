@@ -42,7 +42,7 @@ flowchart LR
     setup --> kernel["main, one pass:<br/>manual vignette gain,<br/>vignetting at each tap,<br/>per-channel bicubic warp"]
 ```
 
-In Apertrust it is the operation behind the first pass's Lens correction module, in the Correct tab (decisions 2 and 38; `docs/modules/README.md`, Lens correction). It is the first port that changes an image's geometry through the engine's maps (decision 16).
+In Apertrust it is the operation behind the first pass's Lens correction tool, in the Correct tab (decisions 2 and 38; `docs/tools/README.md`, Lens correction). It is the first port that changes an image's geometry through the engine's maps (decision 16).
 
 ## Pipeline
 
@@ -50,8 +50,8 @@ In Apertrust it is the operation behind the first pass's Lens correction module,
 - **Apertrust slot:** camera RGB 13, darktable's (decision 22), between denoise (profiled) (camera RGB 9, specified) and haze removal (camera RGB 14). Its row in `crates/operations/order.md`'s table, added with the kernel: `lens | camera RGB 13 | no | 13.0, after denoise (profiled), before chromatic aberrations and haze removal | Lens correction`.
 - **Domain:** scene-referred, linear in and out.
 - **Input and output:** RGBA in camera RGB (`default_colorspace()` is `IOP_CS_RGB`), white balanced by temperature, before the input colour profile. The output is in the same space and of the same size: lens has no `modify_roi_out`, so darktable's default keeps the input's size.
-- **Assumes earlier modules:** demosaic. The corrections act on the camera's own red, green and blue, which is why the module sits before colorin: per-channel warps do not commute with a matrix that mixes channels.
-- **Layer support:** background only (`docs/modules/README.md`): it moves pixels, and its maps carry layers' masks (decision 16).
+- **Assumes earlier modules:** demosaic. The corrections act on the camera's own red, green and blue, which is why the tool sits before colorin: per-channel warps do not commute with a matrix that mixes channels.
+- **Layer support:** background only (`docs/tools/README.md`): it moves pixels, and its maps carry layers' masks (decision 16).
 - **On by default:** no. darktable's lens correction is off until the user turns it on. `lens.cc` has no `init`, so `dt_iop_default_init` leaves `default_enabled` false, and no `init_presets`, so no workflow preset applies it (`_dev_auto_apply_presets` applies only presets marked auto-apply). Apertrust's manifest has `default_enabled` off.
 - **darktable's tiling:** `_tiling_callback_md`: factor 4.5, maxbuf 1.5, overlap 4, align 1, with `IOP_FLAGS_TILING_FULL_ROI`, so darktable's tiling asks `modify_roi_in` for every tile's input. darktable-cli's export of the cases at `resourcelevel=reference` does not tile.
 
@@ -207,7 +207,7 @@ The corrections reach the operation through the image context (decision 25, amen
 
 - `apertrust-raw` reads them into `RawImage::lens_correction`, an enum of darktable's four types, each holding `dt_image_correction_data_t`'s values as darktable stores them.
 - `apertrust-engine::raw` copies it to `apertrust_plugin::Camera::lens_correction: Option<LensCorrection>`, as it copies the other camera fields.
-- All the maths stays in the operation. The module reads the corrections for darktable's conditions on its rows.
+- All the maths stays in the operation. The tool reads the corrections for darktable's conditions on its rows.
 - The lens's identity, focal length, aperture and distance join with Lensfun's method.
 
 Fujifilm's are read today (Slices, 1); the other three types are read in their slices.
@@ -323,7 +323,7 @@ On test 0145's X-T3 data, emulated in f32 at 6240 × 4160 (the case's real size 
 
 The readout shows the description of the `modify_flags` value with those bits ("all", "distortion & TCA", …). Upstream changed this after the reference release (6eca513300, "do not report distortion for chromatic aberration alone"); the port follows the reference release.
 
-The operation crate offers `corrections_done(params, image)`, a pure port of the reference release's `_check_corrections_md` (decision 25). The engine's session, which holds the operations, computes it when the module's values or the photo change and reports it with the module's state. The renderer draws the `modify_flags` option those bits name. `apertrust-modules` stays free of operation crates (decision 28).
+The operation crate offers `corrections_done(params, image)`, a pure port of the reference release's `_check_corrections_md` (decision 25). The engine's session, which holds the operations, computes it when the tool's values or the photo change and reports it with the tool's state. The renderer draws the `modify_flags` option those bits name. `apertrust-modules` stays free of operation crates (decision 28).
 
 ## Per pixel (`process`, `_process_md`)
 
@@ -424,8 +424,8 @@ A tile's input region holds the taps of its pixels' positions clamped to the bou
 
 From decision 25:
 
-1. **Version 1 of the embedded algorithm is not ported:** `prepare` returns `NotPorted` for it, with a test. darktable gives every new instance version 2 and shows "use latest algorithm" only for an edit made with version 1, which Apertrust does not import (decision 51; `docs/modules/README.md`, rule 12). `ports.rs` migrates versions 6 and 7 to it as darktable does, and the cases' `has_been_set` false then renders version 2.
-2. **The Lensfun method is not in this part:** `NotPorted`, with a test, until lensfun's port (decision 5). So is embedded metadata on an image without corrections, which darktable sends to Lensfun. The module does not list it there (decision 30). An edit pasted from another photo that holds it keeps it, shown "Not available for this photo", and the session leaves the module out of the render and reports it, as for any setting not ported (decision 28).
+1. **Version 1 of the embedded algorithm is not ported:** `prepare` returns `NotPorted` for it, with a test. darktable gives every new instance version 2 and shows "use latest algorithm" only for an edit made with version 1, which Apertrust does not import (decision 51; `docs/tools/README.md`, rule 12). `ports.rs` migrates versions 6 and 7 to it as darktable does, and the cases' `has_been_set` false then renders version 2.
+2. **The Lensfun method is not in this part:** `NotPorted`, with a test, until lensfun's port (decision 5). So is embedded metadata on an image without corrections, which darktable sends to Lensfun. The tool does not list it there (decision 30). An edit pasted from another photo that holds it keeps it, shown "Not available for this photo", and the session leaves the tool out of the render and reports it, as for any setting not ported (decision 28).
 3. **Divisions guarded** where darktable divides by zero (Precision): a zero-width spline segment, Sony `nc ≤ 1`, a zero denominator read as 0.
 4. **Bounds-checked metadata:** a malformed opcode list or tag gives no correction, or what was read before it, where darktable can read past its buffer.
 5. **Bicubic only in this part:** darktable's warp interpolator is a darktable preference, bicubic by default, which the harness keeps. Bilinear and lanczos2 come with the preference, through rotate and perspective's port (decision 16). This is not a departure from any reference.
@@ -436,9 +436,9 @@ Two behaviours that could differ follow darktable: the clamping and mirroring at
 
 ## Tool binding notes
 
-The first pass's Lens correction module mirrors darktable's page (`docs/modules/README.md`, Lens correction; decisions 2 and 29), in `gui_init`'s order:
+The first pass's Lens correction tool mirrors darktable's page (`docs/tools/README.md`, Lens correction; decisions 2 and 29), in `gui_init`'s order:
 
-- **Correction method** (`method`), always: embedded metadata, Lensfun database (drawn disabled until its port), only manual vignette (ported with the manual vignette; it is the same gain and a copy, so it costs no maths of its own, and the module lists it, rule 8). darktable lists embedded metadata only while the photo carries corrections (`reload_defaults` rebuilds the list), and so does the module (`Module::options`, decision 30). On a photo without corrections it lists Lensfun database and only manual vignette, and its method is Lensfun, darktable's default there: drawn disabled, "not ported yet", until Lensfun's port, and the module makes no correction on such a photo.
+- **Correction method** (`method`), always: embedded metadata, Lensfun database (drawn disabled until its port), only manual vignette (ported with the manual vignette; it is the same gain and a copy, so it costs no maths of its own, and the tool lists it, rule 8). darktable lists embedded metadata only while the photo carries corrections (`reload_defaults` rebuilds the list), and so does the tool (`Module::options`, decision 30). On a photo without corrections it lists Lensfun database and only manual vignette, and its method is Lensfun, darktable's default there: drawn disabled, "not ported yet", until Lensfun's port, and the tool makes no correction on such a photo.
 - **Corrections** (`modify_flags`) and the **corrections done** readout (Setup, The corrections done), hidden for only manual vignette: darktable's eight options in its enum's order.
 - **Embedded metadata:** "use latest algorithm" is not shown (rule 12).
 - **Fine-tuning**, a collapsible group closed at first, under darktable's conditions (`gui_changed`):
@@ -453,13 +453,13 @@ The first pass's Lens correction module mirrors darktable's page (`docs/modules/
 
 **What is an identity:** `modify_flags` none with manual vignette strength 0 (darktable copies), or every fine-tune 0 with `scale_md` 1 and strength 0 (every table 1, every position an integer: bit for bit on finite input). darktable's defaults for a new instance, every correction at 1, change the image.
 
-**The module's untouched state** is off. The module is switched (decision 32), as every module darktable leaves off on a new photo:
+**The tool's untouched state** is off. The tool is switched (decision 32), as every tool darktable leaves off on a new photo:
 
 - off until a control changes;
 - then on with `reload_defaults`' values for the photo: every correction (distortion and vignetting on a monochrome image), darktable's method, the fine-tunes at 1, the image scale at 1 and the manual vignette at darktable's defaults;
 - its reset turns it off.
 
-darktable has no presets for lens correction (no `init_presets`), and the module has none.
+darktable has no presets for lens correction (no `init_presets`), and the tool has none.
 
 ## Gradients
 
@@ -553,7 +553,7 @@ flowchart TD
    - manifest (camera RGB 13, `default_enabled` off, differentiable, radius 0, provenance), schema version 1 (Parameters), `defaults(image)`;
    - `prepare`'s Fujifilm version 2 tables, automatic scale and tangents;
    - `Operation::geometry`: identity extent, `input_region`, `forward`, `backward`, and a tile's region through the bounds once the engine's step provides them;
-   - `corrections_done(params, image)` for the module's readout (Setup, The corrections done);
+   - `corrections_done(params, image)` for the tool's readout (Setup, The corrections done);
    - `NotPorted` for version 1, Lensfun and the other types until their slices;
    - unit tests restating darktable's arithmetic.
 
@@ -575,7 +575,7 @@ flowchart TD
 
 **Later:**
 
-- the Lens correction module (Correct tab; switched, decision 32; the corrections done readout, computed by the operation crate and reported by the session), separate work, since a port is done only with its module;
+- the Lens correction tool (Correct tab; switched, decision 32; the corrections done readout, computed by the operation crate and reported by the session), separate work, since a port is done only with its tool;
 - the Lensfun method and its database;
 - the warp preference's bilinear and lanczos2;
 - `distort_mask` for layers' masks (Phase 4).

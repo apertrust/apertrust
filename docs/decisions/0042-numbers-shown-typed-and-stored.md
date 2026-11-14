@@ -2,7 +2,7 @@
 
 ## Context
 
-How does a slider show its value, how is a number typed, how is fine control given, and how do choices look in a module panel? darktable's users know its bauhaus sliders and comboboxes (`bauhaus.c`), and the first pass mirrors darktable ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)).
+How does a slider show its value, how is a number typed, how is fine control given, and how do choices look in a tool panel? darktable's users know its bauhaus sliders and comboboxes (`bauhaus.c`), and the first pass mirrors darktable ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)).
 
 ## Decision
 
@@ -12,9 +12,9 @@ How does a slider show its value, how is a number typed, how is fine control giv
 
 **darktable's fine-control popup, nothing removed,** opens on Enter, a right-click, Shift+F10, the Menu key or AccessKit's ShowContextMenu, drawn on every platform as a kind of the popup service ([0040](0040-popup-menus-native-on-the-mac-drawn-elsewhere.md)), with darktable's geometry, fan, pick-up rule, precision, zoom and keys and the approved deviations listed in [gui.md](../gui.md) (planned).
 
-**A cancelled gesture leaves no trace:** `Command::CancelGesture { module }` puts the module back as it was before the gesture's first `SetControl { done: false }`: values, marks, follow writes, clamps, the held view coordinates and a switched module's on state. It makes no history step and writes nothing; the session reports `Saved` with the cancel's number. Any other command on the edit ends the gesture as completed; a resize, the scopes and a cancel naming another module leave it under way.
+**A cancelled gesture leaves no trace:** `Command::CancelGesture { module }` puts the tool back as it was before the gesture's first `SetControl { done: false }`: values, marks, follow writes, clamps, the held view coordinates and a switched tool's on state. It makes no history step and writes nothing; the session reports `Saved` with the cancel's number. Any other command on the edit ends the gesture as completed; a resize, the scopes and a cancel naming another tool leave it under way.
 
-**Choices have two styles** (`Choice::style`): `Blended`, darktable's combobox, in module choice and preset rows (the option right-aligned with ⌄ after it, no box, the hover band across the row, the kept marker a slider row has), and `Boxed`, the default, everywhere else. An option the photo does not list is shown last, disabled and described ([0030](0030-controls-as-darktables.md)).
+**Choices have two styles** (`Choice::style`): `Blended`, darktable's combobox, in tool choice and preset rows (the option right-aligned with ⌄ after it, no box, the hover band across the row, the kept marker a slider row has), and `Boxed`, the default, everywhere else. An option the photo does not list is shown last, disabled and described ([0030](0030-controls-as-darktables.md)).
 
 The curve's readout and the equalizer's graph have no value field and no popup.
 
@@ -22,7 +22,7 @@ The curve's readout and the equalizer's graph have no value field and no popup.
 
 - A value field always shown with the number alone: unlike darktable, and noisier at rest.
 - Enter moving to the field: darktable's Enter opens the popup.
-- The client sending the old value and mark back on a cancel: it leaves follow writes, clamps and a switched module on, and makes history steps of nothing.
+- The client sending the old value and mark back on a cancel: it leaves follow writes, clamps and a switched tool on, and makes history steps of nothing.
 - No live values in the popup: darktable shows them.
 - Filtering a paste to number characters: it changes a pasted number unseen.
 - Expressions in the field now: no need yet.
@@ -30,5 +30,5 @@ The curve's readout and the equalizer's graph have no value field and no popup.
 ## Consequences
 
 - `SliderRow` takes its sign rule from its range; `format_number` writes a signed zero with "+".
-- The session holds a gesture's starting state per module until it ends.
+- The session holds a gesture's starting state per tool until it ends.
 - Planned: the popup's pointer, keys, zoom and middle click; the colour wheel's rows.

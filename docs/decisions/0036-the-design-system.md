@@ -6,7 +6,7 @@ How is the interface built so that its parts are reused, it can be themed and tr
 
 ## Decision
 
-**A design-system crate, `apertrust-ui`, under the app** ([gui.md](../gui.md)). It holds tokens and themes, fonts, icons, every component the interface uses and a gallery. It knows nothing of photos, modules or the engine: a slider reports that it moved, and the app turns that into a session command. It depends on `apertrust-base` only for `settings::Choice` ([0043](0043-settings-and-apertrusts-folders.md)). Module panels are generated from module definitions, with custom widgets from a closed registry.
+**A design-system crate, `apertrust-ui`, under the app** ([gui.md](../gui.md)). It holds tokens and themes, fonts, icons, every component the interface uses and a gallery. It knows nothing of photos, tools or the engine: a slider reports that it moved, and the app turns that into a session command. It depends on `apertrust-base` only for `settings::Choice` ([0043](0043-settings-and-apertrusts-folders.md)). Tool panels are generated from tool definitions, with custom widgets from a closed registry.
 
 **Themes** are token sets named by role: colours, the photo's neutral surround, type sizes, density, radii and strokes, overlay colours and motion. They are TOML files in `crates/ui/themes`: dark (the default, a neutral dark grey), grey, light and high contrast built in, and user theme files that extend one. Every theme is checked for WCAG AA contrast when it loads and can be switched live. The interface's scale is a setting (egui's zoom factor). The layout, the components' shapes, the typeface and colours that are data are not themable.
 

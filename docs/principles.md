@@ -5,7 +5,7 @@
 This page is about what photographers get from Apertrust and how it should feel to use. How it is built is covered elsewhere:
 
 - `docs/architecture.md`: the architecture in overview, linking each area's document, `docs/engine.md` the engine among them;
-- `docs/modules/README.md`: the modules.
+- `docs/tools/README.md`: the tools.
 
 ## The promise
 
@@ -17,10 +17,10 @@ For photographers who care how their pictures look, Apertrust gets them there qu
 
 A major part of Apertrust is built on darktable's trusted colour science. It comes in two stages.
 
-- **The migration, first.** darktable's processing and modules are rewritten for the GPU, and every step is compared with darktable's own render until it matches. The migration ends once, for the whole project, when every module of the first pass is in the app and matches, at the end of Phase 3.
+- **The migration, first.** darktable's processing and modules are rewritten for the GPU, and every step is compared with darktable's own render until it matches. The migration ends once, for the whole project, when every tool of the first pass is in the app and matches, at the end of Phase 3.
 - **Then Apertrust's own way.** From there Apertrust's own renders are its reference, and every change to how a photo looks is deliberate, measured and reviewed. Its processing may then evolve on its own, and it does not claim to reproduce darktable.
 
-Nothing of darktable is loaded or linked at any stage, and edits made with the migrated modules keep looking exactly as they did.
+Nothing of darktable is loaded or linked at any stage, and edits made with the migrated tools keep looking exactly as they did.
 
 ## What only Apertrust does
 
@@ -52,12 +52,12 @@ Photographers who care how their pictures look and want to get there quickly. Tw
 
 - **Who:** knows what a raw file can give, and gets it from darktable.
 - **Struggles with:**
-  - hunting through dozens of modules;
+  - hunting through dozens of tools;
   - three ways to do the same thing;
   - settings that interact in ways they must remember.
 - **Wants:** the same results in a fraction of the time, without giving up control when a photo needs it.
 - **Keeps:**
-  - every parameter, in each module's tabs and collapsible groups;
+  - every parameter, in each tool's tabs and collapsible groups;
   - curves;
   - typed-in values;
   - keyboard shortcuts;
@@ -97,7 +97,7 @@ Eight principles, following the three parts of the promise. Each one helps choos
 #### 1. Quality is never traded for simplicity
 
 - Simple controls sit on top of reference-grade processing. Making something easier never makes the picture worse.
-- Power stays reachable, one level down, inside the same module.
+- Power stays reachable, one level down, inside the same tool.
 - *Rules out:* simplifying by removing capability. Users resented this when darktable's forks tried it.
 
 #### 2. What you see is true
@@ -124,23 +124,23 @@ Eight principles, following the three parts of the promise. Each one helps choos
 #### 4. Start from a good picture
 
 - Opening a raw file gives a pleasing, natural result straight away. Editing is refining, not rescuing.
-- *Rules out:* flat or grey starting points that need ten modules before they look like a photo.
+- *Rules out:* flat or grey starting points that need ten tools before they look like a photo.
 
 #### 5. Every control keeps to what it says
 
 - Each control is a darktable parameter and does what darktable's does, checked against darktable.
-- A module that is off leaves the photo untouched, as darktable's does: a module darktable leaves off on a new photo stays off until one of its controls changes, then works from darktable's own defaults, and its reset turns it off again (architecture decision 32). A module every photo runs is untouched at its defaults.
+- A tool that is off leaves the photo untouched, as darktable's does: a tool darktable leaves off on a new photo stays off until one of its controls changes, then works from darktable's own defaults, and its reset turns it off again (architecture decision 32). A tool every photo runs is untouched at its defaults.
 - No control depends on hidden settings or on the order it was used in. These hold now, and are tested.
 - Local work uses the same sliders. Click the subject or the sky, brush, or drag a gradient, then adjust as you would anywhere else; a slider will behave the same on a layer as on the whole photo when layers come.
 - *Rules out:*
   - controls whose effect depends on hidden settings, or on the order they were used in;
-  - masks built inside each module's settings.
+  - masks built into each tool.
 
-#### 6. One module for each tool, its depth inside it
+#### 6. One tool for each task, its depth inside it
 
-- The modules are darktable's, one per algorithm, without its legacy and overlapping ones, in darktable's words.
-- Depth comes from inside the module, in its tabs and collapsible groups.
-- *Rules out:* duplicate modules, legacy alternatives, an expert maze, and copying a layout for its own sake.
+- The processing tools are darktable's processing modules, one per algorithm, without its legacy and overlapping ones, in darktable's words.
+- Depth comes from inside the tool, in its tabs and collapsible groups.
+- *Rules out:* duplicate tools, legacy alternatives, an expert maze, and copying a layout for its own sake.
 
 ### Help: it can set the sliders for you
 
@@ -167,7 +167,7 @@ The editor then sets the sliders, working around what you have already decided:
 
 - Whatever the editor or an assistant changes appears as ordinary slider values in the history, with a short note on what it did. One undo reverts it.
 - **Assistants** are a core capability, but not the headline:
-  - scripts and AI assistants work through the same modules, layers, history and undo as a person;
+  - scripts and AI assistants work through the same tools, layers, history and undo as a person;
   - they check their results before showing them;
   - they connect only when you allow it.
 - **AI tools** (masks, denoise, erase) run on your computer. The editor is complete without them.
@@ -198,7 +198,7 @@ Requirements every feature meets. They are not principles, because nobody would 
 2. **Predictable wins over clever.** A control that always behaves the same is better than one that guesses.
 3. **Newcomers succeed without help; veterans' control is one level down, never removed.**
 4. **The user's own choice wins over automation.**
-5. **Fewer, better modules win over matching another editor's feature list.**
+5. **Fewer, better tools win over matching another editor's feature list.**
 6. **Local and private wins over connected.**
 
 ## What we will not build
@@ -206,8 +206,8 @@ Requirements every feature meets. They are not principles, because nobody would 
 - **A darktable skin, or a copy of a commercial editor,** as where Apertrust ends up. The first pass shows darktable's modules on purpose, in Apertrust's own interface, to prove the rewrite; after the migration, Apertrust evolves on its own.
 - **darktable's flexibility for its own sake:**
   - reordering the processing;
-  - multiple copies of a module outside layers;
-  - expert and legacy modules.
+  - multiple copies of a tool outside layers;
+  - expert and legacy tools.
 - **Accounts, subscriptions, cloud processing or telemetry.**
 - **Generative image content.** Removing small distractions by filling from their surroundings is in scope; adding or replacing content is not.
 - **Not yet:**
@@ -232,8 +232,8 @@ The numbers are first targets; usability tests with photographers confirm or rev
 
 ## What this means for the plan
 
-- **Rewrite first, improve later.** darktable's modules come first, in Apertrust's interface, so the engine, the interface and the edit are proven on modules people already know. Once the whole project is migrated, Apertrust evolves on its own, and edits made before keep looking exactly as they did.
-- **The rewrite is as close to darktable as it can be:** its modules, parameters, controls, defaults, order and results. It differs only in these ways: one view, Apertrust's design system, layers in place of instances, darktable's order kept fixed, tone mappers as modules of their own with one per edit, and darktable's legacy and overlapping modules left out. Both of darktable's white balance modules stay as darktable has them (architecture decision 27). Improvements come after the rewrite works.
+- **Rewrite first, improve later.** darktable's modules come first, in Apertrust's interface, so the engine, the interface and the edit are proven on tools people already know. Once the whole project is migrated, Apertrust evolves on its own, and edits made before keep looking exactly as they did.
+- **The rewrite is as close to darktable as it can be:** its modules, parameters, controls, defaults, order and results. It differs only in these ways: one view, Apertrust's design system, layers in place of instances, darktable's order kept fixed, tone mappers as tools of their own with one per edit, and darktable's legacy and overlapping modules left out. Both of darktable's white balance modules stay as darktable has them (architecture decision 27). Improvements come after the rewrite works.
 - **The migration ends for the whole project at once,** when the first pass is complete. Until then darktable's renders are the reference; after it Apertrust's own are (architecture decision 2).
 - **Prove "it sets the sliders" early.** A command-line test that matches a reference photo comes at the start of Phase 3.
 - **Design the interface around the promise,** not around another editor's layout.
@@ -248,7 +248,7 @@ The numbers are first targets; usability tests with photographers confirm or rev
 | Quality | During the migration, darktable's algorithms ported one by one, each tested against darktable by ΔE2000; after it, against Apertrust's own baselines (architecture decision 2) | `docs/testing.md`, `golden-tests` skill |
 | What you see is true | One GPU engine for preview and export, with the viewport scaled after demosaic; a software GPU when there is no hardware one; pinned, versioned edits | Decisions 7, 12, 13 and 48 |
 | Safe and yours | Local processing; `.apxmp` XMP sidecars written atomically; history in the session | Decision 48, `docs/engine.md` |
-| Predictable controls | Modules over operations, one owner per parameter, invariants tables with tests; layers as masked operation instances | Decision 4, `tool-bindings` skill, `docs/layers.md` |
+| Predictable controls | Tools over operations, one owner per parameter, invariants tables with tests; layers as masked operation instances | Decision 4, `tool-bindings` skill, `docs/layers.md` |
 | Immediate | A GPU-resident pipeline, a viewport pipe and cache points | `docs/engine.md`, decision 12 |
 | Sets the sliders | A differentiable pipeline: Slang derivatives of the operations after demosaic, checked against finite differences: exposure, AgX and colour balance rgb export them; colorin and colorout need theirs for matching | `docs/ai.md` (The differentiable pipeline) |
 | Assistants | One session protocol for every client; MCP | `docs/architecture.md` (At a glance), `docs/ai.md` |

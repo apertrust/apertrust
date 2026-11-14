@@ -15,7 +15,7 @@ The OpenCL kernel is `data/kernels/rgbcurve.cl`, with `color_conversion.h` and `
 
 Ported. Every mode is in Slang (`crates/op/rgbcurve`), with its manifest and schema: linked and independent channels, the three interpolations, all seven ways of preserving colours, and middle grey compensated or not.
 
-The operation is in `OPERATIONS` with `default_enabled` off. An unedited photo does not run it, and the session plans it only while a module's binding sets one of its parameters (decision 28). The built Tone curve does, as one linked instance; the RGB curve module will (decision 2).
+The operation is in `OPERATIONS` with `default_enabled` off. An unedited photo does not run it, and the session plans it only while a tool's binding sets one of its parameters (decision 28). The built Tone curve does, as one linked instance; the RGB curve tool will (decision 2).
 
 Golden result: nine cases on test 0060's mire1.cr2, 3908×2602, Apple M4, ΔE2000 mean 0.0007 to 0.0038, max 0.47 at most (Results).
 
@@ -80,7 +80,7 @@ darktable defers the setup to `_generate_curve_lut`, which `process` calls:
 
 ### Apertrust
 
-`prepare` is in `crates/op/rgbcurve/src/setup.rs`. The curve maths, a port of darktable's `curve_tools.c` with the extrapolation's fit, is in `apertrust-color` (`crates/color/src/curve.rs`), which the Tone curve module's panel shares to draw the curve.
+`prepare` is in `crates/op/rgbcurve/src/setup.rs`. The curve maths, a port of darktable's `curve_tools.c` with the extrapolation's fit, is in `apertrust-color` (`crates/color/src/curve.rs`), which the Tone curve tool's panel shares to draw the curve.
 
 1. The same uncompensation, in f32 (`WorkingProfile::uncompensate_middle_grey` in `apertrust-color`).
 2. For each curve the mode uses, the tangents darktable's interpolation gives each node, by darktable's own code in f32. For a cubic spline, darktable's second derivatives become each node's slope, `mᵢ = (y_{i+1} − yᵢ)/hᵢ − hᵢ(2 ypp_i + ypp_{i+1})/6`, the last node's from the last segment's right end, in f64 rounded once. Every interpolation is then cubic Hermite segments through (x, y, m): on each segment the same cubic darktable samples.
@@ -136,29 +136,29 @@ The kernel (`slang/rgbcurve.slang`) does the same with `C(v) = v < x₀ ? clamp(
 - **The cubic spline in Hermite form:** the same cubic, with the slopes taken from darktable's second derivatives; rounding differs by under 2e-6 (`the_hermite_form_is_darktables_cubic_spline`).
 - **The extrapolation fitted to the curve, not to its table:** y₀ is the last node's y rather than its 16-bit sample, so the curve is continuous at the last node, and the identity curve stays the identity above 1 within 1e-6.
 - **A degenerate extrapolation exponent is 1** (a curve ending at 0, where darktable's is −∞): same output.
-- **Nodes darktable cannot interpolate** (fewer than 2, more than 20, x not strictly increasing): darktable's table keeps the samples of the curve's last successful build, undefined before the first (Setup). `prepare` returns `NotPorted`, since there is no behaviour to port. Unused curves are not checked: darktable builds all three but reads only red's when linked. Planned with the RGB curve module, so that a saved edit always opens: when an edit is read, its nodes are sorted and those closer than 0.0025, darktable's editor's minimum, dropped, with a warning naming the curve; `prepare` keeps its refusal as a last guard.
+- **Nodes darktable cannot interpolate** (fewer than 2, more than 20, x not strictly increasing): darktable's table keeps the samples of the curve's last successful build, undefined before the first (Setup). `prepare` returns `NotPorted`, since there is no behaviour to port. Unused curves are not checked: darktable builds all three but reads only red's when linked. Planned with the RGB curve tool, so that a saved edit always opens: when an edit is read, its nodes are sorted and those closer than 0.0025, darktable's editor's minimum, dropped, with a warning naming the curve; `prepare` keeps its refusal as a last guard.
 - **The basic power norm of black** is 0, not NaN: same output.
-- **No histogram, picker or GUI:** the curve editor, its histogram request and the "create curve from area" picker are interface, for the RGB curve module.
+- **No histogram, picker or GUI:** the curve editor, its histogram request and the "create curve from area" picker are interface, for the RGB curve tool.
 
 ## Tool binding notes
 
-In the first pass (decision 2) the RGB curve module is darktable's, one instance:
+In the first pass (decision 2) the RGB curve tool is darktable's, one instance:
 
 - its controls: mode, the curve with R, G and B tabs while independent, interpolation method, compensate middle grey and preserve colours;
-- the curve's ends fixed at (0, 0) and (1, 1), as decision 31 stores them (proposed; `docs/modules/README.md`);
+- the curve's ends fixed at (0, 0) and (1, 1), as decision 31 stores them (proposed; `docs/tools/README.md`);
 - at darktable's 42, before RGB levels and the tone mapper;
 - darktable's graph, with compensate middle grey and darktable's graph scale, drawing the curve itself whatever preserve colours holds (decision 22).
 
-The built Tone curve's Luma curve, one linked instance, becomes this module's linked curve.
+The built Tone curve's Luma curve, one linked instance, becomes this tool's linked curve.
 
-- **Black and white point handles:** the ends stay fixed at (0, 0) and (1, 1). Black and white are RGB levels' own module, which runs after this one at 43, as in darktable (decisions 2, 22 and 31).
+- **Black and white point handles:** the ends stay fixed at (0, 0) and (1, 1). Black and white are RGB levels' own tool, which runs after this one at 43, as in darktable (decisions 2, 22 and 31).
 - **Interpolation:** monotone Hermite by default, the only one that never overshoots between monotone nodes; cubic spline and Catmull-Rom are darktable's other choices.
-- **compensate_middle_grey** puts middle grey at 0.5 of the curve's axes, which suits a curve drawn over a perceptual histogram. It is a control of the module, as in darktable.
-- **Presets:** darktable's (`init_presets`) are the module's presets: contrast compression; linear (gamma 1.0); contrast medium and high, linear and gamma 2.2; non-contrast curves gamma 2.0, gamma 0.5, logarithm base 2 and exponential base 2. All use cubic splines, the non-contrast ones monotone Hermite, and middle grey compensated.
-- **Preserve colours:** every norm stays, a choice of the module as in darktable, each checked by a golden case. The built Tone curve offers six of them as one Advanced "Preserve colours" choice, luminance by default. RGB levels has the same `preserve_colors` with the same seven norms, darktable's shared `dt_rgb_norm`, here `rgb_norm` in `color.slang` and `RgbNorm` in `apertrust-color`, which both ports use.
+- **compensate_middle_grey** puts middle grey at 0.5 of the curve's axes, which suits a curve drawn over a perceptual histogram. It is a control of the tool, as in darktable.
+- **Presets:** darktable's (`init_presets`) are the tool's presets: contrast compression; linear (gamma 1.0); contrast medium and high, linear and gamma 2.2; non-contrast curves gamma 2.0, gamma 0.5, logarithm base 2 and exponential base 2. All use cubic splines, the non-contrast ones monotone Hermite, and middle grey compensated.
+- **Preserve colours:** every norm stays, a choice of the tool as in darktable, each checked by a golden case. The built Tone curve offers six of them as one Advanced "Preserve colours" choice, luminance by default. RGB levels has the same `preserve_colors` with the same seven norms, darktable's shared `dt_rgb_norm`, here `rgb_norm` in `color.slang` and `RgbNorm` in `apertrust-color`, which both ports use.
 - **The identity curve is not a no-op in every mode.** It changes no pixel within 1e-5 when linked with a norm. In the channel modes, independent and linked with `none`, it turns negative channels to 0, as darktable does (`crates/golden/tests/rgbcurve.rs`). So:
   - the built Tone curve leaves the operation out of the plan while its curve is straight, as `edit::instances` does (decision 28), and its no-op invariant test is the binding's;
-  - RGB curve becomes a switched module (decision 32): off until a control changes, then on until its reset, a straight curve then clipping negatives as darktable's does. The Tone curve keeps the rule above until RGB curve replaces it.
+  - RGB curve becomes a switched tool (decision 32): off until a control changes, then on until its reset, a straight curve then clipping negatives as darktable's does. The Tone curve keeps the rule above until RGB curve replaces it.
 
 ## Gradients
 

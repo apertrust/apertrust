@@ -1,12 +1,12 @@
 # Grain
 
-Module `grain`, version 2. It works on the background only, has no Auto and is switched (decision 32).
+Tool `grain`, version 2. It works on the background only, has no Auto and is switched (decision 32).
 
 It is darktable's grain in the first pass (decision 2). darktable's page has no tabs, sections or presets: its three sliders are in `gui_init`'s order under darktable's labels in British spelling (decision 29), Coarseness, Strength and Mid-tones bias, as darktable's panel shows them: "1600 ISO", "25.00%" and "100.00%" at darktable's defaults.
 
-It drives one operation, `grain` ([../ports/grain.md](../ports/grain.md)), which an unedited photo does not run. It is planned while the module is on. The module owns all three of the operation's parameters. darktable's `channel`, which its GUI does not show and its `process()` ignores, is not ported ([README.md](README.md), Effect).
+It drives one operation, `grain` ([../ports/grain.md](../ports/grain.md)), which an unedited photo does not run. It is planned while the tool is on. The tool owns all three of the operation's parameters. darktable's `channel`, which its GUI does not show and its `process()` ignores, is not ported ([README.md](README.md), Effect).
 
-**Status:** built, in `crates/modules/src/grain.rs`. The app draws it in the Effect tab after Soften, from its definition (`docs/gui.md`, Module panels from definitions). In [README.md](README.md)'s order (decision 38) it follows Vignetting and Soften and comes before Bloom and Diffuse or sharpen, whose modules are not built yet.
+**Status:** built, in `crates/modules/src/grain.rs`. The app draws it in the Effect tab after Soften, from its definition (`docs/gui.md`, Tool panels from definitions). In [README.md](README.md)'s order (decision 38) it follows Vignetting and Soften and comes before Bloom and Diffuse or sharpen, whose tools are not built yet.
 
 - Its rows are tests in `crates/modules/tests/grain.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
@@ -56,19 +56,19 @@ No slider differs, and every default is darktable's.
 
 ## Invariants
 
-A switched module's rows (decision 32; [README.md](README.md), Rows every table has), but the layer row, since the module works on the background only. G5, which held the coarseness and the bias to nothing while the strength was 0, is withdrawn: on, they act at any strength.
+A switched tool's rows (decision 32; [README.md](README.md), Rows every table has), but the layer row, since the tool works on the background only. G5, which held the coarseness and the bias to nothing while the strength was 0, is withdrawn: on, they act at any strength.
 
-No control's unit is Apertrust's: ISO and the percentages are darktable's own display of its parameters, and G4 holds the module's values to darktable's parameters.
+No control's unit is Apertrust's: ISO and the percentages are darktable's own display of its parameters, and G4 holds the tool's values to darktable's parameters.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
-| G0 | None: the module off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that grain joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
-| G1 | The first step | The module on at darktable's defaults, 1600 ISO, 25 % and 100 %: a control written at its default | Frame, ΔE2000 against no edit | darktable's behaviour, darktable's new instance | Measured and reported, without a bound (decision 22) | Ramp, sweep; every corpus raw |
-| G2 | Each control, moved and reset | Strength 0, 26 % and 25 %, a write at its default; Coarseness 1650 ISO and Mid-tones bias 99 %, each one step; all three at the `grain-agx` case's 3200 ISO, 71.3 % and 83 %; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan's operations and cache keys; the frame | Each move changes the frame; reset control by control, the module stays on and renders as G1's; the module's reset turns it off and renders as no edit, grain leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
+| G0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that grain joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
+| G1 | The first step | The tool on at darktable's defaults, 1600 ISO, 25 % and 100 %: a control written at its default | Frame, ΔE2000 against no edit | darktable's behaviour, darktable's new instance | Measured and reported, without a bound (decision 22) | Ramp, sweep; every corpus raw |
+| G2 | Each control, moved and reset | Strength 0, 26 % and 25 %, a write at its default; Coarseness 1650 ISO and Mid-tones bias 99 %, each one step; all three at the `grain-agx` case's 3200 ISO, 71.3 % and 83 %; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan's operations and cache keys; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as G1's; the tool's reset turns it off and renders as no edit, grain leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
 | G3 | Two controls, in either order | Strength 25 % and Coarseness 800 ISO; Mid-tones bias 52.7 % and Strength 37.3 % | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
-| G4 | Every control, the darktable match | The values of darktable's five golden grain cases, test 0059's `grain`, `grain-fine`, `grain-channel` and `grain-v1`, and `grain-agx`, as its sliders show them: Coarseness the field × 213.2 in f32, unrounded, and a version 1 case's Mid-tones bias 0, as darktable's `legacy_params` gives it; then Coarseness rounded to the whole ISO the panel shows | The parameters the module binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters bit for bit, and the kernel's inputs the golden harness's (below) | Exact, and one f32 step for `grain`'s rounded ISO | The cases' parameters, on the CPU |
-| G6 | On at darktable's defaults | Every control's default made explicit; the module on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind grain's own exactly; on at its defaults grain is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
-| G7 | Version 1's edits | Version 1 entries read from `.apxmp`: Strength 37.3 % and 800 ISO; 25 % and a bias of 52.7 %; 100 % and a bias of 0 %; and 3200 ISO alone, a strength of 0, and nothing | The module's state; grain's parameters, resolved over its schema | Those with the strength off 0 read on and bind what version 1 bound; the others read off, their values dropped, grain not planned | Exact | The CPU |
+| G4 | Every control, the darktable match | The values of darktable's five golden grain cases, test 0059's `grain`, `grain-fine`, `grain-channel` and `grain-v1`, and `grain-agx`, as its sliders show them: Coarseness the field × 213.2 in f32, unrounded, and a version 1 case's Mid-tones bias 0, as darktable's `legacy_params` gives it; then Coarseness rounded to the whole ISO the panel shows | The parameters the tool binds, and the kernel's inputs through the operation's `prepare` | darktable's parameters bit for bit, and the kernel's inputs the golden harness's (below) | Exact, and one f32 step for `grain`'s rounded ISO | The cases' parameters, on the CPU |
+| G6 | On at darktable's defaults | Every control's default made explicit; the tool on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind grain's own exactly; on at its defaults grain is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
+| G7 | Version 1's edits | Version 1 entries read from `.apxmp`: Strength 37.3 % and 800 ISO; 25 % and a bias of 52.7 %; 100 % and a bias of 0 %; and 3200 ISO alone, a strength of 0, and nothing | The tool's state; grain's parameters, resolved over its schema | Those with the strength off 0 read on and bind what version 1 bound; the others read off, their values dropped, grain not planned | Exact | The CPU |
 
 G4 must hold:
 
@@ -76,9 +76,9 @@ G4 must hold:
 - **The kernel's inputs:** every word the golden harness checks against darktable's render, but the three offset terms, which are the provisional offset's (`docs/ports/grain.md`, Deliberate differences), and the gradient slots, which only the derivative entry points read.
 - **The rounded ISO** binds the field exactly for four cases, and within one f32 step for `grain`. Its field, 0x41f0266c, one step under darktable's maximum, is reached only by an unrounded value, from the CLI or a script, where 6400 ISO binds the maximum.
 
-G4 is how the module matches darktable. The golden cases check the operation against darktable-cli at the cases' settings and darktable's offset, a ΔE2000 mean of 0.0008 at most, max 0.095 (`docs/ports/grain.md`, Results). G4 holds the module's controls set to those settings to bind those parameters.
+G4 is how the tool matches darktable. The golden cases check the operation against darktable-cli at the cases' settings and darktable's offset, a ΔE2000 mean of 0.0008 at most, max 0.095 (`docs/ports/grain.md`, Results). G4 holds the tool's controls set to those settings to bind those parameters.
 
-darktable's offset, a hash of the file name, is no field of darktable's params, so no module value reaches it. The engine renders every photo at the provisional offset 0 until the seed stored in the edit, planned (`docs/ports/grain.md`, Deliberate differences).
+darktable's offset, a hash of the file name, is no field of darktable's params, so no tool value reaches it. The engine renders every photo at the provisional offset 0 until the seed stored in the edit, planned (`docs/ports/grain.md`, Deliberate differences).
 
 ## Results
 
@@ -86,9 +86,9 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/grain.rs`. The synthet
 
 | Row | Result |
 | --- | --- |
-| G0 | Holds, exactly. Frames byte-identical to no edit, the module off and untouched or with every control kept, on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that grain joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
+| G0 | Holds, exactly. Frames byte-identical to no edit, the tool off and untouched or with every control kept, on the ramp and the sweep, and on the small raw through the export and the viewport, each on one pipeline that grain joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
 | G1 | Measured (below) |
-| G2 | Holds, exactly, on the sweep and on the small raw through the viewport, at a scale of about 0.48, where the lattice averages the noise, and on the 90D through the viewport and the export. Every move changes the frame, each control's one step and a write at the default among them; reset control by control, the module renders as on at darktable's defaults; the module's reset renders as no edit |
+| G2 | Holds, exactly, on the sweep and on the small raw through the viewport, at a scale of about 0.48, where the lattice averages the noise, and on the 90D through the viewport and the export. Every move changes the frame, each control's one step and a write at the default among them; reset control by control, the tool renders as on at darktable's defaults; the tool's reset renders as no edit |
 | G3 | Holds, exactly, on the sweep and on the 90D through the viewport and the export |
 | G4 | Holds, exactly (below) |
 | G6 | Holds, exactly |
@@ -109,7 +109,7 @@ Measured on the Apple M4 (Metal) by `crates/modules/tests/grain.rs`. The synthet
 
 What darktable's page has or does that the panel does not yet:
 
-1. **The module's tooltip,** darktable's "simulate silver grains from film": a definition implies no message for the module's own tooltip.
+1. **The tool's tooltip,** darktable's "simulate silver grains from film": a definition implies no message for the tool's own tooltip.
 
 ## Design choices
 
@@ -119,9 +119,9 @@ What darktable's page has or does that the panel does not yet:
   - With no digits a whole ISO rounds to itself, so the binding's `value / factor` is the quotient darktable's slider stores for it, before its round trip through the track's position, and every golden case's value round-trips bit for bit.
   - Dividing in f64 would bind 1129 of the 6381 whole ISO values from 20 to 6400 one f32 step from darktable's, and `grain`'s unrounded 6399.9995 ISO one step below its field (0x41f0266b for 0x41f0266c).
 - **A unit for ISO:** `Unit::Iso`, `unit-iso` and `unit-iso-value`, "ISO" in every language, as darktable's " ISO" format is no translated string. Screen readers hear the unit.
-- **What binds while the module is on:** each control only while off its default, which is the operation's own, bit for bit.
+- **What binds while the tool is on:** each control only while off its default, which is the operation's own, bit for bit.
 - **Ranges and tracks:** darktable's hard ranges in the units shown, the tracks over them, as darktable sets no soft range.
 - **Steps and decimals:** darktable's: its computed steps, 50 ISO and 1 %, and its digits, none and two.
-- **Words:** darktable's labels and tooltips from its `en@truecase` catalogue, with British spelling ("modelling", "fall-off") and a full stop; Ukrainian and Polish from its `uk.po` and `pl.po` at the tag, capitalised as the other modules' are.
+- **Words:** darktable's labels and tooltips from its `en@truecase` catalogue, with British spelling ("modelling", "fall-off") and a full stop; Ukrainian and Polish from its `uk.po` and `pl.po` at the tag, capitalised as the other tools' are.
 - **Row ids:** G, for Grain.
-- **The layer row:** left out, since the module works on the background only.
+- **The layer row:** left out, since the tool works on the background only.

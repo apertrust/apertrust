@@ -16,11 +16,11 @@ What is Apertrust, beyond a rewrite of darktable, and what do product decisions 
   - Ease: start from a good picture; every control keeps its promise; one place for each task, in words you know.
   - Help: show or tell the goal and the editor sets the sliders; help is visible, reversible and yours to accept.
 - **The quality bar**, which every feature meets: immediate (the picture follows a slider, presets and styles preview on hover, no progress bars while editing, it still runs without a GPU); first-class on Windows, macOS and Linux, with the same results on each; accessible (keyboard, scaling, colour-blind-safe overlays, screen readers as far as the toolkit allows).
-- **When principles conflict:** picture quality over convenience; predictable over clever; newcomers succeed without help while veterans' control is one level down, never removed; the user's choice over automation; fewer, better modules over a feature list; local and private over connected.
-- **What will not be built:** a darktable skin or a copy of a commercial editor as where Apertrust ends up; reordering the processing, copies of a module outside layers, expert and legacy modules; accounts, subscriptions, cloud processing or telemetry; generative content. Not yet: video, archive-scale photo management, a web version for a home server.
+- **When principles conflict:** picture quality over convenience; predictable over clever; newcomers succeed without help while veterans' control is one level down, never removed; the user's choice over automation; fewer, better tools over a feature list; local and private over connected.
+- **What will not be built:** a darktable skin or a copy of a commercial editor as where Apertrust ends up; reordering the processing, copies of a tool outside layers, expert and legacy tools; accounts, subscriptions, cloud processing or telemetry; generative content. Not yet: video, archive-scale photo management, a web version for a home server.
 - **First numeric targets** for each promise, measured as the principles' table says.
 
-**Assistants are a core capability but not the headline.** They work through the same modules, history and undo as a person.
+**Assistants are a core capability but not the headline.** They work through the same tools, history and undo as a person.
 
 **A native mobile app** for phones and tablets, designed for touch, is planned after Phase 3.
 

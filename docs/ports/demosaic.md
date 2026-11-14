@@ -7,11 +7,11 @@ Status: ported.
 - **Code:** the kernel is `slang/demosaic.slang` in `crates/op/demosaic`, with its operation and setup in `src/lib.rs`.
 - **Coverage:** only RCD and Markesteijn 1-pass, darktable's defaults for Bayer and X-Trans sensors: RCD inside the band of PPG darktable keeps at the edges, Markesteijn 1-pass inside darktable's band of linear VNG. The other methods return `NotPorted` (decision 51), VNG4 and Monochrome among them, darktable's defaults for a pattern of four colours and a raw with no colour filters, which are refused; so do green equilibration, colour smoothing, dual demosaicing and capture sharpening.
 - **Checks:** with the same parameters the raw stage matches darktable to a mean difference of about 1e-8 (Results). Checked on one GPU so far.
-- **Module:** Demosaic (`docs/modules/demosaic.md`), darktable's page in the Base tab, its defaults the operation's, the methods and controls not ported drawn disabled.
+- **Tool:** Demosaic (`docs/tools/demosaic.md`), darktable's page in the Base tab, its defaults the operation's, the methods and controls not ported drawn disabled.
 
 ## Purpose
 
-The last operation of the raw stage: each photosite measured one colour, and demosaic estimates the other two from its neighbours, turning the mosaic into an RGB image in the camera's colour space. RCD (ratio corrected demosaicing, Luis Sanz Rodríguez) interpolates green along the more uniform of the vertical and horizontal directions, using colour ratios, then red and blue along the more uniform diagonal. Markesteijn's X-Trans algorithm interpolates in four directions and keeps, per pixel, the most homogeneous ones in YPbPr. Its module is Demosaic, darktable's, in the Base tab (`docs/modules/demosaic.md`).
+The last operation of the raw stage: each photosite measured one colour, and demosaic estimates the other two from its neighbours, turning the mosaic into an RGB image in the camera's colour space. RCD (ratio corrected demosaicing, Luis Sanz Rodríguez) interpolates green along the more uniform of the vertical and horizontal directions, using colour ratios, then red and blue along the more uniform diagonal. Markesteijn's X-Trans algorithm interpolates in four directions and keeps, per pixel, the most homogeneous ones in YPbPr. Its tool is Demosaic, darktable's, in the Base tab (`docs/tools/demosaic.md`).
 
 ## Pipeline
 
@@ -27,7 +27,7 @@ darktable params version 6: `green_eq` (enum), `median_thrs` (f32), `color_smoot
 
 | Name | darktable field | Type | Range | Default | Owner | Meaning |
 | --- | --- | --- | --- | --- | --- | --- |
-| Method | `demosaicing_method` | choice, darktable's 17 methods | | darktable's `reload_defaults`: `rcd` for Bayer, `markesteijn` for X-Trans, `vng4` for a pattern of four colours, whatever its size, and `monochrome` for a raw with no colour filters, as darktable's monochrome sraw (Open questions) | Demosaic | The algorithm; only RCD and Markesteijn 1-pass are ported, and the module lists the sensor's methods (decision 30) |
+| Method | `demosaicing_method` | choice, darktable's 17 methods | | darktable's `reload_defaults`: `rcd` for Bayer, `markesteijn` for X-Trans, `vng4` for a pattern of four colours, whatever its size, and `monochrome` for a raw with no colour filters, as darktable's monochrome sraw (Open questions) | Demosaic | The algorithm; only RCD and Markesteijn 1-pass are ported, and the tool lists the sensor's methods (decision 30) |
 | Match greens | `green_eq` | choice: `no`, `local`, `full`, `both` | | `no` | Demosaic | Green equilibration; not ported |
 | Edge threshold | `median_thrs` | f32 | 0 to 1 | 0 | Demosaic, not ported: PPG only | PPG's pre-median |
 | Colour smoothing | `color_smoothing` | choice: `off` to `five` | | `off` | Demosaic | Median passes on colour differences; not ported |
@@ -80,7 +80,7 @@ darktable's OpenCL RCD computes the discrimination planes over a wider area than
 
 ## Tool binding notes
 
-The Demosaic module is darktable's (decision 2; `docs/modules/demosaic.md`), in no group of darktable's scene-referred preset, so in Base, after Rotate and perspective, the group darktable's "modules: all" gives it (decision 38): the method, the per-method thresholds and LMMSE refine, colour smoothing, match greens and the Capture sharpen toggle, each shown where darktable's `gui_changed` shows it, and capture sharpening's five controls, darktable's collapsible section, a collapsible group shown while the toggle is on (decision 29), in the raw stage where darktable has it (`docs/modules/README.md`). It owns every parameter, its defaults the operation's for the photo, so an untouched module sets nothing; what is not ported is drawn disabled and refused. A change re-runs demosaic (decision 12).
+The Demosaic tool is darktable's (decision 2; `docs/tools/demosaic.md`), in no group of darktable's scene-referred preset, so in Base, after Rotate and perspective, the group darktable's "modules: all" gives it (decision 38): the method, the per-method thresholds and LMMSE refine, colour smoothing, match greens and the Capture sharpen toggle, each shown where darktable's `gui_changed` shows it, and capture sharpening's five controls, darktable's collapsible section, a collapsible group shown while the toggle is on (decision 29), in the raw stage where darktable has it (`docs/tools/README.md`). It owns every parameter, its defaults the operation's for the photo, so an untouched tool sets nothing; what is not ported is drawn disabled and refused. A change re-runs demosaic (decision 12).
 
 ## Gradients
 

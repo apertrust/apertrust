@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! RGB primaries' invariants (`docs/modules/rgb-primaries.md`, Invariants), one test per
+//! RGB primaries' invariants (`docs/tools/rgb-primaries.md`, Invariants), one test per
 //! row, each named after its row: a switched module's (decision 32), P0 off, P1 the
 //! first step, on at darktable's defaults, P2 moved and reset, P3 the order, P4 the
 //! darktable match, P7 on at darktable's defaults on the CPU and P8 version 1's edits; P5,
@@ -60,7 +60,7 @@ use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, decoded, each_corpus_raw, 
 
 const PRIMARIES: &str = "primaries";
 
-/// The ramp (`docs/modules/README.md`, Test images): neutral greys one per 1/16 EV from
+/// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
 /// 2⁻¹⁶ to 2⁴, then RGB 0.18. One row, over a colour raw's context with an exposure bias
 /// of −0.67 EV.
 fn ramp() -> (Picture, ImageContext) {

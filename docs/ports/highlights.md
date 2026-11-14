@@ -16,7 +16,7 @@ Ported, inpaint opposed only. The kernel is `slang/highlights.slang` in `crates/
 - **Ported:** Bayer and X-Trans mosaics. The chrominance offset is a reduction (decision 15).
 - **Not ported:** the other methods, linear raws (sraw), four-colour sensors and monochrome raws, which return `NotPorted`.
 - **Checks:** it matches a restatement of darktable's CPU loops within 2e-6 relative on synthetic mosaics. It matches darktable itself on 29 of the 33 corpus mosaics, every one whose decoders and camera matrices agree (Results). Checked on one GPU, the Apple M4.
-- **Module:** Highlight reconstruction is built ([../modules/highlight-reconstruction.md](../modules/highlight-reconstruction.md); Tool binding notes).
+- **Tool:** Highlight reconstruction is built ([../tools/highlight-reconstruction.md](../tools/highlight-reconstruction.md); Tool binding notes).
 
 ## Purpose
 
@@ -129,12 +129,12 @@ The OpenCL path rounds the masks' size to 4, not 8, keeps only the three dilated
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Highlight reconstruction module is darktable's: method and clipping threshold, the other methods' controls coming with their methods (`docs/modules/README.md`).
+In the first pass (decision 2) the Highlight reconstruction tool is darktable's: method and clipping threshold, the other methods' controls coming with their methods (`docs/tools/README.md`).
 
-The module is built (`crates/modules/src/highlight_reconstruction.rs`, [../modules/highlight-reconstruction.md](../modules/highlight-reconstruction.md)). It owns both parameters:
+The tool is built (`crates/modules/src/highlight_reconstruction.rs`, [../tools/highlight-reconstruction.md](../tools/highlight-reconstruction.md)). It owns both parameters:
 
 - the method takes only inpaint opposed;
-- the threshold starts at this operation's default for the photo, which the module restates from the image context, its tests holding the two together, and it sets `clip` only off it.
+- the threshold starts at this operation's default for the photo, which the tool restates from the image context, its tests holding the two together, and it sets `clip` only off it.
 
 The other methods' controls are in its definition, not ported, at darktable's defaults, with no parameter here until their methods come.
 
@@ -145,7 +145,7 @@ An edit from another photo that holds a method this photo does not list renders 
 - guided laplacians on a raw that is not Bayer, and LCh, reconstruct colour or segmentation on a linear raw, as inpaint opposed. Only darktable's `gui_changed` writes this, so the binding does here. darktable-cli, which has no panel, runs its Bayer laplacian on an X-Trans mosaic;
 - every method on an image that is not a raw, or on a four-colour sensor, as clip, as darktable's `commit_params` does.
 
-The module's table holds this in an invariant row.
+The tool's table holds this in an invariant row.
 
 A change re-runs the raw stage and demosaic (decision 12).
 

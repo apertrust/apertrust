@@ -2,7 +2,7 @@
 
 ## Context
 
-The third part of Apertrust's promise is that it can set the sliders for you ([0001](0001-what-apertrust-is-the-principles.md), principle 7). With gradients of the output with respect to every slider, an optimiser can move all of an edit's sliders towards a target in a few dozen small renders, and the result is ordinary module values a person can tweak. Retrofitting differentiability into kernels written without it would mean reworking them. What must every kernel provide, where is that impossible or inexact, and what proves the promise first?
+The third part of Apertrust's promise is that it can set the sliders for you ([0001](0001-what-apertrust-is-the-principles.md), principle 7). With gradients of the output with respect to every slider, an optimiser can move all of an edit's sliders towards a target in a few dozen small renders, and the result is ordinary tool values a person can tweak. Retrofitting differentiability into kernels written without it would mean reworking them. What must every kernel provide, where is that impossible or inexact, and what proves the promise first?
 
 ## Decision
 
@@ -26,11 +26,11 @@ One exception: sigmoid's derivative with respect to its contrast, skew and targe
 
 **The matching test is Phase 3's first engine work:** a command-line test that matches a reference photo by fitting the editable settings of operations after demosaic through their derivative entry points, at preview resolution (around 512 px), on real photo pairs. Its pass threshold is set with the test. The derivative interface gains input-derivative entry points with it, per-pixel operations first, and takes more than four parameters per pass; a spatial operation's input derivative records its gap as understood. In order: the input derivatives and a backward pipe, frozen; the frozen error measured; the slots audited; local laplacian's pyramids when its controls are fitted; tangents for what remains.
 
-**What the user keeps:** the optimiser moves only the sliders the user has not set; matching has a strength; the result is ordinary module values in the history, one undo step.
+**What the user keeps:** the optimiser moves only the sliders the user has not set; matching has a strength; the result is ordinary tool values in the history, one undo step.
 
 ## Options considered
 
-- A forward-only pipeline with per-module auto pickers, as darktable has: each solves one narrow problem; none optimises the whole edit.
+- A forward-only pipeline with per-tool auto pickers, as darktable has: each solves one narrow problem; none optimises the whole edit.
 - Tangents through every whole-image pass now: every whole-image kernel differentiated, reductions and quick selects included, with up to five times the scratch.
 - Reverse mode through every pass: adjoint scratch and reversed passes.
 - Finite differences for every parameter feeding a whole-image result: kept as the measuring stick, too slow for fitting.

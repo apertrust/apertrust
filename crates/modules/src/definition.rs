@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A module's definition (decision 28, `docs/gui.md`, Module panels from definitions):
+//! A module's definition (decision 28, `docs/gui.md`, Tool panels from definitions):
 //! static data the app draws a panel from and MCP describes. Controls, what an edit
 //! stores, are kept apart from rows, how a tab shows them, so validation, edits and MCP
 //! read the controls without walking the panel.
@@ -377,13 +377,13 @@ pub enum Row {
     },
     /// One of darktable's own settings for the module, which darktable keeps in its
     /// darktablerc and never in an edit: the colour checker's chart, an area mode
-    /// (decision 29; `docs/modules/README.md`, rule 12). It is no control: an app setting
+    /// (decision 29; `docs/tools/README.md`, rule 12). It is no control: an app setting
     /// that comes with what uses it, never stored with the photo. Until that is built the
     /// panel draws it disabled at darktable's default, so the page reads as darktable's and
     /// shows what is missing.
     Setting(SettingRow),
     /// One of darktable's buttons, by its id: an action that writes the module's controls
-    /// and is never stored (`docs/modules/README.md`, rule 10), as AgX's Auto tune levels
+    /// and is never stored (`docs/tools/README.md`, rule 10), as AgX's Auto tune levels
     /// picks both exposures from the photo and its Set from above copies one set of
     /// controls to another. It is no control. Until what it runs is built the panel draws
     /// it disabled, so the page reads as darktable's and shows what is missing.

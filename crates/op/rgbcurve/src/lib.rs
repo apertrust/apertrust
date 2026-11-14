@@ -17,7 +17,7 @@
 
 //! RGB curve, ported from darktable (`src/iop/rgbcurve.c`): linked or independent
 //! channels, every interpolation, every way of preserving colours, middle grey
-//! compensated or not. The Tone curve module's curves (`docs/modules/README.md`). See
+//! compensated or not. The Tone curve module's curves (`docs/tools/README.md`). See
 //! `docs/ports/rgbcurve.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run

@@ -27,7 +27,7 @@ Every operation runs on the GPU ([0008](0008-a-gpu-resident-fp32-pipeline-on-wgp
 | The colour equalizer with its guided filter, its default | 16.8 MP | Float2 scratch bound whole for column passes; the 100% view too |
 | Denoise's wavelets | 8.4 MP, until image-shaped scratch runs in strips | Three RGBA images of scratch |
 
-A later port's refusal on a software GPU joins this list, stated in its spec with the pass and the sizes, while its port and module go ahead.
+A later port's refusal on a software GPU joins this list, stated in its spec with the pass and the sizes, while its port and tool go ahead.
 
 **Image-shaped scratch bound in windows** ([0015](0015-whole-image-passes.md)) is planned engine work before Phase 3's exit, lifting the refusals of local contrast, bloom, soften, the colour equalizer, filmic rgb and haze removal. **The recorded remedies** come with the ports that need them: transposed line passes (a block transpose so each column becomes a row walked whole in row strips, darktable's sums bit for bit), which lift bloom's, soften's, filmic's and the colour equalizer's refusals; non-local means' offsets in groups, each binding only the window it reaches. The other refusals stay accepted limits.
 

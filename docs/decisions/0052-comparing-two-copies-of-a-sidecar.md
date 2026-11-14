@@ -12,12 +12,12 @@ People edit on more than one computer, through a share, a sync service or a driv
 - one at or below the other for every machine: that copy is only older, and the newer replaces it;
 - neither, and both changed the edit: the copy whose latest clock is later, its clock vector included, not only its last step's, stays, and the other becomes a new virtual copy with its own history, named after its machine and time ("From MacBook, 5 Nov 14:02"; in folder mode "From another computer"), the activity saying so. A copy whose only change was an Undo, a Truncate or a Compress ([0078](0078-undo-redo-and-the-edits-history.md)) counts as later by that move's clock.
 
-**Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on another never splits a photo. A virtual copy only one side has is kept; a deletion wins only over steps older than it. A module-by-module merge of edits comes later, as a setting.
+**Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on another never splits a photo. A virtual copy only one side has is kept; a deletion wins only over steps older than it. A tool-by-tool merge of edits comes later, as a setting.
 
 **When copies are compared:**
 
 - before every write: the writer reads the file again if it changed since this machine last read it, and writes only if the bytes differ;
-- when a sidecar changes outside Apertrust: the active photo takes the newer edit, a module being dragged stays the person's, and a diverged photo stays on screen with the other edit arriving as a virtual copy;
+- when a sidecar changes outside Apertrust: the active photo takes the newer edit, a tool being dragged stays the person's, and a diverged photo stays on screen with the other edit arriving as a virtual copy;
 - conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp` and whose `apertrust:photo` and fingerprint match a photo there, compared, kept 30 days in the user data folder's `conflict-copies/` and removed ([0076](0076-the-cache-kinds-limits-and-control.md)); its content decides, not its name;
 - a server root's sidecar, whenever this machine and the server exchange it, the server being one more copy ([0071](0071-a-self-hosted-server-with-sync.md), planned);
 - later: silent winners, each machine keeping in its user data folder the last copy of each sidecar it wrote ([0076](0076-the-cache-kinds-limits-and-control.md)), and iCloud's hidden versions.
@@ -34,7 +34,7 @@ People edit on more than one computer, through a share, a sync service or a driv
 
 ## Options considered
 
-- A module-by-module merge first: more work than the first build needs; kept as a later setting.
+- A tool-by-tool merge first: more work than the first build needs; kept as a later setting.
 - A CRDT library such as Automerge: a binary document, against a readable XMP sidecar.
 - darktable's keep-one-side-whole by modified time: one machine's work is lost.
 - Locks: they fail on NFS and SMB and do not exist in cloud folders.

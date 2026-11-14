@@ -756,10 +756,10 @@ page = "general"
 group = "diagnostics"
 applies = "at-once"
 
-# Exposure's area exposure mapping (docs/modules/exposure.md; decision 29), the settings
+# Exposure's area exposure mapping (docs/tools/exposure.md; decision 29), the settings
 # its picker reads, kept here as darktable keeps them in its darktablerc, never in an
 # edit. The app sends them with the picker's On and Settings commands (docs/pickers.md,
-# A module's settings).
+# A tool's settings).
 
 # Area mode: correction sets Exposure so the area maps to the target lightness, measure
 # sets the target lightness the area gives at the current exposure. darktable's

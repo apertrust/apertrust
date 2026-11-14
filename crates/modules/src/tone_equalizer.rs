@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Tone equalizer (`docs/modules/tone-equalizer.md`): darktable's tone equalizer as
+//! Tone equalizer (`docs/tools/tone-equalizer.md`): darktable's tone equalizer as
 //! the user edits with it, in the first pass (decision 2): darktable's page, its tabs
 //! Simple, Advanced and Masking, its controls in `gui_init`'s order under its labels.
 //!
@@ -36,7 +36,7 @@
 //! at the default smoothing, as darktable's first step does.
 //!
 //! Every slider is darktable's: its hard range the control's, its track darktable's soft
-//! range, its decimals and its step darktable's (`docs/modules/tone-equalizer.md`, Sliders
+//! range, its decimals and its step darktable's (`docs/tools/tone-equalizer.md`, Sliders
 //! against darktable). The contrast compensation, on the Advanced tab, shows only with
 //! the guided filter or EIGF, chosen on the Masking tab, as darktable shows it.
 //!
@@ -277,7 +277,7 @@ static DEFINITION: Definition = Definition {
     ],
     before: &[],
     // darktable's toggle under its notebook: the mask in place of the photo, a view mode
-    // that no edit stores (`docs/modules/README.md`, rule 10).
+    // that no edit stores (`docs/tools/README.md`, rule 10).
     after: &[Row::Setting(SettingRow {
         id: "display_exposure_mask",
         kind: ControlKind::Bool { default: false },
@@ -533,7 +533,7 @@ mod tests {
     }
 
     /// darktable's tone equalizer sliders (`src/iop/toneequal.c`, the params and
-    /// `gui_init`), in its parameters' units: `docs/modules/tone-equalizer.md`'s slider
+    /// `gui_init`), in its parameters' units: `docs/tools/tone-equalizer.md`'s slider
     /// table. None shows a factor; Smoothing diameter's "%" format gives none, its range
     /// above ±10. Curve smoothing is a slider of no parameter, from
     /// `dt_bauhaus_slider_new_with_range`.
