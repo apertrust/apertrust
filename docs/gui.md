@@ -2086,7 +2086,7 @@ Planned (decision 83): built in Phase 3 with named workspaces, the floating pane
 
 - a processing module's drag says, under the lifted header, "Moves it in this tab only. Processing order stays fixed.";
 - Ctrl+Shift with the drag, darktable's gesture, does what a plain drag does;
-- the side panel's ⋮ has **Processing Order**, checked while the tab shown has its processing modules in pipeline order; chosen, it sorts them back among the places they hold, utilities and pins untouched; disabled in a tab with no processing modules;
+- the side panel's ⋮ has **Processing Order**, checked while the processing modules of each of the tab's two lists, the pinned and the scrolling, are in pipeline order; chosen, it sorts each list's processing modules among the places they hold in it, none crossing the pinned area's edge and utilities keeping their places, so a pinned module stays pinned above the rest; disabled in a tab with no processing modules;
 - a move is never a step in History, and Undo never undoes one.
 
 ```mermaid
