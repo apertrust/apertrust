@@ -768,7 +768,7 @@ fn a_tiled_export_in_two_rounds_equals_the_whole_one() {
 /// The tone equalizer with its mask compensated as a filtered mode compensates it,
 /// contrast included, then left unfiltered: decision 15's baseline for the viewport, the
 /// per-pixel gap any nonlinear operation shows after the downscale. A setting no schema,
-/// edit or module reaches: only this test plans it.
+/// edit or tool reaches: only this test plans it.
 struct CompensatedUnfiltered;
 
 impl apertrust_plugin::Operation for CompensatedUnfiltered {

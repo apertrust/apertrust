@@ -58,7 +58,7 @@ fn step(id: u64, change: Change) -> Step {
     }
 }
 
-/// The change of the one module that differs from `before` to `after`.
+/// The change of the one tool that differs from `before` to `after`.
 fn changed(before: &Edit, after: &Edit) -> Change {
     match &Entry::between(before, after)[..] {
         [entry] => Change::Entry(entry.clone()),
@@ -80,7 +80,7 @@ fn add(log: &mut Log, first: u64, before: &Edit, after: &Edit, wrote: &[Wrote]) 
 }
 
 #[test]
-fn a_change_s_entries_hold_each_changed_module_s_whole_state_an_empty_one_its_reset() {
+fn a_change_s_entries_hold_each_changed_tool_s_whole_state_an_empty_one_its_reset() {
     let before = brightened(0.5);
     let mut after = before.clone();
     let image = testing::image();
@@ -105,34 +105,34 @@ fn a_change_s_entries_hold_each_changed_module_s_whole_state_an_empty_one_its_re
     let reset = Entry::between(&after, &Edit::default());
     assert_eq!(reset.len(), 2);
     assert!(reset.iter().all(Entry::is_empty));
-    // A module holding nothing and none at all are the same state: no entry.
+    // A tool holding nothing and none at all are the same state: no entry.
     let mut untouched = Edit::default();
     untouched
-        .modules
+        .tools
         .insert("sample".to_owned(), ToolValues::new());
     assert!(Entry::between(&Edit::default(), &untouched).is_empty());
 }
 
-/// What each change is of, in order: a module, an operation's parameters, or a reset of
+/// What each change is of, in order: a tool, an operation's parameters, or a reset of
 /// how many.
 fn names(changes: &[Change]) -> Vec<String> {
     (changes.iter())
         .map(|change| match change {
-            Change::Entry(Entry::Tool { tool: module, .. }) => module.clone(),
+            Change::Entry(Entry::Tool { tool, .. }) => tool.clone(),
             Change::Entry(Entry::Operation { operation, .. }) => format!("{operation} params"),
             Change::Reset(entries) => format!("reset of {}", entries.len()),
         })
         .collect()
 }
 
-/// A change is a step for each module and operation it touched, in the order first written
+/// A change is a step for each tool and operation it touched, in the order first written
 /// after the last `Reset`, then those none wrote in `Entry::between`'s order; a `Reset`
 /// is one step in its place, holding each empty entry written after it by none.
 #[test]
-fn a_change_is_a_step_of_each_module_in_the_order_written_and_reset_one() {
+fn a_change_is_a_step_of_each_tool_in_the_order_written_and_reset_one() {
     let mut after = grained(&brightened(0.5), 30.0);
     (after.set_param(OPERATIONS, TOOLS, "exposure", "black", Value::Float(0.01))).unwrap();
-    let module = |id: &str| Wrote::Tool(id.to_owned());
+    let tool = |id: &str| Wrote::Tool(id.to_owned());
     let black = || Wrote::Operation("exposure".to_owned());
     let between = |before: &Edit, after: &Edit, wrote: &[Wrote]| {
         names(&Change::between(before, after, wrote))
@@ -142,12 +142,12 @@ fn a_change_is_a_step_of_each_module_in_the_order_written_and_reset_one() {
         between(
             &none,
             &after,
-            &[module("grain"), black(), module("sample"), module("grain")]
+            &[tool("grain"), black(), tool("sample"), tool("grain")]
         ),
         ["grain", "exposure params", "sample"]
     );
     assert_eq!(
-        between(&none, &after, &[module("sample")]),
+        between(&none, &after, &[tool("sample")]),
         ["sample", "grain", "exposure params"]
     );
     assert_eq!(
@@ -155,7 +155,7 @@ fn a_change_is_a_step_of_each_module_in_the_order_written_and_reset_one() {
         ["grain", "sample", "exposure params"]
     );
     // A `Reset`, then Sample written: the reset of the rest, then Sample.
-    let wrote = [module("grain"), Wrote::All, module("sample")];
+    let wrote = [tool("grain"), Wrote::All, tool("sample")];
     let changes = Change::between(&after, &brightened(1.0), &wrote);
     assert_eq!(names(&changes), ["reset of 2", "sample"]);
     assert!(changes[0].entries().iter().all(Entry::is_empty));
@@ -165,7 +165,7 @@ fn a_change_is_a_step_of_each_module_in_the_order_written_and_reset_one() {
 }
 
 #[test]
-fn the_fold_is_each_module_s_last_entry_up_to_the_end() {
+fn the_fold_is_each_tool_s_last_entry_up_to_the_end() {
     let (one, two) = (brightened(0.5), brightened(1.0));
     let mut log = Log::default();
     log.add(step(1, changed(&Edit::default(), &one)));
@@ -261,9 +261,9 @@ fn a_step_added_below_the_end_drops_the_steps_after_it() {
     assert_eq!(log.end(), 1);
 }
 
-/// A change of one module merged into the last step applied: the step keeps its id, its
+/// A change of one tool merged into the last step applied: the step keeps its id, its
 /// entry takes the change's, and its clock is the merge's. None into a step of another
-/// module or of a batch, nor with no step applied.
+/// tool or of a batch, nor with no step applied.
 #[test]
 fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
     let sample = |edit: &Edit| Entry::Tool {
@@ -281,7 +281,7 @@ fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
     };
     assert_eq!((merged.id, merged.clock), (StepId(1), clock));
     assert_eq!(log.fold(), brightened(0.75));
-    // Not into a step of another module.
+    // Not into a step of another tool.
     let grain = changed(&brightened(0.75), &grained(&brightened(0.75), 30.0));
     let Change::Entry(entry) = &grain else {
         panic!("{grain:?}");
@@ -306,11 +306,11 @@ fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
     assert!(!log.merge(&sample(&brightened(1.0)), clock));
 }
 
-/// A version 1 file reads as a step of each module and operation, modules first and each
+/// A version 1 file reads as a step of each tool and operation, tools first and each
 /// in id order, sharing a batch, the ids from the hash of the file's bytes, so every read
 /// gives the same steps (`docs/history.md`, In the sidecar).
 #[test]
-fn a_version_1_file_reads_as_a_step_of_each_module_with_the_same_ids_every_time() {
+fn a_version_1_file_reads_as_a_step_of_each_tool_with_the_same_ids_every_time() {
     let mut edit = grained(&brightened(0.5), 30.0);
     (edit.set_param(OPERATIONS, TOOLS, "exposure", "black", Value::Float(0.01))).unwrap();
     let xml = crate::sidecar::to_xml(&edit, OPERATIONS, TOOLS, "test");
@@ -350,7 +350,7 @@ fn a_version_1_file_reads_as_a_step_of_each_module_with_the_same_ids_every_time(
     // Other bytes, other ids.
     let other = read(&xml.replace("test", "other"));
     assert_ne!(other.steps()[0].id, first);
-    // One module: one step, in no batch.
+    // One tool: one step, in no batch.
     let one = crate::sidecar::to_xml(&brightened(0.5), OPERATIONS, TOOLS, "test");
     let one = read(&one);
     assert_eq!(one.steps().len(), 1);
@@ -416,7 +416,7 @@ fn the_clock_vector_keeps_each_machine_s_latest() {
     assert_eq!(latest([], a), None);
 }
 
-/// A change not yet a step moves onto another log's edit: each module it changed at its
+/// A change not yet a step moves onto another log's edit: each tool it changed at its
 /// state, the rest the other's.
 #[test]
 fn a_change_not_yet_a_step_is_rebased() {
@@ -514,7 +514,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
             }],
         }]
     );
-    // The reset: each module and operation it reset.
+    // The reset: each tool and operation it reset.
     let reset = &steps[4].changes;
     assert_eq!(reset.len(), 3);
     assert_eq!(reset[0].enabled, Some([true, false]));
@@ -536,7 +536,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
 }
 
 #[test]
-fn a_module_or_operation_this_build_does_not_know_is_listed_by_its_stored_name() {
+fn a_tool_or_operation_this_build_does_not_know_is_listed_by_its_stored_name() {
     let image = testing::image();
     let mut values = ToolValues::new();
     values.set("radius", ControlValue::Number(3.0));
@@ -579,7 +579,7 @@ fn base_black(image: &ImageContext) -> f32 {
 }
 
 #[test]
-fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
+fn the_default_tools_are_darktable_s_for_a_new_raw_in_its_history_order() {
     let lines = default_tools(apertrust_tools::TOOLS, OPERATIONS);
     // darktable's modules with no on/off button first, then those with one, each in the
     // pipe's order.
@@ -595,7 +595,7 @@ fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
         ]
     );
     // Then those darktable's workflow auto-applies, in the pipe's order; Tone curve, which
-    // no preset applies, has none, nor has any switched module.
+    // no preset applies, has none, nor has any switched tool.
     let rest = &lines[6..];
     assert_eq!(rest, ["exposure", "channelmixerrgb", "agx"], "{lines:?}");
     let switched = |id: &&str| {
@@ -606,29 +606,29 @@ fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
     assert!(!lines.iter().any(switched), "{lines:?}");
 }
 
-/// The modules every photo runs, as the default steps hold them.
+/// The tools every photo runs, as the default steps hold them.
 fn defaults() -> Vec<&'static str> {
     default_tools(apertrust_tools::TOOLS, OPERATIONS)
 }
 
-/// The modules and operations of `log`'s steps' entries, in order.
-fn modules_of(log: &Log) -> Vec<&str> {
+/// The tools and operations of `log`'s steps' entries, in order.
+fn tools_of(log: &Log) -> Vec<&str> {
     (log.steps().iter())
         .flat_map(|step| step.change.entries())
         .map(|entry| match entry {
-            Entry::Tool { tool: module, .. } => module.as_str(),
+            Entry::Tool { tool, .. } => tool.as_str(),
             Entry::Operation { operation, .. } => operation.as_str(),
         })
         .collect()
 }
 
 #[test]
-fn a_new_photo_s_log_is_given_a_default_step_of_each_module_every_photo_runs() {
+fn a_new_photo_s_log_is_given_a_default_step_of_each_tool_every_photo_runs() {
     let defaults = defaults();
     let mut log = Log::default();
     log.add_defaults(&defaults, Clock::at(1, None, MachineId::UNKNOWN));
-    // Steps 1 to n, source Default, each at its module's reset state, the end after them.
-    assert_eq!(modules_of(&log), defaults);
+    // Steps 1 to n, source Default, each at its tool's reset state, the end after them.
+    assert_eq!(tools_of(&log), defaults);
     assert_eq!(
         (log.end(), log.defaults()),
         (defaults.len(), defaults.len())
@@ -639,14 +639,14 @@ fn a_new_photo_s_log_is_given_a_default_step_of_each_module_every_photo_runs() {
             && step.batch.is_none()
             && step.change.entries().iter().all(Entry::is_empty)
     }));
-    // The edit they fold to is the photo untouched, every module applied.
+    // The edit they fold to is the photo untouched, every tool applied.
     assert_eq!(log.fold(), Edit::default());
 }
 
-/// A later build that runs one more module on every photo gives a log that has steps no
-/// step of it: the steps keep their numbers, and the module runs at its defaults.
+/// A later build that runs one more tool on every photo gives a log that has steps no
+/// step of it: the steps keep their numbers, and the tool runs at its defaults.
 #[test]
-fn a_later_build_s_new_default_module_adds_no_step() {
+fn a_later_build_s_new_default_tool_adds_no_step() {
     let defaults = defaults();
     let (earlier, added) = defaults.split_at(defaults.len() - 1);
     let mut log = Log::default();
@@ -667,7 +667,7 @@ fn a_later_build_s_new_default_module_adds_no_step() {
     assert_eq!((read.steps().len(), read.defaults()), (1, 0));
 }
 
-/// Below its default step, a module darktable leaves off until its workflow applies it is
+/// Below its default step, a tool darktable leaves off until its workflow applies it is
 /// not applied; one darktable has on by default always is.
 #[test]
 fn the_end_within_the_default_steps_applies_the_first_k() {
@@ -684,8 +684,8 @@ fn the_end_within_the_default_steps_applies_the_first_k() {
     ];
     for end in 0..=defaults.len() {
         let expected: BTreeSet<String> = (defaults[end..].iter())
-            .filter(|module| !on.contains(module))
-            .map(|module| (*module).to_owned())
+            .filter(|tool| !on.contains(tool))
+            .map(|tool| (*tool).to_owned())
             .collect();
         assert_eq!(log.fold_to(end).unapplied, expected, "{end}");
     }
@@ -697,7 +697,7 @@ fn the_end_within_the_default_steps_applies_the_first_k() {
 }
 
 /// A change made with the end within the default steps keeps those after it, moved below
-/// it, as darktable keeps an always-on module's item, so every module is applied again;
+/// it, as darktable keeps an always-on module's item, so every tool is applied again;
 /// the steps after the end that are not default steps are dropped.
 #[test]
 fn a_change_within_the_default_steps_keeps_the_later_ones() {
@@ -717,10 +717,7 @@ fn a_change_within_the_default_steps_keeps_the_later_ones() {
     let back = log.add(step(11, changed(&folded, &grained(&folded, 5.0))));
     // Every step that was after the end, which Undo puts back.
     assert_eq!(back.iter().map(|step| step.id).collect::<Vec<_>>(), after);
-    assert_eq!(
-        modules_of(&log),
-        ["temperature", "exposure", "agx", "grain"]
-    );
+    assert_eq!(tools_of(&log), ["temperature", "exposure", "agx", "grain"]);
     assert_eq!((log.end(), log.defaults()), (4, 3));
     assert!(log.fold().unapplied.is_empty());
 }
@@ -733,11 +730,11 @@ fn ids_and_end(log: &Log) -> (Vec<u64>, usize) {
     )
 }
 
-/// Compress keeps, among the steps up to the end, each module's and operation's last step,
-/// as it was; one whose entry is empty goes, as a module's reset and Reset do, and so does
+/// Compress keeps, among the steps up to the end, each tool's and operation's last step,
+/// as it was; one whose entry is empty goes, as a tool's reset and Reset do, and so does
 /// every step after the end. The end is the last step kept, and the log renders as before.
 #[test]
-fn compress_keeps_each_module_s_last_entry_drops_empty_ones_and_every_step_after_the_end() {
+fn compress_keeps_each_tool_s_last_entry_drops_empty_ones_and_every_step_after_the_end() {
     let one = brightened(0.5);
     let both = grained(&one, 10.0);
     let brighter = grained(&brightened(0.8), 10.0);
@@ -750,7 +747,7 @@ fn compress_keeps_each_module_s_last_entry_drops_empty_ones_and_every_step_after
         ..step(2, changed(&one, &both))
     });
     log.add(step(3, changed(&both, &brighter)));
-    // Grain's reset: an empty entry, its module's last.
+    // Grain's reset: an empty entry, its tool's last.
     log.add(step(4, changed(&brighter, &ungrained)));
     log.add(step(5, changed(&ungrained, &brightened(0.9))));
     log.set_end(4);
@@ -759,7 +756,7 @@ fn compress_keeps_each_module_s_last_entry_drops_empty_ones_and_every_step_after
     // Kept as it was: its id, clock, source, note, batch and entry.
     assert_eq!(compressed.steps()[0], log.steps()[2]);
     assert_eq!(compressed.fold(), log.fold());
-    // A step that is its module's last keeps its note and batch.
+    // A step that is its tool's last keeps its note and batch.
     log.set_end(3);
     let kept = log.compressed();
     assert_eq!(ids_and_end(&kept), (vec![2, 3], 2));
@@ -781,7 +778,7 @@ fn compress_keeps_each_module_s_last_entry_drops_empty_ones_and_every_step_after
 }
 
 /// Compress keeps every default step, the end's or Original's photo needing them, though a
-/// later step of its module follows, so the Defaults stay whole.
+/// later step of its tool follows, so the Defaults stay whole.
 #[test]
 fn compress_keeps_every_default_step() {
     let mut log = Log::default();
@@ -821,7 +818,7 @@ fn defaults_then_steps() -> Log {
 
 /// Compress and Truncate never change what the photo shows, at the end or at Original,
 /// wherever the end is past Original, among the default steps too, where those after it
-/// stay after it, their modules not applied; at end 0 both drop every step.
+/// stay after it, their tools not applied; at end 0 both drop every step.
 #[test]
 fn compress_and_truncate_leave_the_photo_as_it_shows_at_the_end_and_at_original() {
     let log = defaults_then_steps();
@@ -870,12 +867,12 @@ fn truncate_drops_the_steps_after_the_end_alone() {
 }
 
 /// An edit started afresh, as Discard History starts an unreadable history: a new photo's
-/// default steps, then a step of each module and operation it holds, source You, noted
+/// default steps, then a step of each tool and operation it holds, source You, noted
 /// `history-discard`, sharing a batch, the end after the last, folding to the edit, with
-/// Original the untouched photo; a module not applied in it keeps its default step after
-/// the end, so it stays so. None for an edit holding nothing, with no default module.
+/// Original the untouched photo; a tool not applied in it keeps its default step after
+/// the end, so it stays so. None for an edit holding nothing, with no default tool.
 #[test]
-fn an_edit_started_afresh_is_the_default_steps_and_a_step_of_each_module_it_holds() {
+fn an_edit_started_afresh_is_the_default_steps_and_a_step_of_each_tool_it_holds() {
     let mut edit = grained(&brightened(0.5), 10.0);
     let param = Value::Float(2.0);
     edit.params
@@ -886,7 +883,7 @@ fn an_edit_started_afresh_is_the_default_steps_and_a_step_of_each_module_it_hold
     let defaults = ["temperature", "exposure"];
     let log = Log::afresh(&edit, &defaults, clock);
     assert_eq!(
-        modules_of(&log),
+        tools_of(&log),
         ["temperature", "exposure", "grain", "sample", "op"]
     );
     assert_eq!((log.end(), log.defaults()), (5, 2));
@@ -907,7 +904,7 @@ fn an_edit_started_afresh_is_the_default_steps_and_a_step_of_each_module_it_hold
         ..Edit::default()
     };
     let log = Log::afresh(&unapplied, &["temperature", "exposure", "agx"], clock);
-    assert_eq!(modules_of(&log), ["temperature", "exposure", "agx"]);
+    assert_eq!(tools_of(&log), ["temperature", "exposure", "agx"]);
     assert_eq!(log.end(), 1);
     assert_eq!(log.fold(), unapplied);
     assert_eq!(Log::afresh(&Edit::default(), &[], clock), Log::default());
@@ -924,10 +921,7 @@ fn undo_s_fallback_stops_above_a_default_step_after_the_person_s() {
     };
     let clock = Clock::at(5, None, MachineId::UNKNOWN);
     let mut log = Log::afresh(&unapplied, &["temperature", "exposure", "agx"], clock);
-    assert_eq!(
-        modules_of(&log),
-        ["temperature", "sample", "exposure", "agx"]
-    );
+    assert_eq!(tools_of(&log), ["temperature", "sample", "exposure", "agx"]);
     assert_eq!((log.end(), log.defaults()), (2, 1));
     // Redo applies Exposure's default step, which Undo never takes back.
     log.set_end(log.redo_end().unwrap());
@@ -937,7 +931,7 @@ fn undo_s_fallback_stops_above_a_default_step_after_the_person_s() {
     // and stops above AgX's.
     log.add(step(9, changed(&log.fold(), &brightened(1.0))));
     assert_eq!(
-        modules_of(&log),
+        tools_of(&log),
         ["temperature", "sample", "exposure", "agx", "sample"]
     );
     assert_eq!(log.undo_end(), Some(4));

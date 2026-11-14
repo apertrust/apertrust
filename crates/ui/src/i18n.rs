@@ -141,7 +141,7 @@ impl Locale {
 
     fn sources(self) -> &'static [&'static str] {
         match self {
-            // The interface's own words, then the modules' (decision 28).
+            // The interface's own words, then the tools' (decision 28).
             Locale::EnGb | Locale::Pseudo => &[
                 include_str!("../locales/en-GB/ui.ftl"),
                 include_str!("../locales/en-GB/modules.ftl"),
@@ -1016,7 +1016,7 @@ mod tests {
                 args.set("command", "Ctrl");
                 // A picker button's tooltip: the picker's own words.
                 args.set("tip", "Pick colour from the photo");
-                // The active picker: its module and name, its own sentence, where it is on
+                // The active picker: its tool and name, its own sentence, where it is on
                 // the photo in percent, and what a pick changed.
                 args.set("module", "Exposure");
                 args.set("picker", "Exposure");
@@ -1034,7 +1034,7 @@ mod tests {
                 args.set("after", "+1.20 EV");
                 // History's lines: what changed, as screen readers hear it.
                 args.set("change", "+0.70 EV to +1.20 EV");
-                // History's groups: their steps' numbers and their modules; a day's date.
+                // History's groups: their steps' numbers and their tools; a day's date.
                 args.set("first", 12);
                 args.set("last", 16);
                 args.set("modules", "Exposure, Grain");

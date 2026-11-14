@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A module's words, as message ids that follow from its ids (decision 28, `docs/gui.md`,
+//! A tool's words, as message ids that follow from its ids (decision 28, `docs/gui.md`,
 //! Tool panels from definitions). Hyphens separate the parts, ids are snake_case, and a
 //! fixed word comes before each id, so an option or a tab called `label` or `title`
 //! cannot collide with another message. The messages are in
@@ -24,72 +24,72 @@ use std::collections::BTreeSet;
 
 use crate::definition::{ControlKind, Definition, Row, SettingRow, Slider, Unit};
 
-/// The module's title: `module-<module>-title`.
-pub fn title(module: &str) -> String {
-    format!("module-{module}-title")
+/// The tool's title: `module-<tool>-title`.
+pub fn title(tool: &str) -> String {
+    format!("module-{tool}-title")
 }
 
-/// Auto's tooltip, which names its target: `module-<module>-auto`.
-pub fn auto(module: &str) -> String {
-    format!("module-{module}-auto")
+/// Auto's tooltip, which names its target: `module-<tool>-auto`.
+pub fn auto(tool: &str) -> String {
+    format!("module-{tool}-auto")
 }
 
-/// A tab's title: `module-<module>-tab-<tab>`.
-pub fn tab(module: &str, tab: &str) -> String {
-    format!("module-{module}-tab-{tab}")
+/// A tab's title: `module-<tool>-tab-<tab>`.
+pub fn tab(tool: &str, tab: &str) -> String {
+    format!("module-{tool}-tab-{tab}")
 }
 
-/// A group label: `module-<module>-group-<group>`.
-pub fn group(module: &str, group: &str) -> String {
-    format!("module-{module}-group-{group}")
+/// A group label: `module-<tool>-group-<group>`.
+pub fn group(tool: &str, group: &str) -> String {
+    format!("module-{tool}-group-{group}")
 }
 
-/// A collapsible group's title: `module-<module>-collapsible-<group>`.
-pub fn collapsible(module: &str, group: &str) -> String {
-    format!("module-{module}-collapsible-{group}")
+/// A collapsible group's title: `module-<tool>-collapsible-<group>`.
+pub fn collapsible(tool: &str, group: &str) -> String {
+    format!("module-{tool}-collapsible-{group}")
 }
 
-/// A control's short label: `module-<module>-control-<control>-label`.
-pub fn label(module: &str, control: &str) -> String {
-    format!("module-{module}-control-{control}-label")
+/// A control's short label: `module-<tool>-control-<control>-label`.
+pub fn label(tool: &str, control: &str) -> String {
+    format!("module-{tool}-control-{control}-label")
 }
 
 /// A control's full name, which screen readers say:
-/// `module-<module>-control-<control>-full`.
-pub fn full(module: &str, control: &str) -> String {
-    format!("module-{module}-control-{control}-full")
+/// `module-<tool>-control-<control>-full`.
+pub fn full(tool: &str, control: &str) -> String {
+    format!("module-{tool}-control-{control}-full")
 }
 
-/// A control's promise, its tooltip: `module-<module>-control-<control>-promise`.
-pub fn promise(module: &str, control: &str) -> String {
-    format!("module-{module}-control-{control}-promise")
+/// A control's promise, its tooltip: `module-<tool>-control-<control>-promise`.
+pub fn promise(tool: &str, control: &str) -> String {
+    format!("module-{tool}-control-{control}-promise")
 }
 
-/// A choice's option: `module-<module>-control-<control>-option-<option>`.
-pub fn option(module: &str, control: &str, option: &str) -> String {
-    format!("module-{module}-control-{control}-option-{option}")
+/// A choice's option: `module-<tool>-control-<control>-option-<option>`.
+pub fn option(tool: &str, control: &str, option: &str) -> String {
+    format!("module-{tool}-control-{control}-option-{option}")
 }
 
 /// A row's own words, where darktable labels its control otherwise in the mode the row
 /// shows for ([`crate::Slider::label`]): its short label, full name and promise,
-/// `module-<module>-control-<control>-as-<words>-label`, `-full` and `-promise`.
-pub fn row_words(module: &str, control: &str, words: &str) -> [String; 3] {
+/// `module-<tool>-control-<control>-as-<words>-label`, `-full` and `-promise`.
+pub fn row_words(tool: &str, control: &str, words: &str) -> [String; 3] {
     ["label", "full", "promise"]
-        .map(|part| format!("module-{module}-control-{control}-as-{words}-{part}"))
+        .map(|part| format!("module-{tool}-control-{control}-as-{words}-{part}"))
 }
 
-/// A module's setting's short label, full name and promise ([`crate::Row::Setting`]):
-/// `module-<module>-setting-<setting>-label`, `-full` and `-promise`.
-pub fn setting(module: &str, setting: &str) -> [String; 3] {
-    ["label", "full", "promise"].map(|part| format!("module-{module}-setting-{setting}-{part}"))
+/// A tool's setting's short label, full name and promise ([`crate::Row::Setting`]):
+/// `module-<tool>-setting-<setting>-label`, `-full` and `-promise`.
+pub fn setting(tool: &str, setting: &str) -> [String; 3] {
+    ["label", "full", "promise"].map(|part| format!("module-{tool}-setting-{setting}-{part}"))
 }
 
-/// A module's setting's option: `module-<module>-setting-<setting>-option-<option>`.
-pub fn setting_option(module: &str, setting: &str, option: &str) -> String {
-    format!("module-{module}-setting-{setting}-option-{option}")
+/// A tool's setting's option: `module-<tool>-setting-<setting>-option-<option>`.
+pub fn setting_option(tool: &str, setting: &str, option: &str) -> String {
+    format!("module-{tool}-setting-{setting}-option-{option}")
 }
 
-/// darktable's guides widget's words ([`crate::Row::Guides`]), every module's: show
+/// darktable's guides widget's words ([`crate::Row::Guides`]), every tool's: show
 /// guides' label, full name and promise, then the global settings button's name and
 /// promise.
 pub const GUIDES: [&str; 5] = [
@@ -100,7 +100,7 @@ pub const GUIDES: [&str; 5] = [
     "guides-settings-promise",
 ];
 
-/// A picker's patches' words ([`crate::Row::Patches`]), every module's, darktable's: the
+/// A picker's patches' words ([`crate::Row::Patches`]), every tool's, darktable's: the
 /// input's heading and tooltip, the target's heading, the L readout's tooltip, and the
 /// readout, `$value` its L in the language's number format, or none before a pick. The
 /// target patch's tooltip is its first setting's promise.
@@ -114,17 +114,16 @@ pub const PATCHES: [&str; 6] = [
 ];
 
 /// An action's short label, full name and promise ([`crate::Row::Action`]):
-/// `module-<module>-action-<action>-label`, `-full` and `-promise`.
-pub fn action(module: &str, action: &str) -> [String; 3] {
-    ["label", "full", "promise"].map(|part| format!("module-{module}-action-{action}-{part}"))
+/// `module-<tool>-action-<action>-label`, `-full` and `-promise`.
+pub fn action(tool: &str, action: &str) -> [String; 3] {
+    ["label", "full", "promise"].map(|part| format!("module-{tool}-action-{action}-{part}"))
 }
 
 /// A colour picker's name, full name, promise and, for one that takes a point, the central
-/// bar's sentence ([`crate::Picker`]): `module-<module>-picker-<picker>-label`, `-full`,
+/// bar's sentence ([`crate::Picker`]): `module-<tool>-picker-<picker>-label`, `-full`,
 /// `-promise` and `-what`.
-pub fn picker(module: &str, picker: &str) -> [String; 4] {
-    ["label", "full", "promise", "what"]
-        .map(|part| format!("module-{module}-picker-{picker}-{part}"))
+pub fn picker(tool: &str, picker: &str) -> [String; 4] {
+    ["label", "full", "promise", "what"].map(|part| format!("module-{tool}-picker-{picker}-{part}"))
 }
 
 /// The words of `picker` of `definition` that its button and the central bar use, of
@@ -148,18 +147,18 @@ pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<Stri
 }
 
 /// A preset row's short label, full name and promise:
-/// `module-<module>-preset-<preset>-label`, `-full` and `-promise`.
-pub fn preset(module: &str, preset: &str) -> [String; 3] {
-    ["label", "full", "promise"].map(|part| format!("module-{module}-preset-{preset}-{part}"))
+/// `module-<tool>-preset-<preset>-label`, `-full` and `-promise`.
+pub fn preset(tool: &str, preset: &str) -> [String; 3] {
+    ["label", "full", "promise"].map(|part| format!("module-{tool}-preset-{preset}-{part}"))
 }
 
-/// A preset row's option: `module-<module>-preset-<preset>-option-<option>`.
-pub fn preset_option(module: &str, preset: &str, option: &str) -> String {
-    format!("module-{module}-preset-{preset}-option-{option}")
+/// A preset row's option: `module-<tool>-preset-<preset>-option-<option>`.
+pub fn preset_option(tool: &str, preset: &str, option: &str) -> String {
+    format!("module-{tool}-preset-{preset}-option-{option}")
 }
 
 /// What a preset row shows while the values hold none of its options, the same in every
-/// module: `preset-custom`, in `ui.ftl`.
+/// tool: `preset-custom`, in `ui.ftl`.
 pub const PRESET_CUSTOM: &str = "preset-custom";
 
 /// A unit, from the closed list: `unit-<unit>`, in `ui.ftl`.
@@ -183,40 +182,40 @@ pub fn unit_value(unit: Unit) -> String {
 /// Custom if it has a preset row, the patches' words if it has patches, and each picker's
 /// words its button and the central bar use ([`picker_words`]).
 pub fn of(definition: &Definition) -> Vec<String> {
-    let module = definition.id;
-    let mut ids = vec![title(module)];
+    let tool = definition.id;
+    let mut ids = vec![title(tool)];
     if definition.auto {
-        ids.push(auto(module));
+        ids.push(auto(tool));
     }
     ids.extend(
         definition
             .tabs
             .iter()
             .filter_map(|t| t.id)
-            .map(|t| tab(module, t)),
+            .map(|t| tab(tool, t)),
     );
     for row in definition.rows() {
         match row {
             Row::Label { id }
             | Row::Pickers {
                 label: Some(id), ..
-            } => ids.push(group(module, id)),
-            Row::Group { id, .. } => ids.push(collapsible(module, id)),
+            } => ids.push(group(tool, id)),
+            Row::Group { id, .. } => ids.push(collapsible(tool, id)),
             Row::Slider(Slider {
                 control,
                 label: Some(words),
                 ..
-            }) => ids.extend(row_words(module, control, words)),
+            }) => ids.extend(row_words(tool, control, words)),
             Row::Setting(SettingRow { id, kind, .. }) => {
-                ids.extend(setting(module, id));
+                ids.extend(setting(tool, id));
                 if let ControlKind::Choice { options, .. } = kind {
-                    ids.extend(options.iter().map(|o| setting_option(module, id, o)));
+                    ids.extend(options.iter().map(|o| setting_option(tool, id, o)));
                 }
             }
-            Row::Action { id } => ids.extend(action(module, id)),
+            Row::Action { id } => ids.extend(action(tool, id)),
             Row::Buttons { buttons, .. } => {
                 for button in *buttons {
-                    ids.extend(action(module, button.id));
+                    ids.extend(action(tool, button.id));
                 }
             }
             Row::Guides => ids.extend(GUIDES.map(str::to_owned)),
@@ -229,20 +228,20 @@ pub fn of(definition: &Definition) -> Vec<String> {
     }
     for control in definition.controls {
         let id = control.id;
-        ids.extend([label(module, id), full(module, id), promise(module, id)]);
+        ids.extend([label(tool, id), full(tool, id), promise(tool, id)]);
         if let ControlKind::Choice { options, .. } = control.kind {
-            ids.extend(options.iter().map(|o| option(module, id, o)));
+            ids.extend(options.iter().map(|o| option(tool, id, o)));
         }
     }
     // A view's coordinate is addressed like a control, and worded like one.
     let coordinates = || definition.views.iter().flat_map(|view| view.coordinates);
     for coordinate in coordinates() {
         let id = coordinate.id;
-        ids.extend([label(module, id), full(module, id), promise(module, id)]);
+        ids.extend([label(tool, id), full(tool, id), promise(tool, id)]);
     }
     for row in definition.presets {
-        ids.extend(preset(module, row.id));
-        ids.extend(row.options.iter().map(|o| preset_option(module, row.id, o)));
+        ids.extend(preset(tool, row.id));
+        ids.extend(row.options.iter().map(|o| preset_option(tool, row.id, o)));
     }
     for used in Unit::ALL {
         let units = definition.controls.iter().map(|c| c.unit);
@@ -417,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_s_setting_implies_its_words_and_options() {
+    fn a_tool_s_setting_implies_its_words_and_options() {
         static CONTROLS: &[Control] = &[Control {
             id: "amount",
             kind: ControlKind::Number {

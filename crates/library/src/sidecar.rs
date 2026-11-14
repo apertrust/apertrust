@@ -17,13 +17,13 @@
 //! The `.apxmp` sidecar's text layer (decisions 28, 43, 47, 48, 54 and 78, layer 1 of the
 //! library's API): `IMG.ARW.apxmp`, an XMP file beside the photo, as bytes in and values
 //! out, and back. It knows the file's structure and nothing of what the values mean, so it
-//! depends on no engine, GPU, module or operation crate.
+//! depends on no engine, GPU, tool or operation crate.
 //!
 //! A [`Document`] is the file as text: its version, the build that wrote it (`x:xmptk`) and
-//! its entries, each a module's or an operation's attributes as strings, in the order the
+//! its entries, each a tool's or an operation's attributes as strings, in the order the
 //! file has them. [`Document::parse`] reads one and [`Document::to_xml`] writes one, in a
 //! layout that never varies, so a file read and written back is the same bytes. The engine
-//! turns the entries into an edit's values, and an edit into entries, with the module
+//! turns the entries into an edit's values, and an edit into entries, with the tool
 //! definitions; this module never sees a number, a choice or a parameter's range.
 //!
 //! ```xml
@@ -49,7 +49,7 @@
 //!    </rdf:li>
 //! ```
 //!
-//! A switched module that is on (decision 32) has `apertrust:enabled="true"`; absent, it
+//! A switched tool that is on (decision 32) has `apertrust:enabled="true"`; absent, it
 //! is off. The text layer keeps whatever the attribute holds, so the engine can tell a
 //! value it does not know.
 //!
@@ -62,8 +62,8 @@
 //!
 //! What the text layer tells of an edit a newer Apertrust wrote (decision 43), from the
 //! file alone, is a file version above [`COPIES_VERSION`] ([`Edits::newer`]). [`Newer`]
-//! also names the three things only the module definitions can tell, a module version above
-//! its definition's, a module the build neither has nor has retired, and a module turned on
+//! also names the three things only the tool definitions can tell, a tool version above
+//! its definition's, a tool the build neither has nor has retired, and a tool turned on
 //! that the build does not switch, which the engine finds. [`ViewOnly`] is the error an
 //! edit opened for viewing only carries, its [`Reason`] what a newer build wrote or a
 //! [`Problem`], what of a version 2 file cannot be read.
@@ -83,7 +83,7 @@ use crate::xmp::{self, ArrayKind, Name, Namespace, Node, Property, Xmp};
 const DOCUMENT_VERSION: u32 = 1;
 /// The namespace of Apertrust's own properties, on the project's domain (decision 48).
 pub const NAMESPACE: &str = "https://apertrust.org/ns/xmp/";
-/// The namespace of module controls, by their ids.
+/// The namespace of tool controls, by their ids.
 pub const CONTROL_NAMESPACE: &str = "https://apertrust.org/ns/xmp/control/";
 /// The namespace of operation parameters, by their schema names.
 pub const PARAM_NAMESPACE: &str = "https://apertrust.org/ns/xmp/param/";
@@ -122,16 +122,16 @@ pub enum SidecarError {
 pub enum Newer {
     /// A file version above [`COPIES_VERSION`], read as [`COPIES_VERSION`] lays it out.
     Version(u32),
-    /// A module version above its definition's, or one that is no whole number, as
+    /// A tool version above its definition's, or one that is no whole number, as
     /// written; its controls read by name.
     ToolVersion {
         tool: String,
         version: String,
         has: u32,
     },
-    /// A module this build neither has nor has retired, left out.
+    /// A tool this build neither has nor has retired, left out.
     Tool(String),
-    /// A module whose `apertrust:enabled` this build cannot keep (decision 32): one it
+    /// A tool whose `apertrust:enabled` this build cannot keep (decision 32): one it
     /// does not switch, or a value other than `true`, whose state a save would lose.
     Enabled(String),
 }
@@ -145,21 +145,17 @@ impl fmt::Display for Newer {
                     "is version {version}, newer than this build's {COPIES_VERSION}"
                 )
             }
-            Newer::ToolVersion {
-                tool: module,
-                version,
-                has,
-            } => write!(
+            Newer::ToolVersion { tool, version, has } => write!(
                 f,
-                "holds {module} version {version}, newer than this build's {has}"
+                "holds {tool} version {version}, newer than this build's {has}"
             ),
-            Newer::Tool(module) => {
-                write!(f, "holds the tool {module}, which this build does not have")
+            Newer::Tool(tool) => {
+                write!(f, "holds the tool {tool}, which this build does not have")
             }
-            Newer::Enabled(module) => {
+            Newer::Enabled(tool) => {
                 write!(
                     f,
-                    "turns the tool {module} on, which this build does not switch"
+                    "turns the tool {tool} on, which this build does not switch"
                 )
             }
         }
@@ -282,7 +278,7 @@ pub fn read_fingerprint(path: &Path) -> io::Result<String> {
     Ok(fingerprint(size, &head, &tail))
 }
 
-/// One `rdf:Description` as the file has it: a module's or an operation's, every value
+/// One `rdf:Description` as the file has it: a tool's or an operation's, every value
 /// as the text the file holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
@@ -295,7 +291,7 @@ pub enum Entry {
         /// The ids in `apertrust:auto`.
         auto: Vec<String>,
         /// Its `apertrust:enabled` as written, `None` where absent: `true` for a switched
-        /// module that is on.
+        /// tool that is on.
         enabled: Option<String>,
         /// The `control:` attributes, by control id and text, in the file's order.
         controls: Vec<(String, String)>,
@@ -311,7 +307,7 @@ pub enum Entry {
 
 impl Entry {
     /// Whether it holds nothing, as the text says: no control, mark or `enabled` of a
-    /// module, no parameter of an operation; a step's empty entry, the reset state.
+    /// tool, no parameter of an operation; a step's empty entry, the reset state.
     pub fn is_empty(&self) -> bool {
         match self {
             Entry::Tool {
@@ -326,10 +322,10 @@ impl Entry {
     }
 
     /// What it is of, which orders a version 1 file's entries as steps and folds a log as
-    /// text: modules first, then operations, each by its id.
+    /// text: tools first, then operations, each by its id.
     fn key(&self) -> (u8, &str) {
         match self {
-            Entry::Tool { tool: module, .. } => (0, module),
+            Entry::Tool { tool, .. } => (0, tool),
             Entry::Operation { operation, .. } => (1, operation),
         }
     }
@@ -343,7 +339,7 @@ pub struct Document {
     /// The build that wrote it, as its `x:xmptk` records it; `None` for a file that
     /// records no Apertrust build.
     pub build: Option<String>,
-    /// Every entry in the file's order. [`Document::to_xml`] writes the modules' first and
+    /// Every entry in the file's order. [`Document::to_xml`] writes the tools' first and
     /// then the operations', each group in this order.
     pub entries: Vec<Entry>,
 }
@@ -366,7 +362,7 @@ impl Document {
     }
 
     /// Reads an `.apxmp` file's XMP through the XMP layer ([`Xmp::parse`]): the version, the
-    /// build and every item of `apertrust:modules` and `apertrust:operations`, a module with
+    /// build and every item of `apertrust:modules` and `apertrust:operations`, a tool with
     /// its version, marks and `control:` fields, an operation with its schema and its
     /// `param:` fields. An item that is neither is no entry.
     pub fn parse(xml: &str) -> Result<Document, SidecarError> {
@@ -391,10 +387,10 @@ impl Document {
         }
     }
 
-    /// The document as XMP, the build recorded in `x:xmptk`: the module entries in their
+    /// The document as XMP, the build recorded in `x:xmptk`: the tool entries in their
     /// order, then the operation entries in theirs.
     pub fn to_xml(&self) -> String {
-        let (modules, operations): (Vec<&Entry>, Vec<&Entry>) = self
+        let (tools, operations): (Vec<&Entry>, Vec<&Entry>) = self
             .entries
             .iter()
             .partition(|entry| matches!(entry, Entry::Tool { .. }));
@@ -409,7 +405,7 @@ impl Document {
             Vec::new(),
             vec![
                 own("version", &self.version.to_string()),
-                list("modules", modules),
+                list("modules", tools),
                 list("operations", operations),
             ],
         )
@@ -471,7 +467,7 @@ fn own_field<'a>(fields: &'a [Property], local: &str) -> Option<&'a str> {
         .and_then(|field| field.node.as_str())
 }
 
-/// The entries an `rdf:Seq` holds; an item that is neither a module's nor an operation's
+/// The entries an `rdf:Seq` holds; an item that is neither a tool's nor an operation's
 /// is no entry.
 fn read_entries(node: &Node) -> Vec<Entry> {
     node.items()
@@ -497,14 +493,14 @@ fn entry_node(entry: &Entry) -> Node {
     };
     match entry {
         Entry::Tool {
-            tool: module,
+            tool,
             version,
             kept,
             auto,
             enabled,
             controls,
         } => {
-            let mut fields = vec![own("module", module)];
+            let mut fields = vec![own("module", tool)];
             if let Some(version) = version {
                 fields.push(own("moduleVersion", version));
             }
@@ -538,10 +534,10 @@ fn entry_node(entry: &Entry) -> Node {
     }
 }
 
-/// An entry from an item's fields: a module's, an operation's, or none where it names
+/// An entry from an item's fields: a tool's, an operation's, or none where it names
 /// neither.
 fn entry(fields: &[Property]) -> Option<Entry> {
-    let (mut module, mut operation) = (String::new(), String::new());
+    let (mut tool, mut operation) = (String::new(), String::new());
     let (mut version, mut schema) = (None, None);
     let (mut kept, mut auto) = (Vec::new(), Vec::new());
     let mut enabled = None;
@@ -555,7 +551,7 @@ fn entry(fields: &[Property]) -> Option<Entry> {
         let namespace = name.namespace.as_str();
         if namespace == NAMESPACE {
             match name.local.as_str() {
-                "module" => module = value,
+                "module" => tool = value,
                 "moduleVersion" => version = Some(value),
                 "kept" => kept = list(&value),
                 "auto" => auto = list(&value),
@@ -570,9 +566,9 @@ fn entry(fields: &[Property]) -> Option<Entry> {
             params.push((name.local.clone(), value));
         }
     }
-    if !module.is_empty() {
+    if !tool.is_empty() {
         Some(Entry::Tool {
-            tool: module,
+            tool,
             version,
             kept,
             auto,

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Soften's invariants (`docs/tools/soften.md`, Invariants), one test per row, each
-//! named after its row: a switched module's (decision 32), S0 off, S1 the first step, on
+//! named after its row: a switched tool's (decision 32), S0 off, S1 the first step, on
 //! at darktable's defaults, S2 moved and reset, S3 the order, S4 the darktable match, S7
 //! on at darktable's defaults on the CPU and S8 version 1's edits; S5, on a layer, waits
 //! for Phase 4, and S6 is withdrawn. The synthetic ramp and sweep run on CI's software
@@ -90,7 +90,7 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults, 50 %, 100 %, +0.33 EV and a mix of 50 %:
+    /// The tool on at darktable's defaults, 50 %, 100 %, +0.33 EV and a mix of 50 %:
     /// soften planned at the operation's defaults, darktable's new instance (rows S1 and
     /// S2).
     fn on_at_defaults(&self) -> Vec<Instance<'static>> {
@@ -120,7 +120,7 @@ fn bits_apart(a: &[[f32; 4]], b: &[[f32; 4]]) -> usize {
 // S0: off.
 
 /// S0 on one pipeline, as the session renders: no edit, then soften joining the plan, on
-/// at darktable's defaults, and leaving it, then each edit that leaves the module off,
+/// at darktable's defaults, and leaving it, then each edit that leaves the tool off,
 /// every frame as the first.
 fn s0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
@@ -152,7 +152,7 @@ fn s0_off_renders_as_no_edit() {
     }
 }
 
-/// S0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// S0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -259,7 +259,7 @@ fn s1_on_the_corpus() {
 // S2: each control moved, then reset.
 
 /// Moves of every control: the mix one step off darktable's 50 % and a write of it at
-/// 50 %, which turns the module on; the size, the saturation and the brightness each
+/// 50 %, which turns the tool on; the size, the saturation and the brightness each
 /// moved; and three at the golden case's values. Each changes the frame. The size moves
 /// the blur's radius in whole pixels, 1 % of the image's diagonal at 100 %, so on the
 /// small images here only a large move does: 100 % gives the sweep a radius of 4 where
@@ -274,9 +274,9 @@ const MOVES: [&[(&str, f32)]; 6] = [
 ];
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// soften joins with each move and leaves with each module's reset.
+/// soften joins with each move and leaves with each tool's reset.
 fn s2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults();
@@ -299,13 +299,13 @@ fn s2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn s2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn s2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     s2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -360,10 +360,10 @@ fn s2_and_s3_on_the_corpus() {
 
 // S4: darktable's golden case.
 
-/// S4: the module's controls set to the values of the `soften` golden case, darktable's
+/// S4: the tool's controls set to the values of the `soften` golden case, darktable's
 /// test 0051-soften, each field as darktable's slider shows it, as it is, bind the case's
 /// parameters bit for bit: the very parameter values the golden harness plans the
-/// operation with against darktable's render. So the module renders those values as the
+/// operation with against darktable's render. So the tool renders those values as the
 /// case measures the port: a ΔE2000 mean of 0.0001, max 0.0042 (`docs/ports/soften.md`).
 #[test]
 fn s4_the_golden_case_s_values_bind_to_darktable_s_parameters_bit_for_bit() {
@@ -407,7 +407,7 @@ fn s4_the_golden_case_s_values_bind_to_darktable_s_parameters_bit_for_bit() {
 
 // S7: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind soften's own, and the module on at its
+/// The tool's defaults, each made explicit, bind soften's own, and the tool on at its
 /// defaults plans soften with no parameter set, darktable's new instance; off, it plans
 /// none.
 #[test]
@@ -419,7 +419,7 @@ fn s7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound, resolved over the schema: soften planned where the mix was off 0, version 1's
-/// untouched value, and not planned, the module off, where it was not.
+/// untouched value, and not planned, the tool off, where it was not.
 #[test]
 fn s8_version_1_s_edits_bind_what_they_bound() {
     let image = common::photo();

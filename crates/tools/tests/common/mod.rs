@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The bench the modules' invariant tests share: the GPU, a colour raw's image context,
+//! The bench the tools' invariant tests share: the GPU, a colour raw's image context,
 //! the synthetic images (`docs/tools/README.md`, Test images) and a small raw, a bench
 //! rendering edits through one pipeline as the session does, and the jump between two
 //! frames. Each test file includes it with `mod common;` and defines its own [`Measure`],
@@ -84,7 +84,7 @@ pub fn raw_context(width: u32, height: u32, bias: f32) -> ImageContext {
     }
 }
 
-/// The photo a row's edit sets its controls on, where its module lists each choice's
+/// The photo a row's edit sets its controls on, where its tool lists each choice's
 /// options alike on every photo (decision 30): a colour raw's context, which only a
 /// choice reads.
 pub fn photo() -> ImageContext {

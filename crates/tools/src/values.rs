@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Module values, what an edit stores (decision 28): per control a value where one is
-//! set, and a mark; and, for a switched module (decision 32), whether it is on.
+//! Tool values, what an edit stores (decision 28): per control a value where one is
+//! set, and a mark; and, for a switched tool (decision 32), whether it is on.
 
 use std::collections::BTreeMap;
 
@@ -39,14 +39,14 @@ pub enum Mark {
     Auto,
 }
 
-/// A module's values: for each control a value where one is set, its default for the
+/// A tool's values: for each control a value where one is set, its default for the
 /// photo otherwise, and a mark. A control can be kept without a value, held at its
 /// default. Controls are named by id; values read from an older edit may name controls
-/// the module no longer has, until [`crate::Tool::migrate`] maps them.
+/// the tool no longer has, until [`crate::Tool::migrate`] maps them.
 ///
-/// A switched module (decision 32, [`crate::Definition::switched`]) is on while
+/// A switched tool (decision 32, [`crate::Definition::switched`]) is on while
 /// [`Self::enabled`] holds: off, it holds no value, only marks, and renders nothing; on,
-/// it renders with darktable's defaults for the controls it holds no value for. A module
+/// it renders with darktable's defaults for the controls it holds no value for. A tool
 /// that is not switched never sets it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ToolValues {
@@ -60,18 +60,18 @@ impl ToolValues {
         Self::default()
     }
 
-    /// Neither a value nor a mark, and not on: the module is untouched.
+    /// Neither a value nor a mark, and not on: the tool is untouched.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty() && self.marks.is_empty() && !self.enabled
     }
 
-    /// Whether a switched module is on (decision 32); false for one off, and for every
-    /// module that is not switched, which is always on.
+    /// Whether a switched tool is on (decision 32); false for one off, and for every
+    /// tool that is not switched, which is always on.
     pub fn enabled(&self) -> bool {
         self.enabled
     }
 
-    /// Turns a switched module on or off, its values and marks as they are.
+    /// Turns a switched tool on or off, its values and marks as they are.
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
@@ -182,8 +182,8 @@ impl Controls {
         self.0.is_empty()
     }
 
-    /// A number control's default; a module asks only for its own controls, so a
-    /// missing or mistyped one is a bug in the module.
+    /// A number control's default; a tool asks only for its own controls, so a
+    /// missing or mistyped one is a bug in the tool.
     pub fn number(&self, control: &str) -> f32 {
         match self.get(control) {
             Some(ControlValue::Number(value)) => *value,
@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn a_switched_module_on_with_no_value_is_not_untouched() {
+    fn a_switched_tool_on_with_no_value_is_not_untouched() {
         let mut values = ToolValues::new();
         values.set_enabled(true);
         assert!(!values.is_empty());

@@ -671,7 +671,7 @@ fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, Se
         mut file,
         ..
     } = loaded;
-    // A number outside the range its module's values give, as only a hand-written file
+    // A number outside the range its tool's values give, as only a hand-written file
     // holds, is clamped as it is read (decisions 21 and 30); an edit open for viewing only
     // is shown as it was. The clamp is a change not yet a step.
     if view_only.is_none() {

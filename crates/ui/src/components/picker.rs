@@ -72,7 +72,7 @@ pub struct PickerButton<'a> {
 }
 
 impl<'a> PickerButton<'a> {
-    /// `name` is translated: its full name, the module's and the picker's words ("Exposure:
+    /// `name` is translated: its full name, the tool's and the picker's words ("Exposure:
     /// pick from the photo"), what screen readers say. `on` while its picker is the active
     /// one.
     pub fn new(name: &'a str, on: bool) -> Self {
@@ -101,7 +101,7 @@ impl<'a> PickerButton<'a> {
     /// "ctrl+click or right-click to select an area", on a quad "ctrl+click to select an
     /// area" (`colorequal.c:3010-3011`), Cmd on the Mac. Where darktable's own tooltip
     /// already holds that line (`rgbcurve.c:1500-1501`, `libs/colorpicker.c:778`), the
-    /// module's message holds only its first line, and this adds the rest.
+    /// tool's message holds only its first line, and this adds the rest.
     pub fn point_or_area(mut self, both: bool) -> Self {
         self.area = both;
         self
@@ -116,7 +116,7 @@ impl<'a> PickerButton<'a> {
     }
 
     /// Dimmed, ignoring input, with `why`, translated, as its tooltip: on a photo not yet
-    /// live and, for a module's picker, on a photo open for viewing only.
+    /// live and, for a tool's picker, on a photo open for viewing only.
     pub fn disabled(mut self, why: &'a str) -> Self {
         self.disabled = Some(why);
         self
@@ -232,7 +232,7 @@ fn command_alone(modifiers: Modifiers) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PickerPlace {
     /// A point, with the colour it sampled as the screen shows it: the reading's frame mean,
-    /// or the statistic the Colour picker module shows.
+    /// or the statistic the Colour picker shows.
     Point { at: Pos2, colour: Color32 },
     /// An area, from its top left to its bottom right.
     Area(Rect),

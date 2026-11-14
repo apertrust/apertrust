@@ -355,7 +355,7 @@ fn a_value_set_from_outside_beyond_the_soft_range_widens_the_track_and_it_stays(
 
 #[test]
 fn a_reset_from_outside_keeps_the_widened_span_as_darktable_s_gui_update_does() {
-    // Widened to 3, then the module's or the header's reset sets the default from
+    // Widened to 3, then the tool's or the header's reset sets the default from
     // outside, not the row's own reset: darktable's `gui_update` only widens, so the
     // track keeps −1 to 3.
     let mut harness = slider(Locale::EnGb, Some(-1.0..=1.0));
@@ -2153,7 +2153,7 @@ fn dropdown(width: f32, quad: bool) -> Harness<'static, Dropdown> {
         )
 }
 
-/// The same row Blended, as a module panel draws it, with its kept marker.
+/// The same row Blended, as a tool panel draws it, with its kept marker.
 fn blended(width: f32, quad: bool) -> Harness<'static, Dropdown> {
     let mut harness = dropdown(width, quad);
     harness.state_mut().style = ChoiceStyle::Blended;
@@ -2181,7 +2181,7 @@ fn one_line() -> f32 {
     t.sizes.field + t.spacing.xxs
 }
 
-/// A Blended row's height: a module panel's one-line row.
+/// A Blended row's height: a tool panel's one-line row.
 fn panel_line() -> f32 {
     Theme::default().sizes.panel_line
 }
@@ -2554,7 +2554,7 @@ fn chevron<State>(harness: &Harness<'_, State>, within: egui::Rect) -> (egui::Re
     (icon, icon.left() + icon.width() * 0.87)
 }
 
-/// A slider row over a Blended dropdown row, as a module panel stacks them, `width` points
+/// A slider row over a Blended dropdown row, as a tool panel stacks them, `width` points
 /// wide.
 fn slider_over_choice(width: f32) -> Harness<'static> {
     Harness::builder()
@@ -2887,7 +2887,7 @@ fn a_disabled_icon_button_does_not_click() {
     assert_eq!((undo, redo), (1, 0));
 }
 
-/// Two collapsible groups as a module shows them, each holding a slider, and a checkbox
+/// Two collapsible groups as a tool shows them, each holding a slider, and a checkbox
 /// row after them; what is open, how often each was toggled, and how many controls in
 /// each are set, applied as the app would.
 #[derive(Default)]

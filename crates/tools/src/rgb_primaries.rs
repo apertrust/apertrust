@@ -193,7 +193,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `primaries`: the module is darktable's and owns them all.
+/// Every parameter of `primaries`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 8] = owns();
 
 const fn owns() -> [Owned; 8] {

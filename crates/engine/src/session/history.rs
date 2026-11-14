@@ -15,13 +15,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The open photo's history in the session (decision 78, `docs/history.md`, Behaviour):
-//! its log in memory, each completed change a step of each module it touched, and the undo
+//! its log in memory, each completed change a step of each tool it touched, and the undo
 //! records, which Undo and Redo take back and put back as darktable's undo does
 //! (`src/libs/history.c:664-686`).
 //!
-//! A completed change that touched several modules is a step for each, in the order the
-//! modules were written, sharing a batch id, and one undo record, as darktable's undo group
-//! (`dt_undo_start_group`, `src/common/history.c:157`); Reset is one step of every module
+//! A completed change that touched several tools is a step for each, in the order the
+//! tools were written, sharing a batch id, and one undo record, as darktable's undo group
+//! (`dt_undo_start_group`, `src/common/history.c:157`); Reset is one step of every tool
 //! it reset. Two stacks, the done records and the undone ones: Undo takes the newest done
 //! record back onto the undone stack, Redo the newest undone one back onto the done stack,
 //! and a new step clears the undone stack. Only when the done stack is empty, as after
@@ -33,7 +33,7 @@
 //! `GoTo` moves the end, a record of its own, as darktable's click on a history item is
 //! (`src/libs/history.c:1297-1318`), to any step, one inside a batch among them. `Step`
 //! makes several commands one change of its source and note, all or none, taking in the
-//! gesture under way on a module it writes, of its source and note.
+//! gesture under way on a tool it writes, of its source and note.
 //!
 //! The log is the sidecar's (version 2, [`crate::sidecar`]), read as the photo opens and
 //! saved after each completed change and each move of the end, with the copy's clock
@@ -46,7 +46,7 @@
 //! is not written, so they go into the file with the first change. Undo's fallback stops
 //! above them, as darktable's auto-applied items are no undo records; `GoTo` reaches each.
 //!
-//! `Compress` keeps the default steps and each module's last step up to the end, `Truncate`
+//! `Compress` keeps the default steps and each tool's last step up to the end, `Truncate`
 //! drops the person's steps after the end, neither changing what the photo shows but at
 //! end 0, and `DiscardHistory` goes to Original and compresses, so the log holds no step:
 //! each one undo record holding the log as it was, as darktable records its compress,
@@ -62,7 +62,7 @@
 //! right after that step with no other command on the edit between, its first write within
 //! [`MERGE_WITHIN`] of the step's first and, once a frame including the step's last change
 //! is published, within [`REVIEW`] of that frame (`develop.c:885`); a change of several
-//! modules never merges, nor is a step of a batch merged into. It adds no undo record, so
+//! tools never merges, nor is a step of a batch merged into. It adds no undo record, so
 //! one Undo takes the merged step back whole. The times are the commands' own, as the
 //! client sent them, and the frames' publications, both handed in, so a test sets them.
 
@@ -104,7 +104,7 @@ pub(super) struct PhotoHistory {
     written: Option<Written>,
     /// The step the next change may merge into: the log's last, at the end, made with no
     /// command on the edit since but changes not yet a step, of one target, source You or
-    /// Auto, no note, and of one module, so in no batch.
+    /// Auto, no note, and of one tool, so in no batch.
     merge: Option<Merge>,
     /// Whether the log was read from a file holding steps, taken in from one, or handed to
     /// the writer: until then a log of default steps alone is not written
@@ -171,9 +171,9 @@ pub(super) const REVIEW: Duration = Duration::from_secs(2);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Target {
     /// A control set or reset, a view's coordinate among them.
-    Control { module: String, control: String },
+    Control { tool: String, control: String },
     /// A preset row an option was applied from.
-    Preset { module: String, preset: String },
+    Preset { tool: String, preset: String },
 }
 
 /// The changes not yet a step.
@@ -237,7 +237,7 @@ impl PhotoHistory {
     /// `clocks`, both empty for a photo never edited: the next step's clock follows the
     /// latest of them ([`latest`]). A log with no step is given a default step of each of
     /// `defaults`, the end after them, none written until the first change; a log with steps
-    /// is given none, so its steps keep their numbers and a default module a later build
+    /// is given none, so its steps keep their numbers and a default tool a later build
     /// adds runs at its defaults with no step.
     pub(super) fn read(log: Log, clocks: Vec<Clock>, defaults: &[&str]) -> Self {
         let machine = MachineId::current();
@@ -475,11 +475,11 @@ impl PhotoHistory {
         (std::mem::replace(&mut self.stepped, self.log.fold()), kept)
     }
 
-    /// Makes what changed since the last step a step of each module it touched, of `source`
+    /// Makes what changed since the last step a step of each tool it touched, of `source`
     /// with `note` ([`Change::between`]), and says whether it made any: a change that changes
     /// nothing makes none. Several share a batch id; a Reset's step is noted
     /// `history-reset`. They drop the steps after the end, which Undo brings back, and clear
-    /// the undone records. A change of one module that merges into the step before it makes
+    /// the undone records. A change of one tool that merges into the step before it makes
     /// none of its own and adds no record: that step keeps its id, takes the change's entry
     /// and the latest clock.
     pub(super) fn complete(&mut self, edit: &Edit, source: StepSource, note: Option<Note>) -> bool {
@@ -488,8 +488,8 @@ impl PhotoHistory {
             .as_ref()
             .map_or(&[][..], |written| &written.wrote[..]);
         let mut changes = Change::between(&self.stepped, edit, wrote);
-        // A Reset or a module's reset with the end among the default steps moves no value,
-        // but applies the modules not applied: a step of what it reset.
+        // A Reset or a tool's reset with the end among the default steps moves no value,
+        // but applies the tools not applied: a step of what it reset.
         if changes.is_empty() && edit.unapplied.is_empty() && !self.stepped.unapplied.is_empty() {
             changes = applied_by(wrote, &self.stepped.unapplied);
         }
@@ -543,7 +543,7 @@ impl PhotoHistory {
         true
     }
 
-    /// The modules not applied in `edit`, the edit as it stands: those the last step left
+    /// The tools not applied in `edit`, the edit as it stands: those the last step left
     /// unapplied while its values are the last step's, and none once they move away, as a
     /// change keeps the default steps after the end and applies them ([`Log::add`]).
     pub(super) fn unapplied(&self, edit: &Edit) -> BTreeSet<String> {
@@ -555,7 +555,7 @@ impl PhotoHistory {
     }
 
     /// A command on the edit, sent at `at`, wrote `target`, or, with `None`, wrote several
-    /// or none, and wrote the modules and operations `wrote`, in order: the changes not yet
+    /// or none, and wrote the tools and operations `wrote`, in order: the changes not yet
     /// a step go on, or begin with it.
     pub(super) fn wrote(&mut self, target: Option<Target>, wrote: Vec<Wrote>, at: Instant) {
         self.written = Some(match self.written.take() {
@@ -709,7 +709,7 @@ impl PhotoHistory {
     }
 
     /// Compress, `edit` the edit as it stands, a change not yet a step made one first, as for
-    /// Undo: the log keeps the default steps and each module's last step up to the end
+    /// Undo: the log keeps the default steps and each tool's last step up to the end
     /// ([`Log::compressed`]), a log left with no step given a default step of each of
     /// `defaults` again. The edit it leaves, or `None` where it leaves the log as it is.
     pub(super) fn compress(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
@@ -777,12 +777,12 @@ impl PhotoHistory {
 
     /// Starts the log afresh from `edit`, as Discard History does on an edit open for
     /// viewing only because of a [`crate::sidecar::Problem`]: a default step of each of
-    /// `defaults`, as a new photo's log begins, then a step of each module and operation it
+    /// `defaults`, as a new photo's log begins, then a step of each tool and operation it
     /// holds as far as it was read, sharing a batch, source You, noted `history-discard`,
-    /// the end the last, the modules it holds not applied left so ([`Log::afresh`]). The
+    /// the end the last, the tools it holds not applied left so ([`Log::afresh`]). The
     /// file is written with it, or with no step for default steps alone with every one
     /// applied, which go into it with the first change; default steps alone with the end
-    /// among them are written as they are, so the modules not applied stay so as the photo
+    /// among them are written as they are, so the tools not applied stay so as the photo
     /// reopens. No undo record: the log it replaces could not be written back. The edit it
     /// leaves.
     pub(super) fn afresh(&mut self, edit: &Edit, defaults: &[&str]) -> Edit {
@@ -856,14 +856,14 @@ impl PhotoHistory {
     pub(super) fn fact(
         &mut self,
         through: u64,
-        modules: &[&'static dyn Tool],
+        tools: &[&'static dyn Tool],
         operations: &'static [&'static dyn Operation],
         image: &ImageContext,
     ) -> History {
         self.changed = false;
         History {
             through,
-            steps: (self.described).steps(&self.log, modules, operations, image),
+            steps: (self.described).steps(&self.log, tools, operations, image),
             end: self.log.end(),
             undo: self.next(true),
             redo: self.next(false),
@@ -893,14 +893,14 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
     }
 }
 
-/// The step of a change that moved no value but applied the modules `unapplied`, a Reset or
-/// a module's reset with the end among the default steps, by what it wrote: a Reset holding
-/// an empty entry for each, where it was a `Reset`, else the first module it reset, empty.
+/// The step of a change that moved no value but applied the tools `unapplied`, a Reset or
+/// a tool's reset with the end among the default steps, by what it wrote: a Reset holding
+/// an empty entry for each, where it was a `Reset`, else the first tool it reset, empty.
 fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
     if wrote.contains(&Wrote::All) {
         let entries = (unapplied.iter())
-            .map(|module| Entry::Tool {
-                tool: module.clone(),
+            .map(|tool| Entry::Tool {
+                tool: tool.clone(),
                 values: ToolValues::new(),
             })
             .collect();
@@ -908,8 +908,8 @@ fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
     }
     (wrote.iter())
         .find_map(|wrote| match wrote {
-            Wrote::Tool(module) => Some(Change::Entry(Entry::Tool {
-                tool: module.clone(),
+            Wrote::Tool(tool) => Some(Change::Entry(Entry::Tool {
+                tool: tool.clone(),
                 values: ToolValues::new(),
             })),
             _ => None,
@@ -918,13 +918,13 @@ fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
         .collect()
 }
 
-/// What `command` resets, the edit or a module, or a `Step`'s commands in turn: with the end
-/// among the default steps it applies the modules not applied (decision 78), and is a step
+/// What `command` resets, the edit or a tool, or a `Step`'s commands in turn: with the end
+/// among the default steps it applies the tools not applied (decision 78), and is a step
 /// though it moves no value.
 fn resets(command: &Command) -> Vec<Wrote> {
     match command {
         Command::Reset => vec![Wrote::All],
-        Command::ResetTool { tool: module } => vec![Wrote::Tool(module.clone())],
+        Command::ResetTool { tool } => vec![Wrote::Tool(tool.clone())],
         Command::Step { commands, .. } => commands.iter().flat_map(resets).collect(),
         _ => Vec::new(),
     }
@@ -935,51 +935,49 @@ fn goes_on(command: &Command) -> bool {
     matches!(command, Command::SetControl { done: false, .. })
 }
 
-/// The gesture `command` goes on with, or begins (decision 42): its module, and the
+/// The gesture `command` goes on with, or begins (decision 42): its tool, and the
 /// source and note of its step. A `SetControl { done: false }`'s, of source You, or a
-/// `Step`'s holding such changes alone, of its own, on the module of the last of them.
+/// `Step`'s holding such changes alone, of its own, on the tool of the last of them.
 pub(super) fn gesture_of(command: &Command) -> Option<(&str, StepSource, Option<&Note>)> {
     match command {
         Command::SetControl {
-            tool: module,
-            done: false,
-            ..
-        } => Some((module, StepSource::You, None)),
+            tool, done: false, ..
+        } => Some((tool, StepSource::You, None)),
         Command::Step {
             source,
             note,
             commands,
         } if commands.iter().all(goes_on) => match commands.last()? {
-            Command::SetControl { tool: module, .. } => Some((module, *source, note.as_ref())),
+            Command::SetControl { tool, .. } => Some((tool, *source, note.as_ref())),
             _ => None,
         },
         _ => None,
     }
 }
 
-/// Whether `command` writes `module`: names it, or, as `Reset`, writes every module.
-fn writes(command: &Command, module: &str) -> bool {
+/// Whether `command` writes `tool`: names it, or, as `Reset`, writes every tool.
+fn writes(command: &Command, tool: &str) -> bool {
     match command {
         Command::SetControl { tool: named, .. }
         | Command::ResetControl { tool: named, .. }
         | Command::ResetTool { tool: named }
         | Command::Keep { tool: named, .. }
-        | Command::ApplyPreset { tool: named, .. } => named == module,
+        | Command::ApplyPreset { tool: named, .. } => named == tool,
         Command::Reset => true,
         _ => false,
     }
 }
 
-/// What `command` writes: the module it names, the operation a `Set` names, or every module
+/// What `command` writes: the tool it names, the operation a `Set` names, or every tool
 /// and operation for `Reset`; nothing for any other, a `Step`'s left to
 /// [`Engine::apply_step`], which knows which of its commands changed the edit.
 fn wrote(command: &Command) -> Vec<Wrote> {
     match command {
-        Command::SetControl { tool: module, .. }
-        | Command::ResetControl { tool: module, .. }
-        | Command::ResetTool { tool: module }
-        | Command::Keep { tool: module, .. }
-        | Command::ApplyPreset { tool: module, .. } => vec![Wrote::Tool(module.clone())],
+        Command::SetControl { tool, .. }
+        | Command::ResetControl { tool, .. }
+        | Command::ResetTool { tool }
+        | Command::Keep { tool, .. }
+        | Command::ApplyPreset { tool, .. } => vec![Wrote::Tool(tool.clone())],
         Command::Set { operation, .. } => vec![Wrote::Operation(operation.clone())],
         Command::Reset => vec![Wrote::All],
         _ => Vec::new(),
@@ -988,28 +986,18 @@ fn wrote(command: &Command) -> Vec<Wrote> {
 
 /// The target `command` writes, which a change merges by: a control a `SetControl` or
 /// `ResetControl` names, a preset row an `ApplyPreset` names, or a `Step`'s one command's;
-/// `None` for a change of several, as a `Step` of several commands, or of none, as a module
+/// `None` for a change of several, as a `Step` of several commands, or of none, as a tool
 /// reset, a keep, a `Set` or `Reset`.
 fn target(command: &Command) -> Option<Target> {
     match command {
-        Command::SetControl {
-            tool: module,
-            control,
-            ..
+        Command::SetControl { tool, control, .. } | Command::ResetControl { tool, control } => {
+            Some(Target::Control {
+                tool: tool.clone(),
+                control: control.clone(),
+            })
         }
-        | Command::ResetControl {
-            tool: module,
-            control,
-        } => Some(Target::Control {
-            module: module.clone(),
-            control: control.clone(),
-        }),
-        Command::ApplyPreset {
-            tool: module,
-            preset,
-            ..
-        } => Some(Target::Preset {
-            module: module.clone(),
+        Command::ApplyPreset { tool, preset, .. } => Some(Target::Preset {
+            tool: tool.clone(),
             preset: preset.clone(),
         }),
         Command::Step { commands, .. } => match &commands[..] {
@@ -1075,20 +1063,18 @@ impl Engine {
         }
         let gesture = (self.open.as_ref())
             .and_then(|open| open.gesture.as_ref())
-            .map(|gesture| (gesture.module.clone(), gesture.source, gesture.note.clone()));
-        // One source per gesture: only a change on its module, of its source and note, goes
+            .map(|gesture| (gesture.tool.clone(), gesture.source, gesture.note.clone()));
+        // One source per gesture: only a change on its tool, of its source and note, goes
         // on with it or takes it in.
-        let same = |module: &str, source: StepSource, note: Option<&Note>| {
+        let same = |tool: &str, source: StepSource, note: Option<&Note>| {
             (gesture.as_ref()).is_some_and(|(on, of, noted)| {
-                on == module && *of == source && noted.as_ref() == note
+                on == tool && *of == source && noted.as_ref() == note
             })
         };
         let (releases, goes_on) = match (&command, gesture_of(&command)) {
-            (_, Some((module, source, note))) => (false, same(module, source, note)),
-            (Command::SetControl { tool: module, .. }, None) => {
-                (same(module, StepSource::You, None), false)
-            }
-            // A `Step` takes in the gesture whose module its commands write, of its source
+            (_, Some((tool, source, note))) => (false, same(tool, source, note)),
+            (Command::SetControl { tool, .. }, None) => (same(tool, StepSource::You, None), false),
+            // A `Step` takes in the gesture whose tool its commands write, of its source
             // and note.
             (
                 Command::Step {
@@ -1098,9 +1084,9 @@ impl Engine {
                 },
                 None,
             ) => {
-                let takes_in = |(module, ..): &(String, _, _)| {
-                    same(module, *source, note.as_ref())
-                        && commands.iter().any(|command| writes(command, module))
+                let takes_in = |(tool, ..): &(String, _, _)| {
+                    same(tool, *source, note.as_ref())
+                        && commands.iter().any(|command| writes(command, tool))
                 };
                 (gesture.as_ref().is_some_and(takes_in), false)
             }
@@ -1123,8 +1109,8 @@ impl Engine {
         let resets = resets(&command);
         let before = self.open.as_ref().map(|open| open.edit.clone());
         let mut applied = self.edit_command(command);
-        // A Reset or a module's reset applies the modules not applied, though it may move no
-        // value: the edit at the photo's defaults with every module applied, a step to save.
+        // A Reset or a tool's reset applies the tools not applied, though it may move no
+        // value: the edit at the photo's defaults with every tool applied, a step to save.
         // Inside a `Step` it is a write of its own, which its commands report only where a
         // value moved.
         if !resets.is_empty()
@@ -1165,7 +1151,7 @@ impl Engine {
         {
             open.gesture = None;
         }
-        // The modules not applied: the end's while the values are its, none once they move,
+        // The tools not applied: the end's while the values are its, none once they move,
         // rendered where that changed them.
         if let Some(open) = &mut self.open {
             let unapplied = open.history.unapplied(&open.edit);
@@ -1207,7 +1193,7 @@ impl Engine {
         if self
             .open
             .as_ref()
-            .is_some_and(|open| clamp_only(open, &self.modules))
+            .is_some_and(|open| clamp_only(open, &self.tools))
         {
             return;
         }
@@ -1270,13 +1256,13 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
-        let edit = pending(open, &self.modules);
+        let edit = pending(open, &self.tools);
         let moved = if redo {
             open.history.redo(&edit)
         } else {
             open.history.undo(&edit)
         };
-        Ok(moved_to(open, moved, &self.modules))
+        Ok(moved_to(open, moved, &self.tools))
     }
 
     /// [`Command::GoTo`]: the edit becomes the log's fold, a completed change, which saves
@@ -1285,10 +1271,10 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
-        let edit = pending(open, &self.modules);
+        let edit = pending(open, &self.tools);
         let moved =
             (open.history.go_to(&edit, step)).map_err(|step| SessionError::UnknownStep { step })?;
-        Ok(moved_to(open, moved, &self.modules))
+        Ok(moved_to(open, moved, &self.tools))
     }
 
     /// [`Command::Compress`], [`Command::Truncate`] or [`Command::DiscardHistory`], as `what`
@@ -1298,7 +1284,7 @@ impl Engine {
     /// edit, starts the log afresh, the file's unreadable parts going with the old log, and
     /// ends the view-only state.
     pub(super) fn rewrite(&mut self, what: Rewrite) -> Result<Effect, SessionError> {
-        let defaults = crate::history::default_tools(&self.modules, self.operations);
+        let defaults = crate::history::default_tools(&self.tools, self.operations);
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
@@ -1308,21 +1294,21 @@ impl Engine {
             open.photo.view_only = None;
             // What `Opened` says again: the image context the decode gave.
             *open.photo.image = open.image.clone();
-            return Ok(moved_to(open, Some(afresh), &self.modules));
+            return Ok(moved_to(open, Some(afresh), &self.tools));
         }
-        let edit = pending(open, &self.modules);
+        let edit = pending(open, &self.tools);
         let moved = match what {
             Rewrite::Compress => open.history.compress(&edit, &defaults),
             Rewrite::Truncate => open.history.truncate(&edit, &defaults),
             Rewrite::Discard => open.history.discard(&edit, &defaults),
         };
-        Ok(moved_to(open, moved, &self.modules))
+        Ok(moved_to(open, moved, &self.tools))
     }
 
     /// The open photo's `History`, where it changed since it was last sent.
     pub(super) fn history_event(&mut self) -> Option<Event> {
         let open = self.open.as_mut().filter(|open| open.history.changed())?;
-        let fact = (open.history).fact(self.applied, &self.modules, self.operations, &open.image);
+        let fact = (open.history).fact(self.applied, &self.tools, self.operations, &open.image);
         Some(Event::History(fact))
     }
 }
@@ -1330,16 +1316,16 @@ impl Engine {
 /// Whether the only change of `open`'s edit not yet a step is the clamp a move of the end or
 /// the photo's open made of the log's fold, which never becomes a step of its own: else an
 /// Undo would take back that clamp's step and land where it began, never past it.
-pub(super) fn clamp_only(open: &Open, modules: &[&dyn Tool]) -> bool {
+pub(super) fn clamp_only(open: &Open, tools: &[&dyn Tool]) -> bool {
     let mut clamped = open.history.stepped().clone();
-    clamped.clamp_read(modules, &open.image);
+    clamped.clamp_read(tools, &open.image);
     clamped == open.edit
 }
 
 /// The edit a move of the end makes a step of first, as a change not yet a step: `open`'s,
 /// or the log's fold where its only change is a clamp ([`clamp_only`]).
-fn pending(open: &Open, modules: &[&dyn Tool]) -> Edit {
-    if clamp_only(open, modules) {
+fn pending(open: &Open, tools: &[&dyn Tool]) -> Edit {
+    if clamp_only(open, tools) {
         open.history.stepped().clone()
     } else {
         open.edit.clone()
@@ -1351,16 +1337,16 @@ fn pending(open: &Open, modules: &[&dyn Tool]) -> Edit {
 /// rendered where it differs, and saved as a completed change, the end with it even where
 /// the edit is as it was. With nothing moved, `None`, a change made a step first saves
 /// alike.
-fn moved_to(open: &mut Open, moved: Option<Edit>, modules: &[&dyn Tool]) -> Effect {
+fn moved_to(open: &mut Open, moved: Option<Edit>, tools: &[&dyn Tool]) -> Effect {
     let Some(mut edit) = moved else {
         return Effect {
             save: true,
             ..Effect::default()
         };
     };
-    // Held to the ranges its modules' values give on the photo, as an opened edit is: the
+    // Held to the ranges its tools' values give on the photo, as an opened edit is: the
     // clamp is a change not yet a step.
-    for warning in edit.clamp_read(modules, &open.image) {
+    for warning in edit.clamp_read(tools, &open.image) {
         tracing::warn!(target: "pipe", "{warning}");
     }
     let changed = edit != open.edit;

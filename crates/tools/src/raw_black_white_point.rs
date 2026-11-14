@@ -33,7 +33,7 @@
 //! not ported: rawler reads no gain maps, so no photo can have one, and the control is
 //! drawn disabled on every photo, where darktable hides it. darktable's crop margins, which
 //! it shows only while its preference to edit the raw crop is on, off by default, are not
-//! shown (rule 12): the module owns them at the raw's values and never sets them.
+//! shown (rule 12): the tool owns them at the raw's values and never sets them.
 //!
 //! A change runs demosaic again, as every raw-stage control does (decision 12).
 
@@ -141,7 +141,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `rawprepare`: the module is darktable's and owns them all, the crop
+/// Every parameter of `rawprepare`: the tool is darktable's and owns them all, the crop
 /// margins first, at the raw's values, with no control ([`CROP`]).
 static OWNS: [Owned; 10] = [
     Owned::new(RAWPREPARE, "left"),
@@ -156,7 +156,7 @@ static OWNS: [Owned; 10] = [
     Owned::new(RAWPREPARE, FLAT_FIELD),
 ];
 
-/// How many of [`OWNS`] are the crop margins, which the module fixes.
+/// How many of [`OWNS`] are the crop margins, which the tool fixes.
 const CROP: usize = 4;
 
 impl Tool for RawBlackWhitePoint {
@@ -192,7 +192,7 @@ impl Tool for RawBlackWhitePoint {
     /// read. The levels change nothing on an image that is not a raw, which runs no raw
     /// stage, where darktable shows its "only works for the sensors that need it" page in
     /// place of the sliders (`gui_init`, `reload_defaults`). Neither depends on the
-    /// module's values.
+    /// tool's values.
     fn available(&self, control: &str, _: &Controls, image: &ImageContext) -> bool {
         control != FLAT_FIELD && image.camera.is_some()
     }
@@ -224,7 +224,7 @@ impl Tool for RawBlackWhitePoint {
 /// An empty black pattern leaves the blacks at 0, as the operation's schema does. `None`
 /// for an image that is not a raw, whose levels are the schema's, darktable's passthrough
 /// preset. This crate cannot call the operation's own, so it is restated here; the
-/// module's tests check the two agree.
+/// tool's tests check the two agree.
 pub fn levels(image: &ImageContext) -> Option<([f32; 4], f32)> {
     let camera = image.camera.as_ref()?;
     let pattern = &camera.black;
@@ -333,7 +333,7 @@ mod tests {
         assert!(!DEFINITION.layers && !DEFINITION.auto);
     }
 
-    /// The module owns every parameter of `rawprepare`, each level's control named as its
+    /// The tool owns every parameter of `rawprepare`, each level's control named as its
     /// parameter, with the parameter's range; the crop margins have no control.
     #[test]
     fn it_owns_every_parameter_of_the_operation_and_its_levels_ranges_are_the_schema_s() {

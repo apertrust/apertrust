@@ -18,15 +18,15 @@
 //! decision 78): the History tab, and what Undo and Redo would do, named as History
 //! names a step, for Edit's items.
 //!
-//! A step with a note reads its note, Reset's among them, and one without its module's
-//! title; a batch, the steps one change made on several modules, its note, else the name
+//! A step with a note reads its note, Reset's among them, and one without its tool's
+//! title; a batch, the steps one change made on several tools, its note, else the name
 //! of its first step the app knows and how many more it knows; a `GoTo` taken back or put back, Go to Step. darktable's
-//! label after a • and a layer after a · join a module's title with layers (Phase 4).
+//! label after a • and a layer after a · join a tool's title with layers (Phase 4).
 //!
 //! **The section** lists the mirror's `History` as darktable's history module lists its
 //! stack (`src/libs/history.c`, `gui_update`), the wireframe's History frame:
 //!
-//! - a line per step, newest at the top, numbered from 1, its module's name, as
+//! - a line per step, newest at the top, numbered from 1, its tool's name, as
 //!   darktable's history item reads, even with a note, Reset's reading Reset, then what
 //!   changed in the small text, as the board "Photo · History tab: one line says what
 //!   changed" draws it, and its source's tag at its end only where it is not the
@@ -34,8 +34,8 @@
 //!   darktable's active item, and the steps after it in the secondary text, which
 //!   darktable draws as any other (`docs/history.md`, Against darktable), the undone mark
 //!   under them;
-//! - a batch, one change's steps on several modules, one closed line, a group: its note
-//!   or how many modules, its steps' numbers as a range, its modules' titles, its source;
+//! - a batch, one change's steps on several tools, one closed line, a group: its note
+//!   or how many tools, its steps' numbers as a range, its tools' titles, its source;
 //!   the chevron, or →, opens it, its steps indented under it, and it opens itself when
 //!   the end lands inside it; a click on it goes to its last step, as Undo moves it whole.
 //!   Closed with the end inside it, it is the end's line, the undone mark under it.
@@ -51,18 +51,18 @@
 //! - a step's tooltip: a small table, a row for each control it changed, its label, its
 //!   value before, an arrow and its value after as its row writes them, in lined-up
 //!   columns, then its note, who made it and when apart, on the local clock in the
-//!   interface's language; a group's, its steps' rows under each module's title; a
+//!   interface's language; a group's, its steps' rows under each tool's title; a
 //!   default step's who and when alone;
 //! - a click on a step goes to it ([`Action::GoTo`]), a default step among them, on a
 //!   group's line, the Defaults' among them, to its last step, and on Original to
 //!   Original, but on where the end is, which changes nothing, as darktable's click on its
-//!   active item; Shift-click on a step opens its module's section ([`Action::Open`]), as
+//!   active item; Shift-click on a step opens its tool's section ([`Action::Open`]), as
 //!   darktable's Shift-click focuses it;
 //! - the keys, a tree's: ↑ and ↓ move between the lines, → opens a group, or goes into
 //!   one open, ← closes it, or goes from a line inside it to it, Home to the newest line
 //!   and End to Original, a key with nothing to do keeping the focus; Enter does what a
 //!   click does, Shift+Enter what Shift-click does. To screen readers a tree of items,
-//!   each named by its number and name, a group by its numbers, name and modules, its
+//!   each named by its number and name, a group by its numbers, name and tools, its
 //!   tooltip its description, the end selected, each saying where it is among its level's,
 //!   a group expanded or not, offering Expand or Collapse, its Click going to its last
 //!   step as a click does, the lines inside one a level down in a group of their own; the
@@ -75,9 +75,9 @@
 //!   open turns into Truncate History, darktable's Ctrl-click on it, where a step lies
 //!   after the end for it to drop; Create a Style…, drawn disabled until styles come; and
 //!   Discard History…, which asks first, as Edit's does ([`options`]);
-//! - the eye at the end of a step's line of one module, under the pointer or with the
-//!   focus: held, by the pointer or Space or Enter, a peek at the photo without the module
-//!   ([`Action::Peek`], `Command::Hide` while held), never saved, the module's name struck
+//! - the eye at the end of a step's line of one tool, under the pointer or with the
+//!   focus: held, by the pointer or Space or Enter, a peek at the photo without the tool
+//!   ([`Action::Peek`], `Command::Hide` while held), never saved, the tool's name struck
 //!   through while the session reports it hidden; nothing stays once it is let go.
 //!
 
@@ -116,11 +116,11 @@ pub enum Action {
     Toggle,
     /// Go to a step, or to Original with `None`: `Command::GoTo`.
     GoTo(Option<StepId>),
-    /// Open this module's section in the side panel.
+    /// Open this tool's section in the side panel.
     Open(&'static str),
     /// Reset the edit, as Reset Edit does.
     Reset,
-    /// The eye held this frame on this module's line: the photo shown without the module
+    /// The eye held this frame on this tool's line: the photo shown without the tool
     /// while it is held, `Command::Hide`.
     Peek(&'static str),
     /// Compress History, from its options: `Command::Compress`.
@@ -180,7 +180,7 @@ pub fn discard_why(options: Options) -> Option<&'static str> {
 /// - Compress History where a step is not a default one, since Compress keeps every default
 ///   step, and at end 0, where it drops every step, the photo is given them again: a
 ///   history of default steps alone is compressed already. It may still find nothing to
-///   do, each module's step up to the end its last and none empty, which `History` does
+///   do, each tool's step up to the end its last and none empty, which `History` does
 ///   not tell; the session then records nothing.
 /// - Truncate History, its alternate, where a step after the end is not a default one,
 ///   which it would drop; otherwise Option shows Compress History still.
@@ -259,7 +259,7 @@ pub struct Line {
     pub name: String,
     /// What changed, after the name in the small text, cut at its end where the line has no
     /// room; none where there is nothing to say, as on a default step. A group's, its
-    /// modules or how many.
+    /// tools or how many.
     pub change: Option<String>,
     /// What changed as screen readers hear it in the step's name, its values before and
     /// after, since they have no tooltip to rest on.
@@ -270,10 +270,10 @@ pub struct Line {
     pub tip: Tip,
     /// Its node on the rail; a group's is drawn the end's only while it is closed.
     pub node: RailNode,
-    /// The module Shift-click opens; none where the app
-    /// does not know it, as an operation's unowned parameters or a newer build's module.
-    pub module: Option<&'static str>,
-    /// The module the eye at its end hides from the view: a step's one module the app
+    /// The tool Shift-click opens; none where the app
+    /// does not know it, as an operation's unowned parameters or a newer build's tool.
+    pub tool: Option<&'static str>,
+    /// The tool the eye at its end hides from the view: a step's one tool the app
     /// knows; none on Reset's, a group's line or Original, nor where the app does not know
     /// it.
     pub hides: Option<&'static str>,
@@ -322,18 +322,18 @@ impl Listed {
 pub enum Tip {
     /// Words alone: Original's.
     Text(String),
-    /// A step's: each module's changes, then who made it and when, each part apart
+    /// A step's: each tool's changes, then who made it and when, each part apart
     /// ("You", "21/10/2026, 17:52").
     Changes {
-        modules: Vec<Changed>,
+        tools: Vec<Changed>,
         by: Vec<String>,
     },
 }
 
-/// What a step changed of one module, for its tooltip.
+/// What a step changed of one tool, for its tooltip.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Changed {
-    /// The module's title, over its rows where the step touched several modules.
+    /// The tool's title, over its rows where the step touched several tools.
     pub heading: Option<String>,
     pub rows: Vec<TipRow>,
 }
@@ -355,12 +355,12 @@ impl Tip {
     /// What screen readers hear of it, plain text in the order it is drawn: "Exposure,
     /// +0.700 EV to +1.200 EV; You, 21/10/2026, 17:52".
     pub fn said(&self, tr: &Translator) -> String {
-        let (modules, by) = match self {
+        let (tools, by) = match self {
             Tip::Text(text) => return text.clone(),
-            Tip::Changes { modules, by } => (modules, by),
+            Tip::Changes { tools, by } => (tools, by),
         };
         let mut parts = Vec::new();
-        for changed in modules {
+        for changed in tools {
             parts.extend(changed.heading.clone());
             for row in &changed.rows {
                 parts.push(match row {
@@ -422,10 +422,10 @@ impl Line {
 
     /// Whether it takes a click or a Shift-click, which its hover band says: a click going
     /// somewhere while the photo takes edits (`editable`), or a Shift-click opening its
-    /// module, whatever the photo. A group's line always takes one,
+    /// tool, whatever the photo. A group's line always takes one,
     /// on its chevron. Original, the end already there, takes neither.
     fn takes(&self, editable: bool) -> bool {
-        (editable && !self.there()) || self.module.is_some() || self.group()
+        (editable && !self.there()) || self.tool.is_some() || self.group()
     }
 
     /// Whether a click goes nowhere: on the end's line, or on Original while the end is
@@ -449,7 +449,7 @@ impl Line {
     /// (`editable`).
     fn clicked(&self, shift: bool, editable: bool) -> Option<Action> {
         match self.place {
-            Place::Step { .. } if shift => self.module.map(Action::Open),
+            Place::Step { .. } if shift => self.tool.map(Action::Open),
             _ if shift => None,
             // The end where it is changes nothing, as darktable's click on its active item.
             _ if self.there() || !editable => None,
@@ -470,11 +470,11 @@ fn range(first: &str, last: &str) -> String {
 /// batch's as a group, with a heading over each day's, then the Defaults group, a new
 /// photo's default steps, also newest first, then Original; Original alone with no
 /// history. `today` is the
-/// local calendar's day now ([`local_day`]), which the headings count back from. `modules`
+/// local calendar's day now ([`local_day`]), which the headings count back from. `tools`
 /// are the session's, whose titles, controls and rows word the lines.
 pub fn listed(
     history: Option<&History>,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     tr: &Translator,
     today: i32,
 ) -> Listed {
@@ -516,11 +516,11 @@ pub fn listed(
             }
             let lines = (first..=last)
                 .rev()
-                .map(|index| step_line(&steps[index], index + 1, end, modules, tr));
+                .map(|index| step_line(&steps[index], index + 1, end, tools, tr));
             match steps[last].batch {
                 Some(batch) if first < last => entries.push(Entry::Group {
                     key: GroupKey::Batch(batch),
-                    line: batch_line(&steps[first..=last], first + 1, end, modules, tr),
+                    line: batch_line(&steps[first..=last], first + 1, end, tools, tr),
                     // The source is the group's, on its line alone.
                     lines: lines.map(|line| Line { tag: None, ..line }).collect(),
                     holds_end: (first + 1..last + 1).contains(&end),
@@ -529,7 +529,7 @@ pub fn listed(
             }
         }
         if defaults > 0 {
-            entries.push(defaults_group(&steps[..defaults], end, modules, tr));
+            entries.push(defaults_group(&steps[..defaults], end, tools, tr));
         }
     }
     let original = end == 0;
@@ -549,7 +549,7 @@ pub fn listed(
         } else {
             RailNode::Step
         },
-        module: None,
+        tool: None,
         hides: None,
     }));
     Listed {
@@ -563,7 +563,7 @@ fn step_line(
     step: &HistoryStep,
     number: usize,
     end: usize,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     tr: &Translator,
 ) -> Line {
     Line {
@@ -574,34 +574,34 @@ fn step_line(
             end: number == end,
         },
         key: LineKey::Step(step.id),
-        name: line_name(step, modules, tr),
-        change: summary(step, modules, tr),
-        heard: heard(step, modules, tr),
+        name: line_name(step, tools, tr),
+        change: summary(step, tools, tr),
+        heard: heard(step, tools, tr),
         tag: tag(step.source, tr),
-        tip: tip(step, modules, tr),
+        tip: tip(step, tools, tr),
         node: match () {
             () if is_reset(step) => RailNode::Reset { end: number == end },
             () if number == end => RailNode::End,
             () if number > end => RailNode::Undone,
             () => RailNode::Step,
         },
-        module: (step.changes.iter()).find_map(|change| known(modules, &change.tool)),
+        tool: (step.changes.iter()).find_map(|change| known(tools, &change.tool)),
         hides: match &step.changes[..] {
-            [change] if !is_reset(step) => known(modules, &change.tool),
+            [change] if !is_reset(step) => known(tools, &change.tool),
             _ => None,
         },
     }
 }
 
 /// A batch's line, its `steps` numbered from `first`, with the end at `end`: its note,
-/// which its last step carries, else how many modules; its modules' titles in its steps'
-/// order; the last step's source; a tooltip with each step's rows under its module's
+/// which its last step carries, else how many tools; its tools' titles in its steps'
+/// order; the last step's source; a tooltip with each step's rows under its tool's
 /// title, then its note, who and when.
 fn batch_line(
     steps: &[Arc<HistoryStep>],
     first: usize,
     end: usize,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     tr: &Translator,
 ) -> Line {
     let newest = &steps[steps.len() - 1];
@@ -616,21 +616,21 @@ fn batch_line(
     };
     let titles: Vec<String> = (steps.iter())
         .filter_map(|step| step.changes.first())
-        .map(|change| title(modules, &change.tool, tr))
+        .map(|change| title(tools, &change.tool, tr))
         .collect();
     let mut changed = Vec::new();
     for step in steps {
         for change in &step.changes {
-            let definition = definition(modules, &change.tool);
+            let definition = definition(tools, &change.tool);
             changed.push(Changed {
-                heading: Some(title(modules, &change.tool, tr)),
+                heading: Some(title(tools, &change.tool, tr)),
                 rows: (change.controls.iter())
                     .map(|control| control_change(definition, control, tr))
                     .collect(),
             });
         }
     }
-    let Tip::Changes { by, .. } = tip(newest, modules, tr) else {
+    let Tip::Changes { by, .. } = tip(newest, tools, tr) else {
         unreachable!("a step's tooltip has its changes")
     };
     let applied = first <= end;
@@ -647,36 +647,33 @@ fn batch_line(
         change: Some(titles.join(", ")),
         heard: None,
         tag: tag(newest.source, tr),
-        tip: Tip::Changes {
-            modules: changed,
-            by,
-        },
+        tip: Tip::Changes { tools: changed, by },
         node: RailNode::Group {
             end: last == end,
             undone: !applied,
         },
-        module: None,
+        tool: None,
         hides: None,
     }
 }
 
 /// The Defaults group, a new photo's default `steps`, numbered from 1, with the end at
-/// `end`: its line, "Defaults", how many modules, its numbers' range, which a click goes to
+/// `end`: its line, "Defaults", how many tools, its numbers' range, which a click goes to
 /// the last of as a batch's does, and the default steps' lines, newest first, as the steps:
 /// the first darktable adds, Raw black/white point, just over Original.
 fn defaults_group(
     steps: &[Arc<HistoryStep>],
     end: usize,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     tr: &Translator,
 ) -> Entry {
     let lines = (1..=steps.len())
         .rev()
-        .map(|number| step_line(&steps[number - 1], number, end, modules, tr))
+        .map(|number| step_line(&steps[number - 1], number, end, tools, tr))
         .collect();
     let newest = &steps[steps.len() - 1];
     let last = steps.len();
-    let Tip::Changes { by, .. } = tip(newest, modules, tr) else {
+    let Tip::Changes { by, .. } = tip(newest, tools, tr) else {
         unreachable!("a step's tooltip has its changes")
     };
     let mut args = Args::new();
@@ -698,14 +695,14 @@ fn defaults_group(
             heard: None,
             tag: None,
             tip: Tip::Changes {
-                modules: Vec::new(),
+                tools: Vec::new(),
                 by,
             },
             node: RailNode::Group {
                 end: last == end,
                 undone: !applied,
             },
-            module: None,
+            tool: None,
             hides: None,
         },
         lines,
@@ -892,7 +889,7 @@ fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
 /// while it is editable (a photo live and not open for viewing only), Reset runs only
 /// while it is resettable, and each of the options only where it can; ⋯ opens them while
 /// there is a history. The eye, view state alone, is held on any photo, `hidden` the
-/// modules the session reports hidden, as the mirror's values have them. `today` is the
+/// tools the session reports hidden, as the mirror's values have them. `today` is the
 /// local calendar's day ([`today`]). Returns what the user did.
 #[expect(
     clippy::too_many_arguments,
@@ -901,7 +898,7 @@ fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
 pub fn tab(
     ui: &mut egui::Ui,
     history: Option<&History>,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     hidden: &[&str],
     open: bool,
     peek: bool,
@@ -928,7 +925,7 @@ pub fn tab(
         })
         .show(ui, |ui| {
             if open {
-                let lines = |ui: &mut egui::Ui| list(ui, history, modules, hidden, editable, today);
+                let lines = |ui: &mut egui::Ui| list(ui, history, tools, hidden, editable, today);
                 actions = section_body(ui, lines);
             }
         });
@@ -1022,13 +1019,13 @@ fn chosen(id: &str) -> Option<Action> {
 fn list(
     ui: &mut egui::Ui,
     history: Option<&History>,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     hidden: &[&str],
     editable: bool,
     today: i32,
 ) -> Vec<Action> {
     let words = translator(ui.ctx());
-    let listed = kept(ui.ctx(), history, modules, &words, today);
+    let listed = kept(ui.ctx(), history, tools, &words, today);
     let base = ui.make_persistent_id("history lines");
     let open_id = base.with("open");
     let mut open: HashSet<GroupKey> = ui.data(|d| d.get_temp(open_id)).unwrap_or_default();
@@ -1152,7 +1149,7 @@ struct Pass<'a> {
     /// The id the lines' ids are made from.
     base: egui::Id,
     editable: bool,
-    /// The modules the session reports hidden, as the eye holds them.
+    /// The tools the session reports hidden, as the eye holds them.
     hidden: &'a [&'a str],
     /// Whether the end moved, to be scrolled into sight.
     moved: bool,
@@ -1172,7 +1169,7 @@ impl Pass<'_> {
             Drawn::Line(shown) => shown,
         };
         let id_of = |key: LineKey| self.base.with(key);
-        let hidden = (shown.line.hides).is_some_and(|module| self.hidden.contains(&module));
+        let hidden = (shown.line.hides).is_some_and(|tool| self.hidden.contains(&tool));
         let out = line_row(
             ui,
             id_of(shown.line.key),
@@ -1267,7 +1264,7 @@ fn keyed(
 fn kept(
     ctx: &egui::Context,
     history: Option<&History>,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     tr: &Translator,
     today: i32,
 ) -> Arc<Listed> {
@@ -1287,7 +1284,7 @@ fn kept(
     {
         return listed;
     }
-    let worded = Arc::new(listed(history, modules, tr, today));
+    let worded = Arc::new(listed(history, tools, tr, today));
     ctx.data_mut(|data| data.insert_temp(slot, (key, Arc::clone(&worded))));
     worded
 }
@@ -1494,7 +1491,7 @@ struct Clicked {
 /// indented under it, then what changed in the small text, cut at its end where there is
 /// no room, and the tag before the eye's room at the row's end; the end's on
 /// `list_chosen`, an undone step's in `text_secondary`; and the eye on a step of one
-/// module ([`eye_button`]), its module's name struck through in `text_secondary` while the
+/// tool ([`eye_button`]), its tool's name struck through in `text_secondary` while the
 /// session reports it `hidden`. Returns what a click, or Enter, asked for, and the eye held.
 fn line_row(
     ui: &mut egui::Ui,
@@ -1576,7 +1573,7 @@ fn line_row(
                 t.colors.text_secondary,
             )
         };
-        // A module hidden while the eye is held: its name in the secondary text, struck
+        // A tool hidden while the eye is held: its name in the secondary text, struck
         // through below.
         let ink = if hidden && enabled {
             t.colors.text_secondary
@@ -1722,7 +1719,7 @@ fn line_row(
     } else {
         response.on_hover_ui(|ui| tip_ui(ui, &line.tip))
     };
-    let eyed = eye.and_then(|module| {
+    let eyed = eye.and_then(|tool| {
         // Over the line, and inside its item for screen readers.
         let builder = UiBuilder::new()
             .id_salt(eye_id)
@@ -1731,7 +1728,7 @@ fn line_row(
         let pressed = eye_button(&mut ui.new_child(builder), &line.name);
         let focused = pressed.has_focus();
         ui.data_mut(|d| d.insert_temp(eye_id, focused));
-        held(ui, &pressed, area).then_some(Action::Peek(module))
+        held(ui, &pressed, area).then_some(Action::Peek(tool))
     });
     if eye.is_none() && eye_focused {
         ui.data_mut(|d| d.remove::<bool>(eye_id));
@@ -1791,13 +1788,13 @@ fn pressed_on(ui: &egui::Ui, eye_press: egui::Id) -> bool {
 /// The eye's side, at a line's end, the icon's and a point round it, as the board draws it.
 const EYE: f32 = 16.0;
 
-/// The eye on a step's line, `module` its module's title: an icon button, held to see the
-/// photo without the module, never saved. To screen readers a plain button, "Hold to see
+/// The eye on a step's line, `tool` its tool's title: an icon button, held to see the
+/// photo without the tool, never saved. To screen readers a plain button, "Hold to see
 /// the photo without Exposure", its tooltip saying nothing is saved.
-fn eye_button(ui: &mut egui::Ui, module: &str) -> egui::Response {
+fn eye_button(ui: &mut egui::Ui, tool: &str) -> egui::Response {
     let words = translator(ui.ctx());
     let mut args = Args::new();
-    args.set("module", module);
+    args.set("module", tool);
     let name = words.text_with("history-peek", Some(&args));
     let tip = words.text_with("history-peek-tip", Some(&args));
     IconButton::new(Icon::Visible, &name)
@@ -1854,7 +1851,7 @@ fn held(ui: &egui::Ui, response: &egui::Response, area: egui::Rect) -> bool {
 }
 
 /// A line's name as screen readers hear it: a step's number, name and what changed, its
-/// values before and after; a group's numbers, name and modules, the Defaults' how many;
+/// values before and after; a group's numbers, name and tools, the Defaults' how many;
 /// Original's name.
 fn said(line: &Line, words: &Translator) -> String {
     let mut args = Args::new();
@@ -1896,28 +1893,28 @@ fn name_room(room: f32, name: f32, changed: Option<f32>) -> f32 {
 
 /// Draws a line's tooltip. A step's is a small table: a row for each control, its label,
 /// its value before, an arrow and its value after, the values right-aligned in the small
-/// text a slider row writes its value in, so they line up down the rows; a module's
+/// text a slider row writes its value in, so they line up down the rows; a tool's
 /// title over its rows where the step touched several; then who made it and when, apart,
 /// in the secondary text.
 fn tip_ui(ui: &mut egui::Ui, tip: &Tip) {
     let t = theme(ui.ctx());
-    let (modules, by) = match tip {
+    let (tools, by) = match tip {
         Tip::Text(text) => {
             ui.label(text);
             return;
         }
-        Tip::Changes { modules, by } => (modules, by),
+        Tip::Changes { tools, by } => (tools, by),
     };
     let font = FontId::proportional(t.text.small);
     let fonts = ui.ctx().clone();
     let layout = |text: &str, colour| {
         fonts.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), colour))
     };
-    // The columns, as wide as their widest cell across every module's rows: label, before,
+    // The columns, as wide as their widest cell across every tool's rows: label, before,
     // the arrow, after.
     let arrow = layout("→", t.colors.text_secondary);
     let mut widths = [0.0_f32; 3];
-    for row in modules.iter().flat_map(|changed| &changed.rows) {
+    for row in tools.iter().flat_map(|changed| &changed.rows) {
         if let TipRow::Value {
             label,
             before,
@@ -1934,7 +1931,7 @@ fn tip_ui(ui: &mut egui::Ui, tip: &Tip) {
     let arrow_start = before_end + gap;
     let after_end = arrow_start + arrow.size().x + gap + widths[2];
     let height = arrow.size().y;
-    for changed in modules {
+    for changed in tools {
         if let Some(heading) = &changed.heading {
             let medium = FontId::new(t.text.small, egui::FontFamily::Name(fonts::MEDIUM.into()));
             let heading = egui::RichText::new(heading)
@@ -1971,7 +1968,7 @@ fn tip_ui(ui: &mut egui::Ui, tip: &Tip) {
         }
     }
     // Apart from the rows; a default step's alone.
-    if !modules.is_empty() {
+    if !tools.is_empty() {
         ui.add_space(t.spacing.xs);
     }
     let by = egui::RichText::new(by.join(SEPARATOR))
@@ -2007,24 +2004,24 @@ fn shift_clicked(ui: &egui::Ui) -> bool {
     })
 }
 
-/// `id` among `modules`, as the app knows it; none for a module or an operation it does
+/// `id` among `tools`, as the app knows it; none for a tool or an operation it does
 /// not.
-fn known(modules: &[&dyn Tool], id: &str) -> Option<&'static str> {
-    (modules.iter())
-        .map(|module| module.definition().id)
+fn known(tools: &[&dyn Tool], id: &str) -> Option<&'static str> {
+    (tools.iter())
+        .map(|tool| tool.definition().id)
         .find(|known| *known == id)
 }
 
-/// The definition of the module `id`, where the app knows it.
-fn definition(modules: &[&dyn Tool], id: &str) -> Option<&'static Definition> {
-    (modules.iter())
-        .map(|module| module.definition())
+/// The definition of the tool `id`, where the app knows it.
+fn definition(tools: &[&dyn Tool], id: &str) -> Option<&'static Definition> {
+    (tools.iter())
+        .map(|tool| tool.definition())
         .find(|definition| definition.id == id)
 }
 
-/// A module's title, or the stored name of one the app does not know.
-fn title(modules: &[&dyn Tool], id: &str, tr: &Translator) -> String {
-    match known(modules, id) {
+/// A tool's title, or the stored name of one the app does not know.
+fn title(tools: &[&dyn Tool], id: &str, tr: &Translator) -> String {
+    match known(tools, id) {
         Some(id) => tr.text(&messages::title(id)),
         None => id.to_owned(),
     }
@@ -2041,7 +2038,7 @@ fn source(source: StepSource, tr: &Translator) -> String {
     })
 }
 
-/// Whether `step` is Reset's, the one step touching every module it reset.
+/// Whether `step` is Reset's, the one step touching every tool it reset.
 fn is_reset(step: &HistoryStep) -> bool {
     matches!(&step.note, Some(Note::Message { id, .. }) if id == Note::RESET)
 }
@@ -2105,26 +2102,26 @@ fn tag(source_of: StepSource, tr: &Translator) -> Option<String> {
     }
 }
 
-/// What a step changed, as its line says it after the module's name: one number its
+/// What a step changed, as its line says it after the tool's name: one number its
 /// control's label and which way it went, "Shadows ↑" or "Strength ↓", the arrow alone
-/// where the control is the module's own, as Exposure's slider, and no arrow where it did
+/// where the control is the tool's own, as Exposure's slider, and no arrow where it did
 /// not move; any other control, a curve, a choice, a toggle, or one kept, released or set
-/// by Auto, its label alone, none where it is the module's own; several controls how
-/// many. Nothing for Reset, a step of source Default or a module this build does not know,
+/// by Auto, its label alone, none where it is the tool's own; several controls how
+/// many. Nothing for Reset, a step of source Default or a tool this build does not know,
 /// which has no control; an operation's unowned parameter, with no definition, by its
 /// name, as the tooltip and screen readers have it. The before and after are the
 /// tooltip's.
-fn summary(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn summary(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
     let changed = step.changes.first()?;
-    let definition = definition(modules, &changed.tool);
+    let definition = definition(tools, &changed.tool);
     match changed.controls.as_slice() {
         [] => None,
         [one] => {
             let label = Some(label(definition, one.control, tr))
-                .filter(|label| *label != title(modules, &changed.tool, tr));
+                .filter(|label| *label != title(tools, &changed.tool, tr));
             let arrow = match (&one.before, &one.after) {
                 (ControlValue::Number(before), ControlValue::Number(after)) if after > before => {
                     Some(UP)
@@ -2154,14 +2151,14 @@ const DOWN: &str = "↓";
 
 /// What a step changed as screen readers hear it in its name: each control's label and its
 /// value before and after, as the tooltip has them, the label left out where it is the
-/// module's own; nothing where the line says nothing.
-fn heard(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
+/// tool's own; nothing where the line says nothing.
+fn heard(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
     let changed = step.changes.first()?;
-    let definition = definition(modules, &changed.tool);
-    let own = title(modules, &changed.tool, tr);
+    let definition = definition(tools, &changed.tool);
+    let own = title(tools, &changed.tool, tr);
     let parts: Vec<String> = (changed.controls.iter())
         .map(|control| match control_change(definition, control, tr) {
             TipRow::Value {
@@ -2192,40 +2189,40 @@ fn label(definition: Option<&'static Definition>, control: &str, tr: &Translator
     }
 }
 
-/// A step's line: its module's title, as darktable's history item reads, even with a note,
-/// which its tooltip gives; the stored name of a module the app does not know, as a newer
-/// build's or an operation's unowned parameters; Reset's, which touches every module it
+/// A step's line: its tool's title, as darktable's history item reads, even with a note,
+/// which its tooltip gives; the stored name of a tool the app does not know, as a newer
+/// build's or an operation's unowned parameters; Reset's, which touches every tool it
 /// reset, its note, Reset. A step that names nothing reads its source, so a line never
 /// reads empty.
-fn line_name(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> String {
+fn line_name(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> String {
     match (&step.note, step.changes.as_slice()) {
         (Some(note), _) if is_reset(step) => noted(note, tr),
-        (_, [one]) => title(modules, &one.tool, tr),
+        (_, [one]) => title(tools, &one.tool, tr),
         (Some(note), _) => noted(note, tr),
         (None, _) => source(step.source, tr),
     }
 }
 
-/// A step's tooltip: its module's changes, then its note, who made it and when, on the
-/// local clock. Reset's, the one step of several modules, has a heading over each
-/// module's rows, and its note is its line's name. A default step, the photo's own, has
+/// A step's tooltip: its tool's changes, then its note, who made it and when, on the
+/// local clock. Reset's, the one step of several tools, has a heading over each
+/// tool's rows, and its note is its line's name. A default step, the photo's own, has
 /// who and when alone.
-fn tip(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Tip {
+fn tip(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Tip {
     let several = step.changes.len() > 1;
     let mut changed = Vec::new();
     let shown = (step.source != StepSource::Default).then_some(&step.changes);
     for change in shown.into_iter().flatten() {
-        let definition = definition(modules, &change.tool);
-        // The controls alone, not a switched module's turning on or off, which they show:
+        let definition = definition(tools, &change.tool);
+        // The controls alone, not a switched tool's turning on or off, which they show:
         // a reset turning one off, its controls going back to their defaults.
         let rows: Vec<TipRow> = (change.controls.iter())
             .map(|control| control_change(definition, control, tr))
             .collect();
-        // A module with nothing to describe, as a newer build's, shows by its heading
+        // A tool with nothing to describe, as a newer build's, shows by its heading
         // alone, and on a step of its own by the line's name.
         if several || !rows.is_empty() {
             changed.push(Changed {
-                heading: several.then(|| title(modules, &change.tool, tr)),
+                heading: several.then(|| title(tools, &change.tool, tr)),
                 rows,
             });
         }
@@ -2238,10 +2235,7 @@ fn tip(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Tip {
     if step.clock.when > 0 {
         by.push(tr.format_date_time(step.clock.when));
     }
-    Tip::Changes {
-        modules: changed,
-        by,
-    }
+    Tip::Changes { tools: changed, by }
 }
 
 /// One control's change, as darktable's history tooltip writes it: its label, its value
@@ -2342,12 +2336,12 @@ fn natural_decimals(value: f64) -> usize {
 }
 
 /// What Undo and Redo would do in `history`, the open photo's, in `tr`'s words: none where
-/// there is nothing to do, or nothing to name. `modules` are the session's, whose titles
+/// there is nothing to do, or nothing to name. `tools` are the session's, whose titles
 /// name a step.
-pub fn steps(history: Option<&History>, modules: &[&dyn Tool], tr: &Translator) -> Steps {
+pub fn steps(history: Option<&History>, tools: &[&dyn Tool], tr: &Translator) -> Steps {
     let side = |wanted: fn(&History) -> Option<Move>| {
         let history = history?;
-        named(history, wanted(history)?, modules, tr)
+        named(history, wanted(history)?, tools, tr)
     };
     Steps {
         undo: side(|h| h.undo),
@@ -2356,8 +2350,8 @@ pub fn steps(history: Option<&History>, modules: &[&dyn Tool], tr: &Translator) 
 }
 
 /// What `moved` does, as History names it; none for steps not in `history`, or whose first
-/// names no module the app knows, as an operation's unowned parameters alone.
-fn named(history: &History, moved: Move, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
+/// names no tool the app knows, as an operation's unowned parameters alone.
+fn named(history: &History, moved: Move, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
     match moved {
         Move::GoTo => Some(tr.text("history-go-to-step")),
         Move::Compress => Some(tr.text("history-compress")),
@@ -2366,7 +2360,7 @@ fn named(history: &History, moved: Move, modules: &[&dyn Tool], tr: &Translator)
         Move::Steps { first, count } => {
             let at = history.steps.iter().position(|s| s.id == first)?;
             let steps = history.steps.get(at..at + count)?;
-            name(steps, modules, tr)
+            name(steps, tools, tr)
         }
     }
 }
@@ -2374,11 +2368,11 @@ fn named(history: &History, moved: Move, modules: &[&dyn Tool], tr: &Translator)
 /// The name of one change's steps: its note, which a batch's steps share and its last
 /// carries, a Reset's coming first; else the name of its first step the app knows, and how
 /// many more of those it knows.
-fn name(steps: &[Arc<HistoryStep>], modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn name(steps: &[Arc<HistoryStep>], tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if let Some(note) = &steps.last()?.note {
         return Some(noted(note, tr));
     }
-    let mut known = steps.iter().filter_map(|step| step_name(step, modules, tr));
+    let mut known = steps.iter().filter_map(|step| step_name(step, tools, tr));
     let first = known.next()?;
     let more = known.count();
     if more == 0 {
@@ -2390,13 +2384,13 @@ fn name(steps: &[Arc<HistoryStep>], modules: &[&dyn Tool], tr: &Translator) -> O
     Some(tr.text_with("history-modules", Some(&args)))
 }
 
-/// One step's name: its note, else its module's title.
-fn step_name(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
+/// One step's name: its note, else its tool's title.
+fn step_name(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if let Some(note) = &step.note {
         return Some(noted(note, tr));
     }
     let change = step.changes.first()?;
-    (modules.iter())
+    (tools.iter())
         .any(|m| m.definition().id == change.tool)
         .then(|| tr.text(&apertrust_tools::messages::title(&change.tool)))
 }
@@ -2428,18 +2422,18 @@ pub(crate) mod tests {
 
     use super::*;
 
-    /// A step of source You touching `modules`, one, or a reset's several, with `note`.
-    pub fn step(id: u64, modules: &[&'static str], note: Option<Note>) -> Arc<HistoryStep> {
+    /// A step of source You touching `tools`, one, or a reset's several, with `note`.
+    pub fn step(id: u64, tools: &[&'static str], note: Option<Note>) -> Arc<HistoryStep> {
         Arc::new(HistoryStep {
             id: StepId(id),
             clock: Clock::at(0, None, MachineId::UNKNOWN),
             source: StepSource::You,
             note,
             batch: None,
-            changes: modules
+            changes: tools
                 .iter()
-                .map(|module| ToolChange {
-                    tool: (*module).into(),
+                .map(|tool| ToolChange {
+                    tool: (*tool).into(),
                     enabled: None,
                     controls: Vec::new(),
                 })
@@ -2464,7 +2458,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// `steps`, one change's of several modules, sharing the batch `batch`.
+    /// `steps`, one change's of several tools, sharing the batch `batch`.
     pub fn batched(batch: u64, steps: Vec<Arc<HistoryStep>>) -> Vec<Arc<HistoryStep>> {
         (steps.into_iter())
             .map(|step| {
@@ -2511,7 +2505,7 @@ pub(crate) mod tests {
             &["exposure"],
             Some(Note::Text("Brighter".to_owned())),
         ));
-        // An operation's unowned parameters, which no module's title names.
+        // An operation's unowned parameters, which no tool's title names.
         steps.push(step(9, &["colorin"], None));
         steps.push(step(10, &[], None));
         steps.extend(batched(
@@ -2529,7 +2523,7 @@ pub(crate) mod tests {
         };
         let undo = |first, count| named(Some(moving(first, count)), None).undo;
         assert_eq!(undo(1, 1).as_deref(), Some("Exposure"));
-        // A batch: its first module and how many more; the part `GoTo` left of one alike.
+        // A batch: its first tool and how many more; the part `GoTo` left of one alike.
         assert_eq!(undo(2, 3).as_deref(), Some("Exposure and 2 more"));
         assert_eq!(undo(3, 2).as_deref(), Some("Colour balance RGB and 1 more"));
         assert_eq!(undo(5, 1).as_deref(), Some("Reset"));
@@ -2599,7 +2593,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// A step of `source` with `note`, its `changes` each a module's.
+    /// A step of `source` with `note`, its `changes` each a tool's.
     fn made(
         id: u64,
         source: StepSource,
@@ -2617,26 +2611,26 @@ pub(crate) mod tests {
     }
 
     fn change(
-        module: &'static str,
+        tool: &'static str,
         enabled: Option<[bool; 2]>,
         controls: Vec<ControlChange>,
     ) -> ToolChange {
         ToolChange {
-            tool: module.into(),
+            tool: tool.into(),
             enabled,
             controls,
         }
     }
 
-    fn change_of(module: &'static str, controls: Vec<ControlChange>) -> ToolChange {
+    fn change_of(tool: &'static str, controls: Vec<ControlChange>) -> ToolChange {
         ToolChange {
-            tool: module.into(),
+            tool: tool.into(),
             enabled: None,
             controls,
         }
     }
 
-    /// A photo's history of five steps, one module each, the end at the third, so the last
+    /// A photo's history of five steps, one tool each, the end at the third, so the last
     /// two are greyed: Exposure, Grain turned on, an Auto step of Exposure, a reset of both,
     /// and an assistant's step of Exposure with its note. [`with_defaults`] gives it a new
     /// photo's default steps under them.
@@ -2692,11 +2686,11 @@ pub(crate) mod tests {
         }
     }
 
-    /// How many default steps a new photo is given, of the modules the app runs.
+    /// How many default steps a new photo is given, of the tools the app runs.
     const DEFAULT_STEPS: usize = 9;
 
     /// `history`'s steps after a new photo's default steps, one of each of darktable's
-    /// default modules, numbered 1 to [`DEFAULT_STEPS`], the end at `end`.
+    /// default tools, numbered 1 to [`DEFAULT_STEPS`], the end at `end`.
     fn with_defaults(history: History, end: usize) -> History {
         let defaults = apertrust_engine::history::default_tools(
             apertrust_tools::TOOLS,
@@ -2704,12 +2698,12 @@ pub(crate) mod tests {
         );
         assert_eq!(defaults.len(), DEFAULT_STEPS);
         let mut steps: Vec<_> = (defaults.iter().enumerate())
-            .map(|(index, module)| {
+            .map(|(index, tool)| {
                 made(
                     0xd0 + index as u64,
                     StepSource::Default,
                     None,
-                    vec![change(module, None, Vec::new())],
+                    vec![change(tool, None, Vec::new())],
                 )
             })
             .collect();
@@ -2750,7 +2744,7 @@ pub(crate) mod tests {
         assert_eq!(
             shown,
             [
-                // A note leaves the line its module's name, as darktable's; the source
+                // A note leaves the line its tool's name, as darktable's; the source
                 // only where it is not the person's own.
                 (Some(5), "Exposure", Some("Assistant")),
                 (Some(4), "Reset", None),
@@ -2775,10 +2769,10 @@ pub(crate) mod tests {
                 (false, false)
             ]
         );
-        // Each opens its first module the app knows; Original none.
-        assert_eq!(lines[2].module, Some("exposure"));
-        assert_eq!(lines[3].module, Some("grain"));
-        assert_eq!(lines[5].module, None);
+        // Each opens its first tool the app knows; Original none.
+        assert_eq!(lines[2].tool, Some("exposure"));
+        assert_eq!(lines[3].tool, Some("grain"));
+        assert_eq!(lines[5].tool, None);
         // At end 0 every step is greyed, and Original is chosen.
         let lines = lines_in(Some(&photo_s(0)), Locale::EnGb);
         let chosen: Vec<&str> = (lines.iter())
@@ -2801,8 +2795,8 @@ pub(crate) mod tests {
     }
 
     /// A new photo's default steps are one closed group, Defaults, over Original: its
-    /// numbers' range 1 to n, how many modules, and inside it the default steps numbered,
-    /// with no tag, each opening its module; the photo's own steps numbered after them.
+    /// numbers' range 1 to n, how many tools, and inside it the default steps numbered,
+    /// with no tag, each opening its tool; the photo's own steps numbered after them.
     #[test]
     fn the_default_steps_are_the_defaults_group_numbered_from_1() {
         let n = DEFAULT_STEPS;
@@ -2841,7 +2835,7 @@ pub(crate) mod tests {
                 (Some(1), "Raw black/white point", None),
             ]
         );
-        assert_eq!(lines[0].module, Some("agx"));
+        assert_eq!(lines[0].tool, Some("agx"));
         let all = lines_in(Some(&history), Locale::EnGb);
         assert_eq!(all[0].number(), Some(n + 5));
         // At end 0 the group is undone, greyed, and Original chosen; with the end inside it
@@ -2880,22 +2874,22 @@ pub(crate) mod tests {
             line.tip
         };
         let when = || "21/10/2026, 17:52".to_owned();
-        // One module: its rows with no heading, the line naming it.
+        // One tool: its rows with no heading, the line naming it.
         assert_eq!(
             tip(Locale::EnGb, 2),
             Tip::Changes {
-                modules: vec![Changed {
+                tools: vec![Changed {
                     heading: None,
                     rows: vec![value("Strength", "25.00%", "30.00%")],
                 }],
                 by: vec!["You".to_owned(), when()],
             }
         );
-        // A note beside who and when, the line keeping its module's name.
+        // A note beside who and when, the line keeping its tool's name.
         assert_eq!(
             tip(Locale::EnGb, 5),
             Tip::Changes {
-                modules: vec![Changed {
+                tools: vec![Changed {
                     heading: None,
                     rows: vec![
                         value("Exposure", "+0.700 EV", "+1.500 EV"),
@@ -2909,12 +2903,12 @@ pub(crate) mod tests {
                 ],
             }
         );
-        // Reset, the one step of several modules: each module's rows under its title, its
+        // Reset, the one step of several tools: each tool's rows under its title, its
         // note its line's name.
         assert_eq!(
             tip(Locale::EnGb, 4),
             Tip::Changes {
-                modules: vec![
+                tools: vec![
                     Changed {
                         heading: Some("Exposure".to_owned()),
                         rows: vec![value("Exposure", "+0.950 EV", "+0.700 EV")],
@@ -2938,7 +2932,7 @@ pub(crate) mod tests {
         assert_eq!(
             super::tip(&applied, apertrust_tools::TOOLS, &tr),
             Tip::Changes {
-                modules: Vec::new(),
+                tools: Vec::new(),
                 by: vec!["Default".to_owned(), when()],
             }
         );
@@ -2973,7 +2967,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_value_reads_as_its_row_writes_it_and_a_module_this_build_lacks_by_its_name() {
+    fn a_value_reads_as_its_row_writes_it_and_a_tool_this_build_lacks_by_its_name() {
         let tr = Translator::new(Locale::EnGb);
         let exposure = definition(apertrust_tools::TOOLS, "exposure");
         let words = |change: &ControlChange| control_change(exposure, change, &tr);
@@ -2998,7 +2992,7 @@ pub(crate) mod tests {
         assert_eq!(words(&kept), TipRow::Said("Exposure kept".to_owned()));
         kept.mark = [Some(Mark::Kept), None];
         assert_eq!(words(&kept), TipRow::Said("Exposure released".to_owned()));
-        // A parameter no module owns, by its name, with the decimals it needs.
+        // A parameter no tool owns, by its name, with the decimals it needs.
         let black = ControlChange {
             control: "black",
             before: ControlValue::Number(0.0),
@@ -3009,7 +3003,7 @@ pub(crate) mod tests {
             control_change(None, &black, &tr),
             value("black", "0", "0.0125")
         );
-        // A module a newer build wrote: its stored name, nothing to describe.
+        // A tool a newer build wrote: its stored name, nothing to describe.
         let newer = made(
             9,
             StepSource::You,
@@ -3026,9 +3020,9 @@ pub(crate) mod tests {
         };
         let lines = lines_in(Some(&history), Locale::EnGb);
         assert_eq!(lines[0].name, "lens_2030");
-        assert_eq!(lines[0].module, None);
+        assert_eq!(lines[0].tool, None);
         assert_eq!(lines[0].tip.said(&tr), "You, 21/10/2026, 17:52");
-        // Beside a known module, its title alone, with nothing after it.
+        // Beside a known tool, its title alone, with nothing after it.
         let both = made(
             10,
             StepSource::You,
@@ -3057,7 +3051,7 @@ pub(crate) mod tests {
         options: Options,
         /// The number of the photo's open.
         photo: Option<u64>,
-        /// The modules the eye hides, as the mirror's values report them.
+        /// The tools the eye hides, as the mirror's values report them.
         hidden: Vec<&'static str>,
         actions: Vec<Action>,
         /// The side panel's width; the theme's where none.
@@ -3094,14 +3088,14 @@ pub(crate) mod tests {
                         options: scene.options,
                         photo: scene.photo,
                     };
-                    let modules = apertrust_tools::TOOLS;
+                    let tools = apertrust_tools::TOOLS;
                     let mut actions = Vec::new();
                     ui.scope_builder(UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         actions = tab(
                             ui,
                             history,
-                            modules,
+                            tools,
                             &scene.hidden,
                             true,
                             false,
@@ -3161,7 +3155,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_click_goes_to_a_step_and_shift_click_opens_its_module() {
+    fn a_click_goes_to_a_step_and_shift_click_opens_its_tool() {
         let mut harness = photo_scene(3);
         harness.run();
         item(&harness, "Step 1: Exposure").click();
@@ -3182,7 +3176,7 @@ pub(crate) mod tests {
             ]
         );
         harness.state_mut().actions.clear();
-        // Shift-click opens the module, of a step, the end's too; Original has none.
+        // Shift-click opens the tool, of a step, the end's too; Original has none.
         let shift_click = |harness: &mut Harness<'_, Scene>, name: &str| {
             item(harness, name).click_modifiers(egui::Modifiers::SHIFT);
             harness.run();
@@ -3220,7 +3214,7 @@ pub(crate) mod tests {
         })
     }
 
-    /// The modules the eye holds in the frames a run draws, each once, once the events
+    /// The tools the eye holds in the frames a run draws, each once, once the events
     /// sent before it are taken in: the harness may take a button's in the frame after.
     fn peeks(harness: &mut Harness<'_, Scene>) -> Vec<&'static str> {
         harness.run();
@@ -3229,7 +3223,7 @@ pub(crate) mod tests {
         let actions = std::mem::take(&mut harness.state_mut().actions);
         let mut held: Vec<&'static str> = (actions.into_iter())
             .filter_map(|action| match action {
-                Action::Peek(module) => Some(module),
+                Action::Peek(tool) => Some(tool),
                 _ => None,
             })
             .collect();
@@ -3250,12 +3244,12 @@ pub(crate) mod tests {
 
     /// The eye at the end of a step's line: none at rest; under the pointer, a plain button
     /// of one name, not a toggle, its tooltip saying nothing is saved, on a photo that takes
-    /// no edit too. Held by the pointer, it asks to see the photo without the module each
+    /// no edit too. Held by the pointer, it asks to see the photo without the tool each
     /// frame, and let go, nothing; a press that leaves the eye, or a window that loses the
     /// focus, lets it go. With the line's focus, and with its own after Tab, where Space
     /// held holds it.
     #[test]
-    fn the_eye_held_shows_the_photo_without_a_step_s_module() {
+    fn the_eye_held_shows_the_photo_without_a_step_s_tool() {
         const GRAIN: &str = "Hold to see the photo without Grain";
         const EXPOSURE: &str = "Hold to see the photo without Exposure";
         let mut harness = photo_scene(3);
@@ -3278,7 +3272,7 @@ pub(crate) mod tests {
         button(&mut harness, at, true);
         assert_eq!(peeks(&mut harness), ["grain"]);
         assert_eq!(peeks(&mut harness), ["grain"]);
-        // Its name stays the same while the session reports the module hidden.
+        // Its name stays the same while the session reports the tool hidden.
         harness.state_mut().hidden = vec!["grain"];
         harness.run();
         assert_eq!(eye(&harness, GRAIN), Some(None));
@@ -3469,7 +3463,7 @@ pub(crate) mod tests {
     /// No eye on Reset's line, a group's or the Defaults', nor on Original; a default step
     /// inside the Defaults has one.
     #[test]
-    fn the_eye_is_on_a_step_of_one_module_alone() {
+    fn the_eye_is_on_a_step_of_one_tool_alone() {
         let mut harness = photo_scene(3);
         harness.run();
         for name in ["Step 4: Reset", "Original"] {
@@ -3496,7 +3490,7 @@ pub(crate) mod tests {
 
     /// The default steps are inside the Defaults' group, closed at first: a click on the
     /// group goes to its last step, as a batch's does, a click on one inside it to it, and
-    /// Shift-click opens its module.
+    /// Shift-click opens its tool.
     #[test]
     fn a_click_on_the_defaults_goes_to_their_last_step() {
         let mut harness = scene(
@@ -3525,7 +3519,7 @@ pub(crate) mod tests {
     }
 
     /// A line's hover band says it takes a click or a Shift-click: a step always, its
-    /// Shift-click opening its module; Original only while a click on it goes somewhere,
+    /// Shift-click opening its tool; Original only while a click on it goes somewhere,
     /// not at end 0 nor on a photo that takes no edit.
     #[test]
     fn the_hover_band_marks_a_line_that_takes_a_click_or_a_shift_click() {
@@ -3844,7 +3838,7 @@ pub(crate) mod tests {
         harness.key_press(egui::Key::ArrowDown);
         harness.run();
         assert!(focused(&harness, "Step 8: Colour calibration"));
-        // Shift+Enter opens the line's module.
+        // Shift+Enter opens the line's tool.
         harness.state_mut().actions.clear();
         harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
         harness.run();
@@ -3933,11 +3927,11 @@ pub(crate) mod tests {
     #[test]
     fn the_lines_are_worded_once_for_each_history_language_and_day() {
         let ctx = egui::Context::default();
-        let modules = apertrust_tools::TOOLS;
+        let tools = apertrust_tools::TOOLS;
         let (en, uk) = (Translator::new(Locale::EnGb), Translator::new(Locale::Uk));
         let history = photo_s(3);
         let kept_now =
-            |history: &History, tr: &Translator| kept(&ctx, Some(history), modules, tr, today());
+            |history: &History, tr: &Translator| kept(&ctx, Some(history), tools, tr, today());
         let first = kept_now(&history, &en);
         assert!(Arc::ptr_eq(&first, &kept_now(&history, &en)));
         let moved = History {
@@ -3957,7 +3951,7 @@ pub(crate) mod tests {
             Some("Експозиція")
         );
         // The next day, its heading says Yesterday.
-        let tomorrow = kept(&ctx, Some(&anew), modules, &uk, today() + 1);
+        let tomorrow = kept(&ctx, Some(&anew), tools, &uk, today() + 1);
         assert!(!Arc::ptr_eq(&ukrainian, &tomorrow));
         assert_eq!(
             tomorrow.entries.first(),
@@ -4144,20 +4138,20 @@ pub(crate) mod tests {
         harness.get_by_label("↑ 2 undone · your next edit replaces them");
     }
 
-    /// Each line says what changed after its module's name, the control with a direction:
-    /// a number's label and ↑ or ↓, the arrow alone where it is the module's own control,
+    /// Each line says what changed after its tool's name, the control with a direction:
+    /// a number's label and ↑ or ↓, the arrow alone where it is the tool's own control,
     /// no arrow where it did not move; any other control its label; several how many;
     /// Reset and a default step nothing. Screen readers hear the values
     /// before and after in the step's name.
     #[test]
     fn a_line_says_what_changed_and_which_way() {
         let tr = Translator::new(Locale::EnGb);
-        let said = |module, controls| {
-            let step = made(1, StepSource::You, None, vec![change_of(module, controls)]);
+        let said = |tool, controls| {
+            let step = made(1, StepSource::You, None, vec![change_of(tool, controls)]);
             summary(&step, apertrust_tools::TOOLS, &tr)
         };
         let shown = |text: &str| Some(text.to_owned());
-        // The module's own control: the arrow alone.
+        // The tool's own control: the arrow alone.
         assert_eq!(
             said("exposure", vec![number("exposure", 0.7, 1.2)]),
             shown("↑")
@@ -4170,7 +4164,7 @@ pub(crate) mod tests {
             said("grain", vec![number("strength", 25.0, 12.0)]),
             shown("Strength ↓")
         );
-        // Kept at its value: the label, no arrow; the module's own, nothing.
+        // Kept at its value: the label, no arrow; the tool's own, nothing.
         assert_eq!(
             said("grain", vec![number("strength", 25.0, 25.0)]),
             shown("Strength")
@@ -4201,10 +4195,10 @@ pub(crate) mod tests {
         let step = made(1, StepSource::You, None, vec![change_of("exposure", two)]);
         let pl = Translator::new(Locale::Pl);
         let uk = Translator::new(Locale::Uk);
-        let modules = apertrust_tools::TOOLS;
-        assert_eq!(summary(&step, modules, &pl).as_deref(), Some("2 parametry"));
-        assert_eq!(summary(&step, modules, &uk).as_deref(), Some("2 параметри"));
-        // Reset, a Default step and a newer build's module: nothing.
+        let tools = apertrust_tools::TOOLS;
+        assert_eq!(summary(&step, tools, &pl).as_deref(), Some("2 parametry"));
+        assert_eq!(summary(&step, tools, &uk).as_deref(), Some("2 параметри"));
+        // Reset, a Default step and a newer build's tool: nothing.
         let reset = made(
             2,
             StepSource::You,
@@ -4214,14 +4208,14 @@ pub(crate) mod tests {
                 change_of("grain", Vec::new()),
             ],
         );
-        assert_eq!(summary(&reset, modules, &tr), None);
+        assert_eq!(summary(&reset, tools, &tr), None);
         let applied = made(
             3,
             StepSource::Default,
             None,
             vec![change_of("exposure", vec![number("exposure", 0.0, 0.7)])],
         );
-        assert_eq!(summary(&applied, modules, &tr), None);
+        assert_eq!(summary(&applied, tools, &tr), None);
         assert_eq!(said("lens_2030", Vec::new()), None);
         // An operation's unowned parameter, with no definition: its name, as the tooltip's.
         assert_eq!(
@@ -4337,7 +4331,7 @@ pub(crate) mod tests {
     const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 
     /// A step of `source` with `note` made `days` before [`wireframe_s_time`], its
-    /// `changes` each a module's, in `batch` where there is one.
+    /// `changes` each a tool's, in `batch` where there is one.
     fn dated(
         id: u64,
         days: u64,
@@ -4360,8 +4354,8 @@ pub(crate) mod tests {
     /// today a style, Warm film, on Colour balance RGB, Grain and Vignetting, one batch,
     /// steps 3 to 5, then Exposure again.
     fn styled(end: usize) -> History {
-        let one = |module, control, before, after| {
-            vec![change_of(module, vec![number(control, before, after)])]
+        let one = |tool, control, before, after| {
+            vec![change_of(tool, vec![number(control, before, after)])]
         };
         let warm = || Some(Note::Text("Warm film".to_owned()));
         let steps = vec![
@@ -4434,7 +4428,7 @@ pub(crate) mod tests {
         )
     }
 
-    /// A batch is one closed line: its note, its numbers as a range, its modules' titles,
+    /// A batch is one closed line: its note, its numbers as a range, its tools' titles,
     /// its source, a square on the rail, and its steps inside it, a level down.
     #[test]
     fn a_batch_is_one_closed_group_of_its_steps() {
@@ -4470,12 +4464,12 @@ pub(crate) mod tests {
         assert!(!holds_end);
         let numbers: Vec<Option<usize>> = lines.iter().map(Line::number).collect();
         assert_eq!(numbers, [Some(5), Some(4), Some(3)]);
-        // Its tooltip: each step's rows under its module's title, then the note, who and
+        // Its tooltip: each step's rows under its tool's title, then the note, who and
         // when.
-        let Tip::Changes { modules, by } = &line.tip else {
+        let Tip::Changes { tools, by } = &line.tip else {
             panic!("a group's tooltip has its changes")
         };
-        let headings: Vec<Option<&str>> = (modules.iter())
+        let headings: Vec<Option<&str>> = (tools.iter())
             .map(|changed| changed.heading.as_deref())
             .collect();
         assert_eq!(
@@ -4487,7 +4481,7 @@ pub(crate) mod tests {
             ]
         );
         assert_eq!(by[..2], ["Warm film".to_owned(), "Style".to_owned()]);
-        // A batch without a note: how many modules, in each language.
+        // A batch without a note: how many tools, in each language.
         let plain = History {
             steps: (styled(6).steps.into_iter())
                 .map(|step| {

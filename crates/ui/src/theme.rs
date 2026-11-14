@@ -419,7 +419,7 @@ pub struct TextSizes {
     pub caption: f32,
     /// About's version line, and the other titles outside a section's header.
     pub title: f32,
-    /// A module's or utility's title in its section header.
+    /// A tool's title in its section header.
     pub section_title: f32,
     pub heading: f32,
 }
@@ -444,14 +444,14 @@ pub struct Spacing {
 #[serde(deny_unknown_fields)]
 pub struct Sizes {
     pub row: f32,
-    /// A one-line row in a module panel: a choice, a toggle, an action, a collapsible
+    /// A one-line row in a tool panel: a choice, a toggle, an action, a collapsible
     /// group's row, and a row of the Settings dialog, so that every one-line row is one
     /// height. `row` stays for popups' lines, text fields and segments.
     pub panel_line: f32,
-    /// A control's side outside a module's rows: the bars' buttons, a section header's, a
+    /// A control's side outside a tool's rows: the bars' buttons, a section header's, a
     /// segmented control, egui's own widgets.
     pub control: f32,
-    /// The height of a module row's parts: the value field, the row's own buttons (Auto,
+    /// The height of a tool row's parts: the value field, the row's own buttons (Auto,
     /// the picker), the kept marker and a dropdown row's box.
     pub field: f32,
     pub icon: f32,

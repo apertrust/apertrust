@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Golden-image harness: checks Apertrust modules against darktable-cli.
+//! Golden-image harness: checks Apertrust's operations against darktable-cli.
 //!
 //! darktable renders each case's module input and expected output as linear Rec2020
-//! float images. An Apertrust module run on the input must match the expected output
+//! float images. An Apertrust operation run on the input must match the expected output
 //! within the case's CIEDE2000 tolerance. The harness needs darktable-cli
 //! `darktable::REFERENCE_VERSION` and the darktable integration-test images, so it runs
 //! locally rather than on hosted CI.

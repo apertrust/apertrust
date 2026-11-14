@@ -207,7 +207,7 @@ impl<'a> SliderRow<'a> {
         }
     }
 
-    /// The control's full name, unique in its module: what screen readers say, and the
+    /// The control's full name, unique in its tool: what screen readers say, and the
     /// row's id.
     pub fn name(mut self, full: &'a str) -> Self {
         self.name = full;
@@ -286,7 +286,7 @@ impl<'a> SliderRow<'a> {
         self
     }
 
-    /// A disabled row is dimmed and ignores input: a module's Basic sliders in manual mode.
+    /// A disabled row is dimmed and ignores input: a tool's Basic sliders in manual mode.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self

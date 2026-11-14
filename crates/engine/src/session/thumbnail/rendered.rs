@@ -111,7 +111,7 @@ impl State {
         self.before(path, control, |sources| pipeline.writes(sources));
     }
 
-    /// [`Self::before_frame`] for a sample-only render a module's colour picker runs at
+    /// [`Self::before_frame`] for a sample-only render a tool's colour picker runs at
     /// operation `op` of the live pipeline, reading its output too with `output`
     /// (decision 79).
     pub(in crate::session) fn before_sample(
@@ -322,19 +322,14 @@ impl Engine {
     }
 
     /// The plan of the live photo's thumbnail, from its edit as its file holds it, the
-    /// modules not applied at the file's end among it ([`Open::saved_edit`]).
+    /// tools not applied at the file's end among it ([`Open::saved_edit`]).
     pub(in crate::session) fn thumbnail_plan(&self, open: &Open) -> Result<ThumbnailPlan, String> {
         let saved = open.saved_edit();
-        let bound = edit::instances(&saved, self.operations, &self.modules, &open.image);
-        if let Some((module, error)) = bound.failed.first() {
-            return Err(format!("module {module} left out: {error}"));
+        let bound = edit::instances(&saved, self.operations, &self.tools, &open.image);
+        if let Some((tool, error)) = bound.failed.first() {
+            return Err(format!("tool {tool} left out: {error}"));
         }
-        let defaults = edit::instances(
-            &Edit::default(),
-            self.operations,
-            &self.modules,
-            &open.image,
-        );
+        let defaults = edit::instances(&Edit::default(), self.operations, &self.tools, &open.image);
         let unchanged = bound.instances.len() == defaults.instances.len()
             && (bound.instances.iter().zip(&defaults.instances)).all(|(a, b)| {
                 let base = a.operation.defaults(&open.image);
@@ -509,7 +504,7 @@ impl Engine {
         let generation = state.generations.entry(path.clone()).or_default().clone();
         let at = generation.fetch_add(1, Ordering::Relaxed) + 1;
         let canonical = apertrust_library::index::hash(
-            open.xml(self.operations, &self.modules, &self.build)
+            open.xml(self.operations, &self.tools, &self.build)
                 .as_bytes(),
         );
         // A person editing goes first.

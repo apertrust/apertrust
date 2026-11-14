@@ -18,11 +18,11 @@
 //! Bloom, ported from darktable (`src/iop/bloom.c`): the Lab lightness scaled and
 //! thresholded into lights, blurred over the whole image by darktable's box mean
 //! (`src/common/box_filters.cc`, shared in the colour library) in whole-image passes,
-//! and screen-blended onto the lightness by a per-pixel `main`. The Bloom module
+//! and screen-blended onto the lightness by a per-pixel `main`. The Bloom tool
 //! (`docs/tools/README.md`). See `docs/ports/bloom.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
+//! it, and the session plans it only while a tool's binding sets one of its
 //! parameters (decision 28).
 
 mod setup;
@@ -59,7 +59,7 @@ static MANIFEST: Manifest = Manifest {
     // The whole-image passes see the whole image and `main` reads only its own pixel
     // and their scratch, so a tile needs no border.
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "bloom",

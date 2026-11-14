@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! What the engine holds every module to (decisions 4 and 28): a definition that holds
+//! What the engine holds every tool to (decisions 4 and 28): a definition that holds
 //! together, one owner per operation parameter, parameters that exist, pickers that read
-//! operations the module drives as they can (decision 79), and a binding that sets only
-//! what its module owns, within the schema. The session accepts modules with [`accept`]
-//! and leaves out the rest; the tests sweep every built-in module's binding with
+//! operations the tool drives as they can (decision 79), and a binding that sets only
+//! what its tool owns, within the schema. The session accepts tools with [`accept`]
+//! and leaves out the rest; the tests sweep every built-in tool's binding with
 //! [`sweep`].
 
 use apertrust_plugin::{ImageContext, Operation, ParamError, Stage, Value};
@@ -26,35 +26,35 @@ use apertrust_plugin::{ImageContext, Operation, ParamError, Stage, Value};
 use crate::definition::{ControlKind, DefinitionError, MAX_POINTS, Space};
 use crate::{Base, Control, ControlValue, Controls, Owned, Range, Setting, Tool, ToolValues};
 
-/// A number control's range while the module's controls hold `values`, every control,
-/// as the session reports it (decision 30): the module's [`Tool::range`] where it
+/// A number control's range while the tool's controls hold `values`, every control,
+/// as the session reports it (decision 30): the tool's [`Tool::range`] where it
 /// holds inside the definition's ([`Range::holds_inside`]), else `Err` with the
-/// definition's, where the module gives none or one that does not hold. `None` for a
-/// control that is no number. A module's code may panic, which a caller that must go on,
+/// definition's, where the tool gives none or one that does not hold. `None` for a
+/// control that is no number. A tool's code may panic, which a caller that must go on,
 /// as the session, guards against.
-pub fn range(module: &dyn Tool, control: &str, values: &Controls) -> Option<Result<Range, Range>> {
-    let definition = module.definition().range(control)?;
-    Some(match module.range(control, values) {
+pub fn range(tool: &dyn Tool, control: &str, values: &Controls) -> Option<Result<Range, Range>> {
+    let definition = tool.definition().range(control)?;
+    Some(match tool.range(control, values) {
         Some(range) if range.holds_inside(&definition) => Ok(range),
         _ => Err(definition),
     })
 }
 
-/// The writes that bring every number control of `module` back inside its range while
+/// The writes that bring every number control of `tool` back inside its range while
 /// the controls hold `values`, every control, the edit's over the defaults (decision
-/// 30): each number outside its [`range`], the definition's where the module's does not
+/// 30): each number outside its [`range`], the definition's where the tool's does not
 /// hold, written at the range's nearer end, from `values` as they are, in one pass. A
 /// control not ported takes only its default, which its range always holds, and is left
 /// alone. Empty while every number is inside. The edit writes them in the same change,
 /// and the app's pending display shows them, so both clamp alike.
-pub fn clamp(module: &dyn Tool, values: &Controls) -> Controls {
+pub fn clamp(tool: &dyn Tool, values: &Controls) -> Controls {
     let mut writes = Controls::new();
-    for control in module.definition().controls {
+    for control in tool.definition().controls {
         let (Some(ControlValue::Number(value)), false) = (values.get(control.id), control.unported)
         else {
             continue;
         };
-        let Some(range) = range(module, control.id, values).map(|r| r.unwrap_or_else(|d| d)) else {
+        let Some(range) = range(tool, control.id, values).map(|r| r.unwrap_or_else(|d| d)) else {
             continue;
         };
         if !range.contains(*value) {
@@ -105,7 +105,7 @@ pub fn lists_only(control: &Control, listed: &[&str], value: &ControlValue) -> b
     }
 }
 
-/// Why a module is left out, or a setting refused.
+/// Why a tool is left out, or a setting refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ToolError {
     #[error(transparent)]
@@ -135,17 +135,17 @@ pub enum ToolError {
         operation: &'static str,
         source: ParamError,
     },
-    /// A bug in the module: its defaults or its binding panicked.
+    /// A bug in the tool: its defaults or its binding panicked.
     #[error("its binding failed: {0}")]
     Panicked(String),
-    /// A switched module owning a parameter of an operation every photo runs, which it
+    /// A switched tool owning a parameter of an operation every photo runs, which it
     /// could not leave untouched while off (decision 32).
     #[error("it is switched but owns {operation}.{param}, of an operation every photo runs")]
     SwitchedOverBase {
         operation: &'static str,
         param: &'static str,
     },
-    /// A picker reading an operation the module owns no parameter of (decision 79).
+    /// A picker reading an operation the tool owns no parameter of (decision 79).
     #[error("its picker {picker} reads {operation}, which it owns no parameter of")]
     PickerOperation {
         picker: &'static str,
@@ -157,27 +157,27 @@ pub enum ToolError {
     PickerMosaic(&'static str),
 }
 
-/// A module left out, and why.
+/// A tool left out, and why.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rejected {
     pub tool: &'static str,
     pub error: ToolError,
 }
 
-/// The modules that hold, in order, and the others with what is wrong with them. A
-/// parameter belongs to the first module that owns it; a later one that owns it too is
-/// left out whole, so a faulty module never takes a parameter.
+/// The tools that hold, in order, and the others with what is wrong with them. A
+/// parameter belongs to the first tool that owns it; a later one that owns it too is
+/// left out whole, so a faulty tool never takes a parameter.
 pub fn accept<'m>(
-    modules: &[&'m dyn Tool],
+    tools: &[&'m dyn Tool],
     operations: &[&dyn Operation],
 ) -> (Vec<&'m dyn Tool>, Vec<Rejected>) {
     let mut accepted: Vec<&'m dyn Tool> = Vec::new();
     let mut rejected = Vec::new();
-    for &module in modules {
-        match admit(module, &accepted, operations) {
-            Ok(()) => accepted.push(module),
+    for &tool in tools {
+        match admit(tool, &accepted, operations) {
+            Ok(()) => accepted.push(tool),
             Err(error) => rejected.push(Rejected {
-                tool: module.definition().id,
+                tool: tool.definition().id,
                 error,
             }),
         }
@@ -186,11 +186,11 @@ pub fn accept<'m>(
 }
 
 fn admit(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     accepted: &[&dyn Tool],
     operations: &[&dyn Operation],
 ) -> Result<(), ToolError> {
-    let definition = module.definition();
+    let definition = tool.definition();
     definition.check()?;
     if accepted
         .iter()
@@ -198,7 +198,7 @@ fn admit(
     {
         return Err(ToolError::Duplicate(definition.id));
     }
-    let owns = module.owns();
+    let owns = tool.owns();
     for (i, &Owned { operation, param }) in owns.iter().enumerate() {
         let found = operations
             .iter()
@@ -244,27 +244,26 @@ fn admit(
     Ok(())
 }
 
-/// The module among `modules` that owns `operation.param`.
-pub fn owner<'m>(modules: &[&'m dyn Tool], operation: &str, param: &str) -> Option<&'m dyn Tool> {
-    modules.iter().copied().find(|module| {
-        module
-            .owns()
+/// The tool among `tools` that owns `operation.param`.
+pub fn owner<'m>(tools: &[&'m dyn Tool], operation: &str, param: &str) -> Option<&'m dyn Tool> {
+    tools.iter().copied().find(|tool| {
+        tool.owns()
             .iter()
             .any(|owned| owned.operation == operation && owned.param == param)
     })
 }
 
-/// Whether `module` may set what `setting` sets: a parameter it owns, of one of
+/// Whether `tool` may set what `setting` sets: a parameter it owns, of one of
 /// `operations`, with a value its schema takes.
 pub fn setting(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     operations: &[&dyn Operation],
     setting: &Setting,
 ) -> Result<(), ToolError> {
     let &Setting {
         operation, param, ..
     } = setting;
-    if !module.owns().contains(&Owned { operation, param }) {
+    if !tool.owns().contains(&Owned { operation, param }) {
         return Err(ToolError::NotOwned { operation, param });
     }
     let schema = operations
@@ -279,37 +278,36 @@ pub fn setting(
         .map_err(|source| ToolError::Param { operation, source })
 }
 
-/// The parameters whose default a switched module's control, made explicit, binds one
+/// The parameters whose default a switched tool's control, made explicit, binds one
 /// f32 step away, as a percentage darktable's slider shows divided by 100 in f32 does:
 /// Colour balance RGB's two fulcrums at 18.45 %, which bind 0.18450001 for darktable's
-/// 0.1845 (its row B6). The render is exact all the same: a module on at its defaults
+/// 0.1845 (its row B6). The render is exact all the same: a tool on at its defaults
 /// binds no value, so its operations run at their own defaults.
 pub const ONE_STEP_FROM_DEFAULT: [(&str, &str); 2] = [
     ("colorbalancergb", "grey_fulcrum"),
     ("colorbalancergb", "mask_grey_fulcrum"),
 ];
 
-/// What is wrong with a switched module's defaults on `image` (decision 32): each
+/// What is wrong with a switched tool's defaults on `image` (decision 32): each
 /// control's default for the photo, made explicit, must bind its operations' own defaults
-/// for the photo exactly, so the module on and untouched is darktable's new instance, but
+/// for the photo exactly, so the tool on and untouched is darktable's new instance, but
 /// those of [`ONE_STEP_FROM_DEFAULT`], within one f32 step. Empty when they hold, and for a
-/// module that is not switched.
+/// tool that is not switched.
 pub fn switched_defaults(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     operations: &[&dyn Operation],
     image: &ImageContext,
 ) -> Vec<String> {
-    if !module.definition().switched {
+    if !tool.definition().switched {
         return Vec::new();
     }
     let base = Base::new(operations, image);
     let mut values = ToolValues::new();
-    for (control, value) in module.defaults(image).iter() {
+    for (control, value) in tool.defaults(image).iter() {
         values.set(control, value.clone());
     }
     values.set_enabled(true);
-    module
-        .bind(&values, image, &base)
+    tool.bind(&values, image, &base)
         .into_iter()
         .filter(|setting| {
             let default = base.get(setting.operation, setting.param);
@@ -366,23 +364,19 @@ fn sweep_values(control: &Control) -> Vec<ControlValue> {
     }
 }
 
-/// Sweeps `module`'s binding over `image`: at its defaults it must set nothing; with
+/// Sweeps `tool`'s binding over `image`: at its defaults it must set nothing; with
 /// each control alone across its range, and with every control at one end of its range
 /// together, it must set only parameters it owns, each within its schema. With each
 /// control alone across its range, its follow writes ([`Tool::follow`]) must name other
-/// controls of the module, each within its range. Over the same states each number's
+/// controls of the tool, each within its range. Over the same states each number's
 /// range must hold (decision 30's rules). Returns what fails, empty when the binding
 /// holds.
-pub fn sweep(
-    module: &dyn Tool,
-    operations: &[&dyn Operation],
-    image: &ImageContext,
-) -> Vec<String> {
-    let definition = module.definition();
-    let defaults = module.defaults(image);
+pub fn sweep(tool: &dyn Tool, operations: &[&dyn Operation], image: &ImageContext) -> Vec<String> {
+    let definition = tool.definition();
+    let defaults = tool.defaults(image);
     let base = Base::new(operations, image);
     let mut problems = Vec::new();
-    if !module.bind(&ToolValues::new(), image, &base).is_empty() {
+    if !tool.bind(&ToolValues::new(), image, &base).is_empty() {
         problems.push("at its defaults it sets parameters".to_owned());
     }
     let mut tries: Vec<(String, ToolValues)> = Vec::new();
@@ -392,7 +386,7 @@ pub fn sweep(
             let what = format!("{} {}", control.id, control.text(&value));
             let mut every = defaults.clone();
             every.set(control.id, value.clone());
-            problems.extend(follow_problems(module, control.id, &every, image, &what));
+            problems.extend(follow_problems(tool, control.id, &every, image, &what));
             values.set(control.id, value);
             tries.push((what, values));
         }
@@ -425,14 +419,14 @@ pub fn sweep(
                 (what.clone(), every)
             }))
             .collect();
-    problems.extend(range_problems(module, image, &states));
+    problems.extend(range_problems(tool, image, &states));
     for (what, values) in tries {
         let values = values.off_defaults(&defaults);
         if values.is_empty() {
             continue;
         }
-        for set in module.bind(&values, image, &base) {
-            if let Err(error) = setting(module, operations, &set) {
+        for set in tool.bind(&values, image, &base) {
+            if let Err(error) = setting(tool, operations, &set) {
                 problems.push(format!("{}, {what}: {error}", definition.id));
             }
         }
@@ -440,18 +434,18 @@ pub fn sweep(
     problems
 }
 
-/// What is wrong with `module`'s ranges (decision 30) over `states`, the first its
+/// What is wrong with `tool`'s ranges (decision 30) over `states`, the first its
 /// defaults on `image`, each every control's value: at the defaults each number's track
 /// and step must be the definition's; in every state its range must hold inside the
 /// definition's, hold its default, stay where it is whatever its own value, and stay the
 /// definition's for a control a lossless view covers; one [`clamp`] pass must bring every
 /// number inside; and no preset option written over the defaults may need one.
 fn range_problems(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     image: &ImageContext,
     states: &[(String, Controls)],
 ) -> Vec<String> {
-    let definition = module.definition();
+    let definition = tool.definition();
     let id = definition.id;
     let mut problems = Vec::new();
     let numbers: Vec<&Control> = definition
@@ -471,7 +465,7 @@ fn range_problems(
     for control in &numbers {
         let (Some(ours), Some(theirs)) = (
             definition.range(control.id),
-            module.range(control.id, defaults),
+            tool.range(control.id, defaults),
         ) else {
             continue;
         };
@@ -488,7 +482,7 @@ fn range_problems(
             let Some(ours) = definition.range(c) else {
                 continue;
             };
-            let Some(range) = module.range(c, every) else {
+            let Some(range) = tool.range(c, every) else {
                 problems.push(format!("{id}.{c}, {what}: gives no range"));
                 continue;
             };
@@ -508,7 +502,7 @@ fn range_problems(
                 }
                 own.set(control.id, default.clone());
             }
-            if module.range(c, &own) != Some(range) {
+            if tool.range(c, &own) != Some(range) {
                 problems.push(format!(
                     "{id}.{c}, {what}: its range moves with its own value"
                 ));
@@ -520,23 +514,23 @@ fn range_problems(
             }
         }
         let mut clamped = every.clone();
-        for (control, value) in clamp(module, every).iter() {
+        for (control, value) in clamp(tool, every).iter() {
             clamped.set(control, value.clone());
         }
-        if !clamp(module, &clamped).is_empty() {
+        if !clamp(tool, &clamped).is_empty() {
             problems.push(format!("{id}, {what}: one clamp pass is not enough"));
         }
     }
     for row in definition.presets {
         for &option in row.options {
-            let Some(written) = module.preset(row.id, option, image) else {
+            let Some(written) = tool.preset(row.id, option, image) else {
                 continue;
             };
             let mut every = defaults.clone();
             for (control, value) in written.iter() {
                 every.set(control, value.clone());
             }
-            if !clamp(module, &every).is_empty() {
+            if !clamp(tool, &every).is_empty() {
                 problems.push(format!("{id}.{}: {option} needs a clamp", row.id));
             }
         }
@@ -545,18 +539,18 @@ fn range_problems(
 }
 
 /// What is wrong with the follow writes of `control` taking the value `values` holds: a
-/// write to the control itself, to a control the module lacks, or of a value its control
+/// write to the control itself, to a control the tool lacks, or of a value its control
 /// cannot take.
 fn follow_problems(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     control: &str,
     values: &crate::Controls,
     image: &ImageContext,
     what: &str,
 ) -> Vec<String> {
-    let definition = module.definition();
+    let definition = tool.definition();
     let mut problems = Vec::new();
-    for (id, value) in module.follow(control, values, image).iter() {
+    for (id, value) in tool.follow(control, values, image).iter() {
         let problem = match definition.control(id) {
             _ if id == control => format!("rewrites {id}"),
             None => format!("writes {id}, which it lacks"),
@@ -579,7 +573,7 @@ mod tests {
     use crate::definition::{Definition, Picker, PickerKind, Quad, Row, Slider, Tab};
     use crate::testing::{self, Sample};
 
-    /// A module with one control, owning `owns`, whose binding sets `sets` whenever the
+    /// A tool with one control, owning `owns`, whose binding sets `sets` whenever the
     /// control is off its default.
     struct Fake {
         definition: &'static Definition,
@@ -659,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn the_sample_module_holds_against_the_built_in_operations() {
+    fn the_sample_tool_holds_against_the_built_in_operations() {
         let (accepted, rejected) = accept(&[&Sample], OPERATIONS);
         assert_eq!(accepted.len(), 1);
         assert!(rejected.is_empty(), "{rejected:?}");
@@ -719,11 +713,11 @@ mod tests {
     }
 
     #[test]
-    fn a_picker_reads_an_operation_its_module_drives_a_mosaic_as_it_is() {
-        // A module owning `owns` with one picker on its slider's quad.
+    fn a_picker_reads_an_operation_its_tool_drives_a_mosaic_as_it_is() {
+        // A tool owning `owns` with one picker on its slider's quad.
         let picking = |owns: &[Owned], picker: Picker| {
-            let mut module = fake("picking", owns, Vec::new());
-            module.definition = Box::leak(Box::new(Definition {
+            let mut tool = fake("picking", owns, Vec::new());
+            tool.definition = Box::leak(Box::new(Definition {
                 tabs: Box::leak(Box::new([Tab {
                     id: None,
                     rows: Box::leak(Box::new([Row::Slider(
@@ -731,9 +725,9 @@ mod tests {
                     )])),
                 }])),
                 pickers: Box::leak(Box::new([picker])),
-                ..*module.definition
+                ..*tool.definition
             }));
-            let (_, rejected) = accept(&[&module], OPERATIONS);
+            let (_, rejected) = accept(&[&tool], OPERATIONS);
             rejected.into_iter().map(|r| r.error).collect::<Vec<_>>()
         };
         let exposure = [Owned::new("exposure", "exposure")];
@@ -790,17 +784,17 @@ mod tests {
     fn rows_following_a_control_that_is_not_a_choice_or_a_toggle_are_refused() {
         const AMOUNT: &[Row] = &[Row::Slider(Slider::new("amount"))];
         let following = |id: &'static str, control: &'static str| {
-            let mut module = fake(id, &[], Vec::new());
+            let mut tool = fake(id, &[], Vec::new());
             let rows: &'static [Row] = Box::leak(Box::new([Row::When {
                 control,
                 is: &["true"],
                 rows: AMOUNT,
             }]));
-            module.definition = Box::leak(Box::new(Definition {
+            tool.definition = Box::leak(Box::new(Definition {
                 tabs: Box::leak(Box::new([Tab { id: None, rows }])),
-                ..*module.definition
+                ..*tool.definition
             }));
-            module
+            tool
         };
         let (missing, number) = (following("missing", "gone"), following("number", "amount"));
         let (accepted, rejected) = accept(&[&Sample, &missing, &number], OPERATIONS);
@@ -850,7 +844,7 @@ mod tests {
     /// Sample's coarseness reaches up to 100 % plus the bias (decision 30): a bias of 20 %
     /// leaves 150 % outside, which the clamp writes at 120 %, and nothing else.
     #[test]
-    fn a_range_follows_the_module_s_values_and_the_clamp_brings_a_number_inside() {
+    fn a_range_follows_the_tool_s_values_and_the_clamp_brings_a_number_inside() {
         let mut values = Sample.definition().defaults();
         values.set("coarseness", ControlValue::Number(150.0));
         let at = |values: &Controls| range(&Sample, "coarseness", values).unwrap().unwrap();
@@ -990,11 +984,11 @@ mod tests {
             &[Owned::new("grain", "strength")],
             vec![Setting::new("grain", "strength", Value::Bool(true))],
         );
-        for module in [&strays, &too_much, &wrong_kind] {
+        for tool in [&strays, &too_much, &wrong_kind] {
             assert!(
-                !sweep(module, OPERATIONS, &image).is_empty(),
+                !sweep(tool, OPERATIONS, &image).is_empty(),
                 "{}",
-                module.definition.id
+                tool.definition.id
             );
         }
         let fine = fake(

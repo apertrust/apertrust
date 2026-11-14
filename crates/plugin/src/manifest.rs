@@ -38,7 +38,7 @@ pub struct Manifest {
     pub radius: u32,
     /// Whether an unedited photo runs it, darktable's name for the same idea (decision
     /// 28): decision 22's eight and colour calibration (decision 27) do. Any other
-    /// operation is planned only while a module's binding sets one of its parameters, so
+    /// operation is planned only while a tool's binding sets one of its parameters, so
     /// it needs no identity setting, and none of its parameters can be set or saved at
     /// operation level.
     pub default_enabled: bool,

@@ -46,7 +46,7 @@ use apertrust_plugin::{Kernel, Operation};
 /// The operations the engine can run, in pipeline order, darktable's (decision 22, `docs/engine.md`, Order). An unedited photo runs those whose manifest has
 /// `default_enabled`, decision 22's eight, colour calibration (decision 27) and
 /// orientation, which darktable enables on every image at auto; the
-/// others run only while a module sets one of their parameters (decision 28). Nothing
+/// others run only while a tool sets one of their parameters (decision 28). Nothing
 /// takes this list as the default pipeline: `apertrust_engine::edit::instances` makes one
 /// from an edit.
 pub const OPERATIONS: &[&dyn Operation] = &[

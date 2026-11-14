@@ -526,7 +526,7 @@ fn the_viewport_is_within_decision_80s_target_of_the_export() {
     }
 }
 
-/// Decision 15's corpus measurement, which comes before the Soften module ships
+/// Decision 15's corpus measurement, which comes before the Soften tool ships
 /// (`docs/engine.md`, Pipes; `docs/ports/soften.md`, Results, On the corpus): on each corpus raw
 /// the pipeline takes, its default pipeline up to soften's place, exported at full
 /// resolution, as the input, and soften at test 0051's size, saturation and brightness

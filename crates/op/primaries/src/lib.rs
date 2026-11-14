@@ -17,11 +17,11 @@
 
 //! RGB primaries, ported from darktable (`src/iop/primaries.c`): the working
 //! space's primaries turned about the white and moved towards or away from it, and the
-//! white tinted, as one matrix. The RGB primaries module drives it. See
+//! white tinted, as one matrix. The RGB primaries tool drives it. See
 //! `docs/ports/primaries.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run it,
-//! and the session plans it only while a module's binding sets one of its parameters
+//! and the session plans it only while a tool's binding sets one of its parameters
 //! (decision 28).
 
 mod setup;
@@ -59,7 +59,7 @@ static MANIFEST: Manifest = Manifest {
     layers: true,
     differentiable: true,
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "primaries",

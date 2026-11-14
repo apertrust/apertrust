@@ -16,7 +16,7 @@
 
 //! Raw black/white point's invariants (`docs/tools/raw-black-white-point.md`,
 //! Invariants), one test per row, each named after its row: R0 to R3, the rows a
-//! first-pass table has (decision 22) for a module over an operation every raw runs, so
+//! first-pass table has (decision 22) for a tool over an operation every raw runs, so
 //! with no first step, and R4, a white point at or below a black level. The small raw runs
 //! on CI's software GPUs, R3 on the CPU. The raw.pixls.us corpus runs locally, with
 //! `APERTRUST_RAW_CORPUS` naming it, and R3's corpus row also reads darktable's test raws,
@@ -26,7 +26,7 @@
 //! cargo test --release -p apertrust-tools --test raw_black_white_point -- --ignored --nocapture
 //! ```
 //!
-//! The module acts on the raw stage, so every row renders from a mosaic, the small raw's
+//! The tool acts on the raw stage, so every row renders from a mosaic, the small raw's
 //! or a corpus raw's, never a synthetic image in the working space, and reads the frame,
 //! colorout's output before it is rounded to 8 bits.
 
@@ -120,7 +120,7 @@ fn untouched(image: &ImageContext) -> Vec<Edit> {
     vec![written, kept]
 }
 
-/// Whether the module's binding sets nothing for `edit` on the bench's photo.
+/// Whether the tool's binding sets nothing for `edit` on the bench's photo.
 fn binds_nothing(edit: &Edit, image: &ImageContext) -> bool {
     let values = edit.tool(RAWPREPARE).unwrap();
     let defaults = RawBlackWhitePoint.defaults(image);
@@ -138,7 +138,7 @@ fn operation_defaults(image: &ImageContext) -> ParamValues {
         .unwrap()
 }
 
-/// Whether each of the module's defaults is the operation's for the photo.
+/// Whether each of the tool's defaults is the operation's for the photo.
 fn defaults_are_the_operation_s(image: &ImageContext) -> bool {
     let ours = RawBlackWhitePoint.defaults(image);
     let theirs = operation_defaults(image);
@@ -182,7 +182,7 @@ fn r0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// R0 on every corpus raw: the module's defaults are the operation's, and the module at
+/// R0 on every corpus raw: the tool's defaults are the operation's, and the tool at
 /// them, written or kept, plans the very instances and cache keys no edit does, so the
 /// same frame.
 #[test]
@@ -263,7 +263,7 @@ fn r1_holds(bench: &mut Bench) {
         edit.reset_tool(&RawBlackWhitePoint);
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
@@ -393,7 +393,7 @@ fn context(levels: &Levels) -> ImageContext {
     image
 }
 
-/// R3: the module's controls set to darktable's own levels for a raw bind them exactly:
+/// R3: the tool's controls set to darktable's own levels for a raw bind them exactly:
 /// the parameters the edit renders are darktable's history entry for its defaults with
 /// Apertrust's crop, bit for bit, as `raw-run` writes one, and the kernel's inputs are
 /// darktable's `commit_params`, black and white less black for each parity position. So
@@ -459,7 +459,7 @@ fn r3_darktable_s_levels_bind_darktable_s_parameters() {
     }
 }
 
-/// R3's table against the decoder: on each raw it names, the module's defaults are the
+/// R3's table against the decoder: on each raw it names, the tool's defaults are the
 /// levels it gives as Apertrust's, which `raw-defaults` printed. darktable's test raws
 /// come from `APERTRUST_TEST_IMAGES`, the corpus's from `APERTRUST_RAW_CORPUS`.
 #[test]

@@ -74,11 +74,11 @@ mod cache;
 mod history;
 mod library;
 
-/// The operations and the modules the CLI hands the engine, as the app hands them.
+/// The operations and the tools the CLI hands the engine, as the app hands them.
 const OPERATIONS: &[&dyn Operation] = apertrust_operations::OPERATIONS;
 const TOOLS: &[&dyn Tool] = apertrust_tools::TOOLS;
 
-/// The control `preview` times: the Exposure module's Exposure.
+/// The control `preview` times: the Exposure tool's Exposure.
 const EXPOSURE: (&str, &str) = ("exposure", "exposure");
 
 #[derive(Debug, Parser)]
@@ -619,13 +619,13 @@ fn flag_named(flags: &[&'static str], args: impl IntoIterator<Item = OsString>) 
 fn saved(
     photo: &Path,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
 ) -> Result<Option<sidecar::Loaded>> {
     let path = sidecar::path_for(photo);
     if !path.exists() {
         return Ok(None);
     }
-    let loaded = sidecar::read(&path, operations, modules, apertrust_tools::RETIRED)
+    let loaded = sidecar::read(&path, operations, tools, apertrust_tools::RETIRED)
         .with_context(|| format!("reading {}", path.display()))?;
     tracing::debug!(target: "pipe", "read {}", apertrust_base::log::file_name(&path));
     Ok(Some(loaded))
@@ -637,9 +637,9 @@ fn saved(
 fn saved_edit(
     photo: &Path,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
 ) -> Result<(Edit, bool)> {
-    Ok(saved(photo, operations, modules)?.map_or_else(
+    Ok(saved(photo, operations, tools)?.map_or_else(
         || (Edit::default(), false),
         |loaded| {
             let newer = loaded.view_only().is_some();
@@ -652,7 +652,7 @@ fn saved_edit(
 /// photo's list of a choice's options may still refuse.
 struct ControlSet<'m> {
     flag: &'m str,
-    module: &'m dyn Tool,
+    tool: &'m dyn Tool,
     control: &'static Control,
     value: ControlValue,
 }
@@ -666,18 +666,18 @@ impl ControlSet<'_> {
 
 /// Reads each `--set`, refusing one that names no control or a value the control cannot
 /// take, before any photo is decoded.
-fn read_sets<'m>(sets: &'m [String], modules: &[&'m dyn Tool]) -> Result<Vec<ControlSet<'m>>> {
+fn read_sets<'m>(sets: &'m [String], tools: &[&'m dyn Tool]) -> Result<Vec<ControlSet<'m>>> {
     sets.iter()
-        .map(|set| read_set(modules, set).with_context(|| format!("--set {set}")))
+        .map(|set| read_set(tools, set).with_context(|| format!("--set {set}")))
         .collect()
 }
 
 /// `TOOL.CONTROL=VALUE`.
-fn read_set<'m>(modules: &[&'m dyn Tool], set: &'m str) -> Result<ControlSet<'m>> {
+fn read_set<'m>(tools: &[&'m dyn Tool], set: &'m str) -> Result<ControlSet<'m>> {
     let (target, text) = set.split_once('=').context("expected TOOL.CONTROL=VALUE")?;
     let (id, name) = target.split_once('.').context("expected TOOL.CONTROL")?;
-    let module = edit::tool(modules, id)?;
-    let control = module
+    let tool = edit::tool(tools, id)?;
+    let control = tool
         .definition()
         .control(name)
         .with_context(|| format!("{id} has no control {name}"))?;
@@ -685,7 +685,7 @@ fn read_set<'m>(modules: &[&'m dyn Tool], set: &'m str) -> Result<ControlSet<'m>
     control.check(&value)?;
     Ok(ControlSet {
         flag: set,
-        module,
+        tool,
         control,
         value,
     })
@@ -694,24 +694,24 @@ fn read_set<'m>(modules: &[&'m dyn Tool], set: &'m str) -> Result<ControlSet<'m>
 /// Sets each control read on the photo `image`, bringing back inside its range a number
 /// the change's move of a range leaves outside (decision 30).
 fn set_controls(edit: &mut Edit, sets: &[ControlSet], image: &ImageContext) -> Result<()> {
-    // A change, which applies the modules a saved end leaves not applied (decision 78).
+    // A change, which applies the tools a saved end leaves not applied (decision 78).
     if !sets.is_empty() {
         edit.apply_all();
     }
     for set in sets {
         let before = edit.clone();
-        edit.set_control(set.module, set.control.id, set.value.clone(), image)
-            .and_then(|()| edit.clamp(&before, &[set.module], image))
+        edit.set_control(set.tool, set.control.id, set.value.clone(), image)
+            .and_then(|()| edit.clamp(&before, &[set.tool], image))
             .with_context(|| format!("--set {}", set.flag))?;
     }
     Ok(())
 }
 
-/// Brings a saved edit's numbers inside the ranges its modules' values give on `image`
+/// Brings a saved edit's numbers inside the ranges its tools' values give on `image`
 /// (decision 30), each with a warning. Never for an edit a newer Apertrust wrote, which
 /// is rendered as it was, as the session shows it (decision 43).
-fn clamp_read(edit: &mut Edit, modules: &[&dyn Tool], image: &ImageContext) {
-    for warning in edit.clamp_read(modules, image) {
+fn clamp_read(edit: &mut Edit, tools: &[&dyn Tool], image: &ImageContext) {
+    for warning in edit.clamp_read(tools, image) {
         tracing::warn!(target: "pipe", "{warning}");
     }
 }
@@ -721,13 +721,13 @@ fn set_params(
     edit: &mut Edit,
     params: &[String],
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
 ) -> Result<()> {
     if !params.is_empty() {
         edit.apply_all();
     }
     for set in params {
-        set_param(edit, operations, modules, set).with_context(|| format!("--param {set}"))?;
+        set_param(edit, operations, tools, set).with_context(|| format!("--param {set}"))?;
     }
     Ok(())
 }
@@ -736,14 +736,14 @@ fn set_params(
 /// number the reset's move of a range leaves outside (decision 30).
 fn reset_control(
     edit: &mut Edit,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     reset: &str,
     image: &ImageContext,
 ) -> Result<()> {
     let (id, name) = reset.split_once('.').context("expected TOOL.CONTROL")?;
     let before = edit.clone();
-    edit.reset_control(edit::tool(modules, id)?, name)?;
-    edit.clamp(&before, modules, image)?;
+    edit.reset_control(edit::tool(tools, id)?, name)?;
+    edit.clamp(&before, tools, image)?;
     Ok(())
 }
 
@@ -751,7 +751,7 @@ fn reset_control(
 fn set_param(
     edit: &mut Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     set: &str,
 ) -> Result<()> {
     let (target, text) = set
@@ -760,8 +760,8 @@ fn set_param(
     let (id, name) = target
         .split_once('.')
         .context("expected OPERATION.PARAMETER")?;
-    let (_, param) = edit::unowned(operations, modules, id, name)?;
-    edit.set_param(operations, modules, id, name, param.parse(text)?)?;
+    let (_, param) = edit::unowned(operations, tools, id, name)?;
+    edit.set_param(operations, tools, id, name, param.parse(text)?)?;
     Ok(())
 }
 
@@ -769,13 +769,13 @@ fn set_param(
 fn reset_param(
     edit: &mut Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     reset: &str,
 ) -> Result<()> {
     let (id, name) = reset
         .split_once('.')
         .context("expected OPERATION.PARAMETER")?;
-    edit.reset_param(operations, modules, id, name)?;
+    edit.reset_param(operations, tools, id, name)?;
     Ok(())
 }
 
@@ -790,7 +790,7 @@ fn instances(
             bail!("no operation {id}");
         }
     }
-    // A module whose binding fails is an error here: an export renders the edit as it
+    // A tool whose binding fails is an error here: an export renders the edit as it
     // is, or not at all.
     let mut instances = edit::instances(edit, OPERATIONS, TOOLS, image).all()?;
     instances.retain(|instance| {
@@ -801,13 +801,13 @@ fn instances(
     Ok(instances)
 }
 
-/// The edit as lines to show: each module it touches, then each operation it sets a
-/// parameter of. A switched module on with no control to show reads `<module>: on`
+/// The edit as lines to show: each tool it touches, then each operation it sets a
+/// parameter of. A switched tool on with no control to show reads `<tool>: on`
 /// (decision 32).
-fn describe(edit: &Edit, operations: &[&dyn Operation], modules: &[&dyn Tool]) -> Vec<String> {
+fn describe(edit: &Edit, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> Vec<String> {
     let mut lines = Vec::new();
-    for module in modules {
-        let definition = module.definition();
+    for tool in tools {
+        let definition = tool.definition();
         let Some(values) = edit.tool(definition.id) else {
             continue;
         };
@@ -896,7 +896,7 @@ impl FlagOrder {
     }
 }
 
-/// Changes the edit saved beside `photo`, then shows it. The change is a step of each module
+/// Changes the edit saved beside `photo`, then shows it. The change is a step of each tool
 /// and operation it writes, in the order of the flags, `--clear` first, sharing a batch
 /// where there are several, source You, added to the log after its end, as the session's
 /// change is (`docs/history.md`, The CLI), with `--note`'s words as its note; a photo with
@@ -908,7 +908,7 @@ fn edit(
     photo: &Path,
     args: EditArgs,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
@@ -916,11 +916,11 @@ fn edit(
     let path = sidecar::path_for(photo);
     // Another program's write between the read and the write, as the app's, is read again
     // and the change made on it, once; a second is refused.
-    let edit = match edit_once(photo, &args, operations, modules)? {
+    let edit = match edit_once(photo, &args, operations, tools)? {
         Some(edit) => edit,
         None => {
             tracing::debug!(target: "pipe", "{} changed while it was edited: read again", path.display());
-            edit_once(photo, &args, operations, modules)?.with_context(|| {
+            edit_once(photo, &args, operations, tools)?.with_context(|| {
                 format!(
                     "{} changed while it was edited, twice: not written; run edit again",
                     path.display()
@@ -928,7 +928,7 @@ fn edit(
             })?
         }
     };
-    let lines = describe(&edit, operations, modules);
+    let lines = describe(&edit, operations, tools);
     if lines.is_empty() {
         println!("No settings: every tool and operation keeps its defaults for the image.");
     }
@@ -978,7 +978,7 @@ fn write_history(
     read: Stamp,
     mut file: sidecar::Edits,
     (log, clocks): (&Log, &[Clock]),
-    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
 ) -> Result<bool> {
     let path = sidecar::path_for(photo);
     file.photo = Some(apertrust_base::log::file_name(photo).into_owned());
@@ -987,7 +987,7 @@ fn write_history(
     }
     let build = apertrust_base::program!().version;
     write_if_unchanged(&path, read, || {
-        sidecar::write_log(&path, &file, log, clocks, (operations, modules), build)
+        sidecar::write_log(&path, &file, log, clocks, (operations, tools), build)
             .with_context(|| format!("writing {}", path.display()))
     })
 }
@@ -998,11 +998,11 @@ fn edit_once(
     photo: &Path,
     args: &EditArgs,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Tool],
+    tools: &[&'static dyn Tool],
 ) -> Result<Option<Edit>> {
     let path = sidecar::path_for(photo);
     let read_stamp = stamp(&path)?;
-    let saved = saved(photo, operations, modules)?;
+    let saved = saved(photo, operations, tools)?;
     if let Some(view_only) = saved.as_ref().and_then(sidecar::Loaded::view_only) {
         return Err(view_only).with_context(|| format!("not changing {}", path.display()));
     }
@@ -1019,7 +1019,7 @@ fn edit_once(
     } else {
         before.clone()
     };
-    let sets = read_sets(&args.flags.sets, modules)?;
+    let sets = read_sets(&args.flags.sets, tools)?;
     // Only a choice reads the photo, for the options it lists (decision 30), so the raw
     // is decoded only for a --set that names one; any other is set on an empty image, as
     // no range reads the photo (decision 30).
@@ -1030,17 +1030,17 @@ fn edit_once(
     } else {
         ImageContext::full(0, 0)
     };
-    clamp_read(&mut edit, modules, &image);
+    clamp_read(&mut edit, tools, &image);
     for reset in args.resets.iter() {
-        reset_control(&mut edit, modules, reset, &image)
+        reset_control(&mut edit, tools, reset, &image)
             .with_context(|| format!("--reset {reset}"))?;
     }
     for reset in args.param_resets.iter() {
-        reset_param(&mut edit, operations, modules, reset)
+        reset_param(&mut edit, operations, tools, reset)
             .with_context(|| format!("--reset-param {reset}"))?;
     }
     set_controls(&mut edit, &sets, &image)?;
-    set_params(&mut edit, &args.flags.params, operations, modules)?;
+    set_params(&mut edit, &args.flags.params, operations, tools)?;
     let asked = args.clear
         || !args.flags.is_empty()
         || !args.resets.is_empty()
@@ -1050,13 +1050,13 @@ fn edit_once(
         false => Vec::new(),
     };
     // `--clear` with the end among the default steps moves no value, but applies the
-    // modules not applied, as the session's Reset there does (decision 78): a Reset step of
+    // tools not applied, as the session's Reset there does (decision 78): a Reset step of
     // each, which keeps the default steps after the end and moves them below it.
     let unapplied = log.unapplied(log.end());
     if changes.is_empty() && args.clear && !unapplied.is_empty() {
         let entries = (unapplied.into_iter())
-            .map(|module| Entry::Tool {
-                tool: module,
+            .map(|tool| Entry::Tool {
+                tool,
                 values: ToolValues::new(),
             })
             .collect();
@@ -1072,10 +1072,10 @@ fn edit_once(
     let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
     let mut last = latest(read, machine);
     // A photo with no history is given its default steps first, as the app's first change
-    // gives them (decision 78), so Original leaves out the modules its workflow applies.
+    // gives them (decision 78), so Original leaves out the tools its workflow applies.
     if log.steps().is_empty() {
         let made = Clock::now(last.as_ref(), machine);
-        log.add_defaults(&default_tools(modules, operations), made);
+        log.add_defaults(&default_tools(tools, operations), made);
         advance(&mut clocks, made);
         last = Some(made);
     }
@@ -1088,7 +1088,7 @@ fn edit_once(
         read_stamp,
         file,
         (&log, &clocks),
-        (operations, modules),
+        (operations, tools),
     )?;
     if !written {
         return Ok(None);
@@ -1097,7 +1097,7 @@ fn edit_once(
     Ok(Some(edit))
 }
 
-/// What `edit`'s flags write, which orders its steps: `--clear`, every module and operation,
+/// What `edit`'s flags write, which orders its steps: `--clear`, every tool and operation,
 /// first, as the change starts from no settings, then each reset, `--set` and `--param` in
 /// the order it came on the command line ([`FlagOrder`]).
 fn wrote(args: &EditArgs, sets: &[ControlSet]) -> Vec<Wrote> {
@@ -1126,10 +1126,10 @@ fn wrote(args: &EditArgs, sets: &[ControlSet]) -> Vec<Wrote> {
             .map(|r| Wrote::Operation(id(r)))
             .collect(),
     );
-    let modules = sets
+    let tools = sets
         .iter()
-        .map(|set| Wrote::Tool(set.module.definition().id.to_owned()));
-    place(&order.sets, modules.collect());
+        .map(|set| Wrote::Tool(set.tool.definition().id.to_owned()));
+    place(&order.sets, tools.collect());
     place(
         &order.params,
         (args.flags.params.iter())
@@ -1819,7 +1819,7 @@ struct PreviewOptions {
 }
 
 /// The built-in operations an unedited photo does not run, which `preview --join` adds
-/// as their modules do (decision 28).
+/// as their tools do (decision 28).
 fn optional() -> impl Iterator<Item = &'static dyn Operation> {
     OPERATIONS
         .iter()
@@ -1855,18 +1855,18 @@ async fn preview(
         raw::upload(&gpu, &raw).context("the raw stage takes only 16-bit mosaics so far")??;
     let sensor = input.desc();
 
-    // Each change sets the Exposure module's Exposure, as the app's slider does.
+    // Each change sets the Exposure tool's Exposure, as the app's slider does.
     let (mut edit, newer) = saved_edit(path, OPERATIONS, TOOLS)?;
     if !newer {
         clamp_read(&mut edit, TOOLS, &image);
     }
-    let module = edit::tool(TOOLS, EXPOSURE.0)?;
+    let tool = edit::tool(TOOLS, EXPOSURE.0)?;
     let base_ev = match options.exposure {
         Some(ev) => ev,
         None => edit
             .tool(EXPOSURE.0)
             .and_then(|values| values.number(EXPOSURE.1))
-            .unwrap_or_else(|| module.defaults(&image).number(EXPOSURE.1)),
+            .unwrap_or_else(|| tool.defaults(&image).number(EXPOSURE.1)),
     };
     // Each change moves a hundredth of a stop, back from +4 rather than past it.
     let step = if base_ev + 0.01 > 4.0 { -0.01 } else { 0.01 };
@@ -1874,11 +1874,11 @@ async fn preview(
         budget: engine.budget,
         ..Limits::of(&gpu)
     };
-    // Exposure set, a change, which applies the modules a saved end leaves not applied
+    // Exposure set, a change, which applies the tools a saved end leaves not applied
     // (decision 78).
     edit.apply_all();
     let mut plan_at = |ev: f32| -> Result<pipeline::Plan> {
-        edit.set_control(module, EXPOSURE.1, ControlValue::Number(ev), &image)
+        edit.set_control(tool, EXPOSURE.1, ControlValue::Number(ev), &image)
             .context("preview --exposure")?;
         let instances = instances(&edit, &image, &[])?;
         Ok(pipeline::plan(
@@ -1967,13 +1967,13 @@ async fn preview(
     if let Some(operation) = joining {
         // From the photo at the Exposure set, rendered, as a drag leaves it.
         let id = operation.manifest().id;
-        edit.set_control(module, EXPOSURE.1, ControlValue::Number(base_ev), &image)
+        edit.set_control(tool, EXPOSURE.1, ControlValue::Number(base_ev), &image)
             .context("preview --exposure")?;
         let unjoined = instances(&edit, &image, &[])?;
         if unjoined.iter().any(|i| i.operation.manifest().id == id) {
             bail!("--join {id}: the photo's saved edit runs it already");
         }
-        // At its schema's defaults, as its module's first step adds it.
+        // At its schema's defaults, as its tool's first step adds it.
         let mut with = unjoined.clone();
         with.push(Instance {
             operation,
@@ -2533,12 +2533,12 @@ mod tests {
         edit: &mut Edit,
         flags: &SetFlags,
         operations: &[&dyn Operation],
-        modules: &[&dyn Tool],
+        tools: &[&dyn Tool],
         image: &ImageContext,
     ) -> Result<()> {
-        let sets = read_sets(&flags.sets, modules)?;
+        let sets = read_sets(&flags.sets, tools)?;
         set_controls(edit, &sets, image)?;
-        set_params(edit, &flags.params, operations, modules)
+        set_params(edit, &flags.params, operations, tools)
     }
 
     /// Applies the flags on Sample's photo, `testing::image`, which records no exposure
@@ -2547,18 +2547,18 @@ mod tests {
         edit: &mut Edit,
         flags: &SetFlags,
         operations: &[&dyn Operation],
-        modules: &[&dyn Tool],
+        tools: &[&dyn Tool],
     ) -> Result<()> {
         let image = apertrust_tools::testing::image();
-        apply_on(edit, flags, operations, modules, &image)
+        apply_on(edit, flags, operations, tools, &image)
     }
 
     /// An override of a saved edit whose end lies before its default steps, as `--set`, is a
-    /// change: it applies the modules the end leaves not applied, as the
+    /// change: it applies the tools the end leaves not applied, as the
     /// session's first change there does (decision 78), so `export --set` renders what
     /// `edit --set` then `export` would.
     #[test]
-    fn an_override_applies_the_modules_a_saved_end_leaves_out() {
+    fn an_override_applies_the_tools_a_saved_end_leaves_out() {
         use apertrust_engine::history::{Clock, Log, MachineId};
 
         let image = apertrust_tools::testing::image();
@@ -2604,30 +2604,30 @@ mod tests {
         );
     }
 
-    /// A switched module on at its defaults is shown on, not as no settings, and its
+    /// A switched tool on at its defaults is shown on, not as no settings, and its
     /// reset control by control leaves it so.
     #[test]
-    fn a_switched_module_on_at_its_defaults_is_shown_on() {
+    fn a_switched_tool_on_at_its_defaults_is_shown_on() {
         use apertrust_tools::grain::Grain;
-        let modules: &[&dyn Tool] = &[&Grain];
+        let tools: &[&dyn Tool] = &[&Grain];
         let mut edit = Edit::default();
         apply(
             &mut edit,
             &flags(&["grain.strength=25"], &[]),
             OPERATIONS,
-            modules,
+            tools,
         )
         .unwrap();
         assert_eq!(
-            describe(&edit, OPERATIONS, modules),
+            describe(&edit, OPERATIONS, tools),
             ["grain: strength 25 (kept)"]
         );
         edit.reset_control(&Grain, "strength").unwrap();
-        assert_eq!(describe(&edit, OPERATIONS, modules), ["grain: on"]);
+        assert_eq!(describe(&edit, OPERATIONS, tools), ["grain: on"]);
     }
 
     #[test]
-    fn set_and_reset_take_module_controls() {
+    fn set_and_reset_take_tool_controls() {
         let mut edit = Edit::default();
         apply(
             &mut edit,
@@ -2761,7 +2761,7 @@ mod tests {
             WITH_SAMPLE,
         ));
         assert!(said.contains("outside -1 to 1"), "{said}");
-        // The built-in Exposure module owns every exposure parameter, so its control sets
+        // The built-in Exposure tool owns every exposure parameter, so its control sets
         // them instead.
         let error = apply(
             &mut edit,
@@ -2884,7 +2884,7 @@ mod tests {
                 .0
                 .is_empty()
         );
-        // Each run a change of its own, a step of each module and operation it wrote, in
+        // Each run a change of its own, a step of each tool and operation it wrote, in
         // the order of its flags, sharing a batch where there are several, after the steps
         // before it; --clear one Reset, the log kept. A run that changes nothing adds none.
         run(&[], &[], &["sample.grain"], false).unwrap();
@@ -2897,7 +2897,7 @@ mod tests {
         assert!(steps[0].batch.is_some() && steps[0].batch == steps[1].batch);
         let names: Vec<_> = (steps.iter())
             .map(|step| match step.change.entries() {
-                [Entry::Tool { tool: module, .. }] => module.clone(),
+                [Entry::Tool { tool, .. }] => tool.clone(),
                 [Entry::Operation { operation, .. }] => operation.clone(),
                 _ => "reset".to_owned(),
             })
@@ -2947,16 +2947,16 @@ mod tests {
             order: FlagOrder::of(matches.subcommand_matches("edit").unwrap()),
         };
         let sets = read_sets(&flags.sets, WITH_SAMPLE).unwrap();
-        let module = |id: &str| Wrote::Tool(id.to_owned());
+        let tool = |id: &str| Wrote::Tool(id.to_owned());
         let operation = |id: &str| Wrote::Operation(id.to_owned());
         assert_eq!(
             wrote(&args, &sets),
             [
                 Wrote::All,
                 operation("exposure"),
-                module("sample"),
+                tool("sample"),
                 operation("colorin"),
-                module("grain"),
+                tool("grain"),
             ]
         );
         // With no command line, kind by kind.
@@ -2968,9 +2968,9 @@ mod tests {
             wrote(&args, &sets),
             [
                 Wrote::All,
-                module("grain"),
+                tool("grain"),
                 operation("colorin"),
-                module("sample"),
+                tool("sample"),
                 operation("exposure"),
             ]
         );
@@ -3023,7 +3023,7 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let photo = directory.join("IMG.ARW");
         std::fs::write(&photo, b"not read").unwrap();
-        // Sample's grain, and a module of a newer Apertrust's that this build lacks.
+        // Sample's grain, and a tool of a newer Apertrust's that this build lacks.
         let mut grainy = Edit::default();
         grainy
             .set_control(

@@ -18,7 +18,7 @@
 //! sidecar): the photo's identity and its virtual copies, each with its clock vector, its
 //! history as a log of steps and its end. Every value is the text the file holds, but the
 //! clocks, which [`Clock`] reads; the entries are version 1's, so this module, like the
-//! rest of the text layer, never sees a module's meaning. What cannot be read as written,
+//! rest of the text layer, never sees a tool's meaning. What cannot be read as written,
 //! a clock or a note, is a [`Problem`] the reader is told of, the rest of the file read.
 //!
 //! ```xml
@@ -57,7 +57,7 @@
 //! `apertrust:noteMessage`, a message id, with its arguments in `apertrust:noteArgs`, a
 //! struct of fields in [`ARG_NAMESPACE`] by their names: nested, so an argument named as a
 //! step's field, `id` or `when`, is never read as one by tools that name a struct's fields
-//! by their local names alone, as ExifTool does. Its entries, modules' and operations'
+//! by their local names alone, as ExifTool does. Its entries, tools' and operations'
 //! alike, are one `rdf:Seq` in the step's order, each written as version 1 writes it. The
 //! clock vector is written in the order of its machine ids, so two machines writing the
 //! same copy write the same bytes (decision 52).
@@ -225,7 +225,7 @@ pub struct Step {
     pub note: Option<Note>,
     /// `apertrust:batch`, 16 hex digits.
     pub batch: Option<String>,
-    /// `apertrust:entries`: each module and operation it touched, with its whole state
+    /// `apertrust:entries`: each tool and operation it touched, with its whole state
     /// after it, in the step's order.
     pub entries: Vec<Entry>,
 }
@@ -256,7 +256,7 @@ impl VirtualCopy {
     }
 
     /// Whether its edit holds anything, folded as text (`docs/history.md`, In the sidecar):
-    /// some module's or operation's last entry among the steps up to the end is not empty.
+    /// some tool's or operation's last entry among the steps up to the end is not empty.
     pub fn edited(&self) -> bool {
         let mut last = std::collections::BTreeMap::new();
         for entry in self.history[..self.applied()]
@@ -299,7 +299,7 @@ impl Edits {
     /// milliseconds since 1970. A file of version 2 or above is read as version 2 lays it
     /// out. A file of version 1 or 0 is read as one virtual copy, [`FIRST_COPY`], number
     /// `0` with no name, its history a step of each of the file's entries, as a history step
-    /// is one module's (decision 78): modules first, then operations, each in id order
+    /// is one tool's (decision 78): tools first, then operations, each in id order
     /// whatever the file's order, as the engine's own reading orders them. The first step's
     /// id is the first 16 hex digits of the BLAKE3 hash of `xml`'s bytes and each next one
     /// more, so every machine reading the same file gives the same steps; several share a
@@ -363,7 +363,7 @@ impl Edits {
             let bits = |at: usize| u64::from_be_bytes(hash[at..at + 8].try_into().expect("8"));
             let clock = Clock::at(modified, None, MachineId::UNKNOWN);
             let mut entries = document.entries;
-            // Stable, so a module written twice keeps its order, the later one folding last.
+            // Stable, so a tool written twice keeps its order, the later one folding last.
             entries.sort_by(|a, b| a.key().cmp(&b.key()));
             let batch = (entries.len() > 1).then(|| format!("{:016x}", bits(8)));
             for (index, entry) in entries.into_iter().enumerate() {
@@ -704,7 +704,7 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
 
 /// A problem for what in a step's `apertrust:entries`, at `place`, a save would drop, by the
 /// kind of entry the text layer reads each as ([`Entry`]): an item that is no entry, with
-/// no module's or operation's name, or both; and in a module's entry a field other than its
+/// no tool's or operation's name, or both; and in a tool's entry a field other than its
 /// `module`, `moduleVersion`, `enabled`, `kept`, `auto` and `control:` fields, in an
 /// operation's a field other than its `operation`, `schema` and `param:` fields, of
 /// Apertrust's namespace or any other, as a newer build's, or one that is no plain text.
@@ -725,7 +725,7 @@ fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
             (true, false) => (&MODULE, CONTROL_NAMESPACE),
             (false, true) => (&OPERATION, PARAM_NAMESPACE),
             (true, true) => {
-                problems.push(unknown("an entry naming both a module and an operation"));
+                problems.push(unknown("an entry naming both a tool and an operation"));
                 continue;
             }
             (false, false) => {

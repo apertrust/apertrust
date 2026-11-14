@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The session's history (decision 78): each completed change a step of each module it
+//! The session's history (decision 78): each completed change a step of each tool it
 //! touched, Undo and Redo, Reset a step, a control's quick repeats merged, and the `History`
 //! fact.
 
@@ -139,7 +139,7 @@ fn planned(driven: &Driven) -> Vec<&'static str> {
         .collect()
 }
 
-/// Whether the module `id` is on, as the values report it.
+/// Whether the tool `id` is on, as the values report it.
 fn on(events: &[Event], id: &str) -> bool {
     (values(events).tools.iter())
         .find(|state| state.tool == id)
@@ -261,8 +261,8 @@ fn go_to_a_default_step_renders_the_first_k_and_undo_stops_above_them() {
     remove(&path);
 }
 
-/// Reset, or a module's reset, with the end among the default steps moves no value but
-/// applies the default steps after the end: one step, every module applied.
+/// Reset, or a tool's reset, with the end among the default steps moves no value but
+/// applies the default steps after the end: one step, every tool applied.
 #[test]
 fn a_reset_among_the_default_steps_applies_them_as_one_step() {
     let path = scratch("history-default-reset");
@@ -290,7 +290,7 @@ fn a_reset_among_the_default_steps_applies_them_as_one_step() {
     let read = sidecar::read(&sidecar, OPERATIONS, DEFAULTS, &[]).unwrap();
     assert_eq!((read.log.steps().len(), read.log.end()), (4, 4));
     assert!(read.edit.unapplied.is_empty());
-    // Undo takes it back to Original; a module's reset there is one step of that module.
+    // Undo takes it back to Original; a tool's reset there is one step of that tool.
     driven.run([Command::Undo]);
     assert!(!edit(&driven).unapplied.is_empty());
     let reset = driven.run([Command::ResetTool {
@@ -324,8 +324,8 @@ fn a_reset_among_the_default_steps_applies_them_as_one_step() {
     remove(&path);
 }
 
-/// A module's picker turned on with the end among the default steps is the first change:
-/// the modules not applied are applied, so its operation is planned and it is on.
+/// A tool's picker turned on with the end among the default steps is the first change:
+/// the tools not applied are applied, so its operation is planned and it is on.
 #[test]
 fn a_picker_turned_on_among_the_default_steps_applies_them() {
     let path = scratch("history-default-picker");
@@ -347,7 +347,7 @@ fn a_picker_turned_on_among_the_default_steps_applies_them() {
     assert!(failures(&events).is_empty(), "{events:?}");
     assert!(on(&events, "exposure"));
     assert_eq!(planned(&driven), all);
-    // A step of its module, as darktable's picker turning its module on is an item, after
+    // A step of its tool, as darktable's picker turning its module on is an item, after
     // the default steps, saved: reopened, the photo shows them applied.
     let after = history(&events);
     assert_eq!((after.steps.len(), after.end), (4, 4));
@@ -410,7 +410,7 @@ fn a_newer_file_taken_in_over_default_steps_never_written_loses_no_move() {
 }
 
 /// Thumbnails and the live export render the edit its file holds: before the first change
-/// the file holds nothing, so every module is applied, whatever default step the end is at.
+/// the file holds nothing, so every tool is applied, whatever default step the end is at.
 #[test]
 fn thumbnails_and_the_live_export_render_the_file_s_edit_before_the_first_change() {
     let path = scratch("history-default-unwritten");
@@ -431,7 +431,7 @@ fn thumbnails_and_the_live_export_render_the_file_s_edit_before_the_first_change
 
 /// The default steps go into the file with the first change, never before, wherever the
 /// end goes among them. Then a move among them is saved like any move of the end: the file
-/// read folds the modules not applied from its end, as the session and the live export
+/// read folds the tools not applied from its end, as the session and the live export
 /// do, and reopening the photo lists the same steps, numbered as they were, none added.
 #[test]
 fn the_default_steps_are_saved_with_the_first_change_and_read_again() {
@@ -524,8 +524,8 @@ fn a_newer_file_taken_in_gets_no_default_step_never_written() {
     let changes = crate::history::Change::between(&Edit::default(), &blacker, &[]);
     theirs.add_change(changes, StepSource::You, None, clock);
     let file = sidecar::Edits::new("");
-    let modules = (OPERATIONS, DEFAULTS);
-    sidecar::write_log(&sidecar, &file, &theirs, &[clock], modules, "cli").unwrap();
+    let tools = (OPERATIONS, DEFAULTS);
+    sidecar::write_log(&sidecar, &file, &theirs, &[clock], tools, "cli").unwrap();
     // The session's first change finds it, and takes it in.
     driven.run([Command::SetControl {
         tool: "exposure".to_owned(),
@@ -558,7 +558,7 @@ fn a_view_only_file_holding_nothing_opens_with_no_step() {
     std::fs::write(&sidecar, &xml).unwrap();
     let mut driven = Driven::new(DEFAULTS);
     let opened = driven.open(&path);
-    assert!(values(&opened).tools.iter().all(|module| module.enabled));
+    assert!(values(&opened).tools.iter().all(|tool| tool.enabled));
     let read = history(&opened);
     assert_eq!((read.steps.len(), read.end), (0, 0));
     remove(&path);
@@ -668,10 +668,10 @@ fn undo_and_redo_are_inverses_rendered_and_saved() {
     remove(&path);
 }
 
-/// Reset is one step noted `history-reset`, turning a switched module off; its Undo brings
-/// every module back, the switched one on.
+/// Reset is one step noted `history-reset`, turning a switched tool off; its Undo brings
+/// every tool back, the switched one on.
 #[test]
-fn reset_is_a_step_and_its_undo_brings_each_module_back() {
+fn reset_is_a_step_and_its_undo_brings_each_tool_back() {
     let path = scratch("history-reset");
     let mut driven = Driven::new(&[&Sample, &Soften]);
     driven.open(&path);
@@ -686,9 +686,9 @@ fn reset_is_a_step_and_its_undo_brings_each_module_back() {
     assert_eq!((history.steps.len(), history.end), (3, 3));
     let step = &history.steps[2];
     assert_eq!((&step.note, step.batch), (&Some(Note::reset()), None));
-    // One step of each module the edit held, the switched one turned off.
-    let modules: Vec<_> = step.changes.iter().map(|c| (&*c.tool, c.enabled)).collect();
-    assert_eq!(modules, [("sample", None), ("soften", Some([true, false]))]);
+    // One step of each tool the edit held, the switched one turned off.
+    let tools: Vec<_> = step.changes.iter().map(|c| (&*c.tool, c.enabled)).collect();
+    assert_eq!(tools, [("sample", None), ("soften", Some([true, false]))]);
     let undone = driven.run([Command::Undo]);
     assert!(soften(&undone).enabled);
     assert_eq!(brightness(&undone), ControlValue::Number(0.5));
@@ -827,11 +827,11 @@ fn after_reopening_undo_moves_the_end_and_an_edit_drops_the_later_steps() {
     remove(&path);
 }
 
-/// Several commands as one `Step`, writing two modules: a step of each, in the order written,
+/// Several commands as one `Step`, writing two tools: a step of each, in the order written,
 /// of its source and note, sharing a batch, which one Undo takes back whole and one Redo
 /// puts back.
 #[test]
-fn a_step_of_two_modules_is_two_steps_in_one_batch_which_one_undo_takes_back() {
+fn a_step_of_two_tools_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     let path = scratch("history-step");
     let mut driven = Driven::new(&[&Sample, &Soften]);
     driven.open(&path);
@@ -847,14 +847,14 @@ fn a_step_of_two_modules_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     assert_eq!(kinds(&events), ["values", "history", "frame"]);
     let made = history(&events);
     assert_eq!((made.steps.len(), made.end), (2, 2));
-    let modules: Vec<_> = (made.steps.iter())
+    let tools: Vec<_> = (made.steps.iter())
         .map(|step| {
-            let modules: Vec<_> = step.changes.iter().map(|change| &*change.tool).collect();
-            (step.source, step.note.clone(), modules)
+            let tools: Vec<_> = step.changes.iter().map(|change| &*change.tool).collect();
+            (step.source, step.note.clone(), tools)
         })
         .collect();
-    let assistant = |module| (StepSource::Assistant, Some(note.clone()), vec![module]);
-    assert_eq!(modules, [assistant("soften"), assistant("sample")]);
+    let assistant = |tool| (StepSource::Assistant, Some(note.clone()), vec![tool]);
+    assert_eq!(tools, [assistant("soften"), assistant("sample")]);
     let batch = made.steps[0].batch;
     assert!(batch.is_some());
     assert_eq!(made.steps[1].batch, batch);
@@ -881,7 +881,7 @@ fn a_step_of_two_modules_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     remove(&path);
 }
 
-/// A `Step`'s steps follow the first of its commands that changed each module: one that
+/// A `Step`'s steps follow the first of its commands that changed each tool: one that
 /// changes nothing counts as none, as on its own.
 #[test]
 fn a_step_s_command_that_changes_nothing_orders_none_of_its_steps() {
@@ -899,10 +899,10 @@ fn a_step_s_command_that_changes_nothing_orders_none_of_its_steps() {
         ],
     }]);
     let made = history(&events);
-    let modules: Vec<_> = (made.steps[1..].iter())
+    let tools: Vec<_> = (made.steps[1..].iter())
         .map(|step| &*step.changes[0].tool)
         .collect();
-    assert_eq!(modules, ["sample", "soften"]);
+    assert_eq!(tools, ["sample", "soften"]);
     remove(&path);
 }
 
@@ -1082,7 +1082,7 @@ fn a_refused_step_going_on_with_the_gesture_leaves_it_under_way() {
     remove(&path);
 }
 
-/// A `Step` of another source on the gesture's module, refused, still ends the gesture: the
+/// A `Step` of another source on the gesture's tool, refused, still ends the gesture: the
 /// drag a step of its own, and no gesture left under way.
 #[test]
 fn a_refused_step_of_another_source_ends_the_gesture() {
@@ -1159,7 +1159,7 @@ fn a_refused_step_leaves_the_gesture_it_would_take_in_a_step_of_its_own() {
     remove(&path);
 }
 
-/// One source per gesture: a gesture's change of another source or note on its module ends
+/// One source per gesture: a gesture's change of another source or note on its tool ends
 /// the gesture as a step of its own and begins another, and a completed change of another
 /// source or note does not take it in.
 #[test]
@@ -1209,11 +1209,11 @@ fn a_gesture_has_one_source() {
     remove(&path);
 }
 
-/// A `Step` writing the module of the gesture under way takes it in: the drag and the
+/// A `Step` writing the tool of the gesture under way takes it in: the drag and the
 /// `Step` releasing it are one step. One that does not leaves the gesture a step of its
 /// own first.
 #[test]
-fn a_step_takes_in_the_gesture_under_way_on_a_module_it_writes() {
+fn a_step_takes_in_the_gesture_under_way_on_a_tool_it_writes() {
     let path = scratch("history-step-gesture");
     let mut driven = Driven::new(&[&Sample, &Soften]);
     driven.open(&path);
@@ -1246,10 +1246,10 @@ fn a_step_takes_in_the_gesture_under_way_on_a_module_it_writes() {
         ControlValue::Number(0.7),
         true,
     )])]);
-    let modules: Vec<_> = (history(&events).steps.iter())
+    let tools: Vec<_> = (history(&events).steps.iter())
         .map(|step| step.changes[0].tool.clone())
         .collect();
-    assert_eq!(modules, ["sample", "soften", "sample"]);
+    assert_eq!(tools, ["sample", "soften", "sample"]);
     assert_eq!(fold(&driven), edit(&driven));
     remove(&path);
 }
@@ -1424,7 +1424,7 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
 
     let path = scratch("history-view-only");
     let sidecar = sidecar::path_for(&path);
-    // A module version above Sample's: newer, and its step still read.
+    // A tool version above Sample's: newer, and its step still read.
     let xml = brightened("0.9.0").replace(
         r#"apertrust:moduleVersion="1""#,
         r#"apertrust:moduleVersion="2""#,
@@ -1613,7 +1613,7 @@ fn a_change_that_changes_nothing_counts_as_none() {
 
 // -- Saved in the sidecar (9.5) -----------------------------------------------------------
 
-/// The modules of the tests that save: Sample, and Soften, which another program changes.
+/// The tools of the tests that save: Sample, and Soften, which another program changes.
 const SAVING: &[&dyn apertrust_tools::Tool] = &[&Sample, &Soften];
 
 /// The sidecar of `path` as this build reads it.
@@ -1705,7 +1705,7 @@ fn each_step_and_each_move_advances_the_clock_vector() {
     remove(&path);
 }
 
-/// A version 1 file is read as a step of each module and written as version 2 at the next
+/// A version 1 file is read as a step of each tool and written as version 2 at the next
 /// change, its steps kept under the new one.
 #[test]
 fn a_version_1_file_is_written_as_version_2_at_the_next_change() {
@@ -1860,9 +1860,9 @@ fn a_newer_file_found_as_the_photo_closes_is_taken_in() {
     driven.writes();
     let read = saved(&path);
     assert_eq!(read.log.steps().len(), 3);
-    let soften = &read.edit.modules["soften"];
+    let soften = &read.edit.tools["soften"];
     assert_eq!(soften.get("amount"), Some(&ControlValue::Number(40.0)));
-    let sample = &read.edit.modules["sample"];
+    let sample = &read.edit.tools["sample"];
     assert_eq!(sample.get("size"), Some(&ControlValue::Choice(2)));
     remove(&path);
     remove(&other);
@@ -2053,7 +2053,7 @@ fn this_machine_s_other_program_s_step_is_taken_in() {
     let read = saved(&path);
     assert_eq!(read.log.steps().len(), 3);
     assert_eq!(
-        read.edit.modules["soften"].get("amount"),
+        read.edit.tools["soften"].get("amount"),
         Some(&ControlValue::Number(40.0))
     );
     remove(&path);
@@ -2081,11 +2081,11 @@ fn a_cancel_after_another_program_s_write_takes_its_file_in() {
     driven.writes();
     let read = saved(&path);
     assert_eq!(
-        read.edit.modules["soften"].get("amount"),
+        read.edit.tools["soften"].get("amount"),
         Some(&ControlValue::Number(40.0))
     );
     assert_eq!(
-        read.edit.modules["sample"].get("size"),
+        read.edit.tools["sample"].get("size"),
         Some(&ControlValue::Choice(2))
     );
     remove(&path);
@@ -2133,16 +2133,16 @@ fn an_unreadable_newer_file_is_never_written_over() {
     assert!(failures(&taken).is_empty(), "{taken:?}");
     driven.writes();
     let read = saved(&path);
-    let sample = &read.edit.modules["sample"];
+    let sample = &read.edit.tools["sample"];
     assert_eq!(sample.get("grain"), Some(&ControlValue::Number(40.0)));
     assert_eq!(
-        read.edit.modules["soften"].get("amount"),
+        read.edit.tools["soften"].get("amount"),
         Some(&ControlValue::Number(40.0))
     );
     remove(&path);
 }
 
-/// Undo, Redo and `GoTo` hold the edit they move to to the ranges its modules' values
+/// Undo, Redo and `GoTo` hold the edit they move to to the ranges its tools' values
 /// give, as the photo's open does, the clamp a change not yet a step, which never becomes a
 /// step of its own: here a hand-written log of coarseness at 150 %, then the bias at 20 %,
 /// which allows 120 %. Two Undos reach Original, two Redos come back, each clamped.
@@ -2156,7 +2156,7 @@ fn a_move_of_the_end_clamps_what_it_moves_to() {
             sample.set("bias", ControlValue::Number(bias));
         }
         let mut edit = Edit::default();
-        edit.modules.insert("sample".to_owned(), sample);
+        edit.tools.insert("sample".to_owned(), sample);
         edit
     };
     let mut log = crate::history::Log::default();
@@ -2228,7 +2228,7 @@ fn steps_kept_for_an_unreadable_file_are_saved_as_the_photo_closes() {
     driven.writes();
     let read = saved(&path);
     assert_eq!(
-        read.edit.modules["sample"].get("grain"),
+        read.edit.tools["sample"].get("grain"),
         Some(&ControlValue::Number(30.0))
     );
     remove(&path);
@@ -2288,7 +2288,7 @@ fn a_rating_added_by_hand_survives_the_next_save() {
     let written = std::fs::read_to_string(&sidecar).unwrap();
     assert!(written.contains("<xmp:Rating>4</xmp:Rating>"), "{written}");
     assert_eq!(
-        saved(&path).edit.modules["sample"].get("grain"),
+        saved(&path).edit.tools["sample"].get("grain"),
         Some(&ControlValue::Number(30.0))
     );
     remove(&path);
@@ -2574,7 +2574,7 @@ fn another_program_s_change_to_another_copy_is_kept() {
     assert_eq!(written.copies.len(), 2);
     assert_eq!(written.copies[1], other);
     assert_eq!(
-        saved(&path).edit.modules["sample"].get("grain"),
+        saved(&path).edit.tools["sample"].get("grain"),
         Some(&ControlValue::Number(30.0))
     );
     remove(&path);
@@ -2814,12 +2814,12 @@ fn shown(history: &History) -> (Vec<StepId>, usize) {
     (ids, history.end)
 }
 
-/// The sidecar of `path` read back with `modules`, once every write is done: it holds the
+/// The sidecar of `path` read back with `tools`, once every write is done: it holds the
 /// log as the session is to write it, the default steps not yet written left out, and the
 /// copy's clock vector, with no problem.
-fn assert_saved(driven: &Driven, path: &Path, modules: &[&dyn Tool]) -> sidecar::Loaded {
+fn assert_saved(driven: &Driven, path: &Path, tools: &[&dyn Tool]) -> sidecar::Loaded {
     driven.writes();
-    let read = sidecar::read(&sidecar::path_for(path), OPERATIONS, modules, &[]).unwrap();
+    let read = sidecar::read(&sidecar::path_for(path), OPERATIONS, tools, &[]).unwrap();
     let open = driven.engine.open.as_ref().unwrap();
     assert_eq!(read.log, *open.history.written());
     assert_eq!(read.clocks(), open.history.clocks());
@@ -2827,12 +2827,12 @@ fn assert_saved(driven: &Driven, path: &Path, modules: &[&dyn Tool]) -> sidecar:
     read
 }
 
-/// Compress keeps, among the steps up to the end, each module's last, and drops the steps
+/// Compress keeps, among the steps up to the end, each tool's last, and drops the steps
 /// after the end: the edit as it was, nothing rendered, the file holding the steps kept
 /// and its clock vector advanced. Undo puts the log back as it was, its steps and its end,
 /// and Redo compresses it again, each saved. A log compressed already changes nothing.
 #[test]
-fn compress_keeps_each_module_s_last_step_and_undo_brings_the_log_back() {
+fn compress_keeps_each_tool_s_last_step_and_undo_brings_the_log_back() {
     let path = scratch("history-compress");
     let mut driven = Driven::new(SAVING);
     driven.open(&path);
@@ -2917,7 +2917,7 @@ fn truncate_drops_the_steps_after_the_end_and_undo_brings_them_back() {
 }
 
 /// Compress right after Reset leaves no step: Reset's entries are all empty, and every
-/// module it reset has no other last step.
+/// tool it reset has no other last step.
 #[test]
 fn compress_right_after_reset_leaves_an_empty_history() {
     let path = scratch("history-compress-reset");
@@ -2998,7 +2998,7 @@ fn discard_history_gives_the_default_steps_again_and_undo_restores_the_log() {
 }
 
 /// An edit part of whose history cannot be read opens for viewing only; Discard History is
-/// the one command it takes: a fresh log of a step of each module the edit holds as read,
+/// the one command it takes: a fresh log of a step of each tool the edit holds as read,
 /// sharing a batch, source You, noted `history-discard`, the end the last, `Opened` sent
 /// again before its values, editable, and the file written with the fresh log, which reads
 /// with no problem. One a newer Apertrust wrote refuses it.
@@ -3102,7 +3102,7 @@ fn a_compress_not_yet_saved_over_another_program_s_step_is_not_kept_and_told() {
 }
 
 /// Compress and Truncate with the end among the default steps keep those after it, so the
-/// modules darktable leaves off until its workflow applies them stay not applied: nothing
+/// tools darktable leaves off until its workflow applies them stay not applied: nothing
 /// is rendered, and the file holds the default steps at that end.
 #[test]
 fn compress_and_truncate_among_the_default_steps_change_nothing_shown() {
@@ -3130,12 +3130,12 @@ fn compress_and_truncate_among_the_default_steps_change_nothing_shown() {
 }
 
 /// Discard History on an unreadable history whose end lies among the default steps: the
-/// fresh log begins with a new photo's default steps, those of the modules not applied
+/// fresh log begins with a new photo's default steps, those of the tools not applied
 /// after the end, so nothing changes on screen and Original is the untouched photo; with
 /// default steps alone and the end among them, the file holds them at that end, so the
-/// photo reopens as it shows, its modules not applied still so.
+/// photo reopens as it shows, its tools not applied still so.
 #[test]
-fn discard_history_afresh_keeps_the_modules_not_applied() {
+fn discard_history_afresh_keeps_the_tools_not_applied() {
     let path = scratch("history-discard-unreadable-defaults");
     let sidecar = sidecar::path_for(&path);
     let mut driven = Driven::new(DISCARDING);
@@ -3261,27 +3261,27 @@ fn live_operations(driven: &Driven) -> Vec<&'static str> {
     ids
 }
 
-/// The module `id`'s state among the values in `events`.
+/// The tool `id`'s state among the values in `events`.
 fn state<'v>(events: &'v [Event], id: &str) -> &'v ToolState {
     (values(events).tools.iter())
         .find(|state| state.tool == id)
         .unwrap()
 }
 
-fn hide(module: &str, hidden: bool) -> Command {
+fn hide(tool: &str, hidden: bool) -> Command {
     Command::Hide {
-        tool: module.to_owned(),
+        tool: tool.to_owned(),
         hidden,
     }
 }
 
-/// The eye (`Hide`) shows the live frame as if the module were reset, and is no more than
-/// view state: a module every photo runs at its defaults, its operation still planned; a
+/// The eye (`Hide`) shows the live frame as if the tool were reset, and is no more than
+/// view state: a tool every photo runs at its defaults, its operation still planned; a
 /// switched one off, its operation out of the plan. Its controls stay the edit's, reported
 /// hidden. No step, nothing written: the file, the live export's edit and the thumbnail's
 /// plan stay the edit's. Shown again, the frame is the edit's again.
 #[test]
-fn the_eye_hides_a_module_from_the_view_alone() {
+fn the_eye_hides_a_tool_from_the_view_alone() {
     let path = scratch("history-eye");
     let sidecar = sidecar::path_for(&path);
     let mut driven = Driven::new(&[&Sample, &Soften]);
@@ -3319,7 +3319,7 @@ fn the_eye_hides_a_module_from_the_view_alone() {
     assert!(frame(&driven.gpu, &both) == untouched);
 
     // Nothing written, no step, and what the file, an export and a thumbnail take is the
-    // edit, both modules applied.
+    // edit, both tools applied.
     assert!(driven.writes().is_empty());
     assert_eq!(std::fs::read(&sidecar).unwrap(), file);
     let open = driven.engine.open.as_ref().unwrap();
@@ -3345,10 +3345,10 @@ fn the_eye_hides_a_module_from_the_view_alone() {
     remove(&path);
 }
 
-/// The eye on a module every photo runs that the edit leaves untouched changes nothing: the
+/// The eye on a tool every photo runs that the edit leaves untouched changes nothing: the
 /// frame is the photo's as it was.
 #[test]
-fn the_eye_on_an_untouched_module_every_photo_runs_changes_nothing() {
+fn the_eye_on_an_untouched_tool_every_photo_runs_changes_nothing() {
     let path = scratch("history-eye-untouched");
     let mut driven = Driven::new(&[&Sample, &Soften]);
     let opened = driven.open(&path);
@@ -3363,7 +3363,7 @@ fn the_eye_on_an_untouched_module_every_photo_runs_changes_nothing() {
 }
 
 /// The eye is no command on the edit: it neither ends a gesture under way nor is refused on
-/// a photo open for viewing only or still opening; a module the session lacks is refused.
+/// a photo open for viewing only or still opening; a tool the session lacks is refused.
 #[test]
 fn the_eye_leaves_a_gesture_under_way_and_is_taken_view_only_and_opening() {
     let path = scratch("history-eye-gesture");
@@ -3454,10 +3454,10 @@ fn what_the_eye_hides_ends_as_the_photo_closes_or_another_opens() {
     remove(&other);
 }
 
-/// Hiding never adds an effect: a default module the history's end leaves not applied stays
+/// Hiding never adds an effect: a default tool the history's end leaves not applied stays
 /// out of the live plan when hidden, reported off and hidden, the frame as it was.
 #[test]
-fn a_module_the_end_leaves_not_applied_stays_out_when_hidden() {
+fn a_tool_the_end_leaves_not_applied_stays_out_when_hidden() {
     let path = scratch("history-eye-unapplied");
     let mut driven = Driven::new(DEFAULTS);
     let (_, ids) = opened_with_defaults(&mut driven, &path);

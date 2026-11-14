@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! RGB primaries' invariants (`docs/tools/rgb-primaries.md`, Invariants), one test per
-//! row, each named after its row: a switched module's (decision 32), P0 off, P1 the
+//! row, each named after its row: a switched tool's (decision 32), P0 off, P1 the
 //! first step, on at darktable's defaults, P2 moved and reset, P3 the order, P4 the
 //! darktable match, P7 on at darktable's defaults on the CPU and P8 version 1's edits; P5,
 //! on a layer, waits for Phase 4; and P6, the tint's hue at a purity of 0. The synthetic
@@ -100,7 +100,7 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults: rgb primaries planned at the operation's
+    /// The tool on at darktable's defaults: rgb primaries planned at the operation's
     /// defaults, darktable's new instance (rows P1, P2 and P6).
     fn on_at_defaults(&self) -> Vec<Instance<'static>> {
         self.instances(&switched::on_at_defaults(&RgbPrimaries, &self.image), Frame)
@@ -124,7 +124,7 @@ fn same_pixels(a: &Rendered, b: &Rendered) -> bool {
 
 /// P0 on one pipeline, as the session renders: no edit, then rgb primaries joining the
 /// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// module off, every frame as the first.
+/// tool off, every frame as the first.
 fn p0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let joined = bench.on_at_defaults();
@@ -155,7 +155,7 @@ fn p0_off_renders_as_no_edit() {
     }
 }
 
-/// P0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// P0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -267,7 +267,7 @@ fn p1_on_the_corpus() {
 
 // P2: each control moved, then reset.
 
-/// Moves of every control: a write of a hue at its default, which turns the module on, a
+/// Moves of every control: a write of a hue at its default, which turns the tool on, a
 /// primary's hue, a primary's purity, both of one primary, the tint, and all eight at
 /// test 0152's values as its sliders show them. Each changes the frame.
 const MOVES: [&[(&str, f32)]; 6] = [
@@ -292,9 +292,9 @@ const MOVES: [&[(&str, f32)]; 6] = [
 ];
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// rgb primaries joins with each move and leaves with each module's reset.
+/// rgb primaries joins with each move and leaves with each tool's reset.
 fn p2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults();
@@ -320,13 +320,13 @@ fn p2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn p2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn p2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     p2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -391,11 +391,11 @@ fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
 /// about that step times the entry's derivative, which is below 1 here.
 const MATRIX: f32 = 2.4e-7;
 
-/// P4: the module's controls set to the values of the `primaries` golden case,
+/// P4: the tool's controls set to the values of the `primaries` golden case,
 /// darktable's test 0152-rgb-primaries, each field × factor + offset, unrounded, bind to
 /// the case's parameters within one f32 step, the round trip's rounding, and, through the
 /// operation's `prepare`, to the kernel inputs the golden harness checks against
-/// darktable's render. So the module renders those values as the case measures the port:
+/// darktable's render. So the tool renders those values as the case measures the port:
 /// a ΔE2000 mean of 0.0000, max 0.0002 (`docs/ports/primaries.md`).
 #[test]
 fn p4_the_golden_case_s_values_bind_to_darktable_s_parameters() {
@@ -467,7 +467,7 @@ fn p4_the_golden_case_s_values_bind_to_darktable_s_parameters() {
 // P6: the tint's hue does nothing while its purity is 0.
 
 /// The tint's hue moved while its purity is 0 turns rgb primaries on, as any control's
-/// write does, and renders exactly the first step's pixels, the module on at its
+/// write does, and renders exactly the first step's pixels, the tool on at its
 /// defaults: the white moves by its purity, so the matrix is the defaults'. It stays
 /// enabled there, as darktable's does.
 #[test]
@@ -484,7 +484,7 @@ fn p6_the_tint_s_hue_at_purity_0_renders_as_the_first_step() {
 
 // P7: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind rgb primaries' own, and the module on
+/// The tool's defaults, each made explicit, bind rgb primaries' own, and the tool on
 /// at its defaults plans it with no parameter set, darktable's new instance; off, it plans
 /// none.
 #[test]
@@ -496,7 +496,7 @@ fn p7_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound: rgb primaries planned where a value was off its default, with what the binding
-/// gives those values, and not planned, the module off, where none was.
+/// gives those values, and not planned, the tool off, where none was.
 #[test]
 fn p8_version_1_s_edits_bind_what_they_bound() {
     let image = common::photo();

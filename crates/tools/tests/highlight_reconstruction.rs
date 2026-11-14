@@ -16,7 +16,7 @@
 
 //! Highlight reconstruction's invariants (`docs/tools/highlight-reconstruction.md`,
 //! Invariants), one test per row, each named after its row: K0 to K3, the rows a
-//! first-pass table has (decision 22) for a module over an operation every raw runs, so
+//! first-pass table has (decision 22) for a tool over an operation every raw runs, so
 //! with no first step. The small raw, which clips in a corner, runs on CI's software GPUs,
 //! K3 on the CPU. The raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS`
 //! naming it:
@@ -25,7 +25,7 @@
 //! cargo test --release -p apertrust-tools --test highlight_reconstruction -- --ignored --nocapture
 //! ```
 //!
-//! The module acts on the raw stage, so every row renders from a mosaic, the small raw's
+//! The tool acts on the raw stage, so every row renders from a mosaic, the small raw's
 //! or a corpus raw's, never a synthetic image in the working space, and reads the frame,
 //! colorout's output before it is rounded to 8 bits.
 
@@ -60,12 +60,12 @@ impl common::Measure for Frame {
     }
 }
 
-/// An edit with these controls set on `image`, in this order: each a module and a
+/// An edit with these controls set on `image`, in this order: each a tool and a
 /// control of it.
 fn edit_of(set: &[(&dyn Tool, &str, f32)], image: &ImageContext) -> Edit {
     let mut edit = Edit::default();
-    for &(module, control, value) in set {
-        edit.set_control(module, control, ControlValue::Number(value), image)
+    for &(tool, control, value) in set {
+        edit.set_control(tool, control, ControlValue::Number(value), image)
             .unwrap();
     }
     edit
@@ -95,7 +95,7 @@ fn untouched(image: &ImageContext) -> Vec<Edit> {
     vec![written, kept]
 }
 
-/// Whether the module's binding sets nothing for `edit` on the photo.
+/// Whether the tool's binding sets nothing for `edit` on the photo.
 fn binds_nothing(edit: &Edit, image: &ImageContext) -> bool {
     let values = edit.tool(HIGHLIGHTS).unwrap();
     let defaults = HighlightReconstruction.defaults(image);
@@ -113,7 +113,7 @@ fn operation_defaults(image: &ImageContext) -> ParamValues {
         .unwrap()
 }
 
-/// Whether the module's defaults are the operation's for the photo: the threshold bit for
+/// Whether the tool's defaults are the operation's for the photo: the threshold bit for
 /// bit, and inpaint opposed.
 fn defaults_are_the_operation_s(image: &ImageContext) -> bool {
     let ours = HighlightReconstruction.defaults(image);
@@ -162,7 +162,7 @@ fn k0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// K0 on every corpus raw: the module's defaults are the operation's, and the module at
+/// K0 on every corpus raw: the tool's defaults are the operation's, and the tool at
 /// them, written or kept, plans the very instances and cache keys no edit does, so the
 /// same frame.
 #[test]
@@ -218,7 +218,7 @@ fn k1_holds(bench: &mut Bench) {
         edit.reset_tool(&HighlightReconstruction);
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{value}, the module reset"
+            "{value}, the tool reset"
         );
     }
 }

@@ -2588,7 +2588,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
 
 ### The section and its words
 
-- **The tool is a `Section`:** `Section::module()`, its title, its tabs (`Section::tabs`, the selected tab being the app's state).
+- **The tool is a `Section`:** `Section::edits()`, its title, its tabs (`Section::tabs`, the selected tab being the app's state).
 - **No summary while closed:** a closed section is its title and its header buttons, with no summary of what is set. What a tool has set shows in its open section and in History.
 - **Words are message ids that follow from the ids**, so a definition holds no text. Ids are snake\_case and hyphens separate the parts, and each id follows a fixed word, so an option or a tab named `label` or `title` can never collide with another message:
 
@@ -2632,7 +2632,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
 
 `crates/app/src/tools.rs` draws any tool's section from its definition and the mirror's values, with no code of the tool's own.
 
-- **The section** is `Section::module()` with the tool's title, its tabs when it has more than one (the tab shown is the app's state for the run), and presets and options drawn disabled until something is behind them; no Advanced controls toggle (decision 29). Whether it is open is the shell's, kept in settings by the tool's id (`Shell::section_open`), open by default, on its first tab.
+- **The section** is `Section::edits()` with the tool's title, its tabs when it has more than one (the tab shown is the app's state for the run), and presets and options drawn disabled until something is behind them; no Advanced controls toggle (decision 29). Whether it is open is the shell's, kept in settings by the tool's id (`Shell::section_open`), open by default, on its first tab.
 - **A switched tool that is off** (decision 32) is drawn as any other, its controls at darktable's defaults as the session reports them, with no dimming and no switch: it is transparent to the person.
   - A switched tool's reset is available only while the session reports it edited (`ToolState::edited`, which a switched tool is while it is on), and at once while a change turning it on is pending, on a photo that can be edited. Every other tool's reset is available on a photo that can be edited, as before; it follows the same rule once kept marks count as edited. The kept marker beside each control set is the other cue.
   - To AccessKit the section is described as "Not applied" (`section-not-applied`, through `Section::not_applied`) while the session reports it off (`ToolState::enabled` false), and not while a pending change turns it on.

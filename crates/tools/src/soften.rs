@@ -106,7 +106,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `soften`: the module is darktable's and owns them all.
+/// Every parameter of `soften`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 4] = [
     Owned::new(SOFTEN, "size"),
     Owned::new(SOFTEN, "saturation"),
@@ -244,7 +244,7 @@ mod tests {
     }
 
     /// Each control sets its parameter alone, whatever the mix holds: soften is switched,
-    /// so the session plans it while the module is on, not while the mix is off 0.
+    /// so the session plans it while the tool is on, not while the mix is off 0.
     #[test]
     fn each_control_sets_its_parameter_alone() {
         for (control, value) in [

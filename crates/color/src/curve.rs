@@ -24,7 +24,7 @@
 //! is the cubic darktable samples into its table, so the kernel needs no table. Past the
 //! last node, darktable's power law (`dt_iop_estimate_exp`), fitted as RGB curve fits it.
 //!
-//! RGB curve's setup builds its kernel's curves with it, and the Tone curve module draws
+//! RGB curve's setup builds its kernel's curves with it, and the Tone curve tool draws
 //! its Luma curve with it, so the curve drawn is the curve rendered. darktable's
 //! `tonecurve`, `basecurve` and `colorzones` use the same interpolators.
 

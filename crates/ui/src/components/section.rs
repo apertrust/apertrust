@@ -14,16 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A section of the side panel: a module or a utility such as Scopes or History.
+//! A section of the side panel: a tool, one that edits the photo or a utility such as
+//! Scopes or History, which edits nothing.
 //!
 //! The header holds the chevron and the title, then the buttons, in the wireframe's order:
-//! a module's reset, presets and options, a utility's options alone, or with a reset
+//! an editing tool's reset, presets and options, a utility's options alone, or with a reset
 //! before them where it has one, as History's resets the edit, each as narrow as its
-//! icon and evenly spaced, the last one's ink ending where the rows do. A module's options
-//! are drawn disabled until what their menu holds is decided. A title that would run under
-//! the buttons is cut at its end with …, whole in the tooltip and for screen readers. A
-//! closed section is its header alone, with no summary of what is set. An open section
-//! shows its tabs, if it has any, and its body. Holding H over a section, or with its
+//! icon and evenly spaced, the last one's ink ending where the rows do. An editing tool's
+//! options are drawn disabled until what their menu holds is decided. A title that would
+//! run under the buttons is cut at its end with …, whole in the tooltip and for screen
+//! readers. A closed section is its header alone, with no summary of what is set. An open
+//! section shows its tabs, if it has any, and its body. Holding H over a section, or with its
 //! header in focus, shows the photo without it: the section reports that it is peeking, and
 //! the app asks the engine. The section never reads the key itself: the app's actions
 //! registry says whether it is held ([`Section::peek`]), so the key can be rebound.
@@ -72,7 +73,7 @@ pub struct Section<'a> {
     tab: usize,
     /// Tabs that cannot be chosen yet, by index, and their tooltip.
     disabled_tabs: (&'a [usize], &'a str),
-    module: bool,
+    edits: bool,
     reset: bool,
     /// A utility's reset button, by its name, where it has one.
     utility_reset: Option<&'a str>,
@@ -86,7 +87,7 @@ pub struct Section<'a> {
 }
 
 impl Section<'_> {
-    /// The body's margin at its start and end, 12 points (`spacing.l`): a module's rows
+    /// The body's margin at its start and end, 12 points (`spacing.l`): a tool's rows
     /// start inside it, and a [`section_list`]'s scroll bar floats in its end.
     pub fn body_margin(t: &crate::Theme) -> f32 {
         t.spacing.l
@@ -105,7 +106,7 @@ impl<'a> Section<'a> {
             tabs: &[],
             tab: 0,
             disabled_tabs: (&[], ""),
-            module: false,
+            edits: false,
             reset: true,
             utility_reset: None,
             presets: true,
@@ -116,10 +117,10 @@ impl<'a> Section<'a> {
         }
     }
 
-    /// A module: reset, presets and options, its options drawn disabled for now ("No
-    /// options yet", `section-options-none`).
-    pub fn module(mut self) -> Self {
-        self.module = true;
+    /// A tool that edits the photo: reset, presets and options, its options drawn disabled
+    /// for now ("No options yet", `section-options-none`).
+    pub fn edits(mut self) -> Self {
+        self.edits = true;
         self
     }
 
@@ -136,7 +137,7 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// Whether a module's reset button, or a utility's ([`Self::utility_reset`]), can run,
+    /// Whether an editing tool's reset button, or a utility's ([`Self::utility_reset`]), can run,
     /// as it can by default: drawn disabled where nothing may change, as an action that
     /// cannot run is.
     pub fn reset(mut self, enabled: bool) -> Self {
@@ -145,8 +146,8 @@ impl<'a> Section<'a> {
     }
 
     /// A utility with a reset button before its options, named `name`, translated, as
-    /// History's header has one, which resets the edit (`docs/history.md`). A module's
-    /// reset is its own, so this changes nothing on one.
+    /// History's header has one, which resets the edit (`docs/history.md`). An
+    /// editing tool's reset is its own, so this changes nothing on one.
     pub fn utility_reset(mut self, name: &'a str) -> Self {
         self.utility_reset = Some(name);
         self
@@ -159,8 +160,8 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// Whether a utility's options button can run; see [`Self::presets`]. A module's is
-    /// drawn disabled whatever this says, so this changes nothing on one.
+    /// Whether a utility's options button can run; see [`Self::presets`]. An editing
+    /// tool's is drawn disabled whatever this says, so this changes nothing on one.
     pub fn options(mut self, enabled: bool) -> Self {
         self.options = enabled;
         self
@@ -182,7 +183,7 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// Whether the module is off and renders nothing, as a switched module is until a
+    /// Whether the tool is off and renders nothing, as a switched tool is until a
     /// control is written (decision 32): nothing more is drawn, and screen readers hear
     /// "Not applied" (`section-not-applied`) first in the toggle's description.
     pub fn not_applied(mut self, off: bool) -> Self {
@@ -243,7 +244,7 @@ impl<'a> Section<'a> {
                     ui.spacing_mut().item_spacing.x = t.spacing.section_button_gap;
                     let mut pressed = Vec::new();
                     let name = say("section-options");
-                    if self.module {
+                    if self.edits {
                         // Drawn disabled until what its menu holds is decided.
                         let none = tr.text("section-options-none");
                         IconButton::new(Icon::Options, &name)
@@ -469,7 +470,7 @@ pub fn section_body<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
     inner
 }
 
-/// A list scrolling inside a section's body: every scrolling area inside a module is one,
+/// A list scrolling inside a section's body: every scrolling area inside a tool is one,
 /// so they all look and behave alike. It is `sizes.section_list` high whatever `add` draws,
 /// so the section keeps its height, and scrolls when the content is taller. Its scroll bar
 /// is egui's floating one in the quiet bar's colours ([`super::quiet_scroll`]), drawn in

@@ -17,7 +17,7 @@
 use super::*;
 use crate::clock::{Clock, MachineId};
 
-/// A version 1 file with one module entry, with these attributes.
+/// A version 1 file with one tool entry, with these attributes.
 fn version_1(attributes: &str) -> String {
     format!(
         r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF_NAMESPACE}">
@@ -28,7 +28,7 @@ fn version_1(attributes: &str) -> String {
     )
 }
 
-fn module(id: &str) -> Entry {
+fn tool(id: &str) -> Entry {
     Entry::Tool {
         tool: id.to_owned(),
         version: Some("2".to_owned()),
@@ -54,7 +54,7 @@ fn operation(id: &str) -> Entry {
 #[test]
 fn a_document_reads_back_as_written() {
     let mut document = Document::new("0.4.0+12~g1a2b3c4");
-    document.entries = vec![module("look"), module("lens"), operation("fake")];
+    document.entries = vec![tool("look"), tool("lens"), operation("fake")];
     let xml = document.to_xml();
     for written in [
         r#"apertrust:version="1""#,
@@ -71,15 +71,15 @@ fn a_document_reads_back_as_written() {
     ] {
         assert!(xml.contains(written), "{written} in {xml}");
     }
-    // A module off writes no `enabled`.
+    // A tool off writes no `enabled`.
     assert_eq!(xml.matches("apertrust:enabled").count(), 1, "{xml}");
     assert_eq!(Document::parse(&xml).unwrap(), document);
 }
 
 #[test]
-fn modules_are_written_before_operations_each_in_its_order() {
+fn tools_are_written_before_operations_each_in_its_order() {
     let mut document = Document::new("test");
-    document.entries = vec![operation("b"), module("y"), operation("a"), module("x")];
+    document.entries = vec![operation("b"), tool("y"), operation("a"), tool("x")];
     let xml = document.to_xml();
     let at = |text: &str| xml.find(text).unwrap_or_else(|| panic!("{text} in {xml}"));
     assert!(at(r#"apertrust:module="y""#) < at(r#"apertrust:module="x""#));
@@ -140,7 +140,7 @@ fn entries_are_read_as_text_in_the_file_s_order() {
             ],
         }]
     );
-    // A schema that is no number is none; a description with neither a module nor an
+    // A schema that is no number is none; a description with neither a tool nor an
     // operation is no entry.
     let xml = xml.replace(
         "<rdf:li>",
@@ -255,7 +255,7 @@ fn a_sidecar_sits_beside_the_photo_and_is_replaced_whole() {
     let directory = tempfile::tempdir().unwrap();
     let path = path_for(&directory.path().join("IMG.ARW"));
     let mut document = Document::new("test");
-    document.entries = vec![module("look"), operation("fake")];
+    document.entries = vec![tool("look"), operation("fake")];
     write_xml(&path, &document.to_xml()).unwrap();
     document.entries.pop();
     write_xml(&path, &document.to_xml()).unwrap();
@@ -326,7 +326,7 @@ fn step(id: &str, clock: Clock, note: Option<Note>, entries: Vec<Entry>) -> Step
 }
 
 /// A file with one virtual copy of three steps, the end on the second: an assistant's
-/// words with a batch, a module and an operation in one step, and a message with its
+/// words with a batch, a tool and an operation in one step, and a message with its
 /// arguments after the end.
 fn edits() -> Edits {
     let mut edits = Edits::new("0.5.0+3~g1a2b3c4");
@@ -338,7 +338,7 @@ fn edits() -> Edits {
         Some(Note::Text(
             "Warmer, as asked: \"a bit\" & <more>".to_owned(),
         )),
-        vec![operation("fake"), module("look")],
+        vec![operation("fake"), tool("look")],
     );
     assistant.source = "assistant".to_owned();
     assistant.batch = Some("0f1e2d3c4b5a6978".to_owned());
@@ -376,7 +376,7 @@ fn edits() -> Edits {
                 "00000000000000a1",
                 clock(PI_DAY, 0, "5e1f22c9"),
                 None,
-                vec![module("lens")],
+                vec![tool("lens")],
             ),
             assistant,
             message,
@@ -414,7 +414,7 @@ fn version_2_reads_back_as_written() {
     ] {
         assert!(xml.contains(written), "{written} in {xml}");
     }
-    // A step's entries keep its order, here an operation's before a module's.
+    // A step's entries keep its order, here an operation's before a tool's.
     let at = |text: &str| xml.find(text).unwrap_or_else(|| panic!("{text} in {xml}"));
     assert!(at(r#"apertrust:operation="fake""#) < at(r#"apertrust:module="look""#));
     assert_eq!(xml.matches("<apertrust:entries>").count(), 3, "{xml}");
@@ -469,14 +469,14 @@ fn an_empty_version_2_file_reads_back_empty() {
     assert_eq!(Edits::parse(&xml, 0).unwrap(), edits);
 }
 
-/// A version 1 file reads as a step of each entry, modules first, each in id order, sharing
+/// A version 1 file reads as a step of each entry, tools first, each in id order, sharing
 /// a batch: the same ids on every read, from its bytes, the first the hash's first 64 bits
 /// and each next one more, the batch its next 64; their clock the file's modified time on
 /// no known machine; the end the last. One entry is one step in no batch.
 #[test]
-fn version_1_reads_as_a_step_of_each_module() {
+fn version_1_reads_as_a_step_of_each_tool() {
     let mut document = Document::new("0.4.0");
-    document.entries = vec![operation("fake"), module("look"), module("lens")];
+    document.entries = vec![operation("fake"), tool("look"), tool("lens")];
     let xml = document.to_xml();
     let read = Edits::parse(&xml, PI_DAY).unwrap();
     assert_eq!(read, Edits::parse(&xml, PI_DAY).unwrap());
@@ -503,22 +503,22 @@ fn version_1_reads_as_a_step_of_each_module() {
             end: id(2),
             clocks: vec![made],
             history: vec![
-                batched(0, module("lens")),
-                batched(1, module("look")),
+                batched(0, tool("lens")),
+                batched(1, tool("look")),
                 batched(2, operation("fake")),
             ],
         }
     );
     // One entry: one step, in no batch.
     let mut one = Document::new("0.4.0");
-    one.entries = vec![module("look")];
+    one.entries = vec![tool("look")];
     let xml_one = one.to_xml();
     let hash_one = crate::index::hash(xml_one.as_bytes());
     let id_one: String = hash_one[..8].iter().map(|b| format!("{b:02x}")).collect();
     let read_one = Edits::parse(&xml_one, PI_DAY).unwrap();
     assert_eq!(
         read_one.copies[0].history,
-        [step(&id_one, made, None, vec![module("look")])]
+        [step(&id_one, made, None, vec![tool("look")])]
     );
     assert_eq!(read_one.copies[0].end, id_one);
     // Another file gives other steps; it is written as version 2.
@@ -832,7 +832,7 @@ fn end_on_no_step(xml: &str) -> String {
     )
 }
 
-/// A copy is edited where some module's or operation's last entry up to the end is not
+/// A copy is edited where some tool's or operation's last entry up to the end is not
 /// empty, as the index folds a log as text; the steps after the end count for nothing.
 #[test]
 fn a_copy_is_edited_where_a_last_entry_up_to_the_end_is_not_empty() {
@@ -866,7 +866,7 @@ fn a_copy_is_edited_where_a_last_entry_up_to_the_end_is_not_empty() {
         }
     }
     assert!(!edits.edited());
-    // A later entry of a module reset over an earlier one's values.
+    // A later entry of a tool reset over an earlier one's values.
     let mut edits = self::edits();
     let reset = edits.copies[0].history[2].clone();
     edits.copies[0].history.insert(2, reset);
@@ -969,8 +969,8 @@ fn other_tools_properties_are_kept_and_unknown_fields_are_problems() {
 
 /// In a step's entries, a field a newer build may write that this one would drop is a
 /// problem, by the kind of entry: one of Apertrust's own it does not write, another
-/// namespace's, an operation's control or a module's parameter, an item that is no entry,
-/// and an entry naming both a module and an operation.
+/// namespace's, an operation's control or a tool's parameter, an item that is no entry,
+/// and an entry naming both a tool and an operation.
 #[test]
 fn an_entry_s_unknown_field_is_a_problem() {
     let xml = edits().to_xml();
@@ -1007,8 +1007,8 @@ fn an_entry_s_unknown_field_is_a_problem() {
         };
         assert_eq!(read.problems, [expected], "{field}");
     }
-    // By the kind of entry: an operation's control, a module's parameter or schema, a
-    // module named by nothing, and an entry naming both.
+    // By the kind of entry: an operation's control, a tool's parameter or schema, a
+    // tool named by nothing, and an entry naming both.
     let fake = r#"apertrust:operation="fake""#;
     let cases = [
         (
@@ -1034,7 +1034,7 @@ fn an_entry_s_unknown_field_is_a_problem() {
         (
             xml.replacen(lens, &format!(r#"{lens} {fake}"#), 1),
             place,
-            "an entry naming both a module and an operation",
+            "an entry naming both a tool and an operation",
         ),
     ];
     for (damaged, at, field) in cases {
@@ -1109,7 +1109,7 @@ fn an_edit_s_file_is_read_with_its_modified_time() {
     let directory = tempfile::tempdir().unwrap();
     let path = path_for(&directory.path().join("IMG.ARW"));
     let mut document = Document::new("test");
-    document.entries = vec![module("look")];
+    document.entries = vec![tool("look")];
     write_xml(&path, &document.to_xml()).unwrap();
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     let millis = modified

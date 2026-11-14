@@ -9,12 +9,12 @@ repository.workspace = true
 publish.workspace = true
 
 [features]
-# `testing::Sample`, a module for the module layer's tests in other crates; never in
+# `testing::Sample`, a tool for the tool layer's tests in other crates; never in
 # TOOLS.
 testing = []
 
 [dependencies]
-# Its settings part alone, for the types of the modules' settings' generated statics
+# Its settings part alone, for the types of the tools' settings' generated statics
 # (decisions 29 and 43).
 apertrust-base.workspace = true
 # RGB curve's curve maths, for the Tone curve's panel, and darktable's illuminants, for
@@ -25,7 +25,7 @@ apertrust-plugin.workspace = true
 thiserror.workspace = true
 
 [build-dependencies]
-# The settings generator, which writes the modules' settings' statics from the schema.
+# The settings generator, which writes the tools' settings' statics from the schema.
 apertrust-base = { workspace = true, features = ["codegen"] }
 
 [dev-dependencies]

@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! For the module layer's tests, in this crate and, with the `testing` feature, in
-//! others: [`Sample`], a module [`crate::TOOLS`] never holds, with
+//! For the tool layer's tests, in this crate and, with the `testing` feature, in
+//! others: [`Sample`], a tool [`crate::TOOLS`] never holds, with
 //! [`Following`], Sample with follow writes, a small synthetic photo's image context, and
-//! darktable's sliders, which each module's slider table is held to
+//! darktable's sliders, which each tool's slider table is held to
 //! ([`slider_differences`]).
 
 use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
@@ -30,18 +30,18 @@ use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
 use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 
-/// A module over one operation an unedited photo runs and one it does not, its page laid
+/// A tool over one operation an unedited photo runs and one it does not, its page laid
 /// out as darktable lays one out (decision 29):
 ///
 /// - `brightness`, added to the photo's default exposure, so its 0 is the photo as first
 ///   shown (`exposure.exposure`): an offset over the photo's own value, where the
-///   Exposure module writes darktable's slider's value as it is (decision 30);
+///   Exposure tool writes darktable's slider's value as it is (decision 30);
 /// - `grain`, in percent, which adds the grain operation while it is off 0
 ///   (`grain.strength`);
 /// - `size`, fine, medium or coarse grain, which sets nothing while `grain` is at 0,
 ///   as Exposure's pivot sets nothing while Contrast is 0 (`grain.scale`);
 /// - `method`, how the grain lies over the tones: evenly, or biased by `bias`; its third
-///   option, film, as darktable lists one this module does not port, drawn disabled and
+///   option, film, as darktable lists one this tool does not port, drawn disabled and
 ///   refused; and its fourth, camera, the grain as the camera's exposure bias leaves the
 ///   tones, which only a photo that records a bias lists, as darktable lists colour
 ///   calibration's as shot in camera only on a colour raw (decision 30). It sets nothing
@@ -67,15 +67,15 @@ use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 ///   difference, exact in f32 but for a rounding; a pair of coordinates in range may still
 ///   give a grain or a bias outside its own, which the session refuses;
 /// - three colour pickers (decision 79), each reading the exposure operation, as darktable's
-///   modules pick ([`Tool::pick`]): `brightness`, on brightness's quad, an area read
+///   tools pick ([`Tool::pick`]): `brightness`, on brightness's quad, an area read
 ///   at exposure's output, which moves brightness by what brings the area's mean to 18 %
 ///   grey, darktable's Exposure correction in short, and shows the area's patch; `spread`,
 ///   a point or an area read at exposure's input, denoised, which sets grain to the
 ///   spread from the area's minimum to its maximum in percent, of the channel shown,
 ///   `red`, `green` or `blue`, else of the three's widest, and with `shift` held coarse
-///   grain, with `command` fine, writing nothing for a reading that equals the module's
+///   grain, with `command` fine, writing nothing for a reading that equals the tool's
 ///   last, as RGB levels' picks; and `show`, a point or an area read at exposure's input
-///   and output, kept on as the module changes, which writes nothing and shows the
+///   and output, kept on as the tool changes, which writes nothing and shows the
 ///   output's patch, as RGB curve's show colour.
 ///
 /// The look's row and brightness's are before every tab's, shown whichever is open. The
@@ -466,7 +466,7 @@ fn patch(stats: &Stats) -> Shown {
 
 /// [`Sample`] with follow writes (decision 27), as Colour calibration's illuminant writes
 /// its light: its grain writes what [`Follow`] says, right or wrong as a bug may make it,
-/// for the tests that the session writes them in the same change and refuses a module's
+/// for the tests that the session writes them in the same change and refuses a tool's
 /// wrong ones. Its page, binding, look and pair are Sample's.
 pub struct Following(pub Follow);
 
@@ -478,7 +478,7 @@ pub enum Follow {
     Size,
     /// A bias of 150 %, outside the bias's range.
     OutOfRange,
-    /// A contrast, which the module lacks.
+    /// A contrast, which the tool lacks.
     Unknown,
     /// Its own value, rewritten.
     Itself,
@@ -529,7 +529,7 @@ impl Tool for Following {
     }
 }
 
-/// A module whose binding misbehaves on purpose, for the tests that it is left out while
+/// A tool whose binding misbehaves on purpose, for the tests that it is left out while
 /// the rest renders: with `stray` on it sets a parameter it does not own, and with
 /// `panic` on it panics, as `Base::float` does on a parameter it lacks. It owns nothing,
 /// so it passes [`crate::check::accept`].
@@ -634,9 +634,9 @@ impl Tool for Pushing {
     }
 }
 
-/// A module whose defaults for the photo panic, as a bug in [`Tool::defaults`] may make
+/// A tool whose defaults for the photo panic, as a bug in [`Tool::defaults`] may make
 /// them, for the tests that the edit and the session go on without it where they ask
-/// every module, as each change's clamp does (decision 30). Its one control, `amount`,
+/// every tool, as each change's clamp does (decision 30). Its one control, `amount`,
 /// is a number from 0 to 10 at 0; it binds nothing and owns nothing.
 pub struct Defaultless;
 
@@ -686,7 +686,7 @@ impl Tool for Defaultless {
     }
 }
 
-/// A module with two lossless views of the same two controls, as White balance shows its
+/// A tool with two lossless views of the same two controls, as White balance shows its
 /// light as temperature and tint and as hue and chroma (decision 2), for the tests that
 /// editing one view moves the other. It binds nothing and owns nothing. Its controls are
 /// `x` and `y`, from 0 to 100, at 20 and 60; its views:
@@ -864,8 +864,8 @@ pub fn image() -> ImageContext {
 }
 
 /// darktable's picker on a slider, as its `gui_init` makes it with `dt_color_picker_new`: a
-/// row of a module's picker table, which [`pickers_on_sliders`] gives back from the
-/// module's definition, so a test holds every picker to darktable's.
+/// row of a tool's picker table, which [`pickers_on_sliders`] gives back from the
+/// tool's definition, so a test holds every picker to darktable's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DarktablePicker {
     pub id: &'static str,
@@ -912,9 +912,9 @@ pub fn pickers_on_sliders(definition: &Definition) -> Vec<DarktablePicker> {
 }
 
 /// darktable's slider for one control or setting, as its params and `gui_init`
-/// leave it, in the parameter's own units: a row of a module's slider table
+/// leave it, in the parameter's own units: a row of a tool's slider table
 /// (`docs/tools/README.md`, Sliders against darktable), which [`slider_differences`]
-/// holds the module's definition to.
+/// holds the tool's definition to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DarktableSlider {
     /// The control's id, or the setting's.
@@ -1003,19 +1003,19 @@ impl DarktableSlider {
     }
 }
 
-/// How a module's sliders differ from darktable's while its controls hold `values`, a
+/// How a tool's sliders differ from darktable's while its controls hold `values`, a
 /// line each: every slider row and every number setting against its row of
 /// `darktable`, by id, in the units shown: the range a value may hold, what the track
 /// spans at rest, the decimals and the key step; then each of darktable's sliders that no
-/// row shows. A control's range, track and step are the module's for `values`
-/// ([`Tool::range`], decision 30), the module's defaults for every module's own test,
+/// row shows. A control's range, track and step are the tool's for `values`
+/// ([`Tool::range`], decision 30), the tool's defaults for every tool's own test,
 /// and other values where its range moves, as AgX's pivot's does with the input range.
 pub fn slider_differences(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     values: &Controls,
     darktable: &[DarktableSlider],
 ) -> Vec<String> {
-    let definition = module.definition();
+    let definition = tool.definition();
     let close = |a: f32, b: f32| (a - b).abs() <= 1e-5 * a.abs().max(b.abs()).max(1.0);
     let same = |a: (f32, f32), b: (f32, f32)| close(a.0, b.0) && close(a.1, b.1);
     let mut differences = Vec::new();
@@ -1024,9 +1024,9 @@ pub fn slider_differences(
         let (id, range, step, decimals, soft) = match *row {
             Row::Slider(slider) => {
                 let id = slider.control;
-                // A row's own soft range stands while the module's range is the
+                // A row's own soft range stands while the tool's range is the
                 // definition's.
-                if let (Some(ours), Some(moved)) = (definition.range(id), module.range(id, values))
+                if let (Some(ours), Some(moved)) = (definition.range(id), tool.range(id, values))
                     && moved != ours
                 {
                     let soft = Some(moved.soft);
@@ -1449,14 +1449,14 @@ mod tests {
             ..keys
         };
         assert_eq!(spread(None, command).writes.choice("size"), 0);
-        // Nothing for a reading that equals the module's last, as RGB levels'.
+        // Nothing for a reading that equals the tool's last, as RGB levels'.
         assert_eq!(pick("spread", &warm, None, Some(&warm), keys), None);
         // Show writes nothing and shows the output's patch.
         let both = reading([0.1; 3], Some([0.2, 0.4, 0.6]));
         let shown = pick("show", &both, None, None, keys).unwrap();
         assert!(shown.writes.is_empty());
         assert_eq!(shown.shown.patch.unwrap().srgb, [0.2, 0.4, 0.6]);
-        // A picker it lacks, and a module's provided pick, give nothing.
+        // A picker it lacks, and a tool's provided pick, give nothing.
         assert_eq!(pick("contrast", &both, None, None, keys), None);
         let provided = Faulty.pick("show", &both, &values, &image, &[], None, None, keys);
         assert_eq!(provided, None);

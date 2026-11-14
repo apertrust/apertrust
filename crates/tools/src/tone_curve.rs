@@ -25,7 +25,7 @@
 //! - **Advanced:** Preserve colours, what the Luma curve acts on in each pixel: luminance,
 //!   as by default, or max, average, sum, norm or basic power, RGB curve's other norms.
 //! - **RGB, Red, Green and Blue** have no rows, so the panel draws their tabs disabled;
-//!   they give way to RGB curve's tabs when the module becomes RGB curve (decision 2).
+//!   they give way to RGB curve's tabs when the tool becomes RGB curve (decision 2).
 //!
 //! It drives one `rgbcurve` instance, linked, monotone Hermite and middle grey
 //! compensated, planned only while the Luma curve is not straight: a
@@ -50,7 +50,7 @@ const RGB_CURVE: &str = "rgbcurve";
 pub const LUMA: &str = "luma_points";
 pub const PRESERVE: &str = "preserve_colour";
 
-/// The curve's ends, which hold still: the module adds them to the points it stores, which
+/// The curve's ends, which hold still: the tool adds them to the points it stores, which
 /// lie between them, so a saved edit keeps its meaning whatever the handles come to set.
 pub const ENDS: [[f32; 2]; 2] = [[0.0, 0.0], [1.0, 1.0]];
 
@@ -110,7 +110,7 @@ static DEFINITION: Definition = Definition {
                 controls: &[LUMA],
             }],
         },
-        // To come when the module becomes RGB curve (decision 2).
+        // To come when the tool becomes RGB curve (decision 2).
         Tab {
             id: Some("rgb"),
             rows: &[],
@@ -174,8 +174,8 @@ const SETTINGS: [&str; 9] = [
 
 const OWNED: usize = 3 * NODES_PER_CURVE * 2 + SETTINGS.len();
 
-/// Every RGB curve parameter: the module owns all of them, and no other
-/// module sets them.
+/// Every RGB curve parameter: the tool owns all of them, and no other
+/// tool sets them.
 static OWNS: [Owned; OWNED] = owns();
 
 const fn owns() -> [Owned; OWNED] {
@@ -279,7 +279,7 @@ pub fn luma(points: &[[f32; 2]], preserve: u32) -> Vec<Setting> {
 /// pixel), to draw it and to test against: the nodes made linear, darktable's monotone
 /// Hermite tangent at each (`monotone_hermite_set`), cubic Hermite segments between them,
 /// clamped to 0 to 1, and past the last node darktable's power law fitted to the curve,
-/// by the curve maths RGB curve's setup uses (`apertrust_color::curve`). The module's
+/// by the curve maths RGB curve's setup uses (`apertrust_color::curve`). The tool's
 /// tests hold the knots it builds to those the setup builds from the binding.
 ///
 /// It is the curve a grey's luminance goes through. With Preserve colours on sum or norm,

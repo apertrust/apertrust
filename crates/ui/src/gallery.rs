@@ -1075,7 +1075,7 @@ struct Demo {
     picking: bool,
     scale: usize,
     adaptation: usize,
-    /// The Blended Adaptation's kept marker, as a module's choice has one.
+    /// The Blended Adaptation's kept marker, as a tool's choice has one.
     adaptation_mark: Mark,
     /// White balance's Mode, a preset row: none of its options while the light is the
     /// user's own, the box then showing Custom.
@@ -1360,8 +1360,8 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         }
     });
     ui.add_space(t.spacing.s);
-    // Dropdown rows, Boxed as everywhere but module panels; then the same rows Blended, as
-    // module panels draw them, at the side panel's width under a slider row whose value
+    // Dropdown rows, Boxed as everywhere but tool panels; then the same rows Blended, as
+    // tool panels draw them, at the side panel's width under a slider row whose value
     // their options end with, stacked as a section stacks rows.
     ui.push_id("boxed", |ui| choices(ui, t, demo, ChoiceStyle::Boxed));
     ui.add_space(t.spacing.s);
@@ -1477,7 +1477,7 @@ type GroupRow = (
 /// that are not ported, a preset row with a picker before its option, showing Custom while
 /// none of its options is chosen, one disabled, and in narrow columns one whose widest
 /// illuminant does not fit beside its label, so the label and the option share the line,
-/// each cut at its end, and narrower still share less. Blended, as in a module panel, the
+/// each cut at its end, and narrower still share less. Blended, as in a tool panel, the
 /// controls have the kept marker, the first kept, and the preset row, which stores
 /// nothing, has none.
 fn choices(ui: &mut Ui, t: &Theme, demo: &mut Demo, style: ChoiceStyle) {
@@ -1888,7 +1888,7 @@ fn mask_histogram(overflowing: bool) -> (Vec<f32>, [f32; 2]) {
     (bins, percentiles)
 }
 
-/// The side panel as the Base tab shows it: Scopes and Layers pinned, the modules below.
+/// The side panel as the Base tab shows it: Scopes and Layers pinned, the tools below.
 /// Photos and History, with nothing behind them yet, are drawn disabled. Its edge, here
 /// at its end as for a panel at the window's start, resizes it.
 fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
@@ -1953,16 +1953,16 @@ fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
             pinned_out.push((1, "Layers", out));
         })
         .show(ui, |ui| {
-            let modules: [&'static str; 5] = [
+            let tools: [&'static str; 5] = [
                 "White balance",
                 "Exposure",
                 "High dynamic range",
                 "Colour grading",
                 "Vignette",
             ];
-            for (k, title) in modules.into_iter().enumerate() {
+            for (k, title) in tools.into_iter().enumerate() {
                 let i = k + 2;
-                let mut section = Section::new(title, open[i]).module().peek(peek);
+                let mut section = Section::new(title, open[i]).edits().peek(peek);
                 if title == "Exposure" {
                     section = section.tabs(&["Basic", "Advanced"], exposure_tab);
                 }

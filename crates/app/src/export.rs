@@ -1529,7 +1529,7 @@ const FORMATS: [Listed; 14] = [
 const JPEG: usize = 2;
 const PNG: usize = 8;
 
-/// darktable's twelve export profiles in its order, by the Output colour profile module's
+/// darktable's twelve export profiles in its order, by the Output colour profile tool's
 /// messages for them.
 const PROFILES: [&str; 12] = [
     "module-colorout-control-type-option-srgb",

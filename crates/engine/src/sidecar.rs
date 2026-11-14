@@ -17,44 +17,44 @@
 //! Edits saved beside the photo (`docs/library.md`, Sidecars): `IMG.ARW.apxmp`,
 //! an XMP file. Version 2 (decisions 47 and 78), which the engine writes, holds the edit's
 //! history ([`crate::history`]): its virtual copies, the first the one a photo opens, each
-//! with its clock vector, its log of steps and its end, each step one module's whole state
-//! after it written as version 1 writes a module. The edit is the log's fold. Version 1
-//! (decision 28) held the [`Edit`] alone: each module it touches, in the modules' order,
+//! with its clock vector, its log of steps and its end, each step one tool's whole state
+//! after it written as version 1 writes a tool. The edit is the log's fold. Version 1
+//! (decision 28) held the [`Edit`] alone: each tool it touches, in the tools' order,
 //! with its version, the controls set and its marks, then the operation parameters no
-//! module owns, only of operations an unedited photo runs, each operation with its schema
+//! tool owns, only of operations an unedited photo runs, each operation with its schema
 //! version as version 0 had them (decision 48). It reads as one copy, a step of each of
 //! its entries sharing a batch, and is written as version 2 at the next change.
 //!
 //! The file's text layer, its XMP, structure, versions and build record, is
-//! `apertrust_library::sidecar`'s (decision 54), which knows no module or operation: this
+//! `apertrust_library::sidecar`'s (decision 54), which knows no tool or operation: this
 //! module is the typed reading and writing on top of it. It turns the entries of the
 //! first copy's steps ([`Edits`]), which hold their values as text, into the steps of a
-//! [`Log`] with the module definitions, and a log into entries. See that crate for the
+//! [`Log`] with the tool definitions, and a log into entries. See that crate for the
 //! file's layout.
 //!
 //! Numbers are written in their shortest exact form, choices by option id, points as
 //! `x,y` pairs separated by spaces, and the marks (`apertrust:kept`, `apertrust:auto`)
-//! as lists of control ids. An untouched control is left out. A switched module that is on
+//! as lists of control ids. An untouched control is left out. A switched tool that is on
 //! has `apertrust:enabled="true"`; one off writes no values, and only its marks, where it
 //! has any (decision 32).
 //!
-//! A saved edit always opens (decision 21): a module, control, operation or parameter
+//! A saved edit always opens (decision 21): a tool, control, operation or parameter
 //! the engine does not know, or a value it cannot read, is left out, a number outside
-//! its range is clamped, an older module version is migrated, and a newer module or
+//! its range is clamped, an older tool version is migrated, and a newer tool or
 //! another schema version is read by name, each with a warning, in every entry of every
-//! step. A parameter a module owns, or one of an operation an unedited photo does not
+//! step. A parameter a tool owns, or one of an operation an unedited photo does not
 //! run, is left out with a warning too, and a step left with no entry is left out. Version
 //! 0, which held only operation parameters, still opens that way.
 //!
 //! The file records the build that wrote it, in `x:xmptk` (decision 44's version, which
 //! the binaries hand the engine). An edit a newer Apertrust wrote is told by what it holds
 //! ([`Newer`], decision 43): a file version above [`COPIES_VERSION`], read as this version
-//! lays it out, a module version above its definition's or no whole number, or a module
+//! lays it out, a tool version above its definition's or no whole number, or a tool
 //! this build neither has nor has retired (`apertrust_tools::RETIRED`), whose values a
-//! save would lose, or a module turned on that this build does not switch (decision 32).
+//! save would lose, or a tool turned on that this build does not switch (decision 32).
 //! So is one of whose history the text layer cannot read part ([`Problem`]). Such an edit
-//! opens for viewing only ([`ViewOnly`]); a retired module's values are left out with a
-//! warning, as an older build wrote them. A switched module off that holds a value off its
+//! opens for viewing only ([`ViewOnly`]); a retired tool's values are left out with a
+//! warning, as an older build wrote them. A switched tool off that holds a value off its
 //! defaults, which no build writes, is read as on, with a warning.
 
 use std::collections::HashSet;
@@ -79,7 +79,7 @@ use crate::history::{self, BatchId, Change, Log, Note, Step, StepId, StepSource}
 /// An edit read back: its log and the edit it folds to, the version it was saved as, the
 /// build that wrote it, what could not be used, and the file as text, which a write keeps.
 pub struct Loaded {
-    /// The log's fold, each module's last entry up to the end.
+    /// The log's fold, each tool's last entry up to the end.
     pub edit: Edit,
     /// The first virtual copy's history: a version 1 file's a step of each entry.
     pub log: Log,
@@ -126,10 +126,10 @@ pub fn write(
     path: &Path,
     edit: &Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     build: &str,
 ) -> io::Result<()> {
-    write_xml(path, &to_xml(edit, operations, modules, build))
+    write_xml(path, &to_xml(edit, operations, tools, build))
 }
 
 /// Writes `log` to `path` as `build` writes it ([`log_xml`], [`write_xml`]), through the
@@ -139,25 +139,25 @@ pub fn write_log(
     file: &Edits,
     log: &Log,
     clocks: &[Clock],
-    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
     build: &str,
 ) -> io::Result<()> {
     write_xml(
         path,
-        &log_xml(file, log, clocks, (operations, modules), build),
+        &log_xml(file, log, clocks, (operations, tools), build),
     )
 }
 
-/// Reads the edit at `path` for `operations` and `modules`, with `retired` the ids of the
-/// modules Apertrust has retired ([`from_xml_at`]), its modified time naming a version 1
+/// Reads the edit at `path` for `operations` and `tools`, with `retired` the ids of the
+/// tools Apertrust has retired ([`from_xml_at`]), its modified time naming a version 1
 /// file's steps, logging what is left out.
 pub fn read(
     path: &Path,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
-    let loaded = from_edits(text::read_edits(path)?, operations, modules, retired);
+    let loaded = from_edits(text::read_edits(path)?, operations, tools, retired);
     for warning in &loaded.warnings {
         tracing::warn!(target: "pipe", "{}: {warning}", path.display());
     }
@@ -165,20 +165,20 @@ pub fn read(
 }
 
 /// The XMP of an edit as `build` writes version 1, the build recorded in `x:xmptk`: every
-/// module it touches in the order of `modules`, then every operation it sets a parameter
+/// tool it touches in the order of `tools`, then every operation it sets a parameter
 /// of in the order of `operations`. Every build reads it; the engine writes version 2
 /// ([`log_xml`]).
 pub fn to_xml(
     edit: &Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     build: &str,
 ) -> String {
     let mut document = Document::new(build);
-    for module in modules {
-        let definition = module.definition();
-        if let Some(values) = edit.modules.get(definition.id).filter(|v| !v.is_empty()) {
-            document.entries.push(module_entry(definition, values));
+    for tool in tools {
+        let definition = tool.definition();
+        if let Some(values) = edit.tools.get(definition.id).filter(|v| !v.is_empty()) {
+            document.entries.push(tool_entry(definition, values));
         }
     }
     for operation in operations {
@@ -198,7 +198,7 @@ pub fn log_xml(
     file: &Edits,
     log: &Log,
     clocks: &[Clock],
-    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
     build: &str,
 ) -> String {
     let first = file.copies.first();
@@ -209,7 +209,7 @@ pub fn log_xml(
         end: (log.steps()[..log.end()].last()).map_or_else(String::new, |step| step.id.to_string()),
         clocks: clocks.to_vec(),
         history: (log.steps().iter())
-            .map(|step| step_text(step, operations, modules))
+            .map(|step| step_text(step, operations, tools))
             .collect(),
     };
     let others = file.copies.iter().skip(1).cloned();
@@ -225,26 +225,26 @@ pub fn log_xml(
     .to_xml()
 }
 
-/// Reads an edit's XMP for `operations` and `modules` ([`from_xml_at`]), as a file with no
+/// Reads an edit's XMP for `operations` and `tools` ([`from_xml_at`]), as a file with no
 /// modified time.
 pub fn from_xml(
     xml: &str,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
-    from_xml_at(xml, None, operations, modules, retired)
+    from_xml_at(xml, None, operations, tools, retired)
 }
 
-/// Reads an edit's XMP for `operations` and `modules`, its file last modified at
-/// `modified`, which a version 1 file's steps take as their time. A module none of them
-/// is, but one of `retired`, the ids of the modules Apertrust has retired, is an older
-/// build's: left out with a warning, as any unknown module is, but not [`Newer`].
+/// Reads an edit's XMP for `operations` and `tools`, its file last modified at
+/// `modified`, which a version 1 file's steps take as their time. A tool none of them
+/// is, but one of `retired`, the ids of the tools Apertrust has retired, is an older
+/// build's: left out with a warning, as any unknown tool is, but not [`Newer`].
 pub fn from_xml_at(
     xml: &str,
     modified: Option<SystemTime>,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     let modified = (modified.and_then(|modified| modified.duration_since(UNIX_EPOCH).ok()))
@@ -252,16 +252,16 @@ pub fn from_xml_at(
             u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
         });
     let file = Edits::parse(xml, modified)?;
-    Ok(from_edits(file, operations, modules, retired))
+    Ok(from_edits(file, operations, tools, retired))
 }
 
 /// The log the first copy of `file` holds, and the edit it folds to, for `operations` and
-/// `modules`: every entry of every step read as version 1's entry is, a step none of whose
+/// `tools`: every entry of every step read as version 1's entry is, a step none of whose
 /// entries this build keeps left out, its place in the end with it.
 fn from_edits(
     file: Edits,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     retired: &[&str],
 ) -> Loaded {
     let mut newer = file.newer();
@@ -279,7 +279,7 @@ fn from_edits(
             let mut entries = Vec::new();
             for entry in &step.entries {
                 let (read, found) =
-                    read_entry(entry.clone(), &mut warnings, (operations, modules), retired);
+                    read_entry(entry.clone(), &mut warnings, (operations, tools), retired);
                 newer = newer.or(found);
                 entries.extend(read);
             }
@@ -307,7 +307,7 @@ fn from_edits(
 }
 
 /// A step of the text layer's with `entries`, its entries read: Reset's where it is noted
-/// `history-reset` or holds other than one entry, else its one module's. What cannot be
+/// `history-reset` or holds other than one entry, else its one tool's. What cannot be
 /// read, which the text layer told as a [`Problem`], is read as nothing: an id or a batch
 /// as 0, a source as You, a clock as the unknown machine's at 1970.
 fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
@@ -331,40 +331,40 @@ fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
     }
 }
 
-/// One entry of a step read for `operations` and `modules`: a module's whole state, or an
-/// operation's unowned parameters; a newer build's module, which this build does not have,
+/// One entry of a step read for `operations` and `tools`: a tool's whole state, or an
+/// operation's unowned parameters; a newer build's tool, which this build does not have,
 /// by its stored name with no value, so the History tab lists it in an edit open for
 /// viewing only, never written; or nothing where this build keeps none of it, a retired
-/// module or an operation it does not run unedited. And what in it tells a newer Apertrust
+/// tool or an operation it does not run unedited. And what in it tells a newer Apertrust
 /// wrote it, if anything does.
 fn read_entry(
     entry: Entry,
     warnings: &mut Vec<String>,
-    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
     retired: &[&str],
 ) -> (Option<history::Entry>, Option<Newer>) {
     let mut read = Edit::default();
     match entry {
         Entry::Tool {
-            tool: module,
+            tool,
             version,
             kept,
             auto,
             enabled,
             controls,
         } => {
-            let newer = read_module(
+            let newer = read_tool(
                 &mut read,
                 warnings,
-                (modules, retired),
-                (&module, version.as_deref()),
+                (tools, retired),
+                (&tool, version.as_deref()),
                 [(kept, Mark::Kept), (auto, Mark::Auto)],
                 (enabled, controls),
             );
-            let known = modules.iter().any(|m| m.definition().id == module);
+            let known = tools.iter().any(|m| m.definition().id == tool);
             let entry = (known || newer.is_some()).then(|| history::Entry::Tool {
-                values: read.modules.remove(&module).unwrap_or_default(),
-                tool: module,
+                values: read.tools.remove(&tool).unwrap_or_default(),
+                tool,
             });
             (entry, newer)
         }
@@ -380,7 +380,7 @@ fn read_entry(
                 &mut read,
                 warnings,
                 operations,
-                modules,
+                tools,
                 (&operation, schema),
                 params,
             );
@@ -395,7 +395,7 @@ fn read_entry(
 
 /// A step as the text layer holds it: its id, clock, source, note and batch as text, and
 /// its entries each as version 1 writes one.
-fn step_text(step: &Step, operations: &[&dyn Operation], modules: &[&dyn Tool]) -> text::Step {
+fn step_text(step: &Step, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> text::Step {
     text::Step {
         id: step.id.to_string(),
         clock: Some(step.clock),
@@ -406,34 +406,29 @@ fn step_text(step: &Step, operations: &[&dyn Operation], modules: &[&dyn Tool]) 
         }),
         batch: step.batch.map(|batch| batch.to_string()),
         entries: (step.change.entries().iter())
-            .map(|entry| entry_text(entry, operations, modules))
+            .map(|entry| entry_text(entry, operations, tools))
             .collect(),
     }
 }
 
-/// An entry as version 1 writes it; one of a module or an operation this build does not
+/// An entry as version 1 writes it; one of a tool or an operation this build does not
 /// have, which only an edit open for viewing only holds and which is never written, by its
 /// id alone.
-fn entry_text(
-    entry: &history::Entry,
-    operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
-) -> Entry {
+fn entry_text(entry: &history::Entry, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> Entry {
     match entry {
-        history::Entry::Tool {
-            tool: module,
-            values,
-        } => match modules.iter().find(|m| m.definition().id == module) {
-            Some(found) => module_entry(found.definition(), values),
-            None => Entry::Tool {
-                tool: module.clone(),
-                version: None,
-                kept: Vec::new(),
-                auto: Vec::new(),
-                enabled: None,
-                controls: Vec::new(),
-            },
-        },
+        history::Entry::Tool { tool, values } => {
+            match tools.iter().find(|m| m.definition().id == tool) {
+                Some(found) => tool_entry(found.definition(), values),
+                None => Entry::Tool {
+                    tool: tool.clone(),
+                    version: None,
+                    kept: Vec::new(),
+                    auto: Vec::new(),
+                    enabled: None,
+                    controls: Vec::new(),
+                },
+            }
+        }
         history::Entry::Operation { operation, params } => {
             match operations.iter().find(|op| op.manifest().id == operation) {
                 Some(found) => operation_entry(*found, params),
@@ -447,9 +442,9 @@ fn entry_text(
     }
 }
 
-/// A module's state as its entry: its version, its marks, `enabled` where a switched module
+/// A tool's state as its entry: its version, its marks, `enabled` where a switched tool
 /// is on, and each control set, in the definition's order.
-fn module_entry(definition: &Definition, values: &ToolValues) -> Entry {
+fn tool_entry(definition: &Definition, values: &ToolValues) -> Entry {
     let marked = |mark| {
         definition
             .controls
@@ -494,25 +489,25 @@ fn operation_entry(operation: &dyn Operation, params: &ParamValues) -> Entry {
     }
 }
 
-/// Reads one module's entry into `edit`, `enabled` its `apertrust:enabled` as written;
+/// Reads one tool's entry into `edit`, `enabled` its `apertrust:enabled` as written;
 /// what in it tells a newer Apertrust wrote it, if anything does.
-fn read_module(
+fn read_tool(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
-    (modules, retired): (&[&dyn Tool], &[&str]),
+    (tools, retired): (&[&dyn Tool], &[&str]),
     (id, saved): (&str, Option<&str>),
     marks: [(Vec<String>, Mark); 2],
     (enabled, controls): (Option<String>, Vec<(String, String)>),
 ) -> Option<Newer> {
-    let Some(module) = modules.iter().find(|m| m.definition().id == id) else {
+    let Some(tool) = tools.iter().find(|m| m.definition().id == id) else {
         if retired.contains(&id) {
-            warnings.push(format!("module {id} is retired; left out"));
+            warnings.push(format!("tool {id} is retired; left out"));
             return None;
         }
-        warnings.push(format!("no module {id}, a newer Apertrust's; left out"));
+        warnings.push(format!("no tool {id}, a newer Apertrust's; left out"));
         return Some(Newer::Tool(id.to_owned()));
     };
-    let definition = module.definition();
+    let definition = tool.definition();
     let has = definition.version;
     // The saved version as written, and as a number; one that is no whole number is no
     // version this build knows.
@@ -521,7 +516,7 @@ fn read_module(
     // the shape of its text.
     let older = matches!(saved, Some((_, Ok(saved))) if saved < has);
     // `true` is the one value this build writes; any other is a newer build's, which a
-    // save would lose, so the module reads as if it had none and the photo is view-only.
+    // save would lose, so the tool reads as if it had none and the photo is view-only.
     let (enabled, unknown) = match enabled.as_deref().map(str::trim) {
         None => (false, None),
         Some("true") => (true, None),
@@ -552,13 +547,13 @@ fn read_module(
     }
     let newer = match saved {
         Some((_, Ok(saved))) if saved < has => {
-            values = module.migrate(saved, values);
+            values = tool.migrate(saved, values);
             None
         }
         Some((_, Ok(saved))) if saved == has => None,
         Some((saved, _)) => {
             warnings.push(format!(
-                "{id}: module version {saved}, newer than this build's {has}; controls read by name"
+                "{id}: tool version {saved}, newer than this build's {has}; controls read by name"
             ));
             Some(Newer::ToolVersion {
                 tool: id.to_owned(),
@@ -568,7 +563,7 @@ fn read_module(
         }
         None => {
             warnings.push(format!(
-                "{id}: no module version, this build has {has}; controls read by name"
+                "{id}: no tool version, this build has {has}; controls read by name"
             ));
             None
         }
@@ -607,19 +602,19 @@ fn read_module(
     }
     let newer = newer.or(enabled);
     if !checked.is_empty() {
-        edit.modules.insert(definition.id.to_owned(), checked);
+        edit.tools.insert(definition.id.to_owned(), checked);
     }
     newer
 }
 
-/// A module's on or off as read into `checked` from `values`, after its migration
-/// (decision 32): a switched module on as `values` says, or as a value off its
+/// A tool's on or off as read into `checked` from `values`, after its migration
+/// (decision 32): a switched tool on as `values` says, or as a value off its
 /// definition's defaults says, which no build writes for one off, with a warning, so it
-/// renders what it holds. A module this build does not switch is always on, and one
+/// renders what it holds. A tool this build does not switch is always on, and one
 /// turned on is a newer build's.
 ///
-/// The defaults compared are the definition's, not the module's for the photo, as no
-/// image context is known while the file is read: a switched module whose defaults come
+/// The defaults compared are the definition's, not the tool's for the photo, as no
+/// image context is known while the file is read: a switched tool whose defaults come
 /// from the photo, as Lens correction's will, would take a value at its per-photo default
 /// for one off it here, and read as on.
 fn switch(
@@ -678,7 +673,7 @@ fn read_operation(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
     operations: &[&dyn Operation],
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     (id, saved): (&str, Option<u32>),
     params: Vec<(String, String)>,
 ) {
@@ -688,7 +683,7 @@ fn read_operation(
     };
     let manifest = operation.manifest();
     if !manifest.default_enabled {
-        warnings.push(format!("{id}: runs only while a module sets it; left out"));
+        warnings.push(format!("{id}: runs only while a tool sets it; left out"));
         return;
     }
     let schema = operation.schema();
@@ -704,9 +699,9 @@ fn read_operation(
             warnings.push(format!("{id} has no parameter {name}; left out"));
             continue;
         };
-        if let Some(owner) = check::owner(modules, manifest.id, param.name) {
+        if let Some(owner) = check::owner(tools, manifest.id, param.name) {
             warnings.push(format!(
-                "{id}.{name}: the module {} owns it now; left out",
+                "{id}.{name}: the tool {} owns it now; left out",
                 owner.definition().id
             ));
             continue;
@@ -836,7 +831,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// The same, but run only while a module sets it.
+    /// The same, but run only while a tool sets it.
     struct Optional;
 
     static OPTIONAL: Manifest = Manifest {
@@ -877,7 +872,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// A module with a control of each kind, owning `fake.owned`, at version 2; version 1
+    /// A tool with a control of each kind, owning `fake.owned`, at version 2; version 1
     /// called `strength` `amount`.
     struct Look;
 
@@ -1041,7 +1036,7 @@ pub(crate) mod tests {
         )
     }
 
-    /// A version 1 file with one module entry, with these attributes.
+    /// A version 1 file with one tool entry, with these attributes.
     fn version_1(attributes: &str) -> String {
         format!(
             r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF}">
@@ -1149,7 +1144,7 @@ pub(crate) mod tests {
                c:strength="1.5" c:style="medium" c:grain="1" c:curve="0,0 0.5""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
-        let values = &loaded.edit.modules["look"];
+        let values = &loaded.edit.tools["look"];
         assert_eq!(values.number("strength"), Some(1.0));
         assert_eq!(values.mark("strength"), Some(Mark::Kept));
         assert_eq!(values.get("style"), None);
@@ -1165,7 +1160,7 @@ pub(crate) mod tests {
             r#"apertrust:module="sample" apertrust:moduleVersion="1" c:method="film" c:size="fine""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, &[&Sample], &[]).unwrap();
-        let values = &loaded.edit.modules["sample"];
+        let values = &loaded.edit.tools["sample"];
         assert_eq!(values.get("method"), None);
         assert_eq!(values.choice("size"), Some(0));
         assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
@@ -1190,7 +1185,7 @@ pub(crate) mod tests {
         assert_eq!(params.get("owned"), None);
         assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
         assert!(
-            loaded.warnings[0].contains("module look"),
+            loaded.warnings[0].contains("tool look"),
             "{:?}",
             loaded.warnings
         );
@@ -1209,13 +1204,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_older_module_version_is_migrated_and_an_unknown_one_reported() {
+    fn an_older_tool_version_is_migrated_and_an_unknown_one_reported() {
         let older = version_1(
             r#"apertrust:module="look" apertrust:moduleVersion="1" apertrust:kept="strength" c:amount="0.25""#,
         );
         let loaded = from_xml(&older, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
-        assert_eq!(loaded.edit.modules["look"].number("strength"), Some(0.25));
+        assert_eq!(loaded.edit.tools["look"].number("strength"), Some(0.25));
         assert_eq!(loaded.newer, None);
         let newer = older.replace(r#"moduleVersion="1""#, r#"moduleVersion="3""#);
         let loaded = from_xml(&newer, OPERATIONS, TOOLS, &[]).unwrap();
@@ -1249,10 +1244,10 @@ pub(crate) mod tests {
         assert_eq!(loaded.newer, Some(Newer::Tool("lens".to_owned())));
     }
 
-    /// A module Apertrust has retired, as the Tone curve's `tone_curve` once RGB curve
+    /// A tool Apertrust has retired, as the Tone curve's `tone_curve` once RGB curve
     /// replaces it, was written by an older build: left out with a warning, never newer.
     #[test]
-    fn a_retired_module_is_left_out_with_a_warning_and_is_not_newer() {
+    fn a_retired_tool_is_left_out_with_a_warning_and_is_not_newer() {
         let xml = version_1(r#"apertrust:module="lens" apertrust:moduleVersion="4" c:amount="1""#)
             .replace(
                 "</rdf:Seq></apertrust:modules>",
@@ -1265,11 +1260,11 @@ pub(crate) mod tests {
             "{:?}",
             loaded.warnings
         );
-        assert_eq!(loaded.edit.modules.len(), 1);
-        assert_eq!(loaded.edit.modules["look"].number("strength"), Some(0.5));
-        // A module the build has wins over a retired id it took again.
+        assert_eq!(loaded.edit.tools.len(), 1);
+        assert_eq!(loaded.edit.tools["look"].number("strength"), Some(0.5));
+        // A tool the build has wins over a retired id it took again.
         let loaded = from_xml(&xml, OPERATIONS, TOOLS, &["look", "lens"]).unwrap();
-        assert_eq!(loaded.edit.modules["look"].number("strength"), Some(0.5));
+        assert_eq!(loaded.edit.tools["look"].number("strength"), Some(0.5));
     }
 
     /// An edit Exposure's version 1 saved, with the Contrast and Pivot it once had: its
@@ -1278,19 +1273,19 @@ pub(crate) mod tests {
     /// Contrast is not set from them (decision 2: no released edit holds them).
     #[test]
     fn exposure_s_version_1_exposure_contrast_and_pivot_are_left_out_and_the_rest_reads() {
-        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
+        let (operations, tools) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
         let xml = version_1(
             r#"apertrust:module="exposure" apertrust:moduleVersion="1" apertrust:kept="exposure contrast black_level" c:exposure="0.5" c:contrast="12" c:pivot="25" c:black_level="0.01""#,
         );
-        let loaded = from_xml(&xml, operations, modules, &[]).unwrap();
+        let loaded = from_xml(&xml, operations, tools, &[]).unwrap();
         assert_eq!(loaded.warnings.len(), 4, "{:?}", loaded.warnings);
-        let exposure = &loaded.edit.modules["exposure"];
+        let exposure = &loaded.edit.tools["exposure"];
         assert_eq!(exposure.get("exposure"), None);
         assert_eq!(exposure.mark("exposure"), None);
         assert_eq!(exposure.number("black_level"), Some(0.01));
         assert_eq!(exposure.mark("black_level"), Some(Mark::Kept));
         assert_eq!(exposure.get("contrast"), None);
-        assert_eq!(loaded.edit.modules.len(), 1);
+        assert_eq!(loaded.edit.tools.len(), 1);
     }
 
     #[test]
@@ -1343,13 +1338,13 @@ pub(crate) mod tests {
         assert_eq!(to_xml(&loaded.edit, OPERATIONS, TOOLS, BUILD), fixture);
     }
 
-    /// Grain, a switched module (decision 32), with the fake's modules.
+    /// Grain, a switched tool (decision 32), with the fake's tools.
     const WITH_GRAIN: &[&dyn Tool] = &[&Look, &apertrust_tools::grain::Grain];
 
-    /// A switched module on writes `enabled`, with only its values off darktable's
+    /// A switched tool on writes `enabled`, with only its values off darktable's
     /// defaults, none at them; one off, only its marks, and nothing at all untouched.
     #[test]
-    fn a_switched_module_on_writes_enabled_and_one_off_no_values() {
+    fn a_switched_tool_on_writes_enabled_and_one_off_no_values() {
         use apertrust_tools::grain::Grain;
         let image = apertrust_tools::testing::image();
         let mut edit = Edit::default();
@@ -1382,11 +1377,11 @@ pub(crate) mod tests {
         assert!(!xml.contains("grain"), "{xml}");
     }
 
-    /// A version 1 entry of a module that has since become switched migrates on where it
+    /// A version 1 entry of a tool that has since become switched migrates on where it
     /// rendered, with its values, and off, its values dropped, where it did not; it reads
     /// with no warning, and writes back as version 2.
     #[test]
-    fn a_version_1_entry_of_a_switched_module_reads_on_where_it_rendered() {
+    fn a_version_1_entry_of_a_switched_tool_reads_on_where_it_rendered() {
         use apertrust_tools::grain::Grain;
         let xml = version_1(
             r#"apertrust:module="grain" apertrust:moduleVersion="1" apertrust:kept="strength" c:strength="37.3" c:scale="800""#,
@@ -1411,8 +1406,8 @@ pub(crate) mod tests {
         assert!(loaded.edit.is_empty());
     }
 
-    /// A switched module off that holds a value off its defaults, which no build writes,
-    /// reads as on with a warning; `enabled` on a module this build does not switch is a
+    /// A switched tool off that holds a value off its defaults, which no build writes,
+    /// reads as on with a warning; `enabled` on a tool this build does not switch is a
     /// newer build's, so the photo opens for viewing only.
     #[test]
     fn enabled_is_repaired_or_read_as_a_newer_build_s() {
@@ -1437,7 +1432,7 @@ pub(crate) mod tests {
     }
 
     /// `enabled` holding anything but `true` is a newer build's, which a save would lose:
-    /// the photo opens for viewing only, the module read as if it had none.
+    /// the photo opens for viewing only, the tool read as if it had none.
     #[test]
     fn enabled_other_than_true_is_a_newer_build_s() {
         use apertrust_tools::grain::Grain;
@@ -1475,7 +1470,7 @@ pub(crate) mod tests {
     fn look(edit: &Edit) -> history::Entry {
         history::Entry::Tool {
             tool: "look".to_owned(),
-            values: edit.modules["look"].clone(),
+            values: edit.tools["look"].clone(),
         }
     }
 
@@ -1783,7 +1778,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Every entry of every step follows decision 48: a newer module version in an old step
+    /// Every entry of every step follows decision 48: a newer tool version in an old step
     /// makes the edit view-only, an older one is migrated entry by entry, and a step whose
     /// only entry this build leaves out goes with its place in the end.
     #[test]
@@ -1959,7 +1954,7 @@ pub(crate) mod tests {
     #[ignore = "a measurement, run on its own in release"]
     fn a_1000_step_log_reads_within_20_ms_and_writes_within_50_ms() {
         use apertrust_tools::exposure::Exposure;
-        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
+        let (operations, tools) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
         let image = apertrust_tools::testing::image();
         let mut log = Log::default();
         let mut edit = Edit::default();
@@ -1985,20 +1980,20 @@ pub(crate) mod tests {
         let folder = std::env::temp_dir().join(format!("apertrust-1000-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
         let path = path_for(&folder.join("DSCF0001.RAF"));
-        let xml = log_xml(&file, &log, &clocks, (operations, modules), BUILD);
+        let xml = log_xml(&file, &log, &clocks, (operations, tools), BUILD);
         let serialise = median_ms(9, || {
-            log_xml(&file, &log, &clocks, (operations, modules), BUILD);
+            log_xml(&file, &log, &clocks, (operations, tools), BUILD);
         });
         // A write of new bytes each time, as each change makes, through the safe write.
         let mut turn = 0;
         let write = median_ms(9, || {
             turn += 1;
             let build = format!("{BUILD}.{turn}");
-            write_log(&path, &file, &log, &clocks, (operations, modules), &build).unwrap();
+            write_log(&path, &file, &log, &clocks, (operations, tools), &build).unwrap();
         });
         let mut read_back = None;
         let read = median_ms(9, || {
-            read_back = Some(super::read(&path, operations, modules, &[]).unwrap());
+            read_back = Some(super::read(&path, operations, tools, &[]).unwrap());
         });
         let loaded = read_back.unwrap();
         assert_eq!(loaded.log.steps().len(), 1000);

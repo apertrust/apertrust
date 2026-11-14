@@ -119,7 +119,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `grain`: the module is darktable's and owns them all.
+/// Every parameter of `grain`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 3] = [
     Owned::new(GRAIN, "scale"),
     Owned::new(GRAIN, "strength"),
@@ -278,7 +278,7 @@ mod tests {
     }
 
     /// Each control sets its parameter alone, whatever the strength holds: grain is
-    /// switched, so the session plans it while the module is on, not while the strength is
+    /// switched, so the session plans it while the tool is on, not while the strength is
     /// off 0.
     #[test]
     fn each_control_sets_its_parameter_alone() {

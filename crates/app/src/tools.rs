@@ -14,41 +14,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The module panel renderer (`docs/gui.md`, Tool panels from definitions; decision 28):
-//! any module's section, drawn from its definition and the session mirror's values, with
-//! no code of the module's own.
+//! The tool panel renderer (`docs/gui.md`, Tool panels from definitions; decision 28):
+//! any tool's section, drawn from its definition and the session mirror's values, with
+//! no code of the tool's own.
 //!
-//! - The section is `Section::module()`: its title, its tabs when it has more than one,
+//! - The section is `Section::edits()`: its title, its tabs when it has more than one,
 //!   Auto drawn disabled until Auto runs, and presets and options drawn disabled until
 //!   something is behind them. Closed, it shows its header alone.
 //! - Each row is a design-system component: a slider is a `SliderRow`, its track over
 //!   darktable's soft range where the definition gives one, a choice a `Choice` in its
 //!   Blended style, darktable's combobox, with its kept marker (decision 42), or
 //!   `Segmented`, a toggle a `ToggleRow`, a label a `group_label`, a collapsible group a
-//!   `CollapsibleGroup`, a curve of points a `Curve`, drawn through the curve the module
+//!   `CollapsibleGroup`, a curve of points a `Curve`, drawn through the curve the tool
 //!   says it renders, and the tone equalizer's graph of its bands an `Equalizer`, drawn
-//!   through the curve the module says it renders through them. The closed registry's
-//!   other painted widgets join with the modules that use them.
+//!   through the curve the tool says it renders through them. The closed registry's
+//!   other painted widgets join with the tools that use them.
 //! - A preset row (decision 2) is a Blended `Choice`, with no marker, showing the option
 //!   the session reports the controls hold, or Custom, which is no option; the options this
 //!   photo cannot have are listed disabled, and choosing one applies it as one change.
 //! - A slider row naming a lossless view's coordinate (decision 2) shows it as the
 //!   session reports it, and sets, resets and keeps it as a control. While a change is
 //!   pending, [`Pending::show`] moves the view's controls and its coordinates as the
-//!   session will, through the module's own `view` and `unview`, so a drag follows at once.
+//!   session will, through the tool's own `view` and `unview`, so a drag follows at once.
 //! - The page is darktable's (decision 29): the rows before every tab's, the
 //!   open tab's, then those after; rows that follow another control's mode only while it
 //!   holds one of their values; a choice's options its operation does not port listed
 //!   disabled. A collapsible group's open state is the app's, kept in settings, and its
 //!   "N set" counts the controls it shows that are off their defaults. darktable's own
-//!   settings for a module, which no edit stores, are drawn disabled until what uses them
+//!   settings for a tool, which no edit stores, are drawn disabled until what uses them
 //!   is built.
 //! - A tab with no rows is drawn disabled: nothing is behind it yet.
 //! - A colour picker (decision 79; `docs/pickers.md`, The picker button) is the design
 //!   system's `PickerButton`: on a slider's quad in its quad mode, and in a row of pickers
 //!   as toggle buttons at the row's end, each on while its picker is the active one, and
 //!   disabled with the reason on a photo not yet live or open for viewing only. A press
-//!   comes back as [`Change::Picker`]. Only the modules whose pick is built draw theirs
+//!   comes back as [`Change::Picker`]. Only the tools whose pick is built draw theirs
 //!   ([`PICKING`]): a quad with nothing behind it is not drawn.
 //! - Values, defaults and marks come from the mirror, a control that can change nothing
 //!   on the photo, or that another control's value disables (decision 30), is drawn
@@ -56,7 +56,7 @@
 //!   comes back as a [`Change`]: the session's commands, which the app sends through its
 //!   pending values so a slider never jumps back, and the section's own state, which the
 //!   app keeps. While a change is pending, [`Pending::show`] moves availability with the
-//!   values, through the module's own `available`.
+//!   values, through the tool's own `available`.
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -83,85 +83,85 @@ use eframe::egui;
 use crate::pickers::Picked;
 use crate::settings::ToolSettings;
 
-/// What the user did to a module's section this frame.
+/// What the user did to a tool's section this frame.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Change {
     /// A control's new value, `done` on the last change of a gesture: `SetControl`. A
     /// lossless view's coordinate is set, reset and kept as a control (decision 2).
     Set {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         value: ControlValue,
         done: bool,
     },
     /// A control back to its default, by a double-click or Delete: `ResetControl`.
     Reset {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
     },
     /// The marker, keeping or releasing a control, or a coordinate's view's controls: `Keep`.
     Keep {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         kept: bool,
     },
     /// The header's reset: `ResetTool`.
-    ResetTool { module: &'static str },
+    ResetTool { tool: &'static str },
     /// Several of these changes as one history step, `Step { source: You }` (decision 78):
     /// the tone equalizer's release of the bands a drag moved, and its reset of the bands.
     Step(Vec<Change>),
     /// One of darktable's buttons of a button row, run on the values shown: the app sends
-    /// each control the module's `action` writes as `SetControl`, one change.
+    /// each control the tool's `action` writes as `SetControl`, one change.
     Action {
-        module: &'static str,
+        tool: &'static str,
         action: &'static str,
         values: Controls,
     },
     /// An option of a preset row, setting the controls it writes: `ApplyPreset`.
     ApplyPreset {
-        module: &'static str,
+        tool: &'static str,
         preset: &'static str,
         option: &'static str,
     },
     /// The section opened or closed: the app's own state.
-    Toggle { module: &'static str },
+    Toggle { tool: &'static str },
     /// Another of the section's tabs: the app's own state.
-    Tab { module: &'static str, tab: usize },
+    Tab { tool: &'static str, tab: usize },
     /// One of its collapsible groups opened or closed: the app's own state, kept in
-    /// settings by module and group, never in the edit.
+    /// settings by tool and group, never in the edit.
     Group {
-        module: &'static str,
+        tool: &'static str,
         group: &'static str,
     },
     /// A colour picker's button pressed, with the keys held: `PickerCommand::On`, or `Off`
     /// for the picker on, since `On` for it would start it again (`docs/pickers.md`,
     /// Against darktable).
     Picker {
-        module: &'static str,
+        tool: &'static str,
         picker: &'static str,
         action: PickerAction,
         keys: PickKeys,
     },
-    /// One of the module's settings, kept by the app in its settings, never in the edit
+    /// One of the tool's settings, kept by the app in its settings, never in the edit
     /// (decision 29): `done` on the last change of a gesture, when the app sends the
-    /// module's settings as `PickerCommand::Settings`.
+    /// tool's settings as `PickerCommand::Settings`.
     Setting {
-        module: &'static str,
+        tool: &'static str,
         setting: &'static str,
         value: ControlValue,
         done: bool,
     },
 }
 
-/// The modules whose pickers the panel draws: those whose pick is built, each joining with
-/// it (`docs/pickers.md`, The plan): Exposure's. Until then a module's quad, its picker
+/// The tools whose pickers the panel draws: those whose pick is built, each joining with
+/// it (`docs/pickers.md`, The plan): Exposure's. Until then a tool's quad, its picker
 /// rows and its patches' input are not drawn, as a quad with nothing behind it is not.
 pub const PICKING: &[&str] = &["exposure"];
 
 /// The colour pickers as a section draws them.
 #[derive(Debug, Clone, Copy)]
 pub struct Pickers<'a> {
-    /// The modules whose pickers are drawn ([`PICKING`]).
+    /// The tools whose pickers are drawn ([`PICKING`]).
     pub drawn: &'a [&'a str],
     /// The picker on, as the app shows it.
     pub on: Option<PickerRef>,
@@ -170,14 +170,14 @@ pub struct Pickers<'a> {
     /// Why not, where there is a reason to tell: the photo opening, or open for viewing
     /// only.
     pub why: Option<&'a str>,
-    /// The modules' settings as the app keeps them: a setting kept there is drawn live,
+    /// The tools' settings as the app keeps them: a setting kept there is drawn live,
     /// any other disabled at its default until what uses it is built.
     pub settings: &'a ToolSettings,
-    /// What the modules' picks showed on the photo, for their patches.
+    /// What the tools' picks showed on the photo, for their patches.
     pub picked: &'a Picked,
 }
 
-/// No module setting kept and nothing picked.
+/// No tool setting kept and nothing picked.
 #[cfg(test)]
 static NO_SETTINGS: ToolSettings = ToolSettings::new();
 #[cfg(test)]
@@ -185,7 +185,7 @@ static NOTHING_PICKED: Picked = Picked::new();
 
 #[cfg(test)]
 impl Pickers<'static> {
-    /// No module's pickers drawn.
+    /// No tool's pickers drawn.
     pub const NONE: Self = Pickers {
         drawn: &[],
         on: None,
@@ -196,30 +196,30 @@ impl Pickers<'static> {
     };
 }
 
-/// Whether a module's section is open when settings have not kept it otherwise.
+/// Whether a tool's section is open when settings have not kept it otherwise.
 pub const OPEN: bool = true;
 
 /// Whether a collapsible group is open when settings have not kept it otherwise: closed,
 /// as darktable's start (decision 29).
 pub const GROUP_OPEN: bool = false;
 
-/// The tab each module's section shows, the first by default (`docs/gui.md`, A frame).
+/// The tab each tool's section shows, the first by default (`docs/gui.md`, A frame).
 /// Whether a section is open is the shell's, which settings keep (`Shell::section_open`,
-/// by the module's id); the tab lasts for the run.
+/// by the tool's id); the tab lasts for the run.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Panels {
     tabs: BTreeMap<&'static str, usize>,
 }
 
 impl Panels {
-    pub fn tab(&self, module: &str) -> usize {
-        self.tabs.get(module).copied().unwrap_or_default()
+    pub fn tab(&self, tool: &str) -> usize {
+        self.tabs.get(tool).copied().unwrap_or_default()
     }
 
     /// Applies a change of tab; the others are the app's.
     pub fn apply(&mut self, change: &Change) {
-        if let Change::Tab { module, tab } = *change {
-            self.tabs.insert(module, tab);
+        if let Change::Tab { tool, tab } = *change {
+            self.tabs.insert(tool, tab);
         }
     }
 }
@@ -230,63 +230,63 @@ impl Panels {
 pub enum Pending {
     /// A control's new value, or a lossless view's coordinate's (`Command::SetControl`).
     Control {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         value: ControlValue,
     },
     /// A control or a coordinate back to its default (`Command::ResetControl`).
     Reset {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
     },
     /// A control kept or released, its value as it is, or a coordinate's view's controls
     /// (`Command::Keep`).
     Keep {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         kept: bool,
     },
-    /// Every control of a module back to its default (`Command::ResetTool`).
-    ResetTool { module: &'static str },
+    /// Every control of a tool back to its default (`Command::ResetTool`).
+    ResetTool { tool: &'static str },
 }
 
 impl Pending {
-    /// The module it changes.
-    pub fn module(&self) -> &'static str {
+    /// The tool it changes.
+    pub fn tool(&self) -> &'static str {
         match *self {
-            Pending::Control { module, .. }
-            | Pending::Reset { module, .. }
-            | Pending::Keep { module, .. }
-            | Pending::ResetTool { module } => module,
+            Pending::Control { tool, .. }
+            | Pending::Reset { tool, .. }
+            | Pending::Keep { tool, .. }
+            | Pending::ResetTool { tool } => tool,
         }
     }
 
-    /// Shows the change in `state`, `module`'s values as the app shows them, as the session
+    /// Shows the change in `state`, `tool`'s values as the app shows them, as the session
     /// will report it: a control set shows its value, kept, as the session keeps it, and
     /// one reset its default, released.
     ///
     /// A lossless view (decision 2) moves as the session's edit moves it, through the
-    /// module's pure `view` and `unview` on `image`. A coordinate set or reset writes
+    /// tool's pure `view` and `unview` on `image`. A coordinate set or reset writes
     /// `unview` of the view's coordinates as shown, that one replaced, into the view's
     /// controls, each kept, and leaves the other coordinates exactly as shown; a change
     /// that moves one of those controls to another value, through its own row or another
-    /// view over it, shows the module's `view` of the values shown, and so does a reset
+    /// view over it, shows the tool's `view` of the values shown, and so does a reset
     /// of one, which takes its value out of the edit. The coordinates shown stand in for
     /// the session's held ones (`edit::Held`): a report carries those it holds through a
     /// gesture, else its view of the stored values, and it holds them while the view's
     /// controls keep the values it wrote, which is when the coordinates shown stay here. What
     /// the session would refuse, a coordinate outside its range or a control `unview` puts
-    /// outside its own, shows nothing, and so does a view the module does not give, or
-    /// whose `view` or `unview` panics: the module's code never takes the UI thread down.
+    /// outside its own, shows nothing, and so does a view the tool does not give, or
+    /// whose `view` or `unview` panics: the tool's code never takes the UI thread down.
     ///
     /// Availability follows the values shown as the session's next report will (decision
-    /// 30), through the module's pure `available`, so a control another's value disables
+    /// 30), through the tool's pure `available`, so a control another's value disables
     /// is drawn disabled at once, its value kept ([`follow_availability`]); and so does a
-    /// number's range, through the module's pure `range`, a value the moved range leaves
+    /// number's range, through the tool's pure `range`, a value the moved range leaves
     /// outside shown clamped, as the session will store it (decision 30,
     /// [`follow_ranges`]).
-    pub fn show(&self, module: &dyn Tool, state: &mut ToolState, image: &ImageContext) {
-        let definition = module.definition();
+    pub fn show(&self, tool: &dyn Tool, state: &mut ToolState, image: &ImageContext) {
+        let definition = tool.definition();
         let before = values(state);
         match *self {
             Pending::Control {
@@ -294,8 +294,8 @@ impl Pending {
             } => match definition.coordinate(control) {
                 Some((view, at)) => {
                     if let Ok(value) = view.coordinates[at].check(value) {
-                        set_coordinate(module, state, view, at, value, image);
-                        // Any write turns a switched module on (decision 32).
+                        set_coordinate(tool, state, view, at, value, image);
+                        // Any write turns a switched tool on (decision 32).
                         state.enabled = true;
                     }
                 }
@@ -304,19 +304,19 @@ impl Pending {
                         state.enabled = true;
                     }
                     if put(state, control, value.clone(), Some(Mark::Kept)) {
-                        follow(module, state, &[control], None, image);
+                        follow(tool, state, &[control], None, image);
                     }
                 }
             },
             Pending::Reset { control, .. } => match definition.coordinate(control) {
-                Some((view, at)) => reset_coordinate(module, state, view, at, image),
+                Some((view, at)) => reset_coordinate(tool, state, view, at, image),
                 None => {
                     // A reset takes the control's value out of the edit, which ends every
                     // hold over it however the value shows.
                     let default = self::control(state, control).map(|c| c.default.clone());
                     if let Some(default) = default {
                         put(state, control, default, None);
-                        follow(module, state, &[control], None, image);
+                        follow(tool, state, &[control], None, image);
                     }
                 }
             },
@@ -339,38 +339,38 @@ impl Pending {
                 for shown in &mut state.views {
                     shown.value = shown.default;
                 }
-                // The reset turns a switched module off (decision 32).
+                // The reset turns a switched tool off (decision 32).
                 state.enabled = !definition.switched;
             }
         }
-        follow_ranges(module, state, &before);
+        follow_ranges(tool, state, &before);
         coordinate_marks(definition, state);
-        follow_availability(module, state, &before, image);
-        state.edited = edited(module, state);
+        follow_availability(tool, state, &before, image);
+        state.edited = edited(tool, state);
     }
 }
 
-/// Whether the module's reset would change what `state` shows rendered, as the session
+/// Whether the tool's reset would change what `state` shows rendered, as the session
 /// reports it (`ToolState::edited`): a control off its default for the photo, or a
-/// switched module on (decision 32). Its reset is available only then.
-pub fn edited(module: &dyn Tool, state: &ToolState) -> bool {
-    (module.definition().switched && state.enabled)
+/// switched tool on (decision 32). Its reset is available only then.
+pub fn edited(tool: &dyn Tool, state: &ToolState) -> bool {
+    (tool.definition().switched && state.enabled)
         || state.controls.iter().any(|c| c.value != c.default)
 }
 
 /// Shows each number's range as the session will report it now that the values `state`
 /// shows have moved from `before` (decision 30): first a number a moved range leaves
 /// outside, clamped through the function the edit clamps with ([`check::clamp`]), kept, or
-/// released at its default; then, where the module's `range` answers otherwise for the
+/// released at its default; then, where the tool's `range` answers otherwise for the
 /// values shown than for `before`, the new range, held to the definition's
-/// (`edit::range`). Every other range shows what the session reported. A module whose
+/// (`edit::range`). Every other range shows what the session reported. A tool whose
 /// `range` panics leaves the values and ranges as reported, as `available` panicking does.
-fn follow_ranges(module: &dyn Tool, state: &mut ToolState, before: &Controls) {
+fn follow_ranges(tool: &dyn Tool, state: &mut ToolState, before: &Controls) {
     let after = values(state);
     if after == *before {
         return;
     }
-    let Ok(writes) = catch_unwind(AssertUnwindSafe(|| check::clamp(module, &after))) else {
+    let Ok(writes) = catch_unwind(AssertUnwindSafe(|| check::clamp(tool, &after))) else {
         return;
     };
     for (id, value) in writes.iter() {
@@ -379,20 +379,20 @@ fn follow_ranges(module: &dyn Tool, state: &mut ToolState, before: &Controls) {
         put(state, id, value.clone(), mark);
     }
     let after = values(state);
-    for found in module.definition().controls {
+    for found in tool.definition().controls {
         let id = found.id;
         let moved = catch_unwind(AssertUnwindSafe(|| {
-            module.range(id, &after) != module.range(id, before)
+            tool.range(id, &after) != tool.range(id, before)
         }));
         if matches!(moved, Ok(true))
             && let Some(shown) = control_mut(state, id)
         {
-            shown.range = apertrust_engine::edit::range(module, id, &after).map(|(range, _)| range);
+            shown.range = apertrust_engine::edit::range(tool, id, &after).map(|(range, _)| range);
         }
     }
 }
 
-/// Every control's value as `state` shows it: what the module's pure functions read.
+/// Every control's value as `state` shows it: what the tool's pure functions read.
 fn values(state: &ToolState) -> Controls {
     let mut values = Controls::new();
     for shown in &state.controls {
@@ -402,16 +402,16 @@ fn values(state: &ToolState) -> Controls {
 }
 
 /// Shows each control's availability as the session will report it now that the values
-/// `state` shows have moved from `before`: where the module's `available` answers
+/// `state` shows have moved from `before`: where the tool's `available` answers
 /// otherwise for them than for `before`, the control shows the new answer, never
 /// available for a control not ported; every other control shows what the session
 /// reported, on the same image context (`PhotoState::image`, the session's `Photo`'s). A
-/// module whose `available` panics leaves every control as reported, as `view` and
+/// tool whose `available` panics leaves every control as reported, as `view` and
 /// `unview` panicking leave the values. Either way a choice whose photo lists only the
 /// option it now shows, by the options the session reported, is unavailable, as the
 /// session will report it (decision 30).
 fn follow_availability(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     state: &mut ToolState,
     before: &Controls,
     image: &ImageContext,
@@ -420,11 +420,11 @@ fn follow_availability(
     if after == *before {
         return;
     }
-    let controls = module.definition().controls;
+    let controls = tool.definition().controls;
     let moved = catch_unwind(AssertUnwindSafe(|| {
         let moved = controls.iter().filter_map(|control| {
-            let now = module.available(control.id, &after, image);
-            (now != module.available(control.id, before, image))
+            let now = tool.available(control.id, &after, image);
+            (now != tool.available(control.id, before, image))
                 .then_some((control.id, now && !control.unported))
         });
         moved.collect::<Vec<_>>()
@@ -464,7 +464,7 @@ fn put(state: &mut ToolState, id: &str, value: ControlValue, mark: Option<Mark>)
 }
 
 /// What `of` reads of each of the view's coordinates as shown, in the view's order; `None`
-/// where the session reports none, as for a view the module failed to give.
+/// where the session reports none, as for a view the tool failed to give.
 fn coordinates(
     state: &ToolState,
     view: &View,
@@ -497,7 +497,7 @@ fn show_coordinates(state: &mut ToolState, view: &View, values: &[f32]) {
 
 /// The view's coordinate `at` set to `value`, in its range, the others held as shown.
 fn set_coordinate(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     state: &mut ToolState,
     view: &View,
     at: usize,
@@ -517,13 +517,13 @@ fn set_coordinate(
         return;
     }
     shown[at] = value;
-    write(module, state, view, &shown, image);
+    write(tool, state, view, &shown, image);
 }
 
 /// The view's coordinate `at` back to its default, the others held as shown; once every
 /// coordinate is at its default, the view's controls are back at theirs, released.
 fn reset_coordinate(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     state: &mut ToolState,
     view: &View,
     at: usize,
@@ -544,28 +544,28 @@ fn reset_coordinate(
         }
         show_coordinates(state, view, &defaults);
         // Their values are out of the edit, which ends every other view's hold over them.
-        follow(module, state, view.controls, Some(view.id), image);
+        follow(tool, state, view.controls, Some(view.id), image);
     } else if !unchanged {
-        write(module, state, view, &shown, image);
+        write(tool, state, view, &shown, image);
     }
 }
 
-/// Shows the module's `unview` of `values` in the view's controls, each kept, and `values`
+/// Shows the tool's `unview` of `values` in the view's controls, each kept, and `values`
 /// as its coordinates, once each control can take what it is given; nothing where one
 /// cannot, as the session refuses it. Every other view over a control whose value moved
-/// shows the module's view of the values, as the session's next report will, since the
+/// shows the tool's view of the values, as the session's next report will, since the
 /// change ends that view's hold.
 fn write(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     state: &mut ToolState,
     view: &View,
     values: &[f32],
     image: &ImageContext,
 ) {
-    let definition = module.definition();
-    // A module's code may panic, as the session guards against: nothing shows, as the
+    let definition = tool.definition();
+    // A tool's code may panic, as the session guards against: nothing shows, as the
     // session refuses the change, and the UI thread goes on.
-    let given = catch_unwind(AssertUnwindSafe(|| module.unview(view.id, values, image)));
+    let given = catch_unwind(AssertUnwindSafe(|| tool.unview(view.id, values, image)));
     let Ok(Some(given)) = given else {
         return;
     };
@@ -586,22 +586,22 @@ fn write(
         }
     }
     show_coordinates(state, view, values);
-    follow(module, state, &moved, Some(view.id), image);
+    follow(tool, state, &moved, Some(view.id), image);
 }
 
 /// Each view covering one of `moved`, controls whose values have just moved or been reset,
-/// but the view `except` they were written through, shows the module's view of the values
+/// but the view `except` they were written through, shows the tool's view of the values
 /// shown, as the session reports once such a change has ended the view's hold. A view the
-/// report leaves out, as one whose module failed, is left as it is, its module not called;
-/// so is one the module does not give, or whose `view` panics.
+/// report leaves out, as one whose tool failed, is left as it is, its tool not called;
+/// so is one the tool does not give, or whose `view` panics.
 fn follow(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     state: &mut ToolState,
     moved: &[&'static str],
     except: Option<&str>,
     image: &ImageContext,
 ) {
-    let views: Vec<&View> = module
+    let views: Vec<&View> = tool
         .definition()
         .views
         .iter()
@@ -615,7 +615,7 @@ fn follow(
     let values = values(state);
     for view in views {
         // A panic, as in `write`, leaves the coordinates reported.
-        let viewed = catch_unwind(AssertUnwindSafe(|| module.view(view.id, &values, image)));
+        let viewed = catch_unwind(AssertUnwindSafe(|| tool.view(view.id, &values, image)));
         if let Ok(Some(viewed)) = viewed
             && viewed.len() == view.coordinates.len()
         {
@@ -647,12 +647,12 @@ fn coordinate_marks(definition: &Definition, state: &mut ToolState) {
 }
 
 /// The curve a band graph draws through the bands from `start` EV to +0 EV, sampled: the
-/// module's curve for `values`, `None` where it says no curve fits them, and an error
-/// where its code panicked. A switched module that is off, not `enabled`, corrects
+/// tool's curve for `values`, `None` where it says no curve fits them, and an error
+/// where its code panicked. A switched tool that is off, not `enabled`, corrects
 /// nothing, so its curve is drawn flat (decision 32); on, it is the curve the operation
 /// renders, darktable's ripple at the defaults.
 fn equalizer_curve(
-    module: &dyn Tool,
+    tool: &dyn Tool,
     enabled: bool,
     first: &str,
     values: &Controls,
@@ -662,7 +662,7 @@ fn equalizer_curve(
         if !enabled {
             return Some(vec![0.0; EQUALIZER_SAMPLES]);
         }
-        let curve = module.curve(first, values)?;
+        let curve = tool.curve(first, values)?;
         Some(
             (0..EQUALIZER_SAMPLES)
                 .map(|k| curve(start * (1.0 - k as f32 / (EQUALIZER_SAMPLES - 1) as f32)))
@@ -671,11 +671,11 @@ fn equalizer_curve(
     }))
 }
 
-/// Draws `module`'s section from its definition, with the values `state` mirrors, open
+/// Draws `tool`'s section from its definition, with the values `state` mirrors, open
 /// or closed as `open` says, each of its collapsible groups open as `groups` says by the
 /// group's id. The section peeks while `peek` holds (`Section::peek`). Its reset is drawn
 /// disabled unless `editable`, as on a photo open for viewing only, whose controls the
-/// session reports unavailable, and for a switched module unless it is edited, as one off
+/// session reports unavailable, and for a switched tool unless it is edited, as one off
 /// never is (decision 32), whose section screen readers describe as not applied. While
 /// `opening` holds the tooltip of a photo opening, read-only until it is live (decision
 /// 77), hovering its rows says why. Its colour pickers are drawn as `pickers` says.
@@ -686,7 +686,7 @@ fn equalizer_curve(
 )]
 pub fn section(
     ui: &mut egui::Ui,
-    module: &dyn Tool,
+    tool: &dyn Tool,
     state: &ToolState,
     open: bool,
     panels: &Panels,
@@ -696,7 +696,7 @@ pub fn section(
     opening: Option<&str>,
     pickers: &Pickers,
 ) -> Vec<Change> {
-    let definition = module.definition();
+    let definition = tool.definition();
     let id = definition.id;
     let words = translator(ui.ctx());
     let title = words.text(&messages::title(id));
@@ -713,12 +713,12 @@ pub fn section(
         .collect();
     let later_tip = words.text("section-tab-later");
 
-    // A switched module's reset is available only while it would change the render
+    // A switched tool's reset is available only while it would change the render
     // (decision 32): off, it has nothing to reset, and shows nothing more than that, but
     // for screen readers, who hear "Not applied".
     let resettable = state.edited || !definition.switched;
     let mut section = Section::new(&title, open)
-        .module()
+        .edits()
         .reset(editable && resettable)
         .presets(false)
         .peek(peek)
@@ -731,7 +731,7 @@ pub fn section(
     let mut changes = Vec::new();
     let page = Page {
         words: &words,
-        module,
+        tool,
         state,
         groups,
         pickers,
@@ -772,9 +772,9 @@ pub fn section(
     });
     for action in out.actions {
         changes.push(match action {
-            SectionAction::Toggle => Change::Toggle { module: id },
-            SectionAction::Tab(tab) => Change::Tab { module: id, tab },
-            SectionAction::Reset => Change::ResetTool { module: id },
+            SectionAction::Toggle => Change::Toggle { tool: id },
+            SectionAction::Tab(tab) => Change::Tab { tool: id, tab },
+            SectionAction::Reset => Change::ResetTool { tool: id },
             // Drawn disabled: nothing is behind them yet.
             SectionAction::Presets | SectionAction::Options => continue,
         });
@@ -786,16 +786,16 @@ fn control<'s>(state: &'s ToolState, id: &str) -> Option<&'s ControlState> {
     state.controls.iter().find(|control| control.control == id)
 }
 
-/// What a module's rows are drawn from: the words, the module, the values the mirror
+/// What a tool's rows are drawn from: the words, the tool, the values the mirror
 /// shows, and whether each collapsible group is open, by its id.
 struct Page<'a> {
     words: &'a Translator,
-    module: &'a dyn Tool,
+    tool: &'a dyn Tool,
     state: &'a ToolState,
     groups: &'a dyn Fn(&str) -> bool,
     pickers: &'a Pickers<'a>,
     /// Where each row of controls on the edit was drawn, which a photo opening says over
-    /// (decision 77): not a group's header, a module's setting nor the guides, which stay
+    /// (decision 77): not a group's header, a tool's setting nor the guides, which stay
     /// usable and keep their own tips.
     controls: std::cell::RefCell<Vec<egui::Rect>>,
 }
@@ -804,7 +804,7 @@ impl Page<'_> {
     /// Whether rows following `control` show: whether its value in the mirror is one of
     /// `is`.
     fn follows(&self, control: &str, is: &[&str]) -> bool {
-        let found = self.module.definition().control(control);
+        let found = self.tool.definition().control(control);
         match (found, self::control(self.state, control)) {
             (Some(found), Some(shown)) => found.is_one_of(&shown.value, is),
             _ => false,
@@ -863,8 +863,8 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
 }
 
 fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>) {
-    let (words, module, state) = (page.words, page.module, page.state);
-    let definition = module.definition();
+    let (words, tool, state) = (page.words, page.tool, page.state);
+    let definition = tool.definition();
     match row {
         Row::Slider(slider) => slider_row(ui, page, slider, changes),
         Row::Choice { control, style } => {
@@ -883,13 +883,13 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         Row::Custom {
             widget: Widget::Curve,
             controls: [points, ..],
-        } => curve_row(ui, words, module, points, state, changes),
+        } => curve_row(ui, words, tool, points, state, changes),
         Row::Custom {
             widget: Widget::Equalizer,
             controls,
-        } => equalizer_row(ui, words, module, controls, state, changes),
+        } => equalizer_row(ui, words, tool, controls, state, changes),
         // The closed registry's other painted widgets (the colour wheels, the hue curve)
-        // join the renderer with the first module that uses each.
+        // join the renderer with the first tool that uses each.
         Row::Custom { .. } => {}
         // A list whatever its style: `Definition::check` refuses segments, which cannot
         // draw Custom or an option disabled yet.
@@ -916,19 +916,19 @@ fn buttons_row(
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let module = definition.id;
+    let tool = definition.id;
     let Some(shown) = control(state, id) else {
         return;
     };
     let [label, full, promise] = [
-        messages::label(module, id),
-        messages::full(module, id),
-        messages::promise(module, id),
+        messages::label(tool, id),
+        messages::full(tool, id),
+        messages::promise(tool, id),
     ]
     .map(|id| words.text(&id));
     let names: Vec<String> = buttons
         .iter()
-        .map(|button| words.text(&messages::action(module, button.id)[1]))
+        .map(|button| words.text(&messages::action(tool, button.id)[1]))
         .collect();
     let icons: Vec<(apertrust_ui::Icon, &str)> = buttons
         .iter()
@@ -941,17 +941,14 @@ fn buttons_row(
         .enabled(shown.available)
         .show(ui);
     match action {
-        Some(ButtonsAction::Reset) => changes.push(Change::Reset {
-            module,
-            control: id,
-        }),
+        Some(ButtonsAction::Reset) => changes.push(Change::Reset { tool, control: id }),
         Some(ButtonsAction::Pressed(index)) => {
             let mut values = Controls::new();
             for shown in &state.controls {
                 values.set(shown.control, shown.value.clone());
             }
             changes.push(Change::Action {
-                module,
+                tool,
                 action: buttons[index].id,
                 values,
             });
@@ -960,14 +957,14 @@ fn buttons_row(
     }
 }
 
-/// What a button's action sends, as `SetControl`s: each control `module`'s action writes
+/// What a button's action sends, as `SetControl`s: each control `tool`'s action writes
 /// on `values`, the values shown, every write but the last `done: false` and the last
 /// `done: true`, so several writes are one gesture, one change and one history step.
-/// None on a photo open for viewing only, nor for a module or action the modules do not
+/// None on a photo open for viewing only, nor for a tool or action the tools do not
 /// have.
 pub fn action_writes(
-    modules: &[&dyn Tool],
-    module: &str,
+    tools: &[&dyn Tool],
+    tool: &str,
     action: &str,
     values: &Controls,
     image: &ImageContext,
@@ -976,7 +973,7 @@ pub fn action_writes(
     if view_only {
         return Vec::new();
     }
-    let found = modules.iter().find(|found| found.definition().id == module);
+    let found = tools.iter().find(|found| found.definition().id == tool);
     let writes = found.and_then(|found| found.action(action, values, image));
     let writes: Vec<(&'static str, ControlValue)> = writes
         .iter()
@@ -1002,7 +999,7 @@ fn icon(icon: ButtonIcon) -> apertrust_ui::Icon {
 }
 
 /// darktable's guides widget: show guides with the global guide settings button at its
-/// end, drawn disabled, off, until the module's guides come. It reports nothing.
+/// end, drawn disabled, off, until the tool's guides come. It reports nothing.
 fn guides_row(ui: &mut egui::Ui, words: &Translator) {
     let [label, full, promise, settings, settings_promise] =
         messages::GUIDES.map(|id| words.text(id));
@@ -1021,11 +1018,11 @@ fn guides_row(ui: &mut egui::Ui, words: &Translator) {
     });
 }
 
-/// One of darktable's buttons, an action that writes the module's controls, AgX's Auto
+/// One of darktable's buttons, an action that writes the tool's controls, AgX's Auto
 /// tune levels: an `ActionRow`, drawn disabled until what it runs is built, its promise the
 /// tooltip. It reports nothing.
-fn action_row(ui: &mut egui::Ui, words: &Translator, module: &str, id: &str) {
-    let [label, full, promise] = messages::action(module, id).map(|id| words.text(&id));
+fn action_row(ui: &mut egui::Ui, words: &Translator, tool: &str, id: &str) {
+    let [label, full, promise] = messages::action(tool, id).map(|id| words.text(&id));
     ActionRow::new(&label)
         .name(&full)
         .promise(&promise)
@@ -1033,7 +1030,7 @@ fn action_row(ui: &mut egui::Ui, words: &Translator, module: &str, id: &str) {
         .show(ui);
 }
 
-/// A preset row (decision 2), Blended as a module's choice: it shows the option the
+/// A preset row (decision 2), Blended as a tool's choice: it shows the option the
 /// session reports the controls hold, or Custom, which the list never offers; the options
 /// this photo cannot have are listed disabled. Choosing one applies it. It stores nothing,
 /// so it has no marker and no reset of its own.
@@ -1045,16 +1042,16 @@ fn preset_row(
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let module = definition.id;
+    let tool = definition.id;
     let shown = state.presets.iter().find(|shown| shown.preset == id);
     let (Some(row), Some(shown)) = (definition.preset(id), shown) else {
         return;
     };
-    let [label, full, promise] = messages::preset(module, id).map(|message| words.text(&message));
+    let [label, full, promise] = messages::preset(tool, id).map(|message| words.text(&message));
     let names: Vec<String> = row
         .options
         .iter()
-        .map(|option| words.text(&messages::preset_option(module, id, option)))
+        .map(|option| words.text(&messages::preset_option(tool, id, option)))
         .collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     let custom = words.text(messages::PRESET_CUSTOM);
@@ -1078,28 +1075,28 @@ fn preset_row(
         // The box shows it once the session reports it: its values are the photo's, which
         // only the session knows.
         changes.push(Change::ApplyPreset {
-            module,
+            tool,
             preset: id,
             option: row.options[chosen],
         });
     }
 }
 
-/// One of darktable's own settings for a module: no control, so nothing an edit stores.
+/// One of darktable's own settings for a tool: no control, so nothing an edit stores.
 /// One the app keeps in settings is drawn live with its value there, a change reported as
 /// [`Change::Setting`]; any other, the colour checker's chart, is drawn disabled at
 /// darktable's default until what uses it is built.
 fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &mut Vec<Change>) {
-    let (words, module) = (page.words, page.module.definition().id);
-    let [label, full, promise] = messages::setting(module, setting.id).map(|id| words.text(&id));
-    let kept = page.pickers.settings.get(module, setting.id);
+    let (words, tool) = (page.words, page.tool.definition().id);
+    let [label, full, promise] = messages::setting(tool, setting.id).map(|id| words.text(&id));
+    let kept = page.pickers.settings.get(tool, setting.id);
     // One `--conf` gives keeps its value for the run, its row disabled as the Settings
     // dialog draws an overridden row (decision 43).
-    let live = kept.is_some() && !page.pickers.settings.overridden(module, setting.id);
+    let live = kept.is_some() && !page.pickers.settings.overridden(tool, setting.id);
     let value = kept.cloned().unwrap_or_else(|| setting.default());
     let mut set = |value: ControlValue, done: bool| {
         changes.push(Change::Setting {
-            module,
+            tool,
             setting: setting.id,
             value,
             done,
@@ -1123,7 +1120,7 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
                 .decimals(usize::from(setting.decimals))
                 .enabled(live);
             // The unit the settings schema declares for it, as a control's.
-            let declared = apertrust_tools::settings::setting(module, setting.id);
+            let declared = apertrust_tools::settings::setting(tool, setting.id);
             let unit = declared.and_then(|declared| match declared.kind() {
                 Kind::Number(number) => number.unit.map(|unit| format!("unit-{unit}-value")),
                 _ => None,
@@ -1131,7 +1128,7 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
             if let Some(unit) = &unit {
                 row = row.unit(unit);
             }
-            if lightness_target(page.module.definition(), setting.id) {
+            if lightness_target(page.tool.definition(), setting.id) {
                 row = row.track(lightness_ramp(min, max));
             }
             match row.show(ui) {
@@ -1146,7 +1143,7 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
         (ControlKind::Choice { options, .. }, ControlValue::Choice(chosen)) => {
             let names: Vec<String> = options
                 .iter()
-                .map(|option| words.text(&messages::setting_option(module, setting.id, option)))
+                .map(|option| words.text(&messages::setting_option(tool, setting.id, option)))
                 .collect();
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
             let action = Choice::new(&label, &names, chosen as usize)
@@ -1199,13 +1196,13 @@ fn lightness_ramp(min: f32, max: f32) -> parts::Track {
 }
 
 /// A picker's input and target patches (`Row::Patches`), darktable's: the input the area
-/// its module's last pick showed on the photo, with its L readout, "L: N/A" before one;
+/// its tool's last pick showed on the photo, with its L readout, "L: N/A" before one;
 /// the target the colour of its settings, L then C and h, as the app keeps them or at
-/// their defaults. Drawn disabled while the module's pickers are not drawn.
+/// their defaults. Drawn disabled while the tool's pickers are not drawn.
 fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static str]) {
-    let (words, definition) = (page.words, page.module.definition());
-    let module = definition.id;
-    let enabled = page.pickers.drawn.contains(&module) && definition.picker(picker).is_some();
+    let (words, definition) = (page.words, page.tool.definition());
+    let tool = definition.id;
+    let enabled = page.pickers.drawn.contains(&tool) && definition.picker(picker).is_some();
     let lch: Vec<f32> = target
         .iter()
         .map(|id| {
@@ -1213,7 +1210,7 @@ fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static 
                 Row::Setting(setting) if setting.id == *id => Some(setting),
                 _ => None,
             });
-            let value = page.pickers.settings.get(module, id).cloned();
+            let value = page.pickers.settings.get(tool, id).cloned();
             match value.or_else(|| row.map(SettingRow::default)) {
                 Some(ControlValue::Number(value)) => value,
                 _ => 0.0,
@@ -1225,7 +1222,7 @@ fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static 
         lch.get(1).copied().unwrap_or_default(),
         lch.get(2).copied().unwrap_or_default(),
     ]);
-    let input = page.pickers.picked.patch(module).filter(|_| enabled);
+    let input = page.pickers.picked.patch(tool).filter(|_| enabled);
     let readout = match input {
         Some(patch) => {
             let mut args = Args::new();
@@ -1241,7 +1238,7 @@ fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static 
         messages::PATCHES.map(|id| words.text(id));
     let target_tip = target
         .first()
-        .map(|id| words.text(&messages::setting(module, id)[2]))
+        .map(|id| words.text(&messages::setting(tool, id)[2]))
         .unwrap_or_default();
     parts::Patches::new(
         parts::Patch {
@@ -1277,8 +1274,8 @@ fn group_row(
     rows: &[Row],
     changes: &mut Vec<Change>,
 ) {
-    let module = page.module.definition().id;
-    let title = page.words.text(&messages::collapsible(module, id));
+    let tool = page.tool.definition().id;
+    let title = page.words.text(&messages::collapsible(tool, id));
     // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
     if rows.is_empty() {
         let later = page.words.text("section-tab-later");
@@ -1305,19 +1302,19 @@ fn group_row(
         group.response.on_hover_text(tip);
     }
     if group.inner {
-        changes.push(Change::Group { module, group: id });
+        changes.push(Change::Group { tool, group: id });
     }
 }
 
 /// A control's words: its short label, its full name and its promise, or the row's own
 /// where darktable labels the control otherwise in the row's mode ([`Slider::label`]).
-fn words_of(words: &Translator, module: &str, control: &str, own: Option<&str>) -> [String; 3] {
+fn words_of(words: &Translator, tool: &str, control: &str, own: Option<&str>) -> [String; 3] {
     match own {
-        Some(own) => messages::row_words(module, control, own),
+        Some(own) => messages::row_words(tool, control, own),
         None => [
-            messages::label(module, control),
-            messages::full(module, control),
-            messages::promise(module, control),
+            messages::label(tool, control),
+            messages::full(tool, control),
+            messages::promise(tool, control),
         ],
     }
     .map(|id| words.text(&id))
@@ -1329,7 +1326,7 @@ struct Shown {
     min: f32,
     max: f32,
     step: f32,
-    /// The soft range the session reports, where the module's range has moved off the
+    /// The soft range the session reports, where the tool's range has moved off the
     /// definition's (decision 30); `None` for the row's own.
     soft: Option<(f32, f32)>,
     unit: Option<Unit>,
@@ -1340,7 +1337,7 @@ struct Shown {
 }
 
 impl Shown {
-    /// The number `id` names: one of the module's controls, or else a coordinate of one of
+    /// The number `id` names: one of the tool's controls, or else a coordinate of one of
     /// its views. A coordinate's mark is the one its view's controls share, and it can
     /// change the photo while one of them can.
     fn of(definition: &Definition, state: &ToolState, id: &str) -> Option<Self> {
@@ -1354,7 +1351,7 @@ impl Shown {
             else {
                 return None;
             };
-            // The range the session reports for the module's values (decision 30); while
+            // The range the session reports for the tool's values (decision 30); while
             // it is the definition's, the row's own soft range stands.
             let (min, max, step, soft) = match shown.range {
                 Some(range) if Some(range) != definition.range(id) => {
@@ -1399,14 +1396,14 @@ impl Shown {
 
 fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec<Change>) {
     let (words, state) = (page.words, page.state);
-    let definition = page.module.definition();
-    let (module, id) = (definition.id, slider.control);
+    let definition = page.tool.definition();
+    let (tool, id) = (definition.id, slider.control);
     let Some(shown) = Shown::of(definition, state, id) else {
         return;
     };
     let (min, max) = (shown.min, shown.max);
     // A coordinate's words are a control's.
-    let [label, full, promise] = words_of(words, module, id, slider.label);
+    let [label, full, promise] = words_of(words, tool, id, slider.label);
     let unit = shown.unit.map(messages::unit_value);
     // A value outside the range, where a view's controls put it, shows as the value, the
     // track at its end.
@@ -1431,8 +1428,8 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
     if let Some(unit) = &unit {
         row = row.unit(unit);
     }
-    // A picker's quad, where its module's pick is built; a line's comes with the first
-    // module whose quad runs, until then no row draws one, rather than one with nothing
+    // A picker's quad, where its tool's pick is built; a line's comes with the first
+    // tool whose quad runs, until then no row draws one, rather than one with nothing
     // behind it.
     let picker = match slider.quad {
         Some(Quad::Picker(picker)) => page.button(ui.ctx(), picker),
@@ -1444,14 +1441,14 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
     let control = id;
     match row.show(ui) {
         Some(SliderAction::Set { value, done }) => changes.push(Change::Set {
-            module,
+            tool,
             control,
             value: ControlValue::Number(shown_as(value, slider.decimals, min, max)),
             done,
         }),
-        Some(SliderAction::Reset) => changes.push(Change::Reset { module, control }),
+        Some(SliderAction::Reset) => changes.push(Change::Reset { tool, control }),
         Some(SliderAction::ToggleKeep) => changes.push(Change::Keep {
-            module,
+            tool,
             control,
             kept: shown.mark != Some(Mark::Kept),
         }),
@@ -1492,24 +1489,21 @@ impl PickerWords<'_> {
 }
 
 impl<'a> Page<'a> {
-    /// The button of the module's picker `id`, if its module draws its pickers: its
+    /// The button of the tool's picker `id`, if its tool draws its pickers: its
     /// words and whether it is on, enabled, and taking the focus back from the photo.
     fn button(
         &self,
         ctx: &egui::Context,
         id: &'static str,
     ) -> Option<(&'static str, PickerWords<'a>)> {
-        let definition = self.module.definition();
-        let module = definition.id;
-        if !self.pickers.drawn.contains(&module) {
+        let definition = self.tool.definition();
+        let tool = definition.id;
+        if !self.pickers.drawn.contains(&tool) {
             return None;
         }
         let picker = definition.picker(id)?;
-        let [_, full, promise, _] = messages::picker(module, id).map(|id| self.words.text(&id));
-        let this = PickerRef::Tool {
-            tool: module,
-            picker: id,
-        };
+        let [_, full, promise, _] = messages::picker(tool, id).map(|id| self.words.text(&id));
+        let this = PickerRef::Tool { tool, picker: id };
         Some((
             id,
             PickerWords {
@@ -1528,7 +1522,7 @@ impl<'a> Page<'a> {
     fn pressed(&self, ui: &egui::Ui, picker: &'static str, action: PickerAction) -> Change {
         let keys = crate::pickers::pick_keys(ui.input(|i| i.modifiers));
         Change::Picker {
-            module: self.module.definition().id,
+            tool: self.tool.definition().id,
             picker,
             action,
             keys,
@@ -1537,7 +1531,7 @@ impl<'a> Page<'a> {
 }
 
 /// A row of pickers, darktable's toggle buttons packed in a box: its label at the start,
-/// where it has one, and the buttons at the row's end, in order, where its module draws
+/// where it has one, and the buttons at the row's end, in order, where its tool draws
 /// its pickers.
 fn pickers_row(
     ui: &mut egui::Ui,
@@ -1553,8 +1547,8 @@ fn pickers_row(
     if buttons.is_empty() {
         return;
     }
-    let module = page.module.definition().id;
-    let label = label.map(|id| page.words.text(&messages::group(module, id)));
+    let tool = page.tool.definition().id;
+    let label = label.map(|id| page.words.text(&messages::group(tool, id)));
     let t = apertrust_ui::theme(ui.ctx());
     ui.horizontal(|ui| {
         ui.set_min_height(t.sizes.panel_line);
@@ -1599,7 +1593,7 @@ fn choice_row(
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let module = definition.id;
+    let tool = definition.id;
     let (Some(control), Some(shown)) = (definition.control(id), control(state, id)) else {
         return;
     };
@@ -1612,7 +1606,7 @@ fn choice_row(
     else {
         return;
     };
-    let [label, full, promise] = words_of(words, module, id, None);
+    let [label, full, promise] = words_of(words, tool, id, None);
     // The options the session reports the photo lists, in the definition's order, then,
     // while the edit holds one the photo does not list, from another photo's edit, that
     // one, chosen and disabled (decision 30). A report that lists none lists them all.
@@ -1626,7 +1620,7 @@ fn choice_row(
     });
     let names: Vec<String> = listed
         .iter()
-        .map(|&i| words.text(&messages::option(module, id, options[i])))
+        .map(|&i| words.text(&messages::option(tool, id, options[i])))
         .collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     // darktable's options its operation does not port: listed, never chosen. A segmented
@@ -1639,7 +1633,7 @@ fn choice_row(
     let at = listed.iter().position(|&i| i == index).unwrap_or_default();
     let chosen = match style {
         // darktable's combobox, its kept marker the mirror's, as a slider row's. What a
-        // quad runs comes with the first module whose quad runs, as on a slider row.
+        // quad runs comes with the first tool whose quad runs, as on a slider row.
         ChoiceStyle::List => {
             let mut row = Choice::new(&label, &names, at)
                 .name(&full)
@@ -1655,7 +1649,7 @@ fn choice_row(
                 Some(ChoiceAction::Set(chosen)) => Some(chosen),
                 Some(ChoiceAction::ToggleKeep) => {
                     changes.push(Change::Keep {
-                        module,
+                        tool,
                         control: id,
                         kept: shown.mark != Some(Mark::Kept),
                     });
@@ -1674,7 +1668,7 @@ fn choice_row(
     };
     if let Some(chosen) = chosen.and_then(|at| listed.get(at)) {
         changes.push(Change::Set {
-            module,
+            tool,
             control: id,
             value: ControlValue::Choice(*chosen as u32),
             done: true,
@@ -1690,14 +1684,14 @@ fn toggle_row(
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let module = definition.id;
+    let tool = definition.id;
     let Some(shown) = control(state, id) else {
         return;
     };
     let ControlValue::Bool(value) = shown.value else {
         return;
     };
-    let [label, full, promise] = words_of(words, module, id, None);
+    let [label, full, promise] = words_of(words, tool, id, None);
     let changed = ToggleRow::new(&label, value)
         .name(&full)
         .promise(&promise)
@@ -1705,7 +1699,7 @@ fn toggle_row(
         .show(ui);
     if let Some(on) = changed {
         changes.push(Change::Set {
-            module,
+            tool,
             control: id,
             value: ControlValue::Bool(on),
             done: true,
@@ -1714,19 +1708,19 @@ fn toggle_row(
 }
 
 /// A curve of points: the points from the mirror between the curve's ends, (0, 0) and
-/// (1, 1), drawn through the curve the module says it renders (`Tool::curve`), straight
+/// (1, 1), drawn through the curve the tool says it renders (`Tool::curve`), straight
 /// lines if it says none. Moving, adding and removing a point set the whole list, which
 /// holds the points between the ends; the ends stay where they are, so moving one sends
 /// nothing. Resetting the curve resets its control.
 fn curve_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    module: &dyn Tool,
+    tool: &dyn Tool,
     id: &'static str,
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let definition = module.definition();
+    let definition = tool.definition();
     let Some(shown) = control(state, id) else {
         return;
     };
@@ -1745,14 +1739,14 @@ fn curve_row(
     for shown in &state.controls {
         values.set(shown.control, shown.value.clone());
     }
-    let drawn = module.curve(id, &values);
+    let drawn = tool.curve(id, &values);
     let mut curve = Curve::new(&full, &pairs)
         .max_points(MAX_POINTS + 2)
         .enabled(shown.available);
     if let Some(drawn) = &drawn {
         curve = curve.function(drawn.as_ref());
     }
-    let module = definition.id;
+    let tool = definition.id;
     let mut points = points.clone();
     // The handles come with the controls they set; this curve draws none.
     let done = match curve.show(ui) {
@@ -1775,15 +1769,12 @@ fn curve_row(
             true
         }
         Some(CurveAction::Reset) => {
-            return changes.push(Change::Reset {
-                module,
-                control: id,
-            });
+            return changes.push(Change::Reset { tool, control: id });
         }
         _ => return,
     };
     changes.push(Change::Set {
-        module,
+        tool,
         control: id,
         value: ControlValue::Points(points),
         done,
@@ -1794,26 +1785,26 @@ fn curve_row(
 const EQUALIZER_SAMPLES: usize = 256;
 
 /// darktable's graph of a tone equalizer's bands (`Widget::Equalizer`): the bands from the
-/// mirror, each node named by its band, the curve the module says the operation renders
+/// mirror, each node named by its band, the curve the tool says the operation renders
 /// through them (`Tool::curve` of the first) sampled as darktable samples its graph, in
-/// the warning colour where the module says none fits, and a drag reaching as far as the
-/// module says the curve is wide (`Tool::curve_width`), each step of it settling the bands
-/// on the curve the module says they give, as darktable's does. It draws no histogram until
+/// the warning colour where the tool says none fits, and a drag reaching as far as the
+/// tool says the curve is wide (`Tool::curve_width`), each step of it settling the bands
+/// on the curve the tool says they give, as darktable's does. It draws no histogram until
 /// the engine measures the mask (decision 19). Moving the bands sets each band whose value,
 /// rounded to the decimals of the band's own row, changes, no key moving one by less than
 /// the last of them, and the release ends the gesture on each band it moved, as one history
-/// step with the drag; a reset resets the bands, one or all, all as one step. The module's
+/// step with the drag; a reset resets the bands, one or all, all as one step. The tool's
 /// code runs on the UI thread, so a panic in it draws
 /// no curve and moves nothing, as a pending change's `view` and `unview` are guarded.
 fn equalizer_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    module: &dyn Tool,
+    tool: &dyn Tool,
     controls: &[&'static str],
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let definition = module.definition();
+    let definition = tool.definition();
     let id = definition.id;
     // Each band as the mirror shows it, with its range, its row's decimals and its step.
     let shown: Option<Vec<Band>> = controls
@@ -1835,8 +1826,8 @@ fn equalizer_row(
     }
     // The bands lie 1 EV apart up to +0 EV.
     let start = -(bands.len().saturating_sub(1) as f32);
-    let drawn = equalizer_curve(module, state.enabled, first, &values, start);
-    let width = catch_unwind(AssertUnwindSafe(|| module.curve_width(first, &values)));
+    let drawn = equalizer_curve(tool, state.enabled, first, &values, start);
+    let width = catch_unwind(AssertUnwindSafe(|| tool.curve_width(first, &values)));
     let mut args = Args::new();
     args.set("module", words.text(&messages::title(id)));
     let name = words.text_with("equalizer-name", Some(&args));
@@ -1853,7 +1844,7 @@ fn equalizer_row(
         graph = graph.smoothing(width);
     }
     // As darktable's drag, each step settles the bands on the curve they give, its
-    // correction at each node; none where the module says no curve fits them, or where its
+    // correction at each node; none where the tool says no curve fits them, or where its
     // code panics, so a drag then moves nothing.
     let guarded = drawn.is_ok() && width.is_ok();
     let settle = |moved: &[f32]| -> Option<Vec<f32>> {
@@ -1865,7 +1856,7 @@ fn equalizer_row(
             values.set(control, ControlValue::Number(value));
         }
         catch_unwind(AssertUnwindSafe(|| {
-            let curve = module.curve(first, &values)?;
+            let curve = tool.curve(first, &values)?;
             Some((0..moved.len()).map(|i| curve(start + i as f32)).collect())
         }))
         .ok()
@@ -1882,7 +1873,7 @@ fn equalizer_row(
                 // While dragged, what moves; on release, everything the gesture moved.
                 if value != band.value || (done && value != band.rounded(from)) {
                     moved.push(Change::Set {
-                        module: id,
+                        tool: id,
                         control,
                         value: ControlValue::Number(value),
                         done,
@@ -1898,17 +1889,13 @@ fn equalizer_row(
         }
         Some(EqualizerAction::ResetBand(i)) => {
             if let Some(&control) = controls.get(i) {
-                changes.push(Change::Reset {
-                    module: id,
-                    control,
-                });
+                changes.push(Change::Reset { tool: id, control });
             }
         }
         Some(EqualizerAction::Reset) => {
-            let resets = controls.iter().map(|&control| Change::Reset {
-                module: id,
-                control,
-            });
+            let resets = controls
+                .iter()
+                .map(|&control| Change::Reset { tool: id, control });
             changes.extend(one_step(resets.collect()));
         }
         None => {}
@@ -2017,10 +2004,10 @@ mod tests {
         pos2(travel.min + travel.span() * at, track.center().y)
     }
 
-    /// A module's controls at their definition's defaults, as the session reports them
+    /// A tool's controls at their definition's defaults, as the session reports them
     /// for an untouched photo, the sample photo.
-    fn untouched(module: &dyn Tool) -> ToolState {
-        let definition = module.definition();
+    fn untouched(tool: &dyn Tool) -> ToolState {
+        let definition = tool.definition();
         let mut state = ToolState {
             tool: definition.id,
             enabled: !definition.switched,
@@ -2035,35 +2022,35 @@ mod tests {
                     default: control.default(),
                     mark: None,
                     available: true,
-                    options: module.options(control.id, &testing::image()),
-                    range: module.range(control.id, &definition.defaults()),
+                    options: tool.options(control.id, &testing::image()),
+                    range: tool.range(control.id, &definition.defaults()),
                 })
                 .collect(),
             presets: Vec::new(),
-            views: views(module),
+            views: views(tool),
         };
-        state.presets = presets(module, &state);
-        report_availability(module, &mut state);
+        state.presets = presets(tool, &state);
+        report_availability(tool, &mut state);
         state
     }
 
     /// Each control's availability as the session reports it for the values `state`
-    /// shows on the sample photo: what the module says, never for a control not ported.
-    fn report_availability(module: &dyn Tool, state: &mut ToolState) {
+    /// shows on the sample photo: what the tool says, never for a control not ported.
+    fn report_availability(tool: &dyn Tool, state: &mut ToolState) {
         let (image, values) = (testing::image(), values(state));
-        for (control, shown) in module.definition().controls.iter().zip(&mut state.controls) {
-            shown.available = !control.unported && module.available(control.id, &values, &image);
+        for (control, shown) in tool.definition().controls.iter().zip(&mut state.controls) {
+            shown.available = !control.unported && tool.available(control.id, &values, &image);
         }
     }
 
-    /// The module's views' coordinates at its defaults, as the session reports them for
+    /// The tool's views' coordinates at its defaults, as the session reports them for
     /// an untouched photo.
-    fn views(module: &dyn Tool) -> Vec<CoordinateState> {
+    fn views(tool: &dyn Tool) -> Vec<CoordinateState> {
         let image = testing::image();
-        let defaults = module.defaults(&image);
+        let defaults = tool.defaults(&image);
         let mut views = Vec::new();
-        for view in module.definition().views {
-            let coordinates = module.view(view.id, &defaults, &image).unwrap();
+        for view in tool.definition().views {
+            let coordinates = tool.view(view.id, &defaults, &image).unwrap();
             for (coordinate, value) in view.coordinates.iter().zip(coordinates) {
                 views.push(CoordinateState {
                     view: view.id,
@@ -2082,50 +2069,49 @@ mod tests {
     fn pending(change: &Change) -> Option<Pending> {
         Some(match *change {
             Change::Set {
-                module,
+                tool,
                 control,
                 ref value,
                 ..
             } => Pending::Control {
-                module,
+                tool,
                 control,
                 value: value.clone(),
             },
-            Change::Reset { module, control } => Pending::Reset { module, control },
+            Change::Reset { tool, control } => Pending::Reset { tool, control },
             Change::Keep {
-                module,
+                tool,
                 control,
                 kept,
             } => Pending::Keep {
-                module,
+                tool,
                 control,
                 kept,
             },
-            Change::ResetTool { module } => Pending::ResetTool { module },
+            Change::ResetTool { tool } => Pending::ResetTool { tool },
             _ => return None,
         })
     }
 
-    /// The module's preset rows while its controls hold what `state` shows, as the
+    /// The tool's preset rows while its controls hold what `state` shows, as the
     /// session reports them for the sample photo, which records no exposure bias.
-    fn presets(module: &dyn Tool, state: &ToolState) -> Vec<PresetState> {
+    fn presets(tool: &dyn Tool, state: &ToolState) -> Vec<PresetState> {
         let image = testing::image();
         let mut values = Controls::new();
         for shown in &state.controls {
             values.set(shown.control, shown.value.clone());
         }
-        module
-            .definition()
+        tool.definition()
             .presets
             .iter()
             .map(|row| PresetState {
                 preset: row.id,
-                matching: module.matching(row.id, &values, &image),
+                matching: tool.matching(row.id, &values, &image),
                 available: row
                     .options
                     .iter()
                     .copied()
-                    .filter(|option| module.preset(row.id, option, &image).is_some())
+                    .filter(|option| tool.preset(row.id, option, &image).is_some())
                     .collect(),
             })
             .collect()
@@ -2138,12 +2124,12 @@ mod tests {
         state.edited = state.controls.iter().any(|c| c.value != c.default);
     }
 
-    /// One module's section and what it reported, its values changed as the app's mirror
+    /// One tool's section and what it reported, its values changed as the app's mirror
     /// shows them before the engine reports ([`Pending::show`]), an option of a preset row
     /// applied and its preset rows reported each frame as the session would, its groups
     /// opened and closed as the app's shell keeps them.
     struct Panel {
-        module: &'static dyn Tool,
+        tool: &'static dyn Tool,
         state: ToolState,
         open: bool,
         panels: Panels,
@@ -2154,7 +2140,7 @@ mod tests {
         why: Option<&'static str>,
     }
 
-    fn panel(module: &'static dyn Tool, state: ToolState) -> Harness<'static, Panel> {
+    fn panel(tool: &'static dyn Tool, state: ToolState) -> Harness<'static, Panel> {
         Harness::builder()
             .with_size(egui::vec2(400.0, 300.0))
             // Frames a sixtieth of a second apart, so two clicks make a double-click.
@@ -2162,7 +2148,7 @@ mod tests {
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
             .build_ui_state(
                 |ui, panel: &mut Panel| {
-                    panel.state.presets = presets(panel.module, &panel.state);
+                    panel.state.presets = presets(panel.tool, &panel.state);
                     let groups =
                         |group: &str| panel.groups.get(group).copied().unwrap_or(GROUP_OPEN);
                     let pickers = Pickers {
@@ -2174,7 +2160,7 @@ mod tests {
                     };
                     let changes = section(
                         ui,
-                        panel.module,
+                        panel.tool,
                         &panel.state,
                         panel.open,
                         &panel.panels,
@@ -2194,7 +2180,7 @@ mod tests {
                             change => pending(change).into_iter().collect(),
                         };
                         for pending in shown {
-                            pending.show(panel.module, &mut panel.state, &testing::image());
+                            pending.show(panel.tool, &mut panel.state, &testing::image());
                         }
                         match change {
                             Change::Group { group, .. } => {
@@ -2203,8 +2189,8 @@ mod tests {
                             }
                             Change::ApplyPreset { preset, option, .. } => {
                                 let image = testing::image();
-                                let values = panel.module.preset(preset, option, &image).unwrap();
-                                let row = panel.module.definition().preset(preset).unwrap();
+                                let values = panel.tool.preset(preset, option, &image).unwrap();
+                                let row = panel.tool.definition().preset(preset).unwrap();
                                 for control in row.controls {
                                     let value = values.get(control).unwrap().clone();
                                     set(&mut panel.state, control, value, Some(Mark::Kept));
@@ -2216,7 +2202,7 @@ mod tests {
                     panel.changes.extend(changes);
                 },
                 Panel {
-                    module,
+                    tool,
                     state,
                     open: OPEN,
                     panels: Panels::default(),
@@ -2242,7 +2228,7 @@ mod tests {
         harness.drop_at(at);
         harness.run();
         let set = |done| Change::Set {
-            module: "exposure",
+            tool: "exposure",
             control: "exposure",
             value: ControlValue::Number(2.25),
             done,
@@ -2305,7 +2291,7 @@ mod tests {
         assert_eq!(
             harness.state().changes.last(),
             Some(&Change::Set {
-                module: "colorbalancergb",
+                tool: "colorbalancergb",
                 control: "vibrance",
                 value: percent(80.0),
                 done: true,
@@ -2324,7 +2310,7 @@ mod tests {
         assert_eq!(
             harness.state().changes.last(),
             Some(&Change::Set {
-                module: "colorbalancergb",
+                tool: "colorbalancergb",
                 control: "vibrance",
                 value: percent(100.0),
                 done: true,
@@ -2350,7 +2336,7 @@ mod tests {
         harness.key_press(Key::Delete);
         harness.run();
         let reset = Change::Reset {
-            module: "exposure",
+            tool: "exposure",
             control: "exposure",
         };
         assert_eq!(harness.state().changes, std::slice::from_ref(&reset));
@@ -2393,7 +2379,7 @@ mod tests {
         harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
         harness.run();
         let set = |value| Change::Set {
-            module: "sample",
+            tool: "sample",
             control: "brightness",
             value: ControlValue::Number(value),
             done: true,
@@ -2406,7 +2392,7 @@ mod tests {
     }
 
     #[test]
-    fn the_marker_keeps_and_the_header_resets_the_module() {
+    fn the_marker_keeps_and_the_header_resets_the_tool() {
         let mut harness = panel(&Exposure, untouched(&Exposure));
         harness.run();
         harness.get_by_label("Keep Exposure").click();
@@ -2417,11 +2403,11 @@ mod tests {
             harness.state().changes,
             [
                 Change::Keep {
-                    module: "exposure",
+                    tool: "exposure",
                     control: "exposure",
                     kept: true
                 },
-                Change::ResetTool { module: "exposure" }
+                Change::ResetTool { tool: "exposure" }
             ]
         );
     }
@@ -2446,7 +2432,7 @@ mod tests {
         harness.get_by_label("Keep Mode").click();
         harness.run();
         let keep = |kept| Change::Keep {
-            module: "exposure",
+            tool: "exposure",
             control: "mode",
             kept,
         };
@@ -2467,7 +2453,7 @@ mod tests {
             harness.run();
         }
         assert!(harness.state().changes.is_empty());
-        // A module's header draws no Auto yet.
+        // A tool's header draws no Auto yet.
         assert!(harness.query_by_label("Auto").is_none());
     }
 
@@ -2486,7 +2472,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Tab {
-                module: "channelmixerrgb",
+                tool: "channelmixerrgb",
                 tab: 2
             }]
         );
@@ -2544,7 +2530,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Set {
-                module: "exposure",
+                tool: "exposure",
                 control: "camera_bias",
                 value: ControlValue::Bool(false),
                 done: true
@@ -2565,7 +2551,7 @@ mod tests {
         let mut state = untouched(&Sample);
         set(&mut state, "coarseness", ControlValue::Number(150.0), None);
         let pending = Pending::Control {
-            module: "sample",
+            tool: "sample",
             control: "bias",
             value: ControlValue::Number(20.0),
         };
@@ -2642,7 +2628,7 @@ mod tests {
         assert!(disabled);
         assert_eq!(value, at);
         // Coarse grain chosen: while the change is pending, it is live at once, through
-        // the module's own availability, and so after the session's report.
+        // the tool's own availability, and so after the session's report.
         choose(&mut harness, "coarse");
         assert_eq!(coarseness(&harness), (false, heard.clone(), at.clone()));
         harness.state_mut().state = reported(2);
@@ -2651,7 +2637,7 @@ mod tests {
         // Fine grain chosen: disabled at once, its value kept, and so after the report.
         choose(&mut harness, "fine");
         let size = |choice| Change::Set {
-            module: "sample",
+            tool: "sample",
             control: "size",
             value: ControlValue::Choice(choice),
             done: true,
@@ -2686,7 +2672,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Set {
-                module: "sample",
+                tool: "sample",
                 control: "size",
                 value: ControlValue::Choice(0),
                 done: true
@@ -2698,7 +2684,7 @@ mod tests {
     fn shape(state: ToolState) -> Harness<'static, Panel> {
         let mut harness = panel(&Sample, state);
         harness.state_mut().panels.apply(&Change::Tab {
-            module: "sample",
+            tool: "sample",
             tab: 1,
         });
         harness.run();
@@ -2728,7 +2714,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Group {
-                module: "sample",
+                tool: "sample",
                 group: "midtones"
             }]
         );
@@ -2832,7 +2818,7 @@ mod tests {
                 .is_none()
         );
         let method = |option| Change::Set {
-            module: "sample",
+            tool: "sample",
             control: "method",
             value: ControlValue::Choice(option),
             done: true,
@@ -2955,7 +2941,7 @@ mod tests {
         assert_eq!(
             sets(&harness),
             [Change::Set {
-                module: "sample",
+                tool: "sample",
                 control: "method",
                 value: ControlValue::Choice(0),
                 done: true,
@@ -3090,7 +3076,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Set {
-                module: "sample",
+                tool: "sample",
                 control: "brightness",
                 value: ControlValue::Number(0.01),
                 done: true
@@ -3115,7 +3101,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::ApplyPreset {
-                module: "sample",
+                tool: "sample",
                 preset: "look",
                 option: "grainy"
             }]
@@ -3144,7 +3130,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::ApplyPreset {
-                module: "sample",
+                tool: "sample",
                 preset: "look",
                 option: "untouched"
             }]
@@ -3163,7 +3149,7 @@ mod tests {
         row.accesskit_node().value().as_deref().map(str::to_owned)
     }
 
-    /// Grain and bias for the pair's `coordinates`: the module's inverse of its view.
+    /// Grain and bias for the pair's `coordinates`: the tool's inverse of its view.
     fn unviewed(coordinates: [f32; 2]) -> [f32; 2] {
         let values = Sample
             .unview("pair", &coordinates, &testing::image())
@@ -3171,7 +3157,7 @@ mod tests {
         ["grain", "bias"].map(|id| values.number(id))
     }
 
-    /// The pair's coordinates for the values `state` shows: the module's view of them.
+    /// The pair's coordinates for the values `state` shows: the tool's view of them.
     fn viewed(state: &ToolState) -> Vec<f32> {
         let mut values = Controls::new();
         for shown in &state.controls {
@@ -3197,7 +3183,7 @@ mod tests {
     }
 
     /// Sample's values as the session reports them holding the pair at `coordinates`, as
-    /// after a script set them or through a gesture: grain and bias what the module's
+    /// after a script set them or through a gesture: grain and bias what the tool's
     /// inverse gives them, kept, the coordinates exactly, and the method biased, so bias's
     /// own row shows.
     fn paired(coordinates: [f32; 2]) -> ToolState {
@@ -3274,14 +3260,14 @@ mod tests {
         // Three quarters along the sum's track, which spans its soft range, 50 to 150 %.
         drag(&mut harness, SUM, 0.75);
         let set = |done| Change::Set {
-            module: "sample",
+            tool: "sample",
             control: "sum",
             value: ControlValue::Number(125.0),
             done,
         };
         assert_eq!(harness.state().changes, [set(false), set(true)]);
         // While it is pending, the difference stays exactly where the session holds it,
-        // and grain and bias are what the module's inverse gives the two, kept ...
+        // and grain and bias are what the tool's inverse gives the two, kept ...
         let state = &harness.state().state;
         let kept = Some(Mark::Kept);
         assert_eq!(pair(state), [(125.0, kept), (-40.3, kept)]);
@@ -3291,7 +3277,7 @@ mod tests {
             grain_and_bias(state),
             [(number(grain), kept), (number(bias), kept)]
         );
-        // ... where the module's view of them gives the difference back only to a rounding.
+        // ... where the tool's view of them gives the difference back only to a rounding.
         assert_ne!(viewed(state)[1], -40.3);
         // Their own rows follow at once: bias's here, grain's on its tab.
         assert_eq!(
@@ -3317,7 +3303,7 @@ mod tests {
         harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
         harness.run();
         let set = |value| Change::Set {
-            module: "sample",
+            tool: "sample",
             control: "sum",
             value: ControlValue::Number(value),
             done: true,
@@ -3371,7 +3357,7 @@ mod tests {
         [of("pair"), of("mix")]
     }
 
-    /// Twin's view `view` of the values `state` shows: the module's own.
+    /// Twin's view `view` of the values `state` shows: the tool's own.
     fn twin_viewed(state: &ToolState, view: &str) -> [f32; 2] {
         let mut values = Controls::new();
         for shown in &state.controls {
@@ -3413,7 +3399,7 @@ mod tests {
         );
     }
 
-    /// Twin's definition with an `unview` that panics, as a module's code may, and a `view`
+    /// Twin's definition with an `unview` that panics, as a tool's code may, and a `view`
     /// and an `available` that panic too or are Twin's; it counts the panics.
     struct Panicking {
         view_panics: bool,
@@ -3481,7 +3467,7 @@ mod tests {
     /// Twin's `x` set to 30 and its pair's sum to 110, as the app sends them.
     fn twin_changes() -> [Pending; 2] {
         [("x", 30.0), ("sum", 110.0)].map(|(control, value)| Pending::Control {
-            module: "twin",
+            tool: "twin",
             control,
             value: ControlValue::Number(value),
         })
@@ -3489,20 +3475,20 @@ mod tests {
 
     #[test]
     fn a_view_the_report_leaves_out_is_never_asked_for() {
-        // The session leaves out a view whose module panics: a change to its controls, or
+        // The session leaves out a view whose tool panics: a change to its controls, or
         // to one of its coordinates, shows without calling it.
         let mut state = untouched(&Twin);
         state.views.clear();
-        let (module, image) = (Panicking::new(true), testing::image());
+        let (tool, image) = (Panicking::new(true), testing::image());
         for change in twin_changes() {
-            change.show(&module, &mut state, &image);
+            change.show(&tool, &mut state, &image);
         }
         Pending::Reset {
-            module: "twin",
+            tool: "twin",
             control: "x",
         }
-        .show(&module, &mut state, &image);
-        assert_eq!(module.panics(), 0);
+        .show(&tool, &mut state, &image);
+        assert_eq!(tool.panics(), 0);
         assert_eq!(
             control(&state, "y").unwrap().value,
             ControlValue::Number(60.0)
@@ -3516,18 +3502,18 @@ mod tests {
         // through an `unview` that panics shows nothing, as the session refuses it ...
         let image = testing::image();
         let untouched = untouched(&Twin);
-        let module = Panicking::new(false);
+        let tool = Panicking::new(false);
         let mut state = untouched.clone();
         let [_, sum] = twin_changes();
-        sum.show(&module, &mut state, &image);
-        assert_eq!(module.panics(), 1);
+        sum.show(&tool, &mut state, &image);
+        assert_eq!(tool.panics(), 1);
         assert_eq!(state, untouched);
         // ... and a control set through its own row shows, its views as reported where
         // their `view` panics.
-        let module = Panicking::new(true);
+        let tool = Panicking::new(true);
         let [x, _] = twin_changes();
-        x.show(&module, &mut state, &image);
-        assert_eq!(module.panics(), 2, "one for each view");
+        x.show(&tool, &mut state, &image);
+        assert_eq!(tool.panics(), 2, "one for each view");
         assert_eq!(
             control(&state, "x").unwrap().value,
             ControlValue::Number(30.0)
@@ -3540,13 +3526,13 @@ mod tests {
         let image = testing::image();
         let mut state = untouched(&Twin);
         control_mut(&mut state, "y").unwrap().available = false;
-        let module = Panicking {
+        let tool = Panicking {
             available_panics: true,
             ..Panicking::new(false)
         };
         let [x, _] = twin_changes();
-        x.show(&module, &mut state, &image);
-        assert_eq!(module.panics(), 1);
+        x.show(&tool, &mut state, &image);
+        assert_eq!(tool.panics(), 1);
         // The value shows, and each control's availability as the session reported it.
         let shown = |id| control(&state, id).unwrap();
         assert_eq!(shown("x").value, ControlValue::Number(30.0));
@@ -3556,7 +3542,7 @@ mod tests {
 
     /// Twin with x and y at their defaults, kept, as a write through a view can leave them,
     /// and its views' coordinates `pair` and `mix`, kept: held where they are off the
-    /// module's view of x and y.
+    /// tool's view of x and y.
     fn twin_held(pair: [f32; 2], mix: [f32; 2]) -> ToolState {
         let mut state = untouched(&Twin);
         for (id, value) in [("x", 20.0), ("y", 60.0)] {
@@ -3584,7 +3570,7 @@ mod tests {
         // mix is its view of x and y again, as the session reports.
         let mut state = twin_held([80.0, -40.0], off);
         Pending::Reset {
-            module: "twin",
+            tool: "twin",
             control: "x",
         }
         .show(&Twin, &mut state, &image);
@@ -3594,7 +3580,7 @@ mod tests {
         // the mix is its view of them again too.
         let mut state = twin_held([80.0, (-40f32).next_up()], off);
         Pending::Reset {
-            module: "twin",
+            tool: "twin",
             control: "difference",
         }
         .show(&Twin, &mut state, &image);
@@ -3609,7 +3595,7 @@ mod tests {
         harness.run();
         assert_eq!(
             harness.state().changes,
-            [Change::ResetTool { module: "sample" }]
+            [Change::ResetTool { tool: "sample" }]
         );
         let state = &harness.state().state;
         assert_eq!(pair(state), [(100.0, None), (-100.0, None)]);
@@ -3628,7 +3614,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Keep {
-                module: "sample",
+                tool: "sample",
                 control: "difference",
                 kept: false
             }]
@@ -3647,7 +3633,7 @@ mod tests {
     #[test]
     fn a_control_s_own_row_moves_the_coordinates_of_its_view() {
         // Grain's row, on its tab, while the session holds the pair: the coordinates are
-        // the module's view of the values again, as the session reports once grain moves.
+        // the tool's view of the values again, as the session reports once grain moves.
         let mut harness = panel(&Sample, paired([100.0, -40.3]));
         harness.run();
         drag(&mut harness, GRAIN, 0.75);
@@ -3661,7 +3647,7 @@ mod tests {
         assert_ne!(shown[1], -40.3);
         // The pair's rows show them.
         harness.state_mut().panels.apply(&Change::Tab {
-            module: "sample",
+            tool: "sample",
             tab: 1,
         });
         harness.state_mut().groups.insert("midtones", true);
@@ -3703,20 +3689,20 @@ mod tests {
             grain_and_bias(state),
             [(number(0.0), kept), (number(100.0), kept)]
         );
-        let module = "sample";
+        let tool = "sample";
         assert_eq!(
             harness.state().changes,
             [
                 Change::Reset {
-                    module,
+                    tool,
                     control: "sum"
                 },
                 Change::Reset {
-                    module,
+                    tool,
                     control: "difference"
                 },
                 Change::Keep {
-                    module,
+                    tool,
                     control: "sum",
                     kept: true
                 },
@@ -3724,7 +3710,7 @@ mod tests {
         );
     }
 
-    /// A page as local contrast draws one, for the paths no built module takes yet:
+    /// A page as local contrast draws one, for the paths no built tool takes yet:
     /// `sigma_r` under its own label with the bilateral grid and under Highlights with the
     /// local Laplacian filter, and the mask display after every tab's rows. It binds
     /// nothing; its words are its message ids.
@@ -3863,7 +3849,7 @@ mod tests {
         assert_eq!(
             harness.state().changes.last(),
             Some(&Change::Set {
-                module: "bilat",
+                tool: "bilat",
                 control: "sigma_r",
                 value: ControlValue::Number(0.75),
                 done: true,
@@ -3911,7 +3897,7 @@ mod tests {
     fn luma_set(change: &Change) -> (&[[f32; 2]], bool) {
         match change {
             Change::Set {
-                module: "tone_curve",
+                tool: "tone_curve",
                 control: "luma_points",
                 value: ControlValue::Points(points),
                 done,
@@ -4028,7 +4014,7 @@ mod tests {
         harness.key_press_modifiers(Modifiers::SHIFT, Key::Delete);
         harness.run();
         let reset = Change::Reset {
-            module: "tone_curve",
+            tool: "tone_curve",
             control: "luma_points",
         };
         assert_eq!(harness.state().changes, std::slice::from_ref(&reset));
@@ -4038,7 +4024,7 @@ mod tests {
                 .value,
             ControlValue::Points(Vec::new())
         );
-        // The header's reset resets the module, the curve with it.
+        // The header's reset resets the tool, the curve with it.
         set(
             &mut harness.state_mut().state,
             "luma_points",
@@ -4051,9 +4037,7 @@ mod tests {
         harness.run();
         assert_eq!(
             harness.state().changes,
-            [Change::ResetTool {
-                module: "tone_curve"
-            }]
+            [Change::ResetTool { tool: "tone_curve" }]
         );
     }
 
@@ -4073,7 +4057,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Tab {
-                module: "tone_curve",
+                tool: "tone_curve",
                 tab: 5
             }]
         );
@@ -4093,8 +4077,8 @@ mod tests {
 
     #[test]
     fn colour_balance_rgb_draws_darktable_s_three_tabs() {
-        let module: &'static dyn Tool = &ColourBalanceRgb;
-        let mut harness = panel(module, untouched(module));
+        let tool: &'static dyn Tool = &ColourBalanceRgb;
+        let mut harness = panel(tool, untouched(tool));
         harness.run();
         for name in ["Master", "4 ways", "Masks"] {
             let tab = harness.get_by_role_and_label(Role::Tab, name);
@@ -4132,13 +4116,10 @@ mod tests {
         );
         let fulcrum = harness.get_by_role_and_label(Role::Slider, "Contrast grey fulcrum");
         assert_eq!(fulcrum.accesskit_node().value().as_deref(), Some("18.45%"));
-        let module = "colorbalancergb";
+        let tool = "colorbalancergb";
         assert_eq!(
             harness.state().changes,
-            [
-                Change::Tab { module, tab: 1 },
-                Change::Tab { module, tab: 2 }
-            ]
+            [Change::Tab { tool, tab: 1 }, Change::Tab { tool, tab: 2 }]
         );
     }
 
@@ -4243,7 +4224,7 @@ mod tests {
         assert_eq!(
             harness.state().changes,
             [Change::Group {
-                module: "channelmixerrgb",
+                tool: "channelmixerrgb",
                 group: "colour_checker"
             }]
         );
@@ -4275,8 +4256,8 @@ mod tests {
 
     #[test]
     fn rgb_primaries_draws_darktable_s_eight_sliders_in_order() {
-        let module: &'static dyn Tool = &RgbPrimaries;
-        let mut state = untouched(module);
+        let tool: &'static dyn Tool = &RgbPrimaries;
+        let mut state = untouched(tool);
         set(
             &mut state,
             "red_hue",
@@ -4285,7 +4266,7 @@ mod tests {
         );
         let purity = ControlValue::Number(-15.7);
         set(&mut state, "red_purity", purity, Some(Mark::Kept));
-        let mut harness = panel(module, state);
+        let mut harness = panel(tool, state);
         harness.run();
         // One untitled tab, so no tab strip.
         assert!(harness.query_by_role(Role::Tab).is_none());
@@ -4351,12 +4332,12 @@ mod tests {
         harness
     }
 
-    /// A switched module off (decision 32) draws as it would on, at darktable's defaults,
+    /// A switched tool off (decision 32) draws as it would on, at darktable's defaults,
     /// but for its reset, unavailable, and screen readers hear "Not applied" on its
     /// section; a control's change turns it on at once, the reset available and the
     /// description gone, and the reset turns it off again.
     #[test]
-    fn a_switched_module_off_has_no_reset_and_says_not_applied() {
+    fn a_switched_tool_off_has_no_reset_and_says_not_applied() {
         let mut harness = vignetting(untouched(&Vignetting));
         harness.run();
         let reset = |harness: &Harness<'_, Panel>| {
@@ -4470,7 +4451,7 @@ mod tests {
         // keeping its value, and so after the session's report.
         toggle(&mut harness);
         let autoratio = |on| Change::Set {
-            module: "vignette",
+            tool: "vignette",
             control: "autoratio",
             value: ControlValue::Bool(on),
             done: true,
@@ -4610,7 +4591,7 @@ mod tests {
         assert!(stored.rect().top() > last);
     }
 
-    /// A module's pickers are drawn only where its pick is built: Exposure's quad is not
+    /// A tool's pickers are drawn only where its pick is built: Exposure's quad is not
     /// yet, Sample's are. On a photo opening or open for viewing only each is disabled,
     /// saying why, and sends nothing.
     #[test]
@@ -4698,7 +4679,7 @@ mod tests {
                 };
                 let page = Page {
                     words: &words,
-                    module: &Sample,
+                    tool: &Sample,
                     state: &state,
                     groups: &groups,
                     pickers: &pickers,
@@ -4758,7 +4739,7 @@ mod tests {
     }
 
     /// A button's writes, one gesture: one write ends it at once; several are every one
-    /// but the last `done: false`; none on a photo open for viewing only, nor for a module
+    /// but the last `done: false`; none on a photo open for viewing only, nor for a tool
     /// or action there is not.
     #[test]
     fn a_button_s_writes_are_one_gesture() {
@@ -4807,7 +4788,7 @@ mod tests {
 
     /// Orientation's page as darktable draws it: the transform label with darktable's
     /// four buttons inline, each named, and show guides with the guide settings button
-    /// drawn disabled. A button reports its action on the values shown, which the module
+    /// drawn disabled. A button reports its action on the values shown, which the tool
     /// turns as darktable's `do_rotate` does; a double-click on the label, or Delete on it
     /// focused, resets.
     #[test]
@@ -4847,7 +4828,7 @@ mod tests {
         let changes = std::mem::take(&mut harness.state_mut().changes);
         let [
             Change::Action {
-                module: "flip",
+                tool: "flip",
                 action: "rotate_cw",
                 values,
             },
@@ -4875,7 +4856,7 @@ mod tests {
         }
         harness.step();
         let reset = Change::Reset {
-            module: "flip",
+            tool: "flip",
             control: "orientation",
         };
         let changes = std::mem::take(&mut harness.state_mut().changes);
@@ -4975,7 +4956,7 @@ mod tests {
         assert!(harness.query_by_label("Curve y gamma").is_none());
 
         harness.state_mut().panels.apply(&Change::Tab {
-            module: "agx",
+            tool: "agx",
             tab: 1,
         });
         harness.run();
@@ -5012,7 +4993,7 @@ mod tests {
         );
     }
 
-    /// Every slider row of every built module, at either end of its range, in each
+    /// Every slider row of every built tool, at either end of its range, in each
     /// language and the pseudo-locale, at the side panel's narrowest: its value is drawn
     /// whole, with its unit, as darktable writes it and as screen readers hear it, 5 points
     /// from the row's end, the widest, the tone equalizer's Edges refinement/feathering at
@@ -5029,23 +5010,23 @@ mod tests {
             for at_max in [false, true] {
                 let states: Vec<(&'static dyn Tool, ToolState)> = apertrust_tools::TOOLS
                     .iter()
-                    .map(|&module| {
-                        let mut state = untouched(module);
+                    .map(|&tool| {
+                        let mut state = untouched(tool);
                         for shown in &mut state.controls {
                             shown.available = true;
                         }
-                        for control in module.definition().controls {
+                        for control in tool.definition().controls {
                             if let ControlKind::Number { min, max, .. } = control.kind {
                                 let value = if at_max { max } else { min };
                                 set(&mut state, control.id, ControlValue::Number(value), None);
                             }
                         }
-                        (module, state)
+                        (tool, state)
                     })
                     .collect();
                 let rows: usize = states
                     .iter()
-                    .map(|(module, _)| sliders(module.definition()).len())
+                    .map(|(tool, _)| sliders(tool.definition()).len())
                     .sum();
                 let height = rows as f32 * t.sizes.slider_row + 40.0;
                 let mut harness = Harness::builder()
@@ -5057,12 +5038,12 @@ mod tests {
                     .build_ui(move |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         let words = translator(ui.ctx());
-                        for (module, state) in &states {
-                            let definition = module.definition();
+                        for (tool, state) in &states {
+                            let definition = tool.definition();
                             let groups = |_: &str| GROUP_OPEN;
                             let page = Page {
                                 words: &words,
-                                module: *module,
+                                tool: *tool,
                                 state,
                                 groups: &groups,
                                 pickers: &Pickers::NONE,
@@ -5353,7 +5334,7 @@ mod tests {
                 .is_none()
         );
         let details = |option| Change::Set {
-            module: "toneequal",
+            tool: "toneequal",
             control: "details",
             value: ControlValue::Choice(option),
             done: true,
@@ -5379,7 +5360,7 @@ mod tests {
                     ControlValue::Number(value),
                     Some(Mark::Kept),
                 );
-                // A band set turns the switched module on, as the session reports it.
+                // A band set turns the switched tool on, as the session reports it.
                 (state.enabled, state.edited) = (true, true);
             }
         }
@@ -5402,7 +5383,7 @@ mod tests {
             .iter()
             .map(|change| match change {
                 Change::Set {
-                    module: "toneequal",
+                    tool: "toneequal",
                     control,
                     value: ControlValue::Number(value),
                     done,
@@ -5518,7 +5499,7 @@ mod tests {
         harness.run();
         let changes = &harness.state().changes;
         let reset = Change::Reset {
-            module: "toneequal",
+            tool: "toneequal",
             control: "speculars",
         };
         assert_eq!(changes, &[reset, bands_reset()]);
@@ -5527,13 +5508,13 @@ mod tests {
     /// The nine bands' reset, as one step.
     fn bands_reset() -> Change {
         let resets = tone_equalizer::BANDS.iter().map(|&control| Change::Reset {
-            module: "toneequal",
+            tool: "toneequal",
             control,
         });
         Change::Step(resets.collect())
     }
 
-    /// The Tone equalizer, its curve or the curve's width panicking, as a module's code may.
+    /// The Tone equalizer, its curve or the curve's width panicking, as a tool's code may.
     struct Shaky {
         curve: bool,
         width: bool,
@@ -5595,12 +5576,12 @@ mod tests {
     }
 
     #[test]
-    fn a_graph_whose_module_panics_draws_no_curve_and_moves_nothing() {
-        for module in [&CURVE_PANICS, &WIDTH_PANICS] {
-            let mut state = untouched(module);
-            // On, so the drawing asks the module for its curve, which panics.
+    fn a_graph_whose_tool_panics_draws_no_curve_and_moves_nothing() {
+        for tool in [&CURVE_PANICS, &WIDTH_PANICS] {
+            let mut state = untouched(tool);
+            // On, so the drawing asks the tool for its curve, which panics.
             (state.enabled, state.edited) = (true, true);
-            let mut harness = panel(module, state);
+            let mut harness = panel(tool, state);
             harness.run();
             harness.get_by_role_and_label(Role::Tab, "Advanced").click();
             harness.run();
@@ -5674,7 +5655,7 @@ mod tests {
         );
         let mut panels = [Panels::default(), Panels::default()];
         panels[1].apply(&Change::Tab {
-            module: "tone_curve",
+            tool: "tone_curve",
             tab: 5,
         });
         let states = [luma.clone(), luma];
@@ -5851,7 +5832,7 @@ mod tests {
         mapping_with(picked, which, ToolSettings::default())
     }
 
-    /// The section in `which` with these module settings.
+    /// The section in `which` with these tool settings.
     fn mapping_with(
         picked: Picked,
         which: Builtin,
@@ -5890,13 +5871,13 @@ mod tests {
                     // Kept as the app keeps them.
                     for change in changes {
                         if let Change::Setting {
-                            module,
+                            tool,
                             setting,
                             ref value,
                             ..
                         } = change
                         {
-                            mapping.settings.set(module, setting, value.clone());
+                            mapping.settings.set(tool, setting, value.clone());
                         }
                         mapping.changes.push(change);
                     }
@@ -5964,7 +5945,7 @@ mod tests {
         harness.drop_at(at);
         harness.run();
         let setting = |value, done| Change::Setting {
-            module: "exposure",
+            tool: "exposure",
             setting: "lightness",
             value: ControlValue::Number(value),
             done,
@@ -6000,10 +5981,10 @@ mod tests {
         assert_eq!(lightness.accesskit_node().value().as_deref(), Some("50.0%"));
     }
 
-    /// A module setting `--conf` gives is drawn disabled, keeping its value for the run; the
+    /// A tool setting `--conf` gives is drawn disabled, keeping its value for the run; the
     /// others stay live.
     #[test]
-    fn a_module_setting_conf_gives_is_drawn_disabled() {
+    fn a_tool_setting_conf_gives_is_drawn_disabled() {
         let given = vec!["tools.exposure.area_mode=measure".to_owned()];
         let overrides = crate::settings::overrides(&given).expect("read");
         let folder = crate::settings::testing::Folder::new("mapping-conf");
@@ -6017,18 +5998,18 @@ mod tests {
 
     /// The input patch goes as darktable's `gui_update` zeroes it (`exposure.c:707-710`):
     /// at undo, redo, a move through history, the edit's reset, and Compress, Truncate and
-    /// Discard History, and at the module's own reset, never another's, nor an edit of a
+    /// Discard History, and at the tool's own reset, never another's, nor an edit of a
     /// control.
     #[test]
-    fn the_input_patch_goes_as_the_module_s_values_change_from_outside_a_pick() {
+    fn the_input_patch_goes_as_the_tool_s_values_change_from_outside_a_pick() {
         use apertrust_engine::session::{Command, StepId};
         let picked = || {
             let mut picked = Picked::default();
             picked.apply(Some(&exposure_reading()));
             picked
         };
-        let module = |module: &str| Command::ResetTool {
-            tool: module.to_owned(),
+        let tool = |tool: &str| Command::ResetTool {
+            tool: tool.to_owned(),
         };
         let set = Command::SetControl {
             tool: "exposure".to_owned(),
@@ -6049,8 +6030,8 @@ mod tests {
             (Command::Compress, false),
             (Command::Truncate, false),
             (Command::DiscardHistory, false),
-            (module("exposure"), false),
-            (module("agx"), true),
+            (tool("exposure"), false),
+            (tool("agx"), true),
             (set, true),
         ] {
             let mut picked = picked();
@@ -6080,8 +6061,8 @@ mod tests {
         let picked_as = |through: u64, lightness: f32| {
             let mut reading = first.clone();
             reading.through = through;
-            let module = reading.tool.as_mut().unwrap();
-            let shown = module.picked.as_mut().unwrap();
+            let tool = reading.tool.as_mut().unwrap();
+            let shown = tool.picked.as_mut().unwrap();
             shown.patch.as_mut().unwrap().lch[0] = lightness;
             reading
         };
@@ -6090,7 +6071,7 @@ mod tests {
         // One measured after it.
         picked.apply(Some(&picked_as(7, 60.0)));
         assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(60.0));
-        // A module's reset takes only its own.
+        // A tool's reset takes only its own.
         picked.sent(
             8,
             Picked::clears(&Command::ResetTool {
@@ -6102,9 +6083,9 @@ mod tests {
     }
 
     /// `Settings` completes a change on the edit, whose write Quit waits for, whatever picker
-    /// is on or none; a module picker's completing commands do, the Colour picker's never.
+    /// is on or none; a tool picker's completing commands do, the Colour picker's never.
     #[test]
-    fn settings_and_a_module_pick_complete_a_change_on_the_edit() {
+    fn settings_and_a_tool_pick_complete_a_change_on_the_edit() {
         use crate::pickers::completes_edit;
         use apertrust_engine::session::PickerCommand;
         let settings = PickerCommand::Settings {

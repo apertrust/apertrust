@@ -161,7 +161,7 @@ impl Mirror {
 
     /// The session's `Event::Picker`, through the first `through` commands: what the app
     /// asked by one of them is answered, a picker turned on included where the session
-    /// turned it off again before its first reading, as a change of its module does.
+    /// turned it off again before its first reading, as a change of its tool does.
     pub fn apply(&mut self, through: u64, reading: Option<PickerReading>) {
         let answered = |sent: Option<u64>| sent.is_some_and(|n| n <= through);
         if answered(self.asked.map(|(n, _)| n)) {
@@ -196,21 +196,21 @@ impl Mirror {
     }
 }
 
-/// What the modules' picks showed on the photo, darktable's `spot_RGB` and L readout: each
-/// module's last input patch, for its panel's patches (`Row::Patches`), kept after its
-/// picker turns off until the module's values change from outside a pick ([`Picked::sent`])
-/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the module's
+/// What the tools' picks showed on the photo, darktable's `spot_RGB` and L readout: each
+/// tool's last input patch, for its panel's patches (`Row::Patches`), kept after its
+/// picker turns off until the tool's values change from outside a pick ([`Picked::sent`])
+/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the tool's
 /// settings a pick measured, measure mode's target, handed to the app's settings once.
 #[derive(Debug, Default)]
 pub struct Picked {
     patches: BTreeMap<&'static str, Patch>,
-    /// The latest pick shown of the module whose picker is on: every reading after it
+    /// The latest pick shown of the tool whose picker is on: every reading after it
     /// carries it again, so its patch and the settings it measured are taken once.
     seen: Option<(&'static str, Shown)>,
-    /// The last command that took every module's patch away, by its number.
+    /// The last command that took every tool's patch away, by its number.
     cleared: u64,
-    /// The last command that took one module's patch away, by its number, by module.
-    cleared_module: BTreeMap<String, u64>,
+    /// The last command that took one tool's patch away, by its number, by tool.
+    cleared_tool: BTreeMap<String, u64>,
 }
 
 impl Picked {
@@ -219,13 +219,13 @@ impl Picked {
             patches: BTreeMap::new(),
             seen: None,
             cleared: 0,
-            cleared_module: BTreeMap::new(),
+            cleared_tool: BTreeMap::new(),
         }
     }
 
-    /// The session's `Event::Picker`: the module's patch kept, and the module with the
+    /// The session's `Event::Picker`: the tool's patch kept, and the tool with the
     /// settings its pick measured, where the pick comes for the first time. A pick measured
-    /// before a command that took the module's patch away, still on its way as that command
+    /// before a command that took the tool's patch away, still on its way as that command
     /// was sent, shows no patch, as darktable's `gui_update` leaves it zeroed until the next
     /// pick.
     pub fn apply(
@@ -237,28 +237,28 @@ impl Picked {
             self.seen = None;
             return None;
         };
-        let PickerRef::Tool { tool: module, .. } = reading.picker else {
+        let PickerRef::Tool { tool, .. } = reading.picker else {
             return None;
         };
         let shown = reading.tool.as_ref()?.picked.as_ref()?;
-        let seen = (module, shown.clone());
+        let seen = (tool, shown.clone());
         if self.seen.as_ref() == Some(&seen) {
             return None;
         }
         self.seen = Some(seen);
-        let cleared = (self.cleared_module.get(module).copied())
-            .map_or(self.cleared, |n| n.max(self.cleared));
+        let cleared =
+            (self.cleared_tool.get(tool).copied()).map_or(self.cleared, |n| n.max(self.cleared));
         if let Some(patch) = shown.patch
             && reading.through >= cleared
         {
-            self.patches.insert(module, patch);
+            self.patches.insert(tool, patch);
         }
-        (!shown.settings.is_empty()).then(|| (module, shown.settings.clone()))
+        (!shown.settings.is_empty()).then(|| (tool, shown.settings.clone()))
     }
 
-    /// The input patch `module`'s last pick showed on the photo.
-    pub fn patch(&self, module: &str) -> Option<&Patch> {
-        self.patches.get(module)
+    /// The input patch `tool`'s last pick showed on the photo.
+    pub fn patch(&self, tool: &str) -> Option<&Patch> {
+        self.patches.get(tool)
     }
 
     /// The photo is left: its patches with it.
@@ -266,13 +266,13 @@ impl Picked {
         *self = Picked::new();
     }
 
-    /// The patches `command` takes away as it changes modules' values from outside a pick,
+    /// The patches `command` takes away as it changes tools' values from outside a pick,
     /// as darktable's `gui_update` zeroes `spot_RGB` and so the L shown with it
-    /// (`exposure.c:707-710`): `Some(None)` every module's, for undo, redo, a move through
+    /// (`exposure.c:707-710`): `Some(None)` every tool's, for undo, redo, a move through
     /// history, the edit's reset, and Compress, Truncate and Discard History, after which
     /// darktable reloads the history and so its modules' `gui_update` too
     /// (`dt_dev_history_truncate`, `src/develop/develop.c:1860`);
-    /// `Some(Some(module))` one module's, for its reset; `None` for any other command.
+    /// `Some(Some(tool))` one tool's, for its reset; `None` for any other command.
     pub fn clears(command: &Command) -> Option<Option<String>> {
         match command {
             Command::Undo
@@ -282,7 +282,7 @@ impl Picked {
             | Command::Compress
             | Command::Truncate
             | Command::DiscardHistory => Some(None),
-            Command::ResetTool { tool: module } => Some(Some(module.clone())),
+            Command::ResetTool { tool } => Some(Some(tool.clone())),
             _ => None,
         }
     }
@@ -295,9 +295,9 @@ impl Picked {
                 self.patches.clear();
                 self.cleared = number;
             }
-            Some(Some(module)) => {
-                self.patches.remove(module.as_str());
-                self.cleared_module.insert(module, number);
+            Some(Some(tool)) => {
+                self.patches.remove(tool.as_str());
+                self.cleared_tool.insert(tool, number);
             }
             None => {}
         }
@@ -319,7 +319,7 @@ pub fn moved_to(command: &PickerCommand) -> Option<Region> {
 }
 
 /// What a press on `picker`'s button sends, `keys` held: `On`, with the settings its
-/// module's pickers read as the app keeps them, `settings`, and no channel tab until a module
+/// tool's pickers read as the app keeps them, `settings`, and no channel tab until a tool
 /// reads one, or `Off` for the picker on, since `On` for it would start it again
 /// (`docs/pickers.md`, Against darktable).
 pub fn pressed(
@@ -353,11 +353,11 @@ pub struct Showing {
 }
 
 impl Showing {
-    /// What `command` shows, its picker among `modules`.
-    pub fn of(command: &PickerCommand, modules: &[&dyn Tool]) -> Showing {
+    /// What `command` shows, its picker among `tools`.
+    pub fn of(command: &PickerCommand, tools: &[&dyn Tool]) -> Showing {
         let asked = match *command {
             PickerCommand::On { picker, area, .. } => {
-                let kind = declared(modules, picker).map(|(_, declared)| declared.kind);
+                let kind = declared(tools, picker).map(|(_, declared)| declared.kind);
                 let area = kind.map_or(area, |kind| measures_area(kind, area));
                 Some(Some((picker, area)))
             }
@@ -424,7 +424,7 @@ pub fn follow(command: &PickerCommand, region: Region, switched: Region) -> Regi
     }
 }
 
-/// Whether the session applies a module picker's reading after `command`
+/// Whether the session applies a tool picker's reading after `command`
 /// (`docs/pickers.md`, What a pick writes): what the live region waits for.
 pub fn applies(command: &PickerCommand) -> bool {
     matches!(
@@ -451,8 +451,8 @@ pub fn completes(command: &PickerCommand) -> bool {
 }
 
 /// Whether `command`, sent while `active` is the picker on, completes a change on the edit,
-/// which the session answers with a write or the edit reported held: a module picker's
-/// command that [`completes`] one, and `Settings`, which applies its module's latest reading
+/// which the session answers with a write or the edit reported held: a tool picker's
+/// command that [`completes`] one, and `Settings`, which applies its tool's latest reading
 /// again whether its picker is on or not; never the Colour picker's, which writes nothing.
 pub fn completes_edit(command: &PickerCommand, active: Option<PickerRef>) -> bool {
     let picker = match command {
@@ -499,19 +499,15 @@ fn mac_right_click(modifiers: Modifiers, mac: bool) -> bool {
     mac && modifiers.ctrl && !modifiers.mac_cmd
 }
 
-/// A module's picker and its definition, among `modules`.
+/// A tool's picker and its definition, among `tools`.
 fn declared<'m>(
-    modules: &'m [&'m dyn Tool],
+    tools: &'m [&'m dyn Tool],
     picker: PickerRef,
 ) -> Option<(&'m Definition, &'static apertrust_tools::Picker)> {
-    let PickerRef::Tool {
-        tool: module,
-        picker,
-    } = picker
-    else {
+    let PickerRef::Tool { tool, picker } = picker else {
         return None;
     };
-    let found = modules.iter().find(|m| m.definition().id == module)?;
+    let found = tools.iter().find(|m| m.definition().id == tool)?;
     let definition = found.definition();
     Some((definition, definition.picker(picker)?))
 }
@@ -519,33 +515,33 @@ fn declared<'m>(
 /// A picker's name (`docs/pickers.md`, On the photo): its control's label where it sits in
 /// a slider's quad, else its own words.
 pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String {
-    let module = definition.id;
+    let tool = definition.id;
     let quad = definition.rows().find_map(|row| match row {
         Row::Slider(slider) if row.pickers() == [picker] => Some(slider),
         _ => None,
     });
     let id = match quad {
         Some(slider) => match slider.label {
-            Some(own) => messages::row_words(module, slider.control, own)[0].clone(),
-            None => messages::label(module, slider.control),
+            Some(own) => messages::row_words(tool, slider.control, own)[0].clone(),
+            None => messages::label(tool, slider.control),
         },
-        None => messages::picker(module, picker)[0].clone(),
+        None => messages::picker(tool, picker)[0].clone(),
     };
     words.text(&id)
 }
 
 /// The central bar's words while `picker` is on, measuring an area where `area` says
-/// (`docs/pickers.md`, On the photo): which picker it is, the module's title and the
+/// (`docs/pickers.md`, On the photo): which picker it is, the tool's title and the
 /// picker's name, and how to use it, its modifier as `mac` spells it. `None` for the Colour
-/// picker's, whose words come with its module.
+/// picker's, whose words come with its tool.
 pub fn bar_words(
     words: &Translator,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     picker: PickerRef,
     area: bool,
     mac: bool,
 ) -> Option<(String, String)> {
-    let (definition, declared) = declared(modules, picker)?;
+    let (definition, declared) = declared(tools, picker)?;
     let mut args = Args::new();
     args.set("module", words.text(&messages::title(definition.id)));
     args.set("picker", name(words, definition, declared.id));
@@ -1120,7 +1116,7 @@ struct Rest {
     /// When the picker last moved, and by which command.
     at: Instant,
     number: u64,
-    /// The picker's module's values when its gesture began.
+    /// The picker's tool's values when its gesture began.
     before: Vec<(&'static str, ControlValue)>,
 }
 
@@ -1148,7 +1144,7 @@ impl Said {
         self.follow(Some(picker));
         let before = match self.rest.take() {
             Some(rest) => rest.before,
-            None => module_values(picker, values),
+            None => tool_values(picker, values),
         };
         self.rest = Some(Rest {
             at: now,
@@ -1172,7 +1168,7 @@ impl Said {
         now: Instant,
         reading: Option<&PickerReading>,
         values: &Values,
-        modules: &[&dyn Tool],
+        tools: &[&dyn Tool],
         words: &Translator,
     ) -> Option<Duration> {
         let rest = self.rest.as_ref()?;
@@ -1182,20 +1178,20 @@ impl Said {
         }
         let reading = reading.filter(|r| r.through >= rest.number)?;
         let rest = self.rest.take()?;
-        self.text = said(reading, &rest.before, values, modules, words);
+        self.text = said(reading, &rest.before, values, tools, words);
         None
     }
 }
 
-/// The controls of `picker`'s module, as `values` show them.
-fn module_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, ControlValue)> {
-    let PickerRef::Tool { tool: module, .. } = picker else {
+/// The controls of `picker`'s tool, as `values` show them.
+fn tool_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, ControlValue)> {
+    let PickerRef::Tool { tool, .. } = picker else {
         return Vec::new();
     };
     values
         .tools
         .iter()
-        .find(|state| state.tool == module)
+        .find(|state| state.tool == tool)
         .map(|state| {
             state
                 .controls
@@ -1212,11 +1208,11 @@ fn said(
     reading: &PickerReading,
     before: &[(&'static str, ControlValue)],
     values: &Values,
-    modules: &[&dyn Tool],
+    tools: &[&dyn Tool],
     words: &Translator,
 ) -> String {
-    let now = module_values(reading.picker, values);
-    let changed: Vec<String> = declared(modules, reading.picker)
+    let now = tool_values(reading.picker, values);
+    let changed: Vec<String> = declared(tools, reading.picker)
         .map(|(definition, declared)| {
             declared
                 .writes
@@ -1260,7 +1256,7 @@ fn value_said(
     control: &str,
     value: &ControlValue,
 ) -> Option<String> {
-    let module = definition.id;
+    let tool = definition.id;
     let found = definition.control(control)?;
     match (found.kind, value) {
         (ControlKind::Number { min, max, .. }, ControlValue::Number(value)) => {
@@ -1284,7 +1280,7 @@ fn value_said(
         }
         (ControlKind::Choice { options, .. }, ControlValue::Choice(index)) => {
             let option = options.get(*index as usize)?;
-            Some(words.text(&messages::option(module, control, option)))
+            Some(words.text(&messages::option(tool, control, option)))
         }
         _ => None,
     }
@@ -1458,16 +1454,13 @@ mod tests {
                         .inner;
                     for change in changes {
                         if let Change::Picker {
-                            module,
+                            tool,
                             picker,
                             action,
                             keys,
                         } = change
                         {
-                            let picker = PickerRef::Tool {
-                                tool: module,
-                                picker,
-                            };
+                            let picker = PickerRef::Tool { tool, picker };
                             scene.send(pressed(picker, action, keys, Vec::new()), &ctx);
                         }
                     }
@@ -2157,7 +2150,7 @@ mod tests {
         assert_eq!(mirror.active(), Some(SPREAD));
 
         // A picker turned on that the session turns off again before its first reading,
-        // as a change of its module does, by command 5: the end answers the ask.
+        // as a change of its tool does, by command 5: the end answers the ask.
         mirror.asked(4, Some((BRIGHTNESS, true)));
         mirror.apply(5, None);
         assert_eq!((mirror.active(), mirror.region()), (None, None));
@@ -2173,7 +2166,7 @@ mod tests {
         assert_eq!((mirror.active(), mirror.region()), (None, None));
     }
 
-    /// The central bar names the module and the picker, its control's label on a quad, and
+    /// The central bar names the tool and the picker, its control's label on a quad, and
     /// says how to use it: an area's sentence, or a point picker's own; an area picker
     /// switched to a point has none of its own. The Mac says Cmd.
     #[test]

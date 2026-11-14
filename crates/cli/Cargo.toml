@@ -32,7 +32,7 @@ wgpu.workspace = true
 apertrust-base = { workspace = true, features = ["build"] }
 
 [dev-dependencies]
-# Its `testing::Sample` module, for the flags' tests.
+# Its `testing::Sample` tool, for the flags' tests.
 apertrust-tools = { workspace = true, features = ["testing"] }
 
 [lints]

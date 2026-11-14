@@ -32,7 +32,7 @@
 //! 0 to 1 as a PNG holds it.
 //!
 //! Contrast's and the pivot's rows left with them for Colour balance RGB (decision 2):
-//! E1, the first step, is that module's row B1.
+//! E1, the first step, is that tool's row B1.
 
 #[expect(
     dead_code,
@@ -83,23 +83,23 @@ fn ramp(bias: f32) -> (Picture, ImageContext) {
 enum Measure {
     /// The image entering AgX.
     Scene,
-    /// The image leaving exposure, the module's one operation: what E4, E30 and E31
+    /// The image leaving exposure, the tool's one operation: what E4, E30 and E31
     /// measure, since colour calibration, between exposure and AgX on every colour raw
     /// (decision 27), raises the darkest values, clips negative RGB and compresses the
     /// gamut, none of which scales with the image.
-    Module,
+    Tool,
     /// The output, colorout's.
     Frame,
 }
 
 impl common::Measure for Measure {
     /// From exposure on for a synthetic image; ending before AgX for the scene, and after
-    /// exposure for the module's output.
+    /// exposure for the tool's output.
     fn keep(self, instances: &mut Vec<Instance<'static>>, synthetic: bool) {
         instances.retain(|i| !(synthetic && BEFORE_THE_WORKING_SPACE.contains(&id(i))));
         let end = match self {
             Measure::Scene => instances.iter().position(|i| id(i) == "agx"),
-            Measure::Module => instances
+            Measure::Tool => instances
                 .iter()
                 .position(|i| id(i) == "exposure")
                 .map(|exposure| exposure + 1),
@@ -121,7 +121,7 @@ fn value_of(control: &str, value: f32) -> ControlValue {
 
 impl Bench {
     /// Colour balance rgb joining the plan at its defaults over an unedited photo, as the
-    /// Colour balance RGB module's first step adds it: the rows render it between their
+    /// Colour balance RGB tool's first step adds it: the rows render it between their
     /// edits, so the one pipeline changes shape on the way, as the session's does.
     fn joined(&self, measure: Measure) -> Vec<Instance<'static>> {
         let mut instances = edit::instances(&Edit::default(), OPERATIONS, TOOLS, &self.image)
@@ -265,7 +265,7 @@ fn e3_holds(bench: &mut Bench, moves: &[&[(&str, f32)]]) {
         edit.reset_tool(&Exposure);
         assert!(
             exact(&none, &bench.edit(&edit, Measure::Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
@@ -335,11 +335,11 @@ fn darktable_factor(image: &ImageContext, value: f32) -> f64 {
 fn e4_exposure_scales_every_pixel_alike() {
     for (name, (picture, image)) in [("ramp", ramp(-0.67)), ("sweep", sweep(-0.67))] {
         let mut bench = Bench::picture(&picture, image, SCENE);
-        let untouched = bench.edit(&Edit::default(), Measure::Module);
+        let untouched = bench.edit(&Edit::default(), Measure::Tool);
         let values = exposures();
         let spreads: Vec<f64> = values
             .iter()
-            .map(|&value| exposure_factor(&mut bench, &untouched, value, Measure::Module).0)
+            .map(|&value| exposure_factor(&mut bench, &untouched, value, Measure::Tool).0)
             .collect();
         let worst = spreads.iter().copied().fold(0.0, f64::max);
         println!("E4 on the {name}: a spread of at most {worst:.1e}");
@@ -352,7 +352,7 @@ fn e4_exposure_scales_every_pixel_alike() {
 /// E8's relative error at `value`: Exposure's factor over its untouched output against
 /// darktable's.
 fn e8_error(bench: &mut Bench, output: &Rendered, value: f32) -> f64 {
-    let (_, factor) = exposure_factor(bench, output, value, Measure::Module);
+    let (_, factor) = exposure_factor(bench, output, value, Measure::Tool);
     let expected = darktable_factor(&bench.image, value);
     (factor - expected).abs() / expected
 }
@@ -362,7 +362,7 @@ fn e8_exposure_renders_darktable_s_factor_for_any_bias() {
     for bias in [0.0, -0.67, -5.0] {
         let (picture, image) = ramp(bias);
         let mut bench = Bench::picture(&picture, image, SCENE);
-        let output = bench.edit(&Edit::default(), Measure::Module);
+        let output = bench.edit(&Edit::default(), Measure::Tool);
         let mut worst = 0.0_f64;
         for value in exposures() {
             let error = e8_error(&mut bench, &output, value);
@@ -461,7 +461,7 @@ fn e30_black_level_sets_black_and_keeps_white() {
             let set = (default + level).clamp(-1.0, 1.0);
             let stopped = set >= white;
             let black = f64::from(if stopped { white - 0.01 } else { set });
-            let output = bench.set(&[("black_level", level)], Measure::Module);
+            let output = bench.set(&[("black_level", level)], Measure::Tool);
             for (input, output) in picture.pixels.iter().zip(&output.pixels) {
                 let expected = (f64::from(input[0]) - black) / (f64::from(white) - black);
                 let error = (f64::from(output[0]) - expected).abs() / expected.abs().max(1e-2);
@@ -488,8 +488,8 @@ fn e30_black_level_sets_black_and_keeps_white() {
 fn e31_use_camera_bias_off_darkens_by_the_bias() {
     let (picture, image) = ramp(-0.67);
     let mut bench = Bench::picture(&picture, image, SCENE);
-    let untouched = bench.edit(&Edit::default(), Measure::Module);
-    let off = bench.set(&[("camera_bias", 0.0)], Measure::Module);
+    let untouched = bench.edit(&Edit::default(), Measure::Tool);
+    let off = bench.set(&[("camera_bias", 0.0)], Measure::Tool);
     let (spread, factor) = factor(&untouched.pixels, &off.pixels);
     println!("E31: a spread of {spread:.1e}, {:+.4} EV", factor.log2());
     assert!(spread <= 1e-5, "E31: a spread of {spread:e}");
@@ -501,8 +501,8 @@ fn e31_use_camera_bias_off_darkens_by_the_bias() {
 
     let (picture, image) = ramp(0.0);
     let mut bench = Bench::picture(&picture, image, SCENE);
-    let untouched = bench.edit(&Edit::default(), Measure::Module);
-    let off = bench.set(&[("camera_bias", 0.0)], Measure::Module);
+    let untouched = bench.edit(&Edit::default(), Measure::Tool);
+    let off = bench.set(&[("camera_bias", 0.0)], Measure::Tool);
     assert_eq!(
         untouched.pixels, off.pixels,
         "E31: with no bias, nothing changes"
@@ -572,7 +572,7 @@ fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
                 let written: Vec<&str> = picked.writes.iter().map(|(c, _)| c).collect();
                 assert_eq!(written, ["exposure"], "E50: only Exposure changes");
                 let exposure = picked.writes.number("exposure");
-                let output = bench.set(&[("exposure", exposure)], Measure::Module);
+                let output = bench.set(&[("exposure", exposure)], Measure::Tool);
                 let off = (luminance(&output.pixels[at]) / target_y).log2().abs();
                 worst = worst.max(off);
                 assert!(
@@ -786,9 +786,9 @@ fn e4_and_e8_on_the_corpus() {
     for name in [NINETY_D, Z6, X_T5] {
         let mut bench = corpus_bench(name, CORPUS_VIEWPORT);
         let bias = bench.image.camera.as_ref().unwrap().exposure_bias;
-        let output = bench.edit(&Edit::default(), Measure::Module);
+        let output = bench.edit(&Edit::default(), Measure::Tool);
         for value in exposures() {
-            let (spread, _) = exposure_factor(&mut bench, &output, value, Measure::Module);
+            let (spread, _) = exposure_factor(&mut bench, &output, value, Measure::Tool);
             let error = e8_error(&mut bench, &output, value);
             println!(
                 "{name} (bias {bias:+.2}) at {value:+} EV: spread {spread:.1e}, \
@@ -818,7 +818,7 @@ fn e3_and_e14_on_the_corpus() {
     }
 }
 
-/// Contrast and its pivot are the Colour balance RGB module's now (decision 2): Exposure
+/// Contrast and its pivot are the Colour balance RGB tool's now (decision 2): Exposure
 /// refuses them, as the session's `SetControl`, the CLI and a saved edit do.
 #[test]
 fn contrast_and_its_pivot_are_no_longer_exposure_s() {
@@ -838,7 +838,7 @@ fn contrast_and_its_pivot_are_no_longer_exposure_s() {
     assert_eq!(edit, Edit::default());
 }
 
-/// The module's defaults agree with the exposure operation's for every kind of image:
+/// The tool's defaults agree with the exposure operation's for every kind of image:
 /// Compensate camera exposure as the operation's `compensate_exposure_bias`, and the
 /// camera's bias as the operation itself clamps it.
 #[test]

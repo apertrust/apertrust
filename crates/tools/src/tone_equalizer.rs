@@ -288,7 +288,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `toneequal`, each by the control of its name: the module is
+/// Every parameter of `toneequal`, each by the control of its name: the tool is
 /// darktable's and owns them all.
 static OWNS: [Owned; 18] = owns();
 
@@ -350,8 +350,8 @@ impl Tool for ToneEqualizer {
     /// The bands' curve as `toneequal` renders it (decision 31), on the graph's axes: the
     /// correction in EV for the mask's exposure in EV, darktable's fit of the nine gains at
     /// the σ the binding sets, through the curve `apertrust-color` gives the operation's
-    /// setup too: at the defaults, darktable's ripple, which the module on renders. The
-    /// panel draws it flat while the module is off (decision 32), as nothing is corrected
+    /// setup too: at the defaults, darktable's ripple, which the tool on renders. The
+    /// panel draws it flat while the tool is off (decision 32), as nothing is corrected
     /// then. `None` where the fit fails.
     fn curve(&self, control: &str, values: &Controls) -> Option<Box<dyn Fn(f32) -> f32>> {
         if !BANDS.contains(&control) {
@@ -658,8 +658,8 @@ mod tests {
 
     #[test]
     fn the_graph_at_the_defaults_is_darktable_s_ripple() {
-        // On at its defaults the module renders darktable's zero bands' ripple, so the
-        // curve is that ripple; the panel draws it flat while the module is off.
+        // On at its defaults the tool renders darktable's zero bands' ripple, so the
+        // curve is that ripple; the panel draws it flat while the tool is off.
         let ripple = ToneEqualizer
             .curve(BANDS[0], &DEFINITION.defaults())
             .unwrap();

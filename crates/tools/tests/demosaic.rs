@@ -178,7 +178,7 @@ fn d0_every_control_at_its_default_renders_as_no_edit() {
     }
 }
 
-/// D0 on every corpus raw: the module at its defaults, written or kept, plans the very
+/// D0 on every corpus raw: the tool at its defaults, written or kept, plans the very
 /// instances and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -260,7 +260,7 @@ fn d1_holds(bench: &mut Bench) {
     edit.reset_tool(&Demosaic);
     assert!(
         exact(&none, &bench.edit(&edit, Frame)),
-        "D1, the module reset"
+        "D1, the tool reset"
     );
 }
 
@@ -286,7 +286,7 @@ fn d1_on_the_corpus() {
 
 // D2: on a layer.
 
-/// D2: demosaic acts on the mosaic, before any layer, so the module is the background's
+/// D2: demosaic acts on the mosaic, before any layer, so the tool is the background's
 /// only, as darktable's demosaic is one instance with no mask.
 #[test]
 fn d2_it_is_never_offered_on_a_layer() {
@@ -324,7 +324,7 @@ fn rendered_method(edit: &Edit, image: &ImageContext) -> u32 {
     apertrust_operations::demosaic::METHODS[params.choice(METHOD) as usize].1
 }
 
-/// D3: the module's defaults are darktable's `reload_defaults` for the photo, RCD or
+/// D3: the tool's defaults are darktable's `reload_defaults` for the photo, RCD or
 /// Markesteijn 1-pass, so an unedited photo renders darktable's method with every other
 /// parameter darktable's default, which `apertrust-golden raw-run` holds to darktable's
 /// own demosaic (`docs/ports/demosaic.md`, Results); the panel shows that method.

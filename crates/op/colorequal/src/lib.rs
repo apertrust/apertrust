@@ -20,11 +20,11 @@
 //! nodes each, with darktable's guided filter, which first smooths the chromaticity the
 //! hue is read from and then spreads the saturation and brightness corrections over
 //! areas of one colour, on darktable's recursive Gaussian (`src/common/gaussian.c`,
-//! shared in the colour library). The Colour equalizer module (`docs/tools/README.md`).
+//! shared in the colour library). The Colour equalizer tool (`docs/tools/README.md`).
 //! See `docs/ports/colorequal.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
+//! it, and the session plans it only while a tool's binding sets one of its
 //! parameters (decision 28).
 
 mod setup;
@@ -63,7 +63,7 @@ static MANIFEST: Manifest = Manifest {
     // The guided filter's passes see the whole image and `main` reads only its own
     // pixel and their scratch, so a tile needs no border.
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "colorequal",

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Colour maths on the CPU, for kernel setup: the values a module computes once before
+//! Colour maths on the CPU, for kernel setup: the values an operation computes once before
 //! its kernel runs. Each function mirrors the darktable helper named in its doc, in f32
 //! like darktable, so setup values match darktable's own.
 //!
@@ -28,7 +28,7 @@
 //! of `slang/box_filter.slang`), the recursive Gaussian (`gaussian`, of
 //! `slang/gaussian.slang`), the bilinear resampling between grids (`bilinear`, of
 //! `slang/bilinear.slang`), and the tone equalizer's correction curve (`tone_equalizer`),
-//! which its operation's setup and its module's band graph share.
+//! which its operation's setup and its tool's band graph share.
 
 #![allow(
     clippy::excessive_precision,

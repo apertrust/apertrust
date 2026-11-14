@@ -18,8 +18,8 @@
 //! Tests): every command, its region kept on its part of the scene through every
 //! orientation, its reading after the frame it measured and equal to the frame's own
 //! statistics under it, the refusals, turning off, and a failure that leaves the frames;
-//! and module pickers: read at their operation, applied through their pick as a gesture,
-//! turning their module on and off with it, and in the raw stage per CFA colour.
+//! and tool pickers: read at their operation, applied through their pick as a gesture,
+//! turning their tool on and off with it, and in the raw stage per CFA colour.
 
 use apertrust_tools::colour_balance_rgb::ColourBalanceRgb;
 use apertrust_tools::orientation::Orientation;
@@ -43,17 +43,14 @@ fn on(area: bool) -> Command {
 }
 
 /// `On` for [`Sample`]'s picker `id`, an area where it takes both.
-fn on_module(id: &'static str, area: bool) -> Command {
+fn on_tool(id: &'static str, area: bool) -> Command {
     on_picker("sample", id, area)
 }
 
-/// `On` for the picker `id` of `module`.
-fn on_picker(module: &'static str, id: &'static str, area: bool) -> Command {
+/// `On` for the picker `id` of `tool`.
+fn on_picker(tool: &'static str, id: &'static str, area: bool) -> Command {
     picker(PickerCommand::On {
-        picker: PickerRef::Tool {
-            tool: module,
-            picker: id,
-        },
+        picker: PickerRef::Tool { tool, picker: id },
         area,
         keys: PickKeys::default(),
         settings: Vec::new(),
@@ -347,25 +344,25 @@ fn on_is_refused_before_the_photo_is_live_and_a_move_with_no_picker_on() {
     ]);
     assert_eq!(refused(&driven.run([on(false)])), "NotLive");
     driven.settle();
-    // A picker no module declares, and one of a module the session lacks.
+    // A picker no tool declares, and one of a tool the session lacks.
     assert_eq!(
-        refused(&driven.run([on_module("contrast", true)])),
+        refused(&driven.run([on_tool("contrast", true)])),
         "UnknownPicker"
     );
     assert_eq!(
         refused(&driven.run([on_picker("exposure", "exposure", true)])),
         "UnknownPicker"
     );
-    // Settings no picker of the module reads.
+    // Settings no picker of the tool reads.
     let unread = vec![("target", ControlValue::Number(50.0))];
-    let mut module = on_module("brightness", true);
+    let mut tool = on_tool("brightness", true);
     if let Command::Picker(PickerCommand::On {
         settings: asked, ..
-    }) = &mut module
+    }) = &mut tool
     {
         *asked = unread.clone();
     }
-    assert_eq!(refused(&driven.run([module])), "UnknownSetting(\"target\")");
+    assert_eq!(refused(&driven.run([tool])), "UnknownSetting(\"target\")");
     let settings = picker(PickerCommand::Settings {
         tool: "sample",
         settings: unread,
@@ -395,8 +392,8 @@ fn on_is_refused_before_the_photo_is_live_and_a_move_with_no_picker_on() {
     let opened = driven.open(&path);
     assert!(matches!(opened.first(), Some(Event::Opened(photo)) if photo.view_only.is_some()));
     assert!(driven.reading([on(false)]).frame.is_some());
-    // A module's picker writes the edit: refused there, the Colour picker's left on.
-    let events = driven.run([on_module("brightness", true)]);
+    // A tool's picker writes the edit: refused there, the Colour picker's left on.
+    let events = driven.run([on_tool("brightness", true)]);
     assert!(
         matches!(failures(&events)[..], [SessionError::ViewOnly(_)]),
         "{events:?}"
@@ -441,7 +438,7 @@ fn the_picker_turns_off_as_another_photo_opens_and_its_readings_never_arrive() {
     remove(&other);
 }
 
-/// darktable's flip bits for each of the Orientation module's choices: the rows flipped,
+/// darktable's flip bits for each of the Orientation tool's choices: the rows flipped,
 /// the columns flipped, the axes swapped. None comes last, from transverse, so each choice
 /// changes the photo.
 const ORIENTATIONS: [(u32, u8); 8] = [
@@ -584,10 +581,10 @@ fn a_failure_of_the_pickers_is_reported_once_and_the_frames_go_on() {
     remove(&path);
 }
 
-/// The module parts of the pickers' readings in `events`.
-/// The module parts of the pickers' readings in `events`, each once: a reading whose frame
-/// part alone changed carries the module part the one before it did.
-fn module_parts(events: &[Event]) -> Vec<&ToolReading> {
+/// The tool parts of the pickers' readings in `events`.
+/// The tool parts of the pickers' readings in `events`, each once: a reading whose frame
+/// part alone changed carries the tool part the one before it did.
+fn tool_parts(events: &[Event]) -> Vec<&ToolReading> {
     let mut parts: Vec<&ToolReading> = readings(events)
         .into_iter()
         .filter_map(|reading| reading.as_ref()?.tool.as_ref())
@@ -596,13 +593,13 @@ fn module_parts(events: &[Event]) -> Vec<&ToolReading> {
     parts
 }
 
-/// The module part last sent in `events`.
+/// The tool part last sent in `events`.
 fn latest(events: &[Event]) -> &ToolReading {
-    let parts = module_parts(events);
+    let parts = tool_parts(events);
     parts
         .last()
         .copied()
-        .unwrap_or_else(|| panic!("a module part in {events:?}"))
+        .unwrap_or_else(|| panic!("a tool part in {events:?}"))
 }
 
 /// The mean of the first three channels, [`Sample`]'s stand-in for luminance.
@@ -610,8 +607,8 @@ fn grey(stats: &Stats) -> f32 {
     (stats.mean[0] + stats.mean[1] + stats.mean[2]) / 3.0
 }
 
-fn number(values: &Values, module: &str, id: &str) -> f32 {
-    match control(values, module, id).value {
+fn number(values: &Values, tool: &str, id: &str) -> f32 {
+    match control(values, tool, id).value {
         ControlValue::Number(number) => number,
         ref value => panic!("{value:?}"),
     }
@@ -626,19 +623,19 @@ fn moved(from: [f32; 2], to: [f32; 2], done: bool) -> Command {
     })
 }
 
-/// The bits of a module reading's statistics, compared exactly.
+/// The bits of a tool reading's statistics, compared exactly.
 fn bits(stats: &Stats) -> [[u32; 4]; 3] {
     [stats.mean, stats.min, stats.max].map(|v| v.map(f32::to_bits))
 }
 
 #[test]
-fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstream() {
-    let path = scratch("picker-module");
+fn a_tool_picker_applies_its_first_reading_and_each_move_never_an_edit_upstream() {
+    let path = scratch("picker-tool");
     let mut driven = Driven::new(&[&Orientation, &Sample]);
     driven.open(&path);
     driven.writes();
     // On, with no edit: no frame, a sample-only render at exposure.
-    let events = driven.run([on_module("brightness", true)]);
+    let events = driven.run([on_tool("brightness", true)]);
     assert!(
         failures(&events).is_empty() && !events.iter().any(|e| matches!(e, Event::Frame(_))),
         "{events:?}"
@@ -647,7 +644,7 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     // Its reading, then the change its pick makes and the frame; then the reading that
     // frame measured at exposure, sent and never applied. The frame's own parts come
     // between them as they arrive.
-    let parts = module_parts(&picked);
+    let parts = tool_parts(&picked);
     let [part, again] = parts[..] else {
         panic!("{picked:?}");
     };
@@ -699,7 +696,7 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
     let picked = driven.picked();
     let moved_to = number(values(&picked), "sample", "brightness");
-    let part = (module_parts(&picked).into_iter())
+    let part = (tool_parts(&picked).into_iter())
         .find(|part| {
             part.output
                 .is_some_and(|output| (grey(&output) / 0.18 - 1.0).abs() > 1e-3)
@@ -744,11 +741,11 @@ fn a_sample_only_reading_is_the_one_a_render_measures() {
     driven.open(&path);
     // `show` reads exposure's input and output and writes nothing: its first reading,
     // from a sample-only render.
-    driven.run([on_module("show", false)]);
+    driven.run([on_tool("show", false)]);
     let picked = driven.picked();
     let first = latest(&picked);
     let (input, output) = (first.input.unwrap(), first.output.unwrap());
-    // A change to the module, which keeps `show` on: the render measures at exposure.
+    // A change to the tool, which keeps `show` on: the render measures at exposure.
     driven.run([set("brightness", ControlValue::Number(0.5), true)]);
     assert!(driven.engine.pickers.on());
     let picked = driven.picked();
@@ -777,7 +774,7 @@ fn a_drag_is_one_change_completed_by_its_release_or_by_turning_off() {
     let path = scratch("picker-drag");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     // A drag's steps are applied, the edit not saved until the release.
@@ -805,7 +802,7 @@ fn a_drag_is_one_change_completed_by_its_release_or_by_turning_off() {
 }
 
 #[test]
-fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_keeps() {
+fn a_tool_picker_turns_its_tool_on_and_off_as_the_tool_changes_unless_it_keeps() {
     let path = scratch("picker-switched");
     let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
     driven.open(&path);
@@ -823,22 +820,22 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
     assert_eq!(written(&driven.writes()).len(), 1);
     // Its operation's input read; its pick, none yet, writes nothing.
     let picked = driven.picked();
-    let parts = module_parts(&picked);
+    let parts = tool_parts(&picked);
     assert!(
         matches!(parts[..], [part] if part.input.is_some() && part.output.is_none()),
         "{picked:?}"
     );
     assert!(!picked.iter().any(|e| matches!(e, Event::Values(_))));
-    // A change to its module turns it off, as darktable's `gui_changed` does.
+    // A change to its tool turns it off, as darktable's `gui_changed` does.
     let events = driven.run([Command::ResetTool {
         tool: "colorbalancergb".to_owned(),
     }]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
     // Its end is through the reset, so a client knows it answers its `On`.
     assert_eq!(end(&events), Some(driven.engine.applied));
-    // A change to another module leaves it on; Sample's `show`, darktable's keep-active,
-    // stays on through its own module's.
-    driven.run([on_module("show", true)]);
+    // A change to another tool leaves it on; Sample's `show`, darktable's keep-active,
+    // stays on through its own tool's.
+    driven.run([on_tool("show", true)]);
     driven.picked();
     let events = driven.run([
         Command::ResetTool {
@@ -850,14 +847,14 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
         readings(&events).is_empty() && driven.engine.pickers.on(),
         "{events:?}"
     );
-    // `spread` does not keep: off as its module changes.
-    driven.run([on_module("spread", true)]);
+    // `spread` does not keep: off as its tool changes.
+    driven.run([on_tool("spread", true)]);
     driven.picked();
     let events = driven.run([set("grain", ControlValue::Number(30.0), true)]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
     assert_eq!(end(&events), Some(driven.engine.applied));
     // `Off` ends it through itself.
-    driven.run([on_module("show", true)]);
+    driven.run([on_tool("show", true)]);
     driven.picked();
     let events = driven.run([picker(PickerCommand::Off)]);
     assert_eq!(end(&events), Some(driven.engine.applied));
@@ -875,7 +872,7 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
         100.0 * (input.max[c] - input.min[c])
     };
     // `spread` with the red channel shown: red's spread, denoised, in percent.
-    let mut on = on_module("spread", true);
+    let mut on = on_tool("spread", true);
     if let Command::Picker(PickerCommand::On { channel, .. }) = &mut on {
         *channel = Some("red");
     }
@@ -918,7 +915,7 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
     remove(&path);
 }
 
-/// A module with one area picker on temperature's input, the mosaic, as White balance's
+/// A tool with one area picker on temperature's input, the mosaic, as White balance's
 /// `spot` reads it, which writes nothing: its one control is temperature's red
 /// coefficient, which it owns and binds to nothing.
 struct Spot;
@@ -1056,8 +1053,8 @@ fn a_moved_area_s_reading_at_its_operation_on_the_7r_v() {
         ),
         ("temperature, in the raw stage", &[&Spot], "spot", "red"),
     ];
-    for (name, modules, module, id) in cases {
-        let mut driven = Driven::new(modules);
+    for (name, tools, tool, id) in cases {
+        let mut driven = Driven::new(tools);
         driven.engine.load = open::files();
         let mut opened = driven.run([
             Command::Open(path.clone()),
@@ -1072,7 +1069,7 @@ fn a_moved_area_s_reading_at_its_operation_on_the_7r_v() {
             _ => None,
         });
         assert_eq!(photo, Some((9504, 6336)), "{opened:?}");
-        driven.run([on_picker(module, id, true)]);
+        driven.run([on_picker(tool, id, true)]);
         driven.picked();
         let mut latencies = Vec::new();
         for run in 0..60u32 {
@@ -1082,7 +1079,7 @@ fn a_moved_area_s_reading_at_its_operation_on_the_7r_v() {
             driven.run([moved([at, at], [1.0 - at, 1.0 - at], true)]);
             let read = loop {
                 let events = driven.engine.picked();
-                if !module_parts(&events).is_empty() {
+                if !tool_parts(&events).is_empty() {
                     break start.elapsed();
                 }
                 std::thread::sleep(POLL_INTERVAL);
@@ -1108,7 +1105,7 @@ fn a_release_while_a_drag_s_reading_is_on_its_way_completes_with_that_reading() 
     let path = scratch("picker-release-in-flight");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     // A step, its reading still on its way as the release comes where it left the area:
@@ -1157,7 +1154,7 @@ fn a_release_while_a_drag_s_reading_is_on_its_way_completes_with_that_reading() 
     let path = scratch("picker-release-edit-reading");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
     driven.picked();
@@ -1204,7 +1201,7 @@ fn a_picker_on_an_operation_in_the_viewport_s_tiles_reads_nothing_and_applies_no
     let bound = edit::instances(
         &open.edit,
         driven.engine.operations,
-        &driven.engine.modules,
+        &driven.engine.tools,
         &open.image,
     );
     let instances: Vec<Instance> = (bound.instances.into_iter())
@@ -1242,7 +1239,7 @@ fn a_picker_on_an_operation_in_the_viewport_s_tiles_reads_nothing_and_applies_no
     let mut events = Vec::new();
     driven.engine.probed(Some(probing), None, &mut events);
     assert!(events.is_empty(), "{events:?}");
-    // Its reading has no module part, and nothing is applied.
+    // Its reading has no tool part, and nothing is applied.
     let picked = driven.picked();
     assert!(
         matches!(&picked[..], [Event::Picker { reading: Some(reading), .. }] if reading.tool.is_none()),
@@ -1256,7 +1253,7 @@ fn a_release_whose_reading_misses_completes_the_drag_s_change() {
     let path = scratch("picker-release-missed");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
@@ -1275,9 +1272,9 @@ fn a_release_whose_reading_misses_completes_the_drag_s_change() {
     remove(&path);
 }
 
-/// A module with one area picker on exposure's input, which reads the setting `gain`:
+/// A tool with one area picker on exposure's input, which reads the setting `gain`:
 /// its pick sets `level` to the gain times the mean's first channel, and with no gain
-/// writes `other`, which its picker does not write, as a module's bug would; it shows a
+/// writes `other`, which its picker does not write, as a tool's bug would; it shows a
 /// patch of the gain. It owns
 /// exposure's exposure and binds nothing.
 struct Configured;
@@ -1448,7 +1445,7 @@ fn settings_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picke
         driven.engine.pickers.readings_of("configured").0,
         Some(latest)
     );
-    // A pick its module gets wrong is refused, the picker off, the last reading kept.
+    // A pick its tool gets wrong is refused, the picker off, the last reading kept.
     driven.run([Command::Resize {
         width: 50,
         height: 50,
@@ -1476,7 +1473,7 @@ fn a_waiting_reading_replaced_passes_its_application_on() {
     let path = scratch("picker-keep-due");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     // Three steps and nothing polled: two staging buffers mapping, the third waiting.
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
@@ -1502,7 +1499,7 @@ fn a_gpu_error_retries_without_the_reduction_only_where_one_was_in_the_render() 
     let path = scratch("picker-retry");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("show", true)]);
+    driven.run([on_tool("show", true)]);
     driven.picked();
     // A render with no reduction at exposure, grain after it changing: the error is the
     // frame's, and the picker stays on.
@@ -1530,7 +1527,7 @@ fn a_gpu_error_retries_without_the_reduction_only_where_one_was_in_the_render() 
     let path = scratch("picker-retry-both");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("show", true)]);
+    driven.run([on_tool("show", true)]);
     driven.picked();
     driven.engine.poison = Some(Poison::Always);
     let events = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
@@ -1547,7 +1544,7 @@ fn a_release_that_misses_waits_for_its_drag_s_step_on_its_way() {
     let path = scratch("picker-missed-in-flight");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     // A step, its reading still on its way, then a release on the photo's right edge,
@@ -1577,7 +1574,7 @@ fn a_release_and_the_next_drag_s_first_step_in_one_batch_save_apart() {
     let path = scratch("picker-release-and-step");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
@@ -1604,7 +1601,7 @@ fn a_gpu_error_keeps_a_release_that_missed() {
     let path = scratch("picker-discard-release");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
@@ -1665,7 +1662,7 @@ fn settings_save_a_drag_under_way_before_their_pick() {
     remove(&path);
 }
 
-/// Every completing command of a module's picker is answered with a `Saved` through it,
+/// Every completing command of a tool's picker is answered with a `Saved` through it,
 /// a pick that wrote nothing included, the edit reported held (decision 79): `show`'s
 /// `On` and a release of its, neither of which writes.
 #[test]
@@ -1682,7 +1679,7 @@ fn a_pick_that_writes_nothing_is_answered_with_a_save() {
             })
             .max()
     };
-    driven.run([on_module("show", true)]);
+    driven.run([on_tool("show", true)]);
     driven.picked();
     let on = driven.engine.applied;
     assert!(saved(&driven.writes()).is_some_and(|t| t >= on));
@@ -1710,7 +1707,7 @@ fn a_pick_that_writes_nothing_writes_again_after_a_failed_write() {
         "{writes:?}"
     );
     std::fs::create_dir_all(&folder).unwrap();
-    driven.run([on_module("show", true)]);
+    driven.run([on_tool("show", true)]);
     driven.picked();
     assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
     assert!(sidecar.exists());
@@ -1719,7 +1716,7 @@ fn a_pick_that_writes_nothing_writes_again_after_a_failed_write() {
 
 /// A write answering an earlier command never answers a picker's `On` whose first pick is
 /// still to come: `Settings` with no reading kept, answered held in the batch, then `On` for
-/// a module already on, the `Saved` through `Settings` alone until the pick arrives.
+/// a tool already on, the `Saved` through `Settings` alone until the pick arrives.
 #[test]
 fn a_write_never_answers_a_pick_still_to_come() {
     let path = scratch("picker-pick-to-come");
@@ -1738,7 +1735,7 @@ fn a_write_never_answers_a_pick_still_to_come() {
         tool: "sample",
         settings: Vec::new(),
     });
-    driven.run([settings, on_module("show", true)]);
+    driven.run([settings, on_tool("show", true)]);
     let on = driven.engine.applied;
     assert_eq!(saved(&driven.writes()), Some(on - 1));
     driven.picked();
@@ -1747,7 +1744,7 @@ fn a_write_never_answers_a_pick_still_to_come() {
     remove(&path);
 }
 
-/// A module picker's `On` replacing one with a drag under way is never answered by the
+/// A tool picker's `On` replacing one with a drag under way is never answered by the
 /// writes that close the drag and turn the old picker off: those are through the command
 /// before it, and only its pick's answer covers it.
 #[test]
@@ -1763,14 +1760,14 @@ fn replacing_a_picker_never_answers_the_new_one_early() {
             })
             .max()
     };
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     // A step written, unsaved: a drag under way.
     driven.run([moved([0.1, 0.1], [0.4, 0.5], false)]);
     driven.picked();
     assert!(driven.engine.unsaved());
     driven.writes();
-    driven.run([on_module("show", true)]);
+    driven.run([on_tool("show", true)]);
     let on = driven.engine.applied;
     assert_eq!(saved(&driven.writes()), Some(on - 1));
     driven.picked();
@@ -1836,7 +1833,7 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
     remove(&path);
 }
 
-/// A pick that ends a person's slider gesture under way, on another module, makes the
+/// A pick that ends a person's slider gesture under way, on another tool, makes the
 /// gesture a step of its own source first, You, never the pick's Auto.
 #[test]
 fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
@@ -1844,7 +1841,7 @@ fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
     let path = scratch("picker-ends-gesture");
     let mut driven = Driven::new(&[&Sample, &apertrust_tools::soften::Soften]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     driven.run([Command::SetControl {
@@ -1856,8 +1853,8 @@ fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
     driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
     driven.picked();
     let open = driven.engine.open.as_ref().unwrap();
-    let of = |module: &str| {
-        let entry = |step: &&crate::history::Step| matches!(&step.change, Change::Entry(Entry::Tool { tool: m, .. }) if m == module);
+    let of = |tool: &str| {
+        let entry = |step: &&crate::history::Step| matches!(&step.change, Change::Entry(Entry::Tool { tool: m, .. }) if m == tool);
         (open.history.log().steps().iter())
             .rfind(entry)
             .map(|step| step.source)
@@ -1874,7 +1871,7 @@ fn a_settled_pick_sends_its_history() {
     let path = scratch("picker-history");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     driven.picked();
     driven.writes();
     driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
@@ -1889,26 +1886,26 @@ fn a_settled_pick_sends_its_history() {
     remove(&path);
 }
 
-fn hide(module: &str, hidden: bool) -> Command {
+fn hide(tool: &str, hidden: bool) -> Command {
     Command::Hide {
-        tool: module.to_owned(),
+        tool: tool.to_owned(),
         hidden,
     }
 }
 
-/// While the History tab's eye hides a module, a module's picker already on measures and
+/// While the History tab's eye hides a tool, a tool's picker already on measures and
 /// applies nothing (decision 78): what it read would be the view's, and what it wrote the
 /// edit's. A `Hide` leaves it on; a move meanwhile writes nothing to the edit or its file,
 /// its reading waiting; shown again, the next reading applies as usual. `On` for a
-/// module's picker is refused while a module is hidden, `Hidden`; the Colour picker
-/// module's, which writes nothing, still turns on.
+/// tool's picker is refused while a tool is hidden, `Hidden`; the Colour
+/// picker's, which writes nothing, still turns on.
 #[test]
-fn a_module_picker_applies_no_reading_while_a_module_is_hidden() {
+fn a_tool_picker_applies_no_reading_while_a_tool_is_hidden() {
     let path = scratch("picker-hidden");
     let sidecar = sidecar::path_for(&path);
     let mut driven = Driven::new(&[&Orientation, &Sample]);
     driven.open(&path);
-    driven.run([on_module("brightness", true)]);
+    driven.run([on_tool("brightness", true)]);
     let before = number(values(&driven.picked()), "sample", "brightness");
     driven.writes();
     let file = std::fs::read(&sidecar).unwrap();
@@ -1928,8 +1925,8 @@ fn a_module_picker_applies_no_reading_while_a_module_is_hidden() {
     assert_eq!(driven.engine.open.as_ref().unwrap().edit, edit);
     driven.writes();
     assert_eq!(std::fs::read(&sidecar).unwrap(), file);
-    // `On` for a module's picker is refused while hidden.
-    let refused = driven.run([on_module("spread", true)]);
+    // `On` for a tool's picker is refused while hidden.
+    let refused = driven.run([on_tool("spread", true)]);
     assert!(
         matches!(failures(&refused)[..], [SessionError::Hidden]),
         "{refused:?}"
@@ -1941,7 +1938,7 @@ fn a_module_picker_applies_no_reading_while_a_module_is_hidden() {
     let after = number(values(&picked), "sample", "brightness");
     assert!((after - before).abs() > 1e-4, "{before} then {after}");
     assert_ne!(driven.engine.open.as_ref().unwrap().edit, edit);
-    // The Colour picker module's turns on while a module is hidden.
+    // The Colour picker's turns on while a tool is hidden.
     driven.run([hide("flip", true)]);
     let reading = driven.reading([on(false)]);
     assert_eq!(reading.picker, PickerRef::ColourPicker);

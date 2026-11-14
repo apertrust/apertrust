@@ -334,7 +334,7 @@ impl Reader<'_> {
             }
         };
         let owner_code = match owner.strip_prefix("tool:") {
-            Some(module) => format!("Tool({module:?})"),
+            Some(tool) => format!("Tool({tool:?})"),
             None if owner == "engine" => "Engine".to_owned(),
             None if owner == "export" => "Export".to_owned(),
             None => "App".to_owned(),
@@ -740,7 +740,7 @@ fn is_unit(unit: &str) -> bool {
 
 fn is_owner(owner: &str) -> bool {
     match owner.strip_prefix("tool:") {
-        Some(module) => is_snake(module),
+        Some(tool) => is_snake(tool),
         None => matches!(owner, "app" | "engine" | "export"),
     }
 }
@@ -851,19 +851,19 @@ mod tests {
     fn the_schema_is_read_and_its_ids_are_unique() {
         let schema = parse(SCHEMA, SCHEMA_PATH).unwrap_or_else(|errors| panic!("{errors:?}"));
         let owned = |owner: &str| schema.settings.iter().filter(|s| s.owner == owner).count();
-        // Exposure is the one module with settings, its area exposure mapping's.
-        let module = "tool:exposure";
+        // Exposure is the one tool with settings, its area exposure mapping's.
+        let tool = "tool:exposure";
         assert_eq!(
-            owned("app") + owned("engine") + owned("export") + owned(module),
+            owned("app") + owned("engine") + owned("export") + owned(tool),
             schema.settings.len()
         );
         let (app, engine) = (schema.generate("app"), schema.generate("engine"));
-        let (export, module) = (schema.generate("export"), schema.generate(module));
+        let (export, tool) = (schema.generate("export"), schema.generate(tool));
         assert_eq!(
-            ids(&module),
+            ids(&tool),
             ["tools.exposure.area_mode", "tools.exposure.lightness"]
         );
-        let mut every = [ids(&app), ids(&engine), ids(&export), ids(&module)].concat();
+        let mut every = [ids(&app), ids(&engine), ids(&export), ids(&tool)].concat();
         assert_eq!(
             (every.first(), every.len()),
             (Some(&"theme"), schema.settings.len())

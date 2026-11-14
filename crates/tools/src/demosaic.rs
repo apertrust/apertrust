@@ -352,7 +352,7 @@ static DEFINITION: Definition = Definition {
     pickers: &[],
 };
 
-/// Every parameter of `demosaic`: the module is darktable's and owns them all.
+/// Every parameter of `demosaic`: the tool is darktable's and owns them all.
 static OWNS: [Owned; 12] = [
     Owned::new(DEMOSAIC, "green_eq"),
     Owned::new(DEMOSAIC, "median_thrs"),
@@ -518,7 +518,7 @@ mod tests {
         }))
     }
 
-    /// Every kind of image the module meets: a Bayer raw, an X-Trans raw, two Bayer4 raws,
+    /// Every kind of image the tool meets: a Bayer raw, an X-Trans raw, two Bayer4 raws,
     /// the second's four colours in a 2×4 pattern, a raw with no colour filters and an
     /// image that is not a raw.
     fn images() -> [ImageContext; 6] {
@@ -864,7 +864,7 @@ mod tests {
         assert!(Demosaic.options("dual_thrs", &bayer()).is_empty());
     }
 
-    /// The controls `rows` show while the module holds `values`, as a panel shows them:
+    /// The controls `rows` show while the tool holds `values`, as a panel shows them:
     /// a mode's rows only for its values, a group's whatever it holds.
     fn shown(rows: &[Row], values: &Controls, into: &mut Vec<&'static str>) {
         for row in rows {

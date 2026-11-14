@@ -39,27 +39,27 @@ impl Random {
 }
 
 /// A random change to `edit`, of the kinds an edit's commands make, and what it wrote: a
-/// value, a mark, a switched module turned on or off, a module reset, an unowned parameter,
-/// the whole edit reset. A mark taken away may leave a module holding nothing, as no
+/// value, a mark, a switched tool turned on or off, a tool reset, an unowned parameter,
+/// the whole edit reset. A mark taken away may leave a tool holding nothing, as no
 /// command does.
 fn change(edit: &mut Edit, random: &mut Random) -> Wrote {
-    let module = ["a", "b", "c"][random.below(3) as usize].to_owned();
-    let wrote = Wrote::Tool(module.clone());
+    let tool = ["a", "b", "c"][random.below(3) as usize].to_owned();
+    let wrote = Wrote::Tool(tool.clone());
     match random.below(12) {
         0..=3 => {
             let value = ControlValue::Number(random.below(4) as f32);
-            edit.modules.entry(module).or_default().set("x", value);
+            edit.tools.entry(tool).or_default().set("x", value);
         }
         4 | 5 => {
             let mark = [None, Some(Mark::Kept)][random.below(2) as usize];
-            edit.modules.entry(module).or_default().set_mark("y", mark);
+            edit.tools.entry(tool).or_default().set_mark("y", mark);
         }
         6 | 7 => {
-            let values = edit.modules.entry(module).or_default();
+            let values = edit.tools.entry(tool).or_default();
             values.set_enabled(!values.enabled());
         }
         8 => {
-            edit.modules.remove(&module);
+            edit.tools.remove(&tool);
         }
         9 | 10 => {
             let value = Value::Float(random.below(3) as f32);
@@ -77,25 +77,25 @@ fn change(edit: &mut Edit, random: &mut Random) -> Wrote {
     wrote
 }
 
-/// `edit` without the modules and operations that hold nothing: the same state.
+/// `edit` without the tools and operations that hold nothing: the same state.
 fn tidy(edit: &Edit) -> Edit {
     let mut tidy = edit.clone();
-    tidy.modules.retain(|_, values| !values.is_empty());
+    tidy.tools.retain(|_, values| !values.is_empty());
     tidy.params
         .retain(|_, params| params.iter().next().is_some());
     tidy
 }
 
-/// A change that wrote `wrote`, of a random target of two controls of its module, or of
+/// A change that wrote `wrote`, of a random target of two controls of its tool, or of
 /// several or none, sent between 0 and 3 s after the last, a frame published after it half
 /// the time: so some changes merge into the step before them, by the two times, and some
 /// do not. An operation's parameters or `Reset` have no target, as the session gives them.
 fn write(history: &mut PhotoHistory, wrote: Wrote, at: &mut Instant, random: &mut Random) {
     let pick = random.below(3) as usize;
     let target = match &wrote {
-        Wrote::Tool(module) => {
+        Wrote::Tool(tool) => {
             let control = |control: &str| Target::Control {
-                module: module.clone(),
+                tool: tool.clone(),
                 control: control.to_owned(),
             };
             [Some(control("x")), Some(control("y")), None][pick].clone()
@@ -116,10 +116,10 @@ fn write(history: &mut PhotoHistory, wrote: Wrote, at: &mut Instant, random: &mu
 /// left it; Undo and Redo are each other's inverse, over a batch's steps whole, Undo takes
 /// a `GoTo` back, and a merged step whole, and a merged change adds no record; a `GoTo`
 /// inside a batch lands on the batch's steps up to it. A change not yet a step goes on
-/// over several rounds, so it may touch several modules, a batch. Half the runs start from
-/// an edit read from a file, a step of each module. Seeds above 40 give a new photo three
+/// over several rounds, so it may touch several tools, a batch. Half the runs start from
+/// an edit read from a file, a step of each tool. Seeds above 40 give a new photo three
 /// default steps, which `GoTo` lands among and Undo's fallback stops above; the edit's
-/// modules not applied follow it as the session keeps them.
+/// tools not applied follow it as the session keeps them.
 #[test]
 fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
     // How many times Undo and Redo fell back to moving the end, a `GoTo` moved it, and a
@@ -256,7 +256,7 @@ fn the_fold_is_the_edit_after_every_sequence_and_undo_and_redo_are_inverses() {
                     }
                 }
             }
-            // The modules not applied, as the session keeps them after each command.
+            // The tools not applied, as the session keeps them after each command.
             edit.unapplied = history.unapplied(&edit);
             record(&history, &tidy(&edit), &mut left);
             assert_eq!(history.log.fold(), tidy(&history.stepped), "{context}");
@@ -486,7 +486,7 @@ fn record(history: &PhotoHistory, edit: &Edit, left: &mut BTreeMap<StepId, (Cloc
     }
 }
 
-/// The default steps the random sequences above seed 40 begin with: modules the changes
+/// The default steps the random sequences above seed 40 begin with: tools the changes
 /// touch and one they do not, none of which darktable has on by default.
 const DEFAULTS: &[&str] = &["d", "a", "e"];
 
@@ -498,7 +498,7 @@ fn exposed(ev: f32) -> Edit {
     edit
 }
 
-/// A history read from a file holding `edit`: a step of each module and operation it
+/// A history read from a file holding `edit`: a step of each tool and operation it
 /// holds, sharing a batch, as a version 1 file reads (the sidecar's tests hold that
 /// reading), of the unknown machine's clock, which is the copy's vector.
 fn reopened(edit: &Edit) -> PhotoHistory {
@@ -670,27 +670,27 @@ fn undo_makes_a_change_not_yet_a_step_one_first_and_takes_it_back() {
     assert_eq!(history.log.steps().len(), 2);
 }
 
-/// `edit` with the module `b`'s control at `x`.
+/// `edit` with the tool `b`'s control at `x`.
 fn with_b(edit: &Edit, x: f32) -> Edit {
     let mut edit = edit.clone();
-    (edit.modules.entry("b".to_owned()).or_default()).set("x", ControlValue::Number(x));
+    (edit.tools.entry("b".to_owned()).or_default()).set("x", ControlValue::Number(x));
     edit
 }
 
-fn module(id: &str) -> Wrote {
+fn tool(id: &str) -> Wrote {
     Wrote::Tool(id.to_owned())
 }
 
-/// A change of two modules is a step of each, in the order written, of its source and note,
+/// A change of two tools is a step of each, in the order written, of its source and note,
 /// sharing a batch: one Undo takes both back and one Redo puts both back, and, with no
 /// records, as after reopening, Undo's and Redo's fallback moves over both.
 #[test]
-fn a_change_of_two_modules_is_two_steps_in_one_batch_which_undo_and_redo_move_whole() {
+fn a_change_of_two_tools_is_two_steps_in_one_batch_which_undo_and_redo_move_whole() {
     let mut history = reopened(&Edit::default());
     history.complete(&exposed(1.0), StepSource::You, None);
     let both = with_b(&exposed(2.0), 1.0);
     let note = Some(Note::Text("Style".to_owned()));
-    history.wrote(None, vec![module("b"), module("exposure")], Instant::now());
+    history.wrote(None, vec![tool("b"), tool("exposure")], Instant::now());
     assert!(history.complete(&both, StepSource::Style, note.clone()));
     let steps = history.log.steps();
     let made: Vec<_> = (steps.iter())
@@ -699,8 +699,8 @@ fn a_change_of_two_modules_is_two_steps_in_one_batch_which_undo_and_redo_move_wh
     assert_eq!(
         made[1..],
         [
-            (r#"Module("b")"#.to_owned(), StepSource::Style),
-            (r#"Module("exposure")"#.to_owned(), StepSource::Style),
+            (r#"Tool("b")"#.to_owned(), StepSource::Style),
+            (r#"Tool("exposure")"#.to_owned(), StepSource::Style),
         ]
     );
     let batch = steps[1].batch;
@@ -725,27 +725,23 @@ fn a_change_of_two_modules_is_two_steps_in_one_batch_which_undo_and_redo_move_wh
     assert_eq!(history.log.end(), 3);
 }
 
-/// A change of one target that touched another module too, as a tone mapper turning another
-/// off: a batch, its written module first, which the target's next change does not merge
+/// A change of one target that touched another tool too, as a tone mapper turning another
+/// off: a batch, its written tool first, which the target's next change does not merge
 /// into.
 #[test]
 fn a_batch_s_step_is_merged_into_by_none() {
     let start = Instant::now();
     let mut history = reopened(&Edit::default());
-    history.wrote(Some(exposure()), vec![module("exposure")], start);
+    history.wrote(Some(exposure()), vec![tool("exposure")], start);
     history.complete(&with_b(&exposed(1.0), 1.0), StepSource::You, None);
     let steps = history.log.steps();
     assert_eq!(steps.len(), 2);
     assert!(steps[0].batch.is_some());
     assert!(matches!(
         &steps[0].change,
-        Change::Entry(Entry::Tool { tool: module, .. }) if module == "exposure"
+        Change::Entry(Entry::Tool { tool, .. }) if tool == "exposure"
     ));
-    history.wrote(
-        Some(exposure()),
-        vec![module("exposure")],
-        start + secs(0.5),
-    );
+    history.wrote(Some(exposure()), vec![tool("exposure")], start + secs(0.5));
     history.complete(&with_b(&exposed(2.0), 1.0), StepSource::You, None);
     assert_eq!(history.log.steps().len(), 3);
     assert_eq!(history.log.steps()[2].batch, None);
@@ -760,7 +756,7 @@ fn go_to_lands_inside_a_batch() {
     let mut history = reopened(&Edit::default());
     history.complete(&exposed(1.0), StepSource::You, None);
     let both = with_b(&exposed(2.0), 1.0);
-    history.wrote(None, vec![module("b"), module("exposure")], Instant::now());
+    history.wrote(None, vec![tool("b"), tool("exposure")], Instant::now());
     history.complete(&both, StepSource::You, None);
     let three = ids(&history);
     // Inside: `b` applied, Exposure's second step not.
@@ -802,7 +798,7 @@ fn go_to_lands_inside_a_batch() {
 /// The target of Exposure's exposure control, which [`exposed`] writes.
 fn exposure() -> Target {
     Target::Control {
-        module: "exposure".to_owned(),
+        tool: "exposure".to_owned(),
         control: "exposure".to_owned(),
     }
 }
@@ -812,12 +808,12 @@ fn exposure() -> Target {
 fn merges(published: Option<Duration>, after: Duration) -> bool {
     let start = Instant::now();
     let mut history = reopened(&Edit::default());
-    history.wrote(Some(exposure()), vec![module("exposure")], start);
+    history.wrote(Some(exposure()), vec![tool("exposure")], start);
     history.complete(&exposed(1.0), StepSource::You, None);
     if let Some(published) = published {
         history.published(start + published);
     }
-    history.wrote(Some(exposure()), vec![module("exposure")], start + after);
+    history.wrote(Some(exposure()), vec![tool("exposure")], start + after);
     history.complete(&exposed(2.0), StepSource::You, None);
     history.log.steps().len() == 1
 }
@@ -852,7 +848,7 @@ fn a_merged_step_keeps_its_id_and_one_undo_takes_it_back_whole() {
     let nudge = |history: &mut PhotoHistory, ev: f32, after: f64| {
         history.wrote(
             Some(exposure()),
-            vec![module("exposure")],
+            vec![tool("exposure")],
             start + secs(after),
         );
         history.complete(&exposed(ev), StepSource::You, None);
@@ -890,11 +886,11 @@ fn a_merged_step_keeps_its_id_and_one_undo_takes_it_back_whole() {
 #[test]
 fn no_merge_across_another_target_source_note_or_command() {
     let preset = Target::Preset {
-        module: "exposure".to_owned(),
+        tool: "exposure".to_owned(),
         preset: "look".to_owned(),
     };
     let black = Target::Control {
-        module: "exposure".to_owned(),
+        tool: "exposure".to_owned(),
         control: "black".to_owned(),
     };
     let note = || Some(Note::Text("Brighter".to_owned()));
@@ -902,14 +898,14 @@ fn no_merge_across_another_target_source_note_or_command() {
     // `edit` the edit the step left: whether it merged.
     let merged = |change: &dyn Fn(&mut PhotoHistory, &Edit)| {
         let mut history = reopened(&Edit::default());
-        history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
+        history.wrote(Some(exposure()), vec![tool("exposure")], Instant::now());
         history.complete(&exposed(1.0), StepSource::You, None);
         change(&mut history, &exposed(1.0));
         history.log.steps().len() == 1
     };
     let you = |target: Option<Target>| {
         move |history: &mut PhotoHistory, _: &Edit| {
-            history.wrote(target.clone(), vec![module("exposure")], Instant::now());
+            history.wrote(target.clone(), vec![tool("exposure")], Instant::now());
             history.complete(&exposed(2.0), StepSource::You, None);
         }
     };
@@ -918,12 +914,8 @@ fn no_merge_across_another_target_source_note_or_command() {
     assert!(!merged(&you(Some(preset))));
     assert!(!merged(&you(None)));
     assert!(!merged(&|history, _| {
-        history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
-        history.wrote(
-            Some(black.clone()),
-            vec![module("exposure")],
-            Instant::now(),
-        );
+        history.wrote(Some(exposure()), vec![tool("exposure")], Instant::now());
+        history.wrote(Some(black.clone()), vec![tool("exposure")], Instant::now());
         history.complete(&exposed(2.0), StepSource::You, None);
     }));
     for (source, note) in [
@@ -932,7 +924,7 @@ fn no_merge_across_another_target_source_note_or_command() {
         (StepSource::Assistant, None),
     ] {
         assert!(!merged(&|history, _| {
-            history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
+            history.wrote(Some(exposure()), vec![tool("exposure")], Instant::now());
             history.complete(&exposed(2.0), source, note.clone());
         }));
     }
@@ -957,7 +949,7 @@ fn no_merge_across_another_target_source_note_or_command() {
     ] {
         let mut history = reopened(&Edit::default());
         for ev in [1.0, 2.0] {
-            history.wrote(Some(exposure()), vec![module("exposure")], Instant::now());
+            history.wrote(Some(exposure()), vec![tool("exposure")], Instant::now());
             history.complete(&exposed(ev), source, note.clone());
         }
         assert_eq!(
@@ -974,24 +966,16 @@ fn no_merge_across_another_target_source_note_or_command() {
 fn a_cancelled_gesture_is_forgotten() {
     let start = Instant::now();
     let mut history = reopened(&Edit::default());
-    history.wrote(Some(exposure()), vec![module("exposure")], start);
+    history.wrote(Some(exposure()), vec![tool("exposure")], start);
     history.complete(&exposed(1.0), StepSource::You, None);
     // A drag begun at once, cancelled: the edit back where the step left it.
-    history.wrote(Some(exposure()), vec![module("exposure")], start);
+    history.wrote(Some(exposure()), vec![tool("exposure")], start);
     history.interrupted(&exposed(1.0));
     assert!(history.written.is_none() && history.merge.is_none());
     // The next change, 12 s on, merges with the one after it: timed from its own first.
-    history.wrote(
-        Some(exposure()),
-        vec![module("exposure")],
-        start + secs(12.0),
-    );
+    history.wrote(Some(exposure()), vec![tool("exposure")], start + secs(12.0));
     history.complete(&exposed(2.0), StepSource::You, None);
-    history.wrote(
-        Some(exposure()),
-        vec![module("exposure")],
-        start + secs(13.0),
-    );
+    history.wrote(Some(exposure()), vec![tool("exposure")], start + secs(13.0));
     history.complete(&exposed(3.0), StepSource::You, None);
     assert_eq!(history.log.steps().len(), 2);
 }
@@ -1006,7 +990,7 @@ fn a_cancelled_gesture_is_forgotten() {
 #[ignore = "a measurement, run on its own in release"]
 fn the_fact_s_budgets() {
     let image = testing::image();
-    let modules = apertrust_tools::TOOLS;
+    let tools = apertrust_tools::TOOLS;
     for steps in [200, 1000] {
         let mut history = reopened(&Edit::default());
         let ev = |i: usize| -1.0 + (i % 300) as f32 * 0.01;
@@ -1018,13 +1002,13 @@ fn the_fact_s_budgets() {
             (0..5)
                 .map(|_| {
                     history.described = Described::default();
-                    timed(|| history.fact(1, modules, OPERATIONS, &image)).0
+                    timed(|| history.fact(1, tools, OPERATIONS, &image)).0
                 })
                 .collect(),
         );
         // A batch's: one more step, the one before it taken back first so the log keeps
         // its length, then the fact.
-        history.fact(1, modules, OPERATIONS, &image);
+        history.fact(1, tools, OPERATIONS, &image);
         let mut fact = None;
         let warm = median(
             (steps..steps + 51)
@@ -1032,7 +1016,7 @@ fn the_fact_s_budgets() {
                     let last = history.stepped.clone();
                     history.undo(&last);
                     history.complete(&exposed(ev(i)), StepSource::You, None);
-                    let (time, built) = timed(|| history.fact(1, modules, OPERATIONS, &image));
+                    let (time, built) = timed(|| history.fact(1, tools, OPERATIONS, &image));
                     fact = Some(built);
                     time
                 })

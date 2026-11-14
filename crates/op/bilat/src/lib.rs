@@ -19,11 +19,11 @@
 //! Local contrast, ported from darktable (`src/iop/bilat.c`): Lab lightness
 //! through a local laplacian filter (`src/common/locallaplacian.c`), darktable's default,
 //! or a bilateral grid (`src/common/bilateral.c`), each built over the whole image in
-//! whole-image passes and read by a per-pixel `main`. The Local contrast module
+//! whole-image passes and read by a per-pixel `main`. The Local contrast tool
 //! (`docs/tools/README.md`). See `docs/ports/bilat.md`.
 //!
 //! It is in `OPERATIONS` with `default_enabled` off: an unedited photo does not run
-//! it, and the session plans it only while a module's binding sets one of its
+//! it, and the session plans it only while a tool's binding sets one of its
 //! parameters (decision 28).
 
 mod setup;
@@ -60,7 +60,7 @@ static MANIFEST: Manifest = Manifest {
     // The whole-image passes see the whole image and `main` reads only its own pixel
     // and their scratch, so a tile needs no border.
     radius: 0,
-    // Planned only while a module sets one of its parameters (decision 28).
+    // Planned only while a tool sets one of its parameters (decision 28).
     default_enabled: false,
     provenance: Some(Provenance {
         darktable_module: "bilat",

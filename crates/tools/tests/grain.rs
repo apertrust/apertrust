@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Grain's invariants (`docs/tools/grain.md`, Invariants), one test per row, each
-//! named after its row: a switched module's (decision 32), G0 off, G1 the first step, on
+//! named after its row: a switched tool's (decision 32), G0 off, G1 the first step, on
 //! at darktable's defaults, G2 moved and reset, G3 the order, G4 the darktable match, G6
 //! on at darktable's defaults on the CPU and G7 version 1's edits; G5 is withdrawn. The
 //! synthetic ramp and sweep run on CI's software GPUs, G4, G6 and G7 on the CPU. The
@@ -90,7 +90,7 @@ fn edit_of(set: &[(&str, f32)]) -> Edit {
 }
 
 impl Bench {
-    /// The module on at darktable's defaults, 1600 ISO, 25 % and 100 %: grain planned at
+    /// The tool on at darktable's defaults, 1600 ISO, 25 % and 100 %: grain planned at
     /// the operation's defaults, darktable's new instance (rows G1 and G2).
     fn on_at_defaults(&self) -> Vec<Instance<'static>> {
         self.instances(&switched::on_at_defaults(&Grain, &self.image), Frame)
@@ -104,7 +104,7 @@ impl Bench {
 // G0: off.
 
 /// G0 on one pipeline, as the session renders: no edit, then grain joining the plan, on
-/// at darktable's defaults, and leaving it, then each edit that leaves the module off,
+/// at darktable's defaults, and leaving it, then each edit that leaves the tool off,
 /// every frame as the first.
 fn g0_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
@@ -136,7 +136,7 @@ fn g0_off_renders_as_no_edit() {
     }
 }
 
-/// G0 on every corpus raw: the module off, untouched or kept, plans the very instances
+/// G0 on every corpus raw: the tool off, untouched or kept, plans the very instances
 /// and cache keys no edit does, so the same frame.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
@@ -221,7 +221,7 @@ fn g1_on_the_corpus() {
 /// Moves of every control, each by its step and by more: the strength at 0 and one step
 /// off darktable's 25 %, the coarseness and the bias each one step off its default, and
 /// all three at the `grain-agx` golden case's values; and a write of the strength at its
-/// default, which turns the module on. Each changes the frame.
+/// default, which turns the tool on. Each changes the frame.
 const MOVES: [&[(&str, f32)]; 6] = [
     &[("strength", 0.0)],
     &[("strength", 26.0)],
@@ -236,9 +236,9 @@ const MOVES: [&[(&str, f32)]; 6] = [
 ];
 
 /// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the module on at darktable's defaults, and by `ResetTool` (the
+/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
 /// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// grain joins with each move and leaves with each module's reset.
+/// grain joins with each move and leaves with each tool's reset.
 fn g2_holds(bench: &mut Bench) {
     let none = bench.edit(&Edit::default(), Frame);
     let on = bench.on_at_defaults();
@@ -261,13 +261,13 @@ fn g2_holds(bench: &mut Bench) {
         assert_eq!(edit, Edit::default());
         assert!(
             exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the module reset"
+            "{set:?}, the tool reset"
         );
     }
 }
 
 #[test]
-fn g2_a_control_moved_and_reset_renders_as_on_and_the_module_reset_as_no_edit() {
+fn g2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
     let (picture, image) = sweep(-0.67);
     g2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
     let (mosaic, image) = small_raw(-0.67);
@@ -345,12 +345,12 @@ const OFFSET_WORDS: std::ops::Range<usize> = 4..7;
 /// does not read and the golden harness chooses for its gradient check.
 const GRADIENT_WORDS: std::ops::Range<usize> = 32..36;
 
-/// G4: the module's controls set to each golden grain case's values as darktable's
+/// G4: the tool's controls set to each golden grain case's values as darktable's
 /// sliders show them, the coarseness its field × 213.2 in f32, unrounded, and a version 1
 /// case's bias 0, as darktable's `legacy_params` gives it, bind the case's parameters bit
 /// for bit, and, through the operation's `prepare`, every word of the kernel's inputs the
 /// golden harness checks against darktable's render but the offset's, which are the
-/// provisional offset's. So the module renders those values as the cases measure the
+/// provisional offset's. So the tool renders those values as the cases measure the
 /// port, at darktable's offset: ΔE2000 means of 0.0008 at most (`docs/ports/grain.md`).
 /// The coarseness rounded to the whole ISO the panel shows binds the field too, but for
 /// `grain`'s, one f32 step under darktable's maximum, which only an unrounded value, from
@@ -441,7 +441,7 @@ fn g4_the_golden_cases_values_bind_to_darktable_s_parameters_bit_for_bit() {
 
 // G6: on at darktable's defaults, on the CPU.
 
-/// The module's defaults, each made explicit, bind grain's own, and the module on at its
+/// The tool's defaults, each made explicit, bind grain's own, and the tool on at its
 /// defaults plans grain with no parameter set, darktable's new instance; off, it plans
 /// none.
 #[test]
@@ -453,7 +453,7 @@ fn g6_on_at_darktable_s_defaults_binds_the_operation_s_defaults() {
 
 /// Edits version 1 saved, read as a photo opens them, bind the parameters version 1
 /// bound, resolved over the schema: grain planned where the strength was off 0, version
-/// 1's untouched value, and not planned, the module off, where it was not.
+/// 1's untouched value, and not planned, the tool off, where it was not.
 #[test]
 fn g7_version_1_s_edits_bind_what_they_bound() {
     let image = common::photo();

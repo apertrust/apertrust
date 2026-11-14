@@ -23,7 +23,7 @@
 //! The preset is kept for the operations after demosaic: "as shot to reference",
 //! darktable's scene-referred default, tells input colour to correct towards the
 //! camera's D65 reference later. darktable's temperature and tint controls, its
-//! colour picker and its camera presets belong to modules, not to this operation.
+//! colour picker and its camera presets belong to tools, not to this operation.
 
 use apertrust_plugin::{
     Camera, Domain, Format, ImageContext, ImageDesc, Kernel, Kind, Manifest, NotPorted, Operation,
