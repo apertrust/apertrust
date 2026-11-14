@@ -13,7 +13,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 - [docs/plugins.md](docs/plugins.md): the operation interface, one crate per operation, manifests and schemas, passes, slots, the image context, third-party plugins (planned).
 - [docs/settings.md](docs/settings.md): the settings schema and store, `--conf`, the user data folders, edits in another folder (decision 43).
 - [docs/cache.md](docs/cache.md): the on-disk cache (decision 76, planned): its folder and kinds, one file per entry, the limit or Unlimited, eviction, what never goes in it, Settings › Storage and `apertrust-cli cache`.
-- [docs/history.md](docs/history.md): undo, redo and the edit's history (decision 78, planned): a step and what merges, the log in the sidecar, `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `DiscardHistory` and `Step` through the session with one `History` fact, the History tab and `apertrust-cli history`, the plan.
+- [docs/history.md](docs/history.md): undo, redo and the edit's history (decision 78): a step and what merges, the log in the sidecar, `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate`, `DiscardHistory` and `Step` through the session with one `History` fact, the History tab and `apertrust-cli history`, the plan.
 - [docs/pickers.md](docs/pickers.md): colour pickers (decision 79, planned): one active picker, a module's or the Colour picker module's, and stored samples; `Picker` and `Samples` through the session; the GPU reduction at the operation's place in the viewport pipe; `Definition::pickers` and `Module::pick`; the picker button, the marks on the photo and the Colour picker module; the plan.
 - [docs/library.md](docs/library.md): the library: one photo, folder mode, the Library and the Project, the code's four layers, `LibraryCommand` and `LibraryEvent`, listing and the index, sidecars, finding photos on several computers, a server, a library's cache and thumbnails (decisions 46 to 55 and 71).
 - [docs/events.md](docs/events.md): the event API (decision 59). [docs/session-protocol.md](docs/session-protocol.md): the protocol every client reaches the engine through.
@@ -89,7 +89,8 @@ tools/build-dmg-background.sh              # the disk image's background.tiff fr
 # The CLI; every flag in docs/crates.md, apertrust-cli
 cargo run -p apertrust-cli -- gpu [--adapter NAME] [--backend auto|dx12|vulkan]   # adapters, and the one the engine opens
 cargo run -p apertrust-cli -- info FILE              # decode a raw, show its metadata
-cargo run --release -p apertrust-cli -- edit FILE [--set MODULE.CONTROL=VALUE] [--reset MODULE.CONTROL] [--param OP.PARAM=VALUE] [--reset-param OP.PARAM] [--clear]
+cargo run --release -p apertrust-cli -- edit FILE [--set MODULE.CONTROL=VALUE] [--reset MODULE.CONTROL] [--param OP.PARAM=VALUE] [--reset-param OP.PARAM] [--clear] [--note TEXT]
+cargo run -p apertrust-cli -- history FILE [--undo | --redo | --go-to N | --compress | --truncate | --discard]   # list, or one move
 cargo run --release -p apertrust-cli -- export FILE... [-o PATTERN] [--width W --height H --hq BOOL --upscale BOOL] [--set ...] [--param ...] [--skip OP] [--tile N] [--runs N]
 cargo run --release -p apertrust-cli -- preview FILE [--width W --height H] [--exposure EV] [--png OUT] [--join OPERATION] [--scopes[=totals|histogram|waveform|vectorscope]]
 cargo run --release -p apertrust-cli -- -d perf preview FILE --beside-export ROUNDS [--changes N] [--interval MS]
@@ -113,7 +114,7 @@ UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test gallery   # accept changed 
 
 - **Every binary** takes darktable-style debug domains on stderr: `-d gpu|raw|pipe|perf|memory|golden|settings|control|event` (`signal` an alias), `-d all`, `-d verbose`; with one on, a banner comes first. `--version` (`-V`) prints the version and commit, libraries, GPU backends and where to report bugs (decision 44).
 - **Settings.** `--user-data-dir DIR` (or `--config-dir`, `--configdir`, `APERTRUST_USER_DATA_DIR`; else the platform's folder) holds `settings.toml`; the CLI only reads it. `--cache-dir DIR` (or darktable's `--cachedir`, `APERTRUST_CACHE_DIR`; else `<user data>/cache` for a user data folder given, else the platform's cache folder) names the cache folder (decision 76). `--conf KEY=VALUE` sets one for this run only, as darktable's does (decision 43). The rules for each are in [docs/crates.md](docs/crates.md) (`apertrust-cli`, and the app's settings file).
-- **`edit`** changes `FILE.apxmp` beside the raw, which `export` and `preview` start from. **`export`** follows darktable-cli's size flags, format and file-on-disk rules (decision 56).
+- **`edit`** changes `FILE.apxmp` beside the raw, which `export` and `preview` start from, one step of its history per module it writes; **`history`** lists that history, or makes one move on the file, as the app's would ([docs/history.md](docs/history.md#the-cli)). **`export`** follows darktable-cli's size flags, format and file-on-disk rules (decision 56).
 - **`compare-cpu.sh`** times darktable-cli against Apertrust on one machine into `target/compare-cpu/results.md` ([docs/crates.md](docs/crates.md), `apertrust-golden`).
 - **Snapshots** let GPUs differ by 2/255 a channel and 2 pixels more (`kittest.toml`), so one made on any machine passes on the others; `crates/ui/tests/tolerance.rs` keeps it catching a token 3/255 off, a point's move, a lost letter.
 
@@ -170,7 +171,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `history`, `batch`, `serve` and `mcp` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `batch`, `serve` and `mcp` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |

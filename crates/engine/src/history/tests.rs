@@ -203,6 +203,44 @@ fn the_fallback_moves_over_a_whole_batch() {
     assert_eq!(log.fold_to(2), grained(&one, 30.0));
 }
 
+/// Where the fallback moves the end from each end: Undo back over a batch whole and never
+/// over a default step, Redo forward over a batch whole, the default steps among them.
+#[test]
+fn the_fallback_s_ends_stop_above_the_default_steps() {
+    let mut log = Log::default();
+    log.add_defaults(
+        &["temperature", "exposure"],
+        Clock::at(1, None, MachineId::UNKNOWN),
+    );
+    let one = brightened(0.5);
+    log.add(step(1, changed(&Edit::default(), &one)));
+    add(&mut log, 2, &one, &grained(&brightened(1.0), 30.0), &[]);
+    let ends = |log: &Log| -> Vec<(Option<usize>, Option<usize>)> {
+        (0..=log.steps().len())
+            .map(|end| {
+                let mut at = log.clone();
+                at.set_end(end);
+                (at.undo_end(), at.redo_end())
+            })
+            .collect()
+    };
+    assert_eq!(
+        ends(&log),
+        [
+            (None, Some(1)),
+            (None, Some(2)),
+            (None, Some(3)),
+            (Some(2), Some(5)),
+            (Some(3), Some(5)),
+            (Some(3), None),
+        ]
+    );
+    // With no default step, back to Original.
+    let mut log = Log::default();
+    log.add(step(1, changed(&Edit::default(), &one)));
+    assert_eq!(ends(&log), [(None, Some(1)), (Some(0), None)]);
+}
+
 #[test]
 fn a_step_added_below_the_end_drops_the_steps_after_it() {
     let mut log = Log::default();
@@ -876,4 +914,36 @@ fn an_edit_started_afresh_is_the_default_steps_and_a_step_of_each_module_it_hold
     assert_eq!(log.end(), 1);
     assert_eq!(log.fold(), unapplied);
     assert_eq!(Log::afresh(&Edit::default(), &[], clock), Log::default());
+}
+
+/// Undo's fallback never moves the end back over a default step, wherever it lies: not
+/// over one an edit started afresh leaves after the end once Redo applies it, nor, after
+/// an edit there, over those the edit kept and moved below it.
+#[test]
+fn undo_s_fallback_stops_above_a_default_step_after_the_person_s() {
+    let unapplied = Edit {
+        unapplied: ["agx", "exposure"].map(str::to_owned).into(),
+        ..brightened(0.5)
+    };
+    let clock = Clock::at(5, None, MachineId::UNKNOWN);
+    let mut log = Log::afresh(&unapplied, &["temperature", "exposure", "agx"], clock);
+    assert_eq!(
+        modules_of(&log),
+        ["temperature", "sample", "exposure", "agx"]
+    );
+    assert_eq!((log.end(), log.defaults()), (2, 1));
+    // Redo applies Exposure's default step, which Undo never takes back.
+    log.set_end(log.redo_end().unwrap());
+    assert_eq!(log.end(), 3);
+    assert_eq!(log.undo_end(), None);
+    // An edit after it keeps AgX's default step, moved below it; Undo takes the edit back
+    // and stops above AgX's.
+    log.add(step(9, changed(&log.fold(), &brightened(1.0))));
+    assert_eq!(
+        modules_of(&log),
+        ["temperature", "sample", "exposure", "agx", "sample"]
+    );
+    assert_eq!(log.undo_end(), Some(4));
+    log.set_end(4);
+    assert_eq!(log.undo_end(), None);
 }

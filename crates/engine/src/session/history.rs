@@ -631,10 +631,7 @@ impl PhotoHistory {
             // undo records.
             None => {
                 let end = self.log.end();
-                if end <= self.log.defaults() {
-                    return None;
-                }
-                let start = self.log.batch_start(end)?;
+                let start = self.log.undo_end()?;
                 self.log.set_end(start);
                 Record::Moved { start, end }
             }
@@ -675,7 +672,7 @@ impl PhotoHistory {
             // reverses.
             None => {
                 let start = self.log.end();
-                let end = self.log.batch_end(start)?;
+                let end = self.log.redo_end()?;
                 self.log.set_end(end);
                 Record::Moved { start, end }
             }
@@ -783,13 +780,16 @@ impl PhotoHistory {
     /// `defaults`, as a new photo's log begins, then a step of each module and operation it
     /// holds as far as it was read, sharing a batch, source You, noted `history-discard`,
     /// the end the last, the modules it holds not applied left so ([`Log::afresh`]). The
-    /// file is written with it, or with no step for default steps alone, which go into it
-    /// with the first change. No undo record: the log it replaces could not be written
-    /// back. The edit it leaves.
+    /// file is written with it, or with no step for default steps alone with every one
+    /// applied, which go into it with the first change; default steps alone with the end
+    /// among them are written as they are, so the modules not applied stay so as the photo
+    /// reopens. No undo record: the log it replaces could not be written back. The edit it
+    /// leaves.
     pub(super) fn afresh(&mut self, edit: &Edit, defaults: &[&str]) -> Edit {
         let clock = Clock::now(self.clock.as_ref(), self.machine);
         let log = Log::afresh(edit, defaults, clock);
-        let saved = (log.steps().iter()).any(|step| step.source != StepSource::Default);
+        let saved = log.end() < log.steps().len()
+            || (log.steps().iter()).any(|step| step.source != StepSource::Default);
         (self.dropped).extend(self.log.steps().iter().map(|step| step.id));
         self.log = log;
         self.saved = saved;
@@ -841,9 +841,8 @@ impl PhotoHistory {
             }
             Some(Record::Added { at, kept, .. }) => (at + kept, steps.len()),
             Some(Record::Moved { start, end }) => (*start, *end),
-            None if undo && end <= self.log.defaults() => return None,
-            None if undo => (self.log.batch_start(end)?, end),
-            None => (end, self.log.batch_end(end)?),
+            None if undo => (self.log.undo_end()?, end),
+            None => (end, self.log.redo_end()?),
         };
         let first = steps.get(start)?;
         Some(Move::Steps {
