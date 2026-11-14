@@ -178,7 +178,7 @@ Not compared line by line. The contrast and gamut-mapping steps of `colorbalance
 
 ## Tool binding notes
 
-In the first pass (decision 2) the Colour balance RGB tool is darktable's and owns every parameter, each as darktable shows it, `contrast` as darktable's percentage and `grey_fulcrum` at its 18.45 % (decision 22): its master, 4 ways and masks tabs are content tabs (decision 29), and its contrast, grey fulcrum and power luminance, `contrast`, `grey_fulcrum` and `midtones_Y`, are its controls as every other parameter is (`docs/tools/README.md`). It is built (`crates/modules/src/colour_balance_rgb.rs`, `docs/tools/colour-balance-rgb.md`), each percentage the parameter times 100.
+In the first pass (decision 2) the Colour balance RGB tool is darktable's and owns every parameter, each as darktable shows it, `contrast` as darktable's percentage and `grey_fulcrum` at its 18.45 % (decision 22): its master, 4 ways and masks tabs are content tabs (decision 29), and its contrast, grey fulcrum and power luminance, `contrast`, `grey_fulcrum` and `midtones_Y`, are its controls as every other parameter is (`docs/tools/README.md`). It is built (`crates/tools/src/colour_balance_rgb.rs`, `docs/tools/colour-balance-rgb.md`), each percentage the parameter times 100.
 
 What the binding needs:
 

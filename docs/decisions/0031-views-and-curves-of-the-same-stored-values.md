@@ -6,7 +6,7 @@ darktable draws some stored values twice: White balance's coefficients as temper
 
 ## Decision
 
-**A lossless view is a second row** over the same stored values: an exact, invertible change of coordinates the tool gives as pure methods of `Module`, `view` (the coordinates from the stored values) and `unview` (back).
+**A lossless view is a second row** over the same stored values: an exact, invertible change of coordinates the tool gives as pure methods of `Tool`, `view` (the coordinates from the stored values) and `unview` (back).
 
 - A coordinate is addressed like a control: `SetControl`, `ResetControl` and `Keep` take it, the session holding the view's other coordinates through a gesture (`edit::Held`) and reporting every view's coordinates with the values (`CoordinateState`).
 - Nothing is stored under a coordinate's id. Marks and reset belong to the stored controls; once every coordinate is back at its default, the stored values are reset exactly.
@@ -16,11 +16,11 @@ darktable draws some stored values twice: White balance's coefficients as temper
 
 **The tone equalizer's graph** shows the nine bands themselves on their own axes, the identity view: a custom row naming the band controls (`Widget::Equalizer`), with no coordinates of its own. A drag sends `SetControl` on the bands and its release ends the gesture on each band moved, sent together as one `Step { source: You }`, so a drag is one history step; a reset of the nine bands is one `Step` too ([0078](0078-undo-redo-and-the-edits-history.md)). `Definition::check` allows `Widget::Equalizer` alone as such a second row, so a control named twice by mistake is still refused.
 
-**Curves drawn as rendered: `Module::curve(control, values)`**, provided as `None` (straight lines), returns the curve a curve row or band graph draws, from the tool's own values, pending ones included, so the curve follows a drag with no round trip. It runs on the CPU to draw, never to process a pixel. The tone equalizer's curve comes from the fit `apertrust-color` shares between the operation's setup and the graph (`tone_equalizer`), `None` where the fit fails, drawn in the warning colour; a drag settles the bands on it after each step, as darktable's does. `Module::curve_width(control, values)` gives the width σ of its Gaussians, how far a drag reaches, darktable's √2 by default.
+**Curves drawn as rendered: `Tool::curve(control, values)`**, provided as `None` (straight lines), returns the curve a curve row or band graph draws, from the tool's own values, pending ones included, so the curve follows a drag with no round trip. It runs on the CPU to draw, never to process a pixel. The tone equalizer's curve comes from the fit `apertrust-color` shares between the operation's setup and the graph (`tone_equalizer`), `None` where the fit fails, drawn in the warning colour; a drag settles the bands on it after each step, as darktable's does. `Tool::curve_width(control, values)` gives the width σ of its Gaussians, how far a drag reaches, darktable's √2 by default.
 
 **A curve control stores only the points between its ends**, (0, 0) and (1, 1), which the binding adds: RGB curve's up to 18 points, `rgbcurve`'s 20 nodes less the two ends, x at least 0.0025 apart and as far from the ends. RGB curve draws darktable's graph, with its compensate middle grey and graph scale.
 
-**Follow writes: `Module::follow`.** Where darktable's GUI writes other parameters with a control to keep one quantity consistent, the tool gives those writes, pure, and the session applies them in the same change and history step (`Edit::follow`), never rewriting the control the command set; a wrong one refuses the change whole (`EditError::FollowFailed`). Controls set the same quantity last-wins, as two views of one value do. A preset row's option takes none: it writes every control itself (`Module::preset`). darktable's session memory is not mirrored.
+**Follow writes: `Tool::follow`.** Where darktable's GUI writes other parameters with a control to keep one quantity consistent, the tool gives those writes, pure, and the session applies them in the same change and history step (`Edit::follow`), never rewriting the control the command set; a wrong one refuses the change whole (`EditError::FollowFailed`). Controls set the same quantity last-wins, as two views of one value do. A preset row's option takes none: it writes every control itself (`Tool::preset`). darktable's session memory is not mirrored.
 
 ## Options considered
 

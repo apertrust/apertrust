@@ -33,9 +33,9 @@ use apertrust_engine::settings as engine;
 use apertrust_export::settings::OnConflict;
 use apertrust_export::size::Request;
 use apertrust_export::{Format, Places};
-use apertrust_modules::ControlValue;
+use apertrust_tools::ControlValue;
 
-use crate::{EXPOSURE, MODULES, OPERATIONS};
+use crate::{EXPOSURE, OPERATIONS, TOOLS};
 
 /// What `preview --beside-export` runs.
 pub(crate) struct Options {
@@ -86,9 +86,9 @@ impl Client {
                 }),
                 Event::Values(values) => {
                     let control = values
-                        .modules
+                        .tools
                         .iter()
-                        .filter(|module| module.module == EXPOSURE.0)
+                        .filter(|module| module.tool == EXPOSURE.0)
                         .flat_map(|module| &module.controls)
                         .find(|control| control.control == EXPOSURE.1);
                     if let Some(ControlValue::Number(ev)) = control.map(|c| &c.value) {
@@ -142,7 +142,7 @@ impl Client {
     /// One change of the Exposure module's Exposure, as a drag sends it.
     fn change(&self, ev: f32) -> u64 {
         self.session.send(Command::SetControl {
-            module: EXPOSURE.0.to_owned(),
+            tool: EXPOSURE.0.to_owned(),
             control: EXPOSURE.1.to_owned(),
             value: ControlValue::Number(ev),
             done: false,
@@ -191,7 +191,7 @@ fn measure(photo: &Path, folder: &Path, options: &Options, engine: engine::Optio
     let session = Session::start(
         gpu,
         OPERATIONS,
-        MODULES,
+        TOOLS,
         apertrust_base::program!().version,
         engine.budget,
         // The CLI writes no disk cache: none of its commands keeps anything there yet, and
@@ -215,7 +215,7 @@ fn measure(photo: &Path, folder: &Path, options: &Options, engine: engine::Optio
     client.until("first frame", |c| {
         c.opened && c.frames.last().is_some_and(|f| f.through >= resize)
     })?;
-    let base = client.exposure.context("the Exposure module's values")?;
+    let base = client.exposure.context("the Exposure tool's values")?;
     // A hundredth of a stop, back from +4 rather than past it, as `preview` moves.
     let step = if base + 0.01 > 4.0 { -0.01 } else { 0.01 };
     let mut sent = 0u32;

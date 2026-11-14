@@ -33,7 +33,7 @@
 //! - **The frame's reading** ([`FrameReading`]) is the frame's RGB, as the window shows
 //!   it, and each statistic in Lab D50, as darktable's color picker utility reads its
 //!   samples on the display-referred frame.
-//! - **A module's reading** ([`ModuleReading`]) is its operation's input and output
+//! - **A module's reading** ([`ToolReading`]) is its operation's input and output
 //!   statistics in the live viewport pipe, and what the module's pick showed of them.
 //!
 //! Built: the Colour picker module's picker, measured on the frame, and module pickers,
@@ -43,9 +43,9 @@
 use std::num::NonZeroU64;
 use std::time::Instant;
 
-use apertrust_modules::ControlValue;
-pub use apertrust_modules::pick::{PickKeys, Reading, Region, Shown, Stats};
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Kernel, PassHeader};
+use apertrust_tools::ControlValue;
+pub use apertrust_tools::pick::{PickKeys, Reading, Region, Shown, Stats};
 
 use crate::compute::{ComputeError, GpuImage, GpuTimer, ImageKernel, POLL_INTERVAL};
 use crate::gpu::GpuContext;
@@ -92,8 +92,8 @@ pub const DEFAULT_AREA: Region = Region::Area([0.02, 0.02, 0.98, 0.98]);
 pub enum PickerRef {
     /// A module's picker, by its module's id and the picker's id in its definition
     /// (`Definition::pickers`).
-    Module {
-        module: &'static str,
+    Tool {
+        tool: &'static str,
         picker: &'static str,
     },
     /// The Colour picker module's, darktable's primary picker with no module.
@@ -146,7 +146,7 @@ pub enum PickerCommand {
     /// (`Shown::settings` empty), since the client has just sent its own. Refused for a
     /// setting none of its pickers reads.
     Settings {
-        module: &'static str,
+        tool: &'static str,
         settings: Vec<(&'static str, ControlValue)>,
     },
     /// The channel tab the active picker's module shows changed: kept for its next pick,
@@ -172,7 +172,7 @@ pub struct PickerReading {
     pub region: Region,
     /// A module picker's statistics at its operation; `None` for the Colour picker's, and
     /// until the first arrives.
-    pub module: Option<ModuleReading>,
+    pub tool: Option<ToolReading>,
     /// The frame's colour under the region; `None` until measured, or where the region
     /// misses the frame.
     pub frame: Option<FrameReading>,
@@ -182,7 +182,7 @@ pub struct PickerReading {
 /// `picked_color_min` and `picked_color_max` of its input and output, each in the
 /// picker's space.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ModuleReading {
+pub struct ToolReading {
     /// `None` where the region misses the operation's image, as darktable's empty box.
     pub input: Option<Stats>,
     /// With the picker's `output` only.
@@ -1170,7 +1170,7 @@ mod tests {
 
     #[test]
     fn a_region_maps_to_its_box_in_a_viewport_buffer_and_in_the_mosaic() {
-        let mut image = apertrust_modules::testing::image();
+        let mut image = apertrust_tools::testing::image();
         let camera = image.camera.as_mut().unwrap();
         camera.declared = [6, 4, 84, 62];
         let (width, height) = (image.width, image.height);

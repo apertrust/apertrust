@@ -6,9 +6,9 @@ It is darktable's output color profile in the first pass (decision 2). darktable
 
 It drives one operation, `colorout` (display 70, [../ports/colorout.md](../ports/colorout.md)), which every photo runs, so it adds no operation. It has no first step, and at its default it sets nothing and leaves the plan as it was. It owns both parameters of the operation.
 
-**Status:** built, in `crates/modules/src/output_colour_profile.rs`. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), first, before Colour balance RGB.
+**Status:** built, in `crates/tools/src/output_colour_profile.rs`. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), first, before Colour balance RGB.
 
-- Its rows are tests in `crates/modules/tests/output_colour_profile.rs` and the tool's source, and the panel's in `crates/app/src/modules.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/output_colour_profile.rs` and the tool's source, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own default, so none has a proposed tolerance; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -24,13 +24,13 @@ Linear XYZ and Lab, which darktable lists only while its `allow_lab_output` pref
 
 **sRGB is the only profile an edit can choose.** colorout ports sRGB, linear Rec709 and linear Rec2020 (`docs/ports/colorout.md`). But the viewport draws colorout's output as sRGB, and the CLI tags its PNG sRGB, so a linear profile would show and save wrong. Decision 26 makes the display path's conversion from the edit's profile the condition for letting an edit choose another profile, and that conversion is not built ([Gaps](#gaps), 1).
 
-So the two linear profiles are refused as commands, as the nine the operation does not port are. The control, whose one value is its default, can change nothing on any photo: it is unavailable (`Module::available`, decision 30), its box drawn disabled at sRGB (web-safe), as Raw black/white point's flat field correction is.
+So the two linear profiles are refused as commands, as the nine the operation does not port are. The control, whose one value is its default, can change nothing on any photo: it is unavailable (`Tool::available`, decision 30), its box drawn disabled at sRGB (web-safe), as Raw black/white point's flat field correction is.
 
 A disabled box does not open, so its list is not seen until the control is available. Then every profile still refused shows in it drawn disabled, "Coming in a later version". The binding already writes every profile by its name ([O2](#invariants)), so once the display converts, a profile becomes choosable by leaving the definition's `unported` list, and the control becomes available.
 
 **Commands.**
 
-- A script sends `SetControl { module: "colorout", control: "type", value: … }`, and `apertrust-cli edit --set colorout.type=srgb` does the same; `--set colorout.type=lin_rec2020` is refused as not ported.
+- A script sends `SetControl { tool: "colorout", control: "type", value: … }`, and `apertrust-cli edit --set colorout.type=srgb` does the same; `--set colorout.type=lin_rec2020` is refused as not ported.
 - `--param colorout.type=…` is refused, since the tool owns it, and `--param colorout.intent=…` as fixed by the tool.
 - An edit holding a `colorout` value at operation level, under `param:`, loses it with a warning when it is read, and it is gone from the file after its next save.
 
@@ -45,7 +45,7 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | O0 | Export profile at its default | sRGB, written or kept | `bind`; the plan's instances and cache keys; the frame | `bind` returns nothing; instances, keys and frames as with no edit | Exact | The small Bayer raw and the sweep through the export and the viewport; every corpus raw |
-| O1 | Export profile, moved and reset | Each profile an edit can choose, sRGB today, then reset by `ResetControl` and by `ResetModule`; each profile held back, linear Rec709 and linear Rec2020, bound directly, as a held-back control's rows are (`tool-bindings`, Testing a module), then gone | The profile colorout renders; the frame on one pipeline updated as the session updates it | The profile chosen is the one rendered; once reset, or the held-back profile gone, the frame and its keys are no edit's; while sRGB is set too, and a held-back profile's frame is not sRGB's | Exact | The small Bayer raw and the sweep through the export and the viewport; the 90D through the viewport and the export |
+| O1 | Export profile, moved and reset | Each profile an edit can choose, sRGB today, then reset by `ResetControl` and by `ResetTool`; each profile held back, linear Rec709 and linear Rec2020, bound directly, as a held-back control's rows are (`tool-bindings`, Testing a module), then gone | The profile colorout renders; the frame on one pipeline updated as the session updates it | The profile chosen is the one rendered; once reset, or the held-back profile gone, the frame and its keys are no edit's; while sRGB is set too, and a held-back profile's frame is not sRGB's | Exact | The small Bayer raw and the sweep through the export and the viewport; the 90D through the viewport and the export |
 | O2 | The binding | Each of the twelve profiles | `bind`'s settings | Each profile but sRGB writes colorout's `type` as the operation's choice of its name, and nothing else; sRGB writes nothing | Exact | CPU, a colour raw's context and an image that is not a raw |
 | O3 | What an edit cannot choose | Each profile but sRGB; `--param colorout.type` and `colorout.intent` | The edit; the operation's `prepare` | Each command refused, the edit unchanged: the two linear profiles held back, which the operation prepares, and the nine others, which it refuses as not ported; the profile refused at operation level as owned, the intent as fixed | Exact | CPU |
 | O4 | On a layer | | The definition | Background only: never offered on a layer, as colorout encodes the whole image for its output | Exact | CPU |
@@ -55,7 +55,7 @@ O5 is how the tool matches darktable. An untouched tool binds nothing, so coloro
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/output_colour_profile.rs` and the tool's source. The small-image and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/output_colour_profile.rs` and the tool's source. The small-image and CPU rows run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -98,6 +98,6 @@ What darktable's page has or does that the panel does not yet:
 - **The list:** darktable's twelve built-in export profiles in its order. Lab and linear XYZ are left out, as darktable's preference leaves them out (rule 12); ICC files are a gap.
 - **The promise:** "The colour profile the image is exported in.", since darktable's tooltip names folders Apertrust does not read and would promise files.
 - **Rows:** O0 to O5. No first step, since every photo runs colorout, and no order row, since there is one control. O1 binds the held-back profiles directly, so their binding is tested before they are choosable.
-- **The panel's test:** in `crates/app/src/modules.rs`, beside every other tool's.
+- **The panel's test:** in `crates/app/src/tools.rs`, beside every other tool's.
 - **Row ids:** O, for Output colour profile.
-- **In `MODULES`:** after Demosaic, before White balance.
+- **In `TOOLS`:** after Demosaic, before White balance.

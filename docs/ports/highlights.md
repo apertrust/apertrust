@@ -131,14 +131,14 @@ The OpenCL path rounds the masks' size to 4, not 8, keeps only the three dilated
 
 In the first pass (decision 2) the Highlight reconstruction tool is darktable's: method and clipping threshold, the other methods' controls coming with their methods (`docs/tools/README.md`).
 
-The tool is built (`crates/modules/src/highlight_reconstruction.rs`, [../tools/highlight-reconstruction.md](../tools/highlight-reconstruction.md)). It owns both parameters:
+The tool is built (`crates/tools/src/highlight_reconstruction.rs`, [../tools/highlight-reconstruction.md](../tools/highlight-reconstruction.md)). It owns both parameters:
 
 - the method takes only inpaint opposed;
 - the threshold starts at this operation's default for the photo, which the tool restates from the image context, its tests holding the two together, and it sets `clip` only off it.
 
 The other methods' controls are in its definition, not ported, at darktable's defaults, with no parameter here until their methods come.
 
-The method lists darktable's methods for the photo, as `reload_defaults` rebuilds its list (`Module::options`, decision 30). Reconstruct colour, which darktable lists on no photo, is left out.
+The method lists darktable's methods for the photo, as `reload_defaults` rebuilds its list (`Tool::options`, decision 30). Reconstruct colour, which darktable lists on no photo, is left out.
 
 An edit from another photo that holds a method this photo does not list renders as darktable's darkroom renders it:
 

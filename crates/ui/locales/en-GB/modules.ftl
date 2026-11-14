@@ -1,5 +1,5 @@
 # The modules' words in British English, the source language (docs/gui.md, Tool panels
-# from definitions). Each id follows from the module's definition in apertrust-modules:
+# from definitions). Each id follows from the module's definition in apertrust-tools:
 #   module-<module>-title, module-<module>-auto, module-<module>-tab-<tab>,
 #   module-<module>-group-<group>, module-<module>-collapsible-<group>,
 #   module-<module>-control-<control>-label, -full and -promise,
@@ -8,7 +8,7 @@
 #   preset row's module-<module>-preset-<preset>-label, -full, -promise and
 #   -option-<option>.
 # Units are unit-<unit>, and a preset row's Custom preset-custom, in ui.ftl. A test in
-# crates/modules/tests checks that every id a built-in module implies is here; Ukrainian
+# crates/tools/tests checks that every id a built-in module implies is here; Ukrainian
 # (uk) and Polish (pl) translate each one.
 
 ## Raw black/white point (docs/tools/raw-black-white-point.md): darktable's raw

@@ -19,9 +19,9 @@ apertrust-base = { workspace = true, features = ["jobs", "cache"] }
 apertrust-color.workspace = true
 # What an export writes and where, which its session's export jobs use (decision 56).
 apertrust-export.workspace = true
-apertrust-modules.workspace = true
 apertrust-plugin.workspace = true
 apertrust-raw.workspace = true
+apertrust-tools.workspace = true
 # The .apxmp file's text layer, `apertrust_library::sidecar`; the engine reads and writes
 # its values with the modules (decision 54).
 apertrust-library.workspace = true
@@ -37,7 +37,7 @@ wgpu.workspace = true
 [features]
 # A session whose raws are the modules crate's synthetic photo (`session::testing`), for the
 # tests of the engine's clients: the app's, through its dev-dependencies.
-testing = ["apertrust-modules/testing"]
+testing = ["apertrust-tools/testing"]
 
 [build-dependencies]
 # The settings generator, which writes the engine's statics from the schema (decision 43).
@@ -46,8 +46,8 @@ apertrust-base = { workspace = true, features = ["codegen"] }
 [dev-dependencies]
 naga.workspace = true
 # Its `testing::Sample` module, for the session's and the edit's tests.
-apertrust-modules = { workspace = true, features = ["testing"] }
 apertrust-operations.workspace = true
+apertrust-tools = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

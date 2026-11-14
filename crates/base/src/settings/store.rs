@@ -1059,7 +1059,7 @@ mod tests {
     static GROUPS: Setting<settings::Table<settings::Table<bool>>> = setting(
         "edit.groups",
         Kind::Table {
-            by: "modules",
+            by: "tools",
             of: &Kind::Table {
                 by: "groups",
                 of: &Kind::Boolean,

@@ -16,13 +16,13 @@
 
 use std::time::Duration;
 
-use apertrust_modules::grain::Grain;
-use apertrust_modules::testing::{self, Sample};
 use apertrust_operations::OPERATIONS;
+use apertrust_tools::grain::Grain;
+use apertrust_tools::testing::{self, Sample};
 
 use super::*;
 
-const MODULES: &[&'static dyn Module] = &[&Sample, &Grain];
+const TOOLS: &[&'static dyn Tool] = &[&Sample, &Grain];
 
 /// An edit with Sample's brightness at `brightness`, kept.
 fn brightened(brightness: f32) -> Edit {
@@ -91,13 +91,13 @@ fn a_change_s_entries_hold_each_changed_module_s_whole_state_an_empty_one_its_re
     assert_eq!(
         entries,
         [
-            Entry::Module {
-                module: "grain".to_owned(),
-                values: after.module("grain").unwrap().clone(),
+            Entry::Tool {
+                tool: "grain".to_owned(),
+                values: after.tool("grain").unwrap().clone(),
             },
-            Entry::Module {
-                module: "sample".to_owned(),
-                values: after.module("sample").unwrap().clone(),
+            Entry::Tool {
+                tool: "sample".to_owned(),
+                values: after.tool("sample").unwrap().clone(),
             },
         ]
     );
@@ -109,7 +109,7 @@ fn a_change_s_entries_hold_each_changed_module_s_whole_state_an_empty_one_its_re
     let mut untouched = Edit::default();
     untouched
         .modules
-        .insert("sample".to_owned(), ModuleValues::new());
+        .insert("sample".to_owned(), ToolValues::new());
     assert!(Entry::between(&Edit::default(), &untouched).is_empty());
 }
 
@@ -118,7 +118,7 @@ fn a_change_s_entries_hold_each_changed_module_s_whole_state_an_empty_one_its_re
 fn names(changes: &[Change]) -> Vec<String> {
     (changes.iter())
         .map(|change| match change {
-            Change::Entry(Entry::Module { module, .. }) => module.clone(),
+            Change::Entry(Entry::Tool { tool: module, .. }) => module.clone(),
             Change::Entry(Entry::Operation { operation, .. }) => format!("{operation} params"),
             Change::Reset(entries) => format!("reset of {}", entries.len()),
         })
@@ -131,8 +131,8 @@ fn names(changes: &[Change]) -> Vec<String> {
 #[test]
 fn a_change_is_a_step_of_each_module_in_the_order_written_and_reset_one() {
     let mut after = grained(&brightened(0.5), 30.0);
-    (after.set_param(OPERATIONS, MODULES, "exposure", "black", Value::Float(0.01))).unwrap();
-    let module = |id: &str| Wrote::Module(id.to_owned());
+    (after.set_param(OPERATIONS, TOOLS, "exposure", "black", Value::Float(0.01))).unwrap();
+    let module = |id: &str| Wrote::Tool(id.to_owned());
     let black = || Wrote::Operation("exposure".to_owned());
     let between = |before: &Edit, after: &Edit, wrote: &[Wrote]| {
         names(&Change::between(before, after, wrote))
@@ -266,9 +266,9 @@ fn a_step_added_below_the_end_drops_the_steps_after_it() {
 /// module or of a batch, nor with no step applied.
 #[test]
 fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
-    let sample = |edit: &Edit| Entry::Module {
-        module: "sample".to_owned(),
-        values: edit.module("sample").unwrap().clone(),
+    let sample = |edit: &Edit| Entry::Tool {
+        tool: "sample".to_owned(),
+        values: edit.tool("sample").unwrap().clone(),
     };
     let clock = Clock::at(10, None, MachineId::UNKNOWN);
     let mut log = Log::default();
@@ -312,12 +312,12 @@ fn a_merged_change_takes_the_step_s_place_keeping_its_id() {
 #[test]
 fn a_version_1_file_reads_as_a_step_of_each_module_with_the_same_ids_every_time() {
     let mut edit = grained(&brightened(0.5), 30.0);
-    (edit.set_param(OPERATIONS, MODULES, "exposure", "black", Value::Float(0.01))).unwrap();
-    let xml = crate::sidecar::to_xml(&edit, OPERATIONS, MODULES, "test");
+    (edit.set_param(OPERATIONS, TOOLS, "exposure", "black", Value::Float(0.01))).unwrap();
+    let xml = crate::sidecar::to_xml(&edit, OPERATIONS, TOOLS, "test");
     let hash = apertrust_library::index::hash(xml.as_bytes());
     let modified = UNIX_EPOCH + Duration::from_millis(1_773_497_331_120);
     let read = |xml: &str| {
-        let loaded = crate::sidecar::from_xml_at(xml, Some(modified), OPERATIONS, MODULES, &[]);
+        let loaded = crate::sidecar::from_xml_at(xml, Some(modified), OPERATIONS, TOOLS, &[]);
         loaded.unwrap().log
     };
     let log = read(&xml);
@@ -351,12 +351,12 @@ fn a_version_1_file_reads_as_a_step_of_each_module_with_the_same_ids_every_time(
     let other = read(&xml.replace("test", "other"));
     assert_ne!(other.steps()[0].id, first);
     // One module: one step, in no batch.
-    let one = crate::sidecar::to_xml(&brightened(0.5), OPERATIONS, MODULES, "test");
+    let one = crate::sidecar::to_xml(&brightened(0.5), OPERATIONS, TOOLS, "test");
     let one = read(&one);
     assert_eq!(one.steps().len(), 1);
     assert_eq!(one.steps()[0].batch, None);
     // A file holding nothing is no step.
-    let none = crate::sidecar::to_xml(&Edit::default(), OPERATIONS, MODULES, "test");
+    let none = crate::sidecar::to_xml(&Edit::default(), OPERATIONS, TOOLS, "test");
     assert_eq!(read(&none), Log::default());
 }
 
@@ -450,7 +450,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
     let one = brightened(0.5);
     let mut two = grained(&one, 30.0);
     (two.set_control(&Sample, "brightness", ControlValue::Number(1.0), &image)).unwrap();
-    (two.set_param(OPERATIONS, MODULES, "exposure", "black", Value::Float(0.01))).unwrap();
+    (two.set_param(OPERATIONS, TOOLS, "exposure", "black", Value::Float(0.01))).unwrap();
     let mut log = Log::default();
     log.add(step(1, changed(&Edit::default(), &one)));
     // Grain, Sample and the parameter, in a batch.
@@ -458,7 +458,7 @@ fn a_step_is_described_control_by_control_before_and_after() {
     // Reset: one step of each.
     add(&mut log, 5, &two, &Edit::default(), &[Wrote::All]);
     let mut described = Described::default();
-    let steps = described.steps(&log, MODULES, OPERATIONS, &image);
+    let steps = described.steps(&log, TOOLS, OPERATIONS, &image);
     let brightness = |before: f32, after: f32, mark: [Option<Mark>; 2]| ControlChange {
         control: "brightness",
         before: ControlValue::Number(before),
@@ -471,8 +471,8 @@ fn a_step_is_described_control_by_control_before_and_after() {
     assert_eq!(batches, [None, batch, batch, batch, None]);
     assert_eq!(
         steps[0].changes,
-        [ModuleChange {
-            module: "sample".into(),
+        [ToolChange {
+            tool: "sample".into(),
             enabled: None,
             controls: vec![brightness(0.0, 0.5, [None, kept])],
         }]
@@ -481,8 +481,8 @@ fn a_step_is_described_control_by_control_before_and_after() {
     // Grain, switched, turned on.
     assert_eq!(
         steps[1].changes,
-        [ModuleChange {
-            module: "grain".into(),
+        [ToolChange {
+            tool: "grain".into(),
             enabled: Some([false, true]),
             controls: vec![ControlChange {
                 control: "strength",
@@ -494,8 +494,8 @@ fn a_step_is_described_control_by_control_before_and_after() {
     );
     assert_eq!(
         steps[2].changes,
-        [ModuleChange {
-            module: "sample".into(),
+        [ToolChange {
+            tool: "sample".into(),
             enabled: None,
             controls: vec![brightness(0.5, 1.0, [kept, kept])],
         }]
@@ -503,8 +503,8 @@ fn a_step_is_described_control_by_control_before_and_after() {
     // An unowned parameter, under its operation.
     assert_eq!(
         steps[3].changes,
-        [ModuleChange {
-            module: "exposure".into(),
+        [ToolChange {
+            tool: "exposure".into(),
             enabled: None,
             controls: vec![ControlChange {
                 control: "black",
@@ -520,13 +520,13 @@ fn a_step_is_described_control_by_control_before_and_after() {
     assert_eq!(reset[0].enabled, Some([true, false]));
     assert_eq!(reset[1].controls, [brightness(1.0, 0.0, [kept, None])]);
     // Described once: kept while the steps before them stay.
-    let again = described.steps(&log, MODULES, OPERATIONS, &image);
+    let again = described.steps(&log, TOOLS, OPERATIONS, &image);
     assert!(steps.iter().zip(&again).all(|(a, b)| Arc::ptr_eq(a, b)));
     log.set_end(4);
     let mut three = two.clone();
     (three.set_control(&Sample, "brightness", ControlValue::Number(0.5), &image)).unwrap();
     log.add(step(6, changed(&two, &three)));
-    let after = described.steps(&log, MODULES, OPERATIONS, &image);
+    let after = described.steps(&log, TOOLS, OPERATIONS, &image);
     assert!(Arc::ptr_eq(&after[3], &steps[3]));
     assert_eq!(after[4].id, StepId(6));
     assert_eq!(
@@ -538,15 +538,15 @@ fn a_step_is_described_control_by_control_before_and_after() {
 #[test]
 fn a_module_or_operation_this_build_does_not_know_is_listed_by_its_stored_name() {
     let image = testing::image();
-    let mut values = ModuleValues::new();
+    let mut values = ToolValues::new();
     values.set("radius", ControlValue::Number(3.0));
     let mut params = ParamValues::new();
     params.set("strength", Value::Float(0.5));
     let mut log = Log::default();
     log.add(step(
         1,
-        Change::Entry(Entry::Module {
-            module: "lens_2030".to_owned(),
+        Change::Entry(Entry::Tool {
+            tool: "lens_2030".to_owned(),
             values,
         }),
     ));
@@ -558,19 +558,16 @@ fn a_module_or_operation_this_build_does_not_know_is_listed_by_its_stored_name()
         }),
     ));
     log.add(step(3, changed(&Edit::default(), &brightened(0.5))));
-    let steps = Described::default().steps(&log, MODULES, OPERATIONS, &image);
+    let steps = Described::default().steps(&log, TOOLS, OPERATIONS, &image);
     // As a newer build wrote them: their names, and nothing this build could describe.
-    let unknown = |name: &str| ModuleChange {
-        module: Cow::Owned(name.to_owned()),
+    let unknown = |name: &str| ToolChange {
+        tool: Cow::Owned(name.to_owned()),
         enabled: None,
         controls: Vec::new(),
     };
     assert_eq!(steps[0].changes, [unknown("lens_2030")]);
     assert_eq!(steps[1].changes, [unknown("glow")]);
-    assert!(matches!(
-        steps[2].changes[0].module,
-        Cow::Borrowed("sample")
-    ));
+    assert!(matches!(steps[2].changes[0].tool, Cow::Borrowed("sample")));
 }
 
 /// The exposure operation's black level for the photo.
@@ -583,7 +580,7 @@ fn base_black(image: &ImageContext) -> f32 {
 
 #[test]
 fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
-    let lines = default_modules(apertrust_modules::MODULES, OPERATIONS);
+    let lines = default_tools(apertrust_tools::TOOLS, OPERATIONS);
     // darktable's modules with no on/off button first, then those with one, each in the
     // pipe's order.
     assert_eq!(
@@ -602,7 +599,7 @@ fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
     let rest = &lines[6..];
     assert_eq!(rest, ["exposure", "channelmixerrgb", "agx"], "{lines:?}");
     let switched = |id: &&str| {
-        apertrust_modules::MODULES
+        apertrust_tools::TOOLS
             .iter()
             .any(|m| m.definition().id == *id && m.definition().switched)
     };
@@ -611,7 +608,7 @@ fn the_default_modules_are_darktable_s_for_a_new_raw_in_its_history_order() {
 
 /// The modules every photo runs, as the default steps hold them.
 fn defaults() -> Vec<&'static str> {
-    default_modules(apertrust_modules::MODULES, OPERATIONS)
+    default_tools(apertrust_tools::TOOLS, OPERATIONS)
 }
 
 /// The modules and operations of `log`'s steps' entries, in order.
@@ -619,7 +616,7 @@ fn modules_of(log: &Log) -> Vec<&str> {
     (log.steps().iter())
         .flat_map(|step| step.change.entries())
         .map(|entry| match entry {
-            Entry::Module { module, .. } => module.as_str(),
+            Entry::Tool { tool: module, .. } => module.as_str(),
             Entry::Operation { operation, .. } => operation.as_str(),
         })
         .collect()

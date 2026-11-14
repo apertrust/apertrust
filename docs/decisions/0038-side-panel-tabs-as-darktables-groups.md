@@ -36,5 +36,5 @@ The first pass presents darktable's modules ([0002](0002-rewrite-darktable-first
 
 ## Consequences
 
-- The app's `TABS` and `TAB_MODULES` hold these lists, the Edit workspace's defaults, which the layout shown starts from ([0083](0083-the-side-panels-layout-dragged-and-floating.md)); a tool added to `OPERATIONS` gets its tab by this rule.
+- The app's `TABS` and `TAB_TOOLS` hold these lists, the Edit workspace's defaults, which the layout shown starts from ([0083](0083-the-side-panels-layout-dragged-and-floating.md)); a tool added to `OPERATIONS` gets its tab by this rule.
 - A port's tool page names its tab from darktable's preset.

@@ -29,8 +29,8 @@ fn version_1(attributes: &str) -> String {
 }
 
 fn module(id: &str) -> Entry {
-    Entry::Module {
-        module: id.to_owned(),
+    Entry::Tool {
+        tool: id.to_owned(),
         version: Some("2".to_owned()),
         kept: vec!["a".to_owned(), "b".to_owned()],
         auto: vec!["c".to_owned()],
@@ -128,8 +128,8 @@ fn entries_are_read_as_text_in_the_file_s_order() {
     let read = Document::parse(&xml).unwrap();
     assert_eq!(
         read.entries,
-        [Entry::Module {
-            module: "look".to_owned(),
+        [Entry::Tool {
+            tool: "look".to_owned(),
             version: Some("2.0".to_owned()),
             kept: vec!["strength".to_owned(), "grain".to_owned()],
             auto: Vec::new(),
@@ -178,11 +178,11 @@ fn a_newer_file_version_is_newer() {
     );
     let view_only = ViewOnly {
         build: None,
-        reason: Reason::Newer(Newer::Module("lens".to_owned())),
+        reason: Reason::Newer(Newer::Tool("lens".to_owned())),
     };
     assert_eq!(
         view_only.to_string(),
-        "the edit a newer Apertrust wrote holds the module lens, which this build does not have: open for viewing only"
+        "the edit a newer Apertrust wrote holds the tool lens, which this build does not have: open for viewing only"
     );
     // Version 2, this build's, is not newer, whatever layout a document reads.
     let xml = Document::new("0.9.0")
@@ -352,8 +352,8 @@ fn edits() -> Edits {
                 ("count".to_owned(), "3".to_owned()),
             ],
         }),
-        vec![Entry::Module {
-            module: "look".to_owned(),
+        vec![Entry::Tool {
+            tool: "look".to_owned(),
             version: Some("2".to_owned()),
             kept: Vec::new(),
             auto: Vec::new(),
@@ -848,7 +848,7 @@ fn a_copy_is_edited_where_a_last_entry_up_to_the_end_is_not_empty() {
     for step in &mut edits.copies[0].history[..2] {
         for entry in &mut step.entries {
             match entry {
-                Entry::Module {
+                Entry::Tool {
                     kept,
                     auto,
                     enabled,
@@ -875,7 +875,7 @@ fn a_copy_is_edited_where_a_last_entry_up_to_the_end_is_not_empty() {
     edits.copies[0].history[0].entries.clear();
     edits.copies[0].history[1]
         .entries
-        .retain(|e| matches!(e, Entry::Module { .. }));
+        .retain(|e| matches!(e, Entry::Tool { .. }));
     assert!(!edits.edited());
 }
 

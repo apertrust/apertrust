@@ -10,11 +10,11 @@ The tools users edit with. In the first pass each is darktable's own: one tool p
 
 Every tool's operation keeps darktable's place, darktable's v5.0 order throughout (decision 22; `src/common/iop_order.c`; [engine.md](../engine.md), Order): the tone equalizer at camera RGB 24.0, RGB curve and RGB levels at 42 and 43, before the tone mapper.
 
-The side panel's tabs are Photos, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each tool sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last tool at the top. The app's `TAB_MODULES` holds these lists for the built tools, the Edit workspace's defaults, and a test holds them to `OPERATIONS` reversed; a person can reorder, pin, move and float sections on screen, never the processing order (decision 83). How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
+The side panel's tabs are Photos, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each tool sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last tool at the top. The app's `TAB_TOOLS` holds these lists for the built tools, the Edit workspace's defaults, and a test holds them to `OPERATIONS` reversed; a person can reorder, pin, move and float sections on screen, never the processing order (decision 83). How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
 
 The tables below are in that order:
 
-- **Built** means the tool is in `apertrust-modules`'s `MODULES` and in the app; the details are on its page.
+- **Built** means the tool is in `apertrust-tools`'s `TOOLS` and in the app; the details are on its page.
 - **Switched** means a tool darktable leaves off on a new photo ([rule 4](#the-rules)).
 - A **slot** is darktable's: the stage, then the order number.
 
@@ -126,7 +126,7 @@ Port specs, tool pages and code cite these by number.
 3. **Controls are darktable's, every one it shows** (decision 29).
    - In darktable's order, under its labels and ranges, ported or not; a control not ported is drawn disabled.
    - A fixed change of unit is allowed: a percentage for a factor, degrees for radians (decision 30).
-   - Sliders are darktable's, soft ranges included (decision 30), and a range darktable moves with other controls moves with them (`Module::range`, decision 30).
+   - Sliders are darktable's, soft ranges included (decision 30), and a range darktable moves with other controls moves with them (`Tool::range`, decision 30).
    - No control sets several parameters.
 4. **A tool that is off is untouched** (decision 32).
    - A tool whose operation every photo runs starts at the photo as first shown, the operation's defaults for it, and is untouched there.
@@ -142,19 +142,19 @@ Port specs, tool pages and code cite these by number.
    - Applying one is one change and one history step.
    - darktable's auto-applied workflow presets are Apertrust's defaults already.
    - A preset that sets a fixed parameter or a mode not ported is left out, and the tool's page says so.
-8. **A choice lists darktable's options for the photo** (decisions 29 and 30; `Module::options`).
+8. **A choice lists darktable's options for the photo** (decisions 29 and 30; `Tool::options`).
    - The definition holds every option darktable lists on some photo, each with a permanent id; a photo lists those darktable lists for it.
    - An option not ported is drawn disabled, and choosing it is refused. So is an option the photo does not list.
    - An edit from another photo that holds one keeps it, shown last, chosen and disabled, "Not available for this photo".
    - Options darktable lists on no photo, kept only for old darktable edits, are left out until the import of darktable's edits needs them (decision 51, planned).
 9. **Left out:** every module darktable marks deprecated, and modules that do another's job: colour zones (the colour equalizer's), monochrome (colour calibration's grey), base curve and the other display-referred legacy tone tools. Tone mappers are the exception: each is a tool of its own ([Tone mappers](#tone-mappers)).
-10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. A picker is declared in `Definition::pickers` with darktable's flags and applied by `Module::pick` ([pickers.md](../pickers.md), decision 79). The tool's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
+10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. A picker is declared in `Definition::pickers` with darktable's flags and applied by `Tool::pick` ([pickers.md](../pickers.md), decision 79). The tool's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
 11. **Layers** replace darktable's instances and per-module masks (decision 34; [layers.md](../layers.md)). A tool works on layers unless the tables above say background only.
 12. **darktable's interface settings** (decision 29).
     - darktable's own settings for a tool, kept in darktablerc and never in an edit, are rows of the tool (`Row::Setting`), kept in `settings.toml` under `[tools.<module>]` once what uses them is built (decision 43).
     - A control darktable shows only under a preference that is off by default, or only for an edit made with an older algorithm, is not shown; its parameter stays at darktable's default or current value.
-13. **Follow writes** (decision 27). Where darktable's GUI writes other parameters with a control, to keep one quantity consistent (colour calibration's illuminant writing `x`, `y` and the temperature; White balance's coefficients writing `preset`), the tool gives those writes (`Module::follow`) and the session applies them in the same change.
-    - A preset row's option takes none: it writes every control itself (`Module::preset`).
+13. **Follow writes** (decision 27). Where darktable's GUI writes other parameters with a control, to keep one quantity consistent (colour calibration's illuminant writing `x`, `y` and the temperature; White balance's coefficients writing `preset`), the tool gives those writes (`Tool::follow`) and the session applies them in the same change.
+    - A preset row's option takes none: it writes every control itself (`Tool::preset`).
     - A range that follows other controls clamps a value it leaves outside in the same change (decision 30).
     - darktable's session memory, values its GUI keeps but no edit stores, is not mirrored.
 
@@ -227,7 +227,7 @@ flowchart LR
     C -- "unview" --> S
 ```
 
-- The tool gives it, as pure methods of `Module`: the coordinates from the stored values (`view`) and back (`unview`).
+- The tool gives it, as pure methods of `Tool`: the coordinates from the stored values (`view`) and back (`unview`).
 - A coordinate is addressed like a control, and the session reports every view's coordinates with the values. Nothing is stored under a coordinate's id.
 - Marks and reset belong to the stored controls. Once every coordinate is back at its default, the stored values are reset exactly.
 - A view with fewer coordinates than controls (temperature and tint over three coefficients) writes the controls as darktable's GUI does, normalised. A view may read the camera, through the photo's image context.
@@ -242,7 +242,7 @@ Each is separate work.
 
 Each tool's page holds its invariants table (decision 28; the `tool-bindings` skill). It says what each control changes, what stays fixed, what zero means, and the control's range and response.
 
-It then lists one row per invariant, and each row is a test in `crates/modules/tests/<id>.rs`. A control whose rows cannot be tested is not yet defined.
+It then lists one row per invariant, and each row is a test in `crates/tools/tests/<id>.rs`. A control whose rows cannot be tested is not yet defined.
 
 The tables come before the bindings. A tolerance or a choice that a page marks as proposed is still open. A page with open questions ends with them and their options.
 
@@ -261,7 +261,7 @@ A first-pass tool's table needs only the rows every table has (below) and the da
 - **Off:** untouched, or with controls only kept, the tool renders byte-identical to no edit, its plan and cache keys too, on every image.
 - **On at darktable's defaults:** the tool's defaults, each made explicit, bind its operations' defaults for the photo exactly (`check::switched_defaults`, on the CPU), so the tool on and untouched is darktable's new instance.
 - **First step:** the tool on at darktable's defaults, against no edit: darktable's behaviour, measured and reported without a bound.
-- **Moved and reset:** each control moved, then the tool's reset (`ResetModule`), renders byte-identical to no edit, the tool off; each moved control reset alone (`ResetControl`) leaves the tool on, rendering as on at darktable's defaults.
+- **Moved and reset:** each control moved, then the tool's reset (`ResetTool`), renders byte-identical to no edit, the tool off; each moved control reset alone (`ResetControl`) leaves the tool on, rendering as on at darktable's defaults.
 - **An older edit,** once, for a tool that became switched: its earlier version's edits, migrated, bind the parameters they bound before.
 - **Order** and **on a layer**, as above.
 
@@ -275,7 +275,7 @@ A letter per tool and a number: A for AgX, D for Demosaic, O for Output colour p
 
 A first-pass tool's sliders are darktable's (rule 3, decision 30). Each tool's page records them, audited against darktable's params and `gui_init`, and a test in the tool's source holds its definition to that table through `testing::slider_differences`. It compares every slider row and number setting with darktable's (`testing::DarktableSlider`: the hard range, the soft range, the factor and offset it shows by, its digits). What is compared, in the units shown:
 
-- **The range** a value may hold, the control's: darktable's hard range, the params' `$MIN` and `$MAX`, times the factor plus the offset. A typed value, a script or a preset may reach it. Where darktable's `gui_changed` moves it with other controls, as AgX's pivot's spans black to white relative exposure, the range, the track and the step are compared for given values through `Module::range`, at the tool's defaults and, in the tool's own test, at others; the definition's range is then the widest any values give (decision 30).
+- **The range** a value may hold, the control's: darktable's hard range, the params' `$MIN` and `$MAX`, times the factor plus the offset. A typed value, a script or a preset may reach it. Where darktable's `gui_changed` moves it with other controls, as AgX's pivot's spans black to white relative exposure, the range, the track and the step are compared for given values through `Tool::range`, at the tool's defaults and, in the tool's own test, at others; the definition's range is then the widest any values give (decision 30).
 - **The track's span at rest:** darktable's soft range (`dt_bauhaus_slider_set_soft_range`), `Slider::soft`, else the range. The track widens to show a value beyond it, and keeps that span until the row is reset, as darktable's `dt_bauhaus_slider_set` widens its visible range; a drag and the keys stay inside the span shown (`docs/gui.md`, How the rows are laid out).
 - **The factor and offset:** `dt_bauhaus_slider_set_factor` and `_offset`, or the factor of 100 that `dt_bauhaus_slider_set_format(…, "%")` gives a slider whose hard maximum is within ±10, taking two of its digits. A tool stores the value as shown, and its binding converts back.
 - **The decimals:** darktable's digits as `gui_init` leaves them; `dt_bauhaus_slider_from_params` gives a float `max(2, −⌊log₁₀(top / 100) + 0.1⌋)`, top the smaller of the hard range's width and its larger end's size.

@@ -16,7 +16,7 @@ What does an edit file look like, and how is it read so that a photo is never lo
 
 **A save never drops what the edit holds.** Whatever this build would leave out makes the photo **view-only**: its controls disabled, every change refused, the file never written, and the photo's caption saying which version wrote it. View-only follows from what the file holds, never from comparing build versions:
 
-- a newer file version, a newer tool version, or a tool this build neither knows nor has retired (`apertrust_modules::RETIRED`);
+- a newer file version, a newer tool version, or a tool this build neither knows nor has retired (`apertrust_tools::RETIRED`);
 - at a tool's own version, a control it lacks, a mark on one, or a value it cannot read or keep;
 - an operation it lacks, a schema version above its own, or at its own a parameter it lacks;
 - an entry repeated, or any element or attribute it does not write;

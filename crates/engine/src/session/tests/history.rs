@@ -18,10 +18,10 @@
 //! touched, Undo and Redo, Reset a step, a control's quick repeats merged, and the `History`
 //! fact.
 
-use apertrust_modules::colour_calibration::ColourCalibration;
-use apertrust_modules::exposure::Exposure;
-use apertrust_modules::soften::Soften;
-use apertrust_modules::white_balance::WhiteBalance;
+use apertrust_tools::colour_calibration::ColourCalibration;
+use apertrust_tools::exposure::Exposure;
+use apertrust_tools::soften::Soften;
+use apertrust_tools::white_balance::WhiteBalance;
 
 use super::*;
 use crate::session::history::{MERGE_WITHIN, REVIEW};
@@ -94,7 +94,7 @@ fn brightness(events: &[Event]) -> ControlValue {
 
 fn amount(value: f32, done: bool) -> Command {
     Command::SetControl {
-        module: "soften".to_owned(),
+        tool: "soften".to_owned(),
         control: "amount".to_owned(),
         value: ControlValue::Number(value),
         done,
@@ -128,7 +128,7 @@ fn a_photo_opens_with_its_history_after_its_values_not_yet_live() {
 
 /// White balance, Exposure and Colour calibration: darktable has the first on by default and
 /// applies the other two to a new raw as its workflow's presets.
-const DEFAULTS: &[&dyn Module] = &[&WhiteBalance, &Exposure, &ColourCalibration];
+const DEFAULTS: &[&dyn Tool] = &[&WhiteBalance, &Exposure, &ColourCalibration];
 
 /// The operations the open photo's edit plans, in order.
 fn planned(driven: &Driven) -> Vec<&'static str> {
@@ -141,8 +141,8 @@ fn planned(driven: &Driven) -> Vec<&'static str> {
 
 /// Whether the module `id` is on, as the values report it.
 fn on(events: &[Event], id: &str) -> bool {
-    (values(events).modules.iter())
-        .find(|state| state.module == id)
+    (values(events).tools.iter())
+        .find(|state| state.tool == id)
         .unwrap()
         .enabled
 }
@@ -168,7 +168,7 @@ fn go_to_a_default_step_renders_the_first_k_and_undo_stops_above_them() {
     let opened = driven.open(&path);
     let made = history(&opened);
     let steps: Vec<_> = (made.steps.iter())
-        .map(|step| (step.source, step.changes[0].module.as_ref()))
+        .map(|step| (step.source, step.changes[0].tool.as_ref()))
         .collect();
     assert_eq!(
         steps,
@@ -221,7 +221,7 @@ fn go_to_a_default_step_renders_the_first_k_and_undo_stops_above_them() {
     // Original and Redo puts it back.
     driven.run([Command::GoTo { step: None }]);
     let edited = driven.run([Command::SetControl {
-        module: "exposure".to_owned(),
+        tool: "exposure".to_owned(),
         control: "exposure".to_owned(),
         value: ControlValue::Number(1.0),
         done: true,
@@ -293,12 +293,12 @@ fn a_reset_among_the_default_steps_applies_them_as_one_step() {
     // Undo takes it back to Original; a module's reset there is one step of that module.
     driven.run([Command::Undo]);
     assert!(!edit(&driven).unapplied.is_empty());
-    let reset = driven.run([Command::ResetModule {
-        module: "temperature".to_owned(),
+    let reset = driven.run([Command::ResetTool {
+        tool: "temperature".to_owned(),
     }]);
     let after = history(&reset);
     assert_eq!((after.steps.len(), after.end), (4, 4));
-    assert_eq!(after.steps[3].changes[0].module, "temperature");
+    assert_eq!(after.steps[3].changes[0].tool, "temperature");
     assert_eq!(planned(&driven), all);
     assert_eq!(fold(&driven), edit(&driven));
     // Saved too, though it moved no value.
@@ -312,13 +312,13 @@ fn a_reset_among_the_default_steps_applies_them_as_one_step() {
     let stepped = driven.run([Command::Step {
         source: StepSource::You,
         note: None,
-        commands: vec![Command::ResetModule {
-            module: "temperature".to_owned(),
+        commands: vec![Command::ResetTool {
+            tool: "temperature".to_owned(),
         }],
     }]);
     let after = history(&stepped);
     assert_eq!((after.steps.len(), after.end), (4, 4));
-    assert_eq!(after.steps[3].changes[0].module, "temperature");
+    assert_eq!(after.steps[3].changes[0].tool, "temperature");
     assert_eq!(planned(&driven), all);
     assert_eq!(fold(&driven), edit(&driven));
     remove(&path);
@@ -335,8 +335,8 @@ fn a_picker_turned_on_among_the_default_steps_applies_them() {
     driven.run([Command::GoTo { step: None }]);
     assert!(!planned(&driven).contains(&"exposure"));
     let events = driven.run([Command::Picker(PickerCommand::On {
-        picker: PickerRef::Module {
-            module: "exposure",
+        picker: PickerRef::Tool {
+            tool: "exposure",
             picker: "exposure",
         },
         area: true,
@@ -351,7 +351,7 @@ fn a_picker_turned_on_among_the_default_steps_applies_them() {
     // the default steps, saved: reopened, the photo shows them applied.
     let after = history(&events);
     assert_eq!((after.steps.len(), after.end), (4, 4));
-    assert_eq!(after.steps[3].changes[0].module, "exposure");
+    assert_eq!(after.steps[3].changes[0].tool, "exposure");
     assert_eq!(fold(&driven), edit(&driven));
     driven.run([Command::Picker(PickerCommand::Off)]);
     driven.writes();
@@ -446,7 +446,7 @@ fn the_default_steps_are_saved_with_the_first_change_and_read_again() {
     assert!(!sidecar.exists());
     // The first change writes them with it.
     driven.run([Command::SetControl {
-        module: "exposure".to_owned(),
+        tool: "exposure".to_owned(),
         control: "exposure".to_owned(),
         value: ControlValue::Number(1.0),
         done: true,
@@ -528,7 +528,7 @@ fn a_newer_file_taken_in_gets_no_default_step_never_written() {
     sidecar::write_log(&sidecar, &file, &theirs, &[clock], modules, "cli").unwrap();
     // The session's first change finds it, and takes it in.
     driven.run([Command::SetControl {
-        module: "exposure".to_owned(),
+        tool: "exposure".to_owned(),
         control: "exposure".to_owned(),
         value: ControlValue::Number(1.0),
         done: true,
@@ -558,7 +558,7 @@ fn a_view_only_file_holding_nothing_opens_with_no_step() {
     std::fs::write(&sidecar, &xml).unwrap();
     let mut driven = Driven::new(DEFAULTS);
     let opened = driven.open(&path);
-    assert!(values(&opened).modules.iter().all(|module| module.enabled));
+    assert!(values(&opened).tools.iter().all(|module| module.enabled));
     let read = history(&opened);
     assert_eq!((read.steps.len(), read.end), (0, 0));
     remove(&path);
@@ -679,7 +679,7 @@ fn reset_is_a_step_and_its_undo_brings_each_module_back() {
     let edited = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
     let before = edit(&driven);
     let reset = driven.run([Command::Reset]);
-    let soften = |events: &[Event]| values(events).modules[1].clone();
+    let soften = |events: &[Event]| values(events).tools[1].clone();
     assert!(!soften(&reset).enabled);
     assert_eq!(brightness(&reset), ControlValue::Number(0.0));
     let history = history(&reset);
@@ -687,11 +687,7 @@ fn reset_is_a_step_and_its_undo_brings_each_module_back() {
     let step = &history.steps[2];
     assert_eq!((&step.note, step.batch), (&Some(Note::reset()), None));
     // One step of each module the edit held, the switched one turned off.
-    let modules: Vec<_> = step
-        .changes
-        .iter()
-        .map(|c| (&*c.module, c.enabled))
-        .collect();
+    let modules: Vec<_> = step.changes.iter().map(|c| (&*c.tool, c.enabled)).collect();
     assert_eq!(modules, [("sample", None), ("soften", Some([true, false]))]);
     let undone = driven.run([Command::Undo]);
     assert!(soften(&undone).enabled);
@@ -783,7 +779,7 @@ fn undo_takes_back_a_pending_set_and_a_drag() {
     // A gesture another command ends is a step of its own.
     driven.run([set("grain", ControlValue::Number(20.0), false)]);
     let ended = driven.run([Command::ResetControl {
-        module: "sample".to_owned(),
+        tool: "sample".to_owned(),
         control: "brightness".to_owned(),
     }]);
     let steps = &history(&ended).steps;
@@ -853,7 +849,7 @@ fn a_step_of_two_modules_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     assert_eq!((made.steps.len(), made.end), (2, 2));
     let modules: Vec<_> = (made.steps.iter())
         .map(|step| {
-            let modules: Vec<_> = step.changes.iter().map(|change| &*change.module).collect();
+            let modules: Vec<_> = step.changes.iter().map(|change| &*change.tool).collect();
             (step.source, step.note.clone(), modules)
         })
         .collect();
@@ -904,7 +900,7 @@ fn a_step_s_command_that_changes_nothing_orders_none_of_its_steps() {
     }]);
     let made = history(&events);
     let modules: Vec<_> = (made.steps[1..].iter())
-        .map(|step| &*step.changes[0].module)
+        .map(|step| &*step.changes[0].tool)
         .collect();
     assert_eq!(modules, ["sample", "soften"]);
     remove(&path);
@@ -942,8 +938,8 @@ fn a_step_is_refused_whole_naming_its_index() {
     assert_eq!(brightness(&events), ControlValue::Number(0.5));
     assert_eq!(edit(&driven), edited);
     let events = driven.run([step(vec![
-        Command::ResetModule {
-            module: "sample".to_owned(),
+        Command::ResetTool {
+            tool: "sample".to_owned(),
         },
         Command::Undo,
     ])]);
@@ -1251,7 +1247,7 @@ fn a_step_takes_in_the_gesture_under_way_on_a_module_it_writes() {
         true,
     )])]);
     let modules: Vec<_> = (history(&events).steps.iter())
-        .map(|step| step.changes[0].module.clone())
+        .map(|step| step.changes[0].tool.clone())
         .collect();
     assert_eq!(modules, ["sample", "soften", "sample"]);
     assert_eq!(fold(&driven), edit(&driven));
@@ -1491,7 +1487,7 @@ fn quick_changes_to_one_control_merge_into_one_step() {
     let reset = driven.run_at(
         times.after(Duration::from_secs(1)),
         [Command::ResetControl {
-            module: "sample".to_owned(),
+            tool: "sample".to_owned(),
             control: "brightness".to_owned(),
         }],
     );
@@ -1521,12 +1517,12 @@ fn no_merge_across_another_command_control_note_or_source() {
     };
     let note = || Some(Note::Text("Brighter".to_owned()));
     let look = |option: &str| Command::ApplyPreset {
-        module: "sample".to_owned(),
+        tool: "sample".to_owned(),
         preset: "look".to_owned(),
         option: option.to_owned(),
     };
     let release = Command::Keep {
-        module: "sample".to_owned(),
+        tool: "sample".to_owned(),
         control: "brightness".to_owned(),
         kept: false,
     };
@@ -1618,7 +1614,7 @@ fn a_change_that_changes_nothing_counts_as_none() {
 // -- Saved in the sidecar (9.5) -----------------------------------------------------------
 
 /// The modules of the tests that save: Sample, and Soften, which another program changes.
-const SAVING: &[&dyn apertrust_modules::Module] = &[&Sample, &Soften];
+const SAVING: &[&dyn apertrust_tools::Tool] = &[&Sample, &Soften];
 
 /// The sidecar of `path` as this build reads it.
 fn saved(path: &Path) -> sidecar::Loaded {
@@ -1902,7 +1898,7 @@ fn a_newer_build_s_file_found_before_a_write_makes_the_photo_view_only() {
         "{taken:?}"
     );
     let values = values(&taken);
-    assert!(values.modules[0].controls.iter().all(|c| !c.available));
+    assert!(values.tools[0].controls.iter().all(|c| !c.available));
     // Nothing handed over before it is written over the newer build's file.
     assert!(driven.writes().is_empty());
     assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), newer);
@@ -2154,7 +2150,7 @@ fn an_unreadable_newer_file_is_never_written_over() {
 fn a_move_of_the_end_clamps_what_it_moves_to() {
     let path = scratch("history-move-clamp");
     let value = |bias: Option<f32>| {
-        let mut sample = apertrust_modules::ModuleValues::new();
+        let mut sample = apertrust_tools::ToolValues::new();
         sample.set("coarseness", ControlValue::Number(150.0));
         if let Some(bias) = bias {
             sample.set("bias", ControlValue::Number(bias));
@@ -2821,7 +2817,7 @@ fn shown(history: &History) -> (Vec<StepId>, usize) {
 /// The sidecar of `path` read back with `modules`, once every write is done: it holds the
 /// log as the session is to write it, the default steps not yet written left out, and the
 /// copy's clock vector, with no problem.
-fn assert_saved(driven: &Driven, path: &Path, modules: &[&dyn Module]) -> sidecar::Loaded {
+fn assert_saved(driven: &Driven, path: &Path, modules: &[&dyn Tool]) -> sidecar::Loaded {
     driven.writes();
     let read = sidecar::read(&sidecar::path_for(path), OPERATIONS, modules, &[]).unwrap();
     let open = driven.engine.open.as_ref().unwrap();
@@ -2943,7 +2939,7 @@ fn compress_right_after_reset_leaves_an_empty_history() {
 }
 
 /// Soften beside darktable's default modules of [`DEFAULTS`].
-const DISCARDING: &[&dyn Module] = &[&Soften, &WhiteBalance, &Exposure, &ColourCalibration];
+const DISCARDING: &[&dyn Tool] = &[&Soften, &WhiteBalance, &Exposure, &ColourCalibration];
 
 /// Discard History clears the log and resets the edit, as going to Original and then
 /// Compress: the photo, with no history, is given its default steps again, the file
@@ -3266,15 +3262,15 @@ fn live_operations(driven: &Driven) -> Vec<&'static str> {
 }
 
 /// The module `id`'s state among the values in `events`.
-fn state<'v>(events: &'v [Event], id: &str) -> &'v ModuleState {
-    (values(events).modules.iter())
-        .find(|state| state.module == id)
+fn state<'v>(events: &'v [Event], id: &str) -> &'v ToolState {
+    (values(events).tools.iter())
+        .find(|state| state.tool == id)
         .unwrap()
 }
 
 fn hide(module: &str, hidden: bool) -> Command {
     Command::Hide {
-        module: module.to_owned(),
+        tool: module.to_owned(),
         hidden,
     }
 }
@@ -3390,7 +3386,7 @@ fn the_eye_leaves_a_gesture_under_way_and_is_taken_view_only_and_opening() {
     assert!(
         matches!(
             failures(&unknown)[..],
-            [SessionError::Edit(EditError::UnknownModule(_))]
+            [SessionError::Edit(EditError::UnknownTool(_))]
         ),
         "{unknown:?}"
     );
@@ -3451,7 +3447,7 @@ fn what_the_eye_hides_ends_as_the_photo_closes_or_another_opens() {
     let other = scratch("history-eye-other");
     let opened = driven.open(&other);
     assert!(
-        (values(&opened).modules.iter()).all(|state| !state.hidden),
+        (values(&opened).tools.iter()).all(|state| !state.hidden),
         "{opened:?}"
     );
     remove(&path);

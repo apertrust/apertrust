@@ -42,7 +42,7 @@ use apertrust_engine::export::{Tiling, export_at};
 use apertrust_engine::export_job;
 use apertrust_engine::gpu::{self, GpuContext};
 use apertrust_engine::history::{
-    Change, Clock, Entry, Log, MachineId, Note, StepSource, Wrote, advance, default_modules, latest,
+    Change, Clock, Entry, Log, MachineId, Note, StepSource, Wrote, advance, default_tools, latest,
 };
 use apertrust_engine::jobs::JobEvent;
 use apertrust_engine::names::{self, Shot};
@@ -64,9 +64,9 @@ use apertrust_export::settings::registry::{
 use apertrust_export::settings::{self as export_settings, FileFormat, SizeMode};
 use apertrust_export::size::Request;
 use apertrust_export::{Format, Places, png, variables};
-use apertrust_modules::{Control, ControlKind, ControlValue, Mark, Module, ModuleValues};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_raw::{CfaColor, Pixels, Rect};
+use apertrust_tools::{Control, ControlKind, ControlValue, Mark, Tool, ToolValues};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 mod beside;
@@ -76,7 +76,7 @@ mod library;
 
 /// The operations and the modules the CLI hands the engine, as the app hands them.
 const OPERATIONS: &[&dyn Operation] = apertrust_operations::OPERATIONS;
-const MODULES: &[&dyn Module] = apertrust_modules::MODULES;
+const TOOLS: &[&dyn Tool] = apertrust_tools::TOOLS;
 
 /// The control `preview` times: the Exposure module's Exposure.
 const EXPOSURE: (&str, &str) = ("exposure", "exposure");
@@ -159,7 +159,7 @@ enum Command {
         #[command(subcommand)]
         command: cache::Command,
     },
-    /// Render a raw through the viewport pipe, time changes of the Exposure module's
+    /// Render a raw through the viewport pipe, time changes of the Exposure tool's
     /// Exposure as a slider drag sends them, and optionally save the viewport image. The
     /// raw stage and demosaic run at full resolution, every later operation at the
     /// viewport's size, and each change restarts from the newest cache point it leaves
@@ -171,7 +171,7 @@ enum Command {
         width: u32,
         #[arg(long, default_value_t = 1600)]
         height: u32,
-        /// The Exposure module's Exposure, in EV as darktable's slider shows it, −18 to
+        /// The Exposure tool's Exposure, in EV as darktable's slider shows it, −18 to
         /// +18 (+0.7 for a colour raw as first shown); the saved edit's when left out.
         #[arg(long, allow_negative_numbers = true)]
         exposure: Option<f32>,
@@ -182,7 +182,7 @@ enum Command {
         #[arg(long)]
         png: Option<PathBuf>,
         /// Then time an operation an unedited photo does not run joining the plan at its
-        /// defaults, as a module adds it, leaving, and joining again: each rebuild keeps
+        /// defaults, as a tool adds it, leaving, and joining again: each rebuild keeps
         /// the compiled kernels and the cache points that still hold (decision 28), and
         /// the first is compared with a pipeline built from nothing. Any operation
         /// whose manifest leaves `default_enabled` off, such as colorbalancergb or grain.
@@ -236,8 +236,8 @@ enum Command {
         #[arg(long, value_name = "NAME", value_parser = backend_named)]
         backend: Option<gpu::Backend>,
     },
-    /// Change the edit saved beside a raw, `FILE.apxmp`: module values, and the parameters
-    /// no module owns yet, one change added to its history, a step of each module it
+    /// Change the edit saved beside a raw, `FILE.apxmp`: tool values, and the parameters
+    /// no tool owns yet, one change added to its history, a step of each tool it
     /// writes; then show it. `export` and `preview` start from it. Resets apply before
     /// sets. An edit a newer Apertrust wrote is refused and left as it is; `export` and
     /// `preview` render what this build reads of it.
@@ -251,7 +251,7 @@ enum Command {
         note: Option<String>,
         /// Return a control to its default for the image, no longer kept; repeat for
         /// more.
-        #[arg(long = "reset", value_name = "MODULE.CONTROL")]
+        #[arg(long = "reset", value_name = "TOOL.CONTROL")]
         resets: Vec<String>,
         /// Return a parameter `--param` sets to its default for the image; repeat for
         /// more.
@@ -264,8 +264,8 @@ enum Command {
         clear: bool,
     },
     /// List the history of the edit saved beside a raw, `FILE.apxmp`, newest first, as the
-    /// app's History tab lists it: each step's number, module, what changed and its time in
-    /// UTC, its source where it is not yours, its note; a change of several modules and the
+    /// app's History tab lists it: each step's number, tool, what changed and its time in
+    /// UTC, its source where it is not yours, its note; a change of several tools and the
     /// default steps each under a line of their own; Original, 0; the end marked with >.
     /// Or make one move, a write of the file that the app takes in, only over the file as
     /// it was read, then list it. A move that would change nothing writes nothing. An edit
@@ -376,16 +376,16 @@ impl ScopesGraph {
     }
 }
 
-/// Values set on top of the saved edit, as a client of the session sets them: module
-/// controls, and parameters no module owns yet (decision 28).
+/// Values set on top of the saved edit, as a client of the session sets them: tool
+/// controls, and parameters no tool owns yet (decision 28).
 #[derive(Debug, Default, clap::Args)]
 struct SetFlags {
-    /// Set a module's control, such as `colorbalancergb.contrast=20`, which keeps it;
+    /// Set a tool's control, such as `colorbalancergb.contrast=20`, which keeps it;
     /// repeat for more.
-    #[arg(long = "set", value_name = "MODULE.CONTROL=VALUE")]
+    #[arg(long = "set", value_name = "TOOL.CONTROL=VALUE")]
     sets: Vec<String>,
-    /// Set a parameter no module owns yet, of an operation an unedited photo runs, such as
-    /// `colorin.type=lin_rec709`; any other is refused, since modules set it. Repeat for
+    /// Set a parameter no tool owns yet, of an operation an unedited photo runs, such as
+    /// `colorin.type=lin_rec709`; any other is refused, since tools set it. Repeat for
     /// more.
     #[arg(long = "param", value_name = "OPERATION.PARAMETER=VALUE")]
     params: Vec<String>,
@@ -478,10 +478,10 @@ fn main() -> Result<()> {
                     .unwrap_or_default(),
             },
             OPERATIONS,
-            MODULES,
+            TOOLS,
         ),
         Command::History(history::Args { file, moves }) => {
-            history::run(&file, moves.chosen(), OPERATIONS, MODULES)
+            history::run(&file, moves.chosen(), OPERATIONS, TOOLS)
         }
         Command::Preview {
             file,
@@ -619,13 +619,13 @@ fn flag_named(flags: &[&'static str], args: impl IntoIterator<Item = OsString>) 
 fn saved(
     photo: &Path,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
 ) -> Result<Option<sidecar::Loaded>> {
     let path = sidecar::path_for(photo);
     if !path.exists() {
         return Ok(None);
     }
-    let loaded = sidecar::read(&path, operations, modules, apertrust_modules::RETIRED)
+    let loaded = sidecar::read(&path, operations, modules, apertrust_tools::RETIRED)
         .with_context(|| format!("reading {}", path.display()))?;
     tracing::debug!(target: "pipe", "read {}", apertrust_base::log::file_name(&path));
     Ok(Some(loaded))
@@ -637,7 +637,7 @@ fn saved(
 fn saved_edit(
     photo: &Path,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
 ) -> Result<(Edit, bool)> {
     Ok(saved(photo, operations, modules)?.map_or_else(
         || (Edit::default(), false),
@@ -648,11 +648,11 @@ fn saved_edit(
     ))
 }
 
-/// One `--set MODULE.CONTROL=VALUE`, read: a value its control takes, which only the
+/// One `--set TOOL.CONTROL=VALUE`, read: a value its control takes, which only the
 /// photo's list of a choice's options may still refuse.
 struct ControlSet<'m> {
     flag: &'m str,
-    module: &'m dyn Module,
+    module: &'m dyn Tool,
     control: &'static Control,
     value: ControlValue,
 }
@@ -666,19 +666,17 @@ impl ControlSet<'_> {
 
 /// Reads each `--set`, refusing one that names no control or a value the control cannot
 /// take, before any photo is decoded.
-fn read_sets<'m>(sets: &'m [String], modules: &[&'m dyn Module]) -> Result<Vec<ControlSet<'m>>> {
+fn read_sets<'m>(sets: &'m [String], modules: &[&'m dyn Tool]) -> Result<Vec<ControlSet<'m>>> {
     sets.iter()
         .map(|set| read_set(modules, set).with_context(|| format!("--set {set}")))
         .collect()
 }
 
-/// `MODULE.CONTROL=VALUE`.
-fn read_set<'m>(modules: &[&'m dyn Module], set: &'m str) -> Result<ControlSet<'m>> {
-    let (target, text) = set
-        .split_once('=')
-        .context("expected MODULE.CONTROL=VALUE")?;
-    let (id, name) = target.split_once('.').context("expected MODULE.CONTROL")?;
-    let module = edit::module(modules, id)?;
+/// `TOOL.CONTROL=VALUE`.
+fn read_set<'m>(modules: &[&'m dyn Tool], set: &'m str) -> Result<ControlSet<'m>> {
+    let (target, text) = set.split_once('=').context("expected TOOL.CONTROL=VALUE")?;
+    let (id, name) = target.split_once('.').context("expected TOOL.CONTROL")?;
+    let module = edit::tool(modules, id)?;
     let control = module
         .definition()
         .control(name)
@@ -712,7 +710,7 @@ fn set_controls(edit: &mut Edit, sets: &[ControlSet], image: &ImageContext) -> R
 /// Brings a saved edit's numbers inside the ranges its modules' values give on `image`
 /// (decision 30), each with a warning. Never for an edit a newer Apertrust wrote, which
 /// is rendered as it was, as the session shows it (decision 43).
-fn clamp_read(edit: &mut Edit, modules: &[&dyn Module], image: &ImageContext) {
+fn clamp_read(edit: &mut Edit, modules: &[&dyn Tool], image: &ImageContext) {
     for warning in edit.clamp_read(modules, image) {
         tracing::warn!(target: "pipe", "{warning}");
     }
@@ -723,7 +721,7 @@ fn set_params(
     edit: &mut Edit,
     params: &[String],
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
 ) -> Result<()> {
     if !params.is_empty() {
         edit.apply_all();
@@ -734,17 +732,17 @@ fn set_params(
     Ok(())
 }
 
-/// `--reset MODULE.CONTROL`, on the photo `image`, bringing back inside its range a
+/// `--reset TOOL.CONTROL`, on the photo `image`, bringing back inside its range a
 /// number the reset's move of a range leaves outside (decision 30).
 fn reset_control(
     edit: &mut Edit,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     reset: &str,
     image: &ImageContext,
 ) -> Result<()> {
-    let (id, name) = reset.split_once('.').context("expected MODULE.CONTROL")?;
+    let (id, name) = reset.split_once('.').context("expected TOOL.CONTROL")?;
     let before = edit.clone();
-    edit.reset_control(edit::module(modules, id)?, name)?;
+    edit.reset_control(edit::tool(modules, id)?, name)?;
     edit.clamp(&before, modules, image)?;
     Ok(())
 }
@@ -753,7 +751,7 @@ fn reset_control(
 fn set_param(
     edit: &mut Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     set: &str,
 ) -> Result<()> {
     let (target, text) = set
@@ -771,7 +769,7 @@ fn set_param(
 fn reset_param(
     edit: &mut Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     reset: &str,
 ) -> Result<()> {
     let (id, name) = reset
@@ -794,7 +792,7 @@ fn instances(
     }
     // A module whose binding fails is an error here: an export renders the edit as it
     // is, or not at all.
-    let mut instances = edit::instances(edit, OPERATIONS, MODULES, image).all()?;
+    let mut instances = edit::instances(edit, OPERATIONS, TOOLS, image).all()?;
     instances.retain(|instance| {
         !skips
             .iter()
@@ -806,11 +804,11 @@ fn instances(
 /// The edit as lines to show: each module it touches, then each operation it sets a
 /// parameter of. A switched module on with no control to show reads `<module>: on`
 /// (decision 32).
-fn describe(edit: &Edit, operations: &[&dyn Operation], modules: &[&dyn Module]) -> Vec<String> {
+fn describe(edit: &Edit, operations: &[&dyn Operation], modules: &[&dyn Tool]) -> Vec<String> {
     let mut lines = Vec::new();
     for module in modules {
         let definition = module.definition();
-        let Some(values) = edit.module(definition.id) else {
+        let Some(values) = edit.tool(definition.id) else {
             continue;
         };
         let controls: Vec<String> = definition
@@ -910,7 +908,7 @@ fn edit(
     photo: &Path,
     args: EditArgs,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Module],
+    modules: &[&'static dyn Tool],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
@@ -932,7 +930,7 @@ fn edit(
     };
     let lines = describe(&edit, operations, modules);
     if lines.is_empty() {
-        println!("No settings: every module and operation keeps its defaults for the image.");
+        println!("No settings: every tool and operation keeps its defaults for the image.");
     }
     for line in lines {
         println!("{line}");
@@ -980,7 +978,7 @@ fn write_history(
     read: Stamp,
     mut file: sidecar::Edits,
     (log, clocks): (&Log, &[Clock]),
-    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
 ) -> Result<bool> {
     let path = sidecar::path_for(photo);
     file.photo = Some(apertrust_base::log::file_name(photo).into_owned());
@@ -1000,7 +998,7 @@ fn edit_once(
     photo: &Path,
     args: &EditArgs,
     operations: &[&'static dyn Operation],
-    modules: &[&'static dyn Module],
+    modules: &[&'static dyn Tool],
 ) -> Result<Option<Edit>> {
     let path = sidecar::path_for(photo);
     let read_stamp = stamp(&path)?;
@@ -1057,9 +1055,9 @@ fn edit_once(
     let unapplied = log.unapplied(log.end());
     if changes.is_empty() && args.clear && !unapplied.is_empty() {
         let entries = (unapplied.into_iter())
-            .map(|module| Entry::Module {
-                module,
-                values: ModuleValues::new(),
+            .map(|module| Entry::Tool {
+                tool: module,
+                values: ToolValues::new(),
             })
             .collect();
         changes = vec![Change::Reset(entries)];
@@ -1077,7 +1075,7 @@ fn edit_once(
     // gives them (decision 78), so Original leaves out the modules its workflow applies.
     if log.steps().is_empty() {
         let made = Clock::now(last.as_ref(), machine);
-        log.add_defaults(&default_modules(modules, operations), made);
+        log.add_defaults(&default_tools(modules, operations), made);
         advance(&mut clocks, made);
         last = Some(made);
     }
@@ -1120,7 +1118,7 @@ fn wrote(args: &EditArgs, sets: &[ControlSet]) -> Vec<Wrote> {
     let order = &args.order;
     place(
         &order.resets,
-        (args.resets.iter()).map(|r| Wrote::Module(id(r))).collect(),
+        (args.resets.iter()).map(|r| Wrote::Tool(id(r))).collect(),
     );
     place(
         &order.param_resets,
@@ -1130,7 +1128,7 @@ fn wrote(args: &EditArgs, sets: &[ControlSet]) -> Vec<Wrote> {
     );
     let modules = sets
         .iter()
-        .map(|set| Wrote::Module(set.module.definition().id.to_owned()));
+        .map(|set| Wrote::Tool(set.module.definition().id.to_owned()));
     place(&order.sets, modules.collect());
     place(
         &order.params,
@@ -1275,7 +1273,7 @@ async fn export_in_session(
     let session = Session::start(
         gpu,
         OPERATIONS,
-        MODULES,
+        TOOLS,
         apertrust_base::program!().version,
         engine.budget,
         // The CLI writes no disk cache: none of its commands keeps anything there yet, and
@@ -1452,14 +1450,14 @@ async fn export(
     let runs = (*runs).max(1);
     // The flags are checked before the raw is decoded, and a choice's option against the
     // photo's list after it (decision 30).
-    let (mut edit, newer) = saved_edit(path, OPERATIONS, MODULES)?;
-    let sets = read_sets(&flags.sets, MODULES)?;
-    set_params(&mut edit, &flags.params, OPERATIONS, MODULES)?;
+    let (mut edit, newer) = saved_edit(path, OPERATIONS, TOOLS)?;
+    let sets = read_sets(&flags.sets, TOOLS)?;
+    set_params(&mut edit, &flags.params, OPERATIONS, TOOLS)?;
     let start = Instant::now();
     let raw = apertrust_raw::decode_file(path)?;
     let image = raw::image_context(&raw);
     if !newer {
-        clamp_read(&mut edit, MODULES, &image);
+        clamp_read(&mut edit, TOOLS, &image);
     }
     set_controls(&mut edit, &sets, &image)?;
     if gpu.is_none() {
@@ -1858,15 +1856,15 @@ async fn preview(
     let sensor = input.desc();
 
     // Each change sets the Exposure module's Exposure, as the app's slider does.
-    let (mut edit, newer) = saved_edit(path, OPERATIONS, MODULES)?;
+    let (mut edit, newer) = saved_edit(path, OPERATIONS, TOOLS)?;
     if !newer {
-        clamp_read(&mut edit, MODULES, &image);
+        clamp_read(&mut edit, TOOLS, &image);
     }
-    let module = edit::module(MODULES, EXPOSURE.0)?;
+    let module = edit::tool(TOOLS, EXPOSURE.0)?;
     let base_ev = match options.exposure {
         Some(ev) => ev,
         None => edit
-            .module(EXPOSURE.0)
+            .tool(EXPOSURE.0)
             .and_then(|values| values.number(EXPOSURE.1))
             .unwrap_or_else(|| module.defaults(&image).number(EXPOSURE.1)),
     };
@@ -2422,12 +2420,12 @@ fn adapter_lines(adapters: &[wgpu::AdapterInfo], preference: wgpu::PowerPreferen
 mod tests {
     use apertrust_engine::edit::EditError;
     use apertrust_export::jpeg;
-    use apertrust_modules::testing::Sample;
     use apertrust_plugin::Value;
+    use apertrust_tools::testing::Sample;
 
     use super::*;
 
-    const WITH_SAMPLE: &[&dyn Module] = &[&Sample];
+    const WITH_SAMPLE: &[&dyn Tool] = &[&Sample];
 
     /// `gpu` says which backends were asked for and why, then lists the adapters,
     /// Automatic's marked, and the software one as CPU, under its own name (decision 82).
@@ -2535,7 +2533,7 @@ mod tests {
         edit: &mut Edit,
         flags: &SetFlags,
         operations: &[&dyn Operation],
-        modules: &[&dyn Module],
+        modules: &[&dyn Tool],
         image: &ImageContext,
     ) -> Result<()> {
         let sets = read_sets(&flags.sets, modules)?;
@@ -2549,9 +2547,9 @@ mod tests {
         edit: &mut Edit,
         flags: &SetFlags,
         operations: &[&dyn Operation],
-        modules: &[&dyn Module],
+        modules: &[&dyn Tool],
     ) -> Result<()> {
-        let image = apertrust_modules::testing::image();
+        let image = apertrust_tools::testing::image();
         apply_on(edit, flags, operations, modules, &image)
     }
 
@@ -2563,9 +2561,9 @@ mod tests {
     fn an_override_applies_the_modules_a_saved_end_leaves_out() {
         use apertrust_engine::history::{Clock, Log, MachineId};
 
-        let image = apertrust_modules::testing::image();
+        let image = apertrust_tools::testing::image();
         let planned = |edit: &Edit| {
-            let bound = edit::instances(edit, OPERATIONS, MODULES, &image);
+            let bound = edit::instances(edit, OPERATIONS, TOOLS, &image);
             (bound.instances.iter()).any(|i| i.operation.manifest().id == "exposure")
         };
         let at_original = || {
@@ -2577,7 +2575,7 @@ mod tests {
         let mut edit = at_original();
         assert!(!planned(&edit));
         let set = flags(&["exposure.exposure=1"], &[]);
-        apply_on(&mut edit, &set, OPERATIONS, MODULES, &image).unwrap();
+        apply_on(&mut edit, &set, OPERATIONS, TOOLS, &image).unwrap();
         assert!(planned(&edit));
     }
 
@@ -2595,13 +2593,13 @@ mod tests {
         let unread = flags(&["sample.method=sepia"], &[]);
         assert!(read_sets(&unread.sets, WITH_SAMPLE).is_err());
         assert!(read_sets(&camera.sets, WITH_SAMPLE).is_ok_and(|s| s[0].is_choice()));
-        let mut biased = apertrust_modules::testing::image();
+        let mut biased = apertrust_tools::testing::image();
         if let Some(camera) = &mut biased.camera {
             camera.exposure_bias = -0.7;
         }
         apply_on(&mut edit, &camera, OPERATIONS, WITH_SAMPLE, &biased).unwrap();
         assert_eq!(
-            edit.module("sample").unwrap().get("method"),
+            edit.tool("sample").unwrap().get("method"),
             Some(&ControlValue::Choice(3))
         );
     }
@@ -2610,8 +2608,8 @@ mod tests {
     /// reset control by control leaves it so.
     #[test]
     fn a_switched_module_on_at_its_defaults_is_shown_on() {
-        use apertrust_modules::grain::Grain;
-        let modules: &[&dyn Module] = &[&Grain];
+        use apertrust_tools::grain::Grain;
+        let modules: &[&dyn Tool] = &[&Grain];
         let mut edit = Edit::default();
         apply(
             &mut edit,
@@ -2638,7 +2636,7 @@ mod tests {
             WITH_SAMPLE,
         )
         .unwrap();
-        let values = edit.module("sample").unwrap();
+        let values = edit.tool("sample").unwrap();
         assert_eq!(values.number("brightness"), Some(0.5));
         assert_eq!(values.get("size"), Some(&ControlValue::Choice(2)));
         assert_eq!(values.mark("brightness"), Some(Mark::Kept));
@@ -2651,9 +2649,9 @@ mod tests {
             ("sample.brightness=9", "outside -3 to 4"),
             ("sample.brightness=bright", "cannot read"),
             ("sample.contrast=1", "no control contrast"),
-            ("exposure.exposure=1", "no module exposure"),
-            ("sample.brightness", "expected MODULE.CONTROL=VALUE"),
-            ("brightness=1", "expected MODULE.CONTROL"),
+            ("exposure.exposure=1", "no tool exposure"),
+            ("sample.brightness", "expected TOOL.CONTROL=VALUE"),
+            ("brightness=1", "expected TOOL.CONTROL"),
         ] {
             let said = refusal(apply(
                 &mut edit,
@@ -2694,9 +2692,9 @@ mod tests {
     /// black to white relative exposure.
     #[test]
     fn set_and_reset_clamp_what_a_moved_range_leaves_outside() {
-        use apertrust_modules::agx::PIVOT;
+        use apertrust_tools::agx::PIVOT;
         let pivot = |edit: &Edit| {
-            let values = edit.module("agx").unwrap();
+            let values = edit.tool("agx").unwrap();
             (values.number(PIVOT), values.mark(PIVOT))
         };
         // Black raised past the pivot at −5 EV.
@@ -2705,7 +2703,7 @@ mod tests {
             &["agx.curve_pivot_x=-5", "agx.range_black_relative_ev=-4"],
             &[],
         );
-        apply(&mut edit, &raised, OPERATIONS, MODULES).unwrap();
+        apply(&mut edit, &raised, OPERATIONS, TOOLS).unwrap();
         assert_eq!(pivot(&edit), (Some(-4.0), Some(Mark::Kept)));
         // Black reset from −15 EV to its default of −10, past the pivot at −12.
         let mut edit = Edit::default();
@@ -2713,11 +2711,11 @@ mod tests {
             &["agx.range_black_relative_ev=-15", "agx.curve_pivot_x=-12"],
             &[],
         );
-        apply(&mut edit, &lowered, OPERATIONS, MODULES).unwrap();
-        edit.keep(edit::module(MODULES, "agx").unwrap(), PIVOT, false)
+        apply(&mut edit, &lowered, OPERATIONS, TOOLS).unwrap();
+        edit.keep(edit::tool(TOOLS, "agx").unwrap(), PIVOT, false)
             .unwrap();
         let image = ImageContext::full(0, 0);
-        reset_control(&mut edit, MODULES, "agx.range_black_relative_ev", &image).unwrap();
+        reset_control(&mut edit, TOOLS, "agx.range_black_relative_ev", &image).unwrap();
         assert_eq!(pivot(&edit), (Some(-10.0), Some(Mark::Kept)));
     }
 
@@ -2741,7 +2739,7 @@ mod tests {
                 EditError::Owned {
                     operation: "exposure",
                     param: "exposure",
-                    module: "sample",
+                    tool: "sample",
                 },
             ),
             (
@@ -2769,7 +2767,7 @@ mod tests {
             &mut edit,
             &flags(&[], &["exposure.exposure=1"]),
             OPERATIONS,
-            MODULES,
+            TOOLS,
         )
         .unwrap_err();
         assert_eq!(
@@ -2777,23 +2775,20 @@ mod tests {
             Some(&EditError::Owned {
                 operation: "exposure",
                 param: "exposure",
-                module: "exposure",
+                tool: "exposure",
             })
         );
         apply(
             &mut edit,
             &flags(&["exposure.exposure=1"], &[]),
             OPERATIONS,
-            MODULES,
+            TOOLS,
         )
         .unwrap();
-        assert_eq!(
-            edit.module("exposure").unwrap().number("exposure"),
-            Some(1.0)
-        );
+        assert_eq!(edit.tool("exposure").unwrap().number("exposure"), Some(1.0));
         reset_control(
             &mut edit,
-            MODULES,
+            TOOLS,
             "exposure.exposure",
             &ImageContext::full(0, 0),
         )
@@ -2840,7 +2835,7 @@ mod tests {
         run(&["sample.brightness=0.5"], &[], &[], false).unwrap();
         let (saved, newer) = saved_edit(&photo, OPERATIONS, WITH_SAMPLE).unwrap();
         assert!(!newer);
-        let values = saved.module("sample").unwrap();
+        let values = saved.tool("sample").unwrap();
         assert_eq!(values.number("grain"), Some(40.0));
         assert_eq!(values.number("brightness"), Some(0.5));
         assert_eq!(values.choice("size"), None);
@@ -2863,7 +2858,7 @@ mod tests {
             &saved,
             OPERATIONS,
             WITH_SAMPLE,
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         )
         .all()
         .unwrap()
@@ -2877,7 +2872,7 @@ mod tests {
             saved_edit(&photo, OPERATIONS, WITH_SAMPLE)
                 .unwrap()
                 .0
-                .module("sample")
+                .tool("sample")
                 .unwrap()
                 .get("grain")
                 .is_none()
@@ -2902,7 +2897,7 @@ mod tests {
         assert!(steps[0].batch.is_some() && steps[0].batch == steps[1].batch);
         let names: Vec<_> = (steps.iter())
             .map(|step| match step.change.entries() {
-                [Entry::Module { module, .. }] => module.clone(),
+                [Entry::Tool { tool: module, .. }] => module.clone(),
                 [Entry::Operation { operation, .. }] => operation.clone(),
                 _ => "reset".to_owned(),
             })
@@ -2952,7 +2947,7 @@ mod tests {
             order: FlagOrder::of(matches.subcommand_matches("edit").unwrap()),
         };
         let sets = read_sets(&flags.sets, WITH_SAMPLE).unwrap();
-        let module = |id: &str| Wrote::Module(id.to_owned());
+        let module = |id: &str| Wrote::Tool(id.to_owned());
         let operation = |id: &str| Wrote::Operation(id.to_owned());
         assert_eq!(
             wrote(&args, &sets),
@@ -3035,7 +3030,7 @@ mod tests {
                 &Sample,
                 "grain",
                 ControlValue::Number(40.0),
-                &apertrust_modules::testing::image(),
+                &apertrust_tools::testing::image(),
             )
             .unwrap();
         let xml = sidecar::to_xml(&grainy, OPERATIONS, WITH_SAMPLE, "0.9.0").replacen(

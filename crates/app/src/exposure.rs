@@ -110,7 +110,7 @@ mod tests {
         focal_length: Option<f32>,
         iso: f32,
     ) -> Photo {
-        let mut image = apertrust_modules::testing::image();
+        let mut image = apertrust_tools::testing::image();
         if let Some(camera) = &mut image.camera {
             camera.iso = iso;
         }

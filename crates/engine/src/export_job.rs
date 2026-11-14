@@ -64,8 +64,8 @@ use apertrust_export::disk::{self, Disk, Prepared, Skipped, Stored, Target};
 use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{DateTime, Size};
 use apertrust_export::{ExportSettings, Format, Image, Places};
-use apertrust_modules::Module;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
+use apertrust_tools::Tool;
 use thiserror::Error;
 
 use crate::compute::GpuImage;
@@ -446,7 +446,7 @@ impl Snapshot {
 pub(crate) struct Run {
     pub gpu: GpuContext,
     pub operations: &'static [&'static dyn Operation],
-    pub modules: Vec<&'static dyn Module>,
+    pub tools: Vec<&'static dyn Tool>,
     pub retired: &'static [&'static str],
     pub limits: Limits,
     pub load: Load,
@@ -849,13 +849,13 @@ impl Run {
         // As the session reads an edit: a number outside its range clamped, a newer
         // Apertrust's edit exported as this build shows it (decisions 30 and 43).
         if !newer {
-            for warning in edit.clamp_read(&self.modules, &image) {
+            for warning in edit.clamp_read(&self.tools, &image) {
                 tracing::warn!(target: "pipe", "{warning}");
             }
         }
         // A module whose binding fails fails the photo: an export renders the edit as it
         // is, or not at all.
-        let instances = match edit::instances(&edit, self.operations, &self.modules, &image).all() {
+        let instances = match edit::instances(&edit, self.operations, &self.tools, &image).all() {
             Ok(instances) => instances,
             Err(error) => return failed(Cause::Binding, None, &error),
         };
@@ -969,7 +969,7 @@ impl Run {
             Ok(None) => return Ok((Edit::default(), false)),
             Err(error) => return Err(reading(&error)),
         };
-        let loaded = sidecar::from_xml(&xml, self.operations, &self.modules, self.retired)
+        let loaded = sidecar::from_xml(&xml, self.operations, &self.tools, self.retired)
             .map_err(|error| reading(&error))?;
         for warning in &loaded.warnings {
             tracing::warn!(target: "pipe", "{}: {warning}", sidecar.display());
@@ -1197,9 +1197,9 @@ mod tests {
 
     use apertrust_export::png;
     use apertrust_export::settings::OnConflict;
-    use apertrust_modules::ControlValue;
-    use apertrust_modules::testing::{self as modules, Sample};
     use apertrust_operations::OPERATIONS;
+    use apertrust_tools::ControlValue;
+    use apertrust_tools::testing::{self as modules, Sample};
 
     use super::*;
     use crate::export::export_at;
@@ -1212,7 +1212,7 @@ mod tests {
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
     /// The modules the tests edit with: `Sample`'s brightness moves exposure.
-    const MODULES: &[&dyn Module] = &[&Sample];
+    const TOOLS: &[&dyn Tool] = &[&Sample];
 
     fn gpu() -> GpuContext {
         pollster::block_on(GpuContext::new(&GpuOptions::default()))
@@ -1300,7 +1300,7 @@ mod tests {
 
     fn brightness(value: f32, done: bool) -> Command {
         Command::SetControl {
-            module: "sample".to_owned(),
+            tool: "sample".to_owned(),
             control: "brightness".to_owned(),
             value: ControlValue::Number(value),
             done,
@@ -1331,7 +1331,7 @@ mod tests {
     fn expected_of(gpu: &GpuContext, path: &Path, value: Option<f32>) -> Vec<u8> {
         let (image, [width, height], mosaic) = photo(path);
         let edit = edit_at(value);
-        let instances = edit::instances(&edit, OPERATIONS, MODULES, &image)
+        let instances = edit::instances(&edit, OPERATIONS, TOOLS, &image)
             .all()
             .unwrap();
         let input = GpuImage::upload_mosaic(gpu, width, height, &mosaic).unwrap();
@@ -1371,7 +1371,7 @@ mod tests {
             let session = Session::spawn(
                 gpu.clone(),
                 OPERATIONS,
-                MODULES,
+                TOOLS,
                 BUILD,
                 pipeline::BUDGET,
                 None,
@@ -1508,7 +1508,7 @@ mod tests {
         let [a, live, b] = ["a.ARW", "live.ARW", "b.ARW"].map(|name| folder.join(name));
         // `b`'s edit is the one saved beside it.
         let saved = edit_at(Some(1.0));
-        sidecar::write(&sidecar::path_for(&b), &saved, OPERATIONS, MODULES, BUILD).unwrap();
+        sidecar::write(&sidecar::path_for(&b), &saved, OPERATIONS, TOOLS, BUILD).unwrap();
         let out = folder.join("out");
         let mut client = Client::beside_a_viewport(&gpu, &live);
         let command = client.send(export(&[&a, &live, &b], &out));
@@ -2133,7 +2133,7 @@ mod tests {
         let [a, b] = ["a.ARW", "b.ARW"].map(|name| folder.join(name));
         // `a`'s own edit, so its file differs from `b`'s.
         let saved = edit_at(Some(1.0));
-        sidecar::write(&sidecar::path_for(&a), &saved, OPERATIONS, MODULES, BUILD).unwrap();
+        sidecar::write(&sidecar::path_for(&a), &saved, OPERATIONS, TOOLS, BUILD).unwrap();
         let out = folder.join("out");
         let mut client = Client::start(&gpu);
         let command = export_as(&[&a, &b], &out, "img_$(SEQUENCE)", OnConflict::Overwrite);

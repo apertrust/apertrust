@@ -6,10 +6,10 @@ It is darktable's white balance module as its page has it, over the raw-stage `t
 
 A change runs the raw stage and demosaic again (decision 12; `docs/engine.md`, Pipes). The light the photo is adapted for is Colour calibration's CAT tab's (`colour-calibration.md`), as in darktable's scene-referred workflow.
 
-**Status:** built, in `crates/modules/src/white_balance.rs` (decision 27), after Demosaic in `MODULES`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Highlight reconstruction and before Raw black/white point (decision 38). darktable's model of temperature and tint is `apertrust_color::white_balance`. Its id is its operation's ([README.md](README.md), rule 1).
+**Status:** built, in `crates/tools/src/white_balance.rs` (decision 27), after Demosaic in `TOOLS`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Highlight reconstruction and before Raw black/white point (decision 38). darktable's model of temperature and tint is `apertrust_color::white_balance`. Its id is its operation's ([README.md](README.md), rule 1).
 
 - A first-pass table (decision 22): the rows every table has, and darktable's match.
-- Every row is a test in `crates/modules/tests/white_balance.rs`, the corpus's in `w_rows_on_the_corpus`; [Results](#results) gives what they measured.
+- Every row is a test in `crates/tools/tests/white_balance.rs`, the corpus's in `w_rows_on_the_corpus`; [Results](#results) gives what they measured.
 - One proposed bound fails where darktable's own model does: W3's 0.01 K, kept as an ignored test (decision 30). A coefficient reset control by control leaves darktable's own state, as built (W1).
 - Temperature and tint reach coefficients outside the operation's 0 to 8 on every corpus camera. The tool reports this rather than narrowing the ranges, and the session refuses such coordinates; the operation taking them, as darktable's does, is planned ([Gaps](#gaps)).
 - The [design choices](#design-choices) are settled.
@@ -23,19 +23,19 @@ darktable's page, top to bottom: the button bar, Settings, Finetune, the SCENE I
 
 | Control | Row | Kind and range | Default | Parameter |
 | --- | --- | --- | --- | --- |
-| `settings` | Settings, a preset row (`Row::Preset`), first | Not stored: options `as_shot` (as shot), `spot` (from image area), `user` (user modified), `d65` (camera reference) and `d65_late` (as shot to reference), each writing `red`, `green`, `blue`, `various` and `preset`; then, under a heading with the camera's maker and model, the camera's presets (`PresetRow::camera`, darktable's 90 names, the photo's listed by `Module::listed`), each writing the same five; its tuning `finetune` (decision 27, designed) | Shows "as shot to reference", or "as shot" without a colour matrix | — |
+| `settings` | Settings, a preset row (`Row::Preset`), first | Not stored: options `as_shot` (as shot), `spot` (from image area), `user` (user modified), `d65` (camera reference) and `d65_late` (as shot to reference), each writing `red`, `green`, `blue`, `various` and `preset`; then, under a heading with the camera's maker and model, the camera's presets (`PresetRow::camera`, darktable's 90 names, the photo's listed by `Tool::listed`), each writing the same five; its tuning `finetune` (decision 27, designed) | Shows "as shot to reference", or "as shot" without a colour matrix | — |
 | `finetune` | After Settings, a `Row::Slider` naming Settings' tuning (`PresetRow::tuning`), drawn only while the session reports it | Not stored: a whole number, the matched camera preset's tunings, its track those within −9 to 9, step 1, 0 decimals, mired (`Unit::Mired`); shown while the coefficients are a camera preset's that has tunings, as darktable's `gui_update` shows it; applies the preset Settings names at that tuning (decision 27, designed) | The preset's untuned entry, 0 | — |
 | `temperature`, `tint` | After the SCENE ILLUMINANT TEMP group label: coordinates of the view `temperature_tint` of `red`, `green` and `blue` | Temperature 1901 to 25000 K, no soft range, 0 decimals, step 1; tint 0.135 to 2.326, no soft range, 3 decimals, step 0.01, below 1 magenta and above 1 green; unavailable without a colour matrix | As shot's | — |
 | `red`, `green`, `blue` | The Channel coefficients collapsible group, closed at first | Number, 0 to 8, no soft range, 3 decimals, step 0.1 | The as-shot coefficient over green, held to 0 to 8 | `red`, `green`, `blue` |
 | `various` | None of its own: Emerald, which darktable shows on a four-colour sensor alone; Settings writes it | Number, 0 to 8, 3 decimals; not ported (`Control::unported`), so it takes only its default, temperature porting no four-colour sensor | The fourth as-shot coefficient, or 1, which it is on every corpus raw | `various` |
-| `preset` | None of its own: Settings shows it with the coefficients | Choice: darktable's five, `as_shot`, `spot`, `user`, `d65`, `d65_late`, then darktable's camera presets by name, 90 permanent ids (`CAMERA_PRESETS`, decision 27, designed), the photo listing its camera's (`Module::options`); darktable stores a camera preset's position in its list instead | `d65_late` with a colour matrix, `as_shot` without | `preset`, a camera preset written as the operation's `camera` |
+| `preset` | None of its own: Settings shows it with the coefficients | Choice: darktable's five, `as_shot`, `spot`, `user`, `d65`, `d65_late`, then darktable's camera presets by name, 90 permanent ids (`CAMERA_PRESETS`, decision 27, designed), the photo listing its camera's (`Tool::options`); darktable stores a camera preset's position in its list instead | `d65_late` with a colour matrix, `as_shot` without | `preset`, a camera preset written as the operation's `camera` |
 
 **Settings** writes what darktable's `_preset_tune_callback` writes, all four coefficients (`_temp_params_from_array`) and `preset`:
 
 - `as_shot`: the as-shot coefficients and `preset` as shot.
 - `d65`: the camera's D65 coefficients (`_calculate_bogus_daylight_wb`, the temperature port's daylight multipliers, Emerald's 1, darktable's being no number on a three-colour sensor) and `preset` camera reference.
 - `d65_late`: the as-shot coefficients and `preset` as shot to reference, under which colorin applies the late correction (decision 21).
-- `spot`, from image area, is the picker's, drawn disabled until the picker comes (`Module::preset` gives `None`); choosing it turns the picker on, and a pick stores it ([below](#controls), After a pick).
+- `spot`, from image area, is the picker's, drawn disabled until the picker comes (`Tool::preset` gives `None`); choosing it turns the picker on, and a pick stores it ([below](#controls), After a pick).
 - `user`, user modified, is never applied. darktable restores the coefficients its session last had from temperature and tint (`mod_coeff`), which no edit stores (principle 5's first pass, decision 27), so its `preset` gives `None` and it is drawn disabled.
 
 The first three are offered on every photo, as darktable lists them. Without a colour matrix, camera reference writes darktable's D65 coefficients then, every one 1, darktable's own. Its `reload_defaults` looks for the camera's Daylight preset there, but compares the file's names, which its reader lowercases, with "Daylight" and "DirectSunlight", so it never finds one (decision 27).
@@ -72,8 +72,8 @@ The view reads the camera, so the session's `Photo` carries the photo's image co
 
 **Commands.**
 
-- A script sends `SetControl { module: "temperature", control: "temperature", value: 5500 }`: the session holds tint, writes the three coefficients and `preset` user modified.
-- `ApplyPreset { module: "temperature", preset: "settings", option: "d65" }` gives camera reference.
+- A script sends `SetControl { tool: "temperature", control: "temperature", value: 5500 }`: the session holds tint, writes the three coefficients and `preset` user modified.
+- `ApplyPreset { tool: "temperature", preset: "settings", option: "d65" }` gives camera reference.
 - `apertrust-cli edit --set temperature.red=2.1` sets a coefficient, `preset` left as it was.
 - `--param temperature.red` is refused, since the tool owns it, and a value an edit holds that way is dropped with a warning.
 
@@ -103,11 +103,11 @@ darktable stores the list's position (6 on, after the five and the camera's head
 
 **Their words.** Each id's label in sentence case and British spelling (Daylight, Cool white fluorescent, High temp. mercury-vapour fluorescent, Flash (auto mode)); a kelvin preset its temperature with the kelvin sign (2500 K). They are `module-temperature-preset-settings-option-<id>` and `module-temperature-control-preset-option-<id>`, in en-GB, uk and pl, darktable's own Ukrainian and Polish translations of its standard names a reference for the drafts. Finetune's words are a control's: `module-temperature-control-finetune-label` "Finetune", `-full` "Fine-tune of the camera's white balance setting", after darktable's tooltip, and `-promise`; its unit is `unit-mired`.
 
-**The list** (`Module::listed`, darktable's `_generate_preset_combo`, on a raw): one option per name, in the order the camera's entries give the names, each name's entries contiguous in the file (a test holds it), at most 50, which no camera reaches (the Coolpix P1000 has 44). After the five, the panel draws a heading with the camera's maker and model, darktable's combobox section `camera_maker camera_model`, then the options; nothing when the camera has no presets. `Module::options("preset")` gives the five and these.
+**The list** (`Tool::listed`, darktable's `_generate_preset_combo`, on a raw): one option per name, in the order the camera's entries give the names, each name's entries contiguous in the file (a test holds it), at most 50, which no camera reaches (the Coolpix P1000 has 44). After the five, the panel draws a heading with the camera's maker and model, darktable's combobox section `camera_maker camera_model`, then the options; nothing when the camera has no presets. `Tool::options("preset")` gives the five and these.
 
 **A preset's tunings.** Its first entry is its lowest, its entry with tuning 0 its untuned one, and the largest tuning met scanning its entries its highest. A preset whose first entry's tuning is 0 has no tunings, whatever follows: the EOS 77D's Flash, from 0 down to −9, and the DMC-G2's Cloudy, at 0 twice. 1,280 of the file's presets have tunings, in 176 models, from −3 to 3 up to −14 to 14; 380 of them have gaps between their tunings.
 
-**Applying preset P at tuning t** (`Module::preset`, darktable's `_preset_tune_callback`) writes `red`, `green`, `blue`, `various` and `preset`:
+**Applying preset P at tuning t** (`Tool::preset`, darktable's `_preset_tune_callback`) writes `red`, `green`, `blue`, `various` and `preset`:
 
 1. among P's entries from its lowest to its highest, the first whose tuning is t: its first three channels, each as `f32`;
 2. else two consecutive entries of P with tunings a < t < b: darktable's `dt_wb_preset_interpolate` in `f64`, c = 1 / ((1 − s) / c_a + s / c_b) with s = clamp((t − a) / (b − a), 0, 1), for each of the three, then `f32`;
@@ -117,9 +117,9 @@ Green is the file's, not normalised: 207 presets have green other than 1. `vario
 
 Where a coefficient falls outside 0 to 8 the option gives `None`, as the session refuses temperature and tint there ([Gaps](#gaps), the reach): the Olympus C5050Z's Incandescent and White fluorescent at +7 (blue 8.07 and 8.09), the file's only two.
 
-Choosing P from Settings applies it at the tuning Finetune shows, `Module::tuning`'s value, 0 where none, as darktable's callback reads the slider, and with no follow writes, as `_preset_tune_callback` runs without `gui_changed`.
+Choosing P from Settings applies it at the tuning Finetune shows, `Tool::tuning`'s value, 0 where none, as darktable's callback reads the slider, and with no follow writes, as `_preset_tune_callback` runs without `gui_changed`.
 
-**The label and Finetune** (`Module::matching` and `Module::tuning`, darktable's `gui_update`, comparing the first three coefficients as `f32` within 1e-5, `dt_dev_equal_chroma`):
+**The label and Finetune** (`Tool::matching` and `Tool::tuning`, darktable's `gui_update`, comparing the first three coefficients as `f32` within 1e-5, `dt_dev_equal_chroma`):
 
 1. the as-shot coefficients with `preset` as shot to reference: as shot to reference;
 2. the as-shot coefficients: as shot;
@@ -134,7 +134,7 @@ On 107 of the file's 485 models two presets reach the same coefficients (the X10
 
 **Finetune's commands.**
 
-- `SetControl { module: "temperature", control: "finetune", value }`, a whole number in the range shown, applies the option Settings names at that tuning, as darktable's slider runs the list's callback with the list's position. `done` merges a drag into one history step. It is refused while Finetune is hidden.
+- `SetControl { tool: "temperature", control: "finetune", value }`, a whole number in the range shown, applies the option Settings names at that tuning, as darktable's slider runs the list's callback with the list's position. `done` merges a drag into one history step. It is refused while Finetune is hidden.
 - Where Settings names one of the five, which only an edit written by hand or by the CLI holds with a camera preset's coefficients, that option applies with the tuning ignored, and user modified is refused, `preset` giving `None` for it.
 - `ResetControl` applies the preset's untuned tuning, darktable's double-click; `Keep` keeps or releases the five controls.
 
@@ -146,7 +146,7 @@ On 107 of the file's 485 models two presets reach the same coefficients (the X10
 
 **The operation's fallback** (`_find_coeffs`). A raw with no usable as-shot multipliers and no colour matrix takes the camera's first entry, whatever its name and tuning (an EOS R5's Daylight at −9), its first three channels over green's, before darktable's 2, 1, 1.5: `apertrust_color::as_shot_multipliers` takes `white_balance_presets`' first entry, so the operation's defaults and the tool's agree. No corpus raw lacks a matrix.
 
-A script sends `ApplyPreset { module: "temperature", preset: "settings", option: "cloudy" }` for the camera's Cloudy at Finetune's tuning, and `SetControl { module: "temperature", control: "finetune", value: 3 }` for +3.
+A script sends `ApplyPreset { tool: "temperature", preset: "settings", option: "cloudy" }` for the camera's Cloudy at Finetune's tuning, and `SetControl { tool: "temperature", control: "finetune", value: 3 }` for +3.
 
 ### Sliders against darktable
 
@@ -167,7 +167,7 @@ A first-pass table (decision 22): the rows every table has, and darktable's matc
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | W0 | None: every control at its default, written or kept | | `bind`; the tool's defaults against the operation's for the photo; the plan's instances and cache keys; the frame | `bind` returns nothing; every default is the operation's; instances, keys and frames as with no edit | Exact | The small raw through the export and the viewport; every corpus raw (defaults, instances and keys) |
-| W1 | Each control, moved and reset | Each coefficient, temperature and tint, and each Settings option; each reset by `ResetControl` and by `ResetModule` | Frame | Changes when moved, Settings' "as shot to reference" at its defaults excepted; as W0 once reset by `ResetModule`, and once an option's controls are reset; a coefficient, temperature or tint reset control by control as Settings' as shot, its follow write left, as darktable's is | Exact | The small raw through the viewport |
+| W1 | Each control, moved and reset | Each coefficient, temperature and tint, and each Settings option; each reset by `ResetControl` and by `ResetTool` | Frame | Changes when moved, Settings' "as shot to reference" at its defaults excepted; as W0 once reset by `ResetTool`, and once an option's controls are reset; a coefficient, temperature or tint reset control by control as Settings' as shot, its follow write left, as darktable's is | Exact | The small raw through the viewport |
 | W2 | Order | Temperature then tint, and tint then temperature | `red`, `green`, `blue`; frame | The same coefficients whichever came first, the session holding the other coordinate | Exact | CPU, session; the small raw |
 | W3 | The view | Temperature across 1901 to 25000 K and tint across 0.135 to 2.326, but for darktable's twins from 3900.33 to 4102.41 K; each corpus camera's as-shot coefficients | `view` of `unview` where the coefficients lie in their range; `unview` of `view` | Each coordinate back where it was; the coefficients back normalised to green 1 | 1e-6 of the temperature and 1e-6 in tint; 4 `f32` units in each coefficient (proposed: 0.01 K everywhere) | CPU: the small raw's camera, the 40D and the X-T4; every corpus camera |
 | W4 | darktable's model | The coordinates of W3 | `view` and `unview` against darktable's `_mul2temp` and `_temp2mul` restated in `f64`, its 1 K bisection included | The same coefficients from the same coordinates; the same temperature within darktable's 1 K bisection and the same tint at it | 1e-9 relative in the coefficients; 1 K; 1e-6 in tint | CPU: the same cameras |
@@ -191,7 +191,7 @@ Where `unview` at a point of the two ranges gives a coefficient outside the oper
 
 ## Results
 
-Run on the M4: `cargo test -p apertrust-modules --test white_balance`, and on the raw.pixls.us corpus with `APERTRUST_RAW_CORPUS` and `--ignored` (31 colour raws).
+Run on the M4: `cargo test -p apertrust-tools --test white_balance`, and on the raw.pixls.us corpus with `APERTRUST_RAW_CORPUS` and `--ignored` (31 colour raws).
 
 | Row | Result |
 | --- | --- |
@@ -206,7 +206,7 @@ Run on the M4: `cargo test -p apertrust-modules --test white_balance`, and on th
 | W8 | Holds: background only |
 | W9 | Holds, exactly: without a colour matrix temperature and tint are unavailable, through `available` and in the session's report, the coefficients and Settings available, Settings offering its three options with a matrix or without; Emerald is a control not ported, in no row, which Settings writes |
 
-**W1 in detail.** Each coefficient, temperature 3500 K and tint 1.2 change the frame, and so do as shot and camera reference. `ResetModule` gives the untouched frame, and so does an option once the five controls it writes are reset.
+**W1 in detail.** Each coefficient, temperature 3500 K and tint 1.2 change the frame, and so do as shot and camera reference. `ResetTool` gives the untouched frame, and so does an option once the five controls it writes are reset.
 
 A coefficient, temperature or tint reset control by control leaves its follow write, `preset` user modified with the as-shot coefficients. That is darktable's own state then, which `gui_update` labels as shot and renders without the late correction: Settings' as shot's frame, not the untouched one.
 
@@ -231,7 +231,7 @@ As-shot readings, for instance: the 5D Mark III 3584 K at tint 0.970, the X-T5 5
 - **Emerald (`various`):** a control not ported, in no row, which Settings writes with the other three, as `_temp_params_from_array` writes all four. darktable shows it on a four-colour sensor alone, temperature ports none, and a row drawn disabled on every photo would show what darktable never does. Settings writes the fourth as-shot coefficient, or 1, and camera reference 1, darktable's D65 fourth being no number on a three-colour sensor.
 - **`preset`:** a control in no row of its own, shown by Settings, which writes it. `Definition::check` allows a control in no row when a placed preset row writes it.
 - **Settings' options and follow writes:** none. `ApplyPreset` writes the option's values as they are, as `_preset_tune_callback` does without `gui_changed`.
-- **The view's matrix without one:** sRGB's, darktable's for an image that is not a raw, so the view is always given. The session reports the coordinates unavailable (`CoordinateState::available`, from `Module::available` on the coordinate's own id).
+- **The view's matrix without one:** sRGB's, darktable's for an image that is not a raw, so the view is always given. The session reports the coordinates unavailable (`CoordinateState::available`, from `Tool::available` on the coordinate's own id).
 - **The twins across 4000 K:** the view's bisection finds one of a twin pair, as darktable's does; W3 leaves the band out and says why.
 - **W3's bound in CI:** 1e-6 of the temperature, since `f32` steps by 0.002 K above 20000 K; the proposed 0.01 K kept ignored.
 - **Coefficients the ranges reach outside 0 to 8:** reported, the ranges darktable's, the coordinates refused by the session. Narrowing the ranges is ruled out by decision 30, and clamping would store other values than darktable's. `builtin.rs` exempts `temperature.temperature_tint` from its grid by id and holds every temperature in range at a colour raw's as-shot tint instead, which holds on the corpus too; the whole grid is an ignored test until the operation takes every coefficient darktable's model reaches ([Gaps](#gaps)).
@@ -247,7 +247,7 @@ What is not built yet, and what brings it:
 - **The trouble message:** "white balance applied twice (details)" while Colour calibration adapts and the coefficients are off the camera's reference (decision 27), planned after this tool.
 - **Painted tracks:** darktable's coloured-sliders preference ("no color" by default; a click on SCENE ILLUMINANT TEMP cycles it), an interface setting, to come with painted tracks ([README.md](README.md), rule 12); plain tracks meanwhile.
 - **A monochrome raw:** darktable shows "white balance disabled for camera" in place of the controls; the pipeline takes no monochrome raw yet. A four-colour sensor's labels (cyan, yellow, green, magenta, reordered) and Emerald wait with temperature's port of one.
-- **Colour calibration's as shot in camera after a white balance change:** choosing it writes `x`, `y` and `temperature` from the camera's light at the camera's reference, since `camera_light` assumes the reference coefficients (darktable's `custom_wb` 1) and `Module::follow` sees only Colour calibration's own values, not `temperature`'s.
+- **Colour calibration's as shot in camera after a white balance change:** choosing it writes `x`, `y` and `temperature` from the camera's light at the camera's reference, since `camera_light` assumes the reference coefficients (darktable's `custom_wb` 1) and `Tool::follow` sees only Colour calibration's own values, not `temperature`'s.
   darktable's `_get_white_balance_coeff` turns the light by White balance's coefficients over the D65 ones once they are off the reference. So after a White balance change the light written differs from darktable's, and leaving as shot in camera for custom, D or Planckian keeps the difference. The render while as shot in camera is chosen agrees, since `prepare` reads the light through the coefficients the image description carries (`docs/ports/channelmixerrgb.md`, Setup on the CPU, 7). A known gap, not fixed: `follow` would need another tool's values.
 - **The CLI:** `apertrust-cli edit` applies no follow writes, as it reads no image context (`docs/engine.md`, follow writes), so `--set temperature.red=2.1` keeps "as shot to reference" with other coefficients, the state darktable never reaches, unless `--set temperature.preset=user` comes with it; it takes no coordinate in `--set` and has no `--preset` yet.
 - **The reach:** darktable's operation takes any coefficient its model reaches, negative ones included, rendered by the same multiplication, its parameters' `$MIN` and `$MAX` being the sliders' and not a check. Planned, as darktable: the operation takes them too, only non-finite values guarded, with tests at the extremes and on the two camera presets past 8, the Olympus C5050Z's Incandescent and White fluorescent at +7 (decision 27). Until then the session refuses them ([Results](#results), the reach).
@@ -300,17 +300,17 @@ flowchart LR
 4. **The operation's fallback.**
    - Deliver `apertrust_color::as_shot_multipliers` taking the camera's first preset entry, used for a raw with no usable as-shot multipliers and no colour matrix before 2, 1, 1.5 (`_find_coeffs`), the operation's `defaults` and the tool's `as_shot_coefficients` passing `white_balance_presets`' first entry. Also: the tool's `daylight` doc comment corrected (darktable's own 1, 1, 1); `docs/ports/temperature.md`'s deliberate difference "No camera white balance presets" removed and its Defaults step 1 made exact.
    - Tests: W13.
-   - Files: the `apertrust-color` file holding `as_shot_multipliers`, `crates/op/temperature/src/lib.rs`, `crates/modules/src/white_balance.rs` (those two functions), `crates/modules/tests/white_balance.rs` (W13), `docs/ports/temperature.md`.
+   - Files: the `apertrust-color` file holding `as_shot_multipliers`, `crates/op/temperature/src/lib.rs`, `crates/tools/src/white_balance.rs` (those two functions), `crates/tools/tests/white_balance.rs` (W13), `docs/ports/temperature.md`.
    - Out of scope: the list, Finetune.
 5. **Preset rows with a photo's options and a tuning.**
-   - Deliver in `apertrust-modules`:
-     - `PresetRow::camera` and `PresetRow::tuning`, `Module::listed` and `Module::tuning` with `Tuning`, `Module::preset` widened to `(preset, option, tuning, values, image)` and the provided `matching` with it (`docs/engine.md`, Planned: a photo's options and a tuning);
+   - Deliver in `apertrust-tools`:
+     - `PresetRow::camera` and `PresetRow::tuning`, `Tool::listed` and `Tool::tuning` with `Tuning`, `Tool::preset` widened to `(preset, option, tuning, values, image)` and the provided `matching` with it (`docs/engine.md`, Planned: a photo's options and a tuning);
      - `Definition::check`: the camera options' ids, each once, none of the row's own; the tuning's id unique with controls, coordinates and preset rows, in one `Row::Slider`;
      - `messages::of` (the camera options' words, the tuning's as a control's) and `Unit::Mired` with `unit-mired` and `unit-mired-value` in `ui.ftl`'s three languages;
-     - `crates/modules/tests/builtin.rs` holding listed options to the row's `camera`, a shown tuning's range finite with its default and value inside, and every option at every tuning of a range within its controls' ranges or `None`;
+     - `crates/tools/tests/builtin.rs` holding listed options to the row's `camera`, a shown tuning's range finite with its default and value inside, and every option at every tuning of a range within its controls' ranges or `None`;
      - `testing::Sample` gaining a listed option and a tuning, the worked example;
      - the tools that implement `preset` adapted with no change of behaviour.
-   - Files: `crates/modules/src/definition.rs`, `lib.rs`, `messages.rs`, `check.rs`, `testing.rs`, `white_balance.rs` (the signature alone), `crates/modules/tests/builtin.rs`, `crates/ui/locales/*/ui.ftl`.
+   - Files: `crates/tools/src/definition.rs`, `lib.rs`, `messages.rs`, `check.rs`, `testing.rs`, `white_balance.rs` (the signature alone), `crates/tools/tests/builtin.rs`, `crates/ui/locales/*/ui.ftl`.
    - Out of scope: the session, the panel, White balance's presets.
 6. **The session's tunings.**
    - Deliver `PresetState::listed`, computed once as the photo opens, and `PresetState::tuning` (`TuningState`), recomputed after every change, both guarded as `matching` is; `ApplyPreset` at the row's tuning, refusing a camera option the photo does not list (`EditError::NotListed`); `SetControl`, `ResetControl` and `Keep` on a tuning's id as `docs/engine.md` states, merged by `done`, with no follow writes, and their refusals.
@@ -322,16 +322,16 @@ flowchart LR
      - `apertrust_ui::components::Choice`'s heading entry (darktable's combobox section: drawn left-aligned in the list, not selectable, skipped by the keys and the pointer, to AccessKit the label of the options after it), in the gallery and its snapshots;
      - the renderer drawing a preset row's own options, the heading with the camera's maker and model from the `Photo`'s image context, then `PresetState::listed`;
      - the tuning's `Row::Slider` as a `SliderRow` only while `PresetState::tuning` is reported, its range, track and step from it, its value whole, sending `SetControl`, `ResetControl` and `Keep` with its id;
-     - `modules::Pending::show` following a pending tuning through `preset`, `matching` and `tuning`.
-   - Files: `crates/ui/src/components/` (the choice), the gallery, `crates/app/src/modules.rs`, the app's tests.
+     - `tools::Pending::show` following a pending tuning through `preset`, `matching` and `tuning`.
+   - Files: `crates/ui/src/components/` (the choice), the gallery, `crates/app/src/tools.rs`, the app's tests.
    - Out of scope: White balance's data, the button bar.
 8. **White balance's camera presets.**
    - Deliver `CAMERA_PRESETS`, the `preset` control's options, the operation's `preset` gaining `camera` with the binding writing it, Settings' `camera`, `options("preset")`, `listed`, `preset` for a camera preset at a tuning, `matching` as [above](#the-cameras-presets-and-finetune), the words in three languages; Finetune not yet (`tuning` still `None`).
    - Tests: W10 at tuning 0 and W12.
-   - Files: `crates/modules/src/white_balance.rs`, `crates/modules/tests/white_balance.rs`, `crates/op/temperature/src/lib.rs` (`PRESETS`), `crates/ui/locales/{en-GB,uk,pl}/modules.ftl`.
+   - Files: `crates/tools/src/white_balance.rs`, `crates/tools/tests/white_balance.rs`, `crates/op/temperature/src/lib.rs` (`PRESETS`), `crates/ui/locales/{en-GB,uk,pl}/modules.ftl`.
    - Out of scope: Finetune, the picker, the CLI.
 9. **Finetune.**
-   - Deliver Settings' `tuning`, the Finetune row after Settings, `Module::tuning` and `preset` at any tuning, interpolation included, as [above](#the-cameras-presets-and-finetune); its slider held to darktable's per tuned preset with `testing::slider_differences`.
+   - Deliver Settings' `tuning`, the Finetune row after Settings, `Tool::tuning` and `preset` at any tuning, interpolation included, as [above](#the-cameras-presets-and-finetune); its slider held to darktable's per tuned preset with `testing::slider_differences`.
    - Tests: W10 at every tuning and W11, the X-T5's Cloudy at +5 pinned to darktable's stored 2.059603, 1 and 1.9215693; W14, darktable's panel on copies of a D850 and the X-E4, the results and screenshots in Results.
-   - Files: `crates/modules/src/white_balance.rs`, `crates/modules/tests/white_balance.rs`, `crates/ui/locales/{en-GB,uk,pl}/modules.ftl`, this file's Results.
+   - Files: `crates/tools/src/white_balance.rs`, `crates/tools/tests/white_balance.rs`, `crates/ui/locales/{en-GB,uk,pl}/modules.ftl`, this file's Results.
    - Out of scope: the button bar, the CLI's `--preset`, the reach.

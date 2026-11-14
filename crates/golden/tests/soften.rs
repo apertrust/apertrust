@@ -564,7 +564,7 @@ fn the_viewport_is_within_decision_80s_target_on_the_corpus() {
         let before: Vec<Instance> = edit::instances(
             &Edit::default(),
             apertrust_operations::OPERATIONS,
-            apertrust_modules::MODULES,
+            apertrust_tools::TOOLS,
             &context,
         )
         .all()

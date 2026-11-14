@@ -8,9 +8,9 @@ Exposure is darktable's slider, `exposure.exposure` itself, its default the phot
 
 **Edits version 1 saved.** Version 1's Exposure solved for exact stops through the photo's black, so its value means another exposure on every photo. Version 2's migration leaves it out with a warning, its mark with it, and Exposure renders at the photo's default; no release wrote such an edit. Black level correction and Compensate camera exposure keep their values. Contrast and Pivot, which an older version 1 had, are left out with a warning each, the photo editable.
 
-**Status:** built, in `crates/modules/src/exposure.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after the Tone equalizer and before Demosaic (decision 38).
+**Status:** built, in `crates/tools/src/exposure.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after the Tone equalizer and before Demosaic (decision 38).
 
-- Rows E0, E3, E4, E6 to E9, E14, E30 to E32 and E50 are tests in `crates/modules/tests/exposure.rs`, with the migration's; [Results](#results) gives what they measured.
+- Rows E0, E3, E4, E6 to E9, E14, E30 to E32 and E50 are tests in `crates/tools/tests/exposure.rs`, with the migration's; [Results](#results) gives what they measured.
 - Its picker is built ([The picker](#the-picker); [pickers.md](../pickers.md), decision 79): its quad on Exposure, its pick in both area modes, the area exposure mapping's settings kept in settings, and the patches with the L readout.
 - A tolerance or a choice marked "proposed" is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
@@ -46,11 +46,11 @@ Their parameters stay at darktable's defaults, the only values the operation ren
 
 **Owners.** Exposure owns every `exposure` parameter, darktable's `mode`, `black`, `exposure`, `deflicker_percentile`, `deflicker_target_level`, `compensate_exposure_bias` and `compensate_hilite_pres`. Contrast, Pivot and Brightness are the Colour balance RGB tool's `contrast`, `grey_fulcrum` and `midtones_y`, darktable's parameters, and Colour balance RGB owns every `colorbalancergb` parameter (decisions 28 and 32).
 
-The control `exposure` is the operation parameter of the same name, which the tool owns. So `apertrust-cli edit --set exposure.exposure=1.7` sets +1.7 EV, 1 EV over a colour raw's default, while `--param exposure.exposure` is refused. A script sends `SetControl { module: "exposure", control: "exposure", value: 1.0, done: true }`, which is the same command a drag ends with.
+The control `exposure` is the operation parameter of the same name, which the tool owns. So `apertrust-cli edit --set exposure.exposure=1.7` sets +1.7 EV, 1 EV over a colour raw's default, while `--param exposure.exposure` is refused. A script sends `SetControl { tool: "exposure", control: "exposure", value: 1.0, done: true }`, which is the same command a drag ends with.
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/exposure.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's columns are its own, in the units its slider shows: no slider here has a factor or an offset (Percentile's "%" format gives none, its range being above ±10). `its_sliders_are_darktable_s`, in `crates/modules/src/exposure.rs`, holds the definition to this table and finds no difference (decision 30).
+Audited against darktable's `src/iop/exposure.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's columns are its own, in the units its slider shows: no slider here has a factor or an offset (Percentile's "%" format gives none, its range being above ±10). `its_sliders_are_darktable_s`, in `crates/tools/src/exposure.rs`, holds the definition to this table and finds no difference (decision 30).
 
 | Slider | darktable: range, soft range | Digits | darktable's step | Apertrust: range, track | Decimals, step | Differs |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -75,7 +75,7 @@ These are the tooltips (`module-exposure-control-<control>-promise`), each turne
 
 ### Transfer functions
 
-- **Exposure** has none: `exposure.exposure` is the control's value, darktable's slider's. The operation scales `(in − b)` by `1 / (2^−(e − β) − b)`, with e the value, b the black and β the camera's bias while Compensate camera exposure is on, `clamp(bias, −5, +5)` as darktable's `_get_exposure_bias` trusts it. The image context carries the bias unclamped and `apertrust-modules` cannot call the exposure crate, so `camera_bias` repeats the clamp, and a test holds it to the operation's. So a move of v EV from the photo's default scales every pixel by (w₀ − b) / (w − b), w₀ and w the whites the default and the value render: 2^v where b is 0, slightly less over a colour raw's black of −2⁻¹² (+3.991 EV for +4 EV with no bias), as in darktable. A negative Black level caps the factor at 1 / −b, as darktable's black does. The default is `default_exposure`, darktable's `reload_defaults` restated, which a test holds to the operation's own.
+- **Exposure** has none: `exposure.exposure` is the control's value, darktable's slider's. The operation scales `(in − b)` by `1 / (2^−(e − β) − b)`, with e the value, b the black and β the camera's bias while Compensate camera exposure is on, `clamp(bias, −5, +5)` as darktable's `_get_exposure_bias` trusts it. The image context carries the bias unclamped and `apertrust-tools` cannot call the exposure crate, so `camera_bias` repeats the clamp, and a test holds it to the operation's. So a move of v EV from the photo's default scales every pixel by (w₀ − b) / (w − b), w₀ and w the whites the default and the value render: 2^v where b is 0, slightly less over a colour raw's black of −2⁻¹² (+3.991 EV for +4 EV with no bias), as in darktable. A negative Black level caps the factor at 1 / −b, as darktable's black does. The default is `default_exposure`, darktable's `reload_defaults` restated, which a test holds to the operation's own.
 - **`black_level(v)`** (`BlackLevel`): b₀ + v, held within darktable's ±1, with derivative 1 inside; a black at or above the white the photo renders, w = 2^−(e − β) (`rendered_white`), is put at w − 0.01, as darktable's `gui_changed` puts it, with derivative 0. darktable compares with the white of its slider's exposure; this compares with the white the kernel divides by, the camera's bias included. On a colour raw the control's bottom 2⁻¹² holds the black at −1. At the photo's default exposure the white is 0.62 with no bias, 0.39 at −0.67 EV of bias and 0.019 at −5 EV. The photo's own black, 0 or below, never reaches a white, so the black is bound only while Black level is set. The margin has a cost: the kernel computes 2^−e − b, and there the GPU's `exp2` error is amplified up to about 100×, estimated at 2e-4 relative at worst; E30 measures it.
 
 ## Invariants
@@ -101,7 +101,7 @@ E51 waits for Auto's statistic, read back as the pickers' readings are (decision
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/exposure.rs`; the synthetic rows run on CI's software GPUs too. The corpus rows run with `APERTRUST_RAW_CORPUS`, the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d. Where a row fails, its proposed bound stays in an ignored test, open, and CI checks the parts of it that hold; the bound itself is unchanged.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/exposure.rs`; the synthetic rows run on CI's software GPUs too. The corpus rows run with `APERTRUST_RAW_CORPUS`, the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d. Where a row fails, its proposed bound stays in an ignored test, open, and CI checks the parts of it that hold; the bound itself is unchanged.
 
 **Where the rows read.** E4, E8, E30 and E31 measure Exposure's own output, the image leaving the exposure operation (the tool output, `docs/tools/README.md`). These rows are about Exposure's maths, darktable's exact multiply. Colour calibration, darktable's default, runs between exposure and AgX on every colour raw (decision 27) and does not keep them at the scene: it raises values below 2⁻¹⁶, clips negative RGB to 0 and compresses colours beyond the gamut, none of which scales with the image.
 
@@ -118,7 +118,7 @@ A synthetic image is already white balanced, so the tests' colour calibration ad
 | Row | Result |
 | --- | --- |
 | E0 | Holds, exactly. `bind` sets nothing with every control written at its default, or kept there, Mode, Highlight preservation mode, Percentile and Target level included. Frames byte-identical to no edit on the ramp and the sweep at biases 0 and −0.67 EV, and on a small synthetic Bayer raw through the export and the viewport pipes, each on one pipeline that colour balance rgb joins and leaves on the way. On all 31 corpus raws the pipeline takes, the same instances and cache keys as no edit |
-| E3 | Holds, exactly. Exposure +1, Black level +0.01, Compensate camera exposure off and the three together, each reset control by control (`ResetControl`) and by the tool's reset (`ResetModule`), on one pipeline that colour balance rgb joins and leaves between the moves, on the ramp and the synthetic raw's viewport; on the 90D through the viewport and the export. |
+| E3 | Holds, exactly. Exposure +1, Black level +0.01, Compensate camera exposure off and the three together, each reset control by control (`ResetControl`) and by the tool's reset (`ResetTool`), on one pipeline that colour balance rgb joins and leaves between the moves, on the ramp and the synthetic raw's viewport; on the 90D through the viewport and the export. |
 | E4 | Holds, at Exposure's output: spreads of at most 2.0e-7 on the ramp and 2.3e-7 on the sweep, the range's ends included; at most 2.4e-7 on the 90D, the Z 6 and the X-T5, with colour calibration on every colour raw |
 | E6 | Holds: the default +1 EV gives factors 3.4e-4 EV apart at biases 0 and −0.67 EV, darktable's black weighing the two photos' whites differently |
 | E7 | Holds at −18, the default ±4 and +18 EV: every frame finite, no grey darker than a darker one |
@@ -132,7 +132,7 @@ A synthetic image is already white balanced, so the tests' colour calibration ad
 
 ## In the panel
 
-- **Compensate camera exposure is drawn disabled** on a photo that records no bias, as an action that cannot run is (`ui-conventions`), with the tooltip naming the camera's bias as 0. Built through `Module::available`; the tooltip still says what the control does, since a disabled control's tooltip cannot say why yet (`docs/gui.md`, the renderer's gaps). darktable's labels add the bias, "compensate camera exposure (+0.7 EV)" and "highlight preservation mode (0.0 EV)"; a label with a value of the photo's waits for the renderer.
+- **Compensate camera exposure is drawn disabled** on a photo that records no bias, as an action that cannot run is (`ui-conventions`), with the tooltip naming the camera's bias as 0. Built through `Tool::available`; the tooltip still says what the control does, since a disabled control's tooltip cannot say why yet (`docs/gui.md`, the renderer's gaps). darktable's labels add the bias, "compensate camera exposure (+0.7 EV)" and "highlight preservation mode (0.0 EV)"; a label with a value of the photo's waits for the renderer.
 - **Mode** is a list, its automatic option drawn disabled, so the list reads as darktable's and says what is missing. The whole row is disabled only on an image that is not a raw; darktable also disables it on a raw that is not one 16-bit channel, which the engine does not render yet.
 - **The unported controls:** Highlight preservation mode, Percentile and Target level are drawn disabled. Percentile and Target level show only in automatic mode, so never yet. darktable shows Highlight preservation mode only on a photo whose maker notes record a bias; since rawler reads none, it is shown disabled on every photo, as a control that cannot act is (decision 30).
 - **While closed** the section shows only its title and buttons, no summary of the controls set (docs/gui.md).

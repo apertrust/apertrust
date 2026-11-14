@@ -142,7 +142,7 @@ The darktable-compatible measurement reproduces darktable's exactly on rawspeed'
 
 In the first pass (decision 2) the Raw black/white point tool is darktable's: the four black levels, the white point and flat field correction as controls, the crop margins fixed (`docs/tools/README.md`).
 
-The tool is built (`crates/modules/src/raw_black_white_point.rs`, [../tools/raw-black-white-point.md](../tools/raw-black-white-point.md)). It owns every parameter:
+The tool is built (`crates/tools/src/raw_black_white_point.rs`, [../tools/raw-black-white-point.md](../tools/raw-black-white-point.md)). It owns every parameter:
 
 - each level's control is named as its parameter and starts at this operation's default for the photo, which the tool restates from the image context as `defaults` reads it, its tests holding the two together;
 - it sets a level only off that default;

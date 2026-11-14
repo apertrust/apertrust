@@ -119,7 +119,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 ### Editing
 
 - [x] The viewport with app-managed colour.
-- [x] The tool layer with bindings (`apertrust-modules`, decision 28) and `.apxmp` version 1.
+- [x] The tool layer with bindings (`apertrust-tools`, decision 28) and `.apxmp` version 1.
 - [x] A tool panel drawn from each tool's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
 - [x] Edits save themselves after each change.
 - [x] Sixteen migrated tools, listed [below](#the-migrated-tools), each darktable's module with its parameters as controls (decision 2, [tools/README.md](tools/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
@@ -131,9 +131,9 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] Switched tools (decision 32): tools darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
 - [ ] Undo, redo and the History tab, with the history saved in the sidecar as its log of steps (decisions 47 and 78; [history.md](history.md), [the library's step 9](#the-librarys-steps)).
 - [ ] Tools, not modules (decision 4):
-  - [ ] 4.1 A tool's settings named settings in the code.
+  - [x] 4.1 A tool's settings named settings in the code.
   - [x] 4.2 The docs say tool, the tools' pages in `docs/tools/`.
-  - [ ] 4.3 `apertrust-tools` in `crates/tools`, with its public names and the CLI's help.
+  - [x] 4.3 `apertrust-tools` in `crates/tools`, with its public names and the CLI's help.
   - [ ] 4.4 The code's own names, tests and comments.
   - [ ] 4.5 The Fluent ids `tool-…`, in `tools.ftl`.
   - [ ] 4.6 The words people see and hear, in every language.
@@ -148,7 +148,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 darktable's colour pickers and its Colour picker, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
 
 - [x] 79.1 The reduction kernel on the frame and the Colour picker's picker through the session, regions mapped through the geometry.
-- [x] 79.2 Tool pickers in `apertrust-modules`: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Module::pick` and its checks.
+- [x] 79.2 Tool pickers in `apertrust-tools`: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Tool::pick` and its checks.
 - [x] 79.3 Tool pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.

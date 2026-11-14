@@ -63,7 +63,6 @@ mod library;
 mod log_window;
 mod menus;
 mod mirror;
-mod modules;
 mod paths;
 mod pickers;
 mod popups;
@@ -78,6 +77,7 @@ mod storage;
 #[cfg(test)]
 mod testing;
 mod thumbnails;
+mod tools;
 mod viewport;
 
 use std::collections::{BTreeMap, HashMap};
@@ -98,7 +98,7 @@ use apertrust_engine::session::{
     PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
-use apertrust_modules::Module;
+use apertrust_tools::Tool;
 use apertrust_ui::components::{
     ActivityAction, Available, CellRating, CentralBar, CentralBarAction, GridEdge, GridEdgeAction,
     GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody, PanelEdge,
@@ -116,9 +116,9 @@ use egui_winit::winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::window::WindowId;
 use mirror::{Mirror, PhotoState, Picture, Reaction, Shown};
-use modules::{Change, Panels, Pending};
 use recents::Recents;
 use settings::{Keeper, Settings};
+use tools::{Change, Panels, Pending};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
 /// [--cache-dir DIR] [--conf KEY=VALUE]... [--safe-mode] [FILE | FOLDER | --in-folder
@@ -1223,7 +1223,7 @@ fn offered(locale: Locale, debug: bool) -> bool {
 /// lists them, in pipeline order with the last module at the top (decision 38,
 /// `docs/tools/README.md`). Customise tabs edits these lists once settings keep them
 /// (`docs/gui.md`, The shell).
-const TAB_MODULES: [&[&str]; TABS.len()] = [
+const TAB_TOOLS: [&[&str]; TABS.len()] = [
     &[],
     &[
         "agx",
@@ -2136,7 +2136,7 @@ impl Shell {
     /// chosen, the section opened, for this run and the next, and scrolled to as the tab
     /// shows. A module no tab lists changes nothing.
     fn reveal(&mut self, module: &'static str) {
-        let Some(tab) = TAB_MODULES.iter().position(|ids| ids.contains(&module)) else {
+        let Some(tab) = TAB_TOOLS.iter().position(|ids| ids.contains(&module)) else {
             return;
         };
         self.choose_tab(tab);
@@ -2199,7 +2199,7 @@ impl Shell {
             return Vec::new();
         }
         let hide = |module: &str, hidden| Command::Hide {
-            module: module.to_owned(),
+            tool: module.to_owned(),
             hidden,
         };
         let shown = self.peeking.take().map(|module| hide(module, false));
@@ -2213,14 +2213,14 @@ impl Shell {
     /// Whether the tab shown lists the module a History line opened, which its sections
     /// scroll to this frame ([`Shell::reveal`]).
     fn revealing(&self) -> bool {
-        let shown = TAB_MODULES.get(self.panel_tab).copied().unwrap_or_default();
+        let shown = TAB_TOOLS.get(self.panel_tab).copied().unwrap_or_default();
         self.reveal.is_some_and(|module| shown.contains(&module))
     }
 
     /// Whether `module`'s collapsible group `group` is open: as the user left it, or
     /// closed (decision 29).
     fn group_open(&self, module: &str, group: &str) -> bool {
-        self.group_open_or(module, group, modules::GROUP_OPEN)
+        self.group_open_or(module, group, tools::GROUP_OPEN)
     }
 
     /// Whether `module`'s collapsible group `group` is open: as the user left it, or
@@ -2741,7 +2741,7 @@ fn open_cache(folder: &Path) -> Option<Arc<Cache>> {
 
 /// The command a module section's change of the edit's values sends, and what the app
 /// shows of it until a report includes it: `SetControl`, `ResetControl`, `Keep` or
-/// `ResetModule`, or several of them as one `Step { source: You }` (decision 78), each shown
+/// `ResetTool`, or several of them as one `Step { source: You }` (decision 78), each shown
 /// as alone; none for any other change.
 fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
     Some(match change {
@@ -2752,7 +2752,7 @@ fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
             done,
         } => (
             Command::SetControl {
-                module: module.to_owned(),
+                tool: module.to_owned(),
                 control: control.to_owned(),
                 value: value.clone(),
                 done,
@@ -2765,7 +2765,7 @@ fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
         ),
         Change::Reset { module, control } => (
             Command::ResetControl {
-                module: module.to_owned(),
+                tool: module.to_owned(),
                 control: control.to_owned(),
             },
             vec![Pending::Reset { module, control }],
@@ -2776,7 +2776,7 @@ fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
             kept,
         } => (
             Command::Keep {
-                module: module.to_owned(),
+                tool: module.to_owned(),
                 control: control.to_owned(),
                 kept,
             },
@@ -2786,11 +2786,11 @@ fn sent(change: Change) -> Option<(Command, Vec<Pending>)> {
                 kept,
             }],
         ),
-        Change::ResetModule { module } => (
-            Command::ResetModule {
-                module: module.to_owned(),
+        Change::ResetTool { module } => (
+            Command::ResetTool {
+                tool: module.to_owned(),
             },
-            vec![Pending::ResetModule { module }],
+            vec![Pending::ResetTool { module }],
         ),
         Change::Step(changes) => {
             let (commands, shown): (Vec<_>, Vec<_>) = changes.into_iter().filter_map(sent).unzip();
@@ -2970,7 +2970,7 @@ impl App {
         let notice = run.notice(info.device_type == egui_wgpu::wgpu::DeviceType::Cpu);
         let places = export::places();
         let ctx = cc.egui_ctx.clone();
-        let modules = apertrust_modules::MODULES;
+        let modules = apertrust_tools::TOOLS;
         let cache_limit = keeper.cache_limit();
         let cache = cache.map(|cache| CacheOptions {
             cache,
@@ -3532,7 +3532,7 @@ impl App {
             Change::Set { .. }
                 | Change::Reset { .. }
                 | Change::Keep { .. }
-                | Change::ResetModule { .. }
+                | Change::ResetTool { .. }
                 | Change::ApplyPreset { .. }
                 | Change::Action { .. }
                 | Change::Step(_)
@@ -3551,7 +3551,7 @@ impl App {
             change @ (Change::Set { .. }
             | Change::Reset { .. }
             | Change::Keep { .. }
-            | Change::ResetModule { .. }
+            | Change::ResetTool { .. }
             | Change::Step(_)) => self.send_change(change),
             // Nothing to show before the session reports it: the option's values are the
             // photo's, which only the session knows.
@@ -3561,7 +3561,7 @@ impl App {
                 option,
             } => {
                 self.send_edit(Command::ApplyPreset {
-                    module: module.to_owned(),
+                    tool: module.to_owned(),
                     preset: preset.to_owned(),
                     option: option.to_owned(),
                 });
@@ -3576,7 +3576,7 @@ impl App {
                 let PhotoState::Open(photo) = &self.mirror.photo else {
                     return;
                 };
-                let writes = modules::action_writes(
+                let writes = tools::action_writes(
                     self.mirror.modules(),
                     module,
                     action,
@@ -3589,7 +3589,7 @@ impl App {
                 }
             }
             Change::Toggle { module } => {
-                let open = self.shell.section_open(module, modules::OPEN);
+                let open = self.shell.section_open(module, tools::OPEN);
                 self.shell.set_section_open(module, !open);
             }
             Change::Group { module, group } => self.shell.toggle_group(module, group),
@@ -3601,7 +3601,10 @@ impl App {
                 keys,
             } => {
                 let settings = self.shell.tool_settings.of(module);
-                let picker = PickerRef::Module { module, picker };
+                let picker = PickerRef::Tool {
+                    tool: module,
+                    picker,
+                };
                 let command = pickers::pressed(picker, action, keys, settings);
                 self.send_picker(command, ctx);
             }
@@ -3617,7 +3620,13 @@ impl App {
                 self.shell.tool_settings.set(module, setting, value);
                 if done {
                     let settings = self.shell.tool_settings.of(module);
-                    self.send_picker(PickerCommand::Settings { module, settings }, ctx);
+                    self.send_picker(
+                        PickerCommand::Settings {
+                            tool: module,
+                            settings,
+                        },
+                        ctx,
+                    );
                 }
             }
         }
@@ -4346,7 +4355,10 @@ impl App {
         };
         let words = translator(ui.ctx());
         let name = match picker {
-            PickerRef::Module { module, picker } => (self.mirror.modules().iter())
+            PickerRef::Tool {
+                tool: module,
+                picker,
+            } => (self.mirror.modules().iter())
                 .find(|m| m.definition().id == module)
                 .map(|m| pickers::name(&words, m.definition(), picker))
                 .unwrap_or_default(),
@@ -5959,9 +5971,9 @@ fn edit_tab(
         let resettable = takes && mirror.resettable();
         let shown = mirror.history.as_ref();
         // The eye's modules, as the photo's values report them.
-        let hidden: Vec<&str> = (values.modules.iter())
+        let hidden: Vec<&str> = (values.tools.iter())
             .filter(|state| state.hidden)
-            .map(|state| state.module)
+            .map(|state| state.tool)
             .collect();
         let today = history::today();
         let state = history::State {
@@ -5980,8 +5992,8 @@ fn edit_tab(
         _ => None,
     };
     let view_only = view_only.map(|view_only| view_only_notice(&words, view_only));
-    let pickers = modules::Pickers {
-        drawn: modules::PICKING,
+    let pickers = tools::Pickers {
+        drawn: tools::PICKING,
         on: mirror.pickers.active(),
         enabled: shown.editable(),
         why: opening.as_deref().or(view_only.as_deref()),
@@ -6018,18 +6030,15 @@ fn panel_body(
     ui: &mut egui::Ui,
     shell: &Shell,
     scopes: Option<(Option<&scopes::Measured>, bool)>,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     values: &Values,
     panels: &Panels,
     peek: bool,
     editable: bool,
     opening: Option<&str>,
-    pickers: &modules::Pickers,
+    pickers: &tools::Pickers,
 ) -> (Vec<scopes::Change>, Vec<Change>) {
-    let shown = TAB_MODULES
-        .get(shell.panel_tab)
-        .copied()
-        .unwrap_or_default();
+    let shown = TAB_TOOLS.get(shell.panel_tab).copied().unwrap_or_default();
     let (mut pinned, mut changes) = (Vec::new(), Vec::new());
     let open = shell.section_open(scopes::ID, scopes::OPEN);
     let mut body = PanelBody::new();
@@ -6042,15 +6051,15 @@ fn panel_body(
     body.show(ui, |ui| {
         for id in shown {
             let module = modules.iter().find(|module| module.definition().id == *id);
-            let state = values.modules.iter().find(|state| state.module == *id);
+            let state = values.tools.iter().find(|state| state.tool == *id);
             if let (Some(module), Some(state)) = (module, state) {
-                let open = shell.section_open(id, modules::OPEN);
+                let open = shell.section_open(id, tools::OPEN);
                 let groups = |group: &str| shell.group_open(id, group);
                 // Each section's widgets in an id of their own, the module's: two modules'
                 // sliders of one name, as Vignetting's and Soften's Brightness, never share
                 // one.
                 let drawn = ui.push_id(id, |ui| {
-                    modules::section(
+                    tools::section(
                         ui, *module, state, open, panels, &groups, peek, editable, opening, pickers,
                     )
                 });
@@ -6387,7 +6396,7 @@ mod tests {
         let words = Translator::new(Locale::EnGb);
         let view_only = |build: Option<&str>| ViewOnly {
             build: build.map(str::to_owned),
-            reason: Reason::Newer(Newer::Module("lens".to_owned())),
+            reason: Reason::Newer(Newer::Tool("lens".to_owned())),
         };
         assert_eq!(
             view_only_notice(&words, &view_only(Some("0.9.0+3~gabcdef0"))),
@@ -6520,8 +6529,8 @@ mod tests {
     #[test]
     fn changes_shown_as_they_are_sent_show_what_the_session_s_edit_will_report() {
         use apertrust_engine::edit::{self, Edit, Held};
-        use apertrust_engine::session::{ControlState, CoordinateState, ModuleState};
-        use apertrust_modules::testing::{self, Twin};
+        use apertrust_engine::session::{ControlState, CoordinateState, ToolState};
+        use apertrust_tools::testing::{self, Twin};
 
         /// A change to Twin, through a control's row or a coordinate's.
         #[derive(Debug, Clone, Copy, PartialEq)]
@@ -6529,18 +6538,18 @@ mod tests {
             Set(&'static str, f32),
             Reset(&'static str),
             Keep(&'static str, bool),
-            ResetModule,
+            ResetTool,
         }
 
         let image = testing::image();
-        let modules: &[&dyn Module] = &[&Twin];
+        let modules: &[&dyn Tool] = &[&Twin];
         let definition = Twin.definition();
         let coordinate = |id| definition.coordinate(id).is_some();
         // What the session reports of Twin with `edit` and `held`: each control's value
         // over its default and its mark, each view's coordinates, held or the module's
         // view of the values, with the mark its controls share.
         let report = |edit: &Edit, held: &Held| {
-            let set = edit.module("twin");
+            let set = edit.tool("twin");
             let defaults = Twin.defaults(&image);
             let controls: Vec<ControlState> = definition
                 .controls
@@ -6581,8 +6590,8 @@ mod tests {
             }
             let edited = controls.iter().any(|c| c.value != c.default);
             Values {
-                modules: vec![ModuleState {
-                    module: "twin",
+                tools: vec![ToolState {
+                    tool: "twin",
                     enabled: true,
                     edited,
                     hidden: false,
@@ -6609,8 +6618,8 @@ mod tests {
                 Step::Reset(id) => edit.reset_control(&Twin, id),
                 Step::Keep(id, kept) if coordinate(id) => edit.keep_coordinate(&Twin, id, kept),
                 Step::Keep(id, kept) => edit.keep(&Twin, id, kept),
-                Step::ResetModule => {
-                    edit.reset_module(&Twin);
+                Step::ResetTool => {
+                    edit.reset_tool(&Twin);
                     Ok(())
                 }
             };
@@ -6632,7 +6641,7 @@ mod tests {
                     control,
                     kept,
                 },
-                Step::ResetModule => Pending::ResetModule { module },
+                Step::ResetTool => Pending::ResetTool { module },
             }
         };
         // x through its own row, then the pair, then the mix, which moves the pair, and
@@ -6651,7 +6660,7 @@ mod tests {
             Step::Reset("sum"),
             Step::Reset("difference"),
             Step::Set("u", 150.0),
-            Step::ResetModule,
+            Step::ResetTool,
         ];
         let (mut edit, mut held) = (Edit::default(), Held::default());
         // As `App::pend` shows each change once over the values as they are; and as it
@@ -6664,10 +6673,10 @@ mod tests {
             let expected = report(&edit, &held);
             let change = pending(step);
             show(&mut sent, &change, modules, &image);
-            assert_eq!(sent.modules, expected.modules, "after {step:?}");
+            assert_eq!(sent.tools, expected.tools, "after {step:?}");
             every.push((number, change));
             again = reported(again, &mut every, modules, &image);
-            if wrong.is_none() && again.modules != expected.modules {
+            if wrong.is_none() && again.tools != expected.tools {
                 wrong = Some(step);
             }
         }
@@ -6681,9 +6690,9 @@ mod tests {
     /// session's `Photo` carries, not the sRGB matrix a photo's size alone would give.
     #[test]
     fn a_temperature_dragged_shows_the_coefficients_the_camera_s_matrix_gives() {
-        use apertrust_engine::session::{ControlState, CoordinateState, ModuleState};
-        use apertrust_modules::testing;
-        use apertrust_modules::white_balance::{COEFFICIENTS, WhiteBalance};
+        use apertrust_engine::session::{ControlState, CoordinateState, ToolState};
+        use apertrust_tools::testing;
+        use apertrust_tools::white_balance::{COEFFICIENTS, WhiteBalance};
 
         // The synthetic raw with a Canon EOS 40D's matrix, far from sRGB's.
         let mut image = testing::image();
@@ -6714,8 +6723,8 @@ mod tests {
         let view = &definition.views[0];
         let viewed = WhiteBalance.view(view.id, &defaults, &image).unwrap();
         let report = Values {
-            modules: vec![ModuleState {
-                module: definition.id,
+            tools: vec![ToolState {
+                tool: definition.id,
                 enabled: true,
                 edited: false,
                 hidden: false,
@@ -6756,7 +6765,7 @@ mod tests {
             extent: [84, 62],
             live: true,
         };
-        let modules: &[&dyn Module] = &[&WhiteBalance];
+        let modules: &[&dyn Tool] = &[&WhiteBalance];
         let drag = Pending::Control {
             module: definition.id,
             control: "temperature",
@@ -6765,7 +6774,7 @@ mod tests {
         let shown = |image: &ImageContext| {
             let mut values = report.clone();
             show(&mut values, &drag, modules, image);
-            let controls = &values.modules[0].controls;
+            let controls = &values.tools[0].controls;
             COEFFICIENTS.map(|id| {
                 let shown = controls.iter().find(|c| c.control == id).unwrap();
                 (shown.value.clone(), shown.mark)
@@ -8636,17 +8645,17 @@ mod tests {
 
     #[test]
     fn a_collapsible_group_opened_stays_open_in_the_next_run() {
-        use apertrust_engine::session::{ControlState, ModuleState};
-        use apertrust_modules::Module as _;
-        use apertrust_modules::testing::Sample;
+        use apertrust_engine::session::{ControlState, ToolState};
+        use apertrust_tools::Tool as _;
+        use apertrust_tools::testing::Sample;
 
         let folder = settings::testing::Folder::new("groups");
         let windows = OperatingSystem::Windows;
         let (keeper, settings) = Keeper::open(folder.storage());
         let shell = Shell::new(&settings, Locale::EnGb, windows);
         let definition = Sample.definition();
-        let state = ModuleState {
-            module: definition.id,
+        let state = ToolState {
+            tool: definition.id,
             enabled: true,
             edited: false,
             hidden: false,
@@ -8667,7 +8676,7 @@ mod tests {
             views: Vec::new(),
         };
         // Its Shape tab, where the Midtones group is.
-        let mut panels = modules::Panels::default();
+        let mut panels = tools::Panels::default();
         panels.apply(&Change::Tab {
             module: "sample",
             tab: 1,
@@ -8680,7 +8689,7 @@ mod tests {
                     let ctx = ui.ctx().clone();
                     let shell = &kept.shell;
                     let groups = |group: &str| shell.group_open("sample", group);
-                    let changes = modules::section(
+                    let changes = tools::section(
                         ui,
                         &Sample,
                         &state,
@@ -8690,7 +8699,7 @@ mod tests {
                         false,
                         true,
                         None,
-                        &modules::Pickers::NONE,
+                        &tools::Pickers::NONE,
                     );
                     for change in changes {
                         if let Change::Group { module, group } = change {
@@ -8742,16 +8751,16 @@ mod tests {
 
     /// The side panel with the settings in `folder`.
     fn side(folder: &settings::testing::Folder) -> Harness<'static, Side> {
-        use apertrust_engine::session::{ControlState, ModuleState};
+        use apertrust_engine::session::{ControlState, ToolState};
 
         let (keeper, settings) = Keeper::open(folder.storage());
-        let exposure = apertrust_modules::MODULES
+        let exposure = apertrust_tools::TOOLS
             .iter()
             .find(|module| module.definition().id == "exposure")
             .expect("Exposure is built in")
             .definition();
-        let untouched = ModuleState {
-            module: exposure.id,
+        let untouched = ToolState {
+            tool: exposure.id,
             enabled: true,
             edited: false,
             hidden: false,
@@ -8783,8 +8792,8 @@ mod tests {
                     }
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let (shell, measured) = (&side.shell, side.scopes.measured());
-                    let panels = modules::Panels::default();
-                    let modules = apertrust_modules::MODULES;
+                    let panels = tools::Panels::default();
+                    let modules = apertrust_tools::TOOLS;
                     let values = &side.values;
                     let (scopes, _) = panel_body(
                         ui,
@@ -8796,7 +8805,7 @@ mod tests {
                         false,
                         true,
                         None,
-                        &modules::Pickers::NONE,
+                        &tools::Pickers::NONE,
                     );
                     for change in scopes {
                         side.shell.scopes_change(change);
@@ -8810,7 +8819,7 @@ mod tests {
                     keeper,
                     scopes: scopes::Scopes::default(),
                     values: Values {
-                        modules: vec![untouched],
+                        tools: vec![untouched],
                         settings: Vec::new(),
                         edited: false,
                         through: 1,
@@ -8860,7 +8869,7 @@ mod tests {
             .build_ui_state(
                 |ui, editing: &mut Editing| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    let panels = modules::Panels::default();
+                    let panels = tools::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
                     let (_, changes, history) = edit_tab(ui, shell, mirror, &panels, false);
                     editing.history.extend(history);
@@ -8887,9 +8896,9 @@ mod tests {
     /// The module titles `tab` lists, in English.
     fn titles(tab: usize) -> Vec<String> {
         let words = Translator::new(Locale::EnGb);
-        TAB_MODULES[tab]
+        TAB_TOOLS[tab]
             .iter()
-            .map(|id| words.text(&apertrust_modules::messages::title(id)))
+            .map(|id| words.text(&apertrust_tools::messages::title(id)))
             .collect()
     }
 
@@ -9004,7 +9013,7 @@ mod tests {
                         editing.shell.run(id, &state, &ctx, &[]);
                     }
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    let panels = modules::Panels::default();
+                    let panels = tools::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
                     let revealed = shell.revealing();
                     let (_, _, history) = edit_tab(ui, shell, mirror, &panels, false);
@@ -9120,7 +9129,7 @@ mod tests {
         mirror.apply(Event::Opened(Photo {
             view_only: Some(ViewOnly {
                 build: Some("9.9.9".to_owned()),
-                reason: Reason::Newer(Newer::Module("lens".to_owned())),
+                reason: Reason::Newer(Newer::Tool("lens".to_owned())),
             }),
             ..photo(1)
         }));
@@ -9153,7 +9162,7 @@ mod tests {
             harness.run();
         };
         let hide = |module: &str, hidden| Command::Hide {
-            module: module.to_owned(),
+            tool: module.to_owned(),
             hidden,
         };
         press(&mut harness, true);
@@ -9239,10 +9248,10 @@ mod tests {
     /// Exposure's at `exposure`, after `through` commands.
     fn photo_values(exposure: f32, through: u64) -> Values {
         let mut values = crate::mirror::tests::mirror().values;
-        for state in &mut values.modules {
+        for state in &mut values.tools {
             for control in &mut state.controls {
                 control.available = true;
-                if (state.module, control.control) == ("exposure", "exposure") {
+                if (state.tool, control.control) == ("exposure", "exposure") {
                     control.value = ControlValue::Number(exposure);
                 }
             }
@@ -9402,7 +9411,7 @@ mod tests {
                     });
                     ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
-                        let panels = modules::Panels::default();
+                        let panels = tools::Panels::default();
                         edit_tab(ui, &scene.shell, &scene.mirror, &panels, false);
                     });
                 },
@@ -10701,13 +10710,13 @@ mod tests {
         let session = apertrust_engine::session::testing::start(
             gpu,
             apertrust_operations::OPERATIONS,
-            apertrust_modules::MODULES,
+            apertrust_tools::TOOLS,
             "0.4.0+12~g1a2b3c4",
             move || {
                 let _ = woken.send(());
             },
         );
-        let mut mirror = Mirror::new(apertrust_modules::MODULES, jobs::Mirror::new(None));
+        let mut mirror = Mirror::new(apertrust_tools::TOOLS, jobs::Mirror::new(None));
         let root =
             std::env::temp_dir().join(format!("apertrust-app-choose-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -10934,7 +10943,7 @@ mod tests {
                 .position(|op| op.manifest().id == operation)
                 .unwrap_or_else(|| panic!("{module} has no operation {operation}"))
         };
-        for (modules, id) in TAB_MODULES.iter().zip(TAB_IDS) {
+        for (modules, id) in TAB_TOOLS.iter().zip(TAB_IDS) {
             let places: Vec<usize> = modules.iter().map(|module| place(module)).collect();
             assert!(
                 places.windows(2).all(|pair| pair[0] > pair[1]),
@@ -10944,21 +10953,21 @@ mod tests {
     }
 
     /// Every built-in module is drawn in some tab, once, and every module a tab names is
-    /// built in, so a module that joins `MODULES` joins a tab too.
+    /// built in, so a module that joins `TOOLS` joins a tab too.
     #[test]
     fn every_built_in_module_is_in_one_tab() {
-        let listed: Vec<&str> = TAB_MODULES
+        let listed: Vec<&str> = TAB_TOOLS
             .iter()
             .flat_map(|tab| tab.iter().copied())
             .collect();
-        for module in apertrust_modules::MODULES {
+        for module in apertrust_tools::TOOLS {
             let id = module.definition().id;
             let tabs = listed.iter().filter(|listed| **listed == id).count();
             assert_eq!(tabs, 1, "{id} is in {tabs} tabs");
         }
         for id in listed {
             assert!(
-                apertrust_modules::MODULES
+                apertrust_tools::TOOLS
                     .iter()
                     .any(|module| module.definition().id == id),
                 "{id} is in a tab but not built in"
@@ -11383,7 +11392,7 @@ mod tests {
                 |ui, bench: &mut Bench| {
                     let ctx = ui.ctx().clone();
                     // As `App::logic` words them before each frame.
-                    let modules = apertrust_modules::MODULES;
+                    let modules = apertrust_tools::TOOLS;
                     let words = translator(&ctx);
                     bench.shell.steps = history::steps(bench.history.as_ref(), modules, &words);
                     let state = bench.state(&ctx);

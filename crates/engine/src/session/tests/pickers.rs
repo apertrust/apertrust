@@ -21,9 +21,9 @@
 //! and module pickers: read at their operation, applied through their pick as a gesture,
 //! turning their module on and off with it, and in the raw stage per CFA colour.
 
-use apertrust_modules::colour_balance_rgb::ColourBalanceRgb;
-use apertrust_modules::orientation::Orientation;
-use apertrust_modules::{Picker, PickerKind, Quad, Space};
+use apertrust_tools::colour_balance_rgb::ColourBalanceRgb;
+use apertrust_tools::orientation::Orientation;
+use apertrust_tools::{Picker, PickerKind, Quad, Space};
 
 use super::*;
 use crate::picker::{DEFAULT_AREA, DEFAULT_POINT, pixels};
@@ -50,7 +50,10 @@ fn on_module(id: &'static str, area: bool) -> Command {
 /// `On` for the picker `id` of `module`.
 fn on_picker(module: &'static str, id: &'static str, area: bool) -> Command {
     picker(PickerCommand::On {
-        picker: PickerRef::Module { module, picker: id },
+        picker: PickerRef::Tool {
+            tool: module,
+            picker: id,
+        },
         area,
         keys: PickKeys::default(),
         settings: Vec::new(),
@@ -364,7 +367,7 @@ fn on_is_refused_before_the_photo_is_live_and_a_move_with_no_picker_on() {
     }
     assert_eq!(refused(&driven.run([module])), "UnknownSetting(\"target\")");
     let settings = picker(PickerCommand::Settings {
-        module: "sample",
+        tool: "sample",
         settings: unread,
     });
     assert_eq!(
@@ -477,7 +480,7 @@ fn an_area_stays_on_its_part_of_the_scene_through_every_orientation() {
     let mut driven = Driven::new(&[&Sample, &Orientation]);
     driven.open(&path);
     let orient = |choice: u32| Command::SetControl {
-        module: "flip".to_owned(),
+        tool: "flip".to_owned(),
         control: "orientation".to_owned(),
         value: ControlValue::Choice(choice),
         done: true,
@@ -584,17 +587,17 @@ fn a_failure_of_the_pickers_is_reported_once_and_the_frames_go_on() {
 /// The module parts of the pickers' readings in `events`.
 /// The module parts of the pickers' readings in `events`, each once: a reading whose frame
 /// part alone changed carries the module part the one before it did.
-fn module_parts(events: &[Event]) -> Vec<&ModuleReading> {
-    let mut parts: Vec<&ModuleReading> = readings(events)
+fn module_parts(events: &[Event]) -> Vec<&ToolReading> {
+    let mut parts: Vec<&ToolReading> = readings(events)
         .into_iter()
-        .filter_map(|reading| reading.as_ref()?.module.as_ref())
+        .filter_map(|reading| reading.as_ref()?.tool.as_ref())
         .collect();
     parts.dedup();
     parts
 }
 
 /// The module part last sent in `events`.
-fn latest(events: &[Event]) -> &ModuleReading {
+fn latest(events: &[Event]) -> &ToolReading {
     let parts = module_parts(events);
     parts
         .last()
@@ -651,7 +654,7 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     let at = |which: &dyn Fn(&Event) -> bool| {
         (picked.iter().position(which)).unwrap_or_else(|| panic!("{picked:?}"))
     };
-    let carries = |e: &Event, part: &ModuleReading| matches!(e, Event::Picker { reading: Some(r), .. } if r.module.as_ref() == Some(part));
+    let carries = |e: &Event, part: &ToolReading| matches!(e, Event::Picker { reading: Some(r), .. } if r.tool.as_ref() == Some(part));
     let order = [
         at(&|e| carries(e, part)),
         at(&|e| matches!(e, Event::Values(_))),
@@ -663,8 +666,8 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     assert_eq!(changes.count(), 1, "{picked:?}");
     let applied = values(&picked);
     let first = readings(&picked)[0].as_ref().expect("a reading");
-    let brightness_picker = PickerRef::Module {
-        module: "sample",
+    let brightness_picker = PickerRef::Tool {
+        tool: "sample",
         picker: "brightness",
     };
     assert_eq!(first.picker, brightness_picker);
@@ -711,7 +714,7 @@ fn a_module_picker_applies_its_first_reading_and_each_move_never_an_edit_upstrea
     // A turn upstream moves what exposure reads under the area: measured and sent, never
     // applied, so the pick never feeds on its own write.
     let events = driven.run([Command::SetControl {
-        module: "flip".to_owned(),
+        tool: "flip".to_owned(),
         control: "orientation".to_owned(),
         value: ControlValue::Choice(6),
         done: true,
@@ -808,8 +811,8 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
     driven.open(&path);
     driven.writes();
     let enabled = |values: &Values| {
-        (values.modules.iter())
-            .find(|m| m.module == "colorbalancergb")
+        (values.tools.iter())
+            .find(|m| m.tool == "colorbalancergb")
             .is_some_and(|m| m.enabled)
     };
     // Colour balance RGB, switched and off: its picker turns it on, a change of its own.
@@ -827,8 +830,8 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
     );
     assert!(!picked.iter().any(|e| matches!(e, Event::Values(_))));
     // A change to its module turns it off, as darktable's `gui_changed` does.
-    let events = driven.run([Command::ResetModule {
-        module: "colorbalancergb".to_owned(),
+    let events = driven.run([Command::ResetTool {
+        tool: "colorbalancergb".to_owned(),
     }]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
     // Its end is through the reset, so a client knows it answers its `On`.
@@ -838,8 +841,8 @@ fn a_module_picker_turns_its_module_on_and_off_as_the_module_changes_unless_it_k
     driven.run([on_module("show", true)]);
     driven.picked();
     let events = driven.run([
-        Command::ResetModule {
-            module: "colorbalancergb".to_owned(),
+        Command::ResetTool {
+            tool: "colorbalancergb".to_owned(),
         },
         set("grain", ControlValue::Number(20.0), true),
     ]);
@@ -867,7 +870,7 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
     let grain = |events: &[Event]| number(values(events), "sample", "grain");
-    let spread = |part: &ModuleReading, c: usize| {
+    let spread = |part: &ToolReading, c: usize| {
         let input = part.input.unwrap();
         100.0 * (input.max[c] - input.min[c])
     };
@@ -908,7 +911,7 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
     );
     // No settings: kept, and nothing applied, since no picker of Sample reads one.
     let events = driven.run([picker(PickerCommand::Settings {
-        module: "sample",
+        tool: "sample",
         settings: Vec::new(),
     })]);
     assert!(events.is_empty(), "{events:?}");
@@ -960,7 +963,7 @@ static SPOT: Definition = Definition {
 
 static SPOT_OWNS: [Owned; 1] = [Owned::new("temperature", "red")];
 
-impl Module for Spot {
+impl Tool for Spot {
     fn definition(&self) -> &'static Definition {
         &SPOT
     }
@@ -969,7 +972,7 @@ impl Module for Spot {
         &SPOT_OWNS
     }
 
-    fn bind(&self, _: &ModuleValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
+    fn bind(&self, _: &ToolValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
         Vec::new()
     }
 }
@@ -1033,7 +1036,7 @@ fn a_picker_in_the_raw_stage_reads_the_mosaic_per_cfa_colour() {
 #[ignore = "a measurement with the raw.pixls.us corpus: cargo test --release -p \
             apertrust-engine --lib -- moved_area --ignored --nocapture"]
 fn a_moved_area_s_reading_at_its_operation_on_the_7r_v() {
-    use apertrust_modules::exposure::Exposure;
+    use apertrust_tools::exposure::Exposure;
 
     let corpus = std::env::var_os("APERTRUST_RAW_CORPUS").map_or_else(
         || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test-images/raw.pixls.us"),
@@ -1044,7 +1047,7 @@ fn a_moved_area_s_reading_at_its_operation_on_the_7r_v() {
     std::fs::hard_link(&raw, &path)
         .or_else(|_| std::fs::copy(&raw, &path).map(|_| ()))
         .expect("the corpus raw");
-    let cases: [(&str, &'static [&'static dyn Module], &str, &str); 2] = [
+    let cases: [(&str, &'static [&'static dyn Tool], &str, &str); 2] = [
         (
             "exposure, after the downscale",
             &[&Exposure],
@@ -1242,7 +1245,7 @@ fn a_picker_on_an_operation_in_the_viewport_s_tiles_reads_nothing_and_applies_no
     // Its reading has no module part, and nothing is applied.
     let picked = driven.picked();
     assert!(
-        matches!(&picked[..], [Event::Picker { reading: Some(reading), .. }] if reading.module.is_none()),
+        matches!(&picked[..], [Event::Picker { reading: Some(reading), .. }] if reading.tool.is_none()),
         "{picked:?}"
     );
     remove(&path);
@@ -1314,7 +1317,7 @@ static CONFIGURED: Definition = Definition {
         rows: &[
             Row::Slider(Slider::new("level").quad(Quad::Picker("level"))),
             Row::Slider(Slider::new("other")),
-            Row::Setting(apertrust_modules::SettingRow {
+            Row::Setting(apertrust_tools::SettingRow {
                 id: "gain",
                 kind: ControlKind::Number {
                     min: 0.0,
@@ -1345,7 +1348,7 @@ static CONFIGURED: Definition = Definition {
 
 static CONFIGURED_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
 
-impl Module for Configured {
+impl Tool for Configured {
     fn definition(&self) -> &'static Definition {
         &CONFIGURED
     }
@@ -1354,21 +1357,21 @@ impl Module for Configured {
         &CONFIGURED_OWNS
     }
 
-    fn bind(&self, _: &ModuleValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
+    fn bind(&self, _: &ToolValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
         Vec::new()
     }
 
     fn pick(
         &self,
         _: &str,
-        reading: &apertrust_modules::pick::Reading,
+        reading: &apertrust_tools::pick::Reading,
         _: &Controls,
         _: &ImageContext,
         settings: &[(&str, ControlValue)],
         _: Option<&str>,
-        _: Option<&apertrust_modules::pick::Reading>,
+        _: Option<&apertrust_tools::pick::Reading>,
         _: PickKeys,
-    ) -> Option<apertrust_modules::pick::Picked> {
+    ) -> Option<apertrust_tools::pick::Picked> {
         let gain = settings
             .iter()
             .find_map(|&(setting, ref value)| match (setting, value) {
@@ -1380,14 +1383,14 @@ impl Module for Configured {
         let control = if gain == 0.0 { "other" } else { "level" };
         writes.set(control, ControlValue::Number(gain * reading.input.mean[0]));
         // A patch of the gain, so each gain shows something of its own.
-        let patch = apertrust_modules::pick::Patch {
+        let patch = apertrust_tools::pick::Patch {
             srgb: [gain / 4.0; 3],
             lch: [25.0 * gain, 0.0, 0.0],
         };
-        Some(apertrust_modules::pick::Picked {
+        Some(apertrust_tools::pick::Picked {
             writes,
             // The gain it measured, as a measure mode gives its settings back.
-            shown: apertrust_modules::pick::Shown {
+            shown: apertrust_tools::pick::Shown {
                 patch: Some(patch),
                 settings: vec![("gain", ControlValue::Number(gain + 1.0))],
             },
@@ -1397,7 +1400,7 @@ impl Module for Configured {
 
 fn gain(gain: f32) -> Command {
     picker(PickerCommand::Settings {
-        module: "configured",
+        tool: "configured",
         settings: vec![("gain", ControlValue::Number(gain))],
     })
 }
@@ -1410,7 +1413,7 @@ fn settings_apply_the_latest_reading_measured_and_a_refused_pick_turns_the_picke
     driven.run([on_picker("configured", "level", true)]);
     let picked = driven.picked();
     let shown = |events: &[Event]| match readings(events).last() {
-        Some(Some(reading)) => reading.module.as_ref().and_then(|m| m.picked.clone()),
+        Some(Some(reading)) => reading.tool.as_ref().and_then(|m| m.picked.clone()),
         _ => None,
     };
     // A reading's pick hands its settings back.
@@ -1732,7 +1735,7 @@ fn a_write_never_answers_a_pick_still_to_come() {
             .max()
     };
     let settings = picker(PickerCommand::Settings {
-        module: "sample",
+        tool: "sample",
         settings: Vec::new(),
     });
     driven.run([settings, on_module("show", true)]);
@@ -1790,14 +1793,14 @@ fn mapping(lightness: f32) -> Vec<(&'static str, ControlValue)> {
 /// The same reading at 50 % writes Exposure.
 #[test]
 fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() {
-    use apertrust_modules::exposure::Exposure;
+    use apertrust_tools::exposure::Exposure;
     let path = scratch("picker-not-finite");
     let mut driven = Driven::new(&[&Exposure]);
     let opened = driven.open(&path);
     let before = number(values(&opened), "exposure", "exposure");
     let mut events = driven.run([picker(PickerCommand::On {
-        picker: PickerRef::Module {
-            module: "exposure",
+        picker: PickerRef::Tool {
+            tool: "exposure",
             picker: "exposure",
         },
         area: true,
@@ -1810,7 +1813,7 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
     let shown = readings(&events)
         .into_iter()
         .rev()
-        .find_map(|reading| reading.as_ref()?.module.as_ref()?.picked.clone())
+        .find_map(|reading| reading.as_ref()?.tool.as_ref()?.picked.clone())
         .unwrap_or_else(|| panic!("a pick shown in {events:?}"));
     let patch = shown.patch.expect("the input patch");
     assert!(patch.lch[0] > 0.0, "{patch:?}");
@@ -1821,7 +1824,7 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
     }
     // The latest reading again, by a target that gives a value.
     let events = driven.run([picker(PickerCommand::Settings {
-        module: "exposure",
+        tool: "exposure",
         settings: mapping(50.0),
     })]);
     assert!(failures(&events).is_empty(), "{events:?}");
@@ -1839,13 +1842,13 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
 fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
     use crate::history::{Change, Entry, StepSource};
     let path = scratch("picker-ends-gesture");
-    let mut driven = Driven::new(&[&Sample, &apertrust_modules::soften::Soften]);
+    let mut driven = Driven::new(&[&Sample, &apertrust_tools::soften::Soften]);
     driven.open(&path);
     driven.run([on_module("brightness", true)]);
     driven.picked();
     driven.writes();
     driven.run([Command::SetControl {
-        module: "soften".to_owned(),
+        tool: "soften".to_owned(),
         control: "amount".to_owned(),
         value: ControlValue::Number(70.0),
         done: false,
@@ -1854,7 +1857,7 @@ fn a_pick_ends_a_slider_s_gesture_as_a_step_of_its_own_source() {
     driven.picked();
     let open = driven.engine.open.as_ref().unwrap();
     let of = |module: &str| {
-        let entry = |step: &&crate::history::Step| matches!(&step.change, Change::Entry(Entry::Module { module: m, .. }) if m == module);
+        let entry = |step: &&crate::history::Step| matches!(&step.change, Change::Entry(Entry::Tool { tool: m, .. }) if m == module);
         (open.history.log().steps().iter())
             .rfind(entry)
             .map(|step| step.source)
@@ -1888,7 +1891,7 @@ fn a_settled_pick_sends_its_history() {
 
 fn hide(module: &str, hidden: bool) -> Command {
     Command::Hide {
-        module: module.to_owned(),
+        tool: module.to_owned(),
         hidden,
     }
 }

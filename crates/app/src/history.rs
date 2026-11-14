@@ -88,7 +88,7 @@ use apertrust_engine::session::{
     BatchId, ControlChange, ControlValue, History, HistoryStep, Mark, Move, Note, StepId,
     StepSource,
 };
-use apertrust_modules::{ControlKind, Definition, Module, Row, Slider, messages};
+use apertrust_tools::{ControlKind, Definition, Row, Slider, Tool, messages};
 use apertrust_ui::components::{
     IconButton, PanelBody, Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred,
     section_body,
@@ -474,7 +474,7 @@ fn range(first: &str, last: &str) -> String {
 /// are the session's, whose titles, controls and rows word the lines.
 pub fn listed(
     history: Option<&History>,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     tr: &Translator,
     today: i32,
 ) -> Listed {
@@ -563,7 +563,7 @@ fn step_line(
     step: &HistoryStep,
     number: usize,
     end: usize,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     tr: &Translator,
 ) -> Line {
     Line {
@@ -585,9 +585,9 @@ fn step_line(
             () if number > end => RailNode::Undone,
             () => RailNode::Step,
         },
-        module: (step.changes.iter()).find_map(|change| known(modules, &change.module)),
+        module: (step.changes.iter()).find_map(|change| known(modules, &change.tool)),
         hides: match &step.changes[..] {
-            [change] if !is_reset(step) => known(modules, &change.module),
+            [change] if !is_reset(step) => known(modules, &change.tool),
             _ => None,
         },
     }
@@ -601,7 +601,7 @@ fn batch_line(
     steps: &[Arc<HistoryStep>],
     first: usize,
     end: usize,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     tr: &Translator,
 ) -> Line {
     let newest = &steps[steps.len() - 1];
@@ -616,14 +616,14 @@ fn batch_line(
     };
     let titles: Vec<String> = (steps.iter())
         .filter_map(|step| step.changes.first())
-        .map(|change| title(modules, &change.module, tr))
+        .map(|change| title(modules, &change.tool, tr))
         .collect();
     let mut changed = Vec::new();
     for step in steps {
         for change in &step.changes {
-            let definition = definition(modules, &change.module);
+            let definition = definition(modules, &change.tool);
             changed.push(Changed {
-                heading: Some(title(modules, &change.module, tr)),
+                heading: Some(title(modules, &change.tool, tr)),
                 rows: (change.controls.iter())
                     .map(|control| control_change(definition, control, tr))
                     .collect(),
@@ -667,7 +667,7 @@ fn batch_line(
 fn defaults_group(
     steps: &[Arc<HistoryStep>],
     end: usize,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     tr: &Translator,
 ) -> Entry {
     let lines = (1..=steps.len())
@@ -901,7 +901,7 @@ fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
 pub fn tab(
     ui: &mut egui::Ui,
     history: Option<&History>,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     hidden: &[&str],
     open: bool,
     peek: bool,
@@ -1022,7 +1022,7 @@ fn chosen(id: &str) -> Option<Action> {
 fn list(
     ui: &mut egui::Ui,
     history: Option<&History>,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     hidden: &[&str],
     editable: bool,
     today: i32,
@@ -1267,7 +1267,7 @@ fn keyed(
 fn kept(
     ctx: &egui::Context,
     history: Option<&History>,
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     tr: &Translator,
     today: i32,
 ) -> Arc<Listed> {
@@ -2009,21 +2009,21 @@ fn shift_clicked(ui: &egui::Ui) -> bool {
 
 /// `id` among `modules`, as the app knows it; none for a module or an operation it does
 /// not.
-fn known(modules: &[&dyn Module], id: &str) -> Option<&'static str> {
+fn known(modules: &[&dyn Tool], id: &str) -> Option<&'static str> {
     (modules.iter())
         .map(|module| module.definition().id)
         .find(|known| *known == id)
 }
 
 /// The definition of the module `id`, where the app knows it.
-fn definition(modules: &[&dyn Module], id: &str) -> Option<&'static Definition> {
+fn definition(modules: &[&dyn Tool], id: &str) -> Option<&'static Definition> {
     (modules.iter())
         .map(|module| module.definition())
         .find(|definition| definition.id == id)
 }
 
 /// A module's title, or the stored name of one the app does not know.
-fn title(modules: &[&dyn Module], id: &str, tr: &Translator) -> String {
+fn title(modules: &[&dyn Tool], id: &str, tr: &Translator) -> String {
     match known(modules, id) {
         Some(id) => tr.text(&messages::title(id)),
         None => id.to_owned(),
@@ -2114,17 +2114,17 @@ fn tag(source_of: StepSource, tr: &Translator) -> Option<String> {
 /// which has no control; an operation's unowned parameter, with no definition, by its
 /// name, as the tooltip and screen readers have it. The before and after are the
 /// tooltip's.
-fn summary(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Option<String> {
+fn summary(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
     let changed = step.changes.first()?;
-    let definition = definition(modules, &changed.module);
+    let definition = definition(modules, &changed.tool);
     match changed.controls.as_slice() {
         [] => None,
         [one] => {
             let label = Some(label(definition, one.control, tr))
-                .filter(|label| *label != title(modules, &changed.module, tr));
+                .filter(|label| *label != title(modules, &changed.tool, tr));
             let arrow = match (&one.before, &one.after) {
                 (ControlValue::Number(before), ControlValue::Number(after)) if after > before => {
                     Some(UP)
@@ -2155,13 +2155,13 @@ const DOWN: &str = "↓";
 /// What a step changed as screen readers hear it in its name: each control's label and its
 /// value before and after, as the tooltip has them, the label left out where it is the
 /// module's own; nothing where the line says nothing.
-fn heard(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Option<String> {
+fn heard(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
     let changed = step.changes.first()?;
-    let definition = definition(modules, &changed.module);
-    let own = title(modules, &changed.module, tr);
+    let definition = definition(modules, &changed.tool);
+    let own = title(modules, &changed.tool, tr);
     let parts: Vec<String> = (changed.controls.iter())
         .map(|control| match control_change(definition, control, tr) {
             TipRow::Value {
@@ -2197,10 +2197,10 @@ fn label(definition: Option<&'static Definition>, control: &str, tr: &Translator
 /// build's or an operation's unowned parameters; Reset's, which touches every module it
 /// reset, its note, Reset. A step that names nothing reads its source, so a line never
 /// reads empty.
-fn line_name(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> String {
+fn line_name(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> String {
     match (&step.note, step.changes.as_slice()) {
         (Some(note), _) if is_reset(step) => noted(note, tr),
-        (_, [one]) => title(modules, &one.module, tr),
+        (_, [one]) => title(modules, &one.tool, tr),
         (Some(note), _) => noted(note, tr),
         (None, _) => source(step.source, tr),
     }
@@ -2210,12 +2210,12 @@ fn line_name(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> St
 /// local clock. Reset's, the one step of several modules, has a heading over each
 /// module's rows, and its note is its line's name. A default step, the photo's own, has
 /// who and when alone.
-fn tip(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Tip {
+fn tip(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Tip {
     let several = step.changes.len() > 1;
     let mut changed = Vec::new();
     let shown = (step.source != StepSource::Default).then_some(&step.changes);
     for change in shown.into_iter().flatten() {
-        let definition = definition(modules, &change.module);
+        let definition = definition(modules, &change.tool);
         // The controls alone, not a switched module's turning on or off, which they show:
         // a reset turning one off, its controls going back to their defaults.
         let rows: Vec<TipRow> = (change.controls.iter())
@@ -2225,7 +2225,7 @@ fn tip(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Tip {
         // alone, and on a step of its own by the line's name.
         if several || !rows.is_empty() {
             changed.push(Changed {
-                heading: several.then(|| title(modules, &change.module, tr)),
+                heading: several.then(|| title(modules, &change.tool, tr)),
                 rows,
             });
         }
@@ -2344,7 +2344,7 @@ fn natural_decimals(value: f64) -> usize {
 /// What Undo and Redo would do in `history`, the open photo's, in `tr`'s words: none where
 /// there is nothing to do, or nothing to name. `modules` are the session's, whose titles
 /// name a step.
-pub fn steps(history: Option<&History>, modules: &[&dyn Module], tr: &Translator) -> Steps {
+pub fn steps(history: Option<&History>, modules: &[&dyn Tool], tr: &Translator) -> Steps {
     let side = |wanted: fn(&History) -> Option<Move>| {
         let history = history?;
         named(history, wanted(history)?, modules, tr)
@@ -2357,12 +2357,7 @@ pub fn steps(history: Option<&History>, modules: &[&dyn Module], tr: &Translator
 
 /// What `moved` does, as History names it; none for steps not in `history`, or whose first
 /// names no module the app knows, as an operation's unowned parameters alone.
-fn named(
-    history: &History,
-    moved: Move,
-    modules: &[&dyn Module],
-    tr: &Translator,
-) -> Option<String> {
+fn named(history: &History, moved: Move, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
     match moved {
         Move::GoTo => Some(tr.text("history-go-to-step")),
         Move::Compress => Some(tr.text("history-compress")),
@@ -2379,7 +2374,7 @@ fn named(
 /// The name of one change's steps: its note, which a batch's steps share and its last
 /// carries, a Reset's coming first; else the name of its first step the app knows, and how
 /// many more of those it knows.
-fn name(steps: &[Arc<HistoryStep>], modules: &[&dyn Module], tr: &Translator) -> Option<String> {
+fn name(steps: &[Arc<HistoryStep>], modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if let Some(note) = &steps.last()?.note {
         return Some(noted(note, tr));
     }
@@ -2396,14 +2391,14 @@ fn name(steps: &[Arc<HistoryStep>], modules: &[&dyn Module], tr: &Translator) ->
 }
 
 /// One step's name: its note, else its module's title.
-fn step_name(step: &HistoryStep, modules: &[&dyn Module], tr: &Translator) -> Option<String> {
+fn step_name(step: &HistoryStep, modules: &[&dyn Tool], tr: &Translator) -> Option<String> {
     if let Some(note) = &step.note {
         return Some(noted(note, tr));
     }
     let change = step.changes.first()?;
     (modules.iter())
-        .any(|m| m.definition().id == change.module)
-        .then(|| tr.text(&apertrust_modules::messages::title(&change.module)))
+        .any(|m| m.definition().id == change.tool)
+        .then(|| tr.text(&apertrust_tools::messages::title(&change.tool)))
 }
 
 /// A note's words: an assistant's as written, Apertrust's own in `tr`'s.
@@ -2425,7 +2420,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use apertrust_engine::history::{Clock, MachineId};
-    use apertrust_engine::session::{BatchId, ModuleChange, StepId, StepSource};
+    use apertrust_engine::session::{BatchId, StepId, StepSource, ToolChange};
     use apertrust_ui::{Builtin, Locale, Theme};
     use egui::accesskit::{Role as AccessRole, Toggled};
     use egui_kittest::Harness;
@@ -2443,8 +2438,8 @@ pub(crate) mod tests {
             batch: None,
             changes: modules
                 .iter()
-                .map(|module| ModuleChange {
-                    module: (*module).into(),
+                .map(|module| ToolChange {
+                    tool: (*module).into(),
                     enabled: None,
                     controls: Vec::new(),
                 })
@@ -2491,7 +2486,7 @@ pub(crate) mod tests {
 
     fn words(history: Option<&History>, locale: Locale) -> Steps {
         let tr = Translator::new(locale);
-        steps(history, apertrust_modules::MODULES, &tr)
+        steps(history, apertrust_tools::TOOLS, &tr)
     }
 
     #[test]
@@ -2609,7 +2604,7 @@ pub(crate) mod tests {
         id: u64,
         source: StepSource,
         note: Option<Note>,
-        changes: Vec<ModuleChange>,
+        changes: Vec<ToolChange>,
     ) -> Arc<HistoryStep> {
         Arc::new(HistoryStep {
             id: StepId(id),
@@ -2625,17 +2620,17 @@ pub(crate) mod tests {
         module: &'static str,
         enabled: Option<[bool; 2]>,
         controls: Vec<ControlChange>,
-    ) -> ModuleChange {
-        ModuleChange {
-            module: module.into(),
+    ) -> ToolChange {
+        ToolChange {
+            tool: module.into(),
             enabled,
             controls,
         }
     }
 
-    fn change_of(module: &'static str, controls: Vec<ControlChange>) -> ModuleChange {
-        ModuleChange {
-            module: module.into(),
+    fn change_of(module: &'static str, controls: Vec<ControlChange>) -> ToolChange {
+        ToolChange {
+            tool: module.into(),
             enabled: None,
             controls,
         }
@@ -2703,8 +2698,8 @@ pub(crate) mod tests {
     /// `history`'s steps after a new photo's default steps, one of each of darktable's
     /// default modules, numbered 1 to [`DEFAULT_STEPS`], the end at `end`.
     fn with_defaults(history: History, end: usize) -> History {
-        let defaults = apertrust_engine::history::default_modules(
-            apertrust_modules::MODULES,
+        let defaults = apertrust_engine::history::default_tools(
+            apertrust_tools::TOOLS,
             apertrust_operations::OPERATIONS,
         );
         assert_eq!(defaults.len(), DEFAULT_STEPS);
@@ -2734,7 +2729,7 @@ pub(crate) mod tests {
     fn listed_in(history: Option<&History>, locale: Locale) -> Listed {
         listed(
             history,
-            apertrust_modules::MODULES,
+            apertrust_tools::TOOLS,
             &Translator::new(locale),
             today(),
         )
@@ -2941,7 +2936,7 @@ pub(crate) mod tests {
         );
         let tr = Translator::new(Locale::EnGb);
         assert_eq!(
-            super::tip(&applied, apertrust_modules::MODULES, &tr),
+            super::tip(&applied, apertrust_tools::TOOLS, &tr),
             Tip::Changes {
                 modules: Vec::new(),
                 by: vec!["Default".to_owned(), when()],
@@ -2980,7 +2975,7 @@ pub(crate) mod tests {
     #[test]
     fn a_value_reads_as_its_row_writes_it_and_a_module_this_build_lacks_by_its_name() {
         let tr = Translator::new(Locale::EnGb);
-        let exposure = definition(apertrust_modules::MODULES, "exposure");
+        let exposure = definition(apertrust_tools::TOOLS, "exposure");
         let words = |change: &ControlChange| control_change(exposure, change, &tr);
         let choice = ControlChange {
             control: "mode",
@@ -3044,12 +3039,12 @@ pub(crate) mod tests {
             ],
         );
         assert_eq!(
-            tip(&both, apertrust_modules::MODULES, &tr).said(&tr),
+            tip(&both, apertrust_tools::TOOLS, &tr).said(&tr),
             "Exposure; Exposure, +0.700 EV to +1.200 EV; lens_2030; You, 21/10/2026, 17:52"
         );
         // A step that names nothing reads its source, never an empty line.
         let bare = made(11, StepSource::Auto, None, Vec::new());
-        assert_eq!(line_name(&bare, apertrust_modules::MODULES, &tr), "Auto");
+        assert_eq!(line_name(&bare, apertrust_tools::TOOLS, &tr), "Auto");
     }
 
     /// The History section drawn from a history the test holds, as the side panel draws
@@ -3099,7 +3094,7 @@ pub(crate) mod tests {
                         options: scene.options,
                         photo: scene.photo,
                     };
-                    let modules = apertrust_modules::MODULES;
+                    let modules = apertrust_tools::TOOLS;
                     let mut actions = Vec::new();
                     ui.scope_builder(UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
@@ -3938,7 +3933,7 @@ pub(crate) mod tests {
     #[test]
     fn the_lines_are_worded_once_for_each_history_language_and_day() {
         let ctx = egui::Context::default();
-        let modules = apertrust_modules::MODULES;
+        let modules = apertrust_tools::TOOLS;
         let (en, uk) = (Translator::new(Locale::EnGb), Translator::new(Locale::Uk));
         let history = photo_s(3);
         let kept_now =
@@ -4159,7 +4154,7 @@ pub(crate) mod tests {
         let tr = Translator::new(Locale::EnGb);
         let said = |module, controls| {
             let step = made(1, StepSource::You, None, vec![change_of(module, controls)]);
-            summary(&step, apertrust_modules::MODULES, &tr)
+            summary(&step, apertrust_tools::TOOLS, &tr)
         };
         let shown = |text: &str| Some(text.to_owned());
         // The module's own control: the arrow alone.
@@ -4206,7 +4201,7 @@ pub(crate) mod tests {
         let step = made(1, StepSource::You, None, vec![change_of("exposure", two)]);
         let pl = Translator::new(Locale::Pl);
         let uk = Translator::new(Locale::Uk);
-        let modules = apertrust_modules::MODULES;
+        let modules = apertrust_tools::TOOLS;
         assert_eq!(summary(&step, modules, &pl).as_deref(), Some("2 parametry"));
         assert_eq!(summary(&step, modules, &uk).as_deref(), Some("2 параметри"));
         // Reset, a Default step and a newer build's module: nothing.
@@ -4349,7 +4344,7 @@ pub(crate) mod tests {
         batch: Option<u64>,
         source: StepSource,
         note: Option<Note>,
-        changes: Vec<ModuleChange>,
+        changes: Vec<ToolChange>,
     ) -> Arc<HistoryStep> {
         Arc::new(HistoryStep {
             id: StepId(id),

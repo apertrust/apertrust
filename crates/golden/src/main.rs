@@ -1329,7 +1329,7 @@ fn all_defaults(image: &ImageContext) -> Result<Vec<Instance<'static>>> {
     edit::instances(
         &edit,
         apertrust_operations::OPERATIONS,
-        apertrust_modules::MODULES,
+        apertrust_tools::TOOLS,
         image,
     )
     .all()?

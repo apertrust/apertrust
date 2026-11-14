@@ -6,10 +6,10 @@ It is darktable's soften in the first pass (decision 2). darktable's page has no
 
 It drives one operation, `soften` ([../ports/soften.md](../ports/soften.md)), which an unedited photo does not run: it is planned while the tool is on. The tool owns all four of the operation's parameters; none is fixed ([README.md](README.md), Effect).
 
-**Status:** built, in `crates/modules/src/soften.rs`. The app draws it in the Effect tab from its definition (`docs/gui.md`, Tool panels from definitions), after Vignetting and before Grain.
+**Status:** built, in `crates/tools/src/soften.rs`. The app draws it in the Effect tab from its definition (`docs/gui.md`, Tool panels from definitions), after Vignetting and before Grain.
 
 - darktable's preset puts soften in no group, so it takes Effect, its group in darktable's "modules: all" ([README.md](README.md), decision 38).
-- Its rows are tests in `crates/modules/tests/soften.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/soften.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
@@ -36,7 +36,7 @@ Soften mixes a blurred copy of the photo into it, the Orton effect:
 - the saturation and the brightness scale the copy's HSL saturation and lightness before the blur;
 - the mix is the copy's weight.
 
-The promises, the tooltips, are darktable's in British English: "The size of blur.", "The saturation of blur.", "The brightness of blur." and "The mix of effect.". A script sends `SetControl { module: "soften", control: "amount", value: 50, done: true }`, and `apertrust-cli edit --set soften.amount=50` does the same.
+The promises, the tooltips, are darktable's in British English: "The size of blur.", "The saturation of blur.", "The brightness of blur." and "The mix of effect.". A script sends `SetControl { tool: "soften", control: "amount", value: 50, done: true }`, and `apertrust-cli edit --set soften.amount=50` does the same.
 
 **Off until a control is written** (rule 4 of [README.md](README.md)). Every control starts at darktable's default, the operation's own, so the binding sets each only while it is off it. A mix of 0, once on, returns the operation's input (`docs/ports/soften.md`, Tool binding notes).
 
@@ -44,7 +44,7 @@ The promises, the tooltips, are darktable's in British English: "The size of blu
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/soften.c`, its params and `gui_init`, and against darktable's panel as it draws them ([README.md](README.md), Sliders against darktable). darktable's side is in its parameters' units, which are the units shown; Apertrust's is the table above. `its_sliders_are_darktable_s`, in `crates/modules/src/soften.rs`, holds the definition to this table.
+Audited against darktable's `src/iop/soften.c`, its params and `gui_init`, and against darktable's panel as it draws them ([README.md](README.md), Sliders against darktable). darktable's side is in its parameters' units, which are the units shown; Apertrust's is the table above. `its_sliders_are_darktable_s`, in `crates/tools/src/soften.rs`, holds the definition to this table.
 
 | Slider | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -63,7 +63,7 @@ A switched tool's rows (decision 32; [README.md](README.md), Rows every table ha
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that soften joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
 | S1 | The first step | The tool on at darktable's defaults, 50 %, 100 %, +0.33 EV and a mix of 50 %: a control written at its default | Frame, ΔE2000 against no edit, and its values and bits | darktable's behaviour, darktable's new instance | Measured and reported, without a bound (decision 22) | Ramp, sweep; every corpus raw |
-| S2 | Each control, moved and reset | Mix 51 %, its step, and 50 %, a write at its default; Size 100 %, Saturation 50 % and Brightness −1 EV; Size, Brightness and Mix at the golden case's 33 %, +0.5 EV and 75 %; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan's operations and cache keys; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as S1's; the tool's reset turns it off and renders as no edit, soften leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
+| S2 | Each control, moved and reset | Mix 51 %, its step, and 50 %, a write at its default; Size 100 %, Saturation 50 % and Brightness −1 EV; Size, Brightness and Mix at the golden case's 33 %, +0.5 EV and 75 %; each reset control by control (`ResetControl`) and by the header's reset (`ResetTool`) | The plan's operations and cache keys; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as S1's; the tool's reset turns it off and renders as no edit, soften leaving the plan | Exact | Sweep; the small raw through the viewport; 90D through the viewport and the export |
 | S3 | Two controls, in either order | Mix 50 % and Size 100 %; Brightness −0.5 EV and Mix 75 % | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | S4 | Every control, the darktable match | The values of darktable's test 0051-soften, the golden case `soften`, as its sliders show them: 33 %, 100 %, +0.5 EV, 75 % | The parameters the tool binds | darktable's parameters bit for bit, which are the very values the golden harness plans the operation with against darktable's render | Exact | The case's parameters, on the CPU |
 | S5 | Each control on a layer, Phase 4 | S2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As S2 | Sweep |
@@ -74,7 +74,7 @@ S4 is how the tool matches darktable. The golden case checks the operation again
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/soften.rs`. The synthetic rows and S4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/soften.rs`. The synthetic rows and S4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS`, `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |

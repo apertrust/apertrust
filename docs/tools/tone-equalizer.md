@@ -6,9 +6,9 @@ It is darktable's tone equalizer in the first pass (decision 2). It has darktabl
 
 It drives one operation, `toneequal` ([../ports/toneequal.md](../ports/toneequal.md)), at darktable's place, camera RGB 24.0 (decision 22). An unedited photo does not run it: it is planned while the tool is on, as in darktable, where the tone equalizer is off until the user turns it on (decision 32). The tool owns every one of the operation's eighteen parameters; none is fixed.
 
-**Status:** built, in `crates/modules/src/tone_equalizer.rs`, its Advanced tab's graph of the bands included but for the mask's histogram ([Gaps](#gaps), 1). The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Base tab, after the Tone curve and before Exposure, in [README.md](README.md)'s order (decision 38).
+**Status:** built, in `crates/tools/src/tone_equalizer.rs`, its Advanced tab's graph of the bands included but for the mask's histogram ([Gaps](#gaps), 1). The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Base tab, after the Tone curve and before Exposure, in [README.md](README.md)'s order (decision 38).
 
-- Its rows are tests in `crates/modules/tests/tone_equalizer.rs`; [Results](#results) gives what they measured.
+- Its rows are tests in `crates/tools/tests/tone_equalizer.rs`; [Results](#results) gives what they measured.
 - The operation ports every luminance estimator and three of darktable's five filters: no filter, EIGF and averaged EIGF. The guided filter and the averaged guided filter are listed and drawn disabled until their follow-up (the spec's Planned).
 - The [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
@@ -46,7 +46,7 @@ Control ids are darktable's parameter names, which below −2 EV are not the ban
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/toneequal.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's columns are its own, in its parameters' units: no slider has a factor or an offset (Smoothing diameter's "%" format gives none, its range being above ±10). `its_sliders_are_darktable_s`, in `crates/modules/src/tone_equalizer.rs`, holds the definition to this table and finds no difference.
+Audited against darktable's `src/iop/toneequal.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's columns are its own, in its parameters' units: no slider has a factor or an offset (Smoothing diameter's "%" format gives none, its range being above ±10). `its_sliders_are_darktable_s`, in `crates/tools/src/tone_equalizer.rs`, holds the definition to this table and finds no difference.
 
 | Sliders | Range | Soft range | Digits | Step |
 | --- | --- | --- | --- | --- |
@@ -63,7 +63,7 @@ Filter diffusion's step is the 1 `dt_bauhaus_slider_from_params` gives an int; e
 
 **Curve smoothing's ends.** darktable's slider runs from −2.33 to 1.67, σ = √2^(−1.33) = 0.6306887 to √2^2.67 = 2.5227547, which are the operation's schema's limits exactly (`docs/ports/toneequal.md`, Parameters), so the binding needs no clamp. It computes `powf(M_SQRT2_F, 1.0f + s)` in f64 and rounds it once to f32, so every platform binds the same σ, the correctly rounded one. A value set where darktable's `gui_update` shows a stored σ, `logf(σ) / logf(√2) − 1`, binds σ back within one f32 step (Q4).
 
-The promises, the tooltips, are darktable's in British English. darktable gives a band none, so a band's says which tones it corrects in darktable's words for them ("blacks" for −8 EV, "mid-tones" for −4 EV). Its full name, what screen readers say, adds them to the label ("−4 EV, mid-tones"). A script sends `SetControl { module: "toneequal", control: "shadows", value: 0.5, done: true }`, and `apertrust-cli edit --set toneequal.shadows=0.5` does the same: half a stop more for the −4 EV band.
+The promises, the tooltips, are darktable's in British English. darktable gives a band none, so a band's says which tones it corrects in darktable's words for them ("blacks" for −8 EV, "mid-tones" for −4 EV). Its full name, what screen readers say, adds them to the label ("−4 EV, mid-tones"). A script sends `SetControl { tool: "toneequal", control: "shadows", value: 0.5, done: true }`, and `apertrust-cli edit --set toneequal.shadows=0.5` does the same: half a stop more for the −4 EV band.
 
 **Presets:** none yet. darktable's thirteen (simple tone curve; mask blending for all purposes and for people with backlight; compress shadows and highlights with EIGF, strong, medium or soft; contrast tone curve, soft, medium or strong; relight: fill-in) come with the header's presets menu (Phase 3); its three with the guided filter wait for that filter.
 
@@ -75,7 +75,7 @@ A switched tool's rows (decision 32; [README.md](README.md), Rows every table ha
 | --- | --- | --- | --- | --- | --- | --- |
 | Q0 | None: the tool off, untouched or with every control kept | | The plan's instances and cache keys; the frame, on one pipeline that the tone equalizer joins and leaves on the way | Instances, keys and frames as with no edit | Exact | Ramp, sweep, the small raw through the export and the viewport; every corpus raw |
 | Q1 | The first step | The tool on at darktable's defaults, the operation's (every band 0, EIGF on the euclidean norm): a control written at its default | The tone equalizer's output over its input on the ramp, in EV; the frame, ΔE2000 against no edit: all of it, inside the gamut and within 80 % of its saturation | darktable's behaviour: every pixel scaled by the zero bands' curve, darktable's ripple, −0.013 to +0.025 EV at the default smoothing (`docs/ports/toneequal.md`, Setup), as darktable's first step does | The frame measured and reported, without a bound (decision 22); the correction within the zero bands' curve's range, 5e-5 relative, the f32 rounding the port's own GPU test allows its curve | Ramp, sweep; the chart; every corpus raw |
-| Q2 | Each control, moved and reset | The −3 EV band at 0 EV, a write at its default; the −4 EV band +1 EV; −8 EV −0.5 with +0 EV +0.75; Curve smoothing 0.5 with −5 EV +0.5; Mask exposure −1 EV with Mask contrast +0.5 EV; Preserve details No on the RGB power norm; Averaged EIGF with Filter diffusion 2, Smoothing diameter 3 %, Edges refinement 3 and Mask quantisation 0.5 EV; each reset control by control (`ResetControl`) and by the header's reset (`ResetModule`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as Q1's; the tool's reset turns it off and renders as no edit, the tone equalizer leaving the plan | Exact | Ramp; the small raw through the viewport; 90D through the viewport and the export |
+| Q2 | Each control, moved and reset | The −3 EV band at 0 EV, a write at its default; the −4 EV band +1 EV; −8 EV −0.5 with +0 EV +0.75; Curve smoothing 0.5 with −5 EV +0.5; Mask exposure −1 EV with Mask contrast +0.5 EV; Preserve details No on the RGB power norm; Averaged EIGF with Filter diffusion 2, Smoothing diameter 3 %, Edges refinement 3 and Mask quantisation 0.5 EV; each reset control by control (`ResetControl`) and by the header's reset (`ResetTool`) | The plan; the frame | Each move changes the frame; reset control by control, the tool stays on and renders as Q1's; the tool's reset turns it off and renders as no edit, the tone equalizer leaving the plan | Exact | Ramp; the small raw through the viewport; 90D through the viewport and the export |
 | Q3 | Two controls, in either order | The −4 EV band +1 EV and Mask exposure −1 EV; Preserve details No and the RGB power norm | Frame | The same whichever was set first | Exact | Sweep; 90D through the viewport and the export |
 | Q4 | Every control, the darktable match | The values of darktable's tests 0080, 0129, 0131, 0133 and 0134 and the two cases edited from them, the golden cases `toneequal-eigf`, `-average`, `-max`, `-power`, `-geomean`, `-smoothing` and `-eigf-iterations`, as darktable's sliders show them, Curve smoothing as darktable's `gui_update` shows σ | The parameters the tool binds, against those the golden harness renders each case with (`golden::ports::plan_values`); and through the operation's setup, the kernel's inputs and its curve | darktable's parameters, and so the inputs the golden harness checks against darktable's render | Exact, but σ within two f32 steps; the curve within 1e-6 relative | The seven cases' parameters, on the CPU |
 | Q5 | Each control on a layer, Phase 4 | Q2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As Q2 | Ramp |
@@ -88,7 +88,7 @@ Its first step, Q1, is the operation's curve with every band at 0, the same in e
 
 ## Results
 
-Measured on the Apple M4 (Metal) by `crates/modules/tests/tone_equalizer.rs`. The synthetic rows and Q4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS` and the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d.
+Measured on the Apple M4 (Metal) by `crates/tools/tests/tone_equalizer.rs`. The synthetic rows and Q4 run on CI's software GPUs too; the corpus rows run with `APERTRUST_RAW_CORPUS` and the chart's with `APERTRUST_TEST_IMAGES`, both `#[ignore]`d.
 
 | Row | Result |
 | --- | --- |
@@ -126,14 +126,14 @@ The Advanced tab opens with darktable's graph of the bands: `Row::Custom` with `
 **What it draws:**
 
 - −8 EV to +0 EV across, +2 EV to −2 EV down, the black-to-white bars at its start and under it, and each band's node with its bar from the ground.
-- The curve the operation renders through the bands (`Module::curve`, decision 31), from the fit `apertrust-color` holds for the operation's setup and the graph alike (`tone_equalizer::Curve`, decision 65). So the curve drawn is the curve rendered, exactly.
+- The curve the operation renders through the bands (`Tool::curve`, decision 31), from the fit `apertrust-color` holds for the operation's setup and the graph alike (`tone_equalizer::Curve`, decision 65). So the curve drawn is the curve rendered, exactly.
 - A flat curve at 0 EV while the tool is off, since it then plans no operation; on, the curve the operation renders, darktable's ripple at the defaults.
 - The curve in the warning colour where the fit fails, which over the smoothing range it never does.
 
 **A drag** anywhere on it moves the bands around the pointer's exposure, as darktable's does:
 
-1. Each step of the pointer raises every band by its rise (the graph's height being 4 EV) times a Gaussian of the band's distance from the exposure the pointer left. The Gaussian's standard deviation is σ²/2, σ the curve's smoothing (`Module::curve_width`), with no limit.
-2. Then every band is set to the correction at its node of the curve those bands give (`Module::curve` again), which keeps it within ±2 EV, as darktable's `set_new_params_interactive` and `pixel_correction` do.
+1. Each step of the pointer raises every band by its rise (the graph's height being 4 EV) times a Gaussian of the band's distance from the exposure the pointer left. The Gaussian's standard deviation is σ²/2, σ the curve's smoothing (`Tool::curve_width`), with no limit.
+2. Then every band is set to the correction at its node of the curve those bands give (`Tool::curve` again), which keeps it within ±2 EV, as darktable's `set_new_params_interactive` and `pixel_correction` do.
 
 So after a drag the nodes sit on the curve. +1 EV at −4 EV from flat bands sets 0.96, 0.65, 0.09 and 0.04 EV from the −4 EV band out, and −0.01 at the ends, where the falloff alone gives 1, 0.61, 0.14, 0.01 and 0.0003. Under the pointer, a ring of radius σ/√2 on the curve shows how far a drag reaches, and the node in reach is filled.
 
@@ -167,8 +167,8 @@ What darktable's page has or does that the panel does not yet:
 - **Display exposure mask:** a `Row::Setting` toggle under every tab (`Definition::after`), drawn disabled at off. It is no control, since no edit stores a view mode (rule 10).
 - **Mask contrast compensation:** a `Row::When` on the Advanced tab following Preserve details on the Masking tab, for the guided filter and EIGF, as darktable's `show_guiding_controls` has it. `Definition::check` lets a `When` follow a control another tab shows outside any group or mode.
 - **Row ids:** Q, for tone eQualizer, since E, C, B, P, T, W and H are taken.
-- **The graph's row:** `Row::Custom` with `Widget::Equalizer` over the nine bands, as decision 19 has a custom row carry a readout. It is a second view of controls that have rows of their own, which `Definition::check` allows beside them: one equalizer a control at most, over number controls, the equalizer the only widget allowed so until another needs it. The curve is `Module::curve` of the first band, and the drag's reach `Module::curve_width`, a provided method.
-- **The graph while the tool is off:** a flat curve at 0 EV, as nothing is corrected (decision 32). On, `Module::curve` gives the curve the operation renders, darktable's ripple at the defaults, Q1, as darktable's graph draws it (decision 31).
+- **The graph's row:** `Row::Custom` with `Widget::Equalizer` over the nine bands, as decision 19 has a custom row carry a readout. It is a second view of controls that have rows of their own, which `Definition::check` allows beside them: one equalizer a control at most, over number controls, the equalizer the only widget allowed so until another needs it. The curve is `Tool::curve` of the first band, and the drag's reach `Tool::curve_width`, a provided method.
+- **The graph while the tool is off:** a flat curve at 0 EV, as nothing is corrected (decision 32). On, `Tool::curve` gives the curve the operation renders, darktable's ripple at the defaults, Q1, as darktable's graph draws it (decision 31).
 - **A drag's step:** darktable's: the bands raised by its falloff at the exposure the pointer left, with no limit, then each set to the correction at its node of the curve they give, which keeps it within ±2 EV. So a drag depends, as darktable's does, on how many steps the pointer took. The widget keeps the bands unrounded through the gesture, and the renderer rounds what it sends to the two decimals the sliders show. The falloff alone would leave the nodes off the curve, by up to 0.05 EV at the default smoothing and 0.24 EV at a smoothing of −1.
 - **A fit that fails:** the bands joined by straight lines in the warning colour, darktable's orange, and a drag's step undone, ending the drag, as darktable's; the operation refuses to prepare. Over the smoothing range the f64 fit never fails. Where the tool's code panics instead, the graph draws no curve and a drag moves nothing.
 - **The keys:** one focus stop, as the curve's, with the keys [above](#the-bands-graph). darktable's graph takes no keys.

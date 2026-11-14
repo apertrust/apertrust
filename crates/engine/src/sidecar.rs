@@ -50,7 +50,7 @@
 //! the binaries hand the engine). An edit a newer Apertrust wrote is told by what it holds
 //! ([`Newer`], decision 43): a file version above [`COPIES_VERSION`], read as this version
 //! lays it out, a module version above its definition's or no whole number, or a module
-//! this build neither has nor has retired (`apertrust_modules::RETIRED`), whose values a
+//! this build neither has nor has retired (`apertrust_tools::RETIRED`), whose values a
 //! save would lose, or a module turned on that this build does not switch (decision 32).
 //! So is one of whose history the text layer cannot read part ([`Problem`]). Such an edit
 //! opens for viewing only ([`ViewOnly`]); a retired module's values are left out with a
@@ -63,8 +63,8 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use apertrust_library::clock::{Clock, MachineId};
-use apertrust_modules::{ControlValue, Definition, Mark, Module, ModuleValues, check};
 use apertrust_plugin::{Operation, ParamValues};
+use apertrust_tools::{ControlValue, Definition, Mark, Tool, ToolValues, check};
 
 use apertrust_library::sidecar::{self as text, Document, Entry, FIRST_COPY, VirtualCopy};
 pub use apertrust_library::sidecar::{
@@ -126,7 +126,7 @@ pub fn write(
     path: &Path,
     edit: &Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     build: &str,
 ) -> io::Result<()> {
     write_xml(path, &to_xml(edit, operations, modules, build))
@@ -139,7 +139,7 @@ pub fn write_log(
     file: &Edits,
     log: &Log,
     clocks: &[Clock],
-    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
     build: &str,
 ) -> io::Result<()> {
     write_xml(
@@ -154,7 +154,7 @@ pub fn write_log(
 pub fn read(
     path: &Path,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     let loaded = from_edits(text::read_edits(path)?, operations, modules, retired);
@@ -171,7 +171,7 @@ pub fn read(
 pub fn to_xml(
     edit: &Edit,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     build: &str,
 ) -> String {
     let mut document = Document::new(build);
@@ -198,7 +198,7 @@ pub fn log_xml(
     file: &Edits,
     log: &Log,
     clocks: &[Clock],
-    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
     build: &str,
 ) -> String {
     let first = file.copies.first();
@@ -230,7 +230,7 @@ pub fn log_xml(
 pub fn from_xml(
     xml: &str,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     from_xml_at(xml, None, operations, modules, retired)
@@ -244,7 +244,7 @@ pub fn from_xml_at(
     xml: &str,
     modified: Option<SystemTime>,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     let modified = (modified.and_then(|modified| modified.duration_since(UNIX_EPOCH).ok()))
@@ -261,7 +261,7 @@ pub fn from_xml_at(
 fn from_edits(
     file: Edits,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     retired: &[&str],
 ) -> Loaded {
     let mut newer = file.newer();
@@ -340,13 +340,13 @@ fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
 fn read_entry(
     entry: Entry,
     warnings: &mut Vec<String>,
-    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+    (operations, modules): (&[&dyn Operation], &[&dyn Tool]),
     retired: &[&str],
 ) -> (Option<history::Entry>, Option<Newer>) {
     let mut read = Edit::default();
     match entry {
-        Entry::Module {
-            module,
+        Entry::Tool {
+            tool: module,
             version,
             kept,
             auto,
@@ -362,9 +362,9 @@ fn read_entry(
                 (enabled, controls),
             );
             let known = modules.iter().any(|m| m.definition().id == module);
-            let entry = (known || newer.is_some()).then(|| history::Entry::Module {
+            let entry = (known || newer.is_some()).then(|| history::Entry::Tool {
                 values: read.modules.remove(&module).unwrap_or_default(),
-                module,
+                tool: module,
             });
             (entry, newer)
         }
@@ -395,7 +395,7 @@ fn read_entry(
 
 /// A step as the text layer holds it: its id, clock, source, note and batch as text, and
 /// its entries each as version 1 writes one.
-fn step_text(step: &Step, operations: &[&dyn Operation], modules: &[&dyn Module]) -> text::Step {
+fn step_text(step: &Step, operations: &[&dyn Operation], modules: &[&dyn Tool]) -> text::Step {
     text::Step {
         id: step.id.to_string(),
         clock: Some(step.clock),
@@ -417,22 +417,23 @@ fn step_text(step: &Step, operations: &[&dyn Operation], modules: &[&dyn Module]
 fn entry_text(
     entry: &history::Entry,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
 ) -> Entry {
     match entry {
-        history::Entry::Module { module, values } => {
-            match modules.iter().find(|m| m.definition().id == module) {
-                Some(found) => module_entry(found.definition(), values),
-                None => Entry::Module {
-                    module: module.clone(),
-                    version: None,
-                    kept: Vec::new(),
-                    auto: Vec::new(),
-                    enabled: None,
-                    controls: Vec::new(),
-                },
-            }
-        }
+        history::Entry::Tool {
+            tool: module,
+            values,
+        } => match modules.iter().find(|m| m.definition().id == module) {
+            Some(found) => module_entry(found.definition(), values),
+            None => Entry::Tool {
+                tool: module.clone(),
+                version: None,
+                kept: Vec::new(),
+                auto: Vec::new(),
+                enabled: None,
+                controls: Vec::new(),
+            },
+        },
         history::Entry::Operation { operation, params } => {
             match operations.iter().find(|op| op.manifest().id == operation) {
                 Some(found) => operation_entry(*found, params),
@@ -448,7 +449,7 @@ fn entry_text(
 
 /// A module's state as its entry: its version, its marks, `enabled` where a switched module
 /// is on, and each control set, in the definition's order.
-fn module_entry(definition: &Definition, values: &ModuleValues) -> Entry {
+fn module_entry(definition: &Definition, values: &ToolValues) -> Entry {
     let marked = |mark| {
         definition
             .controls
@@ -458,8 +459,8 @@ fn module_entry(definition: &Definition, values: &ModuleValues) -> Entry {
             .map(str::to_owned)
             .collect()
     };
-    Entry::Module {
-        module: definition.id.to_owned(),
+    Entry::Tool {
+        tool: definition.id.to_owned(),
         version: Some(definition.version.to_string()),
         kept: marked(Mark::Kept),
         auto: marked(Mark::Auto),
@@ -498,7 +499,7 @@ fn operation_entry(operation: &dyn Operation, params: &ParamValues) -> Entry {
 fn read_module(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
-    (modules, retired): (&[&dyn Module], &[&str]),
+    (modules, retired): (&[&dyn Tool], &[&str]),
     (id, saved): (&str, Option<&str>),
     marks: [(Vec<String>, Mark); 2],
     (enabled, controls): (Option<String>, Vec<(String, String)>),
@@ -509,7 +510,7 @@ fn read_module(
             return None;
         }
         warnings.push(format!("no module {id}, a newer Apertrust's; left out"));
-        return Some(Newer::Module(id.to_owned()));
+        return Some(Newer::Tool(id.to_owned()));
     };
     let definition = module.definition();
     let has = definition.version;
@@ -526,7 +527,7 @@ fn read_module(
         Some("true") => (true, None),
         Some(other) => (false, Some(other.to_owned())),
     };
-    let mut values = ModuleValues::new();
+    let mut values = ToolValues::new();
     values.set_enabled(enabled);
     for (name, text) in controls {
         match definition.control(&name) {
@@ -559,8 +560,8 @@ fn read_module(
             warnings.push(format!(
                 "{id}: module version {saved}, newer than this build's {has}; controls read by name"
             ));
-            Some(Newer::ModuleVersion {
-                module: id.to_owned(),
+            Some(Newer::ToolVersion {
+                tool: id.to_owned(),
                 version: saved.to_owned(),
                 has,
             })
@@ -573,7 +574,7 @@ fn read_module(
         }
     };
     // What a migration gave back, and what was read, held to this version's controls.
-    let mut checked = ModuleValues::new();
+    let mut checked = ToolValues::new();
     for (name, value) in values.values() {
         let Some(control) = definition.control(name) else {
             warnings.push(format!("{id} has no control {name}; left out"));
@@ -623,8 +624,8 @@ fn read_module(
 /// for one off it here, and read as on.
 fn switch(
     definition: &Definition,
-    values: &ModuleValues,
-    checked: &mut ModuleValues,
+    values: &ToolValues,
+    checked: &mut ToolValues,
     warnings: &mut Vec<String>,
 ) -> Option<Newer> {
     let id = definition.id;
@@ -677,7 +678,7 @@ fn read_operation(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     (id, saved): (&str, Option<u32>),
     params: Vec<(String, String)>,
 ) {
@@ -736,13 +737,13 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use apertrust_library::sidecar::RDF_NAMESPACE as RDF;
-    use apertrust_modules::{
-        ChoiceStyle, Control, ControlKind, ControlValue, Definition, Owned, Row, Setting, Slider,
-        Tab, Widget,
-    };
     use apertrust_plugin::{
         Domain, ImageContext, Kernel, Kind, Manifest, NotPorted, Param, ParamValues, Prepared,
         Schema, Slot, Stage, Value,
+    };
+    use apertrust_tools::{
+        ChoiceStyle, Control, ControlKind, ControlValue, Definition, Owned, Row, Setting, Slider,
+        Tab, Widget,
     };
 
     use super::*;
@@ -945,7 +946,7 @@ pub(crate) mod tests {
         pickers: &[],
     };
 
-    impl Module for Look {
+    impl Tool for Look {
         fn definition(&self) -> &'static Definition {
             &LOOK
         }
@@ -959,9 +960,9 @@ pub(crate) mod tests {
 
         fn bind(
             &self,
-            values: &ModuleValues,
+            values: &ToolValues,
             _: &ImageContext,
-            _: &apertrust_modules::Base,
+            _: &apertrust_tools::Base,
         ) -> Vec<Setting> {
             values
                 .number("strength")
@@ -970,7 +971,7 @@ pub(crate) mod tests {
                 .collect()
         }
 
-        fn migrate(&self, from: u32, mut values: ModuleValues) -> ModuleValues {
+        fn migrate(&self, from: u32, mut values: ToolValues) -> ToolValues {
             if from < 2
                 && let Some(amount) = values.remove("amount")
             {
@@ -981,7 +982,7 @@ pub(crate) mod tests {
     }
 
     const OPERATIONS: &[&dyn Operation] = &[&Fake, &Optional];
-    const MODULES: &[&dyn Module] = &[&Look];
+    const TOOLS: &[&dyn Tool] = &[&Look];
     /// The build the tests' edits are written by, a development build's version.
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
@@ -991,28 +992,28 @@ pub(crate) mod tests {
             &Look,
             "strength",
             ControlValue::Number(0.1 + 0.2),
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         )
         .unwrap();
         edit.set_control(
             &Look,
             "style",
             ControlValue::Choice(1),
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         )
         .unwrap();
         edit.set_control(
             &Look,
             "preserve",
             ControlValue::Bool(false),
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         )
         .unwrap();
         edit.set_control(
             &Look,
             "curve",
             ControlValue::Points(vec![[0.25, 0.2], [0.75, 0.8]]),
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         )
         .unwrap();
         // Released, keeping its value, so not every set control is kept.
@@ -1023,7 +1024,7 @@ pub(crate) mod tests {
             ("mode", Value::Choice(1)),
             ("on", Value::Bool(false)),
         ] {
-            edit.set_param(OPERATIONS, MODULES, "fake", name, value)
+            edit.set_param(OPERATIONS, TOOLS, "fake", name, value)
                 .unwrap();
         }
         edit
@@ -1053,7 +1054,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_edit_reads_back_exactly() {
-        let xml = to_xml(&edited(), OPERATIONS, MODULES, BUILD);
+        let xml = to_xml(&edited(), OPERATIONS, TOOLS, BUILD);
         for written in [
             r#"apertrust:version="1""#,
             r#"apertrust:module="look""#,
@@ -1065,7 +1066,7 @@ pub(crate) mod tests {
         ] {
             assert!(xml.contains(written), "{written} in {xml}");
         }
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.version, 1);
         assert_eq!(loaded.edit, edited());
@@ -1074,24 +1075,24 @@ pub(crate) mod tests {
 
     #[test]
     fn an_edit_records_the_build_that_wrote_it() {
-        let xml = to_xml(&edited(), OPERATIONS, MODULES, BUILD);
+        let xml = to_xml(&edited(), OPERATIONS, TOOLS, BUILD);
         assert!(
             xml.contains(r#"x:xmptk="Apertrust 0.4.0+12~g1a2b3c4""#),
             "{xml}"
         );
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.build.as_deref(), Some(BUILD));
         // A packager's version is written as given, escaped.
-        let xml = to_xml(&edited(), OPERATIONS, MODULES, "1.0 \"R&D\"");
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let xml = to_xml(&edited(), OPERATIONS, TOOLS, "1.0 \"R&D\"");
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.build.as_deref(), Some("1.0 \"R&D\""));
         // A file that names no Apertrust build, as one another tool rewrote, or an empty
         // one.
-        let loaded = from_xml(&version_1(""), OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&version_1(""), OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.build, None);
-        let xml = to_xml(&edited(), OPERATIONS, MODULES, " ");
+        let xml = to_xml(&edited(), OPERATIONS, TOOLS, " ");
         assert!(xml.contains(r#"x:xmptk="Apertrust  ""#), "{xml}");
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.build, None);
     }
 
@@ -1102,22 +1103,22 @@ pub(crate) mod tests {
             &Look,
             "curve",
             ControlValue::Points(Vec::new()),
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         )
         .unwrap();
-        let xml = to_xml(&edit, OPERATIONS, MODULES, BUILD);
+        let xml = to_xml(&edit, OPERATIONS, TOOLS, BUILD);
         assert!(xml.contains(r#"control:curve="""#), "{xml}");
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.edit, edit);
     }
 
     #[test]
     fn an_empty_edit_is_written_and_reads_back_empty() {
-        let xml = to_xml(&Edit::default(), OPERATIONS, MODULES, BUILD);
+        let xml = to_xml(&Edit::default(), OPERATIONS, TOOLS, BUILD);
         assert!(!xml.contains("apertrust:operation="), "{xml}");
         assert!(!xml.contains("apertrust:module="), "{xml}");
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.edit.is_empty());
         assert!(loaded.warnings.is_empty());
     }
@@ -1126,16 +1127,16 @@ pub(crate) mod tests {
     fn a_kept_control_without_a_value_reads_back() {
         let mut edit = Edit::default();
         edit.keep(&Look, "strength", true).unwrap();
-        let xml = to_xml(&edit, OPERATIONS, MODULES, BUILD);
+        let xml = to_xml(&edit, OPERATIONS, TOOLS, BUILD);
         assert!(!xml.contains("control:strength"), "{xml}");
-        assert_eq!(from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap().edit, edit);
+        assert_eq!(from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap().edit, edit);
     }
 
     #[test]
     fn what_cannot_be_used_is_left_out_or_clamped_with_a_warning() {
         let xml =
             version_0(r#"p:amount="9" p:level="x" p:mode="medium" p:unknown="1" p:on="true""#);
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         let params = &loaded.edit.params["fake"];
         assert_eq!(params.get("amount"), Some(Value::Float(4.0)));
         assert_eq!(params.get("on"), Some(Value::Bool(true)));
@@ -1147,7 +1148,7 @@ pub(crate) mod tests {
             r#"apertrust:module="look" apertrust:moduleVersion="2" apertrust:kept="strength grain"
                c:strength="1.5" c:style="medium" c:grain="1" c:curve="0,0 0.5""#,
         );
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         let values = &loaded.edit.modules["look"];
         assert_eq!(values.number("strength"), Some(1.0));
         assert_eq!(values.mark("strength"), Some(Mark::Kept));
@@ -1159,7 +1160,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_option_not_ported_is_left_out_with_a_warning() {
-        use apertrust_modules::testing::Sample;
+        use apertrust_tools::testing::Sample;
         let xml = version_1(
             r#"apertrust:module="sample" apertrust:moduleVersion="1" c:method="film" c:size="fine""#,
         );
@@ -1181,7 +1182,7 @@ pub(crate) mod tests {
             "</rdf:li></rdf:Seq>",
             r#"</rdf:li><rdf:li><rdf:Description apertrust:operation="optional" apertrust:schema="2" p:amount="1"/></rdf:li></rdf:Seq>"#,
         );
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.version, 0);
         assert_eq!(loaded.edit.params.len(), 1);
         let params = &loaded.edit.params["fake"];
@@ -1199,10 +1200,10 @@ pub(crate) mod tests {
             loaded.warnings
         );
         // Saved again, it is version 1.
-        let saved = to_xml(&loaded.edit, OPERATIONS, MODULES, BUILD);
+        let saved = to_xml(&loaded.edit, OPERATIONS, TOOLS, BUILD);
         assert!(saved.contains(r#"apertrust:version="1""#));
         assert_eq!(
-            from_xml(&saved, OPERATIONS, MODULES, &[]).unwrap().edit,
+            from_xml(&saved, OPERATIONS, TOOLS, &[]).unwrap().edit,
             loaded.edit
         );
     }
@@ -1212,18 +1213,18 @@ pub(crate) mod tests {
         let older = version_1(
             r#"apertrust:module="look" apertrust:moduleVersion="1" apertrust:kept="strength" c:amount="0.25""#,
         );
-        let loaded = from_xml(&older, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&older, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.edit.modules["look"].number("strength"), Some(0.25));
         assert_eq!(loaded.newer, None);
         let newer = older.replace(r#"moduleVersion="1""#, r#"moduleVersion="3""#);
-        let loaded = from_xml(&newer, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&newer, OPERATIONS, TOOLS, &[]).unwrap();
         // Read by name: amount is no control of version 2.
         assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
         assert_eq!(
             loaded.newer,
-            Some(Newer::ModuleVersion {
-                module: "look".to_owned(),
+            Some(Newer::ToolVersion {
+                tool: "look".to_owned(),
                 version: "3".to_owned(),
                 has: 2
             })
@@ -1231,21 +1232,21 @@ pub(crate) mod tests {
         // A version that is no whole number is none this build knows, and is kept as
         // written.
         let unreadable = older.replace(r#"moduleVersion="1""#, r#"moduleVersion="2.0""#);
-        let loaded = from_xml(&unreadable, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&unreadable, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(
             loaded.newer,
-            Some(Newer::ModuleVersion {
-                module: "look".to_owned(),
+            Some(Newer::ToolVersion {
+                tool: "look".to_owned(),
                 version: "2.0".to_owned(),
                 has: 2
             })
         );
         assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
         let unknown = older.replace(r#"module="look""#, r#"module="lens""#);
-        let loaded = from_xml(&unknown, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&unknown, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.edit.is_empty());
         assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
-        assert_eq!(loaded.newer, Some(Newer::Module("lens".to_owned())));
+        assert_eq!(loaded.newer, Some(Newer::Tool("lens".to_owned())));
     }
 
     /// A module Apertrust has retired, as the Tone curve's `tone_curve` once RGB curve
@@ -1257,7 +1258,7 @@ pub(crate) mod tests {
                 "</rdf:Seq></apertrust:modules>",
                 r#"<rdf:li><rdf:Description apertrust:module="look" apertrust:moduleVersion="2" c:strength="0.5"/></rdf:li></rdf:Seq></apertrust:modules>"#,
             );
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &["lens"]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &["lens"]).unwrap();
         assert_eq!(loaded.newer, None);
         assert!(
             matches!(&loaded.warnings[..], [w] if w.contains("lens is retired")),
@@ -1267,7 +1268,7 @@ pub(crate) mod tests {
         assert_eq!(loaded.edit.modules.len(), 1);
         assert_eq!(loaded.edit.modules["look"].number("strength"), Some(0.5));
         // A module the build has wins over a retired id it took again.
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &["look", "lens"]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &["look", "lens"]).unwrap();
         assert_eq!(loaded.edit.modules["look"].number("strength"), Some(0.5));
     }
 
@@ -1277,7 +1278,7 @@ pub(crate) mod tests {
     /// Contrast is not set from them (decision 2: no released edit holds them).
     #[test]
     fn exposure_s_version_1_exposure_contrast_and_pivot_are_left_out_and_the_rest_reads() {
-        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_modules::MODULES);
+        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
         let xml = version_1(
             r#"apertrust:module="exposure" apertrust:moduleVersion="1" apertrust:kept="exposure contrast black_level" c:exposure="0.5" c:contrast="12" c:pivot="25" c:black_level="0.01""#,
         );
@@ -1298,11 +1299,11 @@ pub(crate) mod tests {
             r#"apertrust:operation="fake""#,
             r#"apertrust:operation="lens""#,
         );
-        let loaded = from_xml(&other, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&other, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
         let older = version_0(r#"p:amount="1""#)
             .replace(r#"apertrust:schema="2""#, r#"apertrust:schema="1""#);
-        let loaded = from_xml(&older, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&older, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(
             loaded.edit.params["fake"].get("amount"),
             Some(Value::Float(1.0))
@@ -1317,14 +1318,14 @@ pub(crate) mod tests {
             std::env::temp_dir().join(format!("apertrust-sidecar-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = path_for(&directory.join("IMG.ARW"));
-        write(&path, &edited(), OPERATIONS, MODULES, BUILD).unwrap();
-        let loaded = read(&path, OPERATIONS, MODULES, &[]).unwrap();
+        write(&path, &edited(), OPERATIONS, TOOLS, BUILD).unwrap();
+        let loaded = read(&path, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.edit, edited());
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         // A foreign or unreadable file is refused as the text layer says.
         std::fs::write(&path, "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>").unwrap();
         assert!(matches!(
-            read(&path, OPERATIONS, MODULES, &[]),
+            read(&path, OPERATIONS, TOOLS, &[]),
             Err(SidecarError::NotAnEdit)
         ));
         std::fs::remove_dir_all(&directory).unwrap();
@@ -1335,22 +1336,22 @@ pub(crate) mod tests {
     #[test]
     fn the_version_1_fixture_reads_with_no_warning_and_writes_back_byte_for_byte() {
         let fixture = include_str!("../../library/tests/fixtures/version-1.apxmp");
-        let loaded = from_xml(fixture, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(fixture, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.edit, edited());
         assert_eq!(loaded.newer, None);
-        assert_eq!(to_xml(&loaded.edit, OPERATIONS, MODULES, BUILD), fixture);
+        assert_eq!(to_xml(&loaded.edit, OPERATIONS, TOOLS, BUILD), fixture);
     }
 
     /// Grain, a switched module (decision 32), with the fake's modules.
-    const WITH_GRAIN: &[&dyn Module] = &[&Look, &apertrust_modules::grain::Grain];
+    const WITH_GRAIN: &[&dyn Tool] = &[&Look, &apertrust_tools::grain::Grain];
 
     /// A switched module on writes `enabled`, with only its values off darktable's
     /// defaults, none at them; one off, only its marks, and nothing at all untouched.
     #[test]
     fn a_switched_module_on_writes_enabled_and_one_off_no_values() {
-        use apertrust_modules::grain::Grain;
-        let image = apertrust_modules::testing::image();
+        use apertrust_tools::grain::Grain;
+        let image = apertrust_tools::testing::image();
         let mut edit = Edit::default();
         edit.set_control(&Grain, "strength", ControlValue::Number(25.0), &image)
             .unwrap();
@@ -1376,7 +1377,7 @@ pub(crate) mod tests {
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert_eq!(loaded.edit, off);
         assert!(!loaded.edit.is_on(&Grain));
-        off.reset_module(&Grain);
+        off.reset_tool(&Grain);
         let xml = to_xml(&off, OPERATIONS, WITH_GRAIN, BUILD);
         assert!(!xml.contains("grain"), "{xml}");
     }
@@ -1386,14 +1387,14 @@ pub(crate) mod tests {
     /// with no warning, and writes back as version 2.
     #[test]
     fn a_version_1_entry_of_a_switched_module_reads_on_where_it_rendered() {
-        use apertrust_modules::grain::Grain;
+        use apertrust_tools::grain::Grain;
         let xml = version_1(
             r#"apertrust:module="grain" apertrust:moduleVersion="1" apertrust:kept="strength" c:strength="37.3" c:scale="800""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert!(loaded.edit.is_on(&Grain));
-        let values = loaded.edit.module("grain").unwrap();
+        let values = loaded.edit.tool("grain").unwrap();
         assert_eq!(values.number("strength"), Some(37.3));
         assert_eq!(values.number("scale"), Some(800.0));
         let written = to_xml(&loaded.edit, OPERATIONS, WITH_GRAIN, BUILD);
@@ -1415,7 +1416,7 @@ pub(crate) mod tests {
     /// newer build's, so the photo opens for viewing only.
     #[test]
     fn enabled_is_repaired_or_read_as_a_newer_build_s() {
-        use apertrust_modules::grain::Grain;
+        use apertrust_tools::grain::Grain;
         let xml =
             version_1(r#"apertrust:module="grain" apertrust:moduleVersion="2" c:strength="40""#);
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
@@ -1432,14 +1433,14 @@ pub(crate) mod tests {
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert_eq!(loaded.newer, Some(Newer::Enabled("look".to_owned())));
         assert!(loaded.view_only().is_some());
-        assert!(!loaded.edit.module("look").unwrap().enabled());
+        assert!(!loaded.edit.tool("look").unwrap().enabled());
     }
 
     /// `enabled` holding anything but `true` is a newer build's, which a save would lose:
     /// the photo opens for viewing only, the module read as if it had none.
     #[test]
     fn enabled_other_than_true_is_a_newer_build_s() {
-        use apertrust_modules::grain::Grain;
+        use apertrust_tools::grain::Grain;
         for text in ["false", "1"] {
             let xml = version_1(&format!(
                 r#"apertrust:module="grain" apertrust:moduleVersion="2" apertrust:enabled="{text}""#
@@ -1472,8 +1473,8 @@ pub(crate) mod tests {
 
     /// Look's values in `edit`.
     fn look(edit: &Edit) -> history::Entry {
-        history::Entry::Module {
-            module: "look".to_owned(),
+        history::Entry::Tool {
+            tool: "look".to_owned(),
             values: edit.modules["look"].clone(),
         }
     }
@@ -1489,7 +1490,7 @@ pub(crate) mod tests {
             &Look,
             "strength",
             ControlValue::Number(0.75),
-            &apertrust_modules::testing::image(),
+            &apertrust_tools::testing::image(),
         ))
         .unwrap();
         let step = |id: u64, counter: u32, change| Step {
@@ -1534,9 +1535,9 @@ pub(crate) mod tests {
                     5,
                     5,
                     Change::Reset(vec![
-                        history::Entry::Module {
-                            module: "look".to_owned(),
-                            values: ModuleValues::new(),
+                        history::Entry::Tool {
+                            tool: "look".to_owned(),
+                            values: ToolValues::new(),
                         },
                         history::Entry::Operation {
                             operation: "fake".to_owned(),
@@ -1555,7 +1556,7 @@ pub(crate) mod tests {
         let (log, clocks) = logged();
         let mut file = Edits::new("");
         file.photo = Some("IMG.ARW".to_owned());
-        log_xml(&file, &log, &clocks, (OPERATIONS, MODULES), BUILD)
+        log_xml(&file, &log, &clocks, (OPERATIONS, TOOLS), BUILD)
     }
 
     /// A log written as version 2 reads back as it was, its steps, their ids, clocks,
@@ -1579,7 +1580,7 @@ pub(crate) mod tests {
         ] {
             assert!(xml.contains(written), "{written} in {xml}");
         }
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert!(loaded.problems.is_empty(), "{:?}", loaded.problems);
         assert_eq!(loaded.view_only(), None);
@@ -1593,22 +1594,16 @@ pub(crate) mod tests {
             &loaded.file,
             &loaded.log,
             loaded.clocks(),
-            (OPERATIONS, MODULES),
+            (OPERATIONS, TOOLS),
             BUILD,
         );
         assert_eq!(again, xml);
         // At Original, the end empty.
         let mut original = log.clone();
         original.set_end(0);
-        let xml = log_xml(
-            &Edits::new(""),
-            &original,
-            &[],
-            (OPERATIONS, MODULES),
-            BUILD,
-        );
+        let xml = log_xml(&Edits::new(""), &original, &[], (OPERATIONS, TOOLS), BUILD);
         assert!(xml.contains(r#"apertrust:end="""#), "{xml}");
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!((loaded.log.end(), loaded.edit.is_empty()), (0, true));
     }
 
@@ -1627,10 +1622,10 @@ pub(crate) mod tests {
         let rating = Name::new("xmp", "http://ns.adobe.com/xap/1.0/", "Rating");
         file.other.push(Property::simple(rating, "3"));
         let xml = file.to_xml();
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         let (mut log, clocks) = logged();
         log.set_end(1);
-        let written = log_xml(&loaded.file, &log, &clocks, (OPERATIONS, MODULES), BUILD);
+        let written = log_xml(&loaded.file, &log, &clocks, (OPERATIONS, TOOLS), BUILD);
         let read = Edits::parse(&written, 0).unwrap();
         assert_eq!(read.copies.len(), 2);
         assert_eq!(read.copies[0].end, "00000000000000a1");
@@ -1643,7 +1638,7 @@ pub(crate) mod tests {
     #[test]
     fn a_newer_file_version_reads_as_this_one_and_is_newer() {
         let xml = logged_xml().replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#);
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.version, 3);
         assert_eq!(loaded.edit, edited());
         assert_eq!(loaded.newer, Some(Newer::Version(3)));
@@ -1769,7 +1764,7 @@ pub(crate) mod tests {
         let cases = damaged();
         assert_eq!(cases.len(), 13, "one case of each kind of problem");
         for (name, xml) in cases {
-            let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+            let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
             assert_eq!(loaded.newer, None, "{name}");
             let view_only = loaded.view_only().unwrap_or_else(|| panic!("{name}"));
             let Reason::Unreadable(problem) = &view_only.reason else {
@@ -1796,9 +1791,9 @@ pub(crate) mod tests {
         let xml = logged_xml();
         let first = r#"apertrust:moduleVersion="2""#;
         let newer = xml.replacen(first, r#"apertrust:moduleVersion="3""#, 1);
-        let loaded = from_xml(&newer, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&newer, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(
-            matches!(&loaded.newer, Some(Newer::ModuleVersion { version, .. }) if version == "3"),
+            matches!(&loaded.newer, Some(Newer::ToolVersion { version, .. }) if version == "3"),
             "{:?}",
             loaded.newer
         );
@@ -1807,7 +1802,7 @@ pub(crate) mod tests {
         let older = xml
             .replacen(first, r#"apertrust:moduleVersion="1""#, 1)
             .replacen("control:strength=", "control:amount=", 1);
-        let loaded = from_xml(&older, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&older, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.view_only(), None);
         assert_eq!(loaded.log, logged().0);
@@ -1818,7 +1813,7 @@ pub(crate) mod tests {
             r#"apertrust:operation="lens""#,
             1,
         );
-        let loaded = from_xml(&unknown, OPERATIONS, MODULES, &[]).unwrap();
+        let loaded = from_xml(&unknown, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.view_only(), None);
         assert_eq!(loaded.warnings, ["no operation lens; left out"]);
         let ids: Vec<u64> = loaded.log.steps().iter().map(|step| step.id.0).collect();
@@ -1830,19 +1825,19 @@ pub(crate) mod tests {
     /// reads back as the same log.
     #[test]
     fn a_version_1_file_is_written_back_as_version_2() {
-        let xml = to_xml(&edited(), OPERATIONS, MODULES, BUILD);
-        let loaded = from_xml(&xml, OPERATIONS, MODULES, &[]).unwrap();
+        let xml = to_xml(&edited(), OPERATIONS, TOOLS, BUILD);
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(loaded.version, 1);
         assert_eq!(loaded.log.steps().len(), 2);
         let written = log_xml(
             &loaded.file,
             &loaded.log,
             loaded.clocks(),
-            (OPERATIONS, MODULES),
+            (OPERATIONS, TOOLS),
             BUILD,
         );
         assert!(written.contains(r#"apertrust:version="2""#), "{written}");
-        let again = from_xml(&written, OPERATIONS, MODULES, &[]).unwrap();
+        let again = from_xml(&written, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(again.log, loaded.log);
         assert_eq!(again.edit, edited());
         assert_eq!(again.clocks(), loaded.clocks());
@@ -1856,7 +1851,7 @@ pub(crate) mod tests {
     /// edit each folds to.
     fn two_logs(steps: usize) -> [(String, Edit); 2] {
         [0.25, 0.75].map(|last| {
-            let image = apertrust_modules::testing::image();
+            let image = apertrust_tools::testing::image();
             let mut log = Log::default();
             let mut edit = Edit::default();
             for step in 0..steps {
@@ -1880,7 +1875,7 @@ pub(crate) mod tests {
                 })
                 .collect();
             let log = Log::from_steps(steps, usize::MAX);
-            let xml = log_xml(&Edits::new(""), &log, &[], (OPERATIONS, MODULES), BUILD);
+            let xml = log_xml(&Edits::new(""), &log, &[], (OPERATIONS, TOOLS), BUILD);
             (xml, edit)
         })
     }
@@ -1931,7 +1926,7 @@ pub(crate) mod tests {
             child.kill().unwrap();
             child.wait().unwrap();
             let xml = std::fs::read_to_string(&path).unwrap();
-            let loaded = from_xml(&xml, OPERATIONS, MODULES, &[])
+            let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[])
                 .unwrap_or_else(|error| panic!("round {round}: {error}"));
             let which = (logs.iter())
                 .position(|(written, _)| *written == xml)
@@ -1963,9 +1958,9 @@ pub(crate) mod tests {
     #[test]
     #[ignore = "a measurement, run on its own in release"]
     fn a_1000_step_log_reads_within_20_ms_and_writes_within_50_ms() {
-        use apertrust_modules::exposure::Exposure;
-        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_modules::MODULES);
-        let image = apertrust_modules::testing::image();
+        use apertrust_tools::exposure::Exposure;
+        let (operations, modules) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
+        let image = apertrust_tools::testing::image();
         let mut log = Log::default();
         let mut edit = Edit::default();
         let mut clocks = Vec::new();

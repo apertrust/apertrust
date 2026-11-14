@@ -24,12 +24,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use apertrust_modules::check::{self, ModuleError};
-use apertrust_modules::{
-    Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, Mark, Module,
-    ModuleValues, Picker, Range, Unit, View,
-};
 use apertrust_plugin::{ImageContext, Operation, Param, ParamError, ParamValues, Value};
+use apertrust_tools::check::{self, ToolError};
+use apertrust_tools::{
+    Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, Mark, Picker,
+    Range, Tool, ToolValues, Unit, View,
+};
 use thiserror::Error;
 
 use crate::pipeline::Instance;
@@ -40,7 +40,7 @@ use crate::pipeline::Instance;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Edit {
     /// Each module the edit touches, by id: the controls set and their marks.
-    pub(crate) modules: BTreeMap<String, ModuleValues>,
+    pub(crate) modules: BTreeMap<String, ToolValues>,
     /// Parameters no module owns, of operations an unedited photo runs, by operation id.
     pub(crate) params: BTreeMap<String, ParamValues>,
     /// The default modules not applied: the history's end lies before
@@ -53,48 +53,42 @@ pub struct Edit {
 /// A change an edit refuses, or a binding that sets what it may not.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum EditError {
-    #[error("no module {0}")]
-    UnknownModule(String),
-    #[error("{module} has no control {control}")]
-    UnknownControl {
-        module: &'static str,
-        control: String,
-    },
-    #[error("{module}: {source}")]
+    #[error("no tool {0}")]
+    UnknownTool(String),
+    #[error("{tool} has no control {control}")]
+    UnknownControl { tool: &'static str, control: String },
+    #[error("{tool}: {source}")]
     Control {
-        module: &'static str,
+        tool: &'static str,
         source: ControlError,
     },
     /// An option of the choice that this photo does not list (decision 30), as
     /// demosaic's other sensor's methods: only an edit from another photo holds one.
-    #[error("{module}.{control}: this photo does not list {option}")]
+    #[error("{tool}.{control}: this photo does not list {option}")]
     NotListed {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         option: &'static str,
     },
-    #[error("{module} has no preset row {preset}")]
-    UnknownPreset {
-        module: &'static str,
-        preset: String,
-    },
-    #[error("{module}.{preset} has no option {option}")]
+    #[error("{tool} has no preset row {preset}")]
+    UnknownPreset { tool: &'static str, preset: String },
+    #[error("{tool}.{preset} has no option {option}")]
     UnknownOption {
-        module: &'static str,
+        tool: &'static str,
         preset: &'static str,
         option: String,
     },
-    #[error("{module}.{preset}: this photo cannot have {option}")]
+    #[error("{tool}.{preset}: this photo cannot have {option}")]
     Unavailable {
-        module: &'static str,
+        tool: &'static str,
         preset: &'static str,
         option: &'static str,
     },
     /// The module's own fault, never the user's: its preset panicked for `option`, gave a
     /// value its control cannot take, or gave none for a control the row writes.
-    #[error("{module}.{preset}: {option} failed: {message}")]
+    #[error("{tool}.{preset}: {option} failed: {message}")]
     PresetFailed {
-        module: &'static str,
+        tool: &'static str,
         preset: &'static str,
         option: &'static str,
         message: String,
@@ -103,43 +97,43 @@ pub enum EditError {
     /// control the picker does not write, of a value its control cannot take, of a
     /// choice's option the photo does not list, or a pick that panicked. The module's
     /// fault; nothing is written.
-    #[error("{module}'s picker {picker} failed: {message}")]
+    #[error("{tool}'s picker {picker} failed: {message}")]
     PickFailed {
-        module: &'static str,
+        tool: &'static str,
         picker: &'static str,
         message: String,
     },
     /// A coordinate's value, within its own range, that would put one of its view's
     /// controls outside its range.
-    #[error("{module}.{coordinate} refused: {source}")]
+    #[error("{tool}.{coordinate} refused: {source}")]
     Coordinate {
-        module: &'static str,
+        tool: &'static str,
         coordinate: &'static str,
         source: ControlError,
     },
     /// The module's own fault, never the user's: its view or its inverse panicked, gave no
     /// coordinates or not one for each, or gave no finite number for a control the view
     /// covers.
-    #[error("{module}.{view} failed: {message}")]
+    #[error("{tool}.{view} failed: {message}")]
     ViewFailed {
-        module: &'static str,
+        tool: &'static str,
         view: &'static str,
         message: String,
     },
     /// The module's own fault, never the user's: its follow writes for `control` panicked,
     /// named a control it lacks or one the change set itself, or gave a value its control
     /// cannot take (decision 27).
-    #[error("{module}: following {control} failed: {message}")]
+    #[error("{tool}: following {control} failed: {message}")]
     FollowFailed {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
         message: String,
     },
     /// The module's own fault, never the user's: a change moved the range of a control it
     /// wrote itself, the command's or a follow write's, leaving it outside (decision 30).
-    #[error("{module}: the change moved {control}'s range away from the value it wrote")]
+    #[error("{tool}: the change moved {control}'s range away from the value it wrote")]
     ClampFailed {
-        module: &'static str,
+        tool: &'static str,
         control: &'static str,
     },
     #[error("no operation {0}")]
@@ -149,33 +143,33 @@ pub enum EditError {
         operation: &'static str,
         source: ParamError,
     },
-    #[error("{operation}.{param} belongs to the module {module}, which sets it")]
+    #[error("{operation}.{param} belongs to the tool {tool}, which sets it")]
     Owned {
         operation: &'static str,
         param: &'static str,
-        module: &'static str,
+        tool: &'static str,
     },
     /// A parameter its module owns with no control, holding it at the operation's value
-    /// for the photo (`Module::fixed`), as Raw black/white point holds the crop.
-    #[error("{operation}.{param} is fixed by the module {module}")]
+    /// for the photo (`Tool::fixed`), as Raw black/white point holds the crop.
+    #[error("{operation}.{param} is fixed by the tool {tool}")]
     Fixed {
         operation: &'static str,
         param: &'static str,
-        module: &'static str,
+        tool: &'static str,
     },
-    #[error("{operation} runs only while a module sets it, so only modules set its parameters")]
+    #[error("{operation} runs only while a tool sets it, so only tools set its parameters")]
     Optional { operation: &'static str },
-    #[error("the module {module}: {source}")]
+    #[error("the tool {tool}: {source}")]
     Binding {
-        module: &'static str,
-        source: ModuleError,
+        tool: &'static str,
+        source: ToolError,
     },
 }
 
 impl Edit {
     /// Nothing set and nothing marked: the photo as Apertrust first shows it.
     pub fn is_empty(&self) -> bool {
-        self.modules.values().all(ModuleValues::is_empty)
+        self.modules.values().all(ToolValues::is_empty)
             && self.params.values().all(|p| p.iter().next().is_none())
     }
 
@@ -187,12 +181,12 @@ impl Edit {
     }
 
     /// The values of the module called `id`, if the edit touches it.
-    pub fn module(&self, id: &str) -> Option<&ModuleValues> {
+    pub fn tool(&self, id: &str) -> Option<&ToolValues> {
         self.modules.get(id)
     }
 
     /// Every module the edit touches, by id.
-    pub fn modules(&self) -> impl Iterator<Item = (&str, &ModuleValues)> {
+    pub fn tools(&self) -> impl Iterator<Item = (&str, &ToolValues)> {
         self.modules
             .iter()
             .map(|(id, values)| (id.as_str(), values))
@@ -204,13 +198,13 @@ impl Edit {
     }
 
     /// Sets a control, refusing a value of another kind, a number outside the range the
-    /// module's values give it now (`Module::range`, decision 30), the definition's where
+    /// module's values give it now (`Tool::range`, decision 30), the definition's where
     /// the module's defaults for the photo panic, and a choice's option the photo, `image`,
     /// does not list (decision 30). Setting a control keeps it, so Auto and Match leave it
     /// alone, and turns a switched module on, whatever the value (decision 32).
     pub fn set_control(
         &mut self,
-        module: &dyn Module,
+        module: &dyn Tool,
         control: &str,
         value: ControlValue,
         image: &ImageContext,
@@ -218,7 +212,7 @@ impl Edit {
         let (id, control) = find_control(module, control)?;
         control
             .check(&value)
-            .map_err(|source| EditError::Control { module: id, source })?;
+            .map_err(|source| EditError::Control { tool: id, source })?;
         // A module's code may panic, as its binding is guarded against: the range is then
         // the definition's, which the check above holds the value to.
         let range = || {
@@ -235,11 +229,11 @@ impl Edit {
                 min: f64::from(range.min),
                 max: f64::from(range.max),
             };
-            return Err(EditError::Control { module: id, source });
+            return Err(EditError::Control { tool: id, source });
         }
         if let Some(option) = unlisted(module, control, &value, image) {
             return Err(EditError::NotListed {
-                module: id,
+                tool: id,
                 control: control.id,
                 option,
             });
@@ -253,7 +247,7 @@ impl Edit {
 
     /// Turns a switched module on (decision 32), as every write of one of its controls
     /// does; a module that is not switched is always on, and stays as it is.
-    fn switch_on(&mut self, module: &dyn Module) {
+    fn switch_on(&mut self, module: &dyn Tool) {
         let definition = module.definition();
         if definition.switched {
             let values = self.modules.entry(definition.id.to_owned()).or_default();
@@ -263,10 +257,10 @@ impl Edit {
 
     /// Whether the module renders: a switched module while it is on (decision 32), every
     /// other but while the history's end lies before its default step (decision 78).
-    pub fn is_on(&self, module: &dyn Module) -> bool {
+    pub fn is_on(&self, module: &dyn Tool) -> bool {
         let definition = module.definition();
         if definition.switched {
-            (self.modules.get(definition.id)).is_some_and(ModuleValues::enabled)
+            (self.modules.get(definition.id)).is_some_and(ToolValues::enabled)
         } else {
             !self.unapplied.contains(definition.id)
         }
@@ -274,7 +268,7 @@ impl Edit {
 
     /// Takes a control back to its default for the photo, no longer kept. A switched
     /// module on stays on (decision 32).
-    pub fn reset_control(&mut self, module: &dyn Module, control: &str) -> Result<(), EditError> {
+    pub fn reset_control(&mut self, module: &dyn Tool, control: &str) -> Result<(), EditError> {
         let (id, control) = find_control(module, control)?;
         if let Some(values) = self.modules.get_mut(id) {
             values.remove(control.id);
@@ -294,7 +288,7 @@ impl Edit {
     /// (decision 32).
     pub fn apply_preset(
         &mut self,
-        module: &dyn Module,
+        module: &dyn Tool,
         preset: &str,
         option: &str,
         image: &ImageContext,
@@ -304,7 +298,7 @@ impl Edit {
         let row = definition
             .preset(preset)
             .ok_or_else(|| EditError::UnknownPreset {
-                module: id,
+                tool: id,
                 preset: preset.to_owned(),
             })?;
         let option = row
@@ -313,12 +307,12 @@ impl Edit {
             .copied()
             .find(|candidate| *candidate == option)
             .ok_or_else(|| EditError::UnknownOption {
-                module: id,
+                tool: id,
                 preset: row.id,
                 option: option.to_owned(),
             })?;
         let failed = |message: String| EditError::PresetFailed {
-            module: id,
+            tool: id,
             preset: row.id,
             option,
             message,
@@ -328,7 +322,7 @@ impl Edit {
         let given = catch_unwind(AssertUnwindSafe(|| module.preset(row.id, option, image)))
             .map_err(|panic| failed(panic_message(panic.as_ref())))?
             .ok_or(EditError::Unavailable {
-                module: id,
+                tool: id,
                 preset: row.id,
                 option,
             })?;
@@ -369,14 +363,14 @@ impl Edit {
     /// written. It turns a switched module on (decision 32).
     pub fn pick(
         &mut self,
-        module: &dyn Module,
+        module: &dyn Tool,
         picker: &Picker,
         writes: &Controls,
         image: &ImageContext,
     ) -> Result<(), EditError> {
         let id = module.definition().id;
         let failed = |message: String| EditError::PickFailed {
-            module: id,
+            tool: id,
             picker: picker.id,
             message,
         };
@@ -423,14 +417,14 @@ impl Edit {
 
     /// Turns a switched module on (decision 32), as its picker turning on does, darktable
     /// turning the module on with its picker; a module that is not switched is always on.
-    pub fn turn_on(&mut self, module: &dyn Module) {
+    pub fn turn_on(&mut self, module: &dyn Tool) {
         self.switch_on(module);
     }
 
     /// Sets `coordinate`, a coordinate of one of the module's lossless views, to `value`
     /// on `image` (decision 2), holding the view's other coordinates: those `held` keeps
     /// while the view's controls hold what it last wrote, else the module's view of the
-    /// edit's values. The view's controls take [`Module::unview`]'s values, each kept, and
+    /// edit's values. The view's controls take [`Tool::unview`]'s values, each kept, and
     /// `held` keeps the coordinates. A value outside the coordinate's range, or one that
     /// would put a control outside its own, is refused, and so is one whose module fails:
     /// every value is checked before any is set, so a refused one changes nothing. Set to
@@ -440,7 +434,7 @@ impl Edit {
     pub fn set_coordinate(
         &mut self,
         held: &mut Held,
-        module: &dyn Module,
+        module: &dyn Tool,
         coordinate: &str,
         value: ControlValue,
         image: &ImageContext,
@@ -448,7 +442,7 @@ impl Edit {
         let (id, view, at, found) = find_coordinate(module, coordinate)?;
         let value = found
             .check(&value)
-            .map_err(|source| EditError::Control { module: id, source })?;
+            .map_err(|source| EditError::Control { tool: id, source })?;
         let mut coordinates = self.coordinates(held, module, view, image)?;
         if coordinates[at] == value {
             self.keep_coordinate(module, found.id, true)?;
@@ -466,7 +460,7 @@ impl Edit {
     pub fn reset_coordinate(
         &mut self,
         held: &mut Held,
-        module: &dyn Module,
+        module: &dyn Tool,
         coordinate: &str,
         image: &ImageContext,
     ) -> Result<(), EditError> {
@@ -496,7 +490,7 @@ impl Edit {
     /// are its controls'.
     pub fn keep_coordinate(
         &mut self,
-        module: &dyn Module,
+        module: &dyn Tool,
         coordinate: &str,
         kept: bool,
     ) -> Result<(), EditError> {
@@ -508,12 +502,12 @@ impl Edit {
     }
 
     /// The coordinates of the module's view `view` on `image`: those `held` keeps while
-    /// the view's controls hold what it last wrote, else [`Module::view`] of every control,
+    /// the view's controls hold what it last wrote, else [`Tool::view`] of every control,
     /// the edit's value over its default for the photo.
     pub fn coordinates(
         &self,
         held: &Held,
-        module: &dyn Module,
+        module: &dyn Tool,
         view: &View,
         image: &ImageContext,
     ) -> Result<Vec<f32>, EditError> {
@@ -526,7 +520,7 @@ impl Edit {
 
     /// Every control of the module on `image`: the edit's value over its default for the
     /// photo.
-    pub(crate) fn every(&self, module: &dyn Module, image: &ImageContext) -> Controls {
+    pub(crate) fn every(&self, module: &dyn Tool, image: &ImageContext) -> Controls {
         let definition = module.definition();
         let mut values = module.defaults(image);
         if let Some(set) = self.modules.get(definition.id) {
@@ -542,7 +536,7 @@ impl Edit {
     /// The module's follow writes (decision 27; `docs/tools/README.md`, rule 13) for a
     /// change from `before` that set `set`, the controls a command wrote ([`written`]):
     /// for each of them whose value the change moved, in the definition's order, what
-    /// [`Module::follow`] gives on `image`, a later control's write over an earlier one's,
+    /// [`Tool::follow`] gives on `image`, a later control's write over an earlier one's,
     /// each written and kept, as the command's own are, but a write of the control's
     /// default for the photo resets it, value and mark, as a reset does. A write that
     /// leaves a control as it is changes nothing. A write to a control the module lacks or
@@ -553,7 +547,7 @@ impl Edit {
     pub fn follow(
         &mut self,
         before: &Edit,
-        module: &dyn Module,
+        module: &dyn Tool,
         set: &[&str],
         image: &ImageContext,
     ) -> Result<(), EditError> {
@@ -568,7 +562,7 @@ impl Edit {
     fn write_follows(
         &mut self,
         before: &Edit,
-        module: &dyn Module,
+        module: &dyn Tool,
         set: &[&str],
         image: &ImageContext,
     ) -> Result<(), EditError> {
@@ -576,7 +570,7 @@ impl Edit {
         let id = definition.id;
         let (now, then) = (self.every(module, image), before.every(module, image));
         let failed = |control: &'static str, message: String| EditError::FollowFailed {
-            module: id,
+            tool: id,
             control,
             message,
         };
@@ -651,7 +645,7 @@ impl Edit {
     pub fn clamp(
         &mut self,
         before: &Edit,
-        modules: &[&dyn Module],
+        modules: &[&dyn Tool],
         image: &ImageContext,
     ) -> Result<(), EditError> {
         for &module in modules {
@@ -674,10 +668,7 @@ impl Edit {
                 .iter()
                 .find(|(control, _)| now.get(control) != then.get(control))
             {
-                let error = EditError::ClampFailed {
-                    module: id,
-                    control,
-                };
+                let error = EditError::ClampFailed { tool: id, control };
                 *self = before.clone();
                 return Err(error);
             }
@@ -701,7 +692,7 @@ impl Edit {
     /// (decision 21): each written at its range's nearer end, its mark as it was. Returns a
     /// warning for each, empty when every number holds; only a hand-written file holds one.
     /// A module whose defaults or ranges panic is left as it is.
-    pub fn clamp_read(&mut self, modules: &[&dyn Module], image: &ImageContext) -> Vec<String> {
+    pub fn clamp_read(&mut self, modules: &[&dyn Tool], image: &ImageContext) -> Vec<String> {
         let mut warnings = Vec::new();
         for &module in modules {
             let id = module.definition().id;
@@ -738,12 +729,12 @@ impl Edit {
         warnings
     }
 
-    /// Writes `coordinates` into the view's controls through [`Module::unview`], each
+    /// Writes `coordinates` into the view's controls through [`Tool::unview`], each
     /// kept, once every value is checked, and holds them; `coordinate` is the one set.
     fn write_view(
         &mut self,
         held: &mut Held,
-        module: &dyn Module,
+        module: &dyn Tool,
         view: &'static View,
         coordinates: Vec<f32>,
         coordinate: &'static str,
@@ -751,7 +742,7 @@ impl Edit {
     ) -> Result<(), EditError> {
         let id = module.definition().id;
         let failed = |message: String| EditError::ViewFailed {
-            module: id,
+            tool: id,
             view: view.id,
             message,
         };
@@ -773,7 +764,7 @@ impl Edit {
             found
                 .check(&value)
                 .map_err(|source| EditError::Coordinate {
-                    module: id,
+                    tool: id,
                     coordinate,
                     source,
                 })?;
@@ -798,19 +789,14 @@ impl Edit {
 
     /// Takes every control of the module back to its default, with no marks, and turns a
     /// switched module off (decision 32).
-    pub fn reset_module(&mut self, module: &dyn Module) {
+    pub fn reset_tool(&mut self, module: &dyn Tool) {
         self.modules.remove(module.definition().id);
     }
 
     /// Keeps a control or releases it. Keeping an untouched control holds it at its
     /// default; releasing a set one leaves its value, free for Auto and Match. It never
     /// turns a switched module on, nor off (decision 32).
-    pub fn keep(
-        &mut self,
-        module: &dyn Module,
-        control: &str,
-        kept: bool,
-    ) -> Result<(), EditError> {
+    pub fn keep(&mut self, module: &dyn Tool, control: &str, kept: bool) -> Result<(), EditError> {
         let (id, control) = find_control(module, control)?;
         let values = self.modules.entry(id.to_owned()).or_default();
         values.set_mark(control.id, kept.then_some(Mark::Kept));
@@ -823,7 +809,7 @@ impl Edit {
     pub fn set_param(
         &mut self,
         operations: &[&dyn Operation],
-        modules: &[&dyn Module],
+        modules: &[&dyn Tool],
         operation: &str,
         param: &str,
         value: Value,
@@ -843,7 +829,7 @@ impl Edit {
     pub fn reset_param(
         &mut self,
         operations: &[&dyn Operation],
-        modules: &[&dyn Module],
+        modules: &[&dyn Tool],
         operation: &str,
         param: &str,
     ) -> Result<(), EditError> {
@@ -859,25 +845,25 @@ impl Edit {
 
     /// Forgets a module the edit no longer touches.
     fn tidy(&mut self, module: &str) {
-        if self.modules.get(module).is_some_and(ModuleValues::is_empty) {
+        if self.modules.get(module).is_some_and(ToolValues::is_empty) {
             self.modules.remove(module);
         }
     }
 }
 
 /// The module called `id`.
-pub fn module<'m>(modules: &[&'m dyn Module], id: &str) -> Result<&'m dyn Module, EditError> {
+pub fn tool<'m>(modules: &[&'m dyn Tool], id: &str) -> Result<&'m dyn Tool, EditError> {
     modules
         .iter()
         .copied()
         .find(|module| module.definition().id == id)
-        .ok_or_else(|| EditError::UnknownModule(id.to_owned()))
+        .ok_or_else(|| EditError::UnknownTool(id.to_owned()))
 }
 
 /// The controls a command on `control`, one of the module's controls or a coordinate of one
 /// of its views, writes: the control, or the view's controls; none for an id the module
 /// lacks, which the command refuses.
-pub fn written(module: &dyn Module, control: &str) -> &'static [&'static str] {
+pub fn written(module: &dyn Tool, control: &str) -> &'static [&'static str] {
     let definition = module.definition();
     match (definition.coordinate(control), definition.control(control)) {
         (Some((view, _)), _) => view.controls,
@@ -886,13 +872,13 @@ pub fn written(module: &dyn Module, control: &str) -> &'static [&'static str] {
     }
 }
 
-/// The options the choice `control` lists on `image` (decision 30): [`Module::options`],
+/// The options the choice `control` lists on `image` (decision 30): [`Tool::options`],
 /// or every option where the module's code panics or gives a list that does not hold
 /// together ([`check::listed`]), with why. A control that is no choice lists none. The
 /// edit refuses any other option, and the session reports the list, warning once of a
 /// failure, so both read it alike.
 pub fn listed(
-    module: &dyn Module,
+    module: &dyn Tool,
     control: &Control,
     image: &ImageContext,
 ) -> (Vec<&'static str>, Option<String>) {
@@ -921,7 +907,7 @@ pub fn listed(
 /// number. The edit refuses a value outside it and the session reports it, warning once of
 /// a failure, so both read it alike.
 pub fn range(
-    module: &dyn Module,
+    module: &dyn Tool,
     control: &str,
     values: &Controls,
 ) -> Option<(Range, Option<String>)> {
@@ -938,14 +924,14 @@ pub fn range(
 }
 
 /// [`range`]'s range alone.
-fn range_now(module: &dyn Module, control: &str, values: &Controls) -> Option<Range> {
+fn range_now(module: &dyn Tool, control: &str, values: &Controls) -> Option<Range> {
     range(module, control, values).map(|(range, _)| range)
 }
 
 /// The option `value` holds, where `control` is a choice that `image` does not list it
 /// for.
 fn unlisted(
-    module: &dyn Module,
+    module: &dyn Tool,
     control: &Control,
     value: &ControlValue,
     image: &ImageContext,
@@ -960,14 +946,14 @@ fn unlisted(
 }
 
 fn find_control(
-    module: &dyn Module,
+    module: &dyn Tool,
     control: &str,
 ) -> Result<(&'static str, &'static Control), EditError> {
     let definition = module.definition();
     let found = definition
         .control(control)
         .ok_or_else(|| EditError::UnknownControl {
-            module: definition.id,
+            tool: definition.id,
             control: control.to_owned(),
         })?;
     Ok((definition.id, found))
@@ -976,7 +962,7 @@ fn find_control(
 /// The coordinate called `coordinate` of one of the module's views: the module's id, the
 /// view, the coordinate's place in it, and the coordinate.
 fn find_coordinate(
-    module: &dyn Module,
+    module: &dyn Tool,
     coordinate: &str,
 ) -> Result<(&'static str, &'static View, usize, &'static Coordinate), EditError> {
     let definition = module.definition();
@@ -984,7 +970,7 @@ fn find_coordinate(
         definition
             .coordinate(coordinate)
             .ok_or_else(|| EditError::UnknownControl {
-                module: definition.id,
+                tool: definition.id,
                 control: coordinate.to_owned(),
             })?;
     Ok((definition.id, view, at, &view.coordinates[at]))
@@ -993,23 +979,23 @@ fn find_coordinate(
 /// The coordinates of the module's view `view` at its defaults for `image`: what a
 /// coordinate's reset takes it back to.
 pub fn default_coordinates(
-    module: &dyn Module,
+    module: &dyn Tool,
     view: &View,
     image: &ImageContext,
 ) -> Result<Vec<f32>, EditError> {
     viewed(module, view, image, || module.defaults(image))
 }
 
-/// [`Module::view`] of the values `values` gives, one coordinate for each of the view's;
+/// [`Tool::view`] of the values `values` gives, one coordinate for each of the view's;
 /// the module's failure, a panic included, an error.
 fn viewed(
-    module: &dyn Module,
+    module: &dyn Tool,
     view: &View,
     image: &ImageContext,
     values: impl FnOnce() -> Controls,
 ) -> Result<Vec<f32>, EditError> {
     let failed = |message: String| EditError::ViewFailed {
-        module: module.definition().id,
+        tool: module.definition().id,
         view: view.id,
         message,
     };
@@ -1030,7 +1016,7 @@ fn viewed(
 /// it, so dragging one coordinate leaves the others exactly where they were however many
 /// steps the drag takes. Any change that leaves those controls holding other values drops
 /// them, and the next edit starts from the stored values again; a view reads only its own
-/// controls ([`Module::view`]), so no other change can move them. Nothing of it is saved.
+/// controls ([`Tool::view`]), so no other change can move them. Nothing of it is saved.
 #[derive(Debug, Clone, Default)]
 pub struct Held(BTreeMap<(&'static str, &'static str), Hold>);
 
@@ -1071,7 +1057,7 @@ impl Hold {
 /// can never wait unseen on an optional operation and appear once a module adds it.
 pub fn unowned(
     operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     operation: &str,
     param: &str,
 ) -> Result<(&'static str, &'static Param), EditError> {
@@ -1102,13 +1088,13 @@ pub fn unowned(
             EditError::Fixed {
                 operation,
                 param,
-                module,
+                tool: module,
             }
         } else {
             EditError::Owned {
                 operation,
                 param,
-                module,
+                tool: module,
             }
         });
     }
@@ -1129,7 +1115,7 @@ pub struct Bound<'a> {
     pub instances: Vec<Instance<'a>>,
     /// Each module whose binding set a parameter it does not own or a value its schema
     /// refuses, or panicked: none of its settings are in `instances`.
-    pub failed: Vec<(&'static str, ModuleError)>,
+    pub failed: Vec<(&'static str, ToolError)>,
 }
 
 impl<'a> Bound<'a> {
@@ -1137,7 +1123,10 @@ impl<'a> Bound<'a> {
     /// edit as it is or not at all.
     pub fn all(self) -> Result<Vec<Instance<'a>>, EditError> {
         match self.failed.into_iter().next() {
-            Some((module, source)) => Err(EditError::Binding { module, source }),
+            Some((module, source)) => Err(EditError::Binding {
+                tool: module,
+                source,
+            }),
             None => Ok(self.instances),
         }
     }
@@ -1147,12 +1136,12 @@ impl<'a> Bound<'a> {
 /// switched module off is never bound; one on is bound with its values off its defaults,
 /// possibly none (decision 32).
 fn bind(
-    module: &dyn Module,
+    module: &dyn Tool,
     edit: &Edit,
     operations: &[&dyn Operation],
     image: &ImageContext,
     base: &mut Option<Base>,
-) -> Result<Vec<apertrust_modules::Setting>, ModuleError> {
+) -> Result<Vec<apertrust_tools::Setting>, ToolError> {
     let Some(values) = edit.modules.get(module.definition().id) else {
         return Ok(Vec::new());
     };
@@ -1170,7 +1159,7 @@ fn bind(
         let base = base.get_or_insert_with(|| Base::new(operations, image));
         module.bind(&values, image, base)
     }))
-    .map_err(|panic| ModuleError::Panicked(panic_message(panic.as_ref())))?;
+    .map_err(|panic| ToolError::Panicked(panic_message(panic.as_ref())))?;
     for setting in &settings {
         check::setting(module, operations, setting)?;
     }
@@ -1191,7 +1180,7 @@ fn bind(
 pub fn instances<'a>(
     edit: &Edit,
     operations: &[&'a dyn Operation],
-    modules: &[&dyn Module],
+    modules: &[&dyn Tool],
     image: &ImageContext,
 ) -> Bound<'a> {
     let mut bound: BTreeMap<&'static str, ParamValues> = BTreeMap::new();
@@ -1247,17 +1236,17 @@ pub fn instances<'a>(
 
 #[cfg(test)]
 mod tests {
-    use apertrust_modules::testing::{self, Defaultless, Pushing, Sample};
-    use apertrust_modules::{Controls, Definition, Owned, Setting};
     use apertrust_operations::OPERATIONS;
+    use apertrust_tools::testing::{self, Defaultless, Pushing, Sample};
+    use apertrust_tools::{Controls, Definition, Owned, Setting};
 
     use super::*;
 
-    const MODULES: &[&dyn Module] = &[&Sample];
+    const TOOLS: &[&dyn Tool] = &[&Sample];
 
     /// Each instance's operation and the parameters it sets.
     fn planned(edit: &Edit) -> Vec<(&'static str, Vec<(String, Value)>)> {
-        instances(edit, OPERATIONS, MODULES, &testing::image())
+        instances(edit, OPERATIONS, TOOLS, &testing::image())
             .all()
             .unwrap()
             .into_iter()
@@ -1329,7 +1318,7 @@ mod tests {
         .unwrap();
         edit.set_control(&Sample, "size", ControlValue::Choice(2), &testing::image())
             .unwrap();
-        edit.set_param(OPERATIONS, MODULES, "exposure", "black", Value::Float(0.01))
+        edit.set_param(OPERATIONS, TOOLS, "exposure", "black", Value::Float(0.01))
             .unwrap();
         let planned = planned(&edit);
         let ids: Vec<_> = planned.iter().map(|(id, _)| *id).collect();
@@ -1357,8 +1346,8 @@ mod tests {
         // Back to the defaults, the pipeline is the default one again.
         edit.reset_control(&Sample, "grain").unwrap();
         assert!(!planned_ids(&edit).contains(&"grain"));
-        edit.reset_module(&Sample);
-        edit.reset_param(OPERATIONS, MODULES, "exposure", "black")
+        edit.reset_tool(&Sample);
+        edit.reset_param(OPERATIONS, TOOLS, "exposure", "black")
             .unwrap();
         assert!(edit.is_empty());
         assert_eq!(edit, Edit::default());
@@ -1406,8 +1395,8 @@ mod tests {
             EditError::UnknownControl { .. }
         ));
         assert!(matches!(
-            module(MODULES, "exposure").map(|_| ()),
-            Err(EditError::UnknownModule(_))
+            tool(TOOLS, "exposure").map(|_| ()),
+            Err(EditError::UnknownTool(_))
         ));
         assert!(edit.is_empty());
     }
@@ -1416,13 +1405,13 @@ mod tests {
     fn only_unowned_parameters_of_base_operations_are_set_at_operation_level() {
         let mut edit = Edit::default();
         let mut set =
-            |operation, param, value| edit.set_param(OPERATIONS, MODULES, operation, param, value);
+            |operation, param, value| edit.set_param(OPERATIONS, TOOLS, operation, param, value);
         assert_eq!(
             set("exposure", "exposure", Value::Float(1.0)),
             Err(EditError::Owned {
                 operation: "exposure",
                 param: "exposure",
-                module: "sample"
+                tool: "sample"
             })
         );
         assert_eq!(
@@ -1442,23 +1431,23 @@ mod tests {
         assert_eq!(set("exposure", "black", Value::Float(0.02)), Ok(()));
         // A parameter its module fixes, with no control, is refused as such; one of its
         // controls' as one it sets.
-        let modules = apertrust_modules::MODULES;
+        let modules = apertrust_tools::TOOLS;
         assert_eq!(
             edit.set_param(OPERATIONS, modules, "rawprepare", "left", Value::Int(4)),
             Err(EditError::Fixed {
                 operation: "rawprepare",
                 param: "left",
-                module: "rawprepare"
+                tool: "rawprepare"
             })
         );
         assert_eq!(
             EditError::Fixed {
                 operation: "rawprepare",
                 param: "left",
-                module: "rawprepare"
+                tool: "rawprepare"
             }
             .to_string(),
-            "rawprepare.left is fixed by the module rawprepare"
+            "rawprepare.left is fixed by the tool rawprepare"
         );
         assert_eq!(
             edit.set_param(
@@ -1471,7 +1460,7 @@ mod tests {
             Err(EditError::Owned {
                 operation: "rawprepare",
                 param: "raw_white_point",
-                module: "rawprepare"
+                tool: "rawprepare"
             })
         );
         assert!(matches!(
@@ -1493,8 +1482,8 @@ mod tests {
 
     #[test]
     fn a_misbehaving_binding_leaves_out_only_its_own_module() {
-        use apertrust_modules::testing::Faulty;
-        let modules: &[&dyn Module] = &[&Faulty, &Sample];
+        use apertrust_tools::testing::Faulty;
+        let modules: &[&dyn Tool] = &[&Faulty, &Sample];
         let mut edit = Edit::default();
         edit.set_control(
             &Sample,
@@ -1517,14 +1506,14 @@ mod tests {
         for (control, error) in [
             (
                 "stray",
-                ModuleError::NotOwned {
+                ToolError::NotOwned {
                     operation: "exposure",
                     param: "black",
                 },
             ),
             (
                 "panic",
-                ModuleError::Panicked(
+                ToolError::Panicked(
                     "exposure.no_such_parameter: expected a number, got None".to_owned(),
                 ),
             ),
@@ -1581,7 +1570,7 @@ mod tests {
     /// brightness in range, then a grain past its own, and `untouched` gives no size.
     struct Wrong;
 
-    impl Module for Wrong {
+    impl Tool for Wrong {
         fn definition(&self) -> &'static Definition {
             Sample.definition()
         }
@@ -1590,7 +1579,7 @@ mod tests {
             Sample.owns()
         }
 
-        fn bind(&self, values: &ModuleValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
+        fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
             Sample.bind(values, image, base)
         }
 
@@ -1636,7 +1625,7 @@ mod tests {
                 .apply_preset(&Wrong, "look", option, &image)
                 .unwrap_err();
             let EditError::PresetFailed {
-                module,
+                tool: module,
                 preset,
                 option: named,
                 ..
@@ -1655,7 +1644,7 @@ mod tests {
     /// back infinite, bias as Sample gives it.
     struct Overflowing;
 
-    impl Module for Overflowing {
+    impl Tool for Overflowing {
         fn definition(&self) -> &'static Definition {
             Sample.definition()
         }
@@ -1664,7 +1653,7 @@ mod tests {
             Sample.owns()
         }
 
-        fn bind(&self, values: &ModuleValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
+        fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
             Sample.bind(values, image, base)
         }
 
@@ -1687,7 +1676,7 @@ mod tests {
     /// `control` set to `value` with its follow writes, as the session sets one.
     fn set_following(
         edit: &mut Edit,
-        module: &dyn Module,
+        module: &dyn Tool,
         control: &str,
         value: ControlValue,
     ) -> Result<(), EditError> {
@@ -1698,7 +1687,7 @@ mod tests {
 
     #[test]
     fn a_change_s_follow_writes_are_written_with_it_each_kept() {
-        use apertrust_modules::testing::{Follow, Following};
+        use apertrust_tools::testing::{Follow, Following};
         let module = &Following(Follow::Size);
         let mut edit = Edit::default();
         set_following(&mut edit, module, "grain", ControlValue::Number(60.0)).unwrap();
@@ -1735,7 +1724,7 @@ mod tests {
 
     #[test]
     fn a_follow_write_its_module_gets_wrong_is_refused_and_changes_nothing() {
-        use apertrust_modules::testing::{Follow, Following};
+        use apertrust_tools::testing::{Follow, Following};
         for (follow, says) in [
             (Follow::OutOfRange, "bias is 150, outside 0 to 100"),
             (Follow::Unknown, "writes contrast, which it lacks"),
@@ -1758,7 +1747,7 @@ mod tests {
                 matches!(
                     &error,
                     EditError::FollowFailed {
-                        module: "sample",
+                        tool: "sample",
                         control: "grain",
                         message,
                     } if message == says
@@ -1773,7 +1762,7 @@ mod tests {
     /// `control` set to `value` as the session sets one, its range's moves clamped after.
     fn set_clamping(
         edit: &mut Edit,
-        module: &dyn Module,
+        module: &dyn Tool,
         control: &str,
         value: f32,
     ) -> Result<(), EditError> {
@@ -1801,7 +1790,7 @@ mod tests {
         assert_eq!(
             refused,
             EditError::Control {
-                module: "sample",
+                tool: "sample",
                 source: ControlError::OutOfRange {
                     control: "coarseness",
                     value: 150.0,
@@ -1828,7 +1817,7 @@ mod tests {
         assert_eq!(
             error,
             EditError::ClampFailed {
-                module: "sample",
+                tool: "sample",
                 control: "coarseness"
             }
         );
@@ -1850,7 +1839,7 @@ mod tests {
         edit.keep(&Sample, "coarseness", false).unwrap();
         edit.set_control(&Sample, "bias", ControlValue::Number(20.0), &image)
             .unwrap();
-        let warnings = edit.clamp_read(MODULES, &image);
+        let warnings = edit.clamp_read(TOOLS, &image);
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(
             warnings[0].starts_with("sample.coarseness is 150"),
@@ -1861,7 +1850,7 @@ mod tests {
             (values.number("coarseness"), values.mark("coarseness")),
             (Some(120.0), None)
         );
-        assert!(edit.clamp_read(MODULES, &image).is_empty());
+        assert!(edit.clamp_read(TOOLS, &image).is_empty());
     }
 
     /// A module whose defaults for the photo panic is passed over where every module's
@@ -1871,7 +1860,7 @@ mod tests {
     #[test]
     fn a_module_whose_defaults_panic_leaves_the_others_ranges_to_hold() {
         let image = testing::image();
-        let modules: &[&dyn Module] = &[&Defaultless, &Sample];
+        let modules: &[&dyn Tool] = &[&Defaultless, &Sample];
         let number = ControlValue::Number;
         let mut edit = Edit::default();
         edit.set_control(&Defaultless, "amount", number(5.0), &image)
@@ -1881,7 +1870,7 @@ mod tests {
             matches!(
                 outside,
                 Err(EditError::Control {
-                    module: "defaultless",
+                    tool: "defaultless",
                     source: ControlError::OutOfRange { .. }
                 })
             ),
@@ -1932,7 +1921,7 @@ mod tests {
             matches!(
                 &error,
                 EditError::ViewFailed {
-                    module: "sample",
+                    tool: "sample",
                     view: "pair",
                     message,
                 } if message == "no finite number for grain"
@@ -1961,7 +1950,7 @@ mod tests {
         Unordered,
     }
 
-    impl Module for Narrow {
+    impl Tool for Narrow {
         fn definition(&self) -> &'static Definition {
             Sample.definition()
         }
@@ -1970,7 +1959,7 @@ mod tests {
             Sample.owns()
         }
 
-        fn bind(&self, values: &ModuleValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
+        fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
             Sample.bind(values, image, base)
         }
 
@@ -2011,7 +2000,7 @@ mod tests {
         assert_eq!(
             edit.set_control(&Sample, "method", camera.clone(), &plain),
             Err(EditError::NotListed {
-                module: "sample",
+                tool: "sample",
                 control: "method",
                 option: "camera",
             })
@@ -2019,7 +2008,7 @@ mod tests {
         assert!(edit.is_empty());
         edit.set_control(&Sample, "method", camera.clone(), &image)
             .unwrap();
-        assert_eq!(edit.module("sample").unwrap().get("method"), Some(&camera));
+        assert_eq!(edit.tool("sample").unwrap().get("method"), Some(&camera));
         edit.reset_control(&Sample, "method").unwrap();
         assert!(edit.is_empty());
         // A number reads no list; a choice reads its own.
@@ -2082,7 +2071,7 @@ mod tests {
         edit.set_control(&module, "grain", ControlValue::Number(60.0), &plain)
             .unwrap();
         edit.follow(&before, &module, &["grain"], &plain).unwrap();
-        let size = edit.module("sample").unwrap().get("size");
+        let size = edit.tool("sample").unwrap().get("size");
         assert_eq!(size, Some(&ControlValue::Choice(2)));
     }
 
@@ -2111,7 +2100,7 @@ mod tests {
 
     /// Each instance's operation planned for `edit` with Grain, a switched module, alone.
     fn planned_with_grain(edit: &Edit) -> Vec<(&'static str, Vec<(String, Value)>)> {
-        let modules: &[&dyn Module] = &[&apertrust_modules::grain::Grain];
+        let modules: &[&dyn Tool] = &[&apertrust_tools::grain::Grain];
         instances(edit, OPERATIONS, modules, &testing::image())
             .all()
             .unwrap()
@@ -2132,7 +2121,7 @@ mod tests {
     /// set; a control reset or kept leaves it on, and its reset turns it off.
     #[test]
     fn a_switched_module_is_on_from_a_control_s_write_until_its_reset() {
-        use apertrust_modules::grain::Grain;
+        use apertrust_tools::grain::Grain;
         let image = testing::image();
         let none = planned_with_grain(&Edit::default());
         let grain = |edit: &Edit| {
@@ -2164,7 +2153,7 @@ mod tests {
         assert!(!edit.is_empty());
         assert_eq!(grain(&edit), Some(Vec::new()));
         // The module's reset turns it off, as no edit.
-        edit.reset_module(&Grain);
+        edit.reset_tool(&Grain);
         assert!(!edit.is_on(&Grain));
         assert_eq!(edit, Edit::default());
         assert_eq!(planned_with_grain(&edit), none);
@@ -2183,6 +2172,6 @@ mod tests {
             &testing::image(),
         )
         .unwrap();
-        assert!(!edit.module("sample").unwrap().enabled());
+        assert!(!edit.tool("sample").unwrap().enabled());
     }
 }

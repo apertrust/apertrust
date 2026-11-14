@@ -339,7 +339,7 @@ One export can take haze removal's first round of tiles at full resolution and t
 
 ## Tool binding notes
 
-The first pass's Haze removal tool (`crates/modules/src/haze_removal.rs`, `docs/tools/haze-removal.md`) mirrors darktable's:
+The first pass's Haze removal tool (`crates/tools/src/haze_removal.rs`, `docs/tools/haze-removal.md`) mirrors darktable's:
 
 - Strength and distance, on darktable's page, under darktable's labels and ranges, with darktable's tooltips ("amount of haze reduction", "limit haze removal up to a specific spatial depth"). Distance shows three decimals, as darktable's slider.
 - `compatibility_mode` and `adaptive` have no widget in darktable and are fixed, off and on.

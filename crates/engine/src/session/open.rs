@@ -48,9 +48,9 @@ use std::time::Instant;
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_base::jobs::{Context, Interrupted};
 use apertrust_library::ops::{self as library, RawStamp, RawThumbnails, Thumbnail};
-use apertrust_modules::Module;
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Operation};
 use apertrust_raw::{Exif, Pixels, RawImage};
+use apertrust_tools::Tool;
 
 use super::cache::Upkeep;
 use super::{Decoded, Event, Inbox, OpenPreview, Outbox, PreviewSource, SessionError};
@@ -363,7 +363,7 @@ pub(crate) struct Run {
     pub load: Load,
     pub cache: Option<Upkeep>,
     pub operations: &'static [&'static dyn Operation],
-    pub modules: Vec<&'static dyn Module>,
+    pub tools: Vec<&'static dyn Tool>,
     pub retired: &'static [&'static str],
     /// The sidecar as the edit writer reads it once it has written what it was handed.
     pub snapshot: mpsc::Receiver<Vec<Snapshot>>,
@@ -646,7 +646,7 @@ fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, Se
     };
     tracing::debug!(target: "pipe", "read {}", sidecar::file_name(&sidecar));
     let start = std::time::Instant::now();
-    let loaded = sidecar::from_xml_at(&xml, modified, run.operations, &run.modules, run.retired)?;
+    let loaded = sidecar::from_xml_at(&xml, modified, run.operations, &run.tools, run.retired)?;
     let ms = start.elapsed().as_secs_f64() * 1e3;
     let steps = loaded.log.steps().len();
     tracing::debug!(target: "perf", "read {}: {steps} steps in {ms:.1} ms", sidecar::file_name(&sidecar));
@@ -675,7 +675,7 @@ fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, Se
     // holds, is clamped as it is read (decisions 21 and 30); an edit open for viewing only
     // is shown as it was. The clamp is a change not yet a step.
     if view_only.is_none() {
-        for warning in edit.clamp_read(&run.modules, &read.metadata.image) {
+        for warning in edit.clamp_read(&run.tools, &read.metadata.image) {
             tracing::warn!(target: "pipe", "{warning}");
         }
         identify(&mut file);

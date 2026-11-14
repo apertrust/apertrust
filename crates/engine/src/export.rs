@@ -900,8 +900,8 @@ fn auto_tile(
 
 #[cfg(test)]
 mod tests {
-    use apertrust_modules::testing as modules;
     use apertrust_operations::{OPERATIONS, bloom, hazeremoval};
+    use apertrust_tools::testing as modules;
 
     use super::*;
     use crate::edit::{self, Edit};

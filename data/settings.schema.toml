@@ -11,7 +11,7 @@
 # A setting's fields:
 # - owner: "app", read by the desktop app alone; "engine", by every process that runs the
 #   engine; "export", the Export dialog's last settings, which the app keeps and the CLI's
-#   export reads (decision 56); "module:<id>", a module's setting.
+#   export reads (decision 56); "tool:<id>", a tool's setting.
 # - kind, with its own fields:
 #   "boolean";
 #   "number": min, max, step and decimals (how many it is kept and shown with), or in
@@ -24,7 +24,7 @@
 #   "text";
 #   "list": of, its items' kind, and length, when it is set; one of no set length may be
 #     written as its single item, without the list;
-#   "table": by, the registry whose ids key it (actions, sections, modules or groups),
+#   "table": by, the registry whose ids key it (actions, sections, tools or groups),
 #     and of, its values' kind.
 #   An item's or a value's kind is a kind's name, or an inline table of kind and that
 #   kind's fields.
@@ -305,7 +305,7 @@ applies = "at-once"
 [edit.groups]
 owner = "app"
 kind = "table"
-by = "modules"
+by = "tools"
 of = { kind = "table", by = "groups", of = "boolean" }
 default = {}
 applies = "at-once"
@@ -767,16 +767,16 @@ applies = "at-once"
 # (exposure.c:742): another photo, undo and redo, a history move, the module's reset.
 # Apertrust keeps it.
 [tools.exposure.area_mode]
-owner = "module:exposure"
+owner = "tool:exposure"
 kind = "choice"
-type = "apertrust_modules::exposure::AreaMode"
+type = "apertrust_tools::exposure::AreaMode"
 default = "correction"
 applies = "at-once"
 
 # The target lightness, CIE L in per cent, darktable's
 # darkroom/modules/exposure/lightness, its slider's range and one decimal.
 [tools.exposure.lightness]
-owner = "module:exposure"
+owner = "tool:exposure"
 kind = "number"
 min = 0.0
 max = 100.0

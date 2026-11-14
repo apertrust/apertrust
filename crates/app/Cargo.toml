@@ -19,10 +19,10 @@ apertrust-display.workspace = true
 apertrust-engine.workspace = true
 # The Export dialog's settings, its choices, the variables it lists and the size it computes.
 apertrust-export.workspace = true
-apertrust-modules.workspace = true
 apertrust-operations.workspace = true
 # The image context a module's view of the pending values takes.
 apertrust-plugin.workspace = true
+apertrust-tools.workspace = true
 apertrust-ui.workspace = true
 rfd.workspace = true
 # The settings' values as settings.toml keeps them, which the Settings dialog's rows show
@@ -49,7 +49,7 @@ apertrust-engine = { workspace = true, features = ["testing"] }
 # The jobs' control, which gives the jobs mirror's tests real job numbers.
 apertrust-base = { workspace = true, features = ["jobs"] }
 # Its `testing::Sample` module, whose rows the renderer's tests draw too.
-apertrust-modules = { workspace = true, features = ["testing"] }
+apertrust-tools = { workspace = true, features = ["testing"] }
 # A history step's time on the local clock, so its tooltip reads the same in every zone.
 chrono.workspace = true
 egui_kittest.workspace = true
