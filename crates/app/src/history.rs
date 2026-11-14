@@ -1678,9 +1678,11 @@ fn held(ui: &egui::Ui, response: &egui::Response, area: egui::Rect) -> bool {
     let lost = response.id.with("lost");
     let mut stopped = ui.data(|d| d.get_temp::<bool>(lost)).unwrap_or(false);
     let holding = pointer || keys && response.has_focus();
+    // Only a new press clears it: the pointer leaving the eye and coming back with the
+    // button still down is the same press.
     if !focused && holding {
         stopped = true;
-    } else if pressed || !holding {
+    } else if pressed {
         stopped = false;
     }
     ui.data_mut(|d| d.insert_temp(lost, stopped));
@@ -3128,9 +3130,13 @@ pub(crate) mod tests {
         harness.input_mut().focused = false;
         assert!(peeks(&mut harness).is_empty());
         // Back with the button still down, as when another program took its release: no
-        // hold until a new press.
+        // hold until a new press, leaving the eye and coming back over it included.
         harness.event(egui::Event::WindowFocused(true));
         harness.input_mut().focused = true;
+        assert!(peeks(&mut harness).is_empty());
+        harness.event(egui::Event::PointerMoved(line));
+        assert!(peeks(&mut harness).is_empty());
+        harness.event(egui::Event::PointerMoved(at));
         assert!(peeks(&mut harness).is_empty());
         button(&mut harness, at, false);
         harness.run();
