@@ -128,11 +128,17 @@ pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<D
             Kind::Folder if !edit => return Some(Dropped::Folder(path.clone())),
             Kind::Raw => {
                 let folder = photo.parent();
-                // Each once: a raw dropped with its edit is one photo.
+                // Each once: a raw dropped with its edit is one photo. A folder named like
+                // an edit stands for no photo.
                 let mut beside: Vec<PathBuf> = Vec::new();
-                for other in &photos[i + 1..] {
+                let later = paths[i + 1..].iter().zip(&photos[i + 1..]);
+                for (given, other) in later {
                     let same = other.parent() == folder && named_raw(other);
-                    if same && other != photo && !beside.contains(other) {
+                    if same
+                        && other != photo
+                        && !beside.contains(other)
+                        && (other == given || kind(given) != Kind::Folder)
+                    {
                         beside.push(other.clone());
                     }
                 }
@@ -506,6 +512,13 @@ pub(crate) mod tests {
         std::fs::create_dir(&album).expect("a folder");
         let dropped = opens(std::slice::from_ref(&album), kind);
         assert_eq!(dropped, Some(Dropped::Folder(album)));
+        // Nor is one dropped after a raw taken for a photo beside it.
+        let album = folder.0.join("Album.CR3.apxmp");
+        std::fs::create_dir(&album).expect("a folder");
+        let first = folder.0.join("IMG_1.CR3");
+        let dropped = opens(&[first.clone(), album], kind);
+        let beside = Vec::new();
+        assert_eq!(dropped, Some(Dropped::Raws { first, beside }));
     }
 
     /// A window in the default theme, the photo's surround over its left part and the
