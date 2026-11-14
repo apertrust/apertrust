@@ -2026,6 +2026,7 @@ mod tests {
             module: definition.id,
             enabled: !definition.switched,
             edited: false,
+            hidden: false,
             controls: definition
                 .controls
                 .iter()

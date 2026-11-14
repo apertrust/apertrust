@@ -1394,6 +1394,7 @@ mod tests {
                 module: definition.id,
                 enabled: true,
                 edited: false,
+                hidden: false,
                 controls,
                 presets: Vec::new(),
                 views: Vec::new(),

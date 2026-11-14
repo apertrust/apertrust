@@ -629,6 +629,7 @@ fn untouched(modules: &[&dyn Module]) -> Values {
             module: definition.id,
             enabled: !definition.switched,
             edited: false,
+            hidden: false,
             controls,
             presets,
             views,
@@ -1198,6 +1199,7 @@ pub(crate) mod tests {
             module: "exposure",
             enabled: true,
             edited: black != 0.0 || exposure != 0.0,
+            hidden: false,
             controls: vec![
                 control("black_level", black, black_mark),
                 control("exposure", exposure, exposure_mark),
@@ -1286,6 +1288,7 @@ pub(crate) mod tests {
                 module: "exposure",
                 enabled: true,
                 edited: exposure != 0.0,
+                hidden: false,
                 controls: vec![ControlState {
                     control: "exposure",
                     value: ControlValue::Number(exposure),
@@ -2557,8 +2560,17 @@ pub(crate) mod tests {
                     let (history, takes) = (m.history.as_ref(), m.takes_edits());
                     let modules = m.modules();
                     let today = crate::history::today();
-                    let asked =
-                        crate::history::tab(ui, history, modules, true, false, takes, false, today);
+                    let asked = crate::history::tab(
+                        ui,
+                        history,
+                        modules,
+                        &[],
+                        true,
+                        false,
+                        takes,
+                        false,
+                        today,
+                    );
                     scene.actions.extend(asked);
                 },
                 Scene {

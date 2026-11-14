@@ -108,6 +108,7 @@ mod outbox;
 mod pickers;
 mod thumbnail;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -311,6 +312,20 @@ pub enum Command {
         note: Option<Note>,
         commands: Vec<Command>,
     },
+    /// The History tab's eye, held (decision 78): the live frame shows the module as if it
+    /// were reset while `hidden`, off for a switched module and at its defaults for one
+    /// every photo runs, whose operation is never skipped; with `hidden` false, as the edit
+    /// has it again. View state, as [`Command::Resize`] is, never a command on the edit: no
+    /// history step, nothing written, no export, still or thumbnail changed, a gesture
+    /// under way left under way, and taken on a photo opening or open for viewing only.
+    /// It ends as the photo closes or another opens. Reported as [`ModuleState::hidden`];
+    /// a module the session lacks is refused ([`EditError::UnknownModule`]); with no photo
+    /// open, nothing. A module's colour picker, which would read the view and write the
+    /// edit, measures nothing and applies no reading while any module is hidden, its reading
+    /// due waiting until all are shown, and none turns on meanwhile
+    /// ([`SessionError::Hidden`]); the Colour picker module's, which reads the frame shown and
+    /// writes nothing, is untouched.
+    Hide { module: String, hidden: bool },
     /// Write the open photo's edit again after its last write failed, as a client's Try
     /// again does; otherwise nothing. It changes no value and leaves a gesture under way,
     /// and is reported [`Event::Saved`] or failed as any write is.
@@ -326,7 +341,8 @@ pub enum Command {
     /// turned on with it, and its readings applied through the module's pick, the first
     /// after it turns on and each after its region moves, a drag's one gesture. Answered by
     /// [`Event::Picker`]; `On` refused before the photo is live ([`SessionError::NotLive`]),
-    /// for a module's picker on a photo open for viewing only ([`SessionError::ViewOnly`]),
+    /// for a module's picker on a photo open for viewing only ([`SessionError::ViewOnly`]) or
+    /// while the History tab's eye hides a module ([`SessionError::Hidden`]),
     /// and for a picker no module declares ([`SessionError::UnknownPicker`]); a point, an
     /// area, a switch or a reset with no picker on ([`SessionError::NoPicker`]); a tool
     /// setting no picker of the module reads ([`SessionError::UnknownTool`]).
@@ -438,6 +454,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::Close
         | Command::Resize { .. }
         | Command::Scopes(_)
+        | Command::Hide { .. }
         | Command::Picker(_)
         | Command::CancelJob { .. }
         | Command::RetryJob { .. }
@@ -726,8 +743,9 @@ pub struct Values {
     /// How many commands had been applied: every one [`Session::send`] numbered up to
     /// this, so a client knows which of its changes the values include.
     pub through: u64,
-    /// The photo as the edit shows it, at full resolution: the developed image, turned and
-    /// mirrored where its orientation says (decision 16), which the viewport fits.
+    /// The photo as the edit shows it in the live frame, at full resolution: the developed
+    /// image, turned and mirrored where its orientation says (decision 16), unless the
+    /// History tab's eye hides Orientation, which the viewport fits.
     pub extent: [u32; 2],
     /// Whether the photo is live (decision 77): false from its `Opened` until its raw is
     /// decoded and uploaded, while every command on the edit is refused
@@ -759,6 +777,10 @@ pub struct ModuleState {
     /// Whether its reset would change the render: a control differs from its default for
     /// the photo, or a switched module is on.
     pub edited: bool,
+    /// Whether the History tab's eye hides it from the view ([`Command::Hide`]): the live
+    /// frame shows it as if it were reset, while its controls, `enabled` and `edited` stay
+    /// the edit's.
+    pub hidden: bool,
     /// Every control, in the definition's order.
     pub controls: Vec<ControlState>,
     /// Every preset row, in the definition's order.
@@ -959,6 +981,11 @@ pub enum SessionError {
     /// A colour picker's point, area, switch or reset with no picker on.
     #[error("no colour picker is on")]
     NoPicker,
+    /// [`PickerCommand::On`] named a module's picker while the History tab's eye hides a
+    /// module ([`Command::Hide`]): its reading would be the view's, not the edit's, and
+    /// what it wrote would reach the edit and its exports (decision 78).
+    #[error("a module is hidden in the view")]
+    Hidden,
     /// The colour pickers could not be measured or read back; they are off for the rest
     /// of the session, and the frames go on without them.
     #[error("the colour pickers are off: {0}")]
@@ -2163,6 +2190,9 @@ struct Open {
     pipeline: Option<Pipeline>,
     /// The edit's history in memory, and its undo records (decision 78).
     history: history::PhotoHistory,
+    /// The modules the History tab's eye hides from the live frame ([`Command::Hide`]):
+    /// view state, never in the edit, gone with the photo.
+    hidden: BTreeSet<&'static str>,
 }
 
 /// A gesture under way (decision 42): the run of `SetControl { done: false }` on one
@@ -2555,6 +2585,11 @@ impl Engine {
                     self.graphs = graphs;
                     Ok(())
                 }
+                // View state: its values say so, and the frame shows it.
+                Command::Hide { module, hidden } => self.hide(&module, hidden).map(|changed| {
+                    values |= changed;
+                    render |= changed;
+                }),
                 Command::Picker(command) => self.picker(command, &mut events).map(|effect| {
                     resample |= effect.moved;
                     values |= effect.values;
@@ -2715,6 +2750,27 @@ impl Engine {
         // a sample-only render after the frame.
         self.probe_alone(&mut events);
         events
+    }
+
+    /// Whether the History tab's eye hides any module of the open photo, while which a
+    /// module's picker measures and applies nothing (decision 78).
+    fn hiding(&self) -> bool {
+        (self.open.as_ref()).is_some_and(|open| !open.hidden.is_empty())
+    }
+
+    /// The History tab's eye on `module` ([`Command::Hide`]): whether the open photo's
+    /// hidden modules changed; none with no photo open. A module the session lacks is
+    /// refused.
+    fn hide(&mut self, module: &str, hidden: bool) -> Result<bool, SessionError> {
+        let id = edit::module(&self.modules, module)?.definition().id;
+        let Some(open) = &mut self.open else {
+            return Ok(false);
+        };
+        Ok(if hidden {
+            open.hidden.insert(id)
+        } else {
+            open.hidden.remove(id)
+        })
     }
 
     /// Applies the edit commands of a batch that arrived after the client dropped its
@@ -2893,6 +2949,7 @@ impl Engine {
             | Command::Close
             | Command::Resize { .. }
             | Command::Scopes(_)
+            | Command::Hide { .. }
             | Command::Picker(_)
             | Command::CancelJob { .. }
             | Command::RetryJob { .. }
@@ -3472,6 +3529,7 @@ impl Engine {
             views_failed: BTreeSet::new(),
             pipeline: None,
             history,
+            hidden: BTreeSet::new(),
         });
         photo
     }
@@ -3485,7 +3543,7 @@ impl Engine {
             return;
         };
         let start = Instant::now();
-        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
         let pipe = Pipe::Viewport { width, height };
         let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
         let planned = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits);
@@ -3951,7 +4009,8 @@ impl Engine {
         events: &mut Vec<Event>,
     ) -> Result<Option<Frame>, SessionError> {
         let mut reduced = false;
-        if !self.pickers.probing() {
+        // A module's picker measures nothing while the eye hides a module (decision 78).
+        if !self.pickers.probing() || self.hiding() {
             return self.render_frame(since, events, false, &mut reduced);
         }
         let (rendered, error) =
@@ -4005,7 +4064,8 @@ impl Engine {
             return Ok(None);
         };
         let pipe = Pipe::Viewport { width, height };
-        let bound = edit::instances(&open.edit, self.operations, &self.modules, &open.image);
+        // The edit as shown, the modules the eye hides as if reset.
+        let bound = edit::instances(&open.shown(), self.operations, &self.modules, &open.image);
         let failing: BTreeSet<&'static str> = bound.failed.iter().map(|(id, _)| *id).collect();
         for (module, source) in bound.failed {
             if !open.failing.contains(module) {
@@ -4137,6 +4197,20 @@ impl Open {
             edit.unapplied.clear();
         }
         edit
+    }
+
+    /// The edit as the live frame shows it: each module the History tab's eye hides as if
+    /// it were reset, off where switched and at its defaults where every photo runs it, its
+    /// operation still planned (decision 78); the edit itself where none is hidden.
+    fn shown(&self) -> Cow<'_, Edit> {
+        if self.hidden.is_empty() {
+            return Cow::Borrowed(&self.edit);
+        }
+        let mut edit = self.edit.clone();
+        for module in &self.hidden {
+            edit.modules.remove(*module);
+        }
+        Cow::Owned(edit)
     }
 
     /// The sidecar as `build` writes it: the log and its end, with the copy's clock vector,
@@ -4297,6 +4371,7 @@ impl Open {
                     module: definition.id,
                     enabled,
                     edited: module_edited,
+                    hidden: self.hidden.contains(definition.id),
                     controls,
                     presets,
                     views,
@@ -4327,8 +4402,9 @@ impl Open {
                 }
             }
         }
-        // The edit's instances, every module's that binds, as the render plans them.
-        let instances = edit::instances(&self.edit, operations, modules, &self.image).instances;
+        // The edit's instances as the live frame shows them, every module's that binds and
+        // the eye does not hide, as the render plans them.
+        let instances = edit::instances(&self.shown(), operations, modules, &self.image).instances;
         let extent = pipeline::extent(&instances, &self.image)
             .unwrap_or([self.image.width, self.image.height]);
         Values {

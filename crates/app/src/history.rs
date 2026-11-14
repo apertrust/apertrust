@@ -69,9 +69,13 @@
 //!   day headings named, never focused;
 //! - Reset in the header, which resets the edit as one step, as Reset Edit does; the
 //!   header stays at the top of the tab while the list scrolls under it, and the end is
-//!   scrolled into sight whenever it moves.
+//!   scrolled into sight whenever it moves;
+//! - the eye at the end of a step's line of one module, under the pointer or with the
+//!   focus: held, by the pointer or Space or Enter, a peek at the photo without the module
+//!   ([`Action::Peek`], `Command::Hide` while held), never saved, the module's name struck
+//!   through while the session reports it hidden; nothing stays once it is let go.
 //!
-//! The eye and Compress history come with later parts (9.7 and 9.8).
+//! Compress history comes with a later part (9.8).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -82,7 +86,8 @@ use apertrust_engine::session::{
 };
 use apertrust_modules::{ControlKind, Definition, Module, Row, Slider, messages};
 use apertrust_ui::components::{
-    PanelBody, Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred, section_body,
+    IconButton, PanelBody, Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred,
+    section_body,
 };
 use apertrust_ui::i18n::{Args, local_day};
 use apertrust_ui::{Icon, Translator, fonts, theme, translator};
@@ -110,6 +115,9 @@ pub enum Action {
     Open(&'static str),
     /// Reset the edit, as Reset Edit does.
     Reset,
+    /// The eye held this frame on this module's line: the photo shown without the module
+    /// while it is held, `Command::Hide`.
+    Peek(&'static str),
 }
 
 /// Where a line stands in the list.
@@ -178,6 +186,10 @@ pub struct Line {
     /// The module Shift-click opens; none where the app
     /// does not know it, as an operation's unowned parameters or a newer build's module.
     pub module: Option<&'static str>,
+    /// The module the eye at its end hides from the view: a step's one module the app
+    /// knows; none on Reset's, a group's line or Original, nor where the app does not know
+    /// it.
+    pub hides: Option<&'static str>,
 }
 
 /// What the list holds, newest first, worded once for a history ([`kept`]).
@@ -451,6 +463,7 @@ pub fn listed(
             RailNode::Step
         },
         module: None,
+        hides: None,
     }));
     Listed {
         entries,
@@ -486,6 +499,10 @@ fn step_line(
             () => RailNode::Step,
         },
         module: (step.changes.iter()).find_map(|change| known(modules, &change.module)),
+        hides: match &step.changes[..] {
+            [change] if !is_reset(step) => known(modules, &change.module),
+            _ => None,
+        },
     }
 }
 
@@ -552,6 +569,7 @@ fn batch_line(
             undone: !applied,
         },
         module: None,
+        hides: None,
     }
 }
 
@@ -601,6 +619,7 @@ fn defaults_group(
                 undone: !applied,
             },
             module: None,
+            hides: None,
         },
         lines,
         holds_end: (1..last).contains(&end),
@@ -783,8 +802,9 @@ fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
 /// staying at the top of the tab while its list scrolls under it, the list from
 /// `history`, the open photo's, drawn disabled where there is none; it peeks while `peek`
 /// holds, as every section does. A step is gone to only while `editable` (a photo live
-/// and not open for viewing only), and Reset runs only while `resettable`. `today` is the
-/// local calendar's day ([`today`]). Returns what the user did.
+/// and not open for viewing only), and Reset runs only while `resettable`; the eye, view
+/// state alone, is held on any photo, `hidden` the modules the session reports hidden, as
+/// the mirror's values have them. `today` is the local calendar's day ([`today`]). Returns what the user did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the section's state from the app, each part apart"
@@ -793,6 +813,7 @@ pub fn tab(
     ui: &mut egui::Ui,
     history: Option<&History>,
     modules: &[&dyn Module],
+    hidden: &[&str],
     open: bool,
     peek: bool,
     editable: bool,
@@ -817,7 +838,8 @@ pub fn tab(
         })
         .show(ui, |ui| {
             if open {
-                actions = section_body(ui, |ui| list(ui, history, modules, editable, today));
+                let lines = |ui: &mut egui::Ui| list(ui, history, modules, hidden, editable, today);
+                actions = section_body(ui, lines);
             }
         });
     let mut done: Vec<Action> = (header.into_iter())
@@ -837,6 +859,7 @@ fn list(
     ui: &mut egui::Ui,
     history: Option<&History>,
     modules: &[&dyn Module],
+    hidden: &[&str],
     editable: bool,
     today: i32,
 ) -> Vec<Action> {
@@ -890,6 +913,7 @@ fn list(
         undone: listed.undone,
         base,
         editable,
+        hidden,
         moved,
         index: 0,
         actions: Vec::new(),
@@ -964,6 +988,8 @@ struct Pass<'a> {
     /// The id the lines' ids are made from.
     base: egui::Id,
     editable: bool,
+    /// The modules the session reports hidden, as the eye holds them.
+    hidden: &'a [&'a str],
     /// Whether the end moved, to be scrolled into sight.
     moved: bool,
     actions: Vec<Action>,
@@ -982,12 +1008,14 @@ impl Pass<'_> {
             Drawn::Line(shown) => shown,
         };
         let id_of = |key: LineKey| self.base.with(key);
+        let hidden = (shown.line.hides).is_some_and(|module| self.hidden.contains(&module));
         let out = line_row(
             ui,
             id_of(shown.line.key),
             shown,
             self.columns,
             self.editable,
+            hidden,
         );
         self.actions.extend(out.action);
         if out.toggle {
@@ -1300,14 +1328,17 @@ struct Clicked {
 /// of the rail, its number, or a batch's range, centred in the section's numbers' column,
 /// a group's chevron, the name, a group's in the medium weight and a line inside a group
 /// indented under it, then what changed in the small text, cut at its end where there is
-/// no room, and the tag at the row's end; the end's on `list_chosen`, an undone step's in
-/// `text_secondary`. Returns what a click, or Enter, asked for.
+/// no room, and the tag before the eye's room at the row's end; the end's on
+/// `list_chosen`, an undone step's in `text_secondary`; and the eye on a step of one
+/// module ([`eye_button`]), its module's name struck through in `text_secondary` while the
+/// session reports it `hidden`. Returns what a click, or Enter, asked for, and the eye held.
 fn line_row(
     ui: &mut egui::Ui,
     id: egui::Id,
     shown: &Shown<'_>,
     columns: Columns,
     editable: bool,
+    hidden: bool,
 ) -> Clicked {
     let t = theme(ui.ctx());
     let words = translator(ui.ctx());
@@ -1316,12 +1347,22 @@ fn line_row(
         ui.cursor().min,
         vec2(ui.available_width(), t.sizes.panel_line),
     );
+    // Asked before the line takes its interest in the focus, which Tab passes on there.
+    let focused = ui.memory(|m| m.has_focus(id));
     let response = ui.interact(rect, id, Sense::click());
     ui.advance_cursor_after_rect(rect);
     // A line the keys reach is scrolled into sight.
     if response.gained_focus() {
         response.scroll_to_me(None);
     }
+    // The eye, under the pointer and with the focus, the line's or its own last frame; the
+    // pointer over it is still over the line. Drawn as the line passes the focus on with
+    // Tab, it takes it next.
+    let eye_id = id.with("eye");
+    let eye_focused = ui.data(|d| d.get_temp::<bool>(eye_id)).unwrap_or(false);
+    let over = ui.rect_contains_pointer(rect);
+    let focused = focused || response.has_focus() || eye_focused;
+    let eye = (line.hides).filter(|_| over || focused);
     let (chosen, greyed) = (shown.chosen, line.greyed());
     let start = rect.left()
         + columns.name()
@@ -1339,7 +1380,7 @@ fn line_row(
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let band = rect.expand2(vec2(t.spacing.xs, 0.0));
-        let hovered = response.hovered() && line.takes(editable);
+        let hovered = (response.hovered() || eye.is_some() && over) && line.takes(editable);
         let ground = if chosen {
             t.colors.list_chosen
         } else if hovered {
@@ -1370,6 +1411,13 @@ fn line_row(
                 t.colors.text_secondary,
                 t.colors.text_secondary,
             )
+        };
+        // A module hidden while the eye is held: its name in the secondary text, struck
+        // through below.
+        let ink = if hidden && enabled {
+            t.colors.text_secondary
+        } else {
+            ink
         };
         let caption = FontId::proportional(t.text.caption);
         let middle = rect.center().y;
@@ -1402,7 +1450,8 @@ fn line_row(
                 colour,
             );
         }
-        let mut end = rect.right();
+        // Every line leaves the eye's room at its end, so the tags line up.
+        let mut end = rect.right() - EYE - t.spacing.xxs;
         if let Some(tag) = &line.tag {
             let tagged = if chosen {
                 t.colors.text_secondary
@@ -1432,7 +1481,12 @@ fn line_row(
         let name = cut_at(painter, &line.name, body, ink, room);
         let after = start + name.as_ref().map_or(0.0, |name| name.size().x) + t.spacing.s;
         if let Some(name) = name {
-            painter.galley(centred(&name, start), name, ink);
+            let (at, size) = (centred(&name, start), name.size());
+            painter.galley(at, name, ink);
+            if hidden {
+                let stroke = egui::Stroke::new(t.shape.hairline, ink);
+                painter.hline(at.x..=at.x + size.x, at.y + size.y / 2.0, stroke);
+            }
         }
         // What changed, cut at its end where the line has no room.
         let change = (line.change.as_ref())
@@ -1472,7 +1526,52 @@ fn line_row(
             line.tip.said(&words)
         });
     });
-    let response = response.on_hover_ui(|ui| tip_ui(ui, &line.tip));
+    let at = pos2(rect.right() - EYE, rect.center().y - EYE / 2.0);
+    let area = egui::Rect::from_min_size(at, vec2(EYE, EYE));
+    // Whether the primary button's press under way began on the eye, kept from its frame
+    // and read from the press's own event: egui forgets where a press began as it is let
+    // go, before the frame's widgets are drawn where both come in one frame, as a tap's do.
+    let eye_press = id.with("eye press");
+    let began = ui.input(|i| {
+        (i.events.iter().rev()).find_map(|event| match event {
+            egui::Event::PointerButton {
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                pos,
+                ..
+            } => Some(area.contains(*pos)),
+            _ => None,
+        })
+    });
+    if let Some(on_eye) = began {
+        ui.data_mut(|d| d.insert_temp(eye_press, on_eye));
+    }
+    // The pointer on the eye shows the eye's tooltip alone: the line's, open, would stay
+    // while the pointer is inside the line.
+    let on_eye = eye.is_some()
+        && ui
+            .ctx()
+            .pointer_hover_pos()
+            .is_some_and(|p| area.contains(p));
+    let response = if on_eye {
+        response
+    } else {
+        response.on_hover_ui(|ui| tip_ui(ui, &line.tip))
+    };
+    let eyed = eye.and_then(|module| {
+        // Over the line, and inside its item for screen readers.
+        let builder = UiBuilder::new()
+            .id_salt(eye_id)
+            .max_rect(area)
+            .accessibility_parent(response.id);
+        let pressed = eye_button(&mut ui.new_child(builder), &line.name);
+        let focused = pressed.has_focus();
+        ui.data_mut(|d| d.insert_temp(eye_id, focused));
+        held(ui, &pressed, area).then_some(Action::Peek(module))
+    });
+    if eye.is_none() && eye_focused {
+        ui.data_mut(|d| d.remove::<bool>(eye_id));
+    }
     // A screen reader's Expand on a closed group, or Collapse on an open one.
     let disclosed = shown.open.is_some_and(|open| {
         let asked = if open {
@@ -1483,11 +1582,17 @@ fn line_row(
         ui.input(|i| i.has_accesskit_action_request(response.id, asked))
     });
     let mut clicked = Clicked {
-        action: None,
+        action: eyed,
         toggle: disclosed,
         response: response.clone(),
     };
     if !response.clicked() {
+        return clicked;
+    }
+    // A pointer's press that began on the eye is the eye's, a peek, though the line took it
+    // where the eye was not drawn yet, the pointer arriving and pressing in one frame, as a
+    // tap does: it goes to no step. A key's click is the line's.
+    if line.hides.is_some() && pressed_on(ui, eye_press) {
         return clicked;
     }
     // The chevron, under the pointer, opens or closes the group; a key's click goes to it.
@@ -1499,6 +1604,89 @@ fn line_row(
         clicked.action = line.clicked(shift_clicked(ui), editable);
     }
     clicked
+}
+
+/// Whether this frame's click is the primary button's release of a press that began on the
+/// eye, as its frame kept it under `eye_press`; a key's click is not.
+fn pressed_on(ui: &egui::Ui, eye_press: egui::Id) -> bool {
+    let released = ui.input(|i| {
+        i.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    ..
+                }
+            )
+        })
+    });
+    released && ui.data(|d| d.get_temp::<bool>(eye_press)) == Some(true)
+}
+
+/// The eye's side, at a line's end, the icon's and a point round it, as the board draws it.
+const EYE: f32 = 16.0;
+
+/// The eye on a step's line, `module` its module's title: an icon button, held to see the
+/// photo without the module, never saved. To screen readers a plain button, "Hold to see
+/// the photo without Exposure", its tooltip saying nothing is saved.
+fn eye_button(ui: &mut egui::Ui, module: &str) -> egui::Response {
+    let words = translator(ui.ctx());
+    let mut args = Args::new();
+    args.set("module", module);
+    let name = words.text_with("history-peek", Some(&args));
+    let tip = words.text_with("history-peek-tip", Some(&args));
+    IconButton::new(Icon::Visible, &name)
+        .tip(&tip)
+        .size(EYE)
+        .show(ui)
+}
+
+/// Whether the eye, its `response` over `area`, is held this frame: the primary button
+/// pressed on this eye and down, the pointer still over it, or Space or Enter down while it
+/// has the focus; never while the window has lost the focus, so a release the window never
+/// saw leaves nothing hidden, and not again after that until a new press of the button or
+/// the key. Read from the pointer's own state, as egui stops counting a press longer than a
+/// click's as one on the widget (`is_pointer_button_down_on`); the press is bound to the eye
+/// it began on by its start time, so a list scrolled under a held button never hands the
+/// hold to another line's eye.
+fn held(ui: &egui::Ui, response: &egui::Response, area: egui::Rect) -> bool {
+    let inside = |at: Option<egui::Pos2>| at.is_some_and(|at| area.contains(at));
+    let (down, began, start, over, keys, focused, pressed) = ui.input(|i| {
+        let p = &i.pointer;
+        let keys = i.key_down(Key::Space) || i.key_down(Key::Enter);
+        let pressed = p.primary_pressed() || i.key_pressed(Key::Space) || i.key_pressed(Key::Enter);
+        (
+            p.primary_down(),
+            p.primary_pressed() && inside(p.press_origin()),
+            p.press_start_time(),
+            inside(p.hover_pos()),
+            keys,
+            i.focused,
+            pressed,
+        )
+    });
+    // The press this eye took: its start time, which no later press shares.
+    let press = egui::Id::unique("history eye press");
+    if began {
+        ui.data_mut(|d| d.insert_temp(press, (response.id, start)));
+    }
+    let ours =
+        ui.data(|d| d.get_temp::<(egui::Id, Option<f64>)>(press)) == Some((response.id, start));
+    let pointer = down && over && ours;
+    // Set as the window loses the focus mid-hold, cleared by the next press.
+    let lost = response.id.with("lost");
+    let mut stopped = ui.data(|d| d.get_temp::<bool>(lost)).unwrap_or(false);
+    let holding = pointer || keys && response.has_focus();
+    // Only a new press clears it: the pointer leaving the eye and coming back with the
+    // button still down is the same press.
+    if !focused && holding {
+        stopped = true;
+    } else if pressed {
+        stopped = false;
+    }
+    ui.data_mut(|d| d.insert_temp(lost, stopped));
+    focused && holding && !stopped
 }
 
 /// A line's name as screen readers hear it: a step's number, name and what changed, its
@@ -2075,7 +2263,7 @@ pub(crate) mod tests {
     use apertrust_engine::history::{Clock, MachineId};
     use apertrust_engine::session::{BatchId, ModuleChange, StepId, StepSource};
     use apertrust_ui::{Builtin, Locale, Theme};
-    use egui::accesskit::Role as AccessRole;
+    use egui::accesskit::{Role as AccessRole, Toggled};
     use egui_kittest::Harness;
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
@@ -2706,6 +2894,8 @@ pub(crate) mod tests {
         history: Option<History>,
         editable: bool,
         resettable: bool,
+        /// The modules the eye hides, as the mirror's values report them.
+        hidden: Vec<&'static str>,
         actions: Vec<Action>,
         /// The side panel's width; the theme's where none.
         panel: Option<f32>,
@@ -2744,6 +2934,7 @@ pub(crate) mod tests {
                             ui,
                             history,
                             modules,
+                            &scene.hidden,
                             true,
                             false,
                             editable,
@@ -2757,6 +2948,7 @@ pub(crate) mod tests {
                     history,
                     editable: true,
                     resettable: true,
+                    hidden: Vec::new(),
                     actions: Vec::new(),
                     panel: None,
                 },
@@ -2843,6 +3035,294 @@ pub(crate) mod tests {
         harness.run();
         shift_click(&mut harness, "Step 2: Grain");
         assert_eq!(harness.state().actions, [Action::Open("grain")]);
+    }
+
+    /// The eye named `name`, if drawn: whether it is a toggle.
+    fn eye(harness: &Harness<'_, Scene>, name: &str) -> Option<Option<Toggled>> {
+        (harness.query_by_role_and_label(AccessRole::Button, name))
+            .map(|node| node.accesskit_node().toggled())
+    }
+
+    /// Whether any eye is drawn.
+    fn any_eye(harness: &Harness<'_, Scene>) -> bool {
+        (harness.query_all_by_role(AccessRole::Button)).any(|node| {
+            let label = node.accesskit_node().label().unwrap_or_default();
+            label.starts_with("Hold to see the photo without ")
+        })
+    }
+
+    /// The modules the eye holds in the frames a run draws, each once, once the events
+    /// sent before it are taken in: the harness may take a button's in the frame after.
+    fn peeks(harness: &mut Harness<'_, Scene>) -> Vec<&'static str> {
+        harness.run();
+        harness.state_mut().actions.clear();
+        harness.run();
+        let actions = std::mem::take(&mut harness.state_mut().actions);
+        let mut held: Vec<&'static str> = (actions.into_iter())
+            .filter_map(|action| match action {
+                Action::Peek(module) => Some(module),
+                _ => None,
+            })
+            .collect();
+        held.dedup();
+        held
+    }
+
+    /// The primary button pressed or let go at `at`.
+    fn button(harness: &mut Harness<'_, Scene>, at: egui::Pos2, pressed: bool) {
+        harness.event(egui::Event::PointerMoved(at));
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+
+    /// The eye at the end of a step's line: none at rest; under the pointer, a plain button
+    /// of one name, not a toggle, its tooltip saying nothing is saved, on a photo that takes
+    /// no edit too. Held by the pointer, it asks to see the photo without the module each
+    /// frame, and let go, nothing; a press that leaves the eye, or a window that loses the
+    /// focus, lets it go. With the line's focus, and with its own after Tab, where Space
+    /// held holds it.
+    #[test]
+    fn the_eye_held_shows_the_photo_without_a_step_s_module() {
+        const GRAIN: &str = "Hold to see the photo without Grain";
+        const EXPOSURE: &str = "Hold to see the photo without Exposure";
+        let mut harness = photo_scene(3);
+        harness.state_mut().editable = false;
+        harness.run();
+        assert!(!any_eye(&harness));
+        item(&harness, "Step 2: Grain").hover();
+        harness.run();
+        assert_eq!(eye(&harness, GRAIN), Some(None));
+        let node = harness.get_by_role_and_label(AccessRole::Button, GRAIN);
+        let tip = node.accesskit_node().description();
+        assert_eq!(
+            tip.as_deref(),
+            Some("Hold to see the photo without Grain; nothing is saved")
+        );
+        let at = node.rect().center();
+        let line = item(&harness, "Step 2: Grain").rect().center();
+        assert!(peeks(&mut harness).is_empty());
+        // Held, then let go.
+        button(&mut harness, at, true);
+        assert_eq!(peeks(&mut harness), ["grain"]);
+        assert_eq!(peeks(&mut harness), ["grain"]);
+        // Its name stays the same while the session reports the module hidden.
+        harness.state_mut().hidden = vec!["grain"];
+        harness.run();
+        assert_eq!(eye(&harness, GRAIN), Some(None));
+        button(&mut harness, at, false);
+        harness.state_mut().hidden.clear();
+        assert!(peeks(&mut harness).is_empty());
+        // Held, the pointer leaving the eye with the button down lets it go.
+        button(&mut harness, at, true);
+        assert_eq!(peeks(&mut harness), ["grain"]);
+        harness.event(egui::Event::PointerMoved(line));
+        assert!(peeks(&mut harness).is_empty());
+        button(&mut harness, line, false);
+        harness.run();
+        // Held, the window losing the focus lets it go.
+        button(&mut harness, at, true);
+        assert_eq!(peeks(&mut harness), ["grain"]);
+        harness.event(egui::Event::WindowFocused(false));
+        harness.input_mut().focused = false;
+        assert!(peeks(&mut harness).is_empty());
+        // Back with the button still down, as when another program took its release: no
+        // hold until a new press, leaving the eye and coming back over it included.
+        harness.event(egui::Event::WindowFocused(true));
+        harness.input_mut().focused = true;
+        assert!(peeks(&mut harness).is_empty());
+        harness.event(egui::Event::PointerMoved(line));
+        assert!(peeks(&mut harness).is_empty());
+        harness.event(egui::Event::PointerMoved(at));
+        assert!(peeks(&mut harness).is_empty());
+        button(&mut harness, at, false);
+        harness.run();
+        button(&mut harness, at, true);
+        assert_eq!(peeks(&mut harness), ["grain"]);
+        button(&mut harness, at, false);
+        harness.run();
+        // The keys: the line's focus shows it, Tab moves the focus onto it, and Space held
+        // there holds it.
+        harness.remove_cursor();
+        harness.run();
+        assert!(!any_eye(&harness));
+        item(&harness, "Step 3: Exposure").focus();
+        harness.run();
+        assert!(eye(&harness, EXPOSURE).is_some());
+        harness.key_press(Key::Tab);
+        harness.run();
+        harness.run();
+        let focused = harness.get_by_role_and_label(AccessRole::Button, EXPOSURE);
+        assert!(focused.is_focused());
+        harness.key_down(Key::Space);
+        assert_eq!(peeks(&mut harness), ["exposure"]);
+        harness.key_up(Key::Space);
+        assert!(peeks(&mut harness).is_empty());
+        let focused = harness.get_by_role_and_label(AccessRole::Button, EXPOSURE);
+        assert!(focused.is_focused());
+    }
+
+    /// A press on a line's eye before the eye is drawn, the pointer arriving and pressing in
+    /// one frame, as a tap does, is the eye's: it peeks, and its release goes to no step.
+    #[test]
+    fn a_press_on_an_eye_not_yet_drawn_goes_to_no_step() {
+        let mut harness = photo_scene(3);
+        harness.remove_cursor();
+        harness.run();
+        assert!(!any_eye(&harness));
+        let line = item(&harness, "Step 2: Grain").rect();
+        let at = egui::pos2(line.right() - EYE / 2.0, line.center().y);
+        harness.state_mut().actions.clear();
+        // Both in one frame: the harness gives each event it queues a frame of its own.
+        let events = &mut harness.input_mut().events;
+        events.push(egui::Event::PointerMoved(at));
+        events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+        let held = std::mem::take(&mut harness.state_mut().actions);
+        assert_eq!(held, [Action::Peek("grain")]);
+        button(&mut harness, at, false);
+        harness.run();
+        let actions = &harness.state().actions;
+        assert!(
+            !actions
+                .iter()
+                .any(|action| matches!(action, Action::GoTo(_))),
+            "{actions:?}"
+        );
+    }
+
+    /// A tap on a line's eye, the pointer arriving, pressing and letting go in one frame,
+    /// goes to no step.
+    #[test]
+    fn a_tap_on_an_eye_goes_to_no_step() {
+        let mut harness = photo_scene(3);
+        harness.remove_cursor();
+        harness.run();
+        let line = item(&harness, "Step 2: Grain").rect();
+        let at = egui::pos2(line.right() - EYE / 2.0, line.center().y);
+        harness.state_mut().actions.clear();
+        // All in one frame: the harness gives each event it queues a frame of its own.
+        let events = &mut harness.input_mut().events;
+        events.push(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        harness.run();
+        let actions = &harness.state().actions;
+        assert!(
+            !actions
+                .iter()
+                .any(|action| matches!(action, Action::GoTo(_))),
+            "{actions:?}"
+        );
+    }
+
+    /// A held eye's press is its own: the list scrolled under the button held puts another
+    /// line's eye under the press, which is not held, and nothing is.
+    #[test]
+    fn a_list_scrolled_under_a_held_eye_holds_no_other() {
+        let steps = (1..=30)
+            .map(|n| step(n, &[if n % 2 == 0 { "grain" } else { "exposure" }], None))
+            .collect();
+        let mut harness = scene(
+            Theme::default(),
+            egui::vec2(640.0, 480.0),
+            Some(history(40, steps, None, None)),
+        );
+        harness.run();
+        let line = item(&harness, "Step 20: Grain").rect();
+        item(&harness, "Step 20: Grain").hover();
+        harness.run();
+        let at = (harness
+            .get_by_role_and_label(AccessRole::Button, "Hold to see the photo without Grain"))
+        .rect()
+        .center();
+        button(&mut harness, at, true);
+        assert_eq!(peeks(&mut harness), ["grain"]);
+        // A line's height up, Step 19's eye under the press.
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -line.height()),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        });
+        assert!(peeks(&mut harness).is_empty());
+        let under = item(&harness, "Step 19: Exposure").rect();
+        assert!(under.contains(at), "{under:?} under {at:?}");
+        assert!(eye(&harness, "Hold to see the photo without Exposure").is_some());
+        button(&mut harness, at, false);
+        harness.run();
+    }
+
+    /// The eye as the board draws it: the pointer on the first step's eye, its tooltip
+    /// shown; then held, Exposure's name struck through on each of its lines while the
+    /// session reports it hidden.
+    #[test]
+    fn the_eye_is_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        let mut harness = scene(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(640.0, 480.0),
+            Some(photo_s(3)),
+        );
+        harness.run();
+        item(&harness, "Step 1: Exposure").hover();
+        harness.run();
+        let at = harness
+            .get_by_role_and_label(AccessRole::Button, "Hold to see the photo without Exposure")
+            .rect()
+            .center();
+        harness.event(egui::Event::PointerMoved(at));
+        harness.run();
+        harness.snapshot("history-tab-eye");
+        results.extend(harness.take_snapshot_results());
+        button(&mut harness, at, true);
+        harness.state_mut().hidden = vec!["exposure"];
+        harness.run();
+        harness.snapshot("history-tab-eye-held");
+        results.extend(harness.take_snapshot_results());
+    }
+
+    /// No eye on Reset's line, a group's or the Defaults', nor on Original; a default step
+    /// inside the Defaults has one.
+    #[test]
+    fn the_eye_is_on_a_step_of_one_module_alone() {
+        let mut harness = photo_scene(3);
+        harness.run();
+        for name in ["Step 4: Reset", "Original"] {
+            item(&harness, name).hover();
+            harness.run();
+            assert!(!any_eye(&harness), "{name}");
+        }
+        let mut harness = scene(
+            Theme::default(),
+            egui::vec2(320.0, 900.0),
+            Some(with_defaults(styled(6), 4)),
+        );
+        harness.run();
+        for name in ["Steps 12 to 14: Warm film", "Steps 1 to 9: Defaults"] {
+            item(&harness, name).hover();
+            harness.run();
+            assert!(!any_eye(&harness), "{name}");
+        }
+        item(&harness, "Step 1: Raw black/white point").hover();
+        harness.run();
+        let name = "Hold to see the photo without Raw black/white point";
+        assert!(eye(&harness, name).is_some());
     }
 
     /// The default steps are inside the Defaults' group, closed at first: a click on the

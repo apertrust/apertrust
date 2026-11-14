@@ -1057,6 +1057,11 @@ history-points =
         [one] { $count } point
        *[other] { $count } points
     }
+# The eye at the end of a step's line, held to see the photo without its module for that
+# moment, never saved: its name for screen readers, then its tooltip; $module is the
+# module's title.
+history-peek = Hold to see the photo without { $module }
+history-peek-tip = Hold to see the photo without { $module }; nothing is saved
 
 ## The curve; $control is its full name
 
