@@ -17,8 +17,9 @@
 
 # Renders the app icon's platform files from its SVG sources, into crates/app/assets/icons
 # (its README lists them): the macOS iconsets and .icns, the Windows sizes and .ico, the
-# Linux hicolor tree named after the app id, and the mark's PNGs. Run it after an SVG
-# changes and commit what it writes; packages and the window's icon take those files.
+# Linux hicolor tree named after the app id, the mark's PNGs, and the .apxmp edit's Windows
+# icon and .ico. Run it after an SVG changes and commit what it writes; packages and the
+# window's icon take those files.
 # Rust only, through the app's `icons` example: no system tool is needed.
 set -euo pipefail
 

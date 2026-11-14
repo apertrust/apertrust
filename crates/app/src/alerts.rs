@@ -27,10 +27,13 @@
 //! - **Why the edit is not saved** ([`Purpose::Save`]): the top panel's save warning
 //!   pressed, with Try Again.
 //! - **Why a drop opens nothing** ([`Purpose::Refused`]): what was dropped onto the window
-//!   is neither a folder nor a raw, or is a library's or a project's file.
+//!   is neither a folder nor a raw, or is a library's or a project's file, or an edit whose
+//!   photo is not beside it.
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
+
+use std::path::Path;
 
 use apertrust_ui::alert::{Request, Role};
 use apertrust_ui::i18n::Args;
@@ -38,6 +41,7 @@ use apertrust_ui::{tr, translator};
 use eframe::egui;
 
 use apertrust_engine::jobs::JobId;
+use apertrust_engine::sidecar;
 
 use crate::dialog_host::{Answer, AppDialogs, Ask};
 use crate::dropped::Refusal;
@@ -216,16 +220,23 @@ pub fn save_request(ctx: &egui::Context, name: &str, why: &str) -> Request {
 }
 
 /// "Can't open notes.txt": a drop that opens nothing, the first thing dropped named `name`,
-/// saying why, with one button, which Return and Escape both press.
+/// saying why, with one button, which Return and Escape both press. An edit's names its
+/// photo, `name` without `.apxmp`.
 pub fn refused_request(ctx: &egui::Context, name: &str, why: Refusal) -> Request {
     let mut args = Args::new();
     args.set("name", name);
     let title = translator(ctx).text_with("alert-refused-title", Some(&args));
     let message = match why {
-        Refusal::Library => "alert-refused-library",
-        Refusal::Unknown => "alert-refused-unknown",
+        Refusal::Library => tr(ctx, "alert-refused-library"),
+        Refusal::NoPhoto => {
+            let photo = sidecar::photo_for(Path::new(name));
+            let photo = photo.as_deref().and_then(Path::to_str).unwrap_or(name);
+            args.set("photo", photo);
+            translator(ctx).text_with("alert-refused-no-photo", Some(&args))
+        }
+        Refusal::Unknown => tr(ctx, "alert-refused-unknown"),
     };
-    Request::new(title, tr(ctx, message)).button(tr(ctx, "alert-refused-button"), Role::Cancel)
+    Request::new(title, message).button(tr(ctx, "alert-refused-button"), Role::Cancel)
 }
 
 /// One Quit or Close Window deciding whether the app leaves: `run_action` asks
@@ -800,6 +811,14 @@ mod tests {
             library.message,
             "Libraries and projects come in a later version."
         );
+        // An edit whose photo is not beside it names the photo.
+        let edit = refused_request(&ctx, "IMG_2041.ARW.apxmp", Refusal::NoPhoto);
+        assert_eq!(edit.title, "Can’t open IMG_2041.ARW.apxmp");
+        assert_eq!(
+            edit.message,
+            "Its photo, IMG_2041.ARW, isn’t in the same folder."
+        );
+        assert_eq!(edit.check(), Ok(()));
         let (mirror, _) = exporting();
         let mut guard = Guard::default();
         let told = then(Purpose::Refused, Answer::Pressed(0), &mut guard, &mirror);

@@ -271,6 +271,36 @@ fn a_sidecar_sits_beside_the_photo_and_is_replaced_whole() {
     ));
 }
 
+#[test]
+fn a_sidecar_names_its_photo_as_the_listing_matches_them() {
+    let photo = Path::new("/photos/IMG_2041.ARW");
+    assert_eq!(photo_for(&path_for(photo)).as_deref(), Some(photo));
+    assert_eq!(
+        photo_for(Path::new("DSCF0001.RAF.apxmp")),
+        Some(PathBuf::from("DSCF0001.RAF"))
+    );
+    // The suffix in lower case alone, as Apertrust writes it, with a name before it.
+    for other in [
+        "/photos/IMG.ARW.APXMP",
+        "/photos/IMG.ARW.Apxmp",
+        "/photos/IMG.ARW",
+        "/photos/.apxmp",
+        "/photos/IMG.ARW.apxmp.tmp",
+        "/",
+    ] {
+        assert_eq!(photo_for(Path::new(other)), None, "{other}");
+    }
+}
+
+/// A name that is not UTF-8 belongs to no photo, as the listing lists no such name.
+#[cfg(unix)]
+#[test]
+fn a_sidecar_whose_name_is_not_text_names_no_photo() {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::OsStr::from_bytes(b"/photos/IMG_\xff.ARW.apxmp");
+    assert_eq!(photo_for(Path::new(name)), None);
+}
+
 // -- Version 2 ----------------------------------------------------------------------------
 
 /// 2026-03-14T14:02:11.120Z.

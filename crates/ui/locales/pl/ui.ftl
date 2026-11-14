@@ -1070,4 +1070,5 @@ alert-quit-anyway = Zakończ mimo to
 alert-refused-title = Nie można otworzyć { $name }
 alert-refused-unknown = Tu otwierają się tylko foldery i zdjęcia raw.
 alert-refused-library = Biblioteki i projekty pojawią się w jednej z kolejnych wersji.
+alert-refused-no-photo = Zdjęcia tej edycji, { $photo }, nie ma w tym samym folderze.
 alert-refused-button = OK

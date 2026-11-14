@@ -1332,8 +1332,10 @@ alert-quit-save-title = Quit without your last changes?
 alert-quit-save-message = Your last changes couldn’t be saved: { $error }
 alert-quit-anyway = Quit Anyway
 # What was dropped onto the window opens nothing: $name is the first thing dropped, the
-# message says why, and the button is the one way out.
+# message says why, and the button is the one way out. An edit (IMG.ARW.apxmp) opens its
+# photo, $photo (IMG.ARW), which no-photo says is not beside it.
 alert-refused-title = Can’t open { $name }
 alert-refused-unknown = Only folders and raw photos open here.
 alert-refused-library = Libraries and projects come in a later version.
+alert-refused-no-photo = Its photo, { $photo }, isn’t in the same folder.
 alert-refused-button = OK

@@ -59,6 +59,15 @@ extensions = [
     "raw", "rw2", "rwl", "srw", "x3f",
 ]
 
+# Apertrust's own file type, the edit beside a photo (IMG.ARW.apxmp), which opens the photo.
+# The Windows installer makes Apertrust.Edit .apxmp's default too, with the executable's
+# second icon, the document's (windows/installer.nsi); macOS takes it from macos/Info.plist.
+[[fileAssociations]]
+name = "Apertrust.Edit"
+description = "Apertrust edit"
+role = "editor"
+extensions = ["apxmp"]
+
 [macos]
 # Merged over the keys cargo-packager writes: the version, the minimum macOS, the
 # document types (macos/Info.plist).

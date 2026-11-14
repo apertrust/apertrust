@@ -15,6 +15,12 @@
 	system's type where macOS declares one, by a type imported here where it does not.
 	Apertrust is an editor of them at the Alternate rank, so it is offered in Open With
 	and never takes a raw from the app that opens it now.
+
+	Apertrust's own type, its edit beside a photo (IMG.ARW.apxmp), is exported as
+	org.apertrust.edit, an XML file, and Apertrust its owner, so a double-click opens the
+	photo. Its icon is the system's document page with the word APXMP on it
+	(UTTypeIconText), which macOS draws once the bundle is signed, as tools/package.sh
+	signs it. Apertrust Dev's rank is Alternate (packaging/dev-identity.txt).
 -->
 <plist version="1.0">
 <dict>
@@ -87,6 +93,18 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Apertrust edit</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.apertrust.edit</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Folder</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -96,6 +114,32 @@
 			<array>
 				<string>public.folder</string>
 			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.apertrust.edit</string>
+			<key>UTTypeDescription</key>
+			<string>Apertrust edit</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeIcons</key>
+			<dict>
+				<key>UTTypeIconText</key>
+				<string>APXMP</string>
+			</dict>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>apxmp</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>

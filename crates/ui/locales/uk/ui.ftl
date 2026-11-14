@@ -1069,4 +1069,5 @@ alert-quit-anyway = Однаково вийти
 alert-refused-title = Не вдалося відкрити { $name }
 alert-refused-unknown = Тут відкриваються лише теки та raw-знімки.
 alert-refused-library = Бібліотеки та проєкти з'являться в одній із наступних версій.
+alert-refused-no-photo = Фото цієї обробки, { $photo }, немає в тій самій теці.
 alert-refused-button = Гаразд

@@ -19,6 +19,9 @@
 //!
 //! - A folder opens as Open Folder… does, and raws as Open… does, from the first one's
 //!   folder. Of several folders, or raws from several folders, the first opens.
+//! - An edit, `IMG.ARW.apxmp`, opens its photo, `IMG.ARW` beside it, as the raw would;
+//!   one whose photo is not there is refused with a message naming the photo. So do the
+//!   edits the system opens with the app, Open With's and a double-click's.
 //! - A library's or a project's file, `Name.aplibrary` or `Name.approject`, is refused with
 //!   a message until libraries and projects open (Phase 5), and so is anything else that
 //!   is neither a folder nor a raw the decoder reads.
@@ -37,7 +40,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
-use apertrust_engine::session;
+use apertrust_engine::{session, sidecar};
 use apertrust_ui::theme;
 use eframe::egui;
 
@@ -76,6 +79,8 @@ pub enum Dropped {
 pub enum Refusal {
     /// A library's or a project's file was among them; they open from Phase 5.
     Library,
+    /// An edit was among them whose photo, named as a raw, is not beside it.
+    NoPhoto,
     /// Nothing was a folder or a raw.
     Unknown,
 }
@@ -108,34 +113,44 @@ pub fn found(path: &Path) -> std::io::Result<Kind> {
 }
 
 /// What dropping `paths` opens, each asked with `kind` in order until the first that
-/// opens: a folder; or a raw, with the raws dropped after it from its folder, told by
-/// their names alone; or, where none opens, the first library's or project's file refused,
+/// opens, an edit standing for its photo ([`sidecar::photo_for`]): a folder; or a raw,
+/// with the raws dropped after it from its folder, told by their names alone; or, where
+/// none opens, the first library's or project's file or edit without its photo refused,
 /// where one was among them, else the first path. None for nothing dropped.
 pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<Dropped> {
-    let mut library = None;
-    for (i, path) in paths.iter().enumerate() {
-        match kind(path) {
-            Kind::Folder => return Some(Dropped::Folder(path.clone())),
+    let photos: Vec<PathBuf> = paths.iter().map(|path| photo(path)).collect();
+    let mut refused = None;
+    for (i, (path, photo)) in paths.iter().zip(&photos).enumerate() {
+        let edit = photo != path;
+        match kind(photo) {
+            Kind::Folder if !edit => return Some(Dropped::Folder(path.clone())),
             Kind::Raw => {
-                let folder = path.parent();
-                let beside = paths[i + 1..]
-                    .iter()
-                    .filter(|other| other.parent() == folder && named_raw(other))
-                    .cloned()
-                    .collect();
-                let first = path.clone();
+                let folder = photo.parent();
+                // Each once: a raw dropped with its edit is one photo.
+                let mut beside: Vec<PathBuf> = Vec::new();
+                for other in &photos[i + 1..] {
+                    let same = other.parent() == folder && named_raw(other);
+                    if same && other != photo && !beside.contains(other) {
+                        beside.push(other.clone());
+                    }
+                }
+                let first = photo.clone();
                 return Some(Dropped::Raws { first, beside });
             }
-            Kind::Library => library = library.or(Some(path)),
-            Kind::Other => {}
+            Kind::Library if !edit => refused = refused.or(Some((path, Refusal::Library))),
+            // Named as a raw, yet no raw there: the photo is gone, or was never beside it.
+            _ if edit && named_raw(photo) => refused = refused.or(Some((path, Refusal::NoPhoto))),
+            _ => {}
         }
     }
-    let (path, why) = match library {
-        Some(path) => (path, Refusal::Library),
-        None => (paths.first()?, Refusal::Unknown),
-    };
+    let (path, why) = refused.or_else(|| Some((paths.first()?, Refusal::Unknown)))?;
     let path = path.clone();
     Some(Dropped::Refused { path, why })
+}
+
+/// What `path` opens as: an edit's photo, `IMG.ARW` for `IMG.ARW.apxmp`, else the path.
+fn photo(path: &Path) -> PathBuf {
+    sidecar::photo_for(path).unwrap_or_else(|| path.to_owned())
 }
 
 /// What Open…'s answer `paths` opens, told by their names alone, the dialog having shown
@@ -341,6 +356,74 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn an_edit_opens_its_photo_as_the_raw_would() {
+        let opens = |names: &[&str]| opens(&paths(names), by_name);
+        assert_eq!(
+            opens(&["/a/IMG_1.CR3.apxmp"]),
+            Some(raws("/a/IMG_1.CR3", &[]))
+        );
+        // Edits and raws together: each edit its photo, which is not given twice.
+        assert_eq!(
+            opens(&[
+                "/a/IMG_2.CR3.apxmp",
+                "/a/IMG_1.CR3",
+                "/a/IMG_2.CR3",
+                "/b/DSC_1.NEF.apxmp",
+                "/a/IMG_3.CR3.apxmp"
+            ]),
+            Some(raws("/a/IMG_2.CR3", &["/a/IMG_1.CR3", "/a/IMG_3.CR3"]))
+        );
+        assert_eq!(
+            opens(&["/a/IMG_1.CR3", "/a/IMG_2.CR3", "/a/IMG_2.CR3.apxmp"]),
+            Some(raws("/a/IMG_1.CR3", &["/a/IMG_2.CR3"]))
+        );
+        assert_eq!(
+            opens(&["/a/notes.txt", "/a/IMG_1.CR3.apxmp", "/a/Wedding"]),
+            Some(raws("/a/IMG_1.CR3", &[]))
+        );
+        // Only `.apxmp` in lower case is an edit, as the listing has it; nor is an edit of
+        // a file that is no raw, nor of a folder.
+        for name in [
+            "/a/IMG_1.CR3.APXMP",
+            "/a/notes.txt.apxmp",
+            "/a/Wedding.apxmp",
+        ] {
+            assert_eq!(opens(&[name]), refused(name, Refusal::Unknown));
+        }
+    }
+
+    #[test]
+    fn an_edit_whose_photo_is_not_beside_it_is_refused_naming_the_edit() {
+        // IMG_1.CR3 is not there: the disk answers as for anything else that is not. Compared
+        // as paths, since Windows joins the photo's name with a backslash.
+        let gone = |path: &Path| {
+            if path == Path::new("/a/IMG_1.CR3") {
+                Kind::Other
+            } else {
+                by_name(path)
+            }
+        };
+        let opens = |names: &[&str]| opens(&paths(names), gone);
+        assert_eq!(
+            opens(&["/a/IMG_1.CR3.apxmp"]),
+            refused("/a/IMG_1.CR3.apxmp", Refusal::NoPhoto)
+        );
+        assert_eq!(
+            opens(&["/a/notes.txt", "/a/IMG_1.CR3.apxmp", "/a/IMG_1.CR3"]),
+            refused("/a/IMG_1.CR3.apxmp", Refusal::NoPhoto)
+        );
+        // Anything that opens still does; of the refusals that say more, the first.
+        assert_eq!(
+            opens(&["/a/IMG_1.CR3.apxmp", "/a/IMG_2.CR3"]),
+            Some(raws("/a/IMG_2.CR3", &[]))
+        );
+        assert_eq!(
+            opens(&["/a/Home.aplibrary", "/a/IMG_1.CR3.apxmp"]),
+            refused("/a/Home.aplibrary", Refusal::Library)
+        );
+    }
+
+    #[test]
     fn open_s_answer_is_told_by_its_names_as_a_drop_of_it_would_be() {
         assert_eq!(
             chosen(&paths(&["/a/IMG_2.CR3", "/a/IMG_1.CR3"])),
@@ -397,6 +480,25 @@ pub(crate) mod tests {
         assert_eq!(kind(&folder.0.join("Home.aplibrary")), Kind::Library);
         // Gone, or never there: nothing to open.
         assert_eq!(kind(&folder.0.join("IMG_2.CR3")), Kind::Other);
+        // An edit beside its photo opens the photo; one whose photo is gone is refused.
+        let edits = [
+            folder.0.join("IMG_1.CR3.apxmp"),
+            folder.0.join("IMG_2.CR3.apxmp"),
+        ];
+        for edit in &edits {
+            std::fs::write(edit, b"").expect("an edit");
+        }
+        let first = folder.0.join("IMG_1.CR3");
+        let beside = Vec::new();
+        assert_eq!(
+            opens(&edits[..1], kind),
+            Some(Dropped::Raws { first, beside })
+        );
+        let (path, why) = (edits[1].clone(), Refusal::NoPhoto);
+        assert_eq!(
+            opens(&edits[1..], kind),
+            Some(Dropped::Refused { path, why })
+        );
     }
 
     /// A window in the default theme, the photo's surround over its left part and the

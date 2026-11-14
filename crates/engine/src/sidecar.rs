@@ -69,7 +69,7 @@ use apertrust_plugin::{Operation, ParamValues};
 use apertrust_library::sidecar::{self as text, Document, Entry, FIRST_COPY, VirtualCopy};
 pub use apertrust_library::sidecar::{
     CONTROL_NAMESPACE, COPIES_VERSION, Edits, NAMESPACE, Newer, PARAM_NAMESPACE, Problem, Reason,
-    SidecarError, ViewOnly, path_for, read_fingerprint, write_xml,
+    SidecarError, ViewOnly, path_for, photo_for, read_fingerprint, write_xml,
 };
 pub(crate) use apertrust_library::sidecar::{file_name, writer};
 

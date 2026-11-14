@@ -26,8 +26,12 @@
 ;   each extension's OpenWithProgids naming it, and the app's Applications entry with its
 ;   SupportedTypes, in place of FileAssociation.nsh's APP_ASSOCIATE, which takes the
 ;   extension's default;
+; - Apertrust's own type, its edit (.apxmp, the ProgID Apertrust.Edit), is the one
+;   default it takes, with the executable's second icon, the document's; Apertrust Dev's,
+;   Apertrust.Dev.Edit, is in Open With alone;
 ; - the uninstaller removes exactly those, where cargo-packager's loops over a field the
-;   associations do not have and removes nothing, and the installer's own registry key;
+;   associations do not have and removes nothing, the edit's default only where it is
+;   still Apertrust's, and the installer's own registry key;
 ; - the Start menu folder chosen is kept in that key, so the uninstaller finds it.
 ;
 ; It removes nothing of the person's: the settings and edits are elsewhere, and the
@@ -538,19 +542,29 @@ Section Install
     File /a "/oname={{this}}" "{{@key}}"
   {{/each}}
 
-  ; The file types, in Open With alone: the ProgID, each extension's OpenWithProgids naming
+  ; The file types, in Open With: the ProgID, each extension's OpenWithProgids naming
   ; it, and the app's entry with the types it supports. Both open the file with
-  ; --in-folder, so the app opens its folder with it active, never the photo alone. No
-  ; extension's default value is written, so the app the person chose for a type stays
-  ; theirs.
+  ; --in-folder, so the app opens its folder with it active, never the photo alone; an
+  ; edit opens its photo. No raw extension's default value is written, so the app the
+  ; person chose for a type stays theirs.
   {{#each file_associations as |association| ~}}
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}" "" "{{association.description}}"
-    WriteRegStr SHCTX "Software\Classes\\{{association.name}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
+    {{#if (eq association.extensions.[0] "apxmp") ~}}
+      ; The edit's icon, the document's: the executable's icon resource 2 (crates/app/build.rs).
+      WriteRegStr SHCTX "Software\Classes\\{{association.name}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",-2"
+    {{else ~}}
+      WriteRegStr SHCTX "Software\Classes\\{{association.name}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
+    {{/if ~}}
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --in-folder $\"%1$\""
     {{#each association.extensions as |ext| ~}}
       WriteRegNone SHCTX "Software\Classes\.{{ext}}\OpenWithProgids" "{{association.name}}"
       WriteRegNone SHCTX "${APPKEY}\SupportedTypes" ".{{ext}}"
     {{/each}}
+    {{#if (eq association.name "Apertrust.Edit") ~}}
+      ; Apertrust's own type: .apxmp's default too, so a double-click opens an edit.
+      ; Apertrust Dev's ProgID, Apertrust.Dev.Edit, never takes it.
+      WriteRegStr SHCTX "Software\Classes\.apxmp" "" "Apertrust.Edit"
+    {{/if ~}}
   {{/each}}
   WriteRegStr SHCTX "${APPKEY}" "FriendlyAppName" "${PRODUCTNAME}"
   WriteRegStr SHCTX "${APPKEY}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
@@ -650,10 +664,17 @@ Section Uninstall
     Delete "$INSTDIR\\{{this}}"
   {{/each}}
 
-  ; The file types the installer registered, and only those: the ProgID's name in each
+  ; The file types the installer registered, and only those: .apxmp's default where it is
+  ; still Apertrust's edit, not another app's since; the ProgID's name in each
   ; extension's OpenWithProgids, the key left where something else is in it (another
-  ; app's default, another's ProgID), the ProgID and the app's entry.
+  ; app's default, another's ProgID); the ProgID and the app's entry.
   {{#each file_associations as |association| ~}}
+    {{#if (eq association.name "Apertrust.Edit") ~}}
+      ReadRegStr $R0 SHCTX "Software\Classes\.apxmp" ""
+      ${If} $R0 == "Apertrust.Edit"
+        DeleteRegValue SHCTX "Software\Classes\.apxmp" ""
+      ${EndIf}
+    {{/if ~}}
     {{#each association.extensions as |ext| ~}}
       DeleteRegValue SHCTX "Software\Classes\.{{ext}}\OpenWithProgids" "{{association.name}}"
       DeleteRegKey /ifempty SHCTX "Software\Classes\.{{ext}}\OpenWithProgids"

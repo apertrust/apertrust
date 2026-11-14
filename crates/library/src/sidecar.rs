@@ -223,6 +223,17 @@ pub fn path_for(photo: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// The photo the sidecar at `path` belongs to, [`path_for`]'s inverse: its name without
+/// [`SUFFIX`], matched as the listing matches it. None for a name that does not end in
+/// `.apxmp` in lower case, has nothing before it, or is not text.
+pub fn photo_for(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    let photo = name
+        .strip_suffix(SUFFIX)
+        .filter(|photo| !photo.is_empty())?;
+    Some(path.with_file_name(photo))
+}
+
 /// A file's name, as a debug line names it, or the whole path where it has none.
 pub fn file_name(path: &Path) -> std::borrow::Cow<'_, str> {
     path.file_name()
