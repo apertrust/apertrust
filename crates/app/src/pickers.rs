@@ -269,11 +269,19 @@ impl Picked {
     /// The patches `command` takes away as it changes modules' values from outside a pick,
     /// as darktable's `gui_update` zeroes `spot_RGB` and so the L shown with it
     /// (`exposure.c:707-710`): `Some(None)` every module's, for undo, redo, a move through
-    /// history and the edit's reset; `Some(Some(module))` one module's, for its reset;
-    /// `None` for any other command.
+    /// history, the edit's reset, and Compress, Truncate and Discard History, after which
+    /// darktable reloads the history and so its modules' `gui_update` too
+    /// (`dt_dev_history_truncate`, `src/develop/develop.c:1860`);
+    /// `Some(Some(module))` one module's, for its reset; `None` for any other command.
     pub fn clears(command: &Command) -> Option<Option<String>> {
         match command {
-            Command::Undo | Command::Redo | Command::GoTo { .. } | Command::Reset => Some(None),
+            Command::Undo
+            | Command::Redo
+            | Command::GoTo { .. }
+            | Command::Reset
+            | Command::Compress
+            | Command::Truncate
+            | Command::DiscardHistory => Some(None),
             Command::ResetModule { module } => Some(Some(module.clone())),
             _ => None,
         }

@@ -11,6 +11,9 @@ action-export = Export…
 # File › Export Again: the export with the settings as last kept, with no dialog.
 action-export-again = Export Again
 action-reset = Reset
+# Edit › Discard History… and the History section's options: clears the history, asking
+# first.
+action-discard-history = Discard History…
 action-undo = Undo
 action-redo = Redo
 action-copy-edit = Copy edit
@@ -378,9 +381,9 @@ edit-not-saved-view-only = another program changed its file, which opens for vie
 # it changed again.
 edit-not-saved-still-changing = another program kept changing its file as the photo closed
 # Over the photo, until another is opened, when another program changed the history in its
-# edit's file so that the last Undo, Redo or Go to made here could not be kept. $name is the
-# photo's file name.
-edit-move-not-kept = Another program changed the history of { $name }: your last Undo, Redo or Go to wasn’t kept
+# edit's file so that the last Undo, Redo, Go to, Compress, Truncate or Discard History made
+# here could not be kept. $name is the photo's file name.
+edit-move-not-kept = Another program changed the history of { $name }: your last Undo, Redo, Go to, Compress, Truncate or Discard History wasn’t kept
 # The exposure values at the end of the caption under the photo, from its EXIF. $value is
 # written in the language's numbers: the shutter as "1/250" or "2.5", the aperture "8.0",
 # the focal length "35", the ISO "200".
@@ -651,6 +654,7 @@ setting-sliders-marker-option-square = Square
 setting-library-reopen-last-label = Reopen what was open last
 setting-library-reopen-last-help = Opens the folder you were working in when { app-name } closed, with its photo. A file or folder opened from the file manager or a terminal opens instead.
 setting-export-ask-before-overwrite-label = Ask before overwriting an exported file
+setting-history-ask-before-discard-label = Ask before discarding a photo’s history
 setting-grid-panel-square-thumbnails-label = Square thumbnails
 setting-library-raw-thumbnails-from-label = Raw thumbnails from
 setting-library-raw-thumbnails-from-help = For photos with no edit: thumbnails larger than this size are rendered from the raw, in { app-name }'s look, instead of the camera's embedded JPEG. Slower. Edited photos always show their edit.
@@ -973,6 +977,24 @@ history-go-to-step = Go to Step
 history-compress = Compress History
 history-truncate = Truncate History
 history-discard = Discard History
+# The History section's options (⋯), as items: Compress History, which Option on the Mac
+# and Alt elsewhere, $key, turns into Truncate History while held, its tip saying so where
+# it can; Create a Style…, which comes with styles; and Discard History…'s tip.
+history-options-compress = Compress History
+history-options-truncate = Truncate History
+history-compress-tip = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is.
+history-compress-tip-truncate = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is. Hold { $key } to truncate instead.
+history-truncate-tip = Removes the steps after the chosen one and keeps the rest as they are. The photo stays as it is.
+history-options-style = Create a Style…
+history-options-style-later = Styles come in a later version.
+history-discard-tip = Clears the history and puts the photo back as it first opened.
+# The same on an edit part of whose history can't be read, which it starts afresh.
+history-discard-tip-unreadable = Starts the history afresh from the photo as it looks now. What can’t be read is lost.
+# Why Discard History… is disabled where it would ask and the system's question can't be
+# shown yet, Windows' until its alert is built: as export-conflict-overwrite-no-alert.
+history-discard-no-alert = Discard History asks first, and that question can’t be shown here yet. Turn off Ask before discarding a photo’s history in Settings to discard without asking.
+# The same on an edit part of whose history can't be read, which always asks first.
+history-discard-no-alert-unreadable = Discarding this history asks first, since nothing can bring back what can’t be read, and that question can’t be shown here yet.
 
 ## The History section in the side panel's History tab (docs/history.md)
 
@@ -1349,3 +1371,12 @@ alert-refused-unknown = Only folders and raw photos open here.
 alert-refused-library = Libraries and projects come in a later version.
 alert-refused-no-photo = Its photo, { $photo }, isn’t in the same folder.
 alert-refused-button = OK
+# Discard History…, Cancel the default: darktable's "delete image's history?". Undo takes it
+# back while the photo is open.
+alert-discard-title = Discard this photo’s history?
+alert-discard-message = The photo goes back to how it first opened, and its history is cleared. Undo brings it back until the photo closes.
+# The same where part of the edit's history can't be read, so it opened for viewing only:
+# discarding starts the history afresh from the photo as it looks, nothing takes it back, and
+# what couldn't be read is lost. $file is the edit's file beside the photo.
+alert-discard-unreadable-message = Some of this edit’s history can’t be read. Discarding starts it afresh from the photo as it looks now, and what can’t be read is lost for good. To keep it, copy { $file } first.
+alert-discard-button = Discard History

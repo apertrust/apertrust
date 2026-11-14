@@ -68,6 +68,10 @@ pub struct Item {
     /// What a pointer resting on the item says, translated: why a disabled one cannot be
     /// chosen.
     pub tip: Option<String>,
+    /// The item shown and chosen in its place while Option (Alt on Windows and Linux) is
+    /// held, as macOS's alternate menu items are: its own id, words, state and tip. None
+    /// for an item with none.
+    pub alternate: Option<Box<Item>>,
 }
 
 impl Item {
@@ -80,6 +84,7 @@ impl Item {
             checked: None,
             enabled: true,
             tip: None,
+            alternate: None,
         }
     }
 
@@ -103,6 +108,22 @@ impl Item {
     pub fn tip(mut self, tip: impl Into<String>) -> Self {
         self.tip = Some(tip.into());
         self
+    }
+
+    /// Shows `item` in its place while Option (Alt) is held; its own alternate is never
+    /// shown.
+    pub fn alternate(mut self, item: Item) -> Self {
+        self.alternate = Some(Box::new(item));
+        self
+    }
+
+    /// The item shown and chosen with Option (Alt) held or not, `held`: its alternate where
+    /// it has one and the key is held, else itself.
+    pub fn held(&self, held: bool) -> &Item {
+        match &self.alternate {
+            Some(alternate) if held => alternate,
+            _ => self,
+        }
     }
 }
 

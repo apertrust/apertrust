@@ -87,6 +87,9 @@ impl ActionId {
     pub const EXPORT: ActionId = ActionId("export");
     pub const EXPORT_AGAIN: ActionId = ActionId("export-again");
     pub const RESET: ActionId = ActionId("reset");
+    /// Edit › Discard History… and the History section's ⋯ item: asks, then
+    /// `Command::DiscardHistory` (decision 78).
+    pub const DISCARD_HISTORY: ActionId = ActionId("discard-history");
     pub const UNDO: ActionId = ActionId("undo");
     pub const REDO: ActionId = ActionId("redo");
     pub const COPY_EDIT: ActionId = ActionId("copy-edit");
@@ -229,6 +232,8 @@ pub enum Intent {
     Export,
     /// The export with the settings as last kept, with no dialog (`export_again`).
     ExportAgain,
+    /// Discard History, asked first unless the setting says not to (`alerts`).
+    DiscardHistory,
     View(View),
     PanelTab(usize),
     /// View › Browse: the first tab holding Browse chosen, nothing where it is chosen.
@@ -267,6 +272,14 @@ pub struct State {
     /// takes them: live and not open for viewing only (decision 78).
     pub undo: bool,
     pub redo: bool,
+    /// Whether Discard History has something to do and is taken: the photo live and not
+    /// open for viewing only, or open for viewing only because part of its history cannot
+    /// be read, which it starts afresh (decision 78; `history::options`).
+    pub discard: bool,
+    /// Why Discard History… cannot run where only the platform's missing alert stops it,
+    /// Windows' until its task dialog, as its items say ([`why_unavailable`]): a message's
+    /// id, `history::discard_why`'s.
+    pub discard_why: Option<&'static str>,
     /// Whether a text field of the main window has the focus: Undo and Redo act on it, as
     /// the Mac's Edit menu does (decision 39), whatever the photo's history holds.
     pub text: bool,
@@ -439,6 +452,15 @@ fn never(_: &State) -> bool {
 }
 
 /// Whether no modal dialog is open, for an action that opens a dialog.
+/// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
+/// reason is one the person can act on: Discard History… where it would ask and the
+/// platform shows no alert. The message's id, or none.
+pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
+    state
+        .discard_why
+        .filter(|_| id == ActionId::DISCARD_HISTORY)
+}
+
 fn no_modal_dialog(state: &State) -> bool {
     !state.modal
 }
@@ -522,7 +544,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 72] = [
+pub static ACTIONS: [Action; 73] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -646,6 +668,18 @@ pub static ACTIONS: [Action; 72] = [
         trigger: Trigger::Press,
         available: |s| s.photo && s.edited && on_main_window(s),
         emits: Emit::Command(Command::Reset),
+    },
+    // No key by default either, as darktable's discard history has none. It asks first
+    // (`ask_before_discard`), an alert, so it rests under a modal dialog as the actions that
+    // open one do.
+    Action {
+        id: ActionId::DISCARD_HISTORY,
+        message: "action-discard-history",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.photo && s.discard && on_main_window(s) && no_modal_dialog(s),
+        emits: Emit::Intent(Intent::DiscardHistory),
     },
     // darktable's Ctrl+Z and Ctrl+Y (`src/views/darkroom.c:3425-3428`), with the
     // platforms' Shift for Redo: Redo shows Ctrl+Y first on Windows, Ctrl+Shift+Z first on
@@ -1908,6 +1942,8 @@ mod tests {
             edited: true,
             undo: true,
             redo: true,
+            discard: true,
+            discard_why: None,
             text: false,
             photos: 2,
             opened: true,

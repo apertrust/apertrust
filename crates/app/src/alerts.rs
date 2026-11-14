@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
-//! alerts, asked through the dialog host and answered on a later frame. Four so far:
+//! alerts, asked through the dialog host and answered on a later frame. Five so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
 //!   replaces files, as darktable does, from the Export dialog's own sheet.
@@ -29,6 +29,9 @@
 //! - **Why a drop opens nothing** ([`Purpose::Refused`]): what was dropped onto the window
 //!   is neither a folder nor a raw, or is a library's or a project's file, or an edit whose
 //!   photo is not beside it.
+//! - **Discard History** ([`Purpose::Discard`]): Edit › Discard History… and the History
+//!   section's ⋯ ask before the edit's history is cleared, as darktable does
+//!   (`ask_before_discard`).
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
@@ -59,6 +62,8 @@ pub enum Purpose {
     Save,
     /// A drop opened nothing: the alert only says why.
     Refused,
+    /// Discard History was asked for: yes sends it.
+    Discard,
 }
 
 /// The open photo's edit as Quit finds it.
@@ -120,7 +125,7 @@ impl Alerts {
 /// "Export in overwrite mode?": Overwrite, which destroys and has no key, or Cancel, the
 /// default, which Return and Escape both press, and Don't ask again. The answers are
 /// Overwrite's index 0 (the yes) and Cancel's 1. With the setting `held` by `--conf`
-/// ([`Overwrite::held`]) there is no box, since ticking it would do nothing.
+/// ([`Question::held`]) there is no box, since ticking it would do nothing.
 pub fn overwrite_request(ctx: &egui::Context, held: bool) -> Request {
     let request = Request::new(
         tr(ctx, "alert-overwrite-title"),
@@ -136,28 +141,38 @@ pub fn overwrite_request(ctx: &egui::Context, held: bool) -> Request {
     }
 }
 
-/// Whether Export, and Export Again, ask the overwrite question: darktable's "ask before
-/// exporting in overwrite mode" (`export.ask_before_overwrite`, on at first). A yes with
-/// Don't ask again ticked turns it off, for good, as it is kept in the settings, unless
-/// `--conf` holds the setting for the run: then the store would refuse the write, so the
-/// run goes on asking.
+/// Whether a question with Don't ask again is asked: Export's and Export Again's overwrite
+/// question, darktable's "ask before exporting in overwrite mode"
+/// (`export.ask_before_overwrite`), and Discard History's, darktable's "ask before
+/// discarding history" (`history.ask_before_discard`), each on at first. A yes with Don't
+/// ask again ticked turns it off, for good, as it is kept in the settings, unless `--conf`
+/// holds the setting for the run: then the store would refuse the write, so the run goes
+/// on asking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Overwrite {
+pub struct Question {
+    purpose: Purpose,
     ask: bool,
     held: bool,
 }
 
-impl Default for Overwrite {
-    /// Asks, and `--conf` holds nothing.
-    fn default() -> Self {
-        Overwrite::new(true, false)
+impl Question {
+    /// The overwrite question as the settings have it, `held` being whether `--conf` sets
+    /// it for this run.
+    pub fn overwrite(ask: bool, held: bool) -> Question {
+        Question {
+            purpose: Purpose::Overwrite,
+            ask,
+            held,
+        }
     }
-}
 
-impl Overwrite {
-    /// As the settings have it, `held` being whether `--conf` sets it for this run.
-    pub fn new(ask: bool, held: bool) -> Overwrite {
-        Overwrite { ask, held }
+    /// Discard History's question, as [`Question::overwrite`].
+    pub fn discard(ask: bool, held: bool) -> Question {
+        Question {
+            purpose: Purpose::Discard,
+            ask,
+            held,
+        }
     }
 
     /// Whether `--conf` sets the setting for this run, so that ticking the box would do
@@ -171,13 +186,98 @@ impl Overwrite {
         self.ask
     }
 
-    /// The answer to an alert asked for `purpose`: a yes to the overwrite question with its
-    /// box ticked stops the asking. A no with the box ticked changes nothing: the person
-    /// did not go ahead.
+    /// The answer to an alert asked for `purpose`: a yes to this question with its box
+    /// ticked stops the asking. A no with the box ticked changes nothing: the person did
+    /// not go ahead. Another question's answer changes nothing.
     pub fn answered(&mut self, purpose: Purpose, answer: Answer) {
-        if purpose == Purpose::Overwrite && answer.confirmed() && answer.ticked() && !self.held {
+        if purpose == self.purpose && answer.confirmed() && answer.ticked() && !self.held {
             self.ask = false;
         }
+    }
+}
+
+/// The photo Discard History… acts on: the number of its open, and whether it is open for
+/// viewing only because part of its edit's history cannot be read, which asks in words of
+/// its own and starts the history afresh.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Discarding {
+    pub open: u64,
+    pub unreadable: bool,
+}
+
+/// What Discard History… does now ([`discard`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Discard {
+    /// Ask first, answered on a later frame.
+    Ask(Discarding),
+    /// Send it at once: the question is off.
+    Send(Discarding),
+    /// Nothing: no photo is open, or the question would be asked where the platform shows
+    /// no alert, which leaves the items disabled ([`discard_runs`]).
+    Nothing,
+}
+
+/// Whether Discard History asks first on a photo: while `question` is on, and always on
+/// an `unreadable` edit, since nothing takes back starting it afresh.
+pub fn discard_asks(question: Question, unreadable: bool) -> bool {
+    unreadable || question.asks()
+}
+
+/// Whether Discard History… can run where the history gives it something to do: where the
+/// platform shows alerts (`alerts`), and where it shows none, Windows' until its task
+/// dialog is built, only where nothing would be asked. Its items are drawn disabled
+/// otherwise, saying why, as Export's On conflict › Overwrite is.
+pub fn discard_runs(question: Question, unreadable: bool, alerts: bool) -> bool {
+    alerts || !discard_asks(question, unreadable)
+}
+
+/// What Discard History… does on `photo`, the one open, if any, with `question` as the
+/// settings have it and `alerts` whether the platform shows alerts.
+pub fn discard(photo: Option<Discarding>, question: Question, alerts: bool) -> Discard {
+    match photo {
+        None => Discard::Nothing,
+        Some(photo) if !discard_asks(question, photo.unreadable) => Discard::Send(photo),
+        Some(photo) if alerts => Discard::Ask(photo),
+        Some(_) => Discard::Nothing,
+    }
+}
+
+/// What a yes to the question asked for `asked` does now that `photo` is open: send it to
+/// the same photo, opened the same way; ask again, in the other words, where that photo's
+/// history has become unreadable or readable since; and drop it where another photo, or
+/// none, is open.
+pub fn discard_confirmed(asked: Option<Discarding>, photo: Option<Discarding>) -> Discard {
+    match (asked, photo) {
+        (Some(asked), Some(photo)) if asked == photo => Discard::Send(photo),
+        (Some(asked), Some(photo)) if asked.open == photo.open => Discard::Ask(photo),
+        _ => Discard::Nothing,
+    }
+}
+
+/// "Discard this photo’s history?": Discard History, which destroys and has no key, or
+/// Cancel, the default, which Return and Escape both press. The answers are Discard
+/// History's index 0 (the yes) and Cancel's 1. Undo takes it back while the photo is open,
+/// as the message says, and Don't ask again turns the question off, unless `held` by
+/// `--conf`. For an edit open for viewing only because part of its history cannot be read,
+/// `unreadable`, the message says that what could not be read goes with the old history
+/// and that nothing takes it back, so a copy of the edit's file, `file`, is to be kept
+/// first; it always asks there, so there is no box.
+pub fn discard_request(ctx: &egui::Context, held: bool, unreadable: bool, file: &str) -> Request {
+    let message = if unreadable {
+        let mut args = Args::new();
+        args.set("file", file);
+        translator(ctx).text_with("alert-discard-unreadable-message", Some(&args))
+    } else {
+        tr(ctx, "alert-discard-message")
+    };
+    let request = Request::new(tr(ctx, "alert-discard-title"), message)
+        .button(tr(ctx, "alert-discard-button"), Role::Destructive)
+        .button(tr(ctx, "alert-cancel"), Role::Cancel)
+        .default_button(1);
+    if held || unreadable {
+        request
+    } else {
+        request.suppression(tr(ctx, "alert-overwrite-suppress"))
     }
 }
 
@@ -316,6 +416,8 @@ pub enum Then {
     Stop(Vec<JobId>),
     /// Write the edit again.
     RetrySave,
+    /// Send Discard History.
+    Discard,
     /// Quit again at once, to leave: the quit alert could not be shown, so this one Quit
     /// leaves and the next asks again, as when asking it fails ([`ask_quit`]).
     Leave,
@@ -346,6 +448,8 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
         }
         Purpose::Save if confirmed => Then::RetrySave,
         Purpose::Save => Then::Nothing,
+        Purpose::Discard if confirmed => Then::Discard,
+        Purpose::Discard => Then::Nothing,
         Purpose::Refused => Then::Told,
     }
 }
@@ -590,7 +694,7 @@ mod tests {
     #[test]
     fn only_a_yes_with_the_box_ticked_stops_the_overwrite_question() {
         let after = |purpose, answer| {
-            let mut overwrite = Overwrite::default();
+            let mut overwrite = Question::overwrite(true, false);
             overwrite.answered(purpose, answer);
             overwrite.asks()
         };
@@ -600,14 +704,119 @@ mod tests {
         assert!(after(Purpose::Overwrite, Answer::Ticked(1)));
         assert!(after(Purpose::Overwrite, Answer::Dismissed));
         assert!(after(Purpose::Quit, Answer::Ticked(0)));
+        assert!(after(Purpose::Discard, Answer::Ticked(0)));
         // `--conf` holds it: it stays whatever the answer.
-        let mut held = Overwrite::new(true, true);
+        let mut held = Question::overwrite(true, true);
         held.answered(Purpose::Overwrite, Answer::Ticked(0));
         assert!(held.asks());
         // Already off, it stays off.
-        let mut off = Overwrite::new(false, false);
+        let mut off = Question::overwrite(false, false);
         off.answered(Purpose::Overwrite, Answer::Pressed(0));
         assert!(!off.asks());
+        // Discard History's question, by its own answers alone.
+        let mut discard = Question::discard(true, false);
+        discard.answered(Purpose::Overwrite, Answer::Ticked(0));
+        assert!(discard.asks());
+        discard.answered(Purpose::Discard, Answer::Ticked(1));
+        assert!(discard.asks());
+        discard.answered(Purpose::Discard, Answer::Ticked(0));
+        assert!(!discard.asks());
+    }
+
+    /// What Discard History… does: asked, sent at once with the question off, or nothing,
+    /// by the photo, the setting and whether the platform shows alerts; and a yes sent only
+    /// to the photo it was asked for, opened the same way.
+    #[test]
+    fn discard_history_asks_sends_or_does_nothing_by_the_photo_the_setting_and_the_platform() {
+        let readable = Discarding {
+            open: 3,
+            unreadable: false,
+        };
+        let unreadable = Discarding {
+            unreadable: true,
+            ..readable
+        };
+        let (on, off) = (
+            Question::discard(true, false),
+            Question::discard(false, false),
+        );
+        assert_eq!(discard(Some(readable), on, true), Discard::Ask(readable));
+        assert_eq!(discard(Some(readable), off, true), Discard::Send(readable));
+        // An unreadable edit always asks.
+        assert_eq!(
+            discard(Some(unreadable), off, true),
+            Discard::Ask(unreadable)
+        );
+        // No alert on the platform: only what asks nothing runs.
+        assert_eq!(discard(Some(readable), on, false), Discard::Nothing);
+        assert_eq!(discard(Some(readable), off, false), Discard::Send(readable));
+        assert_eq!(discard(Some(unreadable), off, false), Discard::Nothing);
+        assert_eq!(discard(None, off, true), Discard::Nothing);
+        assert!(discard_runs(on, false, true) && discard_runs(off, false, false));
+        assert!(!discard_runs(on, false, false) && !discard_runs(off, true, false));
+        // The answer: the same photo opened the same way, sent; its history read otherwise
+        // since, asked again in those words; another photo, or none, dropped.
+        let yes = |asked, now| discard_confirmed(Some(asked), now);
+        assert_eq!(yes(readable, Some(readable)), Discard::Send(readable));
+        assert_eq!(yes(unreadable, Some(readable)), Discard::Ask(readable));
+        assert_eq!(yes(readable, Some(unreadable)), Discard::Ask(unreadable));
+        let other = Discarding {
+            open: 4,
+            ..readable
+        };
+        assert_eq!(yes(readable, Some(other)), Discard::Nothing);
+        assert_eq!(yes(readable, None), Discard::Nothing);
+        assert_eq!(discard_confirmed(None, Some(readable)), Discard::Nothing);
+    }
+
+    #[test]
+    fn the_discard_question_is_a_destructive_yes_and_a_default_cancel_in_every_language() {
+        let file = "IMG_2041.ARW.apxmp";
+        let request = discard_request(&context(Locale::EnGb), false, false, file);
+        assert_eq!(request.title, "Discard this photo’s history?");
+        assert_eq!(
+            request.message,
+            "The photo goes back to how it first opened, and its history is cleared. Undo \
+             brings it back until the photo closes."
+        );
+        assert_eq!(request.check(), Ok(()));
+        let buttons: Vec<_> = (request.buttons.iter())
+            .map(|button| (button.label.as_str(), button.role))
+            .collect();
+        assert_eq!(
+            buttons,
+            [
+                ("Discard History", Role::Destructive),
+                ("Cancel", Role::Cancel)
+            ]
+        );
+        assert_eq!((request.default, request.cancel()), (1, Some(1)));
+        assert_eq!(request.suppression.as_deref(), Some("Don’t ask again"));
+        // Held by `--conf`: no box.
+        let held = discard_request(&context(Locale::EnGb), true, false, file);
+        assert_eq!(held.suppression, None);
+        // An edit part of whose history cannot be read: what goes, and the file to copy
+        // first; it always asks, so no box.
+        let unreadable = discard_request(&context(Locale::EnGb), false, true, file);
+        assert_eq!(unreadable.suppression, None);
+        assert!(unreadable.message.contains(file), "{}", unreadable.message);
+        assert_eq!(unreadable.check(), Ok(()));
+        for locale in Locale::ALL {
+            let words = apertrust_ui::Translator::new(locale);
+            let request = discard_request(&context(locale), false, true, "a.apxmp");
+            assert_eq!(request.title, words.text("alert-discard-title"));
+            assert_eq!(request.buttons[0].label, words.text("alert-discard-button"));
+            assert!(request.message.contains("a.apxmp"), "{locale:?}");
+        }
+        let (mirror, _) = exporting();
+        let mut guard = Guard::default();
+        let then = |answer, guard: &mut Guard| then(Purpose::Discard, answer, guard, &mirror);
+        assert_eq!(then(Answer::Pressed(0), &mut guard), Then::Discard);
+        assert_eq!(then(Answer::Ticked(0), &mut guard), Then::Discard);
+        assert_eq!(then(Answer::Pressed(1), &mut guard), Then::Nothing);
+        assert_eq!(then(Answer::Dismissed, &mut guard), Then::Nothing);
+        assert_eq!(then(Answer::Failed, &mut guard), Then::Nothing);
+        assert!(!guard.confirmed());
     }
 
     /// A mirror with an export of the user's running, and its job.
@@ -617,6 +826,30 @@ mod tests {
         let added = crate::jobs::tests::added(job, apertrust_engine::jobs::Queue::UserExport, None);
         mirror.apply(&added);
         (mirror, job)
+    }
+
+    /// Discard History's question as Linux draws it, and for an edit part of whose history
+    /// cannot be read.
+    #[test]
+    fn the_discard_question_is_photographed() {
+        use apertrust_ui::components::{AlertBody, ButtonOrder};
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (name, unreadable) in [("alert-discard", false), ("alert-discard-unreadable", true)] {
+            let ctx = context(Locale::EnGb);
+            let request = discard_request(&ctx, false, unreadable, "IMG_2041.ARW.apxmp");
+            let mut ticked = false;
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(480.0, 240.0))
+                .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+                .build_ui(move |ui| {
+                    AlertBody::new(&request, &mut ticked)
+                        .order(ButtonOrder::DefaultLast)
+                        .show(ui);
+                });
+            harness.run();
+            harness.snapshot(name);
+            results.extend(harness.take_snapshot_results());
+        }
     }
 
     #[test]
@@ -663,7 +896,7 @@ mod tests {
         assert_eq!(guard.attempt(mirror.running(), SAVED), Attempt::Ask);
         // Failed is no yes and ticks nothing: the other questions do nothing on it.
         assert!(!Answer::Failed.confirmed() && !Answer::Failed.ticked());
-        for purpose in [Purpose::Overwrite, Purpose::Save] {
+        for purpose in [Purpose::Overwrite, Purpose::Save, Purpose::Discard] {
             assert_eq!(
                 then(purpose, Answer::Failed, &mut guard, &mirror),
                 Then::Nothing

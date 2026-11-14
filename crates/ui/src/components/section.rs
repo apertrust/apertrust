@@ -60,6 +60,9 @@ pub struct SectionOutput {
     /// The id of the item chosen this frame in the menu its options button opens, given
     /// by [`Section::options_menu`].
     pub chosen: Option<String>,
+    /// A utility's options button, by which its menu's popup is known
+    /// (`popup::button_menu`), so its caller can close it.
+    pub options: Option<egui::Id>,
 }
 
 pub struct Section<'a> {
@@ -216,6 +219,7 @@ impl<'a> Section<'a> {
             ui.allocate_exact_size(vec2(width, t.sizes.section_header), Sense::hover());
         let menu = self.menu;
         let mut chosen = None;
+        let mut options_id = None;
 
         // The buttons, right to left, each `sizes.section_button` wide round its icon and
         // a control high, `spacing.section_button_gap` apart. The last one's ink, not its
@@ -268,6 +272,7 @@ impl<'a> Section<'a> {
                             .width(narrow)
                             .enabled(self.options)
                             .show(ui);
+                        options_id = Some(options.id);
                         match menu {
                             Some(entries) => chosen = pull_down(ui, &options, &name, || entries),
                             None if options.clicked() => pressed.push(SectionAction::Options),
@@ -421,6 +426,7 @@ impl<'a> Section<'a> {
             pos2(header.right(), bottom),
         ));
         output.chosen = chosen;
+        output.options = options_id;
         output.peeking = self.peek && (hovered || focused);
         if output.peeking {
             ui.painter().rect_filled(

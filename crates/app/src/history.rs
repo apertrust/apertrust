@@ -70,12 +70,16 @@
 //! - Reset in the header, which resets the edit as one step, as Reset Edit does; the
 //!   header stays at the top of the tab while the list scrolls under it, and the end is
 //!   scrolled into sight whenever it moves;
+//! - its options, ⋯ in the header, through the popup service: Compress History, darktable's
+//!   compress history stack, which Option (Alt on Windows and Linux) held while the menu is
+//!   open turns into Truncate History, darktable's Ctrl-click on it, where a step lies
+//!   after the end for it to drop; Create a Style…, drawn disabled until styles come; and
+//!   Discard History…, which asks first, as Edit's does ([`options`]);
 //! - the eye at the end of a step's line of one module, under the pointer or with the
 //!   focus: held, by the pointer or Space or Enter, a peek at the photo without the module
 //!   ([`Action::Peek`], `Command::Hide` while held), never saved, the module's name struck
 //!   through while the session reports it hidden; nothing stays once it is let go.
 //!
-//! Compress history comes with a later part (9.8).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -90,6 +94,7 @@ use apertrust_ui::components::{
     section_body,
 };
 use apertrust_ui::i18n::{Args, local_day};
+use apertrust_ui::popup::{Entry as MenuEntry, Item};
 use apertrust_ui::{Icon, Translator, fonts, theme, translator};
 use eframe::egui::{self, FontId, Key, Modifiers, Role, Sense, UiBuilder, WidgetInfo, pos2, vec2};
 
@@ -118,6 +123,88 @@ pub enum Action {
     /// The eye held this frame on this module's line: the photo shown without the module
     /// while it is held, `Command::Hide`.
     Peek(&'static str),
+    /// Compress History, from its options: `Command::Compress`.
+    Compress,
+    /// Truncate History, Compress History's alternate: `Command::Truncate`.
+    Truncate,
+    /// Discard History…, from its options: run as Edit's, which asks first.
+    Discard,
+}
+
+/// What the section's options can do now ([`options`]), each item drawn disabled where it
+/// cannot.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    pub compress: bool,
+    /// Whether Compress History has Truncate History as its alternate.
+    pub truncate: bool,
+    pub discard: bool,
+    /// Whether the edit is open for viewing only because part of its history cannot be
+    /// read, which Discard History starts afresh, its tip saying so.
+    pub unreadable: bool,
+    /// Whether Discard History cannot run only because it would ask and the platform shows
+    /// no alert, its tip saying so; the app's to set.
+    pub no_alert: bool,
+}
+
+/// What the section can do for the photo: go to a step while `editable`, live and not
+/// open for viewing only; Reset while `resettable`; and its `options`. `photo` is the
+/// number of the photo's open, so a menu opened for one photo chooses nothing for the
+/// next.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct State {
+    pub editable: bool,
+    pub resettable: bool,
+    pub options: Options,
+    pub photo: Option<u64>,
+}
+
+/// Why Discard History… cannot run, where only the platform's missing alert stops it
+/// (`options.no_alert`): with the question on, turning it off lets it run; on an
+/// unreadable edit, which always asks, nothing does. None where it can run, or cannot for
+/// another reason.
+pub fn discard_why(options: Options) -> Option<&'static str> {
+    match (options.no_alert, options.unreadable) {
+        (false, _) => None,
+        (true, false) => Some("history-discard-no-alert"),
+        (true, true) => Some("history-discard-no-alert-unreadable"),
+    }
+}
+
+/// What Compress History, Truncate History and Discard History can do on `history`, the
+/// open photo's, where it `takes` edits, live and not open for viewing only, or is open
+/// for viewing only because part of its history cannot be read, `unreadable`, which
+/// Discard History alone is taken on, starting it afresh (decision 78). Each is offered
+/// only where the history shows it has something to do, from what `History` tells:
+///
+/// - Compress History where a step is not a default one, since Compress keeps every default
+///   step, and at end 0, where it drops every step, the photo is given them again: a
+///   history of default steps alone is compressed already. It may still find nothing to
+///   do, each module's step up to the end its last and none empty, which `History` does
+///   not tell; the session then records nothing.
+/// - Truncate History, its alternate, where a step after the end is not a default one,
+///   which it would drop; otherwise Option shows Compress History still.
+/// - Discard History where the end lies before a step, or a step is not a default one: a
+///   history of default steps alone with the end after them is a new photo's, which it
+///   leaves as it is. Always on an `unreadable` edit.
+pub fn options(history: Option<&History>, takes: bool, unreadable: bool) -> Options {
+    let Some(history) = history else {
+        return Options {
+            discard: unreadable,
+            unreadable,
+            ..Options::default()
+        };
+    };
+    let own = |step: &Arc<HistoryStep>| step.source != StepSource::Default;
+    let end = history.end.min(history.steps.len());
+    let compress = takes && history.steps.iter().any(own);
+    Options {
+        compress,
+        truncate: takes && history.steps[end..].iter().any(own),
+        discard: unreadable || (takes && (compress || end < history.steps.len())),
+        unreadable,
+        no_alert: false,
+    }
 }
 
 /// Where a line stands in the list.
@@ -801,10 +888,12 @@ fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
 /// Draws the History tab: the History section, open or closed as `open` says, its header
 /// staying at the top of the tab while its list scrolls under it, the list from
 /// `history`, the open photo's, drawn disabled where there is none; it peeks while `peek`
-/// holds, as every section does. A step is gone to only while `editable` (a photo live
-/// and not open for viewing only), and Reset runs only while `resettable`; the eye, view
-/// state alone, is held on any photo, `hidden` the modules the session reports hidden, as
-/// the mirror's values have them. `today` is the local calendar's day ([`today`]). Returns what the user did.
+/// holds, as every section does. What it can do is `state`'s: a step is gone to only
+/// while it is editable (a photo live and not open for viewing only), Reset runs only
+/// while it is resettable, and each of the options only where it can; ⋯ opens them while
+/// there is a history. The eye, view state alone, is held on any photo, `hidden` the
+/// modules the session reports hidden, as the mirror's values have them. `today` is the
+/// local calendar's day ([`today`]). Returns what the user did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the section's state from the app, each part apart"
@@ -816,8 +905,7 @@ pub fn tab(
     hidden: &[&str],
     open: bool,
     peek: bool,
-    editable: bool,
-    resettable: bool,
+    state: State,
     today: i32,
 ) -> Vec<Action> {
     let words = translator(ui.ctx());
@@ -825,14 +913,16 @@ pub fn tab(
     let reset = words.text("history-reset-edit");
     let mut header = None;
     let mut actions = Vec::new();
-    // A utility: Reset before its options, which are drawn disabled while nothing is
-    // behind them.
+    let editable = state.editable;
+    // A utility: Reset before its options.
     PanelBody::new()
         .header(|ui| {
+            let os = ui.ctx().os();
             let section = Section::new(&title, open)
                 .utility_reset(&reset)
-                .reset(resettable)
-                .options(false)
+                .reset(state.resettable)
+                .options(history.is_some())
+                .options_menu(menu(&words, state.options, os))
                 .peek(peek);
             header = Some(section.show_header(ui));
         })
@@ -842,16 +932,90 @@ pub fn tab(
                 actions = section_body(ui, lines);
             }
         });
-    let mut done: Vec<Action> = (header.into_iter())
-        .flat_map(|out| out.actions)
-        .filter_map(|action| match action {
+    // Another photo since the last frame: its options menu, opened for the photo before,
+    // closes, and a choice from it is dropped, never run on this one.
+    let photo_id = ui.make_persistent_id("history options photo");
+    let before = ui.data(|d| d.get_temp::<Option<u64>>(photo_id));
+    ui.data_mut(|d| d.insert_temp(photo_id, state.photo));
+    let replaced = before.is_some_and(|before| before != state.photo);
+    let mut done = Vec::new();
+    if let Some(out) = header {
+        done.extend(out.actions.iter().filter_map(|action| match action {
             SectionAction::Toggle => Some(Action::Toggle),
             SectionAction::Reset => Some(Action::Reset),
             _ => None,
-        })
-        .collect();
+        }));
+        if replaced {
+            if let Some(button) = out.options {
+                apertrust_ui::popup::close(ui.ctx(), apertrust_ui::popup::button_menu(button));
+            }
+        } else {
+            done.extend(out.chosen.as_deref().and_then(chosen));
+        }
+    }
     done.extend(actions);
     done
+}
+
+/// The options' ids, as their items answer.
+const COMPRESS: &str = "compress";
+const TRUNCATE: &str = "truncate";
+const STYLE: &str = "style";
+const DISCARD: &str = "discard";
+
+/// The section's options as the popup service lists them (`docs/history.md`, In the app):
+/// Compress History, Truncate History in its place while Option (Alt) is held where it can
+/// run, each with its tip naming the other's key; Create a Style…, disabled until styles
+/// come (Phase 3); and Discard History…, apart, as the destructive one. `os` names the key.
+fn menu(words: &Translator, options: Options, os: egui::os::OperatingSystem) -> Vec<MenuEntry> {
+    let mut args = Args::new();
+    let key = if os == egui::os::OperatingSystem::Mac {
+        "Option"
+    } else {
+        "Alt"
+    };
+    args.set("key", key);
+    // The tip names Option only where it shows Truncate History.
+    let tip = if options.truncate {
+        words.text_with("history-compress-tip-truncate", Some(&args))
+    } else {
+        words.text("history-compress-tip")
+    };
+    let mut compress = Item::new(COMPRESS, words.text("history-options-compress"))
+        .enabled(options.compress)
+        .tip(tip);
+    if options.truncate {
+        let truncate = Item::new(TRUNCATE, words.text("history-options-truncate"))
+            .tip(words.text("history-truncate-tip"));
+        compress = compress.alternate(truncate);
+    }
+    let style = Item::new(STYLE, words.text("history-options-style"))
+        .enabled(false)
+        .tip(words.text("history-options-style-later"));
+    let tip = discard_why(options).unwrap_or(if options.unreadable {
+        "history-discard-tip-unreadable"
+    } else {
+        "history-discard-tip"
+    });
+    let discard = Item::new(DISCARD, words.text("action-discard-history"))
+        .enabled(options.discard)
+        .tip(words.text(tip));
+    vec![
+        compress.into(),
+        style.into(),
+        MenuEntry::Separator,
+        discard.into(),
+    ]
+}
+
+/// The action an option's id asks for; none for one that runs nothing yet.
+fn chosen(id: &str) -> Option<Action> {
+    match id {
+        COMPRESS => Some(Action::Compress),
+        TRUNCATE => Some(Action::Truncate),
+        DISCARD => Some(Action::Discard),
+        _ => None,
+    }
 }
 
 /// Draws the section's list, a tree, and returns what a click or a key asked for.
@@ -2894,6 +3058,10 @@ pub(crate) mod tests {
         history: Option<History>,
         editable: bool,
         resettable: bool,
+        /// What the options can do.
+        options: Options,
+        /// The number of the photo's open.
+        photo: Option<u64>,
         /// The modules the eye hides, as the mirror's values report them.
         hidden: Vec<&'static str>,
         actions: Vec<Action>,
@@ -2924,8 +3092,13 @@ pub(crate) mod tests {
                     ui.painter()
                         .rect_filled(window, 0.0, t.colors.photo_surround);
                     ui.painter().rect_filled(side, 0.0, t.colors.panel);
-                    let (history, editable, resettable) =
-                        (scene.history.as_ref(), scene.editable, scene.resettable);
+                    let history = scene.history.as_ref();
+                    let state = State {
+                        editable: scene.editable,
+                        resettable: scene.resettable,
+                        options: scene.options,
+                        photo: scene.photo,
+                    };
                     let modules = apertrust_modules::MODULES;
                     let mut actions = Vec::new();
                     ui.scope_builder(UiBuilder::new().max_rect(side), |ui| {
@@ -2937,14 +3110,15 @@ pub(crate) mod tests {
                             &scene.hidden,
                             true,
                             false,
-                            editable,
-                            resettable,
+                            state,
                             today(),
                         );
                     });
                     scene.actions.extend(actions);
                 },
                 Scene {
+                    options: options(history.as_ref(), true, false),
+                    photo: None,
                     history,
                     editable: true,
                     resettable: true,
@@ -3394,6 +3568,191 @@ pub(crate) mod tests {
         item(&harness, "Step 10: Exposure").click();
         harness.run();
         assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xa1)))]);
+    }
+
+    /// What the options offer, from what `History` tells: Compress where a step is not a
+    /// default one, Truncate where one lies after the end, Discard where the history is not
+    /// a new photo's; none where the photo takes no edits, Discard alone where its history
+    /// cannot be read.
+    #[test]
+    fn the_options_offer_only_what_the_history_shows_they_can_do() {
+        let options = |history: &History, takes, unreadable| {
+            let o = options(Some(history), takes, unreadable);
+            (o.compress, o.truncate, o.discard)
+        };
+        let steps = photo_s(3);
+        let last = steps.steps.len();
+        assert_eq!(options(&steps, true, false), (true, true, true));
+        // At the last step, nothing after the end to drop.
+        let at_last = History {
+            end: last,
+            ..steps.clone()
+        };
+        assert_eq!(options(&at_last, true, false), (true, false, true));
+        // At Original every step is after the end.
+        assert_eq!(
+            options(&with_defaults(photo_s(0), 0), true, false),
+            (true, true, true)
+        );
+        // A new photo's default steps alone, the end after them: nothing to do. The end
+        // among them: Discard applies them all again.
+        let defaults = |end| History {
+            steps: with_defaults(photo_s(0), 0).steps[..DEFAULT_STEPS].to_vec(),
+            end,
+            ..photo_s(0)
+        };
+        assert_eq!(
+            options(&defaults(DEFAULT_STEPS), true, false),
+            (false, false, false)
+        );
+        assert_eq!(options(&defaults(4), true, false), (false, false, true));
+        // Not live, or open for viewing only: nothing, but Discard on an unreadable one.
+        assert_eq!(options(&steps, false, false), (false, false, false));
+        assert_eq!(options(&steps, false, true), (false, false, true));
+        let none = super::options(None, false, true);
+        assert_eq!(
+            (none.compress, none.truncate, none.discard),
+            (false, false, true)
+        );
+        assert_eq!(super::options(None, true, false), Options::default());
+    }
+
+    /// Opens the header's options, ⋯.
+    fn open_options(harness: &mut Harness<'_, Scene>) {
+        harness
+            .get_by_role_and_label(AccessRole::Button, "History options")
+            .click();
+        harness.run();
+    }
+
+    /// Holds Option (Alt), or lets it go.
+    fn hold_option(harness: &mut Harness<'_, Scene>, held: bool) {
+        let modifiers = if held {
+            egui::Modifiers::ALT
+        } else {
+            egui::Modifiers::NONE
+        };
+        harness.event(egui::Event::ModifiersChanged(modifiers));
+        harness.run();
+    }
+
+    /// The header's options: Compress History, Create a Style… disabled and Discard
+    /// History…; Option held shows Truncate History in Compress's place, where a step lies
+    /// after the end, and each sends its action.
+    #[test]
+    fn the_options_compress_truncate_with_option_held_and_discard() {
+        let mut harness = photo_scene(3);
+        harness.run();
+        open_options(&mut harness);
+        let compress = harness.get_by_role_and_label(AccessRole::MenuItem, "Compress History");
+        assert!(!compress.accesskit_node().is_disabled());
+        let style = harness.get_by_role_and_label(AccessRole::MenuItem, "Create a Style…");
+        assert!(style.accesskit_node().is_disabled());
+        harness
+            .get_by_role_and_label(AccessRole::MenuItem, "Compress History")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::Compress]);
+        harness.state_mut().actions.clear();
+        open_options(&mut harness);
+        hold_option(&mut harness, true);
+        assert!(harness.query_by_label("Compress History").is_none());
+        harness
+            .get_by_role_and_label(AccessRole::MenuItem, "Truncate History")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::Truncate]);
+        hold_option(&mut harness, false);
+        harness.state_mut().actions.clear();
+        open_options(&mut harness);
+        harness
+            .get_by_role_and_label(AccessRole::MenuItem, "Discard History…")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::Discard]);
+        // With nothing after the end, Option shows Compress History still.
+        harness.state_mut().actions.clear();
+        let last = photo_s(3).steps.len();
+        harness.state_mut().options = options(Some(&photo_s(last)), true, false);
+        open_options(&mut harness);
+        hold_option(&mut harness, true);
+        harness
+            .get_by_role_and_label(AccessRole::MenuItem, "Compress History")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::Compress]);
+        hold_option(&mut harness, false);
+        // Where nothing can run, each is disabled and a click sends nothing.
+        harness.state_mut().actions.clear();
+        harness.state_mut().options = Options::default();
+        open_options(&mut harness);
+        for name in ["Compress History", "Discard History…"] {
+            let item = harness.get_by_role_and_label(AccessRole::MenuItem, name);
+            assert!(item.accesskit_node().is_disabled(), "{name}");
+            item.click();
+            harness.run();
+        }
+        assert!(harness.state().actions.is_empty());
+    }
+
+    /// A menu opened for one photo closes as another opens, and chooses nothing for it.
+    #[test]
+    fn the_options_menu_closes_as_another_photo_opens() {
+        let mut harness = photo_scene(3);
+        harness.state_mut().photo = Some(1);
+        harness.run();
+        open_options(&mut harness);
+        assert!(harness.query_by_label("Compress History").is_some());
+        harness.state_mut().photo = Some(2);
+        harness.run();
+        harness.run();
+        assert!(harness.query_by_label("Compress History").is_none());
+        assert!(harness.state().actions.is_empty());
+        // Opened for this photo, it chooses for it.
+        open_options(&mut harness);
+        harness
+            .get_by_role_and_label(AccessRole::MenuItem, "Compress History")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().actions, [Action::Compress]);
+    }
+
+    /// Discard History…'s tip where no alert can be shown: the setting's way out where the
+    /// edit reads whole, none where it cannot be read, which always asks.
+    #[test]
+    fn where_no_alert_can_be_shown_discard_says_why() {
+        let blocked = |unreadable| Options {
+            no_alert: true,
+            unreadable,
+            ..Options::default()
+        };
+        assert_eq!(discard_why(Options::default()), None);
+        assert_eq!(
+            discard_why(blocked(false)),
+            Some("history-discard-no-alert")
+        );
+        assert_eq!(
+            discard_why(blocked(true)),
+            Some("history-discard-no-alert-unreadable")
+        );
+    }
+
+    /// The options as the board draws them, and with Option held.
+    #[test]
+    fn the_options_are_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        let mut harness = scene(
+            Theme::builtin(Builtin::Dark),
+            egui::vec2(480.0, 360.0),
+            Some(photo_s(3)),
+        );
+        harness.run();
+        open_options(&mut harness);
+        harness.snapshot("history-tab-options");
+        results.extend(harness.take_snapshot_results());
+        hold_option(&mut harness, true);
+        harness.snapshot("history-tab-options-truncate");
+        results.extend(harness.take_snapshot_results());
     }
 
     #[test]

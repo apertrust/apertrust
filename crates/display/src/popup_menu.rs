@@ -64,6 +64,10 @@ pub struct MenuItem {
     /// The keys that run it, shown at its end in AppKit's glyphs. The app runs them; the
     /// menu only shows them, and answers with the item's id if they choose it while open.
     pub keys: Option<KeyEquivalent>,
+    /// The item AppKit shows in its place while Option is held, an alternate item
+    /// (`NSMenuItem.alternate`), answering with its own id; its own `keys` and alternate
+    /// are not used: it takes the item's keys with Option added.
+    pub alternate: Option<Box<MenuItem>>,
 }
 
 /// A key equivalent as AppKit takes one.
@@ -147,6 +151,16 @@ pub fn pop_up_menu(
     Ok(false)
 }
 
+/// The index in the `NSMenu` of the line at `at` among `entries`: each alternate before it
+/// is a line of AppKit's menu too, after its item.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn item_index(entries: &[MenuEntry], at: usize) -> usize {
+    let alternates = (entries.iter().take(at))
+        .filter(|entry| matches!(entry, MenuEntry::Item(item) if item.alternate.is_some()))
+        .count();
+    at + alternates
+}
+
 /// Where AppKit is asked to put the menu, in the view's points from its top-left corner:
 /// over the control's top-left, where the positioning item's goes, or under its bottom-left
 /// without one.
@@ -176,7 +190,7 @@ mod macos {
     use objc2_foundation::{NSObject, NSPoint, NSString};
     use raw_window_handle::AppKitWindowHandle;
 
-    use super::{Appearance, KeyEquivalent, MenuEntry, PopUpMenu, location};
+    use super::{Appearance, KeyEquivalent, MenuEntry, MenuItem, PopUpMenu, item_index, location};
     use crate::Error;
     use crate::dialog::macos::{later, window};
 
@@ -235,6 +249,7 @@ mod macos {
         menu.setMinimumWidth(popup.anchor[2]);
         let over = popup
             .over
+            .map(|at| item_index(&popup.entries, at))
             .and_then(|at| isize::try_from(at).ok())
             .and_then(|at| menu.itemAtIndex(at));
         let (x, y) = location(&popup);
@@ -290,28 +305,26 @@ mod macos {
             let line = match entry {
                 MenuEntry::Separator => NSMenuItem::separatorItem(mtm),
                 MenuEntry::Item(item) => {
-                    let line = NSMenuItem::new(mtm);
-                    line.setTitle(&NSString::from_str(&item.title));
-                    line.setTag(isize::try_from(ids.len()).unwrap_or(isize::MAX));
-                    ids.push(item.id.clone());
-                    // SAFETY: the target outlives the menu's tracking, which the caller
-                    // holds it through, and `chosen:` takes the item that sends it.
-                    unsafe { line.setTarget(Some(action)) };
-                    unsafe { line.setAction(Some(sel!(chosen:))) };
-                    line.setEnabled(item.enabled);
-                    line.setState(if item.on {
-                        NSControlStateValueOn
+                    let line = item_line(mtm, item, action, ids);
+                    // The alternate follows its item, with the same key and Option added
+                    // to its modifiers, which is how AppKit pairs them; an item with no
+                    // keys takes none, so Option alone shows the alternate.
+                    let (key, mask) = match &item.keys {
+                        Some(keys) => (keys.key.as_str(), modifiers(keys)),
+                        None => ("", NSEventModifierFlags::empty()),
+                    };
+                    line.setKeyEquivalent(&NSString::from_str(key));
+                    line.setKeyEquivalentModifierMask(mask);
+                    if let Some(alternate) = &item.alternate {
+                        menu.addItem(&line);
+                        let other = item_line(mtm, alternate, action, ids);
+                        other.setKeyEquivalent(&NSString::from_str(key));
+                        other.setKeyEquivalentModifierMask(mask | NSEventModifierFlags::Option);
+                        other.setAlternate(true);
+                        other
                     } else {
-                        NSControlStateValueOff
-                    });
-                    if let Some(tip) = &item.tip {
-                        line.setToolTip(Some(&NSString::from_str(tip)));
+                        line
                     }
-                    if let Some(keys) = &item.keys {
-                        line.setKeyEquivalent(&NSString::from_str(&keys.key));
-                        line.setKeyEquivalentModifierMask(modifiers(keys));
-                    }
-                    line
                 }
                 MenuEntry::Submenu { title, entries } => {
                     let title = NSString::from_str(title);
@@ -326,6 +339,34 @@ mod macos {
             menu.addItem(&line);
         }
         menu
+    }
+
+    /// An item's line, its tag its id's index in `ids` and its action `action`'s, with its
+    /// words, state and tip; its keys are the caller's to set.
+    fn item_line(
+        mtm: MainThreadMarker,
+        item: &MenuItem,
+        action: &AnyObject,
+        ids: &mut Vec<String>,
+    ) -> Retained<NSMenuItem> {
+        let line = NSMenuItem::new(mtm);
+        line.setTitle(&NSString::from_str(&item.title));
+        line.setTag(isize::try_from(ids.len()).unwrap_or(isize::MAX));
+        ids.push(item.id.clone());
+        // SAFETY: the target outlives the menu's tracking, which the caller holds it
+        // through, and `chosen:` takes the item that sends it.
+        unsafe { line.setTarget(Some(action)) };
+        unsafe { line.setAction(Some(sel!(chosen:))) };
+        line.setEnabled(item.enabled);
+        line.setState(if item.on {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+        if let Some(tip) = &item.tip {
+            line.setToolTip(Some(&NSString::from_str(tip)));
+        }
+        line
     }
 
     fn modifiers(keys: &KeyEquivalent) -> NSEventModifierFlags {
@@ -362,6 +403,33 @@ mod tests {
     fn a_dropdown_opens_over_its_control_and_a_pull_down_under_it() {
         assert_eq!(location(&menu(Some(2))), (10.0, 20.0));
         assert_eq!(location(&menu(None)), (10.0, 44.0));
+    }
+
+    #[test]
+    fn a_line_s_index_counts_the_alternates_before_it() {
+        let item = |id: &str, alternate: Option<MenuItem>| {
+            MenuEntry::Item(MenuItem {
+                id: id.to_owned(),
+                title: id.to_owned(),
+                enabled: true,
+                on: false,
+                tip: None,
+                keys: None,
+                alternate: alternate.map(Box::new),
+            })
+        };
+        let other = || match item("b", None) {
+            MenuEntry::Item(item) => item,
+            _ => unreachable!(),
+        };
+        let entries = [
+            item("a", Some(other())),
+            MenuEntry::Separator,
+            item("c", None),
+        ];
+        assert_eq!(item_index(&entries, 0), 0);
+        assert_eq!(item_index(&entries, 1), 2);
+        assert_eq!(item_index(&entries, 2), 3);
     }
 
     #[test]
