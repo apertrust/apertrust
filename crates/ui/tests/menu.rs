@@ -502,11 +502,61 @@ fn option_shows_an_item_s_alternate_in_its_place_and_chooses_it() {
         } else {
             "Compress"
         };
-        harness.get_by_role_and_label(Role::MenuItem, name).click();
+        // A click's release carries the keys held, as the window system's does.
+        let held = if alt {
+            egui::Modifiers::ALT
+        } else {
+            egui::Modifiers::NONE
+        };
+        let item = harness.get_by_role_and_label(Role::MenuItem, name);
+        item.click_modifiers(held);
         harness.run();
         assert_eq!(
             harness.state().answers,
             vec![Answer::Chosen(chosen.to_owned())]
+        );
+    }
+}
+
+/// A click chooses by Alt as the button was let go, not as Alt is by the frame's end: a
+/// release without it then Alt pressed in the same frame chooses the item, and the
+/// reverse its alternate.
+#[test]
+fn a_click_chooses_by_alt_as_the_button_was_let_go() {
+    for (at_release, after, chosen) in [
+        (egui::Modifiers::NONE, egui::Modifiers::ALT, "compress"),
+        (egui::Modifiers::ALT, egui::Modifiers::NONE, "truncate"),
+    ] {
+        let mut harness = app(true);
+        harness.run();
+        open(&mut harness, Some("help"));
+        hold_alt(&mut harness, at_release.alt);
+        let name = if at_release.alt {
+            "Truncate the Whole Log"
+        } else {
+            "Compress"
+        };
+        let at = harness
+            .get_by_role_and_label(Role::MenuItem, name)
+            .rect()
+            .center();
+        let button = |pressed, modifiers| Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers,
+        };
+        harness.event(Event::PointerMoved(at));
+        harness.event(button(true, at_release));
+        harness.run();
+        let events = &mut harness.input_mut().events;
+        events.push(button(false, at_release));
+        events.push(Event::ModifiersChanged(after));
+        harness.run();
+        assert_eq!(
+            harness.state().answers,
+            vec![Answer::Chosen(chosen.to_owned())],
+            "{at_release:?}"
         );
     }
 }

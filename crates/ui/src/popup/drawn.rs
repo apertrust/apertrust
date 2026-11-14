@@ -397,6 +397,7 @@ fn dropdown_keys(open: &mut Open, events: Vec<Event>) -> Option<Closing> {
                 key,
                 repeat,
                 pressed: true,
+                modifiers,
                 ..
             } => match key {
                 Key::ArrowDown | Key::ArrowUp => {
@@ -409,15 +410,20 @@ fn dropdown_keys(open: &mut Open, events: Vec<Event>) -> Option<Closing> {
                 // Once text is typed a space is part of it, from its own text event.
                 Key::Space if !open.filter.is_empty() => {}
                 Key::Enter | Key::Space => {
+                    // The option shown: its alternate where Alt is held with the key.
                     let chosen = if open.filter.is_empty() {
                         // The highlighted option, which starts on the chosen one, so a bare
                         // Enter just closes; one that cannot be chosen closes it too.
                         match open.path[0].and_then(|at| entries.get(at)) {
-                            Some(Entry::Item(item)) if item.enabled => Some(item),
+                            Some(Entry::Item(item)) if item.held(modifiers.alt).enabled => {
+                                Some(item.held(modifiers.alt))
+                            }
                             _ => return Some((Answer::Dismissed, true)),
                         }
                     } else {
                         filter::only_choice(entries, &open.filter)
+                            .map(|item| item.held(modifiers.alt))
+                            .filter(|item| item.enabled)
                     };
                     // Several matches, or none that can be chosen: darktable keeps the list
                     // open for more typing.
@@ -632,7 +638,8 @@ fn draw(ctx: &Context, id: Id, open: &mut Open) -> Pointer {
 
 /// What the pointer did, applied: a line clicked, or one it rests on.
 fn point(ctx: &Context, open: &mut Open, pointer: Pointer) -> Option<Closing> {
-    let (now, alt) = ctx.input(|i| (i.time, i.modifiers.alt));
+    let now = ctx.input(|i| i.time);
+    let alt = alt_clicked(ctx);
     let deepest = open.path.len() - 1;
     if let Some((level, index)) = pointer.clicked {
         match entries_of(&open.request.entries, &open.path[..level]).get(index) {
@@ -780,6 +787,25 @@ fn shown(entry: &Entry, top: bool) -> (String, Option<(usize, char)>) {
         Entry::Item(item) => (item.text.clone(), None),
         Entry::Separator => (String::new(), None),
     }
+}
+
+/// Whether Alt (Option) was held for a click this frame: as the primary button was let go,
+/// by its release's own modifiers, not the input's, which a change later in the frame
+/// would have moved on; the input's where no release came, as a screen reader's click.
+fn alt_clicked(ctx: &Context) -> bool {
+    ctx.input(|i| {
+        (i.events.iter().rev())
+            .find_map(|event| match event {
+                Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers,
+                    ..
+                } => Some(modifiers.alt),
+                _ => None,
+            })
+            .unwrap_or(i.modifiers.alt)
+    })
 }
 
 /// `entry` as shown with Option (Alt) held or not, `alt`: an item's alternate in its place

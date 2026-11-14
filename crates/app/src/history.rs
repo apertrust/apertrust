@@ -3659,7 +3659,7 @@ pub(crate) mod tests {
         assert!(harness.query_by_label("Compress History").is_none());
         harness
             .get_by_role_and_label(AccessRole::MenuItem, "Truncate History")
-            .click();
+            .click_modifiers(egui::Modifiers::ALT);
         harness.run();
         assert_eq!(harness.state().actions, [Action::Truncate]);
         hold_option(&mut harness, false);

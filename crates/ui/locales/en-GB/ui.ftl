@@ -982,9 +982,9 @@ history-discard = Discard History
 # it can; Create a Style…, which comes with styles; and Discard History…'s tip.
 history-options-compress = Compress History
 history-options-truncate = Truncate History
-history-compress-tip = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is.
-history-compress-tip-truncate = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is. Hold { $key } to truncate instead.
-history-truncate-tip = Removes the steps after the chosen one and keeps the rest as they are. The photo stays as it is.
+history-compress-tip = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
+history-compress-tip-truncate = Keeps each module’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults. Hold { $key } to truncate instead.
+history-truncate-tip = Removes the steps after the chosen one and keeps the rest as they are. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
 history-options-style = Create a Style…
 history-options-style-later = Styles come in a later version.
 history-discard-tip = Clears the history and puts the photo back as it first opened.
