@@ -1,14 +1,14 @@
-# The modules' words in British English, the source language (docs/gui.md, Tool panels
-# from definitions). Each id follows from the module's definition in apertrust-tools:
+# The tools' words in British English, the source language (docs/gui.md, Tool panels
+# from definitions). Each id follows from the tool's definition in apertrust-tools:
 #   tool-<tool>-title, tool-<tool>-auto, tool-<tool>-tab-<tab>,
 #   tool-<tool>-group-<group>, tool-<tool>-collapsible-<group>,
 #   tool-<tool>-control-<control>-label, -full and -promise,
-#   tool-<tool>-control-<control>-option-<option>, a module's setting's
+#   tool-<tool>-control-<control>-option-<option>, a tool's setting's
 #   tool-<tool>-setting-<setting>-label, -full, -promise and -option-<option>, and a
 #   preset row's tool-<tool>-preset-<preset>-label, -full, -promise and
 #   -option-<option>.
 # Units are unit-<unit>, and a preset row's Custom preset-custom, in ui.ftl. A test in
-# crates/tools/tests checks that every id a built-in module implies is here; Ukrainian
+# crates/tools/tests checks that every id a built-in tool implies is here; Ukrainian
 # (uk) and Polish (pl) translate each one.
 
 ## Raw black/white point (docs/tools/raw-black-white-point.md): darktable's raw
@@ -196,7 +196,7 @@ tool-agx-action-auto_tune_levels-full = Auto tune levels
 tool-agx-action-auto_tune_levels-promise = Set black and white relative exposure using the selected area.
 tool-agx-action-read_exposure-label = Read exposure
 tool-agx-action-read_exposure-full = Read exposure
-tool-agx-action-read_exposure-promise = Read exposure from the metadata and the Exposure module.
+tool-agx-action-read_exposure-promise = Read exposure from the metadata and the Exposure tool.
 tool-agx-control-curve_pivot_x-label = Pivot relative exposure
 tool-agx-control-curve_pivot_x-full = Pivot relative exposure
 tool-agx-control-curve_pivot_x-promise = Set the pivot's input exposure in EV relative to mid-grey.
@@ -460,7 +460,7 @@ tool-channelmixerrgb-title = Colour calibration
 tool-channelmixerrgb-tab-cat = CAT
 tool-channelmixerrgb-control-adaptation-label = Adaptation
 tool-channelmixerrgb-control-adaptation-full = Adaptation
-tool-channelmixerrgb-control-adaptation-promise = How the illuminant is adapted, and the colour space the module works in. Linear Bradford (1985) is consistent with the ICC v4 toolchain. CAT16 (2016) is more robust and accurate. Non-linear Bradford (1985) is the original Bradford: it can give better results than the linear one, but is unreliable. XYZ is a simple scaling in XYZ space, not recommended in general. None disables any adaptation and uses the pipeline's working RGB.
+tool-channelmixerrgb-control-adaptation-promise = How the illuminant is adapted, and the colour space the tool works in. Linear Bradford (1985) is consistent with the ICC v4 toolchain. CAT16 (2016) is more robust and accurate. Non-linear Bradford (1985) is the original Bradford: it can give better results than the linear one, but is unreliable. XYZ is a simple scaling in XYZ space, not recommended in general. None disables any adaptation and uses the pipeline's working RGB.
 tool-channelmixerrgb-control-adaptation-option-linear_bradford = Linear Bradford (ICC v4)
 tool-channelmixerrgb-control-adaptation-option-cat16 = CAT16 (CIECAM16)
 tool-channelmixerrgb-control-adaptation-option-non_linear_bradford = Non-linear Bradford

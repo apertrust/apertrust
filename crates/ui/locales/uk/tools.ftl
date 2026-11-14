@@ -1,4 +1,4 @@
-# Слова модулів українською (docs/gui.md, Tool panels from definitions).
+# Слова інструментів українською (docs/gui.md, Tool panels from definitions).
 # Переклад повідомлень з en-GB/tools.ftl з тими самими змінними. Чернетка: ще не
 # перевірена носієм мови.
 
@@ -187,7 +187,7 @@ tool-agx-action-auto_tune_levels-full = Автоналаштування рів�
 tool-agx-action-auto_tune_levels-promise = Встановити відносну експозицію чорного та білого, використовуючи вибрану область.
 tool-agx-action-read_exposure-label = Зчитування експозиції
 tool-agx-action-read_exposure-full = Зчитування експозиції
-tool-agx-action-read_exposure-promise = Зчитування експозиції з метаданих та модуля Експозиція.
+tool-agx-action-read_exposure-promise = Зчитування експозиції з метаданих та інструмента Експозиція.
 tool-agx-control-curve_pivot_x-label = Відносна експозиція опорної точки
 tool-agx-control-curve_pivot_x-full = Відносна експозиція опорної точки
 tool-agx-control-curve_pivot_x-promise = Встановити вхідну експозицію опорної точки в EV відносно середнього сірого.
@@ -246,7 +246,7 @@ tool-agx-control-look_original_hue_mix_ratio-full = Збереження від�
 tool-agx-control-look_original_hue_mix_ratio-promise = Збільшити, щоб наблизити відтінки до оригіналу.
 tool-agx-control-base_primaries-label = Основні кольори
 tool-agx-control-base_primaries-full = Основні кольори
-tool-agx-control-base_primaries-promise = Основні кольори колірного простору для використання як основи для наведених нижче коригувань. Профіль експорту використовує профіль, встановлений у модулі Вихідний колірний профіль.
+tool-agx-control-base_primaries-promise = Основні кольори колірного простору для використання як основи для наведених нижче коригувань. Профіль експорту використовує профіль, встановлений в інструменті Вихідний колірний профіль.
 tool-agx-control-base_primaries-option-export_profile = Профіль експорту
 tool-agx-control-base_primaries-option-working_profile = Робочий профіль
 tool-agx-control-base_primaries-option-rec2020 = Rec2020
@@ -440,7 +440,7 @@ tool-channelmixerrgb-title = Калібрування кольору
 tool-channelmixerrgb-tab-cat = CAT
 tool-channelmixerrgb-control-adaptation-label = Адаптація
 tool-channelmixerrgb-control-adaptation-full = Адаптація
-tool-channelmixerrgb-control-adaptation-promise = Метод адаптації джерела світла та кольоровий простір, у якому працює модуль. Лінійний Бредфорд (1985) відповідає набору інструментів ICC v4. CAT16 (2016) надійніший і точніший. Нелінійний Бредфорд (1985) — оригінальний Бредфорд: він може дати кращі результати, ніж лінійна версія, але ненадійний. XYZ — просте масштабування в просторі XYZ, зазвичай не рекомендується. Немає — вимикає будь-яку адаптацію і використовує робочий RGB конвеєра.
+tool-channelmixerrgb-control-adaptation-promise = Метод адаптації джерела світла та кольоровий простір, у якому працює інструмент. Лінійний Бредфорд (1985) відповідає набору інструментів ICC v4. CAT16 (2016) надійніший і точніший. Нелінійний Бредфорд (1985) — оригінальний Бредфорд: він може дати кращі результати, ніж лінійна версія, але ненадійний. XYZ — просте масштабування в просторі XYZ, зазвичай не рекомендується. Немає — вимикає будь-яку адаптацію і використовує робочий RGB конвеєра.
 tool-channelmixerrgb-control-adaptation-option-linear_bradford = Лінійний Бредфорд (ICC v4)
 tool-channelmixerrgb-control-adaptation-option-cat16 = CAT16 (CIECAM16)
 tool-channelmixerrgb-control-adaptation-option-non_linear_bradford = Нелінійний Бредфорд

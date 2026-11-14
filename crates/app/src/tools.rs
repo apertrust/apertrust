@@ -4819,7 +4819,7 @@ mod tests {
         );
         let guides = harness.get_by_label("Show guides");
         assert!(guides.accesskit_node().is_disabled());
-        let settings = harness.get_by_label("Change global guide settings. These settings apply globally, to every module that shows guide overlays.");
+        let settings = harness.get_by_label("Change global guide settings. These settings apply globally, to every tool that shows guide overlays.");
         assert!(settings.accesskit_node().is_disabled());
 
         harness.get_by_label("Rotate 90° clockwise").click();
