@@ -2,7 +2,7 @@
 
 ## Context
 
-A module is what the user edits with; an operation is the engine's algorithm ([0004](0004-tools-for-people-operations-for-algorithms.md)). Where do modules live, how does a control become operation parameters, which commands and events carry module values, and how do edits store them, so that every client sees the same modules, an untouched module changes nothing exactly, and later modules can rebind the same operations?
+A processing tool is what a person edits with; an operation is the engine's algorithm ([0004](0004-tools-for-people-operations-for-algorithms.md)). Where do tools live, how does a control become operation parameters, which commands and events carry tool values, and how do edits store them, so that every client sees the same tools, an untouched tool changes nothing exactly, and later tools can rebind the same operations?
 
 ## Decision
 

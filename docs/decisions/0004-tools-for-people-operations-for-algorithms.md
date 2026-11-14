@@ -12,7 +12,7 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
   - **Everything in the side panel is a tool:** the tools that edit the photo, such as Exposure or Colour calibration, and Browse, Filters, Keywords, Metadata, Scopes, History, Snapshots and the Colour picker.
   - **A processing tool** binds operations, as darktable's processing modules do.
   - **A utility** is a tool that edits nothing, such as Scopes or the Colour picker, as darktable's utility modules. "Utility" names only that kind of tool, never a second level beside tools.
-  - **A tool has controls and settings.** Its controls are what an edit stores. Its settings are the options darktable keeps in darktablerc, which Apertrust keeps in `settings.toml`, never in an edit.
+  - **A processing tool has controls,** and the edit stores them. **Any tool may have settings,** the options darktable keeps in darktablerc, which Apertrust keeps in `settings.toml`, never in an edit. What another tool holds is what it is: view state, such as the folder Browse shows or the Scopes' mode, or the photo's metadata, such as Keywords' and Metadata's fields ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), never controls in the edit.
 - An **operation** is one algorithm in the engine, usually a darktable port, with its manifest, schema and kernels ([0020](0020-operations-as-native-plugins-one-crate-each.md)). darktable's own XMP history calls these operations (`darktable:operation`).
 - **An MCP tool is always written "MCP tool",** never a bare "tool". The MCP tools are generated from the tools' definitions and the library's commands ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
 
@@ -22,7 +22,7 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 - **The languages':** Rust's `mod` and "this module" in its doc comments; Slang's `module` declarations; wgpu's and naga's `ShaderModule`, `naga::Module` and `ModuleInfo`.
 - **Porting a darktable module yields an operation and a tool.**
 
-**Every operation parameter has exactly one owning tool.** A test refuses a parameter owned twice. A parameter with no editing meaning and no darktable widget is fixed at darktable's value, owned by its tool with no control.
+**Every operation parameter has at most one owning tool,** and each gets one as its operation's tool is built. A test refuses a parameter owned twice. A parameter with no editing meaning and no darktable widget is fixed at darktable's value, owned by its tool with no control. Until a tool owns it, a parameter of an operation an unedited photo runs is set only through `Command::Set` and `--param`, and stored in the edit as itself ([0028](0028-tools-bound-to-operations.md)).
 
 **Operations never appear in the interface.** There is no Expert tab or direct operation access. Depth comes from inside a tool, its own tabs and collapsible groups ([0029](0029-a-tool-is-darktables-page.md)), never from a second tool. A read-only operation inspector in debug builds may show what each tool set.
 
@@ -55,4 +55,4 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 - **What people and files hold keeps its meaning.** Tool ids (`exposure`, `toneequal`) are permanent ([0028](0028-tools-bound-to-operations.md)); `settings.toml`'s keys are unchanged, a tool's settings already under `tools.<id>.<setting>`; the CLI's flags are unchanged, `--set` and `--reset` taking a tool id and a control; a message id the sidecar stores is never renamed.
 - **The `tools/` scripts folder, the `tool-bindings` skill and `ToolButton` keep their names.** The skill already means the tools of this decision; the others are a folder and a toolbar's button.
 - An edit stores tool values, and the bindings derive operation parameters from them.
-- `--param` and `Command::Set` reach only a parameter no tool owns yet, of an operation an unedited photo runs; a fixed parameter is refused (`EditError::Fixed`).
+- `--param` and `Command::Set` reach only a parameter no tool owns yet, of an operation an unedited photo runs; an owned or fixed parameter is refused (`EditError::Owned`, `EditError::Fixed`).
