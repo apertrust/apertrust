@@ -3136,7 +3136,8 @@ fn compress_and_truncate_among_the_default_steps_change_nothing_shown() {
 /// Discard History on an unreadable history whose end lies among the default steps: the
 /// fresh log begins with a new photo's default steps, those of the modules not applied
 /// after the end, so nothing changes on screen and Original is the untouched photo; with
-/// default steps alone, the file is written with no step.
+/// default steps alone and the end among them, the file holds them at that end, so the
+/// photo reopens as it shows, its modules not applied still so.
 #[test]
 fn discard_history_afresh_keeps_the_modules_not_applied() {
     let path = scratch("history-discard-unreadable-defaults");
@@ -3168,7 +3169,15 @@ fn discard_history_afresh_keeps_the_modules_not_applied() {
     assert_eq!((fresh.steps.len(), fresh.end), (3, 1));
     assert!((fresh.steps.iter()).all(|step| step.source == StepSource::Default));
     let read = assert_saved(&driven, &path, DISCARDING);
-    assert!(read.log.steps().is_empty());
+    assert_eq!((read.log.steps().len(), read.log.end()), (3, 1));
+    assert_eq!(read.edit, edit(&driven));
+    let reopened = driven.open(&path);
+    assert!(matches!(reopened.first(), Some(Event::Opened(p)) if p.view_only.is_none()));
+    assert_eq!(
+        (history(&reopened).steps.len(), history(&reopened).end),
+        (3, 1)
+    );
+    assert_eq!(read.edit, edit(&driven));
     remove(&path);
 }
 

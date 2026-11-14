@@ -446,8 +446,8 @@ impl Log {
     }
 
     /// How many default steps the log begins with: those of source Default before any
-    /// other, n of them, 1 to n. Undo's fallback stops at them, as darktable's auto-applied
-    /// items are no undo records.
+    /// other, n of them, 1 to n, the History tab's Defaults group. Undo's fallback stops
+    /// above them, and above any default step after them ([`Log::undo_end`]).
     pub fn defaults(&self) -> usize {
         (self.steps.iter())
             .take_while(|step| step.source == StepSource::Default)
@@ -660,6 +660,29 @@ impl Log {
         let other =
             (self.steps[end + 1..].iter()).position(|step| batch.is_none() || step.batch != batch);
         Some(other.map_or(self.steps.len(), |other| end + 1 + other))
+    }
+
+    /// Where Undo's fallback, with no undo record, as after reopening a photo, moves the
+    /// end: back over the step before it and the steps of its batch before that
+    /// ([`Log::batch_start`]), never over a default step, as darktable's auto-applied items
+    /// are no undo records: it stops above the last default step before the end, wherever
+    /// it lies, one [`Log::afresh`] left after the end and a Redo applied among them;
+    /// `None` where it would not move.
+    pub fn undo_end(&self) -> Option<usize> {
+        let floor = (self.steps[..self.end].iter())
+            .rposition(|step| step.source == StepSource::Default)
+            .map_or(0, |last| last + 1);
+        if self.end <= floor {
+            return None;
+        }
+        // A batch holds no default step, so it never reaches below the floor.
+        self.batch_start(self.end)
+    }
+
+    /// Where Redo's fallback moves the end: forward over the step after it and the steps of
+    /// its batch after that ([`Log::batch_end`]); `None` past the last step.
+    pub fn redo_end(&self) -> Option<usize> {
+        self.batch_end(self.end)
     }
 
     /// A random id no step of the log has.

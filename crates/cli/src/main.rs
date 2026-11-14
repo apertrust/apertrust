@@ -41,7 +41,9 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{Tiling, export_at};
 use apertrust_engine::export_job;
 use apertrust_engine::gpu::{self, GpuContext};
-use apertrust_engine::history::{self, Change, Clock, Log, MachineId, StepSource, Wrote};
+use apertrust_engine::history::{
+    Change, Clock, Entry, Log, MachineId, Note, StepSource, Wrote, advance, default_modules, latest,
+};
 use apertrust_engine::jobs::JobEvent;
 use apertrust_engine::names::{self, Shot};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline};
@@ -62,13 +64,14 @@ use apertrust_export::settings::registry::{
 use apertrust_export::settings::{self as export_settings, FileFormat, SizeMode};
 use apertrust_export::size::Request;
 use apertrust_export::{Format, Places, png, variables};
-use apertrust_modules::{Control, ControlKind, ControlValue, Mark, Module};
+use apertrust_modules::{Control, ControlKind, ControlValue, Mark, Module, ModuleValues};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_raw::{CfaColor, Pixels, Rect};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 mod beside;
 mod cache;
+mod history;
 mod library;
 
 /// The operations and the modules the CLI hands the engine, as the app hands them.
@@ -233,14 +236,19 @@ enum Command {
         #[arg(long, value_name = "NAME", value_parser = backend_named)]
         backend: Option<gpu::Backend>,
     },
-    /// Change the edit saved beside a raw, `FILE.apxmp` (version 1: module values, and
-    /// the parameters no module owns yet), then show it. `export` and `preview` start
-    /// from it. Resets apply before sets. An edit a newer Apertrust wrote is refused and
-    /// left as it is; `export` and `preview` render what this build reads of it.
+    /// Change the edit saved beside a raw, `FILE.apxmp`: module values, and the parameters
+    /// no module owns yet, one change added to its history, a step of each module it
+    /// writes; then show it. `export` and `preview` start from it. Resets apply before
+    /// sets. An edit a newer Apertrust wrote is refused and left as it is; `export` and
+    /// `preview` render what this build reads of it.
     Edit {
         file: PathBuf,
         #[command(flatten)]
         flags: SetFlags,
+        /// The change's note, in your own words, stored as written: `history` lists it
+        /// beside each step the change makes. Not used where nothing changes.
+        #[arg(long, value_name = "TEXT", value_parser = clap::builder::NonEmptyStringValueParser::new())]
+        note: Option<String>,
         /// Return a control to its default for the image, no longer kept; repeat for
         /// more.
         #[arg(long = "reset", value_name = "MODULE.CONTROL")]
@@ -255,6 +263,15 @@ enum Command {
         #[arg(long)]
         clear: bool,
     },
+    /// List the history of the edit saved beside a raw, `FILE.apxmp`, newest first, as the
+    /// app's History tab lists it: each step's number, module, what changed and its time in
+    /// UTC, its source where it is not yours, its note; a change of several modules and the
+    /// default steps each under a line of their own; Original, 0; the end marked with >.
+    /// Or make one move, a write of the file that the app takes in, only over the file as
+    /// it was read, then list it. A move that would change nothing writes nothing. An edit
+    /// a newer Apertrust wrote is refused and left as it is; one part of whose history
+    /// cannot be read takes --discard alone.
+    History(history::Args),
     /// Render raws through the engine's operations and save each, with darktable's sRGB
     /// profile, as a JPEG or a PNG as darktable writes them, with the format's options
     /// the user data folder's export settings give, as darktable-cli takes them from
@@ -444,6 +461,7 @@ fn main() -> Result<()> {
         Command::Edit {
             file,
             flags,
+            note,
             resets,
             param_resets,
             clear,
@@ -451,6 +469,7 @@ fn main() -> Result<()> {
             &file,
             EditArgs {
                 flags: &flags,
+                note: note.as_deref(),
                 resets: &resets,
                 param_resets: &param_resets,
                 clear,
@@ -461,6 +480,9 @@ fn main() -> Result<()> {
             OPERATIONS,
             MODULES,
         ),
+        Command::History(history::Args { file, moves }) => {
+            history::run(&file, moves.chosen(), OPERATIONS, MODULES)
+        }
         Command::Preview {
             file,
             width,
@@ -839,6 +861,8 @@ fn describe(edit: &Edit, operations: &[&dyn Operation], modules: &[&dyn Module])
 /// What `edit` asks of the edit saved beside the photo.
 struct EditArgs<'a> {
     flags: &'a SetFlags,
+    /// The change's note, `--note`'s words.
+    note: Option<&'a str>,
     resets: &'a [String],
     param_resets: &'a [String],
     clear: bool,
@@ -877,14 +901,16 @@ impl FlagOrder {
 /// Changes the edit saved beside `photo`, then shows it. The change is a step of each module
 /// and operation it writes, in the order of the flags, `--clear` first, sharing a batch
 /// where there are several, source You, added to the log after its end, as the session's
-/// change is (`docs/history.md`, The CLI); the file is written as version 2. An edit open
-/// for viewing only, a newer Apertrust's or one part of whose history cannot be read, is
-/// refused whatever the flags, `--clear` included, and left as it is (decisions 43 and 48).
+/// change is (`docs/history.md`, The CLI), with `--note`'s words as its note; a photo with
+/// no history is given its default steps first, as the app's first change gives them. The
+/// file is written as version 2. An edit open for viewing only, a newer Apertrust's or one part of
+/// whose history cannot be read, is refused whatever the flags, `--clear` included, and
+/// left as it is (decisions 43 and 48).
 fn edit(
     photo: &Path,
     args: EditArgs,
-    operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    operations: &[&'static dyn Operation],
+    modules: &[&'static dyn Module],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
@@ -946,13 +972,35 @@ fn write_if_unchanged(
     write().map(|()| true)
 }
 
+/// Writes `log`, with its copy's clock vector `clocks`, into `file`, the sidecar beside
+/// `photo` as read, with the photo's name and fingerprint, as version 2, where the sidecar
+/// still has the stamp `read`: whether it wrote, as [`write_if_unchanged`].
+fn write_history(
+    photo: &Path,
+    read: Stamp,
+    mut file: sidecar::Edits,
+    (log, clocks): (&Log, &[Clock]),
+    (operations, modules): (&[&dyn Operation], &[&dyn Module]),
+) -> Result<bool> {
+    let path = sidecar::path_for(photo);
+    file.photo = Some(apertrust_base::log::file_name(photo).into_owned());
+    if let Ok(fingerprint) = sidecar::read_fingerprint(photo) {
+        file.fingerprint = Some(fingerprint);
+    }
+    let build = apertrust_base::program!().version;
+    write_if_unchanged(&path, read, || {
+        sidecar::write_log(&path, &file, log, clocks, (operations, modules), build)
+            .with_context(|| format!("writing {}", path.display()))
+    })
+}
+
 /// One try of [`edit`](fn@edit): the edit the change leaves, or `None` where the file
 /// changed between its read and the write, which writes nothing.
 fn edit_once(
     photo: &Path,
     args: &EditArgs,
-    operations: &[&dyn Operation],
-    modules: &[&dyn Module],
+    operations: &[&'static dyn Operation],
+    modules: &[&'static dyn Module],
 ) -> Result<Option<Edit>> {
     let path = sidecar::path_for(photo);
     let read_stamp = stamp(&path)?;
@@ -995,35 +1043,59 @@ fn edit_once(
     }
     set_controls(&mut edit, &sets, &image)?;
     set_params(&mut edit, &args.flags.params, operations, modules)?;
-    if args.clear
+    let asked = args.clear
         || !args.flags.is_empty()
         || !args.resets.is_empty()
-        || !args.param_resets.is_empty()
-    {
-        let wrote = wrote(args, &sets);
-        let changes = Change::between(&before, &edit, &wrote);
-        if !changes.is_empty() {
-            let machine = MachineId::current();
-            let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
-            let clock = Clock::now(history::latest(read, machine).as_ref(), machine);
-            log.add_change(changes, StepSource::You, None, clock);
-            history::advance(&mut clocks, clock);
-            let mut file = file;
-            file.photo = Some(apertrust_base::log::file_name(photo).into_owned());
-            if let Ok(fingerprint) = sidecar::read_fingerprint(photo) {
-                file.fingerprint = Some(fingerprint);
-            }
-            let build = apertrust_base::program!().version;
-            let written = write_if_unchanged(&path, read_stamp, || {
-                sidecar::write_log(&path, &file, &log, &clocks, (operations, modules), build)
-                    .with_context(|| format!("writing {}", path.display()))
-            })?;
-            if !written {
-                return Ok(None);
-            }
-            println!("Wrote {}", path.display());
-        }
+        || !args.param_resets.is_empty();
+    let mut changes = match asked {
+        true => Change::between(&before, &edit, &wrote(args, &sets)),
+        false => Vec::new(),
+    };
+    // `--clear` with the end among the default steps moves no value, but applies the
+    // modules not applied, as the session's Reset there does (decision 78): a Reset step of
+    // each, which keeps the default steps after the end and moves them below it.
+    let unapplied = log.unapplied(log.end());
+    if changes.is_empty() && args.clear && !unapplied.is_empty() {
+        let entries = (unapplied.into_iter())
+            .map(|module| Entry::Module {
+                module,
+                values: ModuleValues::new(),
+            })
+            .collect();
+        changes = vec![Change::Reset(entries)];
     }
+    if changes.is_empty() {
+        if args.note.is_some() {
+            println!("Nothing changed: the note was not used");
+        }
+        return Ok(Some(edit));
+    }
+    let machine = MachineId::current();
+    let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
+    let mut last = latest(read, machine);
+    // A photo with no history is given its default steps first, as the app's first change
+    // gives them (decision 78), so Original leaves out the modules its workflow applies.
+    if log.steps().is_empty() {
+        let made = Clock::now(last.as_ref(), machine);
+        log.add_defaults(&default_modules(modules, operations), made);
+        advance(&mut clocks, made);
+        last = Some(made);
+    }
+    let clock = Clock::now(last.as_ref(), machine);
+    let note = args.note.map(|words| Note::Text(words.to_owned()));
+    log.add_change(changes, StepSource::You, note, clock);
+    advance(&mut clocks, clock);
+    let written = write_history(
+        photo,
+        read_stamp,
+        file,
+        (&log, &clocks),
+        (operations, modules),
+    )?;
+    if !written {
+        return Ok(None);
+    }
+    println!("Wrote {}", path.display());
     Ok(Some(edit))
 }
 
@@ -2747,6 +2819,7 @@ mod tests {
                 &photo,
                 EditArgs {
                     flags: &flags(sets, params),
+                    note: None,
                     resets: &resets,
                     param_resets: &[],
                     clear,
@@ -2829,14 +2902,14 @@ mod tests {
         assert!(steps[0].batch.is_some() && steps[0].batch == steps[1].batch);
         let names: Vec<_> = (steps.iter())
             .map(|step| match step.change.entries() {
-                [history::Entry::Module { module, .. }] => module.clone(),
-                [history::Entry::Operation { operation, .. }] => operation.clone(),
+                [Entry::Module { module, .. }] => module.clone(),
+                [Entry::Operation { operation, .. }] => operation.clone(),
                 _ => "reset".to_owned(),
             })
             .collect();
         assert_eq!(names, ["sample", "exposure", "sample", "sample", "reset"]);
         assert!(steps.iter().all(|step| step.source == StepSource::You));
-        assert_eq!(steps[4].note, Some(history::Note::reset()));
+        assert_eq!(steps[4].note, Some(Note::reset()));
         std::fs::remove_dir_all(&directory).unwrap();
     }
 
@@ -2872,6 +2945,7 @@ mod tests {
         };
         let args = EditArgs {
             flags: &flags,
+            note: None,
             resets: &resets,
             param_resets: &param_resets,
             clear,
@@ -2976,6 +3050,7 @@ mod tests {
                 &photo,
                 EditArgs {
                     flags: &flags(sets, &[]),
+                    note: None,
                     resets: &[],
                     param_resets: &[],
                     clear,
