@@ -10,10 +10,10 @@ One tool builds every package, [cargo-packager](https://github.com/crabnebula-de
 | --- | --- | --- |
 | macOS | `Apertrust.app` | `Contents/MacOS/apertrust` (the app) and `apertrust-cli`; `Contents/Resources/` with the icon, `LICENSE`, `CREDITS.md` and `licences/`; the bundle's `Info.plist` |
 | macOS | `Apertrust_<version>_aarch64.dmg` for Apple silicon and `Apertrust_<version>_x64.dmg` for Intel | The app and a link to Applications, with the icon as the volume's, in a window of Apertrust's own with a background (below), signed ad hoc; one image per architecture, so each download holds only its own code |
-| Windows | `apertrust_<version>_x64-setup.exe` | An NSIS installer for the person installing, with no administrator's rights, into `%LOCALAPPDATA%\Programs\Apertrust`: both executables and the licences, a Start menu shortcut, the raw file types in Open With, the edit's as Apertrust's own, and an uninstaller (below, Windows) |
-| Windows | `apertrust_<version>_x64-portable.zip` | An `Apertrust` folder with both executables and the licences, to run from anywhere |
-| Linux | `apertrust_<version>_x86_64.AppImage` | The app and the CLI in `usr/bin`, the desktop file, the AppStream metadata, the MIME types, the icons and the licences (in `usr/lib/apertrust`) |
-| Linux | `apertrust_<version>_x86_64.tar.gz` | The same laid out as a prefix (`bin/`, `share/applications`, `share/metainfo`, `share/mime/packages`, `share/icons/hicolor`, `share/doc/apertrust`), to copy into `~/.local` or `/usr/local` |
+| Windows | `apertrust_<version>_x64-setup.exe`, or `_arm64-setup.exe` for Windows on Arm | An NSIS installer for the person installing, with no administrator's rights, into `%LOCALAPPDATA%\Programs\Apertrust`: both executables and the licences, a Start menu shortcut, the raw file types in Open With, the edit's as Apertrust's own, and an uninstaller (below, Windows) |
+| Windows | `apertrust_<version>_x64-portable.zip`, or `_arm64-portable.zip` | An `Apertrust` folder with both executables and the licences, to run from anywhere |
+| Linux | `apertrust_<version>_x86_64.AppImage`, or `_aarch64.AppImage` for Arm | The app and the CLI in `usr/bin`, the desktop file, the AppStream metadata, the MIME types, the icons and the licences (in `usr/lib/apertrust`) |
+| Linux | `apertrust_<version>_x86_64.tar.gz`, or `_aarch64.tar.gz` | The same laid out as a prefix (`bin/`, `share/applications`, `share/metainfo`, `share/mime/packages`, `share/icons/hicolor`, `share/doc/apertrust`), to copy into `~/.local` or `/usr/local` |
 
 **The licences** in every package: `LICENSE` (the GPL), `CREDITS.md` (every component with its licence, and the fonts' and icons' notices, which About also shows), `licences/OFL.txt` (the fonts' licence: the binary compiles IBM Plex Sans in, decision 64) and `licences/LICENSE-Lucide` (the interface's icons).
 
@@ -63,8 +63,8 @@ The nightly builds are Apertrust Nightly, a development build that installs and 
 | Platform | Apertrust Nightly's packages |
 | --- | --- |
 | macOS | `Apertrust-nightly_<version>_aarch64.dmg` and `Apertrust-nightly_<version>_x64.dmg`, the volume `Apertrust Nightly`, laid out by `layout-nightly.DS_Store`, holding `Apertrust Nightly.app`: the bundle id `org.apertrust.Apertrust.Nightly`, its name `Apertrust Nightly`, the executables `apertrust-nightly` and `apertrust-nightly-cli`, the edit's type at the rank Alternate, so it opens edits but never takes them from Apertrust |
-| Windows | `apertrust-nightly_<version>_x64-setup.exe`, installing into `%LOCALAPPDATA%\Programs\Apertrust Nightly` with its own uninstall entry, Start menu shortcut `Apertrust Nightly`, ProgIDs `Apertrust.Nightly.RawImage` and `Apertrust.Nightly.Edit`, the edit's in Open With alone, never `.apxmp`'s default, and Open With entry `Applications\apertrust-nightly.exe`; `apertrust-nightly_<version>_x64-portable.zip`, an `Apertrust Nightly` folder |
-| Linux | `apertrust-nightly_<version>_x86_64.AppImage` and `apertrust-nightly_<version>_x86_64.tar.gz`, with `apertrust-nightly` and `apertrust-nightly-cli`, the desktop entry `org.apertrust.Apertrust.Nightly.desktop` (named Apertrust Nightly) and the metadata `org.apertrust.Apertrust.Nightly.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
+| Windows | `apertrust-nightly_<version>_x64-setup.exe` and `_arm64-setup.exe`, installing into `%LOCALAPPDATA%\Programs\Apertrust Nightly` with its own uninstall entry, Start menu shortcut `Apertrust Nightly`, ProgIDs `Apertrust.Nightly.RawImage` and `Apertrust.Nightly.Edit`, the edit's in Open With alone, never `.apxmp`'s default, and Open With entry `Applications\apertrust-nightly.exe`; `apertrust-nightly_<version>_x64-portable.zip` and `_arm64-portable.zip`, an `Apertrust Nightly` folder |
+| Linux | `apertrust-nightly_<version>_x86_64.AppImage` and `apertrust-nightly_<version>_x86_64.tar.gz`, and `_aarch64` for Arm, each AppImage with its `.zsync` (below, Nightly builds), with `apertrust-nightly` and `apertrust-nightly-cli`, the desktop entry `org.apertrust.Apertrust.Nightly.desktop` (named Apertrust Nightly) and the metadata `org.apertrust.Apertrust.Nightly.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
 
 `crates/app/tests/packaging.rs` applies `nightly-identity.txt` to the files as the script does, and checks that each line still matches and that every package names Apertrust Nightly by its own id.
 
@@ -102,7 +102,7 @@ APERTRUST_VERSION=0.2.0 tools/package.sh                  # a packager's version
 ```
 
 - **macOS**: Xcode's command-line tools (`lipo`, `codesign`, `hdiutil`). The script packages each Apple target installed, a disk image for Apple silicon and one for Intel (`rustup target add aarch64-apple-darwin x86_64-apple-darwin` installs both); `--target aarch64-apple-darwin` or `--target x86_64-apple-darwin` packages one. The disk image is made without driving Finder, its window laid out by the committed `.DS_Store` (above); `--finder-layout` also has create-dmg arrange it in Finder first, which needs a logged-in session and may ask to let the terminal control Finder, and the committed layout then replaces its own.
-- **Windows**: the MSVC toolchain with the Windows SDK, whose `rc.exe` compiles the resources, from Git Bash; the portable zip is written by PowerShell's `Compress-Archive`.
+- **Windows**: the MSVC toolchain with the Windows SDK, whose `rc.exe` compiles the resources, from Git Bash; the portable zip is written by PowerShell's `Compress-Archive`. An x64 or Arm system packages its own; `--target aarch64-pc-windows-msvc` names Arm's.
 - **Linux**: an x86_64 or aarch64 system; the AppImage runs linuxdeploy without FUSE.
 - **What cargo-packager downloads** into its tools folder the first time: the create-dmg script, pinned by its commit, on macOS; NSIS and its plugins, checked by SHA-1, on Windows; linuxdeploy, its AppImage plugin and AppRun on Linux.
 
@@ -126,11 +126,21 @@ Apertrust Nightly's are the same, under its names: `/Applications/Apertrust Nigh
 
 ## Nightly builds
 
-`.github/workflows/nightly-builds.yml` builds Apertrust Nightly's packages each night at 00:08 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
+`.github/workflows/nightly-builds.yml` builds Apertrust Nightly's packages each night at 00:00 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
 
 - **When**: only when main has changed since the commit the `nightly` tag points at. A run by hand from the Actions tab builds the same way, and its `force` input builds and publishes an unchanged main too. One run at a time; a second waits.
-- **The jobs**: `check` compares main with the tag; then three builds, each `tools/package.sh --nightly` with cargo-packager 0.11.8, from a full clone so the version is computed: `macos` on `macos-15` (both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin`), `windows` on `windows-2025` (the installer and the zip), `linux` on `ubuntu-24.04` (the AppImage and the tarball). Each uploads its packages as an artifact, kept seven days.
-- **Publishing**: once every build has succeeded, `publish`, the one job that may write, makes the `nightly` release again: it deletes the release with its tag, then creates it through GitHub's Releases API on the commit built, with the night's files and `SHA256SUMS.txt`, their SHA-256 sums. The API makes the tag, since GitHub refuses the job's own token a `git push` of a tag whose commit changes workflow files. The release is missing for the minute between. The release's notes give the commit and the date, and say that nightlies are untested development builds and unsigned (above). It is a pre-release, never the latest release. A file's version `+` is published as `.` (`apertrust-nightly_0.0.0.615_x64-setup.exe`), as GitHub would otherwise rename it after the sums were taken.
+- **The jobs**: `check` compares main with the tag; then five builds, each `tools/package.sh --nightly` with cargo-packager 0.11.8, from a full clone so the version is computed. Each uploads its packages as an artifact, kept seven days.
+
+| Job | Runner | Files |
+| --- | --- | --- |
+| `macos` | `macos-15` | Both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin` |
+| `windows` | `windows-2025` | The x64 installer and zip |
+| `windows-arm` | `windows-11-arm` | The arm64 installer and zip, with `--target aarch64-pc-windows-msvc`; rustup, pinned and checked by its SHA-256, is installed first should the image lack it |
+| `linux` | `ubuntu-24.04` | The x86_64 AppImage, its `.zsync` and the tarball |
+| `linux-arm` | `ubuntu-24.04-arm` | The aarch64 AppImage, its `.zsync` and the tarball |
+
+- **Updates of the AppImage**: each Linux job embeds the AppImage's update information, `gh-releases-zsync|apertrust|apertrust|nightly|apertrust-nightly_*_<arch>.AppImage.zsync` (`x86_64` or `aarch64`), and publishes `<AppImage>.zsync` beside it, so AppImageUpdate fetches only the blocks that changed. After packaging, the job gives the AppImage its published name, its `+` a `.`, so the `.zsync`'s URL names the published file; extracts it with `--appimage-extract`; and packs it again with appimagetool, `-u` and the update information, which writes the `.zsync` with zsyncmake (apt's `zsync`). appimagetool and its runtime are pinned to a release, appimagetool 1.9.1 and the type2 runtime 20251108, each checked against the SHA-256 the workflow holds.
+- **Publishing**: once every build has succeeded, `publish`, the one job that may write, makes the `nightly` release again: it deletes the release with its tag, then creates it through GitHub's Releases API on the commit built, with the night's files, titled `Nightly build <date>`. GitHub shows each file's SHA-256 itself, so there is no checksums file. The API makes the tag, since GitHub refuses the job's own token a `git push` of a tag whose commit changes workflow files. The release is missing for the minute between. The release's notes give the commit and the date, say that nightlies are untested development builds, and point to the README's [Downloads](../README.md#downloads) for installing and opening them unsigned. It is a pre-release, never the latest release. A file's version `+` is published as `.` (`apertrust-nightly_0.0.0.615_x64-setup.exe`), as GitHub would otherwise rename it.
 - **On failure**: when any build fails, nothing is published and the last nightly stays. A run from another branch builds but never publishes.
 - **What is not there**: tests, which CI runs on every push to main, and signing (above).
 

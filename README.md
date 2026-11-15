@@ -70,7 +70,7 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
 
   Or, without Terminal, where macOS names an unidentified developer: open the disk image once, then choose Open Anyway in System Settings › Privacy & Security and confirm, and do the same for the app the first time it opens. On macOS 14 and earlier, Control-click it and choose Open instead.
 - **Windows**: SmartScreen says "Windows protected your PC": choose More info, then Run anyway.
-- **Linux**: make the AppImage executable (`chmod +x`) and run it.
+- **Linux**: make the AppImage executable (`chmod +x`) and run it. Apertrust Nightly's AppImage updates with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate), which downloads only what changed.
 
 [docs/packaging.md](docs/packaging.md#unsigned-packages) says why, and what each package holds.
 

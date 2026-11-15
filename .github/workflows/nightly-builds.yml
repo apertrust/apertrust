@@ -7,7 +7,7 @@ name: Nightly builds
 # fails, or from a branch other than main.
 on:
   schedule:
-    - cron: "8 0 * * *"   # off the hour, which GitHub delays most
+    - cron: "0 0 * * *"   # midnight UTC
   workflow_dispatch:
     inputs:
       force:
@@ -26,6 +26,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_PACKAGER: 0.11.8
+  # Downloaded, each checked against the SHA-256 its job gives: rustup where the Windows
+  # Arm runner has none, and appimagetool with its runtime, which give the AppImages their
+  # update information.
+  RUSTUP: 1.29.3
+  APPIMAGETOOL: 1.9.1
+  APPIMAGE_RUNTIME: "20251108"
 
 jobs:
   check:
@@ -103,6 +109,52 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Windows on Arm's installer and zip, built on Arm.
+  windows-arm:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-11-arm
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      # The image comes with rustup; should it not, rustup itself, pinned and checked, which
+      # then installs the toolchain rust-toolchain.toml pins on first use.
+      - name: Install rustup if missing
+        env:
+          RUSTUP_INIT_SHA256: 407e0d72f81d26a01f9d032b8317908cbb2917ba22765474b682b41390792ad9
+        run: |
+          if command -v rustup >/dev/null; then
+            rustup --version
+            exit 0
+          fi
+          init=$(cygpath -u "$RUNNER_TEMP")/rustup-init.exe
+          curl -fsSL -o "$init" \
+            "https://static.rust-lang.org/rustup/archive/$RUSTUP/aarch64-pc-windows-msvc/rustup-init.exe"
+          echo "$RUSTUP_INIT_SHA256  $init" | sha256sum -c -
+          "$init" -y --no-modify-path --profile minimal --default-toolchain none
+          printf '%s\\bin\n' "${CARGO_HOME:-$USERPROFILE\\.cargo}" >>"$GITHUB_PATH"
+      - run: cargo --version
+      # The target named, so the packages are Arm's whichever host rustup runs as.
+      - run: rustup target add aarch64-pc-windows-msvc
+      - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: tools/package.sh --nightly --target aarch64-pc-windows-msvc
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-windows-arm
+          path: |
+            target/package/*/out/*-setup.exe
+            target/package/*/out/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
   linux:
     needs: check
     if: needs.check.outputs.build == 'true'
@@ -117,18 +169,89 @@ jobs:
       - run: cargo --version
       - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
       - run: tools/package.sh --nightly
+      # The AppImage under its published name, its `+` a `.` as publish names the other
+      # files, extracted and packed again by appimagetool with the update information,
+      # which also writes the .zsync beside it, naming that file: AppImageUpdate then
+      # fetches only what changed (docs/packaging.md, Nightly builds). The same step in
+      # linux-arm, with Arm's files.
+      - name: Give the AppImage its update information
+        env:
+          ARCH: x86_64
+          APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+          RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+        run: &zsync |
+          sudo apt-get update -q
+          sudo apt-get install -y -q zsync
+          tools=$RUNNER_TEMP/appimage
+          mkdir -p "$tools"
+          curl -fsSL -o "$tools/appimagetool" \
+            "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL/appimagetool-$ARCH.AppImage"
+          curl -fsSL -o "$tools/runtime" \
+            "https://github.com/AppImage/type2-runtime/releases/download/$APPIMAGE_RUNTIME/runtime-$ARCH"
+          sha256sum -c - <<EOF
+          $APPIMAGETOOL_SHA256  $tools/appimagetool
+          $RUNTIME_SHA256  $tools/runtime
+          EOF
+          chmod +x "$tools/appimagetool"
+          cd target/package/*/out
+          built=(*.AppImage)
+          if [ "${#built[@]}" -ne 1 ] || [ ! -f "${built[0]}" ]; then
+            echo "error: one AppImage expected, found: ${built[*]}" >&2
+            exit 1
+          fi
+          name=$(printf '%s' "${built[0]}" | tr -c 'A-Za-z0-9._-' '.')
+          "./${built[0]}" --appimage-extract >/dev/null
+          rm -- "${built[0]}"
+          "$tools/appimagetool" --appimage-extract-and-run --no-appstream \
+            --runtime-file "$tools/runtime" \
+            -u "gh-releases-zsync|apertrust|apertrust|nightly|apertrust-nightly_*_$ARCH.AppImage.zsync" \
+            squashfs-root "$name"
+          rm -rf squashfs-root
+          ls -l "$name" "$name.zsync"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages-linux
           path: |
             target/package/*/out/*.AppImage
+            target/package/*/out/*.AppImage.zsync
+            target/package/*/out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # Linux on Arm's AppImage and tarball, built on Arm.
+  linux-arm:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: cargo --version
+      - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: tools/package.sh --nightly
+      - name: Give the AppImage its update information
+        env:
+          ARCH: aarch64
+          APPIMAGETOOL_SHA256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+          RUNTIME_SHA256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+        run: *zsync
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-linux-arm
+          path: |
+            target/package/*/out/*.AppImage
+            target/package/*/out/*.AppImage.zsync
             target/package/*/out/*.tar.gz
           if-no-files-found: error
           retention-days: 7
 
   # Only after every build succeeded, and only from main.
   publish:
-    needs: [check, macos, windows, linux]
+    needs: [check, macos, windows, windows-arm, linux, linux-arm]
     if: needs.check.outputs.build == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -149,9 +272,9 @@ jobs:
           merge-multiple: true
       # The files in one folder (the Mac's come in a folder per chip). GitHub renames an
       # asset whose name holds other characters than letters, digits, `.`, `-` and `_`:
-      # the version's `+` becomes `.` here, so that each file is published under the
-      # name its checksum gives.
-      - name: Name the files and sum them
+      # the version's `+` becomes `.` here, so that each file is published under the name
+      # it was given; the AppImages come named so, as their .zsync files name them.
+      - name: Name the files
         run: |
           mkdir dist
           find downloads -type f -exec mv -t dist -- {} +
@@ -160,21 +283,21 @@ jobs:
             safe=$(printf '%s' "$file" | tr -c 'A-Za-z0-9._-' '.')
             [ "$safe" = "$file" ] || mv -- "$file" "$safe"
           done
-          sha256sum -- * >SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          ls -l
       # The release is made again, its tag with it, through the Releases API: GitHub
       # refuses the job's token a `git push` of a tag whose commit changes workflow files.
       - name: Replace the nightly release
         run: |
+          date=$(date -u +%Y-%m-%d)
           cat >notes.md <<EOF
-          Apertrust Nightly, built from [\`${SHA:0:7}\`](https://github.com/$GH_REPO/commit/$SHA) on main on $(date -u +%Y-%m-%d).
+          Apertrust Nightly, built from [\`${SHA:0:7}\`](https://github.com/$GH_REPO/commit/$SHA) on main on $date.
 
           Nightly builds are untested development builds, made each night main changes. Apertrust Nightly installs beside Apertrust, with its own name and settings, but it reads and writes the same edits beside your photos.
 
-          They are not signed: [how to open an unsigned package](https://github.com/$GH_REPO/blob/main/docs/packaging.md#unsigned-packages). \`SHA256SUMS.txt\` holds each file's SHA-256.
+          How to install each package, and open it unsigned: [Downloads](https://github.com/$GH_REPO#downloads).
           EOF
           gh release delete nightly --yes --cleanup-tag || true
-          gh release create nightly dist/* --target "$SHA" --title "Nightly build" \
+          gh release create nightly dist/* --target "$SHA" --title "Nightly build $date" \
             --notes-file notes.md --prerelease --latest=false
           # Every file under the name it was given.
           now=$(gh release view nightly --json assets --jq '.assets[].name' | sort)
