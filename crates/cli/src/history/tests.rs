@@ -278,8 +278,8 @@ fn refused_moves_leave_the_file_as_it_is() {
     // A newer Apertrust's: a tool this build lacks.
     let photo = Photo::edited("newer");
     let xml = String::from_utf8(photo.bytes()).unwrap().replacen(
-        "apertrust:module=\"rawprepare\"",
-        "apertrust:module=\"lens2\"",
+        "apertrust:tool=\"rawprepare\"",
+        "apertrust:tool=\"lens2\"",
         1,
     );
     assert!(xml.contains("lens2"));

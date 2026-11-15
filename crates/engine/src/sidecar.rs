@@ -1041,9 +1041,9 @@ pub(crate) mod tests {
         format!(
             r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF}">
             <rdf:Description rdf:about="" xmlns:apertrust="{NAMESPACE}" xmlns:c="{CONTROL_NAMESPACE}" apertrust:version="1">
-            <apertrust:modules><rdf:Seq><rdf:li>
+            <apertrust:tools><rdf:Seq><rdf:li>
             <rdf:Description {attributes}/>
-            </rdf:li></rdf:Seq></apertrust:modules></rdf:Description></rdf:RDF></x:xmpmeta>"#
+            </rdf:li></rdf:Seq></apertrust:tools></rdf:Description></rdf:RDF></x:xmpmeta>"#
         )
     }
 
@@ -1052,8 +1052,8 @@ pub(crate) mod tests {
         let xml = to_xml(&edited(), OPERATIONS, TOOLS, BUILD);
         for written in [
             r#"apertrust:version="1""#,
-            r#"apertrust:module="look""#,
-            r#"apertrust:moduleVersion="2""#,
+            r#"apertrust:tool="look""#,
+            r#"apertrust:toolVersion="2""#,
             r#"apertrust:kept="strength style curve""#,
             r#"control:style="hard""#,
             r#"control:curve="0.25,0.2 0.75,0.8""#,
@@ -1112,7 +1112,7 @@ pub(crate) mod tests {
     fn an_empty_edit_is_written_and_reads_back_empty() {
         let xml = to_xml(&Edit::default(), OPERATIONS, TOOLS, BUILD);
         assert!(!xml.contains("apertrust:operation="), "{xml}");
-        assert!(!xml.contains("apertrust:module="), "{xml}");
+        assert!(!xml.contains("apertrust:tool="), "{xml}");
         let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.edit.is_empty());
         assert!(loaded.warnings.is_empty());
@@ -1140,7 +1140,7 @@ pub(crate) mod tests {
         assert_eq!(loaded.warnings.len(), 4, "{:?}", loaded.warnings);
 
         let xml = version_1(
-            r#"apertrust:module="look" apertrust:moduleVersion="2" apertrust:kept="strength grain"
+            r#"apertrust:tool="look" apertrust:toolVersion="2" apertrust:kept="strength grain"
                c:strength="1.5" c:style="medium" c:grain="1" c:curve="0,0 0.5""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
@@ -1157,7 +1157,7 @@ pub(crate) mod tests {
     fn an_option_not_ported_is_left_out_with_a_warning() {
         use apertrust_tools::testing::Sample;
         let xml = version_1(
-            r#"apertrust:module="sample" apertrust:moduleVersion="1" c:method="film" c:size="fine""#,
+            r#"apertrust:tool="sample" apertrust:toolVersion="1" c:method="film" c:size="fine""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, &[&Sample], &[]).unwrap();
         let values = &loaded.edit.tools["sample"];
@@ -1206,13 +1206,13 @@ pub(crate) mod tests {
     #[test]
     fn an_older_tool_version_is_migrated_and_an_unknown_one_reported() {
         let older = version_1(
-            r#"apertrust:module="look" apertrust:moduleVersion="1" apertrust:kept="strength" c:amount="0.25""#,
+            r#"apertrust:tool="look" apertrust:toolVersion="1" apertrust:kept="strength" c:amount="0.25""#,
         );
         let loaded = from_xml(&older, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.edit.tools["look"].number("strength"), Some(0.25));
         assert_eq!(loaded.newer, None);
-        let newer = older.replace(r#"moduleVersion="1""#, r#"moduleVersion="3""#);
+        let newer = older.replace(r#"toolVersion="1""#, r#"toolVersion="3""#);
         let loaded = from_xml(&newer, OPERATIONS, TOOLS, &[]).unwrap();
         // Read by name: amount is no control of version 2.
         assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
@@ -1226,7 +1226,7 @@ pub(crate) mod tests {
         );
         // A version that is no whole number is none this build knows, and is kept as
         // written.
-        let unreadable = older.replace(r#"moduleVersion="1""#, r#"moduleVersion="2.0""#);
+        let unreadable = older.replace(r#"toolVersion="1""#, r#"toolVersion="2.0""#);
         let loaded = from_xml(&unreadable, OPERATIONS, TOOLS, &[]).unwrap();
         assert_eq!(
             loaded.newer,
@@ -1237,7 +1237,7 @@ pub(crate) mod tests {
             })
         );
         assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
-        let unknown = older.replace(r#"module="look""#, r#"module="lens""#);
+        let unknown = older.replace(r#"tool="look""#, r#"tool="lens""#);
         let loaded = from_xml(&unknown, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.edit.is_empty());
         assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
@@ -1248,10 +1248,10 @@ pub(crate) mod tests {
     /// replaces it, was written by an older build: left out with a warning, never newer.
     #[test]
     fn a_retired_tool_is_left_out_with_a_warning_and_is_not_newer() {
-        let xml = version_1(r#"apertrust:module="lens" apertrust:moduleVersion="4" c:amount="1""#)
+        let xml = version_1(r#"apertrust:tool="lens" apertrust:toolVersion="4" c:amount="1""#)
             .replace(
-                "</rdf:Seq></apertrust:modules>",
-                r#"<rdf:li><rdf:Description apertrust:module="look" apertrust:moduleVersion="2" c:strength="0.5"/></rdf:li></rdf:Seq></apertrust:modules>"#,
+                "</rdf:Seq></apertrust:tools>",
+                r#"<rdf:li><rdf:Description apertrust:tool="look" apertrust:toolVersion="2" c:strength="0.5"/></rdf:li></rdf:Seq></apertrust:tools>"#,
             );
         let loaded = from_xml(&xml, OPERATIONS, TOOLS, &["lens"]).unwrap();
         assert_eq!(loaded.newer, None);
@@ -1275,7 +1275,7 @@ pub(crate) mod tests {
     fn exposure_s_version_1_exposure_contrast_and_pivot_are_left_out_and_the_rest_reads() {
         let (operations, tools) = (apertrust_operations::OPERATIONS, apertrust_tools::TOOLS);
         let xml = version_1(
-            r#"apertrust:module="exposure" apertrust:moduleVersion="1" apertrust:kept="exposure contrast black_level" c:exposure="0.5" c:contrast="12" c:pivot="25" c:black_level="0.01""#,
+            r#"apertrust:tool="exposure" apertrust:toolVersion="1" apertrust:kept="exposure contrast black_level" c:exposure="0.5" c:contrast="12" c:pivot="25" c:black_level="0.01""#,
         );
         let loaded = from_xml(&xml, operations, tools, &[]).unwrap();
         assert_eq!(loaded.warnings.len(), 4, "{:?}", loaded.warnings);
@@ -1353,8 +1353,8 @@ pub(crate) mod tests {
         edit.reset_control(&Grain, "strength").unwrap();
         let xml = to_xml(&edit, OPERATIONS, WITH_GRAIN, BUILD);
         for written in [
-            r#"apertrust:module="grain""#,
-            r#"apertrust:moduleVersion="2""#,
+            r#"apertrust:tool="grain""#,
+            r#"apertrust:toolVersion="2""#,
             r#"apertrust:enabled="true"/>"#,
         ] {
             assert!(xml.contains(written), "{written} in {xml}");
@@ -1384,7 +1384,7 @@ pub(crate) mod tests {
     fn a_version_1_entry_of_a_switched_tool_reads_on_where_it_rendered() {
         use apertrust_tools::grain::Grain;
         let xml = version_1(
-            r#"apertrust:module="grain" apertrust:moduleVersion="1" apertrust:kept="strength" c:strength="37.3" c:scale="800""#,
+            r#"apertrust:tool="grain" apertrust:toolVersion="1" apertrust:kept="strength" c:strength="37.3" c:scale="800""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
@@ -1394,13 +1394,12 @@ pub(crate) mod tests {
         assert_eq!(values.number("scale"), Some(800.0));
         let written = to_xml(&loaded.edit, OPERATIONS, WITH_GRAIN, BUILD);
         assert!(
-            written.contains(r#"apertrust:moduleVersion="2""#),
+            written.contains(r#"apertrust:toolVersion="2""#),
             "{written}"
         );
         assert!(written.contains(r#"apertrust:enabled="true""#), "{written}");
 
-        let xml =
-            version_1(r#"apertrust:module="grain" apertrust:moduleVersion="1" c:scale="3200""#);
+        let xml = version_1(r#"apertrust:tool="grain" apertrust:toolVersion="1" c:scale="3200""#);
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert!(loaded.edit.is_empty());
@@ -1412,8 +1411,7 @@ pub(crate) mod tests {
     #[test]
     fn enabled_is_repaired_or_read_as_a_newer_build_s() {
         use apertrust_tools::grain::Grain;
-        let xml =
-            version_1(r#"apertrust:module="grain" apertrust:moduleVersion="2" c:strength="40""#);
+        let xml = version_1(r#"apertrust:tool="grain" apertrust:toolVersion="2" c:strength="40""#);
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert!(loaded.edit.is_on(&Grain));
         assert_eq!(
@@ -1423,7 +1421,7 @@ pub(crate) mod tests {
         assert_eq!(loaded.newer, None);
 
         let xml = version_1(
-            r#"apertrust:module="look" apertrust:moduleVersion="2" apertrust:enabled="true" c:strength="0.5""#,
+            r#"apertrust:tool="look" apertrust:toolVersion="2" apertrust:enabled="true" c:strength="0.5""#,
         );
         let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
         assert_eq!(loaded.newer, Some(Newer::Enabled("look".to_owned())));
@@ -1438,7 +1436,7 @@ pub(crate) mod tests {
         use apertrust_tools::grain::Grain;
         for text in ["false", "1"] {
             let xml = version_1(&format!(
-                r#"apertrust:module="grain" apertrust:moduleVersion="2" apertrust:enabled="{text}""#
+                r#"apertrust:tool="grain" apertrust:toolVersion="2" apertrust:enabled="{text}""#
             ));
             let loaded = from_xml(&xml, OPERATIONS, WITH_GRAIN, &[]).unwrap();
             assert_eq!(
@@ -1778,14 +1776,53 @@ pub(crate) mod tests {
         }
     }
 
+    /// A file that names its tools as nightly builds did before decision 4's rename,
+    /// `apertrust:module` and `apertrust:moduleVersion` in version 2 or `apertrust:modules` in
+    /// version 1, is read as any field this build does not write: for viewing only, its
+    /// history one this build cannot keep, never read under the old names.
+    #[test]
+    fn a_file_with_the_old_names_opens_for_viewing_only() {
+        let old = |xml: String| {
+            let old = xml
+                .replace("apertrust:tool=", "apertrust:module=")
+                .replace("apertrust:toolVersion=", "apertrust:moduleVersion=")
+                .replace("apertrust:tools>", "apertrust:modules>");
+            assert_ne!(old, xml);
+            old
+        };
+        let version_2 = old(logged_xml());
+        let version_1 = old(version_1(
+            r#"apertrust:tool="look" apertrust:toolVersion="2" c:strength="0.5""#,
+        ));
+        for (xml, place, field) in [
+            (
+                version_2,
+                "step 00000000000000a1 of copy 00000000",
+                "an item that is no entry",
+            ),
+            (version_1, "the file", "apertrust:modules"),
+        ] {
+            let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
+            assert_eq!(loaded.newer, None, "{field}");
+            let unknown = Problem::UnknownField {
+                place: place.to_owned(),
+                field: field.to_owned(),
+            };
+            assert_eq!(loaded.problems.first(), Some(&unknown), "{field}");
+            let view_only = loaded.view_only().expect("viewing only");
+            assert_eq!(view_only.reason, Reason::Unreadable(unknown), "{field}");
+            assert!(view_only.to_string().contains("cannot keep"), "{field}");
+        }
+    }
+
     /// Every entry of every step follows decision 48: a newer tool version in an old step
     /// makes the edit view-only, an older one is migrated entry by entry, and a step whose
     /// only entry this build leaves out goes with its place in the end.
     #[test]
     fn every_entry_of_every_step_is_read_as_version_1_s() {
         let xml = logged_xml();
-        let first = r#"apertrust:moduleVersion="2""#;
-        let newer = xml.replacen(first, r#"apertrust:moduleVersion="3""#, 1);
+        let first = r#"apertrust:toolVersion="2""#;
+        let newer = xml.replacen(first, r#"apertrust:toolVersion="3""#, 1);
         let loaded = from_xml(&newer, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(
             matches!(&loaded.newer, Some(Newer::ToolVersion { version, .. }) if version == "3"),
@@ -1795,7 +1832,7 @@ pub(crate) mod tests {
         assert!(loaded.view_only().is_some());
         // Look's version 1 called strength amount: the first step's entry migrates.
         let older = xml
-            .replacen(first, r#"apertrust:moduleVersion="1""#, 1)
+            .replacen(first, r#"apertrust:toolVersion="1""#, 1)
             .replacen("control:strength=", "control:amount=", 1);
         let loaded = from_xml(&older, OPERATIONS, TOOLS, &[]).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);

@@ -39,7 +39,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 
 ## Project skills
 
-The skills, agents and commands live in the agent kit, [apertrust/agent-kit](https://github.com/apertrust/agent-kit), version 0.2.0 for this checkout. It is optional (a Claude Code plugin, or its `install.sh` into the git-ignored `.claude/`, `.agents/` or `.codex/agents/`); Codex skills and command workflows install under `.agents/skills/`. The rules are in this file, checked by CI and review either way. Follow a skill when its task comes up:
+The skills, agents and commands live in the agent kit, [apertrust/agent-kit](https://github.com/apertrust/agent-kit), version 0.3.0 for this checkout. It is optional (a Claude Code plugin, or its `install.sh` into the git-ignored `.claude/`, `.agents/` or `.codex/agents/`); Codex skills and command workflows install under `.agents/skills/`. The rules are in this file, checked by CI and review either way. Follow a skill when its task comes up:
 
 - `port-module`: a darktable port, from the spec to the golden and gradient checks.
 - `golden-tests`: the harness and the raw corpus: cases, ΔE results, tolerances, when a baseline may change.
@@ -212,8 +212,7 @@ These come from the architecture doc and are not up for local reinterpretation.
   - Generated WGSL is committed and validated with naga.
 - **Tools and operations.**
   - A tool is what a person sees and works with, every section of the side panel; an operation is one engine algorithm, usually a darktable port (decision 4). Operations never appear in the UI. A utility is a tool that edits nothing, such as Scopes or the Colour picker.
-  - "Module" names only darktable's own things (its modules, source, identifiers, module groups and quoted strings, the manifest's `darktable_module`) and the languages' own (Rust's `mod`, Slang's `module`, wgpu's and naga's `ShaderModule` and `Module`). An MCP tool is always written "MCP tool". Porting a darktable module yields an operation and a tool.
-  - Until its rename lands, the sidecar keeps `apertrust:module` (decision 4, planned). Prose says tool; an identifier is written as it is in the code.
+  - "Module" names only darktable's own things (its modules, source, identifiers, module groups and quoted strings, the manifest's `darktable_module`) and the languages' own (Rust's `mod`, Slang's `module`, wgpu's and naga's `ShaderModule` and `Module`). An MCP tool is always written "MCP tool". Porting a darktable module yields an operation and a tool. Prose says tool; an identifier is written as it is in the code.
   - Each operation parameter has at most one owning tool; until a tool owns it, a parameter of an operation an unedited photo runs is set only through `Command::Set` and `--param` (decisions 4 and 28). Depth comes from inside that tool, its tabs and collapsible groups, never from a second tool; there is no Advanced controls toggle in the first pass (decision 29).
   - In the first pass a tool is one darktable module, its parameters the controls under darktable's labels, but for a parameter with no editing meaning and no darktable widget, fixed at darktable's value and owned with no control (decision 4). White balance (over `temperature`) and Colour calibration (with its CAT tab) are both darktable's (decision 27); tone mappers are tools of their own, one per edit (decision 2; `docs/tools/README.md`, `tool-bindings`).
   - A tool that is off is a no-op, covered by an invariant test (decision 32). A tool darktable leaves off on a new photo is off until any of its controls changes, then on with darktable's defaults for the rest; its reset turns it off. A tool whose operation every photo runs is untouched at its defaults.

@@ -137,7 +137,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [x] 4.4 The code's own names, tests and comments.
   - [x] 4.5 The Fluent ids `tool-…`, in `tools.ftl`.
   - [x] 4.6 The words people see and hear, in every language.
-  - [ ] 4.7 The sidecar's `apertrust:tool` and `apertrust:toolVersion`.
+  - [x] 4.7 The sidecar's `apertrust:tool` and `apertrust:toolVersion`.
   - [ ] 4.8 The agent kit's skills, agents and commands.
 - [ ] Per-pixel steps fused into fewer GPU passes, once a spike measures how.
 - [ ] A fine-control popup for sliders, as darktable's (decision 42).

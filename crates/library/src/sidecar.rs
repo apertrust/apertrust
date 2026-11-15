@@ -28,19 +28,19 @@
 //!
 //! ```xml
 //! <rdf:Description rdf:about="" apertrust:version="1">
-//!  <apertrust:modules>
+//!  <apertrust:tools>
 //!   <rdf:Seq>
 //!    <rdf:li>
-//!     <rdf:Description apertrust:module="exposure" apertrust:moduleVersion="1"
+//!     <rdf:Description apertrust:tool="exposure" apertrust:toolVersion="1"
 //!       apertrust:kept="exposure black_level"
 //!       control:exposure="0.5" control:black_level="0.01"/>
 //!    </rdf:li>
 //!    <rdf:li>
-//!     <rdf:Description apertrust:module="grain" apertrust:moduleVersion="2"
+//!     <rdf:Description apertrust:tool="grain" apertrust:toolVersion="2"
 //!       apertrust:enabled="true"/>
 //!    </rdf:li>
 //!   </rdf:Seq>
-//!  </apertrust:modules>
+//!  </apertrust:tools>
 //!  <apertrust:operations>
 //!   <rdf:Seq>
 //!    <rdf:li>
@@ -284,7 +284,7 @@ pub fn read_fingerprint(path: &Path) -> io::Result<String> {
 pub enum Entry {
     Tool {
         tool: String,
-        /// Its `apertrust:moduleVersion` as written.
+        /// Its `apertrust:toolVersion` as written.
         version: Option<String>,
         /// The ids in `apertrust:kept`.
         kept: Vec<String>,
@@ -362,7 +362,7 @@ impl Document {
     }
 
     /// Reads an `.apxmp` file's XMP through the XMP layer ([`Xmp::parse`]): the version, the
-    /// build and every item of `apertrust:modules` and `apertrust:operations`, a tool with
+    /// build and every item of `apertrust:tools` and `apertrust:operations`, a tool with
     /// its version, marks and `control:` fields, an operation with its schema and its
     /// `param:` fields. An item that is neither is no entry.
     pub fn parse(xml: &str) -> Result<Document, SidecarError> {
@@ -375,7 +375,7 @@ impl Document {
         let mut entries = Vec::new();
         for property in &xmp.properties {
             let listed = property.name.namespace == NAMESPACE
-                && matches!(property.name.local.as_str(), "modules" | "operations");
+                && matches!(property.name.local.as_str(), "tools" | "operations");
             if listed {
                 entries.extend(read_entries(&property.node));
             }
@@ -405,7 +405,7 @@ impl Document {
             Vec::new(),
             vec![
                 own("version", &self.version.to_string()),
-                list("modules", tools),
+                list("tools", tools),
                 list("operations", operations),
             ],
         )
@@ -500,9 +500,9 @@ fn entry_node(entry: &Entry) -> Node {
             enabled,
             controls,
         } => {
-            let mut fields = vec![own("module", tool)];
+            let mut fields = vec![own("tool", tool)];
             if let Some(version) = version {
-                fields.push(own("moduleVersion", version));
+                fields.push(own("toolVersion", version));
             }
             if let Some(enabled) = enabled {
                 fields.push(own("enabled", enabled));
@@ -551,8 +551,8 @@ fn entry(fields: &[Property]) -> Option<Entry> {
         let namespace = name.namespace.as_str();
         if namespace == NAMESPACE {
             match name.local.as_str() {
-                "module" => tool = value,
-                "moduleVersion" => version = Some(value),
+                "tool" => tool = value,
+                "toolVersion" => version = Some(value),
                 "kept" => kept = list(&value),
                 "auto" => auto = list(&value),
                 "enabled" => enabled = Some(value),

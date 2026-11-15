@@ -85,9 +85,9 @@ pub fn version_1(tool: &str, controls: &[(&str, &str)]) -> Edit {
     let xml = format!(
         r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
         <rdf:Description rdf:about="" xmlns:apertrust="{}" xmlns:c="{}" apertrust:version="1">
-        <apertrust:modules><rdf:Seq><rdf:li>
-        <rdf:Description apertrust:module="{tool}" apertrust:moduleVersion="1"{attributes}/>
-        </rdf:li></rdf:Seq></apertrust:modules></rdf:Description></rdf:RDF></x:xmpmeta>"#,
+        <apertrust:tools><rdf:Seq><rdf:li>
+        <rdf:Description apertrust:tool="{tool}" apertrust:toolVersion="1"{attributes}/>
+        </rdf:li></rdf:Seq></apertrust:tools></rdf:Description></rdf:RDF></x:xmpmeta>"#,
         sidecar::NAMESPACE,
         sidecar::CONTROL_NAMESPACE,
     );

@@ -46,8 +46,8 @@
             <rdf:Seq>
              <rdf:li>
               <rdf:Description
-                apertrust:module="exposure"
-                apertrust:moduleVersion="2"
+                apertrust:tool="exposure"
+                apertrust:toolVersion="2"
                 apertrust:kept="exposure"
                 control:exposure="1.2"/>
              </rdf:li>
@@ -72,8 +72,8 @@
             <rdf:Seq>
              <rdf:li>
               <rdf:Description
-                apertrust:module="exposure"
-                apertrust:moduleVersion="2"
+                apertrust:tool="exposure"
+                apertrust:toolVersion="2"
                 apertrust:kept="exposure"
                 apertrust:auto="black_level"
                 control:exposure="1.2"
@@ -96,8 +96,8 @@
             <rdf:Seq>
              <rdf:li>
               <rdf:Description
-                apertrust:module="grain"
-                apertrust:moduleVersion="1"
+                apertrust:tool="grain"
+                apertrust:toolVersion="1"
                 apertrust:enabled="true"
                 apertrust:kept="strength"
                 control:strength="25"/>
@@ -124,8 +124,8 @@
             <rdf:Seq>
              <rdf:li>
               <rdf:Description
-                apertrust:module="grain"
-                apertrust:moduleVersion="1"
+                apertrust:tool="grain"
+                apertrust:toolVersion="1"
                 apertrust:enabled="true"
                 apertrust:kept="strength size"
                 control:strength="40"
@@ -147,13 +147,13 @@
             <rdf:Seq>
              <rdf:li>
               <rdf:Description
-                apertrust:module="exposure"
-                apertrust:moduleVersion="2"/>
+                apertrust:tool="exposure"
+                apertrust:toolVersion="2"/>
              </rdf:li>
              <rdf:li>
               <rdf:Description
-                apertrust:module="grain"
-                apertrust:moduleVersion="1"/>
+                apertrust:tool="grain"
+                apertrust:toolVersion="1"/>
              </rdf:li>
             </rdf:Seq>
            </apertrust:entries>

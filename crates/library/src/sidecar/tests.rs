@@ -22,9 +22,9 @@ fn version_1(attributes: &str) -> String {
     format!(
         r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF_NAMESPACE}">
         <rdf:Description rdf:about="" xmlns:apertrust="{NAMESPACE}" xmlns:c="{CONTROL_NAMESPACE}" apertrust:version="1">
-        <apertrust:modules><rdf:Seq><rdf:li>
+        <apertrust:tools><rdf:Seq><rdf:li>
         <rdf:Description {attributes}/>
-        </rdf:li></rdf:Seq></apertrust:modules></rdf:Description></rdf:RDF></x:xmpmeta>"#
+        </rdf:li></rdf:Seq></apertrust:tools></rdf:Description></rdf:RDF></x:xmpmeta>"#
     )
 }
 
@@ -59,9 +59,9 @@ fn a_document_reads_back_as_written() {
     for written in [
         r#"apertrust:version="1""#,
         r#"x:xmptk="Apertrust 0.4.0+12~g1a2b3c4""#,
-        r#"apertrust:module="look""#,
+        r#"apertrust:tool="look""#,
         r#"apertrust:enabled="true""#,
-        r#"apertrust:moduleVersion="2""#,
+        r#"apertrust:toolVersion="2""#,
         r#"apertrust:kept="a b""#,
         r#"apertrust:auto="c""#,
         r#"control:curve="0.25,0.2 0.75,0.8""#,
@@ -82,8 +82,8 @@ fn tools_are_written_before_operations_each_in_its_order() {
     document.entries = vec![operation("b"), tool("y"), operation("a"), tool("x")];
     let xml = document.to_xml();
     let at = |text: &str| xml.find(text).unwrap_or_else(|| panic!("{text} in {xml}"));
-    assert!(at(r#"apertrust:module="y""#) < at(r#"apertrust:module="x""#));
-    assert!(at(r#"apertrust:module="x""#) < at(r#"apertrust:operation="b""#));
+    assert!(at(r#"apertrust:tool="y""#) < at(r#"apertrust:tool="x""#));
+    assert!(at(r#"apertrust:tool="x""#) < at(r#"apertrust:operation="b""#));
     assert!(at(r#"apertrust:operation="b""#) < at(r#"apertrust:operation="a""#));
 }
 
@@ -113,7 +113,7 @@ fn the_build_is_recorded_escaped_and_read_back() {
 fn an_empty_document_has_no_entries() {
     let xml = Document::new("test").to_xml();
     assert!(!xml.contains("apertrust:operation="), "{xml}");
-    assert!(!xml.contains("apertrust:module="), "{xml}");
+    assert!(!xml.contains("apertrust:tool="), "{xml}");
     let read = Document::parse(&xml).unwrap();
     assert!(read.entries.is_empty());
     assert_eq!(read.version, 1);
@@ -123,7 +123,7 @@ fn an_empty_document_has_no_entries() {
 #[test]
 fn entries_are_read_as_text_in_the_file_s_order() {
     let xml = version_1(
-        r#"apertrust:module="look" apertrust:moduleVersion="2.0" apertrust:kept="strength  grain" apertrust:auto="" c:strength="1.5" c:style="medium""#,
+        r#"apertrust:tool="look" apertrust:toolVersion="2.0" apertrust:kept="strength  grain" apertrust:auto="" c:strength="1.5" c:style="medium""#,
     );
     let read = Document::parse(&xml).unwrap();
     assert_eq!(
@@ -231,7 +231,7 @@ fn a_version_that_is_no_number_or_a_foreign_file_is_refused() {
 /// are read (decision 48).
 #[test]
 fn an_edit_in_another_namespace_is_refused() {
-    let other = version_1(r#"apertrust:module="look" c:a="0.3""#).replace(
+    let other = version_1(r#"apertrust:tool="look" c:a="0.3""#).replace(
         "https://apertrust.org/ns/xmp/",
         "https://example.org/other/",
     );
@@ -409,14 +409,14 @@ fn version_2_reads_back_as_written() {
         r#"apertrust:noteMessage="history-applied""#,
         r#"arg:photo="IMG_2041""#,
         r#"arg:count="3""#,
-        r#"apertrust:module="look""#,
+        r#"apertrust:tool="look""#,
         r#"param:amount="0.3""#,
     ] {
         assert!(xml.contains(written), "{written} in {xml}");
     }
     // A step's entries keep its order, here an operation's before a tool's.
     let at = |text: &str| xml.find(text).unwrap_or_else(|| panic!("{text} in {xml}"));
-    assert!(at(r#"apertrust:operation="fake""#) < at(r#"apertrust:module="look""#));
+    assert!(at(r#"apertrust:operation="fake""#) < at(r#"apertrust:tool="look""#));
     assert_eq!(xml.matches("<apertrust:entries>").count(), 3, "{xml}");
     // The arguments are a struct of their own, after the step's own fields.
     assert!(at(r#"apertrust:batch="0f1e"#) < at("<apertrust:noteArgs>"));
@@ -974,7 +974,7 @@ fn other_tools_properties_are_kept_and_unknown_fields_are_problems() {
 #[test]
 fn an_entry_s_unknown_field_is_a_problem() {
     let xml = edits().to_xml();
-    let lens = r#"apertrust:module="lens""#;
+    let lens = r#"apertrust:tool="lens""#;
     let place = "step 00000000000000a1 of copy 7c0e9a14";
     let cases = [
         (
@@ -1027,7 +1027,7 @@ fn an_entry_s_unknown_field_is_a_problem() {
             "apertrust:schema",
         ),
         (
-            xml.replacen(lens, r#"apertrust:module="""#, 1),
+            xml.replacen(lens, r#"apertrust:tool="""#, 1),
             place,
             "an item that is no entry",
         ),
@@ -1101,6 +1101,76 @@ fn a_duplicate_step_a_clock_past_the_vector_and_entries_no_seq_are_problems() {
             place: format!("step 00000000000000a1 of copy {copy}"),
             field: "apertrust:entries".to_owned(),
         }]
+    );
+}
+
+#[test]
+fn a_version_1_entry_s_unknown_field_is_a_problem() {
+    let known = version_1(r#"apertrust:tool="exposure" apertrust:toolVersion="2" c:exposure="1""#);
+    assert_eq!(Edits::parse(&known, 0).unwrap().problems, []);
+    let stray = version_1(
+        r#"apertrust:tool="exposure" apertrust:toolVersion="2" apertrust:moduleVersion="2" c:exposure="1""#,
+    );
+    assert_eq!(
+        Edits::parse(&stray, 0).unwrap().problems,
+        [Problem::UnknownField {
+            place: "the file's tools".to_owned(),
+            field: "apertrust:moduleVersion".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn every_version_1_list_is_checked_whatever_its_shape() {
+    let unknown = |place: &str, field: &str| Problem::UnknownField {
+        place: place.to_owned(),
+        field: field.to_owned(),
+    };
+    let file = |lists: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF_NAMESPACE}">
+            <rdf:Description rdf:about="" xmlns:apertrust="{NAMESPACE}" xmlns:c="{CONTROL_NAMESPACE}" apertrust:version="1">
+            {lists}</rdf:Description></rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    let entry = |attributes: &str| {
+        format!(r#"<rdf:Seq><rdf:li><rdf:Description {attributes}/></rdf:li></rdf:Seq>"#)
+    };
+    // An old-named entry in the operations' list.
+    let old = file(&format!(
+        "<apertrust:operations>{}</apertrust:operations>",
+        entry(r#"apertrust:module="exposure" apertrust:moduleVersion="2""#)
+    ));
+    assert_eq!(
+        Edits::parse(&old, 0).unwrap().problems,
+        [unknown("the file's operations", "an item that is no entry")]
+    );
+    // A second tools' list, its entry holding a stray field.
+    let repeated = file(&format!(
+        "<apertrust:tools>{}</apertrust:tools><apertrust:tools>{}</apertrust:tools>",
+        entry(r#"apertrust:tool="exposure" apertrust:toolVersion="2""#),
+        entry(r#"apertrust:tool="grain" apertrust:moduleVersion="2""#)
+    ));
+    assert_eq!(
+        Edits::parse(&repeated, 0).unwrap().problems,
+        [unknown("the file's tools", "apertrust:moduleVersion")]
+    );
+    // A list that is a struct, not a sequence.
+    let shape = file(
+        r#"<apertrust:tools><rdf:Description apertrust:moduleVersion="2"/></apertrust:tools>"#,
+    );
+    let problems = Edits::parse(&shape, 0).unwrap().problems;
+    assert!(
+        problems.contains(&unknown("the file's tools", "apertrust:tools")),
+        "{problems:?}"
+    );
+    // An entry with a qualifier, which no entry can hold.
+    let qualified = file(
+        r#"<apertrust:tools><rdf:Seq><rdf:li xml:lang="en"><rdf:Description apertrust:tool="exposure" apertrust:toolVersion="2"/></rdf:li></rdf:Seq></apertrust:tools>"#,
+    );
+    assert_eq!(
+        Edits::parse(&qualified, 0).unwrap().problems,
+        [unknown("the file's tools", "an entry with a qualifier")]
     );
 }
 

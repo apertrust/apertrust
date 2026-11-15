@@ -8128,7 +8128,7 @@ mod tests {
     fn with_lens(xml: &str) -> String {
         xml.replacen(
             "<rdf:Seq>\n",
-            "<rdf:Seq>\n<rdf:li><rdf:Description apertrust:module=\"lens\" apertrust:moduleVersion=\"1\" control:amount=\"1\"/></rdf:li>\n",
+            "<rdf:Seq>\n<rdf:li><rdf:Description apertrust:tool=\"lens\" apertrust:toolVersion=\"1\" control:amount=\"1\"/></rdf:li>\n",
             1,
         )
     }
@@ -8171,8 +8171,8 @@ mod tests {
             (
                 "tool",
                 brightened_by.replace(
-                    r#"apertrust:moduleVersion="1""#,
-                    r#"apertrust:moduleVersion="2""#,
+                    r#"apertrust:toolVersion="1""#,
+                    r#"apertrust:toolVersion="2""#,
                 ),
                 sidecar::Newer::ToolVersion {
                     tool: "sample".to_owned(),
@@ -8183,8 +8183,8 @@ mod tests {
             (
                 "unreadable",
                 brightened_by.replace(
-                    r#"apertrust:moduleVersion="1""#,
-                    r#"apertrust:moduleVersion="2.0""#,
+                    r#"apertrust:toolVersion="1""#,
+                    r#"apertrust:toolVersion="2.0""#,
                 ),
                 sidecar::Newer::ToolVersion {
                     tool: "sample".to_owned(),

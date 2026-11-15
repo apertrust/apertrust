@@ -41,17 +41,17 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 ## Consequences
 
-- **The docs, code and skills use the two terms.** Until step 4.7 lands, the sidecar keeps `apertrust:module`.
-- **The rename lands in steps,** 4.1 to 4.6 built and the rest planned, the identifiers in backticks following their own step:
+- **The docs, code, sidecar and skills use the two terms.**
+- **The rename lands in steps,** 4.1 to 4.7 built and 4.8 planned, the identifiers in backticks following their own step:
   - 4.1, built: a tool's settings named settings in the code, freeing the word;
   - 4.2, built: the docs say tool, the tools' pages in `docs/tools/`;
   - 4.3, built: the crate `apertrust-tools` in `crates/tools`, with the trait, its types, the session's commands and events, and the CLI's help and errors;
   - 4.4, built: the code's own names, tests and comments;
   - 4.5, built: the Fluent ids `module-…` renamed `tool-…`, in `tools.ftl`;
   - 4.6, built: the words a person sees and hears, in every language: "tool", "інструмент" in Ukrainian, "narzędzie" in Polish, including the tooltips quoted from darktable, whose wording otherwise stays darktable's;
-  - 4.7: the sidecar's `apertrust:tool` and `apertrust:toolVersion` in place of `apertrust:module` and `apertrust:moduleVersion` ([0048](0048-the-apxmp-format.md));
+  - 4.7, built: the sidecar's `apertrust:tool` and `apertrust:toolVersion` in place of `apertrust:module` and `apertrust:moduleVersion`, and version 1's `apertrust:tools` in place of `apertrust:modules` ([0048](0048-the-apxmp-format.md));
   - 4.8: the agent kit's skills, agents and commands.
-- **The sidecar keeps no reading of the old names.** Only nightly builds have written them, never a release, so after step 4.7 a file a nightly wrote opens view-only, its field unknown, until Discard History… clears its edit ([0078](0078-undo-redo-and-the-edits-history.md)). That cost is accepted while Apertrust is in early development.
+- **The sidecar keeps no reading of the old names.** Only nightly builds have written them, never a release, so a file a nightly wrote before step 4.7 opens view-only, its field unknown, until Discard History… clears its edit ([0078](0078-undo-redo-and-the-edits-history.md)). That cost is accepted while Apertrust is in early development. The file's version stays 2: with no reading of the old names, no version needs to tell them apart, and a nightly from before step 4.7 opens a newer file view-only the same way, its field unknown to it.
 - **What people and files hold keeps its meaning.** Tool ids (`exposure`, `toneequal`) are permanent ([0028](0028-tools-bound-to-operations.md)); `settings.toml`'s keys are unchanged, a tool's settings already under `tools.<id>.<setting>`; the CLI's flags are unchanged, `--set` and `--reset` taking a tool id and a control; a message id the sidecar stores is never renamed.
 - **The `tools/` scripts folder, the `tool-bindings` skill and `ToolButton` keep their names.** The skill already means the tools of this decision; the others are a folder and a toolbar's button.
 - An edit stores tool values, and the bindings derive operation parameters from them.
