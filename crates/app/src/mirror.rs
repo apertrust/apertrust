@@ -2704,6 +2704,9 @@ pub(crate) mod tests {
         let mut m = mirror();
         let path = PathBuf::from("/photos/a.ARW");
         m.folder.alone(vec![path.clone()]);
+        // No thumbnail until one is asked for and comes.
+        let key = crate::folder::CellKey::Path(path.clone());
+        assert_eq!(m.folder.thumbnail(&key, 128), None);
         m.opening(path.clone(), 1, Instant::now());
         let mut reactions = m.apply(Event::Opened(photo(1)));
         reactions.extend(m.apply(Event::Values(report(1.0, 1))));
@@ -2715,7 +2718,6 @@ pub(crate) mod tests {
         assert_eq!(photo.edit, EditState::Edited);
         assert_eq!(m.folder.active_shown(), Some(0));
         assert_eq!(m.folder.shown(), None);
-        assert_eq!(m.folder.thumbnail("a.ARW", 128), None);
         // Open This Folder: the photo stays open, active once its folder is listed.
         let (_, folder) = m.folder.alone_active().expect("its folder");
         let folder = folder.to_owned();

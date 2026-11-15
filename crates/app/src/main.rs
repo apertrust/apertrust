@@ -3970,10 +3970,10 @@ impl App {
     /// The grid panel: the open folder's photos, in the grid bar's sort, the photo open
     /// the active cell; a click or Enter opens one. Always there, empty with no folder
     /// (`docs/gui.md`, The grid panel), and holding the photos open alone, just them, the
-    /// active one's cell active, with no thumbnails, since nothing of their folders is read.
-    /// Each cell draws its thumbnail once it has come, and those in sight without one are
-    /// asked for (`thumbnails.rs`). Returns the action a
-    /// choice in the grid bar's menus, or its Labels, runs.
+    /// active one's cell active. Each cell draws its thumbnail once it has come, and those
+    /// in sight without one are asked for (`thumbnails.rs`), a photo alone's from its own
+    /// file, nothing of its folder read. Returns the action a choice in the grid bar's
+    /// menus, or its Labels, runs.
     fn grid_panel(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
         let grid = self.shell.grid;
@@ -3982,7 +3982,7 @@ impl App {
         // shorter side must cover the square.
         let side = grid.thumbnails.side() * if grid.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
-        let (clicked, wanted, bar) = {
+        let (clicked, asked, bar) = {
             let mirror = &self.mirror;
             let textures = &self.thumbnails;
             let listing = match &mirror.folder.folder {
@@ -4001,7 +4001,7 @@ impl App {
                     edited: matches!(photo.edit, EditState::Edited),
                     status: folder::status(&photo.edit),
                     selected: false,
-                    picture: textures.picture(&photo.name, size),
+                    picture: textures.picture(&mirror.folder.key(order[i]), size),
                     // The library keeps no ratings or labels yet (Phase 3): every photo
                     // shows as unrated and unlabelled.
                     rating: Some(CellRating::default()),
@@ -4033,24 +4033,12 @@ impl App {
                 }
                 _ => None,
             };
-            // Only an open folder's are asked for.
-            let shown = order
-                .get(output.shown)
-                .filter(|_| listing.is_some())
-                .unwrap_or_default()
-                .iter()
-                .map(|&i| photos[i].name.as_str());
-            let folder = &mirror.folder;
-            let has = |photo: &str| folder.thumbnail(photo, size).is_some();
-            let wanted = self.thumbnails_asked.ask(folder.latest(), shown, size, has);
-            (clicked, wanted, output.bar)
+            let shown = order.get(output.shown).unwrap_or_default();
+            let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
+            (clicked, asked, output.bar)
         };
-        if !wanted.is_empty() {
-            self.session
-                .send(Command::Library(LibraryCommand::Thumbnails {
-                    photos: wanted,
-                    size,
-                }));
+        if let Some(asked) = asked {
+            self.session.send(Command::Library(asked));
         }
         if let Some(path) = clicked {
             self.open(path);

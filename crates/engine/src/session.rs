@@ -384,7 +384,7 @@ pub enum Command {
         places: Places,
     },
     /// A library command (decision 54): opening a folder, closing it, or asking for its
-    /// photos' thumbnails. An open is a cancellable job on darktable's `UserBackground`
+    /// photos' thumbnails, or those of photos opened alone. An open is a cancellable job on darktable's `UserBackground`
     /// queue, its progress as [`Event::Job`], its `Added` naming this command, and what it
     /// finds as [`Event::Library`], each naming this command's number; it cancels the
     /// reading before it. A close cancels it and answers [`LibraryEvent::Closed`]. Opening a
@@ -396,7 +396,10 @@ pub enum Command {
     /// not read twice; past 30 the oldest is dropped, and a client asks again for a photo
     /// still on screen. It has no progress, and its picture comes as
     /// [`LibraryEvent::Thumbnail`], naming the open of its folder. A new open or a close
-    /// cancels those not yet sent; with no folder open nothing is read.
+    /// cancels those not yet sent; with no folder open nothing is read. A photo opened
+    /// alone's, asked for by its path ([`LibraryCommand::PhotoThumbnails`]), is read the
+    /// same way from its own file, whatever is open, and comes as
+    /// [`LibraryEvent::PhotoThumbnail`], naming the latest open or close.
     Library(LibraryCommand),
     /// A command of the disk cache's (decision 76).
     ///
@@ -430,8 +433,8 @@ pub enum Command {
     /// Holds the next tree's walk once its root is listed, before it walks, for a test.
     #[cfg(test)]
     HoldWalk(export_job::testing::Hold),
-    /// Holds each thumbnail the next [`LibraryCommand::Thumbnails`] asks for before it is
-    /// read, for a test.
+    /// Holds each thumbnail the next [`LibraryCommand::Thumbnails`] or
+    /// [`LibraryCommand::PhotoThumbnails`] asks for before it is read, for a test.
     #[cfg(test)]
     HoldThumbnails(export_job::testing::Hold),
     /// Holds the next open's decode, the decode slot taken, for a test.
@@ -1856,8 +1859,11 @@ struct Engine {
     folder: Option<JobId>,
     /// The folder last opened, with its open's number, whose thumbnails are asked for.
     shown: Option<(u64, PathBuf)>,
-    /// The thumbnail jobs asked for of that folder that may not have ended, which the next
-    /// open or a close cancels.
+    /// The number of the latest open or close, which the thumbnails of photos opened alone
+    /// name; 0 before any.
+    latest_library: u64,
+    /// The thumbnail jobs asked for of that folder, or of photos alone, that may not have
+    /// ended, which the next open or a close cancels.
     thumbnails: Vec<JobId>,
     rendered_thumbnails: thumbnail::rendered::State,
     /// When the live photo last rendered a frame, which a thumbnail's still yields to
@@ -2285,6 +2291,7 @@ impl Engine {
             preview: None,
             folder: None,
             shown: None,
+            latest_library: 0,
             thumbnails: Vec::new(),
             rendered_thumbnails: thumbnail::rendered::State::default(),
             last_change: pipeline::LastChange::default(),
@@ -3755,6 +3762,10 @@ impl Engine {
                 self.thumbnails(photos, size);
                 return;
             }
+            LibraryCommand::PhotoThumbnails { paths, size } => {
+                self.photo_thumbnails(paths, size);
+                return;
+            }
             LibraryCommand::Subfolders { folder } => {
                 self.subfolders(folder);
                 return;
@@ -3776,6 +3787,7 @@ impl Engine {
             self.jobs.control.cancel(job);
         }
         let open = self.applied;
+        self.latest_library = open;
         let Some(source) = source else {
             self.shown = None;
             self.tree = None;
@@ -3955,6 +3967,31 @@ impl Engine {
         let Some((open, folder)) = self.shown.clone() else {
             return;
         };
+        let wanted = photos.into_iter().map(|photo| thumbnail::Wanted {
+            folder: folder.clone(),
+            photo,
+            alone: None,
+        });
+        self.thumbnail_jobs(open, wanted.collect(), size);
+    }
+
+    /// [`LibraryCommand::PhotoThumbnails`]: each of the photos opened alone at `paths` read
+    /// as a folder's photo is ([`Self::thumbnails`]), from its own file, its folder never
+    /// listed, whatever is open. Each goes out as [`LibraryEvent::PhotoThumbnail`], naming
+    /// its path and the latest open or close; the next open or close cancels those not yet
+    /// sent.
+    fn photo_thumbnails(&mut self, paths: Vec<PathBuf>, size: u32) {
+        let wanted = paths.into_iter().map(|path| thumbnail::Wanted {
+            folder: path.parent().unwrap_or(Path::new("")).to_owned(),
+            photo: (path.file_name().unwrap_or_default().to_string_lossy()).into_owned(),
+            alone: Some(path),
+        });
+        self.thumbnail_jobs(self.latest_library, wanted.collect(), size);
+    }
+
+    /// The jobs of [`Self::thumbnails`] and [`Self::photo_thumbnails`], each thumbnail
+    /// `wanted` at `size` named by the open or close numbered `open`, the first read first.
+    fn thumbnail_jobs(&mut self, open: u64, wanted: Vec<thumbnail::Wanted>, size: u32) {
         // Those that have ended are forgotten, so the list holds what a cancel can reach.
         let control = &self.jobs.control;
         self.thumbnails.retain(|&job| control.state(job).is_some());
@@ -3963,11 +4000,26 @@ impl Engine {
         // The command's jobs share one tally, logged once the last has ended.
         let cached = (self.cache.clone()).map(|upkeep| (upkeep, Arc::new(Tally::new(size))));
         let raw = self.raw_thumbnails;
-        for photo in photos.into_iter().rev() {
-            self.rendered_thumbnails.asked(open, &folder, &photo, size);
-            let key = format!("{open}/{size}/{photo}").into_bytes();
+        for thumbnail::Wanted {
+            folder,
+            photo,
+            alone,
+        } in wanted.into_iter().rev()
+        {
+            // A folder's photo is told apart by its name, a photo alone by its path.
+            let key = match &alone {
+                Some(path) => {
+                    self.rendered_thumbnails.asked_alone(open, path, size);
+                    let path = path.as_os_str().as_encoded_bytes();
+                    [format!("alone/{open}/{size}/").as_bytes(), path].concat()
+                }
+                None => {
+                    self.rendered_thumbnails.asked(open, &folder, &photo, size);
+                    format!("{open}/{size}/{photo}").into_bytes()
+                }
+            };
             let description = format!("thumbnail of {photo} at {size}");
-            let (outbox, folder) = (self.jobs.outbox.clone(), folder.clone());
+            let outbox = self.jobs.outbox.clone();
             let cached = cached.clone();
             #[cfg(test)]
             let hold = hold.clone();
@@ -3977,7 +4029,9 @@ impl Engine {
                     if let Some(hold) = &hold {
                         hold.wait();
                     }
-                    let tell = |event| outbox.send(Event::Library(event));
+                    let tell = |event| {
+                        outbox.send(Event::Library(thumbnail::named(event, alone.as_ref())))
+                    };
                     let asked = thumbnail::Asked {
                         open,
                         folder: &folder,
@@ -10165,6 +10219,7 @@ mod tests {
                 | LibraryEvent::Taken { .. }
                 | LibraryEvent::Closed { .. }
                 | LibraryEvent::Thumbnail { .. }
+                | LibraryEvent::PhotoThumbnail { .. }
                 | LibraryEvent::Walked { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
@@ -11005,6 +11060,84 @@ mod tests {
         drop(session);
         remove(&path);
     }
+
+    /// The thumbnails of photos opened alone, with no folder open, each under its own
+    /// path, two of one name from two folders apart; a close drops those not yet sent.
+    #[test]
+    fn photos_alone_s_thumbnails_come_under_their_paths_and_none_after_a_close() {
+        let gpu = gpu();
+        let path = scratch("library-alone-thumbnails");
+        let folder = path.parent().unwrap().to_owned();
+        let photos: Vec<PathBuf> = ["a", "b"]
+            .iter()
+            .map(|sub| folder.join(sub).join("x.ARW"))
+            .collect();
+        for photo in &photos {
+            std::fs::create_dir_all(photo.parent().unwrap()).unwrap();
+            std::fs::write(photo, [0u8; 4]).unwrap();
+        }
+        let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let workers = apertrust_base::jobs::workers(threads);
+        let (session, wakes) = start_with(&gpu, &[], synthetic);
+        let ask = || {
+            Command::Library(LibraryCommand::PhotoThumbnails {
+                paths: photos.clone(),
+                size: 256,
+            })
+        };
+        // Each photo alone told, by its number and path; none has a picture.
+        let alone_of = |events: &[Event]| -> Vec<(u64, PathBuf)> {
+            (events.iter())
+                .filter_map(|event| match event {
+                    Event::Library(LibraryEvent::PhotoThumbnail {
+                        open,
+                        path,
+                        size,
+                        image,
+                    }) => {
+                        assert_eq!((*size, image), (256, &None), "{path:?}");
+                        Some((*open, path.clone()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let one = |e: &Event| !alone_of(std::slice::from_ref(e)).is_empty();
+        let mut events = Vec::new();
+
+        // Held as they begin, then let go: one each, under its own path, in no open's
+        // number, since none was sent.
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldThumbnails(hold));
+        session.send(ask());
+        begun.recv_timeout(TEST_WAIT).expect("a thumbnail begins");
+        drop(permit);
+        while alone_of(&events).len() < 2 {
+            events.extend(until(&session, &wakes, one));
+        }
+        let mut told = alone_of(&events);
+        told.sort();
+        let each: Vec<(u64, PathBuf)> = photos.iter().map(|p| (0, p.clone())).collect();
+        assert_eq!(told, each);
+
+        // Held again, then a close: those held and those queued are dropped, none told.
+        let (hold, begun, permit) = export_job::testing::Hold::new();
+        session.send(Command::HoldThumbnails(hold));
+        session.send(ask());
+        for _ in 0..workers.min(2) {
+            begun.recv_timeout(TEST_WAIT).expect("a thumbnail begins");
+        }
+        let close = session.send(Command::Library(LibraryCommand::Close));
+        let closed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == close);
+        events.extend(until(&session, &wakes, closed));
+        drop(permit);
+        std::thread::sleep(Duration::from_millis(500));
+        events.extend(session.events());
+        assert_eq!(alone_of(&events).len(), 2, "none after the close");
+        drop(session);
+        remove(&path);
+    }
+
     mod rendered_thumbnails {
         use super::*;
         use crate::jobs::{GpuTask, Step};
@@ -11214,6 +11347,138 @@ mod tests {
             assert_eq!(driven.engine.jobs.control.pending(), 0);
             driven.engine.thumbnail_tick(true);
             assert_eq!(driven.engine.jobs.control.pending(), 0);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// Asks for the thumbnails of the photos alone at `paths` at 256.
+        fn alone(paths: &[&PathBuf]) -> Command {
+            Command::Library(LibraryCommand::PhotoThumbnails {
+                paths: paths.iter().map(|&path| path.clone()).collect(),
+                size: 256,
+            })
+        }
+
+        /// The library's events the jobs send, until `count` thumbnails of photos alone
+        /// have come.
+        fn alone_told(driven: &mut Driven, count: usize) -> Vec<LibraryEvent> {
+            let deadline = Instant::now() + TEST_WAIT;
+            let mut told = Vec::new();
+            loop {
+                told.extend(
+                    driven
+                        .saved
+                        .events()
+                        .into_iter()
+                        .filter_map(|event| match event {
+                            Event::Library(event) => Some(event),
+                            _ => None,
+                        }),
+                );
+                let alone = |e: &&LibraryEvent| matches!(e, LibraryEvent::PhotoThumbnail { .. });
+                if told.iter().filter(alone).count() >= count {
+                    return told;
+                }
+                assert!(Instant::now() < deadline, "{count} thumbnails: {told:?}");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+
+        /// Photos opened alone (`docs/library.md`, One photo) get their thumbnails as a
+        /// folder's photos do, from the cache where it holds them, else read from their own
+        /// file, each by its path in the number of the latest open or close; nothing of
+        /// their folder is listed.
+        #[test]
+        fn photos_alone_s_thumbnails_come_by_path_from_the_cache_or_their_own_file() {
+            let x = scratch("alone-thumbnails").with_file_name("x.ARW");
+            let folder = x.parent().unwrap().to_owned();
+            let y = folder.join("y.ARW");
+            for raw in [&x, &y] {
+                std::fs::write(raw, b"no raw").unwrap();
+            }
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, &folder);
+            // X's embedded picture is in the cache at its file's version; y's is read.
+            let key = library::thumbnail_key(&folder, "x.ARW", 256).expect("a key");
+            let picture = library::Thumbnail {
+                width: 4,
+                height: 3,
+                pixels: vec![200; 48].into(),
+            };
+            let jpeg = thumbnail::encode(&picture).expect("a JPEG");
+            cache
+                .write(THUMBNAILS, &key.slot, &key.version, &jpeg)
+                .unwrap();
+
+            assert!(driven.run([alone(&[&x, &y])]).is_empty());
+            let told = alone_told(&mut driven, 2);
+            let of = |path: &PathBuf| {
+                (told.iter()).find_map(|event| match event {
+                    LibraryEvent::PhotoThumbnail {
+                        open: 0,
+                        path: at,
+                        size: 256,
+                        image,
+                    } if at == path => Some(image.clone()),
+                    _ => None,
+                })
+            };
+            let cached = of(&x).expect("x's").expect("x's picture");
+            assert_eq!((cached.width, cached.height), (4, 3));
+            assert_eq!(of(&y), Some(None));
+            // Nothing listed, opened or walked: only the two thumbnails.
+            assert_eq!(told.len(), 2, "{told:?}");
+            assert!(
+                cache
+                    .version(THUMBNAILS, &library::thumbnail_slot(&y, 256))
+                    .unwrap()
+                    .is_none()
+            );
+
+            // After a close, they name it.
+            let closed = driven.run([Command::Library(LibraryCommand::Close)]);
+            let [Event::Library(LibraryEvent::Closed { open: close })] = closed[..] else {
+                panic!("not closed: {closed:?}");
+            };
+            driven.run([alone(&[&y])]);
+            let told = alone_told(&mut driven, 1);
+            assert!(
+                matches!(&told[..], [LibraryEvent::PhotoThumbnail { open, path, .. }] if *open == close && *path == y),
+                "{told:?}"
+            );
+            finish(&mut driven);
+            drop(driven);
+            remove(&x);
+        }
+
+        /// The live photo opened alone, its thumbnail asked for by its path, gets its
+        /// render by that path once its saved edit settles, as a folder's photo does by
+        /// name.
+        #[test]
+        fn the_live_photo_alone_s_render_comes_by_its_path() {
+            let (mut driven, cache, path) = cached("rendered-alone");
+            driven.run([alone(&[&path])]);
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            let hash = library_hash(&sidecar::path_for(&path));
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            let events = written(&mut driven, &cache, &path, &hash);
+            let rendered = |event: &Event| {
+                matches!(
+                    event,
+                    Event::Library(LibraryEvent::PhotoThumbnail {
+                        open: 0,
+                        path: at,
+                        size: 256,
+                        image: Some(_),
+                    }) if *at == path
+                )
+            };
+            assert!(events.iter().any(rendered), "{events:?}");
+            let by_name = |e: &Event| matches!(e, Event::Library(LibraryEvent::Thumbnail { .. }));
+            assert!(!events.iter().any(by_name), "{events:?}");
+            finish(&mut driven);
             drop(driven);
             remove(&path);
         }

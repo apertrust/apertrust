@@ -41,6 +41,12 @@
 //!   caches).
 //! - **Photos alone,** one or several opened together by any route, are [`Folder::Alone`]:
 //!   no folder is asked for, and the grid panel holds just them ([`FolderState::alone`]).
+//!   Their thumbnails come one `PhotoThumbnail` at a time, each naming its path, kept with
+//!   them by path and size; other photos opened alone keep those of the paths still among
+//!   them, and a folder's opening drops them all; one of a path no longer among them is
+//!   dropped.
+//! - **A cell's key,** what its thumbnails are kept, asked for and drawn by, is a folder's
+//!   photo's name, or a photo alone's path, whole ([`CellKey`], [`FolderState::key`]).
 //! - **The order** the grid panel shows the photos in is the grid bar's sort
 //!   ([`FolderState::sort`], [`sorted`]), worked out again when the sort changes, a chunk
 //!   comes or the capture times do (`Taken`, once the listing is done); until they come,
@@ -84,7 +90,17 @@ pub enum Folder {
         /// The active one among them, whose folder Open This Folder opens: the first, then
         /// the latest of them opened ([`FolderState::locate`]).
         active: usize,
+        /// The thumbnails that have come, by path and size, as a listing keeps its own.
+        thumbnails: HashMap<(PathBuf, u32), Kept>,
     },
+}
+
+/// What a cell's thumbnails are kept, asked for and drawn by: a folder's photo by its
+/// name, a photo alone by its path, whole, so two paths never share one.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CellKey {
+    Name(String),
+    Path(PathBuf),
 }
 
 /// An open folder.
@@ -236,7 +252,8 @@ impl FolderState {
     /// The photos at `paths`, absolute, are opened alone, together, the first active
     /// (`docs/library.md`, One photo), with no folder open or after the folder open was
     /// closed ([`FolderState::closing`]): nothing is listed, and the grid panel holds just
-    /// them, each once, in the order given, until a folder opens.
+    /// them, each once, in the order given, until a folder opens. The thumbnails of photos
+    /// alone before that are among them still are kept.
     pub fn alone(&mut self, paths: Vec<PathBuf>) {
         let mut unique: Vec<PathBuf> = Vec::with_capacity(paths.len());
         for path in paths {
@@ -253,12 +270,18 @@ impl FolderState {
             edit: library::EditState::None,
         };
         let photos = unique.iter().map(cell).collect();
+        let mut thumbnails = match std::mem::take(&mut self.folder) {
+            Folder::Alone { thumbnails, .. } => thumbnails,
+            _ => HashMap::new(),
+        };
+        thumbnails.retain(|(path, _), _| unique.contains(path));
         self.job = None;
         self.active = None;
         self.folder = Folder::Alone {
             paths: unique,
             photos,
             active: 0,
+            thumbnails,
         };
         self.generation += 1;
         self.reorder();
@@ -303,25 +326,61 @@ impl FolderState {
         self.generation
     }
 
-    /// The photo's thumbnail at `size`, if it has come: `Some(None)` where it has none.
-    pub fn thumbnail(&self, photo: &str, size: u32) -> Option<&Kept> {
-        match &self.folder {
-            Folder::Open(listing) => listing.thumbnails.get(&(photo.to_owned(), size)),
+    /// The thumbnails that have come of the open folder's photos, or of the photos alone,
+    /// each with its cell's key ([`FolderState::key`]) and size.
+    pub fn thumbnails(&self) -> impl Iterator<Item = (CellKey, u32, &Kept)> {
+        let (names, paths) = match &self.folder {
+            Folder::Open(listing) => (Some(&listing.thumbnails), None),
+            Folder::Alone { thumbnails, .. } => (None, Some(thumbnails)),
+            _ => (None, None),
+        };
+        let names = (names.into_iter().flatten())
+            .map(|((name, size), kept)| (CellKey::Name(name.clone()), *size, kept));
+        let paths = (paths.into_iter().flatten())
+            .map(|((path, size), kept)| (CellKey::Path(path.clone()), *size, kept));
+        names.chain(paths)
+    }
+
+    /// The thumbnail at `size` of the photo whose cell's key is `key`, if it has come:
+    /// `Some(None)` where it has none.
+    pub fn thumbnail(&self, key: &CellKey, size: u32) -> Option<&Kept> {
+        match (&self.folder, key) {
+            (Folder::Open(listing), CellKey::Name(name)) => {
+                listing.thumbnails.get(&(name.clone(), size))
+            }
+            (Folder::Alone { thumbnails, .. }, CellKey::Path(path)) => {
+                thumbnails.get(&(path.clone(), size))
+            }
             _ => None,
         }
     }
 
+    /// The key of the photo at `i` in the listing, which its thumbnails are kept, asked for
+    /// and drawn by: a folder's photo's name, a photo alone's path.
+    pub fn key(&self, i: usize) -> CellKey {
+        match &self.folder {
+            Folder::Alone { paths, .. } => CellKey::Path(paths[i].clone()),
+            _ => CellKey::Name(self.photos()[i].name.clone()),
+        }
+    }
+
     /// The largest thumbnail that has come of the raw at `path`, if it is one of the open
-    /// folder's photos: what the central panel shows at once as it opens (decision 77).
+    /// folder's photos or of the photos alone: what the central panel shows at once as it
+    /// opens (decision 77).
     pub fn largest_thumbnail(&self, path: &Path) -> Option<&Thumbnail> {
-        let Folder::Open(listing) = &self.folder else {
-            return None;
+        let key = match &self.folder {
+            Folder::Open(listing) => {
+                listing.position(path)?;
+                CellKey::Name(path.file_name()?.to_str()?.to_owned())
+            }
+            Folder::Alone { paths, .. } => {
+                CellKey::Path(paths.iter().find(|alone| same(alone, path))?.clone())
+            }
+            _ => return None,
         };
-        listing.position(path)?;
-        let name = path.file_name()?.to_str()?;
-        (listing.thumbnails.iter())
-            .filter(|((photo, _), _)| photo == name)
-            .filter_map(|((_, size), kept)| Some((*size, kept.image.as_ref()?)))
+        (self.thumbnails())
+            .filter(|(photo, _, _)| *photo == key)
+            .filter_map(|(_, size, kept)| Some((size, kept.image.as_ref()?)))
             .max_by_key(|(size, _)| *size)
             .map(|(_, image)| image)
     }
@@ -608,6 +667,23 @@ impl FolderState {
                         generation: self.generation,
                     };
                     listing.thumbnails.insert((photo.clone(), *size), kept);
+                }
+                None
+            }
+            // One of a photo no longer among those alone is an earlier set's.
+            LibraryEvent::PhotoThumbnail {
+                path, size, image, ..
+            } => {
+                if let Folder::Alone {
+                    paths, thumbnails, ..
+                } = &mut self.folder
+                    && paths.contains(path)
+                {
+                    let kept = Kept {
+                        image: image.clone(),
+                        generation: self.generation,
+                    };
+                    thumbnails.insert((path.clone(), *size), kept);
                 }
                 None
             }
@@ -1172,6 +1248,11 @@ mod tests {
         assert!(matches!(state.folder, Folder::Open(_)));
     }
 
+    /// The key of the folder's photo of this name.
+    fn name(photo: &str) -> CellKey {
+        CellKey::Name(photo.to_owned())
+    }
+
     fn thumbnail(open: u64, photo: &str, size: u32, image: Option<Thumbnail>) -> Event {
         Event::Library(LibraryEvent::Thumbnail {
             open,
@@ -1201,14 +1282,17 @@ mod tests {
         state.apply(&thumbnail(1, "x.ARW", 128, Some(picture(128, 85))));
         state.apply(&thumbnail(1, "y.ARW", 256, None));
 
-        let x = state.thumbnail("x.ARW", 256).expect("x at 256");
+        let x = state.thumbnail(&name("x.ARW"), 256).expect("x at 256");
         assert_eq!(x.image, Some(picture(256, 171)));
         assert!(x.generation > before);
-        let small = state.thumbnail("x.ARW", 128).expect("x at 128");
+        let small = state.thumbnail(&name("x.ARW"), 128).expect("x at 128");
         assert_eq!(small.image.as_ref().map(|t| t.width), Some(128));
         // A photo with none is kept as having none, so it is not asked for again.
-        assert_eq!(state.thumbnail("y.ARW", 256).map(|k| &k.image), Some(&None));
-        assert!(state.thumbnail("y.ARW", 128).is_none());
+        assert_eq!(
+            state.thumbnail(&name("y.ARW"), 256).map(|k| &k.image),
+            Some(&None)
+        );
+        assert!(state.thumbnail(&name("y.ARW"), 128).is_none());
         assert!(state.generation() > x.generation);
     }
 
@@ -1227,13 +1311,13 @@ mod tests {
         state.apply(&opened(2, "/photos/b"));
         state.apply(&listed(2, &["x.ARW"], true));
         state.apply(&thumbnail(1, "x.ARW", 256, Some(picture(4, 3))));
-        assert!(state.thumbnail("x.ARW", 256).is_none());
+        assert!(state.thumbnail(&name("x.ARW"), 256).is_none());
         state.apply(&thumbnail(2, "x.ARW", 256, None));
-        assert!(state.thumbnail("x.ARW", 256).is_some());
+        assert!(state.thumbnail(&name("x.ARW"), 256).is_some());
 
         // A close takes them too.
         state.closing(3);
-        assert!(state.thumbnail("x.ARW", 256).is_none());
+        assert!(state.thumbnail(&name("x.ARW"), 256).is_none());
     }
 
     #[test]
@@ -1318,6 +1402,78 @@ mod tests {
         state.edited(&z, true);
         assert_eq!(state.photos()[2].edit, EditState::Edited);
         assert_eq!(state.photos()[0].edit, EditState::None);
+    }
+
+    /// The thumbnail of the photo alone at `path` at 256, of 4 by 3, in the number `open`.
+    fn alone_thumbnail(open: u64, path: &Path) -> Event {
+        Event::Library(LibraryEvent::PhotoThumbnail {
+            open,
+            path: path.to_owned(),
+            size: 256,
+            image: Some(Thumbnail {
+                width: 4,
+                height: 3,
+                pixels: vec![128; 48].into(),
+            }),
+        })
+    }
+
+    /// The photos alone's thumbnails are kept by path, two of the same name from two
+    /// folders apart, and are what one shows as it opens; those of a path no longer among
+    /// them, of an earlier open or close, or naming a folder's photo, are dropped. Others
+    /// opened alone keep those of the paths among them still, and a folder's opening drops
+    /// them all.
+    #[test]
+    fn photos_alone_keep_their_own_thumbnails_until_they_leave_or_a_folder_opens() {
+        // Absolute, as the app opens them, so on Windows they take the current drive.
+        let absolute = |path: &str| std::path::absolute(path).unwrap();
+        let (x, y, z) = (
+            absolute("/photos/a/x.ARW"),
+            absolute("/photos/b/x.ARW"),
+            absolute("/photos/a/z.ARW"),
+        );
+        let at = |path: &PathBuf| CellKey::Path(path.clone());
+        let mut state = FolderState::default();
+        state.closing(2);
+        state.alone(vec![x.clone(), y.clone()]);
+        let generation = state.generation();
+        state.apply(&alone_thumbnail(2, &x));
+        assert!(state.generation() > generation);
+        assert_eq!([state.key(0), state.key(1)], [at(&x), at(&y)]);
+        assert!(state.thumbnail(&at(&x), 256).is_some());
+        assert_eq!(state.thumbnail(&at(&y), 256), None);
+        assert_eq!(state.thumbnail(&name("x.ARW"), 256), None);
+        // An earlier command's, one not among them, and a folder's photo's: none kept.
+        state.apply(&alone_thumbnail(1, &y));
+        state.apply(&alone_thumbnail(2, &z));
+        state.apply(&Event::Library(LibraryEvent::Thumbnail {
+            open: 2,
+            photo: "x.ARW".to_owned(),
+            size: 256,
+            image: None,
+        }));
+        assert_eq!(state.thumbnails().count(), 1);
+        let largest = state.largest_thumbnail(&x).expect("x's");
+        assert_eq!((largest.width, largest.height), (4, 3));
+        assert!(state.largest_thumbnail(&y).is_none());
+        // Others opened alone: x's stays, among them still, and shows as x opens again; one
+        // of y, no longer among them, is dropped.
+        state.alone(vec![z.clone(), x.clone()]);
+        assert!(state.thumbnail(&at(&x), 256).is_some());
+        assert!(state.largest_thumbnail(&x).is_some());
+        state.apply(&alone_thumbnail(2, &y));
+        state.apply(&alone_thumbnail(2, &z));
+        assert_eq!(state.thumbnails().count(), 2);
+        assert!(state.thumbnail(&at(&z), 256).is_some());
+        // Without x, its thumbnail goes.
+        state.alone(vec![z.clone()]);
+        assert_eq!(state.thumbnail(&at(&x), 256), None);
+        assert_eq!(state.thumbnails().count(), 1);
+        // A folder opens: they go, and a photo alone's that comes after is dropped.
+        state.opening(PathBuf::from("/photos/a"), 3);
+        state.apply(&opened(3, "/photos/a"));
+        state.apply(&alone_thumbnail(3, &z));
+        assert_eq!(state.thumbnails().count(), 0);
     }
 
     #[test]
