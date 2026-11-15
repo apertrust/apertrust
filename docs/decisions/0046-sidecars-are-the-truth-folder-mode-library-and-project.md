@@ -51,6 +51,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 - An optional database the person chooses beside the sidecars: two truths.
 - Session and Catalogue as two concepts; projects as containers of albums; groups of albums beside nested albums; folder roles on any album.
 - Open With, a double-click, Open… and a drop opening the photo's folder with it active, since people often want the folder: every open of one photo lists a folder, changes the recents and what the next start reopens, none of which was asked for, while the folder is one click away.
+- A photo from the folder already open shown in it, the folder staying open: an exception to one rule, so opening a file would do two things depending on what is open.
 - One photo from a terminal alone, the system's ways opening the folder: the same photo opens two ways, and Windows and Linux need a flag to tell them apart.
 - Several files from several folders cut to the first one's folder, the rest left with a notice: a set the person chose loses photos.
 - Keeping `--in-folder` to send a launcher's refusals to the window and a terminal's to stderr: a flag for one difference, and the window's alert reaches a person at a terminal too. Telling a terminal apart by whether stderr is one: launchers differ, and Windows' windowed app has none.
