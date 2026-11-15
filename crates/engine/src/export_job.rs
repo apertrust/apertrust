@@ -71,7 +71,8 @@ use thiserror::Error;
 use crate::compute::GpuImage;
 use crate::edit::{self, Edit, panic_message};
 use crate::export::{
-    ExportError, Hand, MapResult, Mapping, Rendered, Submit, Tiling, export_handing,
+    Commands, ExportError, Hand, MapResult, Mapping, Readback, Rendered, Submit, Tiling,
+    export_handing,
 };
 use crate::gpu::GpuContext;
 use crate::jobs::{self, Context, Destination, Interrupted, Job, Message, Offer, TaskError, Tasks};
@@ -552,6 +553,10 @@ impl Hand for Handing<'_, '_> {
                 .run(self.context, testing::Held::new(hold, submit));
         }
         self.tasks.run(self.context, submit)
+    }
+
+    fn hand_commands(&mut self, commands: Commands) -> Result<Readback, TaskError> {
+        self.tasks.run(self.context, commands)
     }
 
     fn wait(&mut self, mapping: &Mapping) -> Result<MapResult, TaskError> {

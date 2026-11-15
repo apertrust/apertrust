@@ -75,6 +75,12 @@ Readouts (decision 19), apart from the passes, are what an operation measures of
 - `Operation::readout(id, words)` decodes the counts on the CPU into plain data (`ReadoutValue`, a `Histogram` first).
 - The engine dispatches it in the viewport alone, only while a client asks and its key has changed, and reads it back as the scopes are read; no export, tile, fusion or derivative ever sees it. The tone equalizer's `mask_histogram` comes first ([engine.md](engine.md#readouts)).
 
+## Statistics of the raw
+
+Decision 87. An operation that needs the raw's histogram, exposure's automatic mode, says so with `Operation::reads_raw_histogram(params)`, `false` by default. The engine then counts it on the GPU once per photo and hands it to every later `prepare` as `ImageContext::raw_histogram`, a `RawHistogram` with darktable's percentile search, its conversion to EV and the exposure that puts a percentile at a target ([engine.md](engine.md#the-raws-histogram)). Without it, on an image that is not a raw or before it is counted, the operation renders as it can: exposure as manual mode.
+
+`Operation::computed(id, params, image, input)`, `None` by default, gives a number its setup computes for its tool's panel by id, the one `prepare` applies: exposure's `computed_exposure`. A tool shows it as a computed value (`Row::Computed`), and the session reports it with the tool's state. It is not a readout (above): nothing is counted for it.
+
 ## The reach
 
 Decision 13. `Operation::reach(params, image)`, the pixels beyond its output region at the pipe's scale that an operation's output reads, all its passes together, as darktable's `tiling_callback` overlap. By default it is the manifest's fixed radius times the scale; non-local means' comes from its patch size, search radius, scattering and the scale. The planner calls it before `prepare` as it works regions backwards, and each `prepare` is told its output region and sees its input region through `ImageDesc`'s extent and origin (decision 16).
@@ -96,6 +102,7 @@ Decision 21. The image context carries:
 - the camera's identity as darktable's (decision 24): `make`, `model` (the main name, an alias resolved), `alias` (the name the file's camera has) and `iso`, each in darktable's spelling (decision 27), by which denoise finds its noise profile;
 - planned: the camera's white balance presets from darktable's `wb_presets.json`, `white_balance_presets`, in the file's order, which temperature's defaults and the White balance tool read (decision 27);
 - the lens corrections the raw carries, `lens_correction`, as darktable's `exif_correction_type` and `exif_correction_data` hold them (decision 25);
+- for an operation that reads it, the raw's histogram (`raw_histogram`, decision 87), counted by the engine, not the decoder;
 - the pipe's output profile as matrices to and from XYZ D50 (`output_profile`, decision 26). colorout reports it through `Operation::output_profile(params)`, and the planner collects it before any `prepare`; `None`, without colorout, means the working profile. It is the edit's in the viewport and an export's chosen one in that export, read by filmic rgb's v6 and v7 and AgX's "export profile", never by `defaults` or a binding.
 
 ### The camera's names
@@ -113,7 +120,7 @@ Where darktable spells a camera differently from rawler (Nikon's `Z 6_2` for raw
 
 ## Images, bindings and scratch
 
-Decision 21. `prepare` receives the image it gets and returns the one it produces, so rawprepare can crop and demosaic can turn a mosaic into RGBA. Each pass lists exactly what it binds, by convention input 0, output 1, uniforms 2, tables 3 to 7 and scratch buffers 10 up; an operation's passes share the scratch buffers it asks for, sized in bytes. A pass in row strips binds a window of its input and output, whose starts the 48-byte pass header carries as `input_base` and `output_base`; scratch buffers stay whole (decision 14).
+Decision 21. `prepare` receives the image it gets and returns the one it produces, so rawprepare can crop and demosaic can turn a mosaic into RGBA. Its description carries what earlier operations did that later ones read, as darktable's buffer descriptor: the processed maximum, the white balance applied, and rawprepare's black, its four levels averaged and rounded, and white point (`raw_black`, `raw_white`, decision 87). Each pass lists exactly what it binds, by convention input 0, output 1, uniforms 2, tables 3 to 7 and scratch buffers 10 up; an operation's passes share the scratch buffers it asks for, sized in bytes. A pass in row strips binds a window of its input and output, whose starts the 48-byte pass header carries as `input_base` and `output_base`; scratch buffers stay whole (decision 14).
 
 ## What an operation does not own
 
@@ -129,7 +136,7 @@ Shared colour maths is in `apertrust-color`, with the numerical helpers ports sh
 ## Rules the engine enforces for every plugin
 
 - A plugin declares its slot; it cannot reorder the pipeline. A slot another operation has, or a number out of step with its stage, will be refused at load (decision 22).
-- Kernels keep data on the GPU. Only a readout's counts, a few kilobytes, are read back, by the session, never between operations (decision 19).
+- Kernels keep data on the GPU. Only a readout's counts, a few kilobytes, are read back, by the session, never between operations (decision 19). The one exception is the raw's histogram, 256 KiB, which the engine counts and reads back once per photo before `prepare`, for an operation that asks (`Operation::reads_raw_histogram`, decision 87); every other intermediate result stays on the GPU.
 - Kernels never write a local at a run-time index, which FXC fails or may fail to compile; the engine checks a plugin's kernels at load (decision 10).
 - Schema versions and migrations are mandatory, so old edits keep their look. A schema version rises for a removal or a change, never for an addition, which an older build finds in an edit and opens for viewing only (decision 43; [Edits in another user data folder](settings.md#edits-in-another-user-data-folder)).
 - Only differentiable plugins take part in reference matching and other optimisation features.

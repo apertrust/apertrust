@@ -147,6 +147,12 @@ pub fn action(tool: &str, action: &str) -> [String; 3] {
     ["label", "full", "promise"].map(|part| format!("tool-{tool}-action-{action}-{part}"))
 }
 
+/// A computed value's label and promise ([`crate::Row::Computed`]):
+/// `tool-<tool>-computed-<id>-label` and `-promise`.
+pub fn computed(tool: &str, id: &str) -> [String; 2] {
+    ["label", "promise"].map(|part| format!("tool-{tool}-computed-{id}-{part}"))
+}
+
 /// A colour picker's name, full name, promise and, for one that takes a point, the central
 /// bar's sentence ([`crate::Picker`]): `tool-<tool>-picker-<picker>-label`, `-full`,
 /// `-promise` and `-what`.
@@ -242,6 +248,7 @@ pub fn of(definition: &Definition) -> Vec<String> {
                 }
             }
             Row::Action { id } => ids.extend(action(tool, id)),
+            Row::Computed(computed) => ids.extend(self::computed(tool, computed.id)),
             Row::Buttons { buttons, .. } => {
                 for button in *buttons {
                     ids.extend(action(tool, button.id));

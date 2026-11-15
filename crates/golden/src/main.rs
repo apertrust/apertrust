@@ -38,7 +38,7 @@ use golden::cases::{self, CASES, Case};
 use golden::darktable::{DarktableCli, Size};
 use golden::delta_e::{self, Stats, Tolerance};
 use golden::ports::KernelInputs;
-use golden::raw_stage::{RawStage, Skip, SkipKind, skip};
+use golden::raw_stage::{Automatic, RawStage, Skip, SkipKind, skip};
 use golden::{heatmap, pfm::Image, ports, raw_stage, render, synthetic};
 
 /// Largest relative difference between a gradient kernel and finite differences that
@@ -168,6 +168,17 @@ enum Command {
         /// renders at; repeat for more.
         #[arg(long = "add", value_name = "CASE")]
         adds: Vec<String>,
+        /// Exposure in automatic mode on both sides, darktable's deflicker, at this
+        /// percentile and target level, as `50,-4`; Apertrust meters the raw over
+        /// darktable's own crop, recovered from its render as `raw-defaults` recovers it,
+        /// so the algorithm is checked exactly (decision 87).
+        #[arg(
+            long,
+            value_name = "PERCENTILE,TARGET",
+            value_delimiter = ',',
+            allow_negative_numbers = true
+        )]
+        automatic: Option<Vec<f32>>,
     },
     /// Render a raw as `apertrust-cli export` does, through the default pipeline and any
     /// `--add` cases' modules, to an 8-bit PNG, and write darktable's history for the same
@@ -296,6 +307,7 @@ fn main() -> Result<ExitCode> {
             darktable_hq,
             upscale,
             adds,
+            automatic,
         } => {
             let size = (width.is_some() || height.is_some()).then_some(Size {
                 width: width.unwrap_or(0),
@@ -311,7 +323,12 @@ fn main() -> Result<ExitCode> {
                 .iter()
                 .map(|name| find(name))
                 .collect::<Result<Vec<_>>>()?;
-            whole_pipeline(&images, size, darktable_size, &adds)
+            let automatic = match automatic.as_deref() {
+                None => None,
+                Some(&[percentile, target]) => Some(Automatic { percentile, target }),
+                Some(other) => bail!("--automatic takes a percentile and a target, not {other:?}"),
+            };
+            whole_pipeline(&images, size, darktable_size, &adds, automatic)
         }
         Command::Export {
             image,
@@ -1571,6 +1588,7 @@ fn darktable_history(
     instances: &[Instance],
     size: Option<Size>,
     adds: &[&Case],
+    automatic: Option<Automatic>,
 ) -> Result<String> {
     // Exposure at Apertrust's effective value, color calibration with Apertrust's
     // illuminant and AgX at Apertrust's parameters.
@@ -1582,6 +1600,7 @@ fn darktable_history(
         &stage,
         exposure_params.float("black"),
         exposure::effective_exposure(exposure_params, context),
+        automatic,
         &ports::channel_mixer_params_v3(&channel_mixer),
         &agx_params,
     )?;
@@ -1594,6 +1613,38 @@ fn darktable_history(
         xmp = golden::xmp::append_entry(&xmp, case.xmp, case.operation)?;
     }
     Ok(xmp)
+}
+
+/// Exposure's automatic mode at `automatic`'s settings in `instances`.
+fn set_automatic(instances: &mut [Instance], automatic: Automatic) -> Result<()> {
+    let exposure = instances
+        .iter_mut()
+        .find(|instance| instance.operation.manifest().id == "exposure")
+        .context("no exposure instance")?;
+    exposure.params.set("mode", Value::Choice(1));
+    let Automatic { percentile, target } = automatic;
+    exposure
+        .params
+        .set("deflicker_percentile", Value::Float(percentile));
+    exposure
+        .params
+        .set("deflicker_target_level", Value::Float(target));
+    Ok(())
+}
+
+/// The region darktable meters exposure's automatic mode over: rawspeed's crop, which its
+/// deflicker reads from the image (`exposure.c:395-401`) whatever rawprepare's crop, as
+/// `raw-defaults` recovers it from darktable's own render with rawprepare left out.
+fn darktable_crop(
+    darktable: &DarktableCli,
+    image: &Path,
+    raw: &apertrust_raw::RawImage,
+    metadata: &raw_stage::Metadata,
+) -> Result<[u32; 4]> {
+    let stage = RawStage::passthrough(None, Some([1.0; 3]), metadata.is_xtrans());
+    let xmp = raw_stage::passthrough_xmp(&stage)?;
+    let actual = Image::read(&raw_stage::render(darktable, image, &xmp, &[])?)?;
+    Ok(raw_stage::recover_defaults(raw, &actual)?.crop)
 }
 
 /// `apertrust-golden export`: see [`Command::Export`].
@@ -1625,7 +1676,7 @@ fn export(
     cropped_to_declared(&mut instances, camera);
     add_cases(&mut instances, adds, &grain_at)?;
     if let Some(path) = darktable_xmp {
-        let xmp = darktable_history(image, &metadata, &context, &instances, size, adds)?;
+        let xmp = darktable_history(image, &metadata, &context, &instances, size, adds, None)?;
         std::fs::write(path, xmp).with_context(|| format!("writing {}", path.display()))?;
     }
 
@@ -1670,6 +1721,7 @@ fn whole_pipeline(
     size: Option<Size>,
     darktable_size: Option<Size>,
     adds: &[&Case],
+    automatic: Option<Automatic>,
 ) -> Result<ExitCode> {
     check_adds(adds)?;
     let darktable = DarktableCli::locate()?;
@@ -1713,12 +1765,17 @@ fn whole_pipeline(
             cropped_to_declared(&mut instances, camera);
         }
         add_cases(&mut instances, adds, &grain_at)?;
+        if let Some(automatic) = automatic {
+            set_automatic(&mut instances, automatic)?;
+        }
         let (icc_type, to_lab) = output_profile(params_of(&instances, "colorout")?)?;
 
         // darktable first: its render is cached and needs only the parameters, so a raw
         // its loader rejects is skipped before the export is paid for.
         let theirs = {
-            let xmp = darktable_history(image, &metadata, &context, &instances, size, adds)?;
+            let xmp = darktable_history(
+                image, &metadata, &context, &instances, size, adds, automatic,
+            )?;
             let png = raw_stage::render_as(
                 &darktable,
                 image,
@@ -1757,9 +1814,30 @@ fn whole_pipeline(
 
         // Apertrust: the export's output before `apertrust-cli export` rounds it to 8 bits,
         // clipped to 0 to 1 as a PNG holds it. Only the tile count outlives the block.
-        let (ours, tiles) = {
+        let (ours, tiles, metered) = {
             let input = apertrust_engine::raw::upload(&gpu, &raw)
                 .ok_or_else(|| skip(SkipKind::Not16Bit, ""))??;
+            // Automatic mode meters darktable's own crop, rawspeed's, on both sides.
+            // The exposure computed there and over the declared image, which the engine
+            // meters, for the line.
+            let mut context = context.clone();
+            let mut metered = None;
+            if let Some(Automatic { percentile, target }) = automatic {
+                let crop = darktable_crop(&darktable, image, &raw, &metadata)?;
+                let count = |region| {
+                    pollster::block_on(apertrust_engine::raw_histogram::count(&gpu, &input, region))
+                };
+                let (theirs, declared) = (count(crop)?, count(camera.declared)?);
+                let rawprepare = params_of(&instances, "rawprepare")?;
+                let blacks: f32 = BLACK.iter().map(|name| rawprepare.int(name) as f32).sum();
+                let black = (blacks / 4.0).round() as u32;
+                let white = rawprepare.int("raw_white_point") as u32;
+                let at = |histogram: &apertrust_plugin::RawHistogram| {
+                    histogram.exposure(percentile, target, black, white)
+                };
+                metered = Some((at(&theirs), at(&declared)));
+                context.raw_histogram = Some(theirs);
+            }
             let budget = Tiling::Auto { budget: BUDGET };
             let exported = pollster::block_on(export_at(
                 &gpu, &instances, &context, input, budget, resample,
@@ -1771,7 +1849,7 @@ fn whole_pipeline(
                 .collect();
             let (ours_width, ours_height) = (exported.desc.width, exported.desc.height);
             let ours = Image::new(ours_width as usize, ours_height as usize, pixels)?;
-            (ours, exported.tiles)
+            (ours, exported.tiles, metered)
         };
 
         if (theirs.width, theirs.height) != (ours.width, ours.height) {
@@ -1792,7 +1870,7 @@ fn whole_pipeline(
         Ok((
             passed,
             format!(
-                "{}: {width}×{height}{}{}{}, ΔE2000 mean {:.3}, p95 {:.3}, p99 {:.3}, max {:.2}, {:.4}% over {}",
+                "{}: {width}×{height}{}{}{}{}, ΔE2000 mean {:.3}, p95 {:.3}, p99 {:.3}, max {:.2}, {:.4}% over {}",
                 raw.camera.model,
                 match (size, darktable_size) {
                     (Some(size), Some(theirs)) if theirs.high_quality != size.high_quality => {
@@ -1816,6 +1894,12 @@ fn whole_pipeline(
                     format!(" in {tiles} tiles")
                 } else {
                     String::new()
+                },
+                match (automatic, metered) {
+                    (Some(Automatic { percentile, target }), Some((theirs, declared))) => format!(
+                        ", automatic at {percentile} % and {target} EV: {theirs:+.4} EV ({declared:+.4} EV over the declared image)"
+                    ),
+                    _ => String::new(),
                 },
                 stats.mean,
                 stats.p95,

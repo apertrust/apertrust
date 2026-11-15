@@ -38,6 +38,7 @@ pub mod names;
 pub mod picker;
 pub mod pipeline;
 pub mod raw;
+pub mod raw_histogram;
 mod readback;
 pub mod resample;
 pub mod scopes;

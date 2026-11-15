@@ -55,6 +55,15 @@ pub enum ComputeError {
         bytes: u64,
         limit: u64,
     },
+    #[error(
+        "{operation} ({pass}) dispatches {groups} workgroups along one side, more than the GPU allows ({limit})"
+    )]
+    Dispatch {
+        operation: &'static str,
+        pass: &'static str,
+        groups: u32,
+        limit: u32,
+    },
     #[error("{operation} needs a {} MiB buffer, more than the GPU allows ({} MiB)", mebibytes(*bytes), mebibytes(*limit))]
     Buffer {
         operation: &'static str,

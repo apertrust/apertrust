@@ -76,14 +76,15 @@ pub const RESAMPLE: Kernel = Kernel {
 };
 
 /// The engine's own kernels, besides the operations': the pipeline's, the scopes', which
-/// count each viewport frame after it ([`crate::scopes`]), and the colour pickers'
-/// reduction ([`crate::picker`]).
+/// count each viewport frame after it ([`crate::scopes`]), the colour pickers'
+/// reduction ([`crate::picker`]) and the raw's histogram ([`crate::raw_histogram`]).
 pub const KERNELS: &[Kernel] = &[
     DOWNSCALE,
     REGION,
     RESAMPLE,
     crate::scopes::KERNEL,
     crate::picker::KERNEL,
+    crate::raw_histogram::KERNEL,
 ];
 
 /// darktable's finalscale place, display 69.4 between vignette and colorout, where an

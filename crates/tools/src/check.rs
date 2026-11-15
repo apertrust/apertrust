@@ -23,7 +23,7 @@
 
 use apertrust_plugin::{ImageContext, Operation, ParamError, Stage, Value};
 
-use crate::definition::{ControlKind, DefinitionError, MAX_POINTS, Space};
+use crate::definition::{Computed, ControlKind, DefinitionError, MAX_POINTS, Row, Space};
 use crate::{Base, Control, ControlValue, Controls, Owned, Range, Setting, Tool, ToolValues};
 
 /// A number control's range while the tool's controls hold `values`, every control,
@@ -145,6 +145,14 @@ pub enum ToolError {
         operation: &'static str,
         param: &'static str,
     },
+    /// A computed value of an operation the tool owns no parameter of (decision 87).
+    #[error(
+        "its computed value {computed} is an operation's, {operation}, which it owns no parameter of"
+    )]
+    ComputedOperation {
+        computed: &'static str,
+        operation: &'static str,
+    },
     /// A picker reading an operation the tool owns no parameter of (decision 79).
     #[error("its picker {picker} reads {operation}, which it owns no parameter of")]
     PickerOperation {
@@ -220,6 +228,16 @@ fn admit(
                 operation,
                 param,
                 owner,
+            });
+        }
+    }
+    for row in definition.rows() {
+        if let Row::Computed(Computed { id, operation, .. }) = row
+            && !owns.iter().any(|owned| owned.operation == *operation)
+        {
+            return Err(ToolError::ComputedOperation {
+                computed: id,
+                operation,
             });
         }
     }

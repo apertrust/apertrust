@@ -68,14 +68,14 @@ use apertrust_engine::session::{
 use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
 use apertrust_tools::{
-    Button, ButtonIcon, ChoiceStyle, ControlKind, Controls, Definition, MAX_POINTS, PickerKind,
-    Quad, Row, SettingRow, Slider, Tool, Track, Unit, View, Widget, check, messages,
+    Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, Definition, MAX_POINTS,
+    PickerKind, Quad, Row, SettingRow, Slider, Tool, Track, Unit, View, Widget, check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
     CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
-    PickerButton, Section, SectionAction, Segmented, SliderAction, SliderRow, ToggleRow,
-    group_label,
+    PickerButton, ReadoutRow, Section, SectionAction, Segmented, SliderAction, SliderRow,
+    ToggleRow, group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, translator};
@@ -888,6 +888,7 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
             | Row::Action { .. }
             | Row::Pickers { .. }
             | Row::Patches { .. }
+            | Row::Computed(_)
             | Row::Guides
     );
     let top = ui.cursor().top();
@@ -934,6 +935,7 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         Row::Setting(setting) => setting_row(ui, page, setting, changes),
         Row::Patches { picker, target } => patches_row(ui, page, picker, target),
         Row::Action { id } => action_row(ui, words, definition.id, id),
+        Row::Computed(computed) => computed_row(ui, words, definition.id, computed, state),
         Row::Pickers { label, pickers } => pickers_row(ui, page, *label, pickers, changes),
         Row::Buttons { control, buttons } => {
             buttons_row(ui, words, definition, control, buttons, state, changes);
@@ -1065,6 +1067,34 @@ fn action_row(ui: &mut egui::Ui, words: &Translator, tool: &str, id: &str) {
         .promise(&promise)
         .enabled(false)
         .show(ui);
+}
+
+/// A computed value's row (`Row::Computed`, decision 87), the design system's readout
+/// row: its label, and the value the session reports with the tool's state, signed as a
+/// slider's over zero, with its unit; nothing at the end while its operation computes
+/// none.
+fn computed_row(
+    ui: &mut egui::Ui,
+    words: &Translator,
+    tool: &str,
+    computed: &Computed,
+    state: &ToolState,
+) {
+    let [label, promise] = messages::computed(tool, computed.id).map(|id| words.text(&id));
+    let value = state
+        .computed
+        .iter()
+        .find(|shown| shown.id == computed.id)
+        .and_then(|shown| shown.value);
+    let unit = computed.unit.map(messages::unit_value);
+    let mut row = ReadoutRow::new(&label, value.map(f64::from))
+        .promise(&promise)
+        .decimals(usize::from(computed.decimals))
+        .signed(true);
+    if let Some(unit) = &unit {
+        row = row.unit(unit);
+    }
+    row.show(ui);
 }
 
 /// A preset row (decision 2), Blended as a tool's choice: it shows the option the
@@ -2065,6 +2095,7 @@ mod tests {
                 .collect(),
             presets: Vec::new(),
             views: views(tool),
+            computed: Vec::new(),
         };
         state.presets = presets(tool, &state);
         report_availability(tool, &mut state);
@@ -2580,6 +2611,38 @@ mod tests {
         for hidden in ["Percentile", "Target level", "Contrast", "Contrast pivot"] {
             assert!(harness.query_by_label(hidden).is_none(), "{hidden}");
         }
+        assert!(harness.query_by_label_contains("Computed EC").is_none());
+    }
+
+    #[test]
+    fn automatic_mode_shows_its_rows_and_the_computed_exposure() {
+        let mut state = untouched(&Exposure);
+        for control in &mut state.controls {
+            if control.control == "mode" {
+                control.value = ControlValue::Choice(1);
+            }
+        }
+        state.computed = vec![apertrust_engine::session::ComputedState {
+            id: "computed_exposure",
+            value: Some(-1.234),
+        }];
+        let mut harness = panel(&Exposure, state);
+        harness.run();
+        for name in ["Percentile", "Target level", "Black level correction"] {
+            harness.get_by_role_and_label(Role::Slider, name);
+        }
+        // Manual's rows hidden, the computed value after Target level, as darktable's
+        // "computed EC: −1.23 EV".
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Slider, "Exposure")
+                .is_none()
+        );
+        harness.get_by_role_and_label(Role::Label, "Computed EC −1.23 EV");
+        // None yet: the label alone.
+        harness.state_mut().state.computed[0].value = None;
+        harness.run();
+        harness.get_by_role_and_label(Role::Label, "Computed EC");
     }
 
     #[test]

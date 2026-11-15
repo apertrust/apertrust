@@ -632,6 +632,7 @@ fn untouched(tools: &[&dyn Tool]) -> Values {
             controls,
             presets,
             views,
+            computed: Vec::new(),
         }
     });
     Values {
@@ -1205,6 +1206,7 @@ pub(crate) mod tests {
             ],
             presets: Vec::new(),
             views: Vec::new(),
+            computed: Vec::new(),
         };
         let report = |black, value, through| Values {
             tools: vec![exposure(black, None, value, Some(Mark::Kept))],
@@ -1299,6 +1301,7 @@ pub(crate) mod tests {
                 }],
                 presets: Vec::new(),
                 views: Vec::new(),
+                computed: Vec::new(),
             }],
             settings: Vec::new(),
             edited: exposure != 0.0,

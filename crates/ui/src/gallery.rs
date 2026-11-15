@@ -31,10 +31,10 @@ use crate::components::{
     FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
     PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
-    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope,
-    ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
-    Swatches, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction,
-    Track, VectorscopeBins, WaveformBins, Zoom, group_label,
+    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, SaveState, Scale,
+    Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch,
+    SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel,
+    TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -1409,6 +1409,13 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .promise("Set black and white relative exposure using the selected area.")
         .enabled(false)
         .show(ui);
+    // A readout row, with its value and with none yet, as Exposure's computed EC.
+    ReadoutRow::new("Computed EC", Some(0.83))
+        .promise("What exposure correction has actually been used.")
+        .signed(true)
+        .unit("unit-ev-value")
+        .show(ui);
+    ReadoutRow::new("Computed EC", None).show(ui);
     groups(ui, demo);
     let colour = |rgb: u32| {
         let [_, r, g, b] = rgb.to_be_bytes();

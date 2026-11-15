@@ -47,6 +47,7 @@ use apertrust_engine::history::{
 use apertrust_engine::jobs::JobEvent;
 use apertrust_engine::names::{self, Shot};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline};
+use apertrust_engine::raw_histogram;
 use apertrust_engine::scopes::{Graphs, Meter, Reading};
 use apertrust_engine::session::{
     self, ExportSettings, ExportStatus, PhotoResult, Session, SessionError,
@@ -1519,6 +1520,9 @@ async fn export(
         println!("{}", stored_line(&stored, width, height, &tiles, start));
         return Ok(());
     }
+    // The raw's histogram where an instance reads it, as an export counts it (decision 87).
+    let mut image = image;
+    raw_histogram::fill(gpu, &instances, &mut image, &input).await?;
     let pipe = resample.map_or(Pipe::Export, Pipe::Resampled);
     let plan = pipeline::plan(&instances, &image, input.desc(), pipe, &limits)?;
     let (_, output_desc) = plan.output();
@@ -1850,7 +1854,7 @@ async fn preview(
     let decoded_ms = start.elapsed().as_secs_f64() * 1e3;
     let gpu = GpuContext::new(&engine.gpu).await?;
     println!("GPU: {}", gpu.adapter.get_info().name);
-    let image = raw::image_context(&raw);
+    let mut image = raw::image_context(&raw);
     let input =
         raw::upload(&gpu, &raw).context("the raw stage takes only 16-bit mosaics so far")??;
     let sensor = input.desc();
@@ -1877,6 +1881,10 @@ async fn preview(
     // Exposure set, a change, which applies the tools a saved end leaves not applied
     // (decision 78).
     edit.apply_all();
+    // The raw's histogram where the edit reads it, as the session counts it (decision 87).
+    let read = instances(&edit, &image, &[])?;
+    raw_histogram::fill(&gpu, &read, &mut image, &input).await?;
+    let image = image;
     let mut plan_at = |ev: f32| -> Result<pipeline::Plan> {
         edit.set_control(tool, EXPOSURE.1, ControlValue::Number(ev), &image)
             .context("preview --exposure")?;

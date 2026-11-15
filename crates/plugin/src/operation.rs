@@ -78,6 +78,28 @@ pub trait Operation: Send + Sync {
         false
     }
 
+    /// Whether `prepare` with `params` reads the raw's histogram,
+    /// [`ImageContext::raw_histogram`] (decision 87): the engine counts it on the GPU,
+    /// once per photo, only while an operation answers true, so an operation that does
+    /// not read it costs nothing. `false`, the default.
+    fn reads_raw_histogram(&self, _params: &ParamValues) -> bool {
+        false
+    }
+
+    /// A number its setup computes from `params` on `input` for its tool's panel, by id,
+    /// as `prepare` would compute it: exposure's `computed_exposure`, the exposure its
+    /// automatic mode applies, darktable's "computed EC" (decision 87). `None`, the
+    /// default, where it computes none, as for an id it does not know.
+    fn computed(
+        &self,
+        _id: &str,
+        _params: &ParamValues,
+        _image: &ImageContext,
+        _input: &ImageDesc,
+    ) -> Option<f32> {
+        None
+    }
+
     /// How the operation moves pixels with `params` (decision 16); `None`, the default,
     /// for one that leaves every pixel where it is. An operation that returns one runs
     /// after the raw stage, and its `prepare` gets the input region its
