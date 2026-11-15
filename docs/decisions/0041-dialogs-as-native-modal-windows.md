@@ -2,7 +2,7 @@
 
 ## Context
 
-How are dialogs (Settings, Export, Customise tabs, prompts) and confirmations shown? A dialog should behave as the platform's own: a window modal to the one it rises from, a sheet on the Mac, reachable by screen readers. egui's viewports in eframe 0.37 hand the app no window to make owned, transient or a sheet, and only the root window gets an AccessKit adapter.
+How are dialogs (Settings, Customise tabs, prompts) and confirmations shown? A dialog should behave as the platform's own: a window modal to the one it rises from, a sheet on the Mac, reachable by screen readers. egui's viewports in eframe 0.37 hand the app no window to make owned, transient or a sheet, and only the root window gets an AccessKit adapter.
 
 ## Decision
 
@@ -27,7 +27,7 @@ Everywhere the app also takes the main window's input while a modal dialog is op
 
 **Alerts:** plain requests (`alert::Request`: a title, a message, buttons with their role, Default, Cancel or Destructive, and an optional suppression box), answered on a later frame. On the Mac an `NSAlert` as a sheet, the destructive button marked, every key set (`begin_alert`); on Windows the task dialog, owned by the window, on a thread of its own (planned); on Linux, which has no system alert for an app outside GTK and Qt, Apertrust's own drawn alert, `components::AlertBody`, in a dialog window, in the theme, on every desktop. The words are Fluent messages, never the system's OK and Cancel.
 
-**Print and Import are not dialogs:** they are full-window sheets inside the main window ([0037](0037-one-view-the-photos-tab.md)), since each takes the window's whole size for its preview or its thumbnails and is a place to work.
+**Import, Export and Print are not dialogs:** they are full-window sheets inside the main window, drawn by the design system on every platform ([0037](0037-one-view-the-photos-tab.md), [0086](0086-import-and-export-as-one-sheet-pattern.md)), since each takes the window's whole size for its thumbnails or its preview and is a place to work. An alert a sheet asks is the main window's. Export is built as a dialog of the host, a sheet on the Mac, until it is on its sheet.
 
 ## Options considered
 

@@ -236,11 +236,16 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 
 - [x] On the command line: JPEG and PNG with darktable's sRGB profile, at darktable's sizes and resampling, file names from darktable's variables, several files at once.
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
-- [x] The Export dialog on the Mac: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, the overwrite question, and Export Again (decision 56; [gui.md](gui.md#the-export-dialog)).
+- [x] The Export dialog on the Mac: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, the overwrite question, and Export Again (decision 56; [gui.md](gui.md#as-built)).
 - [x] The Export dialog on Windows and Linux, as a modal window, with Overwrite's alert on Linux.
-- [ ] The Export dialog drawn as a tool: every row a tool's setting, its choices Blended, Allow upscaling, High quality resampling and Store masks as toggles, and tall enough that its default rows fit without scrolling (decision 84; [gui.md](gui.md#drawn-as-a-tool)).
+- [ ] Import and Export as one kind of full-window sheet (decision 86; [gui.md](gui.md#sheets)), built in this order:
+  - [ ] the setting rows a sheet's tools need: a slider with no kept marker, the path, note, field and size rows, an indented toggle;
+  - [ ] the sheet frame: the sheet bar, a grid of photos checked to go, a column of tools on the side panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place;
+  - [ ] Import's first slice (the library's step 20a) and Export on the sheet, in either order;
+  - [ ] the rest: presets of the whole sheet, reordering the column, a larger look at one photo, and each sheet's later parts.
+- [ ] Export on the sheet: the photos it was opened with checked, one shown large, Show all N in folder; Storage, Format, Global options, Metadata and Multi-preset export as tools; Allow upscaling, High quality resampling and Store masks as toggles; the photos exported then the selection; a notice with Show in Finder after each export; the dialog removed (decision 84; [gui.md](gui.md#the-export-sheet)).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Export presets, and several presets in one go.
+- [ ] Export presets, For sharing and Full size JPEG built in, and several presets in one go.
 - [ ] Metadata in exported files, and styles applied on export.
 
 ### Culling, metadata and several computers, in folder mode

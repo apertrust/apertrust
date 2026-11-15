@@ -15,7 +15,7 @@ darktable at the reference release, commit 20891f6c6f. darktable's code is the r
 
 ## Status
 
-**Ported**, for the Export dialog (decision 56; `docs/gui.md`, The Export dialog):
+**Ported**, for Export (decision 56; `docs/gui.md`, The Export sheet):
 
 - `apertrust-export`'s `variables` (`crates/export/src/variables/`);
 - `apertrust-raw`'s `read_exif_file` and `read_exif` (`crates/raw/src/exif.rs`).

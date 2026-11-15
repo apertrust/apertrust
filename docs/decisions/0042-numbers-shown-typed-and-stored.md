@@ -14,7 +14,7 @@ How does a slider show its value, how is a number typed, how is fine control giv
 
 **A cancelled gesture leaves no trace:** `Command::CancelGesture { tool }` puts the tool back as it was before the gesture's first `SetControl { done: false }`: values, marks, follow writes, clamps, the held view coordinates and a switched tool's on state. It makes no history step and writes nothing; the session reports `Saved` with the cancel's number. Any other command on the edit ends the gesture as completed; a resize, the scopes and a cancel naming another tool leave it under way.
 
-**Choices have two styles** (`Choice::style`): `Blended`, darktable's combobox, in tool choice and preset rows (the option right-aligned with ⌄ after it, no box, the hover band across the row, the kept marker a slider row has) and in the Export dialog, whose rows are a tool's settings ([0084](0084-the-export-dialog-drawn-as-a-tool.md), planned); and `Boxed`, the default, everywhere else, Settings and Customise tabs among them. An option the photo does not list is shown last, disabled and described ([0030](0030-controls-as-darktables.md)).
+**Choices have two styles** (`Choice::style`): `Blended`, darktable's combobox, in tool choice and preset rows (the option right-aligned with ⌄ after it, no box, the hover band across the row, the kept marker a slider row has) and in the Import and Export sheets' tools, whose rows are all settings ([0086](0086-import-and-export-as-one-sheet-pattern.md), planned); and `Boxed`, the default, everywhere else, Settings and Customise tabs among them. An option the photo does not list is shown last, disabled and described ([0030](0030-controls-as-darktables.md)).
 
 The curve's readout and the equalizer's graph have no value field and no popup.
 

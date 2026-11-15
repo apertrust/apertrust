@@ -8,8 +8,9 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 **Two terms.**
 
-- A **tool** is what a person sees and works with: one section of the side panel, with its controls, tabs and collapsible groups, under one name ([0028](0028-tools-bound-to-operations.md)).
+- A **tool** is what a person sees and works with: one section of the side panel, or of the Import or the Export sheet's column, with its controls, tabs and collapsible groups, under one name ([0028](0028-tools-bound-to-operations.md)).
   - **Everything in the side panel is a tool:** the tools that edit the photo, such as Exposure or Colour calibration, and Browse, Filters, Keywords, Metadata, Scopes, History, Snapshots and the Colour picker.
+  - **A tool has one place:** the side panel, Export (export tools) or Import (import tools), and appears nowhere else ([0086](0086-import-and-export-as-one-sheet-pattern.md)).
   - **A processing tool** binds operations, as darktable's processing modules do.
   - **A utility** is a tool that edits nothing, such as Scopes or the Colour picker, as darktable's utility modules. "Utility" names only that kind of tool, never a second level beside tools.
   - **A processing tool has controls,** and the edit stores them. **Any tool may have settings,** the options darktable keeps in darktablerc, which Apertrust keeps in `settings.toml`, never in an edit. What another tool holds is what it is: view state, such as the folder Browse shows or the Scopes' mode, or the photo's metadata, such as Keywords' and Metadata's fields ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), never controls in the edit.
@@ -26,7 +27,7 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 **Operations never appear in the interface.** There is no Expert tab or direct operation access. Depth comes from inside a tool, its own tabs and collapsible groups ([0029](0029-a-tool-is-darktables-page.md)), never from a second tool. A read-only operation inspector in debug builds may show what each tool set.
 
-**Tools sit behind the session protocol.** Clients send tool values and the session turns them into operation parameters, so every client, the app, scripts, MCP and a remote interface, sees the same tools ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
+**Processing tools sit behind the session protocol.** Clients send their values and the session turns them into operation parameters, so every client, the app, scripts, MCP and a remote interface, sees the same tools ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
 
 ## Options considered
 
