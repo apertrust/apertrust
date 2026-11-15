@@ -2703,24 +2703,22 @@ pub(crate) mod tests {
     fn a_photo_alone_lists_nothing_and_its_folder_opens_with_it_active() {
         let mut m = mirror();
         let path = PathBuf::from("/photos/a.ARW");
-        m.folder.alone(path.clone());
+        m.folder.alone(vec![path.clone()]);
         m.opening(path.clone(), 1, Instant::now());
         let mut reactions = m.apply(Event::Opened(photo(1)));
         reactions.extend(m.apply(Event::Values(report(1.0, 1))));
         assert_eq!(reactions, []);
-        let folder::Folder::Alone { photo, .. } = &m.folder.folder else {
-            panic!("not alone: {:?}", m.folder.folder);
+        let [photo] = m.folder.photos() else {
+            panic!("not one photo alone: {:?}", m.folder.folder);
         };
         assert_eq!(photo.name, "a.ARW");
         assert_eq!(photo.edit, EditState::Edited);
-        assert_eq!(m.folder.photos().len(), 1);
         assert_eq!(m.folder.active_shown(), Some(0));
         assert_eq!(m.folder.shown(), None);
         assert_eq!(m.folder.thumbnail("a.ARW", 128), None);
         // Open This Folder: the photo stays open, active once its folder is listed.
-        let Some(folder::Show::Open(folder)) = m.folder.to_show(&path) else {
-            panic!("its folder, as a way in");
-        };
+        let (_, folder) = m.folder.alone_active().expect("its folder");
+        let folder = folder.to_owned();
         assert_eq!(folder, PathBuf::from("/photos"));
         m.folder.opening(folder, 2);
         assert_eq!(

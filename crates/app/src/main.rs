@@ -121,19 +121,16 @@ use settings::{Keeper, Settings};
 use tools::{Change, Panels, Pending};
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
-/// [--cache-dir DIR] [--conf KEY=VALUE]... [--safe-mode] [FILE | FOLDER | --in-folder
-/// FILE...]` ([`USAGE`]).
+/// [--cache-dir DIR] [--conf KEY=VALUE]... [--safe-mode] [FILE... | FOLDER]` ([`USAGE`]).
 #[derive(Debug, Default, PartialEq)]
 struct Arguments {
-    /// What to open: the first path given, from a terminal.
-    open: Option<Start>,
-    /// `--in-folder FILE...`, Open With's and a double-click's on Windows and Linux, the
-    /// registrations passing it before the files (`docs/packaging.md`, Opening a raw from
-    /// the system): every path given, absolute, to open as a drop of them would, the
-    /// photo's folder with it active, looked at off the interface's thread once the window
-    /// is up and refused there, since a launcher has no terminal. None given, as a desktop
-    /// entry's `%F` gives none when the app is started from a menu, opens nothing.
-    in_folder: Vec<PathBuf>,
+    /// What to open: every path given, absolute, from a terminal, Open With's and a
+    /// double-click's on Windows and Linux (`docs/packaging.md`, Opening a raw from the
+    /// system) or a restart, opened as a drop of them would open (decision 46), looked at
+    /// off the interface's thread once the window is up, a refusal the alert in the window
+    /// and its reason on stderr too. None given, as a desktop entry's `%F` gives none when
+    /// the app is started from a menu, opens nothing given.
+    paths: Vec<PathBuf>,
     /// darktable-style debug domains for stderr (`apertrust_base::log::DOMAINS`).
     domains: Vec<String>,
     /// The user data folder, where the settings are kept, in place of the platform's:
@@ -161,24 +158,19 @@ struct Arguments {
     flags: Vec<OsString>,
 }
 
-/// What the command line's path opens (`docs/gui.md`, The start window).
-#[derive(Clone, Debug, PartialEq)]
-enum Start {
-    /// A raw, alone (`docs/library.md`, One photo).
-    Photo(PathBuf),
-    /// A folder, in folder mode.
-    Folder(PathBuf),
-}
-
-/// `--in-folder`, which Open With's registrations pass before the files.
+/// `--in-folder`, which Open With's registrations passed before the files while Open With
+/// opened the photo's folder: accepted and ignored, and left out of [`USAGE`], until the
+/// first release is tagged, so a registration an earlier nightly build wrote still opens its
+/// files (`docs/packaging.md`, Opening a raw from the system).
 const IN_FOLDER_FLAG: &str = "--in-folder";
 
 /// What `--help` prints: the app's command line. `--list-adapters`, `--reopen-last` and
-/// `--no-reopen-last` are the app's own, for Settings' helper and a restart, and left out.
+/// `--no-reopen-last` are the app's own, for Settings' helper and a restart, and left out,
+/// as is `--in-folder`, which is ignored.
 const USAGE: &str = "\
-Usage: apertrust [OPTIONS] [FILE | FOLDER | --in-folder FILE...]
+Usage: apertrust [OPTIONS] [FILE... | FOLDER]
 
-Opens a raw photo alone, or a folder in folder mode; with neither, what was open last.
+Opens raw photos alone, or a folder in folder mode; with neither, what was open last.
 
 Options:
   -d, --debug DOMAIN      Log a domain on stderr: gpu, raw, pipe, perf, memory, settings,
@@ -189,7 +181,6 @@ Options:
       --conf KEY=VALUE    A setting's value for this run only
       --safe-mode         Start with the graphics card and API at Automatic for this run,
                           the settings kept
-      --in-folder FILE... Open the files' folder with the first file active, as Open With does
   -h, --help              Print this help
   -V, --version           Print the version, libraries and GPU backends
 ";
@@ -199,21 +190,17 @@ fn help_asked(mut args: impl Iterator<Item = OsString>) -> bool {
     args.any(|arg| arg == "--help" || arg == "-h")
 }
 
-/// Reads `args`, the command line after the program's name, `look` saying what its path
-/// is on the disk ([`start()`]), unless `--in-folder` comes anywhere in it, when the disk is
-/// not asked here and every path is its. A flag of the user data folder or the cache
-/// folder without one is an error, so that another is never used in its place, as is
+/// Reads `args`, the command line after the program's name, its paths made absolute, the
+/// disk never asked here: what they are is looked at once the window is up, as a drop's
+/// is. `--in-folder` is ignored wherever it comes. A flag of the user data folder or the
+/// cache folder without one is an error, so that another is never used in its place, as is
 /// `--conf` without its setting.
-fn arguments(
-    args: impl IntoIterator<Item = OsString>,
-    look: impl FnOnce(&Path) -> std::io::Result<dropped::Kind>,
-) -> Result<Arguments, String> {
+fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, String> {
     let mut args = args.into_iter();
     let mut arguments = Arguments::default();
-    let (mut paths, mut in_folder) = (Vec::new(), false);
     while let Some(arg) = args.next() {
         if arg == IN_FOLDER_FLAG {
-            in_folder = true;
+            // Ignored: the files after it are paths as any are.
         } else if arg == restart::SAFE_MODE_FLAG {
             arguments.safe_mode = true;
         } else if arg == restart::REOPEN_FLAG {
@@ -244,60 +231,13 @@ fn arguments(
             let (flag, folder) = given?;
             arguments.named(flag, folder);
         } else {
-            paths.push(PathBuf::from(arg));
+            let path = PathBuf::from(arg);
+            arguments
+                .paths
+                .push(std::path::absolute(&path).unwrap_or(path));
         }
     }
-    if in_folder {
-        let absolute = |path: PathBuf| std::path::absolute(&path).unwrap_or(path);
-        arguments.in_folder = paths.into_iter().map(absolute).collect();
-    } else {
-        let first = paths.into_iter().next();
-        arguments.open = first.map(|path| start(path, look)).transpose()?;
-    }
     Ok(arguments)
-}
-
-/// What `path`, the command line's, opens, as `look` finds it on the disk: a folder in
-/// folder mode; a raw, told by its name, alone; either [`resolved`], so the photo's folder
-/// is known (Open This Folder). A library's or a
-/// project's file, until Phase 5, another file, or nothing there, is an error saying why.
-fn start(
-    path: PathBuf,
-    look: impl FnOnce(&Path) -> std::io::Result<dropped::Kind>,
-) -> Result<Start, String> {
-    let given = path.display();
-    let kind = look(&path).map_err(|error| format!("{given}: {error}"))?;
-    match kind {
-        dropped::Kind::Folder => Ok(Start::Folder(resolved(&path, true))),
-        dropped::Kind::Raw => Ok(Start::Photo(resolved(&path, false))),
-        dropped::Kind::Library => Err(format!(
-            "{given}: libraries and projects come in a later version"
-        )),
-        dropped::Kind::Other => Err(format!("{given}: only folders and raw photos open")),
-    }
-}
-
-/// `path`, a `folder` or a photo, as the app keeps what the command line names: absolute,
-/// from the folder the app starts in, its `.` and `..` and links resolved, a photo's in its
-/// folder alone, so a photo that is a link keeps its own name, and its folder is where the
-/// link lies. On Windows only made absolute, since a resolved path there is a `\\?\` one
-/// the file manager and the dialogs show as it is. One that cannot be resolved is kept
-/// absolute.
-fn resolved(path: &Path, folder: bool) -> PathBuf {
-    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
-    if cfg!(windows) {
-        return absolute;
-    }
-    let canonical = |path: &Path| std::fs::canonicalize(path).ok();
-    let resolved = if folder {
-        canonical(&absolute)
-    } else {
-        let (parent, name) = (absolute.parent(), absolute.file_name());
-        parent
-            .zip(name)
-            .and_then(|(parent, name)| Some(canonical(parent)?.join(name)))
-    };
-    resolved.unwrap_or(absolute)
 }
 
 /// The flags that name a folder: the user data folder's (`folders::FLAGS`), then the cache
@@ -410,8 +350,7 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     let Arguments {
-        open,
-        in_folder,
+        paths,
         domains,
         user_data,
         cache,
@@ -419,7 +358,7 @@ fn main() -> eframe::Result {
         safe_mode,
         reopen,
         flags,
-    } = match arguments(std::env::args_os().skip(1), dropped::found) {
+    } = match arguments(std::env::args_os().skip(1)) {
         Ok(arguments) => arguments,
         Err(error) => {
             eprintln!("apertrust: {error}");
@@ -481,7 +420,7 @@ fn main() -> eframe::Result {
     // window the main window's size and place back where they come.
     let reopen_last = reopen.unwrap_or_else(|| keeper.reopen_last());
     let reopens = reopen_last && recents.last().is_some();
-    let starts = open.is_none() && in_folder.is_empty() && !reopens;
+    let starts = paths.is_empty() && !reopens;
     let placement = if starts {
         start_placement(&settings.window, settings.scale)
     } else {
@@ -610,8 +549,7 @@ fn main() -> eframe::Result {
                 started.set(true);
                 Ok(Box::new(App::new(
                     cc,
-                    open,
-                    in_folder,
+                    paths,
                     (placement, starts),
                     keeper,
                     settings,
@@ -1285,7 +1223,8 @@ struct App {
     asking: Option<dialogs::Asking>,
     /// What was dropped onto the window, while it is looked at (`dropped`).
     drops: dropped::Drops,
-    /// The files the system asked the app to open, Open With's, while they are looked at.
+    /// The files the system asked the app to open, Finder's, and the paths its command line
+    /// gave, while they are looked at.
     opened: dropped::Drops,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
@@ -2855,8 +2794,8 @@ fn apply_settings(
 }
 
 impl App {
-    /// The app as `settings` left it, before its first frame, opening what the command line
-    /// named, `open`, or the files Open With gave it, `in_folder`, once they have been
+    /// The app as `settings` left it, before its first frame, opening the paths the command
+    /// line gave, `paths`, and the files Finder gave it at the launch, once they have been
     /// looked at; `keeper` writes them back. Its window was made at `built`'s placement, as
     /// the start window where it says so, and is given the other where the start turns out
     /// otherwise, before it first shows.
@@ -2868,8 +2807,7 @@ impl App {
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
         cc: &eframe::CreationContext<'_>,
-        open: Option<Start>,
-        in_folder: Vec<PathBuf>,
+        paths: Vec<PathBuf>,
         built: (settings::Window, bool),
         keeper: Keeper,
         settings: Settings,
@@ -3041,21 +2979,18 @@ impl App {
             remembered: Remembered::default(),
             start: start::Window::new(false, settings.scale),
         };
-        // Finder's files at the launch, which macOS hands over as it finishes launching,
-        // before the window, win over what was open last, as `--in-folder`'s do; any that
-        // come later open over it.
-        let mut in_folder = in_folder;
-        in_folder.extend(apertrust_display::take_opened_files().unwrap_or_default());
-        let session = &app.session;
-        let send = &mut |command| session.send(command);
-        if let Some(open) = open {
-            started(open, &mut app.mirror, send);
-        } else if in_folder.is_empty() {
+        // The command line's paths and Finder's files at the launch, which macOS hands over
+        // as it finishes launching, before the window, win over what was open last, looked
+        // at as a drop's are; any that come later open over them.
+        let mut paths = paths;
+        paths.extend(apertrust_display::take_opened_files().unwrap_or_default());
+        if paths.is_empty() {
+            let session = &app.session;
+            let send = &mut |command| session.send(command);
             let last = app.shell.recents.last();
             app.reopening = reopen(last, reopen_last, &mut app.mirror, send);
-        }
-        if !in_folder.is_empty() {
-            app.opened.look(in_folder, &cc.egui_ctx);
+        } else {
+            app.opened.look_given(paths, &cc.egui_ctx);
         }
         // With nothing to open, the start window in place of the main window; the window
         // given the other's size and place where the start turned out otherwise.
@@ -3350,24 +3285,31 @@ impl App {
         }
     }
 
-    /// Opens the raw at `path` in the session, in place of the photo open, as File › Open…
-    /// and a drop do. The session saves the open photo's edit first, if
-    /// anything in it is not on disk yet, and reads the new photo's from beside it.
+    /// Opens the raw at `path`, one of the grid panel's, in the session, in place of the
+    /// photo open ([`open_listed`]).
     fn open(&mut self, path: PathBuf) {
         let session = &self.session;
-        open_photo(
-            path,
-            &mut self.remembered,
-            &mut self.mirror,
-            &mut |command| session.send(command),
-        );
+        open_listed(path, &mut self.mirror, &mut |command| session.send(command));
     }
 
-    /// Opens what Open… or a drop asked for, or asks the alert that says why nothing opens,
-    /// naming the path it refused.
+    /// Opens the photos at `paths` alone, together, the first active ([`open_alone`]).
+    /// Leaving folder mode for them, what was open last keeps the folder and photo active
+    /// now where its root is the one open, as the app's end would keep them.
+    fn open_alone(&mut self, paths: Vec<PathBuf>) {
+        let (reopening, waiting) = (self.reopening.as_ref(), self.remembered.waiting.as_ref());
+        keep_at_exit(&mut self.shell.recents, reopening, waiting, &self.mirror);
+        self.shell.recents.save();
+        let session = &self.session;
+        open_alone(paths, &mut self.mirror, &mut |command| {
+            session.send(command)
+        });
+    }
+
+    /// Opens what Open…, a drop, Open With or the command line asked for, or asks the alert
+    /// that says why nothing opens, naming the path it refused.
     fn carry_out_opening(&mut self, opening: Opening, ctx: &egui::Context) {
         match opening {
-            Ok(Opens::Photo(path)) => self.open(path),
+            Ok(Opens::Photos(paths)) => self.open_alone(paths),
             Ok(Opens::Folder(path)) => self.open_folder(path),
             Err((path, why)) => {
                 let request = alerts::refused_request(ctx, &file_name(&path), why);
@@ -4027,9 +3969,10 @@ impl App {
 
     /// The grid panel: the open folder's photos, in the grid bar's sort, the photo open
     /// the active cell; a click or Enter opens one. Always there, empty with no folder
-    /// (`docs/gui.md`, The grid panel), and holding a photo open alone by itself, with no
-    /// thumbnail, since nothing of its folder is read. Each cell draws its thumbnail once it has come, and
-    /// those in sight without one are asked for (`thumbnails.rs`). Returns the action a
+    /// (`docs/gui.md`, The grid panel), and holding the photos open alone, just them, the
+    /// active one's cell active, with no thumbnails, since nothing of their folders is read.
+    /// Each cell draws its thumbnail once it has come, and those in sight without one are
+    /// asked for (`thumbnails.rs`). Returns the action a
     /// choice in the grid bar's menus, or its Labels, runs.
     fn grid_panel(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
@@ -4079,10 +4022,14 @@ impl App {
                 panel = panel.empty_hint(hint);
             }
             let output = panel.show(ui);
-            let clicked = match (output.action, listing) {
-                (Some(GridPanelAction::Open(i)), Some(listing)) => {
-                    // The photo open stays as it is when its own cell is pressed again.
-                    (active != Some(i)).then(|| listing.path.join(&photos[order[i]].name))
+            // The photo open stays as it is when its own cell is pressed again.
+            let clicked = match (output.action, listing, &mirror.folder.folder) {
+                (Some(GridPanelAction::Open(i)), _, _) if active == Some(i) => None,
+                (Some(GridPanelAction::Open(i)), Some(listing), _) => {
+                    Some(listing.path.join(&photos[order[i]].name))
+                }
+                (Some(GridPanelAction::Open(i)), None, folder::Folder::Alone { paths, .. }) => {
+                    paths.get(order[i]).cloned()
                 }
                 _ => None,
             };
@@ -4570,11 +4517,12 @@ impl App {
             self.carry_out_opening(dropped_opens(dropped), ctx);
         }
         self.drops.take(ctx, modal);
-        // What the system asked the app to open, Open With's, taken in `logic`, opens as a
-        // drop of it would, its folder with the photo active, once looked at; it waits for a
-        // modal dialog to go rather than being set aside, since nothing on the screen says it
-        // came. A drop's answer and Open With's in one frame both open, the later winning,
-        // and the second's refusal, if any, finds the alert busy and says nothing.
+        // What the system asked the app to open, Finder's, taken in `logic`, and the command
+        // line's paths, Open With's on Windows and Linux among them, open as a drop of them
+        // would, once looked at; they wait for a modal dialog to go rather than being set
+        // aside, since nothing on the screen says they came. A drop's answer and Open With's
+        // in one frame both open, the later winning, and the second's refusal, if any, finds
+        // the alert busy and says nothing.
         if !modal && let Some(opened) = self.opened.looked() {
             self.carry_out_opening(dropped_opens(opened), ctx);
         }
@@ -5111,12 +5059,10 @@ impl eframe::App for App {
         self.shell.recents.flush();
         // Restart now's: what is open, for the new start to open again, and whether the
         // graphics card or API changed this run, which `--safe-mode` gives way to.
-        let alone = match &self.mirror.folder.folder {
-            folder::Folder::Alone { path, .. } => Some(path.as_path()),
-            _ => None,
-        };
+        let alone = self.mirror.folder.alone_paths();
+        let active = self.mirror.folder.alone_active().map(|(photo, _)| photo);
         let last = self.shell.recents.last().map(|last| last.path.as_path());
-        let open = restart::Open::of(self.mirror.folder.root(), alone, last);
+        let open = restart::Open::of(self.mirror.folder.root(), alone, active, last);
         let started = &self.hardware.started;
         let changed = recovery::graphics()
             .into_iter()
@@ -5129,7 +5075,8 @@ impl eframe::App for App {
 /// What an open dialog's answer, or a drop, opens.
 #[derive(Debug, PartialEq)]
 enum Opens {
-    Photo(PathBuf),
+    /// Photos alone, together, the first active.
+    Photos(Vec<PathBuf>),
     Folder(PathBuf),
 }
 
@@ -5137,43 +5084,36 @@ enum Opens {
 /// list.
 type SendCommand<'a> = dyn FnMut(Command) -> u64 + 'a;
 
-/// What the command line named, `open`, opened at the start: a folder in folder mode, or a
-/// raw alone (`docs/library.md`, One photo), where no folder is listed, nothing enters the
-/// recents, and the grid panel holds the photo by itself; nothing is written but its edit,
-/// once something in it changes.
-fn started(open: Start, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
-    match open {
-        Start::Folder(path) => open_folder(path, mirror, send),
-        Start::Photo(path) => {
-            mirror.folder.alone(path.clone());
-            let open = send(Command::Open(path.clone()));
-            mirror.opening(path, open, Instant::now());
-        }
+/// Opens the photos at `paths` alone, together, the first active (`docs/library.md`, One
+/// photo), by any route: File › Open…, a drop, Open With, a double-click, the command line.
+/// No folder is listed, nothing enters the recents or what was open last, and the grid
+/// panel holds just them; nothing is written but their edits, once something in one
+/// changes. A folder open, the one the photos came from among them, is closed first, so
+/// folder mode ends; the first photo opens in place of the photo open, the session saving
+/// that one's edit as it saves any photo it leaves. No path, nothing.
+fn open_alone(paths: Vec<PathBuf>, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    let Some(first) = paths.first().cloned() else {
+        return;
+    };
+    if !matches!(
+        mirror.folder.folder,
+        folder::Folder::None | folder::Folder::Alone { .. }
+    ) {
+        let close = send(Command::Library(LibraryCommand::Close));
+        mirror.folder.closing(close);
     }
+    mirror.folder.alone(paths);
+    let open = send(Command::Open(first.clone()));
+    mirror.opening(first, open, Instant::now());
 }
 
-/// Opens the raw at `path` in place of the photo open, and its folder behind it
-/// (`docs/gui.md`, File): where that folder is the root or inside its tree, chosen there
-/// as a click in the tree chooses it, through [`change_folder`], the root and the recents
-/// staying, unless it is active already; elsewhere opened as a way in that makes it the
-/// tree's root and a recent. From a photo alone it opens folder mode.
-fn open_photo(
-    path: PathBuf,
-    remembered: &mut Remembered,
-    mirror: &mut Mirror,
-    send: &mut SendCommand<'_>,
-) {
-    let folder = mirror.folder.to_show(&path);
+/// Opens the raw at `path`, one of the grid panel's, in place of the photo open, as a click
+/// in the grid panel does: the folder, or the photos alone, stay as they are. The session
+/// saves the open photo's edit first, if anything in it is not on disk yet, and reads the
+/// new photo's from beside it.
+fn open_listed(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     let open = send(Command::Open(path.clone()));
     mirror.opening(path, open, Instant::now());
-    match folder {
-        Some(folder::Show::Open(folder)) => open_folder(folder, mirror, send),
-        // The photo is that folder's, so it stays, and none is waited for.
-        Some(folder::Show::Choose(folder)) => {
-            change_folder(folder, FolderChange::Choose, None, remembered, mirror, send);
-        }
-        None => {}
-    }
 }
 
 /// Opens the folder at `path` in the library, its photos going into the grid panel, a way
@@ -5549,12 +5489,14 @@ fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opening> {
     }
 }
 
-/// What a drop opens: the folder, or the first raw, with its folder, the others to be
-/// selected with it as Open…'s are; or the first path, with why nothing opens.
+/// What a drop opens: the folder, or the raws alone, together, the first active; or the
+/// first path, with why nothing opens.
 fn dropped_opens(dropped: dropped::Dropped) -> Opening {
     match dropped {
         dropped::Dropped::Folder(path) => Ok(Opens::Folder(path)),
-        dropped::Dropped::Raws { first, .. } => Ok(Opens::Photo(first)),
+        dropped::Dropped::Raws { first, others } => Ok(Opens::Photos(
+            std::iter::once(first).chain(others).collect(),
+        )),
         dropped::Dropped::Refused { path, why } => Err((path, why)),
     }
 }
@@ -6851,100 +6793,52 @@ mod tests {
     }
 
     fn read(line: &[&str]) -> Result<Arguments, String> {
-        arguments(line.iter().map(OsString::from), on_disk)
+        arguments(line.iter().map(OsString::from))
     }
 
-    /// What the disk would say of a path, by its name, as `dropped`'s tests have it: a
-    /// folder where it has no dot; nothing there where it names `missing`.
-    fn on_disk(path: &Path) -> std::io::Result<dropped::Kind> {
-        if path.to_string_lossy().contains("missing") {
-            return Err(std::io::ErrorKind::NotFound.into());
-        }
-        Ok(dropped::tests::by_name(path))
+    /// `photo.ARW`, as the command line gives it: from the folder the app starts in.
+    fn photo_arw() -> Vec<PathBuf> {
+        vec![std::path::absolute("photo.ARW").expect("absolute")]
     }
 
-    /// `photo.ARW`, as the command line opens it alone: from the folder the app starts in.
-    fn photo_arw() -> Option<Start> {
-        let path = std::path::absolute("photo.ARW").expect("absolute");
-        Some(Start::Photo(path))
-    }
-
-    /// The path, a raw opening alone and a folder in folder mode, both absolute; a
-    /// library's or a project's file, another file and nothing there stop the start, saying
-    /// why; the other flags read as ever around it, and only the first path counts.
+    /// Every path given, absolute, wherever it comes among the flags, which are read as
+    /// ever around them. The disk is never asked here: what each is, a folder, a raw, an
+    /// edit, a library's file or nothing there, is looked at once the window is up, as a
+    /// drop's is (`dropped::Drops::look_given`). With none, nothing is given.
     #[test]
-    fn the_command_line_s_path_opens_a_photo_alone_or_a_folder() {
+    fn the_command_line_s_paths_are_kept_whole_and_the_disk_never_asked() {
         let absolute = |path: &str| std::path::absolute(path).expect("absolute");
-        assert_eq!(read(&["photo.ARW"]).expect("read").open, photo_arw());
-        let folder = read(&["--conf", "scale=2", "Trips/Lisbon", "-d", "settings"]);
-        let folder = folder.expect("read");
-        assert_eq!(folder.open, Some(Start::Folder(absolute("Trips/Lisbon"))));
-        assert_eq!(folder.conf, ["scale=2"]);
-        assert_eq!(folder.domains, ["settings"]);
-        let given = read(&["/photos/IMG_1.CR3", "--cache-dir=one", "/photos/IMG_2.CR3"]);
-        let given = given.expect("read");
-        let first = Some(Start::Photo(PathBuf::from("/photos/IMG_1.CR3")));
-        assert_eq!(given.open, first);
+        assert_eq!(read(&["photo.ARW"]).expect("read").paths, photo_arw());
+        let line = [
+            "--conf",
+            "scale=2",
+            "Trips/Lisbon",
+            "-d",
+            "settings",
+            "/a/IMG_2.CR3.apxmp",
+            "--cache-dir=one",
+            "/nowhere/Home.aplibrary",
+        ];
+        let given = read(&line).expect("read");
+        assert_eq!(
+            given.paths,
+            [
+                absolute("Trips/Lisbon"),
+                absolute("/a/IMG_2.CR3.apxmp"),
+                absolute("/nowhere/Home.aplibrary")
+            ]
+        );
+        assert_eq!(given.conf, ["scale=2"]);
+        assert_eq!(given.domains, ["settings"]);
         assert!(given.cache.is_some());
-        assert_eq!(read(&["-d", "gpu"]).expect("read").open, None);
-        for (line, error) in [
-            (
-                &["Home.aplibrary"][..],
-                "Home.aplibrary: libraries and projects come in a later version",
-            ),
-            (
-                &["--configdir", "dev", "Trip.approject"],
-                "Trip.approject: libraries and projects come in a later version",
-            ),
-            (
-                &["notes.txt"],
-                "notes.txt: only folders and raw photos open",
-            ),
-        ] {
-            assert_eq!(read(line), Err(error.to_owned()), "{line:?}");
-        }
-        let missing = read(&["missing.CR3"]).expect_err("nothing there");
-        assert!(missing.starts_with("missing.CR3: "), "{missing}");
-        // On the disk: a folder, a raw, and nothing there.
-        let scratch = settings::testing::Folder::new("command-line");
-        let raw = scratch.0.join("IMG_1.CR3");
-        std::fs::write(&raw, b"").expect("a raw");
-        let line = |path: &Path| [OsString::from(path)];
-        let found = |path: &Path| arguments(line(path), dropped::found).map(|a| a.open);
-        // Resolved where the system resolves them; on Windows only made absolute.
-        let resolved = |path: &Path| {
-            if cfg!(windows) {
-                path.to_owned()
-            } else {
-                std::fs::canonicalize(path).expect("there")
-            }
-        };
-        let folder = resolved(&scratch.0);
-        assert_eq!(found(&scratch.0), Ok(Some(Start::Folder(folder.clone()))));
-        let photo = Some(Start::Photo(folder.join("IMG_1.CR3")));
-        assert_eq!(found(&raw), Ok(photo.clone()));
-        assert!(found(&scratch.0.join("IMG_2.CR3")).is_err());
-        // `.` and `..` lead to the folder they name, the photo in it; on Windows making
-        // the path absolute resolves them.
-        let days = scratch.0.join("Days");
-        std::fs::create_dir(&days).expect("a folder");
-        for dots in [scratch.0.join("."), days.join("..")] {
-            let given = Ok(Some(Start::Folder(folder.clone())));
-            assert_eq!(found(&dots), given, "{}", dots.display());
-        }
-        assert_eq!(found(&days.join("..").join("IMG_1.CR3")), Ok(photo));
+        assert!(read(&["-d", "gpu"]).expect("read").paths.is_empty());
     }
 
-    /// `--in-folder FILE...`: every path given, absolute, wherever the flag comes, the other
-    /// flags read as ever and the disk never asked here, so a library's file or a missing
-    /// one is refused later, in the window; with none, as a desktop entry's `%F` started
-    /// from a menu gives, nothing opens.
+    /// `--in-folder`, which earlier nightly builds' registrations passed before the files,
+    /// is ignored wherever it comes, the files read as any path, and left out of the usage,
+    /// which names several files.
     #[test]
-    fn in_folder_takes_every_file_given_and_asks_nothing_of_the_disk() {
-        let unasked = |path: &Path| -> std::io::Result<dropped::Kind> {
-            panic!("the disk asked of {}", path.display())
-        };
-        let read = |line: &[&str]| arguments(line.iter().map(OsString::from), unasked);
+    fn in_folder_is_ignored_and_left_out_of_the_usage() {
         let absolute = |path: &str| std::path::absolute(path).expect("absolute");
         let line = [
             "IMG_1.CR3",
@@ -6955,13 +6849,14 @@ mod tests {
         ];
         let given = read(&line).expect("read");
         assert_eq!(
-            given.in_folder,
+            given.paths,
             [absolute("IMG_1.CR3"), absolute("/a/IMG_2.CR3")]
         );
-        assert_eq!((given.open, given.conf), (None, vec!["scale=2".to_owned()]));
-        let refused_later = read(&["--in-folder", "/a/Home.aplibrary", "/nowhere/x.CR3"]);
-        assert_eq!(refused_later.expect("read").in_folder.len(), 2);
+        let flags: Vec<OsString> = vec!["--conf".into(), "scale=2".into()];
+        assert_eq!(given.flags, flags);
         assert_eq!(read(&["--in-folder"]), Ok(Arguments::default()));
+        assert!(!USAGE.contains(IN_FOLDER_FLAG));
+        assert!(USAGE.contains("[FILE... | FOLDER]"));
     }
 
     /// `--safe-mode` and the hidden `--reopen-last` are read anywhere; the flags a restart
@@ -6987,7 +6882,7 @@ mod tests {
         let given = read(&line).expect("read");
         assert!(given.safe_mode);
         assert_eq!(given.reopen, Some(true));
-        assert_eq!(given.open, photo_arw());
+        assert_eq!(given.paths, photo_arw());
         let kept: Vec<OsString> = vec![
             "-d".into(),
             "gpu".into(),
@@ -7000,11 +6895,8 @@ mod tests {
             "~/cache".into(),
         ];
         assert_eq!(given.flags, kept);
-        let unasked = |path: &Path| -> std::io::Result<dropped::Kind> {
-            panic!("the disk asked of {}", path.display())
-        };
         let line = ["--in-folder", "/a/IMG_2.CR3", "--debug", "settings"];
-        let given = arguments(line.map(OsString::from), unasked).expect("read");
+        let given = read(&line).expect("read");
         let debug: Vec<OsString> = vec!["--debug".into(), "settings".into()];
         assert_eq!(
             (given.flags, given.safe_mode, given.reopen),
@@ -7021,9 +6913,10 @@ mod tests {
         );
     }
 
-    /// What Open With gave the app opens as a drop of it would, once looked at: a raw as
-    /// Open… opens it, a library's file refused with the alert in the window. Unlike a
-    /// drop, it waits for a modal dialog to go, and then opens.
+    /// What Open With gave the app, and the command line's paths, open as a drop of them
+    /// would, once looked at: a raw as Open… opens it, a library's file refused with the
+    /// alert in the window, a folder, resolved, as Open Folder… opens it. Unlike a drop,
+    /// they wait for a modal dialog to go, and then open.
     #[test]
     fn open_with_s_files_open_as_a_drop_and_wait_for_a_modal_dialog() {
         let folder = settings::testing::Folder::new("open-with");
@@ -7053,54 +6946,71 @@ mod tests {
         assert!(harness.state().commands.is_empty());
         harness.state_mut().shell.about = about::About::default();
         harness.run();
-        assert_eq!(harness.state().commands, [Command::Open(raw)]);
-    }
-
-    /// A photo that is a link opens under its own name, in the folder where the link lies,
-    /// never as the file it points to.
-    #[cfg(unix)]
-    #[test]
-    fn a_photo_that_is_a_link_keeps_its_name_and_its_folder() {
-        let scratch = settings::testing::Folder::new("command-line-link");
-        let (photos, elsewhere) = (scratch.0.join("Photos"), scratch.0.join("Elsewhere"));
-        for folder in [&photos, &elsewhere] {
-            std::fs::create_dir(folder).expect("a folder");
+        assert_eq!(harness.state().commands, [Command::Open(raw.clone())]);
+        // The command line's folder, `.` and all.
+        harness.state_mut().commands.clear();
+        let ctx = harness.ctx.clone();
+        let given = vec![folder.0.join(".")];
+        harness.state_mut().opened.look_given(given, &ctx);
+        harness.state_mut().opened.wait();
+        harness.run();
+        let resolved = if cfg!(windows) {
+            folder.0.clone()
+        } else {
+            std::fs::canonicalize(&folder.0).expect("there")
+        };
+        let source = Source::Folder(resolved.clone());
+        let open = Command::Library(LibraryCommand::Open(source));
+        assert_eq!(harness.state().commands, [open]);
+        // Raws from two folders, as Open With hands them over, Finder's and the command
+        // line's: all of them alone, together, the first active, the folder open closed.
+        let trip = folder.0.join("Trip");
+        std::fs::create_dir(&trip).expect("a folder");
+        let (two, three) = (trip.join("IMG_2.CR3"), folder.0.join("IMG_3.CR3"));
+        for file in [&two, &three] {
+            std::fs::write(file, b"").expect("a raw");
         }
-        let raw = elsewhere.join("IMG_1.CR3");
-        std::fs::write(&raw, b"").expect("a raw");
-        let link = photos.join("Best.CR3");
-        std::os::unix::fs::symlink(&raw, &link).expect("a link");
-        let open = arguments([OsString::from(&link)], dropped::found).expect("read");
-        let folder = std::fs::canonicalize(&photos).expect("there");
-        assert_eq!(open.open, Some(Start::Photo(folder.join("Best.CR3"))));
+        let given = [raw.clone(), two.clone(), three.clone()];
+        let ctx = harness.ctx.clone();
+        harness.state_mut().commands.clear();
+        harness.state_mut().opened.look_given(given.to_vec(), &ctx);
+        harness.state_mut().opened.wait();
+        harness.run();
+        let photos = [
+            resolved.join("IMG_1.CR3"),
+            resolved.join("Trip").join("IMG_2.CR3"),
+            resolved.join("IMG_3.CR3"),
+        ];
+        let close = Command::Library(LibraryCommand::Close);
+        let first = Command::Open(photos[0].clone());
+        assert_eq!(harness.state().commands, [close, first]);
+        assert_eq!(harness.state().mirror.folder.alone_paths(), photos);
+        harness.state_mut().commands.clear();
+        opened(&mut harness, &[&three, &two]);
+        assert_eq!(harness.state().commands, [Command::Open(three.clone())]);
+        assert_eq!(harness.state().mirror.folder.alone_paths(), [three, two]);
     }
 
-    /// What `open`, the command line's, sends as the app starts, `App::new` needing a
-    /// session and a GPU: the commands, numbered from 1.
-    fn started_with(open: Start, mirror: &mut Mirror) -> Vec<Command> {
-        let mut sent = Vec::new();
-        started(open, mirror, &mut |command| {
-            sent.push(command);
-            sent.len() as u64
-        });
-        sent
-    }
-
-    /// `apertrust FILE`: the photo alone is the one command, no library command is sent,
-    /// so nothing is listed, and nothing of the photo's own events reaches the recents,
-    /// which the folder's opening alone adds to (`Reaction::FolderOpened`); the recents'
-    /// file stays as it was.
+    /// Photos opened alone, by any route, from two folders: the first opened is the one
+    /// command, no library command is sent, so nothing is listed, and nothing of the photo's
+    /// own events reaches the recents, which a folder's opening alone adds to
+    /// (`Reaction::FolderOpened`); the recents' file stays as it was. The grid panel holds
+    /// just them, and a click on another opens it, the photos staying. With none, nothing.
     #[test]
-    fn a_photo_alone_sends_no_library_command_and_leaves_the_recents_untouched() {
+    fn photos_alone_send_no_library_command_and_leave_the_recents_untouched() {
         let scratch = settings::testing::Folder::new("alone-recents");
         let file = scratch.0.join("state.toml");
         let (mut recents, _) = Recents::open(file.clone(), Vec::new);
         recents.flush();
         let before = std::fs::read(&file).ok();
         let mut m = mirror::tests::mirror();
-        let path = PathBuf::from("/photos/a.ARW");
-        let sent = started_with(Start::Photo(path.clone()), &mut m);
-        assert_eq!(sent, [Command::Open(path)]);
+        let (a, b) = (
+            PathBuf::from("/photos/a.ARW"),
+            PathBuf::from("/trips/b.ARW"),
+        );
+        let mut sent = Vec::new();
+        open_alone(vec![a.clone(), b.clone()], &mut m, &mut sender(&mut sent));
+        assert_eq!(sent, [Command::Open(a.clone())]);
         let mut reactions = m.apply(Event::Opened(mirror::tests::photo(1)));
         reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, 1))));
         for reaction in reactions {
@@ -7112,11 +7022,16 @@ mod tests {
         recents.flush();
         assert_eq!(recents.entries().count(), 0);
         assert_eq!(std::fs::read(&file).ok(), before);
-        // `apertrust FOLDER` lists the folder, and opens no photo.
-        let folder = PathBuf::from("/photos");
-        let sent = started_with(Start::Folder(folder.clone()), &mut mirror::tests::mirror());
-        let source = Source::Folder(folder);
-        assert_eq!(sent, [Command::Library(LibraryCommand::Open(source))]);
+        assert_eq!(m.folder.photos().len(), 2);
+        assert_eq!((m.folder.root(), m.folder.shown()), (None, None));
+        assert_eq!(m.folder.active_shown(), Some(0));
+        open_listed(b.clone(), &mut m, &mut sender(&mut sent));
+        assert_eq!(sent[1..], [Command::Open(b.clone())]);
+        assert_eq!(m.folder.alone_paths(), [a, b]);
+        assert_eq!(m.folder.active_shown(), Some(1));
+        let mut none = Vec::new();
+        open_alone(Vec::new(), &mut m, &mut sender(&mut none));
+        assert!(none.is_empty());
     }
 
     /// A list of the commands sent, numbered from 1, and what sends to it.
@@ -7156,12 +7071,7 @@ mod tests {
         let mut sent = Vec::new();
         let folder = PathBuf::from("/photos");
         open_folder(folder.clone(), &mut m, &mut sender(&mut sent));
-        open_photo(
-            folder.join("a.ARW"),
-            &mut Remembered::default(),
-            &mut m,
-            &mut sender(&mut sent),
-        );
+        open_listed(folder.join("a.ARW"), &mut m, &mut sender(&mut sent));
         m.apply(Event::Opened(mirror::tests::photo(2)));
         assert!(!shows_start(opened(&m), false, false, false));
         sent.clear();
@@ -7181,12 +7091,7 @@ mod tests {
         assert!(matches!(m.photo, PhotoState::None));
         // Another photo opened takes its events again.
         let mut more = Vec::new();
-        open_photo(
-            folder.join("a.ARW"),
-            &mut Remembered::default(),
-            &mut m,
-            &mut sender(&mut more),
-        );
+        open_listed(folder.join("a.ARW"), &mut m, &mut sender(&mut more));
         m.apply(Event::Opened(mirror::tests::photo(1)));
         assert!(matches!(m.photo, PhotoState::Open(_)));
         // Nothing open: nothing to close.
@@ -7208,12 +7113,7 @@ mod tests {
         open_folder(at.clone(), &mut m, &mut sender(&mut sent));
         m.apply(folder_opened(1, &at));
         m.apply(listed(1, &["R0001175.DNG", "R0001176.DNG"], true));
-        open_photo(
-            at.join("R0001176.DNG"),
-            &mut Remembered::default(),
-            &mut m,
-            &mut sender(&mut sent),
-        );
+        open_listed(at.join("R0001176.DNG"), &mut m, &mut sender(&mut sent));
         let mut remembered = Remembered::default();
         remembered.remember(&m);
         (m, sent, remembered, at)
@@ -7408,12 +7308,7 @@ mod tests {
         // A cell clicked before the listing holds it.
         let (mut m, mut sent, mut remembered, at) = waiting_for_at();
         let clicked = at.join("R0001175.DNG");
-        open_photo(
-            clicked.clone(),
-            &mut remembered,
-            &mut m,
-            &mut sender(&mut sent),
-        );
+        open_listed(clicked.clone(), &mut m, &mut sender(&mut sent));
         assert_eq!(sent[5..], [Command::Open(clicked.clone())]);
         m.apply(folder_opened(5, &at));
         m.apply(listed(5, &["R0001175.DNG", "R0001176.DNG"], true));
@@ -7496,7 +7391,8 @@ mod tests {
     #[test]
     fn the_photo_s_own_folder_keeps_it_whatever_its_path_is_written_as() {
         let mut m = mirror::tests::mirror();
-        started_with(Start::Photo(PathBuf::from("/photos/a.ARW")), &mut m);
+        let alone = vec![PathBuf::from("/photos/a.ARW")];
+        open_alone(alone, &mut m, &mut sender(&mut Vec::new()));
         let (mut sent, mut remembered) = (Vec::new(), Remembered::default());
         let folder = PathBuf::from("/photos");
         let way_in = FolderChange::WayIn;
@@ -7524,12 +7420,7 @@ mod tests {
         m.apply(folder_opened(1, &absolute));
         m.apply(listed(1, &["x.ARW"], true));
         let photo = absolute.join("x.ARW");
-        open_photo(
-            photo.clone(),
-            &mut remembered,
-            &mut m,
-            &mut sender(&mut sent),
-        );
+        open_listed(photo.clone(), &mut m, &mut sender(&mut sent));
         let choose = FolderChange::Choose;
         change_folder(
             relative,
@@ -7695,13 +7586,13 @@ mod tests {
         assert_eq!(photo_shown(&m), None);
     }
 
-    /// File › Open… of a raw in the open root's tree keeps the root and the recents: its
-    /// folder is chosen there, as a click in the tree chooses it, and the raw opens; the
-    /// root's own raw chooses the root. A raw elsewhere opens its folder as a way in, the
-    /// tree's root and a recent.
+    /// A photo opened by File › Open…, a drop or Open With from the folder already open, or
+    /// from inside its tree, or elsewhere, opens alone all the same (decision 46): the folder
+    /// is closed through the library, Browse loses its root and tree, the grid panel holds
+    /// the photo by itself, and nothing reaches the recents, what was open last staying as
+    /// it was; what the folder's reading still sends changes nothing, nor does its close.
     #[test]
-    fn a_raw_opened_inside_the_root_s_tree_chooses_its_folder_there() {
-        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+    fn a_photo_opened_from_the_folder_open_opens_alone() {
         let joins = |reactions: Vec<Reaction>| {
             reactions
                 .into_iter()
@@ -7711,43 +7602,72 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        // In a subfolder of the root.
-        let other = at.join("Other");
-        let raw = other.join("x.dng");
-        open_photo(raw.clone(), &mut remembered, &mut m, &mut sender(&mut sent));
-        let chosen = Command::Library(LibraryCommand::Open(Source::Folder(other.clone())));
-        assert_eq!(sent[2..], [Command::Open(raw.clone()), chosen]);
-        assert_eq!(m.folder.root(), Some(at.as_path()));
-        assert_eq!(m.folder.shown(), Some(other.as_path()));
-        assert!(joins(m.apply(folder_opened(4, &other))).is_empty());
-        assert_eq!(photo_shown(&m), Some(raw.as_path()));
+        let kept = recents::Last {
+            kind: recents::OpenKind::Folder,
+            path: PathBuf::from("/photos/AT"),
+            folder: None,
+            photo: Some("R0001176.DNG".to_owned()),
+        };
+        for chosen in ["R0001175.DNG", "Other/x.dng", "../Else/y.dng"] {
+            let (mut m, mut sent, _, at) = at_with_its_photo();
+            let before = sent.len();
+            let raw = at.join(chosen);
+            open_alone(vec![raw.clone()], &mut m, &mut sender(&mut sent));
+            let close = Command::Library(LibraryCommand::Close);
+            assert_eq!(
+                sent[before..],
+                [close, Command::Open(raw.clone())],
+                "{chosen}"
+            );
+            assert_eq!((m.folder.root(), m.folder.shown()), (None, None));
+            assert_eq!(m.folder.alone_paths(), std::slice::from_ref(&raw));
+            assert_eq!(photo_shown(&m), Some(raw.as_path()));
+            let mut reactions = m.apply(listed(1, &["R0001177.DNG"], true));
+            reactions.extend(m.apply(folder_opened(1, &at)));
+            // The close's own `Closed`, which the latest command's number lets through.
+            let closed = before as u64 + 1;
+            assert_eq!(m.folder.latest(), closed);
+            let closed = LibraryEvent::Closed { open: closed };
+            reactions.extend(m.apply(Event::Library(closed)));
+            assert!(joins(reactions).is_empty(), "{chosen}");
+            assert!(matches!(m.folder.folder, folder::Folder::Alone { .. }));
+            assert_eq!(m.folder.photos().len(), 1);
+            assert_eq!(m.folder.active_shown(), Some(0));
+            assert_eq!(at_exit(kept.clone(), None, &m), kept, "{chosen}");
+        }
+    }
+
+    /// Leaving folder mode for photos alone, what was open last keeps the folder of the
+    /// root's tree and the photo active then, as `App::open_alone` keeps them before the
+    /// folder closes, and the end leaves them so.
+    #[test]
+    fn photos_alone_in_place_of_a_folder_keep_its_active_folder_and_photo_as_last() {
+        let (mut m, mut sent, _, at) = at_with_its_photo();
+        let day = at.join("Day 2");
+        choose_folder(day.clone(), &mut m, &mut sender(&mut sent));
+        let chosen = sent.len() as u64;
+        m.apply(folder_opened(chosen, &day));
+        m.apply(listed(chosen, &["x.ARW"], true));
+        open_listed(day.join("x.ARW"), &mut m, &mut sender(&mut sent));
+        let mut shell = opened_on("photos");
         let kept = recents::Last {
             kind: recents::OpenKind::Folder,
             path: at.clone(),
             folder: None,
-            photo: None,
+            photo: Some("R0001176.DNG".to_owned()),
         };
-        let left = at_exit(kept, None, &m);
-        assert_eq!((left.path, left.folder), (at.clone(), Some(other.clone())));
-        assert_eq!(left.photo.as_deref(), Some("x.dng"));
-
-        // The root's own raw: the root chosen again, still no recent.
-        let own = at.join("R0001175.DNG");
-        open_photo(own.clone(), &mut remembered, &mut m, &mut sender(&mut sent));
-        let root = Command::Library(LibraryCommand::Open(Source::Folder(at.clone())));
-        assert_eq!(sent[4..], [Command::Open(own.clone()), root]);
-        assert!(joins(m.apply(folder_opened(6, &at))).is_empty());
-        assert_eq!(m.folder.root(), Some(at.as_path()));
-        assert_eq!(photo_shown(&m), Some(own.as_path()));
-
-        // Outside the tree: a way in, the new root and a recent.
-        let elsewhere = PathBuf::from("/photos/Else");
-        let raw = elsewhere.join("y.dng");
-        open_photo(raw.clone(), &mut remembered, &mut m, &mut sender(&mut sent));
-        let opened = Command::Library(LibraryCommand::Open(Source::Folder(elsewhere.clone())));
-        assert_eq!(sent[6..], [Command::Open(raw), opened]);
-        assert_eq!(m.folder.root(), Some(elsewhere.as_path()));
-        assert_eq!(joins(m.apply(folder_opened(8, &elsewhere))), [elsewhere]);
+        shell.recents.set_last(Some(kept.clone()));
+        keep_at_exit(&mut shell.recents, None, None, &m);
+        let elsewhere = vec![PathBuf::from("/trips/y.ARW")];
+        open_alone(elsewhere, &mut m, &mut sender(&mut sent));
+        let left = recents::Last {
+            folder: Some(day),
+            photo: Some("x.ARW".to_owned()),
+            ..kept
+        };
+        assert_eq!(shell.recents.last(), Some(&left));
+        keep_at_exit(&mut shell.recents, None, None, &m);
+        assert_eq!(shell.recents.last(), Some(&left), "the end");
     }
 
     /// What was open last: the root `/photos/Wedding`, with the folder of its tree and the
@@ -7866,7 +7786,7 @@ mod tests {
         let mut m = mirror::tests::mirror();
         let alone = PathBuf::from("/photos/Other/x.ARW");
         let mut sent = Vec::new();
-        started(Start::Photo(alone), &mut m, &mut sender(&mut sent));
+        open_alone(vec![alone], &mut m, &mut sender(&mut sent));
         for reaction in m.apply(Event::Opened(mirror::tests::photo(1))) {
             if let Reaction::FolderOpened(path) = reaction {
                 shell.remember_folder(path);
@@ -7926,12 +7846,7 @@ mod tests {
         let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
         let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
         m.apply(folder_opened(1, &kept.path));
-        open_photo(
-            kept.path.join("a.ARW"),
-            &mut Remembered::default(),
-            &mut m,
-            &mut sender(&mut sent),
-        );
+        open_listed(kept.path.join("a.ARW"), &mut m, &mut sender(&mut sent));
         m.apply(listed(1, &["a.ARW", "b.ARW"], true));
         reopened(&mut reopening, &mut m, &mut sender(&mut sent));
         assert_eq!(sent.len(), 2, "{sent:?}");
@@ -8049,15 +7964,19 @@ mod tests {
         assert!(starts(None, true), "nothing kept");
         assert!(starts(Some(&kept), false), "reopen off");
         assert!(!starts(Some(&kept), true), "what was open last reopening");
-        for given in [
-            Start::Photo(PathBuf::from("/photos/a.ARW")),
-            Start::Folder(PathBuf::from("/photos")),
-        ] {
-            let mut m = mirror::tests::mirror();
-            started_with(given, &mut m);
-            assert!(!shows_start(opened(&m), false, false, false));
-        }
-        // `--in-folder`'s or Finder's files, looked at off this thread, then refused.
+        let mut m = mirror::tests::mirror();
+        let alone = vec![PathBuf::from("/photos/a.ARW")];
+        open_alone(alone, &mut m, &mut sender(&mut Vec::new()));
+        assert!(!shows_start(opened(&m), false, false, false));
+        let mut m = mirror::tests::mirror();
+        open_folder(
+            PathBuf::from("/photos"),
+            &mut m,
+            &mut sender(&mut Vec::new()),
+        );
+        assert!(!shows_start(opened(&m), false, false, false));
+        // The command line's paths or Finder's files, looked at off this thread, then
+        // refused.
         let nothing = opened(&mirror::tests::mirror());
         assert!(!shows_start(nothing, true, false, false));
         assert!(!shows_start(nothing, false, true, false));
@@ -8390,28 +8309,22 @@ mod tests {
         assert_eq!(shell.open_recent.take(), Some(newer));
     }
 
-    /// Open… from a photo alone opens folder mode: the photo chosen and its folder behind
-    /// it, whether it is another of the folder's photos or the one alone again.
+    /// Open… from photos alone opens the photos chosen alone in their place, another of
+    /// the folder's or the one alone again, no folder listed behind them.
     #[test]
-    fn open_from_a_photo_alone_opens_its_folder() {
-        let folder = PathBuf::from("/photos");
-        let listed = || Command::Library(LibraryCommand::Open(Source::Folder(folder.clone())));
+    fn open_from_a_photo_alone_opens_the_photos_chosen_alone() {
         for chosen in ["/photos/b.ARW", "/photos/a.ARW"] {
             let mut m = mirror::tests::mirror();
-            started_with(Start::Photo(PathBuf::from("/photos/a.ARW")), &mut m);
             let mut sent = Vec::new();
+            let alone = vec![PathBuf::from("/photos/a.ARW")];
+            open_alone(alone, &mut m, &mut sender(&mut sent));
             let chosen = PathBuf::from(chosen);
-            open_photo(
-                chosen.clone(),
-                &mut Remembered::default(),
-                &mut m,
-                &mut |command| {
-                    sent.push(command);
-                    sent.len() as u64 + 1
-                },
-            );
-            assert_eq!(sent, [Command::Open(chosen), listed()]);
-            assert_eq!(m.folder.shown(), Some(folder.as_path()));
+            let others = PathBuf::from("/trips/c.ARW");
+            let paths = vec![chosen.clone(), others.clone()];
+            open_alone(paths, &mut m, &mut sender(&mut sent));
+            assert_eq!(sent[1..], [Command::Open(chosen.clone())]);
+            assert_eq!(m.folder.alone_paths(), [chosen, others]);
+            assert_eq!(m.folder.shown(), None);
         }
     }
 
@@ -8424,8 +8337,7 @@ mod tests {
         assert_eq!(
             read(&["-d", "settings", "--user-data-dir", "dev", "photo.ARW"]),
             Ok(Arguments {
-                open: photo_arw(),
-                in_folder: Vec::new(),
+                paths: photo_arw(),
                 domains: vec!["settings".to_owned()],
                 user_data: given("--user-data-dir", "dev"),
                 cache: None,
@@ -8457,7 +8369,7 @@ mod tests {
         let last = read(&["--configdir", "one", "photo.ARW", "--user-data-dir=two"]);
         let last = last.expect("read");
         assert_eq!(last.user_data, given("--user-data-dir", "two"));
-        assert_eq!(last.open, photo_arw());
+        assert_eq!(last.paths, photo_arw());
         // A flag without its folder stops the start, so the platform's is never used for it.
         assert_eq!(
             read(&["photo.ARW", "--config-dir"]),
@@ -8479,7 +8391,7 @@ mod tests {
         let read_ = read(&line).expect("read");
         assert_eq!(read_.cache, given("--cache-dir", "one"));
         assert_eq!(read_.user_data.map(|given| given.flag), Some("--configdir"));
-        assert_eq!(read_.open, photo_arw());
+        assert_eq!(read_.paths, photo_arw());
         for flag in folders::CACHE_FLAGS {
             let apart = read(&[flag, "dev"]).expect("read");
             assert_eq!(apart.cache, given(flag, "dev"));
@@ -8508,7 +8420,7 @@ mod tests {
         ];
         let read_ = read(&line).expect("read");
         assert_eq!(read_.conf, ["scale=1.5", "theme=light", "scale=2"]);
-        assert_eq!(read_.open, photo_arw());
+        assert_eq!(read_.paths, photo_arw());
         // A value with `=` in it, as a table's, keeps it.
         let table = read(&["--conf=keys={ undo = [\"Ctrl+K\"] }"]).expect("read");
         assert_eq!(table.conf, ["keys={ undo = [\"Ctrl+K\"] }"]);
@@ -8525,12 +8437,9 @@ mod tests {
             use std::os::unix::ffi::OsStringExt;
             let not_utf8 = |arg: &[u8]| OsString::from_vec(arg.to_vec());
             let error = Err("--conf edit.tab=\u{FFFD}: not UTF-8".to_owned());
-            assert_eq!(
-                arguments([not_utf8(b"--conf=edit.tab=\xff")], on_disk),
-                error
-            );
+            assert_eq!(arguments([not_utf8(b"--conf=edit.tab=\xff")]), error);
             let apart = ["--conf".into(), not_utf8(b"edit.tab=\xff")];
-            assert_eq!(arguments(apart, on_disk), error);
+            assert_eq!(arguments(apart), error);
         }
     }
 
@@ -8545,7 +8454,7 @@ mod tests {
             folder.clone().into(),
             "photo.ARW".into(),
         ];
-        let given = arguments(line, on_disk).expect("read").user_data;
+        let given = arguments(line).expect("read").user_data;
         let folders = Folders::find(given, None, false)
             .expect("usable")
             .expect("a folder");
@@ -11283,10 +11192,14 @@ mod tests {
         host: FakeHost,
         /// What was dropped, while it is looked at.
         drops: dropped::Drops,
-        /// The files the system asked the app to open, Open With's, while they are looked at.
+        /// The files the system asked the app to open, and the command line's paths, while
+        /// they are looked at.
         opened: dropped::Drops,
         /// Each drop or Open… that opened nothing: the path it names, and why.
         refused: Vec<(PathBuf, dropped::Refusal)>,
+        /// What the app's mirror makes of what opens, through `open_alone` and
+        /// `open_folder`, as `carry_out_opening` opens it.
+        mirror: Mirror,
         /// The alert up, and what each refusal's asking of it came to.
         alerts: alerts::Alerts,
         asked: Vec<dialog_host::Ask>,
@@ -11449,15 +11362,19 @@ mod tests {
                     // The app's own start and answer, `App` needing a session and a GPU.
                     let start = dialogs::locate_start(asked.as_ref());
                     let folder = || start.unwrap_or_else(pictures);
-                    let opens = |opens| match opens {
-                        Opens::Photo(path) => Command::Open(path),
-                        Opens::Folder(path) => {
-                            Command::Library(LibraryCommand::Open(Source::Folder(path)))
-                        }
-                    };
                     // What Open… or a drop opens, or the alert asked, as `carry_out_opening`.
                     let carry_out = |bench: &mut Bench, opening: super::Opening| match opening {
-                        Ok(chosen) => bench.commands.push(opens(chosen)),
+                        Ok(chosen) => {
+                            let commands = &mut bench.commands;
+                            let send = &mut |command| {
+                                commands.push(command);
+                                commands.len() as u64
+                            };
+                            match chosen {
+                                Opens::Photos(paths) => open_alone(paths, &mut bench.mirror, send),
+                                Opens::Folder(path) => open_folder(path, &mut bench.mirror, send),
+                            }
+                        }
                         Err((path, why)) => {
                             let request = alerts::refused_request(&ctx, &file_name(&path), why);
                             let purpose = alerts::Purpose::Refused;
@@ -11513,6 +11430,7 @@ mod tests {
                     drops: dropped::Drops::default(),
                     opened: dropped::Drops::default(),
                     refused: Vec::new(),
+                    mirror: mirror::tests::mirror(),
                     alerts: alerts::Alerts::default(),
                     asked: Vec::new(),
                 },
@@ -14001,7 +13919,7 @@ mod tests {
         let folder = settings::testing::Folder::new("restart-photo");
         let photo = folder.0.join("IMG_1.CR3");
         std::fs::write(&photo, b"").expect("a raw");
-        let open = restart::Open::Photo(photo.clone());
+        let open = restart::Open::Photos(vec![photo.clone()]);
         harness.state_mut().restart.ended(open, false);
         let expected: Vec<OsString> = vec![
             "-d".into(),
@@ -15032,23 +14950,24 @@ mod tests {
             assert!(harness.state().commands.is_empty(), "{os:?}");
             assert_eq!(harness.state().dialog.picks[1], dialogs::Pick::Files);
 
-            // The raw chosen opens through the session, a frame after the dialog asked; the
-            // app opens its folder behind it (`App::open`).
+            // The raw chosen opens through the session, a frame after the dialog asked, alone
+            // (`open_alone`).
             let raw = PathBuf::from("raws/IMG_2041.CR3");
             harness.state_mut().dialog.answer = Some(Some(vec![raw.clone()]));
             harness.run();
             assert_eq!(harness.state().commands, vec![Command::Open(raw)], "{os:?}");
 
-            // Of several from one folder, the first opens; the others wait for the grid
-            // panel's selection.
+            // Of several, the first opens, the others alone with it (`open_alone`).
             harness.state_mut().commands.clear();
             harness.key_press_modifiers(command, Key::O);
             harness.run();
-            let raws = ["raws/IMG_2043.CR3", "raws/IMG_2042.CR3"].map(PathBuf::from);
+            let raws = ["raws/IMG_2043.CR3", "other/IMG_2042.CR3"].map(PathBuf::from);
             harness.state_mut().dialog.answer = Some(Some(raws.to_vec()));
             harness.run();
             let first = Command::Open(raws[0].clone());
             assert_eq!(harness.state().commands, vec![first], "{os:?}");
+            let alone = harness.state().mirror.folder.alone_paths();
+            assert_eq!(alone, raws, "{os:?}");
         }
     }
 
@@ -15088,16 +15007,21 @@ mod tests {
         // A folder; of two, the first.
         drop_onto(&mut harness, &[&wedding]);
         drop_onto(&mut harness, &[&portraits, &wedding]);
-        // Raws: the first, from its folder, the others from it to be selected with it.
+        // Raws from two folders: all of them alone, together, the first open and active,
+        // the folder open closed.
         drop_onto(&mut harness, &[&raws[0], &raws[1], &raws[2]]);
         assert_eq!(
             harness.state().commands,
             vec![
                 open_folder(&wedding),
                 open_folder(&portraits),
+                Command::Library(LibraryCommand::Close),
                 Command::Open(raws[0].clone())
             ]
         );
+        let folder = &harness.state().mirror.folder;
+        assert_eq!(folder.alone_paths(), raws);
+        assert_eq!(folder.active_shown(), Some(0));
         assert!(harness.state().refused.is_empty());
     }
 

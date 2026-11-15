@@ -263,9 +263,9 @@ impl Browse<'_> {
 /// closed as `browse.open` says. Albums and Smart albums join Folders with the library
 /// (Phase 5); folder mode never shows them.
 ///
-/// For a photo alone, as the wireframe's one-photo column draws it, the top line names the
-/// photo, Folders holds Open This Folder alone, and ⋯ holds Open This Folder, then Show in
-/// Finder, which shows the photo in its folder.
+/// For photos alone, as the wireframe's one-photo column draws it, the top line names the
+/// active photo, Folders holds Open This Folder alone, and ⋯ holds Open This Folder, then
+/// Show in Finder, which shows the active photo in its folder.
 pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     let words = translator(ui.ctx());
     let mut actions = Vec::new();
@@ -312,20 +312,17 @@ pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
     actions
 }
 
-/// The photo open alone and its folder, which Open This Folder opens.
+/// The active one of the photos alone and its folder, which Open This Folder opens.
 fn alone(folder: &Folder) -> Option<(&Path, &Path)> {
-    match folder {
-        Folder::Alone { path, .. } => Some((path, path.parent()?)),
-        _ => None,
-    }
+    crate::folder::alone_active(folder)
 }
 
 /// What the top line's box says, as the wireframe draws it: the folder opened, the tree's
 /// root, by its label, "Folder: 2026-10 Lisbon" ([`OpenKind::label`]), whichever folder in
 /// its tree is chosen, its name alone cut in its middle to fit `width` in `font`, so the
 /// kind always shows, its count on its row in the tree; that it is being read; the name of
-/// a photo alone; or, with none open or the last open failed, that none is. Returns it cut,
-/// and whole.
+/// the active photo alone; or, with none open or the last open failed, that none is.
+/// Returns it cut, and whole.
 fn open_line(
     ctx: &egui::Context,
     painter: &egui::Painter,
@@ -352,7 +349,10 @@ fn open_line(
         }
     };
     let whole_name = match browse.folder {
-        Folder::Alone { photo, .. } => photo.name.clone(),
+        Folder::Alone { photos, active, .. } => photos
+            .get(*active)
+            .map(|photo| photo.name.clone())
+            .unwrap_or_default(),
         _ => browse.root.map(name).unwrap_or_default(),
     };
     let whole = line(&whole_name);
@@ -1947,17 +1947,56 @@ mod tests {
         );
     }
 
-    /// A photo opened alone, as the command line opens one: the wireframe's IMG_2041.ARW.
-    fn alone() -> Folder {
+    /// Photos opened alone, `active` the active one of `paths`.
+    fn alone_of(paths: &[&str], active: usize) -> Folder {
+        let paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        let cell = |path: &PathBuf| apertrust_engine::session::library::Photo {
+            name: path.file_name().unwrap().to_string_lossy().into_owned(),
+            size: 0,
+            modified: None,
+            edit: apertrust_engine::session::library::EditState::None,
+        };
+        let photos = paths.iter().map(cell).collect();
         Folder::Alone {
-            path: PathBuf::from("/Users/me/Pictures/2026-10 Lisbon/IMG_2041.ARW"),
-            photo: apertrust_engine::session::library::Photo {
-                name: "IMG_2041.ARW".to_owned(),
-                size: 0,
-                modified: None,
-                edit: apertrust_engine::session::library::EditState::None,
-            },
+            paths,
+            photos,
+            active,
         }
+    }
+
+    /// A photo opened alone, as Open With opens one: the wireframe's IMG_2041.ARW.
+    fn alone() -> Folder {
+        alone_of(&["/Users/me/Pictures/2026-10 Lisbon/IMG_2041.ARW"], 0)
+    }
+
+    /// Two photos opened alone together, from two folders, the second active.
+    fn two_alone() -> Folder {
+        alone_of(
+            &[
+                "/Users/me/Pictures/2026-10 Lisbon/IMG_2041.ARW",
+                "/Users/me/Pictures/Mountains/DSCF0001.RAF",
+            ],
+            1,
+        )
+    }
+
+    /// Of photos opened alone together, Browse's top line names the active one, and Open
+    /// This Folder opens its folder.
+    #[test]
+    fn of_several_photos_alone_the_active_one_s_folder_opens() {
+        let mut harness = browsed(egui::vec2(320.0, 400.0), two_alone, recent, OPEN_ALL, true);
+        harness.run();
+        let what = harness.get_by_role_and_label(Role::ComboBox, "What is open");
+        assert_eq!(
+            what.accesskit_node().value().as_deref(),
+            Some("DSCF0001.RAF")
+        );
+        harness
+            .get_by_role_and_label(Role::Button, "Open This Folder")
+            .click();
+        harness.run();
+        let mountains = PathBuf::from("/Users/me/Pictures/Mountains");
+        assert_eq!(*harness.state(), [Action::Open(mountains)]);
     }
 
     /// Browse for a photo alone: its top line names the photo, and Folders holds Open This

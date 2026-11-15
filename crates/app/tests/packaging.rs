@@ -305,18 +305,18 @@ fn linux_opens_every_decoded_extension() {
     assert_eq!(declared, ours, "the MIME types shared-mime-info lacks");
 }
 
-/// Open With and a double-click open the files' folder with them, never a photo alone,
-/// which a terminal's `apertrust FILE` opens (`docs/packaging.md`, Opening a raw from the
-/// system): the desktop entry passes every file chosen after `--in-folder`, and the
-/// installer's ProgID and the app's entry pass the one opened.
+/// Open With and a double-click open the photo alone, as a terminal's `apertrust FILE`
+/// does (`docs/packaging.md`, Opening a raw from the system): the desktop entry passes
+/// every file chosen, alone, and the installer's ProgID and the app's entry the one
+/// opened, never `--in-folder`, which the app now ignores.
 #[test]
-fn open_with_passes_in_folder_before_the_files() {
+fn open_with_passes_the_files_alone() {
     let desktop = read("packaging/linux/org.apertrust.Apertrust.desktop");
     let exec: Vec<&str> = desktop
         .lines()
         .filter_map(|line| line.strip_prefix("Exec="))
         .collect();
-    assert_eq!(exec, ["apertrust --in-folder %F"]);
+    assert_eq!(exec, ["apertrust %F"]);
     let template = read("packaging/windows/installer.nsi");
     let opens: Vec<&str> = template
         .lines()
@@ -330,8 +330,14 @@ fn open_with_passes_in_folder_before_the_files() {
         "the ProgID's and the app's entry's: {opens:?}"
     );
     for line in opens {
-        let wanted = r#"$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --in-folder $\"%1$\""#;
+        let wanted = r#"$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""#;
         assert!(line.ends_with(&format!("\"\" \"{wanted}\"")), "{line}");
+    }
+    for (file, text) in [("desktop entry", &desktop), ("installer", &template)] {
+        assert!(
+            !text.contains("--in-folder"),
+            "the {file} passes --in-folder"
+        );
     }
 }
 
@@ -634,10 +640,7 @@ fn apertrust_nightly_is_named_by_its_own_id_in_every_package() {
     assert!(!plist.contains("Owner"));
 
     let desktop = as_nightly("packaging/linux/org.apertrust.Apertrust.desktop");
-    for line in [
-        "Name=Apertrust Nightly",
-        "Exec=apertrust-nightly --in-folder %F",
-    ] {
+    for line in ["Name=Apertrust Nightly", "Exec=apertrust-nightly %F"] {
         assert!(
             desktop.contains(&format!("\n{line}\n")),
             "{line} in {desktop}"
