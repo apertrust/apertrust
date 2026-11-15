@@ -17,7 +17,7 @@ It drives one `rgbcurve` instance. An unedited photo does not run it, so it is p
 - The rows measure at the tool's input and output.
 - Measures and test images are in [README.md](README.md).
 
-**Built: the Luma curve and Preserve colours,** in `crates/tools/src/tone_curve.rs`. The tool renderer draws it with the design system's curve. Its tab is Edit's Adjust, at RGB curve's place: after Haze removal and before RGB levels (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after AgX and before the Tone equalizer. What is built:
+**Built: the Luma curve and Preserve colours,** in `crates/tools/src/tone_curve.rs`. The tool renderer draws it with the design system's curve. Its tab is Edit's Adjust, at RGB curve's place: after Haze removal and before RGB levels (decision 38). What is built:
 
 - **Controls:** `luma_points` holds the points between the curve's ends, up to 18, x at least 0.0025 apart and as far from the ends (as `rgbcurve` and the curve widget keep them), none by default, the identity. The ends stay at (0, 0) and (1, 1) and are not stored: the binding adds them as the curve's first and last nodes (decision 31). The panel draws them as points that do not move.
 - **Preserve colours:** `preserve_colour` is one choice over six of `rgbcurve`'s norms (`docs/ports/rgbcurve.md`, Tool binding notes): luminance the default, then max RGB, average RGB, sum RGB, norm RGB and basic power, by the port's names (`luminance`, `max_rgb`, `average_rgb`, `sum_rgb`, `norm_rgb`, `basic_power`).

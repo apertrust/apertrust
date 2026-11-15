@@ -25,9 +25,16 @@ status-saved = Saved
 
 ## The side panel's tabs
 
-# Edit's tabs: darktable's four module groups, base, color, correct and effect, between
-# Apertrust's own Photos and History (decision 38).
+# Edit's tabs: the tools by editing stage, Adjust, Detail, Geometry, Effects and Raw,
+# between Apertrust's own Photos and History (decision 38).
 tab-photos = Photos
+tab-adjust = Adjust
+tab-detail = Detail
+tab-geometry = Geometry
+tab-effects = Effects
+tab-raw = Raw
+# The darktable workspace's tabs, planned: darktable's four module groups, base, color,
+# correct and effect (decision 38).
 tab-base = Base
 tab-color = Colour
 tab-correct = Correct
@@ -873,6 +880,7 @@ action-panel-tab-3 = Side-panel tab 3
 action-panel-tab-4 = Side-panel tab 4
 action-panel-tab-5 = Side-panel tab 5
 action-panel-tab-6 = Side-panel tab 6
+action-panel-tab-7 = Side-panel tab 7
 action-scale-up = Larger interface
 action-scale-down = Smaller interface
 action-scale-reset = Normal interface size
@@ -1329,7 +1337,7 @@ export-masks = Store masks
 export-masks-later = Store masks as layers in exported images. Only TIFF, OpenEXR and XCF can, and layers come with a later version.
 export-profile = Profile
 export-profile-image = Image settings
-export-profile-tip = Image settings: the photo's own, in Colour › Output colour profile, as the view shows it. Another profile applies to this export alone.
+export-profile-tip = Image settings: the photo's own, in Raw › Output colour profile, as the view shows it. Another profile applies to this export alone.
 export-intent = Intent
 export-intent-perceptual = Perceptual
 export-intent-relative = Relative colorimetric

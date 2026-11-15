@@ -7,7 +7,7 @@ Status: ported.
 - **Code:** the kernel is `slang/agx.slang` in `crates/op/agx`, its setup `src/setup.rs`, with shared helpers in `apertrust-color` (`src/lib.rs` and `slang/color.slang`).
 - **Coverage:** every setting of params version 7 except base primaries "export profile", which returns `NotPorted`.
 - **Checks:** all four golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
-- **Tool:** AgX, darktable's page, in Edit's Adjust tab (decision 38; Base until that tab is built), owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
+- **Tool:** AgX, darktable's page, in Edit's Adjust tab (decision 38), owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
 
 Golden result, Apple M4:
 
@@ -40,7 +40,7 @@ In Apertrust it is the background's tone mapper, run once (architecture decision
 
 darktable params version 7, 144 bytes, 36 four-byte fields in this order: `look_lift`, `look_slope`, `look_brightness`, `look_saturation`, `look_original_hue_mix_ratio`, `range_black_relative_ev`, `range_white_relative_ev`, `dynamic_range_scaling`, `curve_pivot_x`, `curve_pivot_y_linear_output`, `curve_contrast_around_pivot`, `curve_linear_ratio_below_pivot`, `curve_linear_ratio_above_pivot`, `curve_toe_power`, `curve_shoulder_power`, `curve_gamma` (f32), `auto_gamma` (gboolean, i32), `curve_target_display_black_ratio`, `curve_target_display_white_ratio` (f32), `base_primaries` (enum, i32), `disable_primaries_adjustments` (i32), `red_inset`, `red_rotation`, `green_inset`, `green_rotation`, `blue_inset`, `blue_rotation`, `master_outset_ratio`, `master_unrotation_ratio`, `red_outset`, `red_unrotation`, `green_outset`, `green_unrotation`, `blue_outset`, `blue_unrotation` (f32), `completely_reverse_primaries` (i32).
 
-Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_scene_referred_default_params` in a scene-referred workflow; `agx::Settings::scene_referred_default`, checked field for field against test 0186's stored params); where the introspection `$DEFAULT` differs, it is given in brackets. The AgX tool, the tone mapper of its own in the Base tab, owns every parameter, one control each, as darktable's Settings and Primaries tabs show them, its show curve, advanced curve parameters and look sections collapsible groups, and `dynamic_range_scaling` a control on the Settings tab, not ported, as darktable shows it (decision 29; `docs/tools/README.md`, AgX).
+Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_scene_referred_default_params` in a scene-referred workflow; `agx::Settings::scene_referred_default`, checked field for field against test 0186's stored params); where the introspection `$DEFAULT` differs, it is given in brackets. The AgX tool, the tone mapper of its own in the Adjust tab, owns every parameter, one control each, as darktable's Settings and Primaries tabs show them, its show curve, advanced curve parameters and look sections collapsible groups, and `dynamic_range_scaling` a control on the Settings tab, not ported, as darktable shows it (decision 29; `docs/tools/README.md`, AgX).
 
 | Name | darktable field | Type | Range | Default | Meaning |
 | --- | --- | --- | --- | --- | --- |

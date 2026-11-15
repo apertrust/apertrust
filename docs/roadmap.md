@@ -123,12 +123,11 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] A tool panel drawn from each tool's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
 - [x] Edits save themselves after each change.
 - [x] Sixteen migrated tools, listed [below](#the-migrated-tools), each darktable's module with its parameters as controls (decision 2, [tools/README.md](tools/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
-- [x] The side panel's tabs as darktable's scene-referred groups: Base, Colour, Correct and Effect, between Photos and History.
-- [ ] Edit's tabs by editing stage (decision 38; [gui.md](gui.md#the-tabs-by-editing-stage)): Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust.
-  - [ ] The app's `TABS` and `TAB_TOOLS` with each tab's list in editing order, Raw's in processing order, and `panel-tab-7`; Scopes pinned over the five editing tabs.
-  - [ ] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in Edit, and the labels in British and American English, Ukrainian and Polish.
-  - [ ] Five tab icons, one colour in Lucide's style with their filled forms, drawn on the wireframe first.
-  - [ ] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding Edit's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for named workspaces (Phase 3).
+- [x] Edit's tabs by editing stage (decision 38; [gui.md](gui.md#the-tabs-by-editing-stage)): Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust.
+  - [x] The app's `TABS` and `TAB_TOOLS` with each tab's list in editing order, Raw's in processing order, and `panel-tab-7`; Scopes pinned over the five editing tabs.
+  - [x] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in Edit, and the labels in British and American English, Ukrainian and Polish.
+  - [x] Five tab icons, one colour in Lucide's style with their filled forms, drawn on the wireframe first.
+  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding Edit's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for named workspaces (Phase 3).
 - [ ] Phase 2's tools are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
   - [ ] Input colour profile and Colour equalizer as tools (their processing is ported).
   - [ ] Rotate and perspective, ported.

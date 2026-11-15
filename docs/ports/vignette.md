@@ -18,7 +18,7 @@ A vignette for the photographer: darken (or lighten) and desaturate (or saturate
 
 Algorithmically, each pixel gets a weight from its distance to a centre, measured in a superellipse whose shape runs from a rectangle through an ellipse and a diamond to a star. The weight is 0 inside the inner radius and rises linearly to 1 across the fall-off. By that weight, the brightness then scales the pixel (darkening) or adds to it (lightening), and the saturation moves its channels away from or towards their mean.
 
-It is the Vignetting tool, in Edit's Effects tab, Effect until that tab is built (decision 38), on layers too, display-referred, after the tone mapper (`docs/layers.md`, Scene and display domains).
+It is the Vignetting tool, in Edit's Effects tab (decision 38), on layers too, display-referred, after the tone mapper (`docs/layers.md`, Scene and display domains).
 
 ## Pipeline
 

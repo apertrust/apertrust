@@ -57,7 +57,8 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `search` | Lucide's `search`, from Feather |
 | `photo` | Lucide's `image` |
 | `photo-off` | Lucide's `image-off` |
-| `base`, `color`, `correct`, `effect` and their filled forms | Drawn for Apertrust: darktable's module group shapes (decision 38) |
+| `adjust`, `raw` and their filled forms | Lucide's `settings-2` and `camera`: Edit's Adjust and Raw tabs (decision 38) |
+| `base`, `color`, `correct`, `detail`, `effect` and their filled forms | Drawn for Apertrust: darktable's module group shapes, `correct` and `effect` also Edit's Geometry and Effects tabs, and Edit's Detail tab in their family, a circle with fine lines across it (decision 38) |
 | `histogram`, `waveform`, `parade`, `vectorscope`, `log-scale`, `clip-shadows`, `clip-highlights` | Drawn for Apertrust: the scopes' graphs and toggles |
 | `minimise`, `maximise`, `restore`, `close` | Drawn for Apertrust: the window's caption buttons, as the systems draw theirs |
 | `mark` | Drawn for Apertrust: the app's mark |

@@ -8,7 +8,7 @@ It is darktable's orientation in the first pass (decision 2), its page as darkta
 
 It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip.md)), which every photo runs, so it adds no operation. It owns its one parameter, darktable's stored orientation. Its default is darktable's, auto: the photo's own orientation from its EXIF data, so an untouched photo shows the right way up and the tool sets nothing. A photo the right way up has no orientation in its plan at all (the port's Setup on the CPU).
 
-**Status:** built, in `crates/tools/src/orientation.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Geometry tab (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after Exposure and before Demosaic.
+**Status:** built, in `crates/tools/src/orientation.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Geometry tab (decision 38).
 
 - Its rows are tests in `crates/tools/tests/orientation.rs` and the tool's source; [Results](#results) gives what they measured.
 - Every row is exact, so none has a proposed tolerance.

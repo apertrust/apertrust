@@ -16,7 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! AgX (`docs/tools/agx.md`): darktable's AgX as the user edits with it, in the
-//! first pass (decision 2), the tone mapper of the Base tab: darktable's page, its
+//! first pass (decision 2), the tone mapper of the Adjust tab: darktable's page, its
 //! controls in `gui_init`'s order under its labels.
 //!
 //! - **Settings:** the input exposure range, white and black relative exposure and

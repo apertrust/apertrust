@@ -15,7 +15,7 @@ Golden result (five cases, four on test 0059's mire1.cr2, 3908×2602, one on hlr
 
 Film grain for the photographer: a fine, irregular texture over the image, its size set like a film's speed in ISO, stronger in the mid-tones than in the shadows and highlights, as silver grain prints on photographic paper.
 
-Algorithmically, three octaves of Gustavson's 3D simplex noise at the pixel's position, normalised by the image's shorter side, are scaled by the strength and passed through a photographic paper's response, a logistic density curve that the mid-tones bias makes steeper, to a change of Lab lightness. It is the Effect tab's Grain tool (background only, `docs/tools/README.md`), display-referred, after the tone mapper.
+Algorithmically, three octaves of Gustavson's 3D simplex noise at the pixel's position, normalised by the image's shorter side, are scaled by the strength and passed through a photographic paper's response, a logistic density curve that the mid-tones bias makes steeper, to a change of Lab lightness. It is the Effects tab's Grain tool (background only, `docs/tools/README.md`), display-referred, after the tone mapper.
 
 ## Pipeline
 

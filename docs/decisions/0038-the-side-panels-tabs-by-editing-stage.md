@@ -28,7 +28,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 - **Display order only.** The processing order stays the pipeline's whatever a tab lists. These lists are the Edit workspace's defaults: a person can reorder, pin, move and float sections on screen ([0083](0083-the-side-panels-layout-dragged-and-floating.md)), and the side panel's ⋮ › Processing Order sorts a tab's tools into pipeline order.
 - **Labels:** one plain word each, Apertrust's own, in British English and sentence case: Adjust, Detail, Geometry, Effects, Raw; American English has the same words. Ukrainian and Polish translations follow, reviewed as every translation is.
 - **Ids,** as settings keep the tab: `adjust`, `detail`, `geometry`, `effects` and `raw`, beside `photos` and `history`; their messages are `tab-` and the id.
-- **Icons:** one colour, in Lucide's style, drawn at 22 points, each with a filled form for the chosen tab ([0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md)); drawn with the wireframe.
+- **Icons:** one colour, in Lucide's style, drawn at 22 points, each with a filled form for the chosen tab ([0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md)); drawn with the wireframe. Adjust two sliders and Raw a camera, from Lucide; Geometry and Effects darktable's Correct and Effect shapes; Detail a circle crossed by three fine lines, in their family.
 - **Edit opens on Adjust.** A tab id in settings that this build does not know, or one drawn disabled, opens Adjust with a warning, and the id stays in the file until a tab is chosen. darktable's ids, `base`, `color`, `correct` and `effect`, which earlier builds kept for Edit, and `library`, which they kept for Photos, are such ids in Edit, never given to another tab.
 - **Scopes** are pinned over the five editing tabs' tools by default, in neither the Photos tab nor History; Layers join them when they come.
 - **No quick access panel and no active-modules tab.** darktable's module search may come later as its own piece of work.
@@ -65,6 +65,6 @@ Planned, with named workspaces in Phase 3: a built-in workspace beside Edit, id 
 ## Consequences
 
 - The app's `TABS` and `TAB_TOOLS` hold Edit's lists, the defaults the layout shown starts from ([0083](0083-the-side-panels-layout-dragged-and-floating.md)); a test holds them as recorded here and each first-pass tool in exactly one of Edit's tabs. A tool added to `OPERATIONS` gets its tab in this record and in [tools/README.md](../tools/README.md).
-- The darktable workspace's lists, the ones `TAB_TOOLS` holds as built, are kept with the test holding them to `OPERATIONS` reversed; the workspace is chosen once named workspaces come.
-- The tab ids, labels and icons in four languages: `tab-adjust` to `tab-raw` in Fluent, five icons, the settings schema's tab ids.
+- The darktable workspace's lists, the app's `DARKTABLE_GROUPS`, are kept with the test holding them to `OPERATIONS` reversed; the workspace is chosen once named workspaces come.
+- The tab ids, labels and icons in four languages: `tab-adjust` to `tab-raw` in Fluent, three new icons (Adjust, Detail and Raw), the settings schema's tab ids.
 - A tool page names its tab from [tools/README.md](../tools/README.md).
