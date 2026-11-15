@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit's reviews of Apertrust. AGENTS.md, which CodeRabbit reads by default, holds
+# the rules; this file adds what to skip and what to check where.
+language: en-GB
+
+reviews:
+  profile: chill
+
+  auto_review:
+    # Every pull request, a stacked one based on another's branch too.
+    base_branches:
+      - ".*"
+
+  path_filters:
+    # WGSL generated from the Slang sources by tools/build-kernels.sh.
+    - "!crates/**/generated/**"
+    # Generated from Cargo.lock by tools/credits.sh.
+    - "!CREDITS.md"
+    - "!Cargo.lock"
+    # Snapshots, icons and the disk image's layout: binary, checked by the tests.
+    - "!**/*.png"
+    - "!**/*.tiff"
+    - "!**/*.icns"
+    - "!**/*.ico"
+    - "!**/*.DS_Store"
+
+  path_instructions:
+    - path: "**/*.slang"
+      instructions: |
+        GPU kernels (the slang-kernels rules in AGENTS.md):
+        - fp32 only; fp64 maths is redesigned, never translated.
+        - No NaN or infinity checks: inputs are sanitized at operation boundaries.
+        - A local vector component written at an index known only at run time uses
+          add_at or set_at from crates/plugin/slang/components.slang (vectors only).
+        - A local array element written at an index known only at run time is refused
+          until it is tested on Windows (FXC): flag it.
+        - Every element of workgroup memory is written before any invocation reads it.
+        - Differentiable kernels export <operation>_backward and <operation>_forward_diff;
+          use pow0, not pow, and prefer continuous parameters to hard clamps and branches.
+        - The matching generated WGSL must change in the same pull request.
+    - path: "crates/engine/**"
+      instructions: |
+        - The engine never depends on UI code.
+        - Submit only through GpuContext::submit, never queue.submit.
+        - Intermediates stay on the GPU; storage buffers by default, textures only where
+          hardware sampling helps, never hardware filtering for geometry.
+    - path: "crates/library/src/sidecar*/**"
+      instructions: |
+        The .apxmp sidecar (decision 48): reading never loses the photo, and a save never
+        drops what the file holds. Any field, attribute, qualifier or shape this build does
+        not write must make the photo view-only (a Problem), never be read and dropped.
+        Committed sidecars read with no warning and write back byte for byte.
+    - path: "crates/ui/locales/**/*.ftl"
+      instructions: |
+        Fluent messages: keep each message's variables, selectors and plural categories
+        intact in every locale. en-GB is the source; Ukrainian and Polish are drafts for a
+        native speaker. A message id the sidecar stores is never renamed.
+    - path: "docs/**/*.md"
+      instructions: |
+        Documents state what is decided and built now: no dates of decisions, no who
+        decided, no earlier designs, no board cards. A part not built yet says "planned".
+        British spelling. Never name a commercial raw editor; say "commercial raw editors".
+        "Module" names only darktable's modules and the languages' own; Apertrust's are
+        tools (what a person works with) and operations (engine algorithms).
+    - path: "docs/decisions/**"
+      instructions: |
+        One decision per file, in Context, Decision, Options considered, Consequences.
+        A change to a decision edits its record so it states what is decided now, with no
+        "amended by" or history. Check that the decision summary in docs/architecture.md,
+        the index in docs/decisions/README.md and the docs describing the area agree.
+
+  labeling_instructions:
+    - label: bugfix
+      instructions: Fixes a bug.
+    - label: enhancement
+      instructions: A new feature or a change in behaviour that is not a fix.
+    - label: maintenance
+      instructions: CI, tooling, refactoring, renames and dependencies.
+    - label: port
+      instructions: Ports a darktable module as an operation and a tool.
+    - label: documentation
+      instructions: Only when the pull request changes nothing but documentation.
+    - label: translation
+      instructions: Only when the pull request changes nothing but translations.
+    - label: baseline change
+      instructions: Changes a golden baseline or what a photo renders.
+    - label: performance
+      instructions: Its main point is speed or memory.
+    - label: "scope: engine"
+      instructions: The pipeline, the GPU, caching and tiling. One scope label at most.
+    - label: "scope: tools"
+      instructions: Operations, kernels, tools and their bindings, colour science.
+    - label: "scope: raw"
+      instructions: Raw decoding and camera support.
+    - label: "scope: library"
+      instructions: Folders, sidecars, the index and thumbnails.
+    - label: "scope: ui"
+      instructions: The app and the design system.
+    - label: "scope: export"
+      instructions: Export.
+    - label: "scope: cli"
+      instructions: apertrust-cli.
+    - label: "scope: packaging"
+      instructions: Packages and installers.
+    - label: "scope: ci"
+      instructions: Workflows and the golden harness.
+
+  pre_merge_checks:
+    title:
+      mode: warning
+      requirements: >-
+        What the change does, in sentence case, imperative ("Port AgX from darktable"),
+        or "Record decision N: …" / "Change decision N: …" for a decision. No type prefix,
+        no full stop, at most 72 characters.
+    custom_checks:
+      - name: No commercial raw editor named
+        mode: warning
+        instructions: >-
+          Fail if any added line in the diff, the title or the description names a
+          proprietary commercial raw photo editor or its maker's product. The project
+          writes "commercial raw editors" instead. darktable's own data files that it
+          copies verbatim are exempt.
