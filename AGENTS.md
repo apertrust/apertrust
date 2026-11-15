@@ -104,7 +104,8 @@ tools/compare-cpu.sh --raws 7rv --add toneequal-eigf,bilat [--size PX --hq BOOL]
 
 # The app and the design system
 cargo run --release -p apertrust -- [--user-data-dir DIR] [FILE | FOLDER]   # a raw alone, or a folder
-cargo run --release -p apertrust -- --in-folder FILE...   # as Open With: the folder, the first file active
+cargo run --release -p apertrust -- --in-folder FILE...   # as Open With, built: the folder, the first active; with step 9d
+                                                          # ignored, every photo opened alone, several together (decision 46)
 cargo run --release -p apertrust -- --safe-mode           # graphics card and API at Automatic for this run
 cargo run -p apertrust -- --help                          # the app's command line
 cargo run --release -p apertrust -- --list-adapters [auto|dx12|vulkan]   # Settings' helper: an API's adapters as lines, no window
