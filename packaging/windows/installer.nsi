@@ -543,10 +543,10 @@ Section Install
   {{/each}}
 
   ; The file types, in Open With: the ProgID, each extension's OpenWithProgids naming
-  ; it, and the app's entry with the types it supports. Both open the file with
-  ; --in-folder, so the app opens its folder with it active, never the photo alone; an
-  ; edit opens its photo. No raw extension's default value is written, so the app the
-  ; person chose for a type stays theirs.
+  ; it, and the app's entry with the types it supports. Both pass the file alone, which
+  ; the app opens as a drop of it, the photo alone; an edit opens its photo. No raw
+  ; extension's default value is written, so the app the person chose for a type stays
+  ; theirs.
   {{#each file_associations as |association| ~}}
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}" "" "{{association.description}}"
     {{#if (eq association.extensions.[0] "apxmp") ~}}
@@ -555,7 +555,7 @@ Section Install
     {{else ~}}
       WriteRegStr SHCTX "Software\Classes\\{{association.name}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
     {{/if ~}}
-    WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --in-folder $\"%1$\""
+    WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
     {{#each association.extensions as |ext| ~}}
       WriteRegNone SHCTX "Software\Classes\.{{ext}}\OpenWithProgids" "{{association.name}}"
       WriteRegNone SHCTX "${APPKEY}\SupportedTypes" ".{{ext}}"
@@ -568,7 +568,7 @@ Section Install
   {{/each}}
   WriteRegStr SHCTX "${APPKEY}" "FriendlyAppName" "${PRODUCTNAME}"
   WriteRegStr SHCTX "${APPKEY}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
-  WriteRegStr SHCTX "${APPKEY}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --in-folder $\"%1$\""
+  WriteRegStr SHCTX "${APPKEY}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
   !insertmacro UPDATEFILEASSOC
 
   ; Register deep links

@@ -31,11 +31,11 @@
 //!   started itself the environment and the terminal are this process's; `open` passes
 //!   neither, so through it `WGPU_BACKEND`, `WGPU_POWER_PREF` and the log's terminal are
 //!   not carried, the folders being flags by then;
-//! - **with what is open**: a photo alone by its path, a folder in folder mode by the
-//!   hidden [`REOPEN_FLAG`], which reopens what was open last, kept as the app ended with
-//!   the folder and the photo active in it, whatever `library.reopen_last` says; for
-//!   nothing, or for a photo or folder no longer there, the hidden [`NO_REOPEN_FLAG`], so
-//!   the start window comes back.
+//! - **with what is open**: photos alone by their paths, the active one first, a folder in
+//!   folder mode by the hidden [`REOPEN_FLAG`], which reopens what was open last, kept as
+//!   the app ended with the folder and the photo active in it, whatever
+//!   `library.reopen_last` says; for nothing, or for photos or a folder no longer there,
+//!   the hidden [`NO_REOPEN_FLAG`], so the start window comes back.
 //!
 //! The new process is started as `main`'s last step, after the event loop has returned, so
 //! it never races this one for the settings file, the recents or a photo's edit.
@@ -64,6 +64,12 @@ pub const NO_REOPEN_FLAG: &str = "--no-reopen-last";
 /// How long a restart through the Mac's `open` waits for its answer, to log a failure.
 const OPEN_WAITS: Duration = Duration::from_secs(5);
 
+/// The longest command line a restart passes every photo alone on, in characters, each
+/// argument counted with its quotes and the space before it: safely under Windows' 32,767
+/// for `CreateProcess`, past which the new start would not start. Longer, it passes the
+/// active photo alone.
+const MOST_CHARACTERS: usize = 30_000;
+
 /// Where the new start goes once the app has ended, for `main` to start it.
 pub type Slot = Arc<Mutex<Option<Relaunch>>>;
 
@@ -78,8 +84,8 @@ pub struct Relaunch {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Open {
     Nothing,
-    /// A photo alone, by its path.
-    Photo(PathBuf),
+    /// Photos alone, by their paths, the one to be active first.
+    Photos(Vec<PathBuf>),
     /// A folder in folder mode, by its root: reopened as what was open last where that is
     /// it (`last`), else opened at its root.
     Folder {
@@ -90,54 +96,109 @@ pub enum Open {
 
 impl Open {
     /// What is open: Browse's `root`, where a folder is, `last` the root of what was open
-    /// last; else the photo open `alone`.
-    pub fn of(root: Option<&Path>, alone: Option<&Path>, last: Option<&Path>) -> Open {
-        match (root, alone) {
-            (Some(root), _) => Open::Folder {
+    /// last; else the photos open `alone`, in the order opened, `active` the one active
+    /// among them, which goes first, so it is active again.
+    pub fn of(
+        root: Option<&Path>,
+        alone: &[PathBuf],
+        active: Option<&Path>,
+        last: Option<&Path>,
+    ) -> Open {
+        if let Some(root) = root {
+            return Open::Folder {
                 root: root.to_owned(),
                 last: last == Some(root),
-            },
-            (None, Some(photo)) => Open::Photo(photo.to_owned()),
-            (None, None) => Open::Nothing,
+            };
         }
+        if alone.is_empty() {
+            return Open::Nothing;
+        }
+        let first = active.filter(|active| alone.iter().any(|path| path == active));
+        let first = first.map(Path::to_owned);
+        let rest = alone.iter().filter(|path| Some(*path) != first.as_ref());
+        Open::Photos(first.iter().chain(rest).cloned().collect())
     }
 
-    /// It, where `there` finds its photo or folder; else nothing, logged.
+    /// It, where `there` finds its folder, or the photos of it `there` finds; else
+    /// nothing, logged.
     fn there(self, there: impl Fn(&Path) -> bool) -> Open {
-        let path = match &self {
-            Open::Nothing => return self,
-            Open::Photo(path) | Open::Folder { root: path, .. } => path,
+        let gone = |path: &Path| {
+            let gone = path.display();
+            tracing::warn!(target: "control", "{gone} is gone: the restart leaves it");
         };
-        if there(path) {
-            return self;
+        match self {
+            Open::Nothing => Open::Nothing,
+            Open::Folder { ref root, .. } if there(root) => self,
+            Open::Folder { root, .. } => {
+                gone(&root);
+                Open::Nothing
+            }
+            Open::Photos(paths) => {
+                let (kept, left): (Vec<PathBuf>, Vec<PathBuf>) =
+                    paths.into_iter().partition(|path| there(path));
+                left.iter().for_each(|path| gone(path));
+                if kept.is_empty() {
+                    Open::Nothing
+                } else {
+                    Open::Photos(kept)
+                }
+            }
         }
-        let gone = path.display();
-        tracing::warn!(target: "control", "{gone} is gone: the restart opens the start window");
-        Open::Nothing
     }
 
     /// Its arguments on the new start's command line.
     fn arguments(&self) -> Vec<OsString> {
         match self {
             Open::Nothing => vec![NO_REOPEN_FLAG.into()],
-            Open::Photo(path)
-            | Open::Folder {
-                root: path,
-                last: false,
-            } => vec![path.into()],
+            Open::Photos(paths) => paths.iter().map(OsString::from).collect(),
+            Open::Folder { root, last: false } => vec![root.into()],
             Open::Folder { last: true, .. } => vec![REOPEN_FLAG.into()],
         }
     }
 }
 
+/// The characters `argument` takes on a command line: on Windows its UTF-16 units, as
+/// `CreateProcess` counts them; elsewhere, where [`MOST_CHARACTERS`] is only a bound kept
+/// alike, its characters, a name that is not UTF-8 counted as its lossy text.
+fn characters(argument: &OsStr) -> usize {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt as _;
+        argument.encode_wide().count()
+    }
+    #[cfg(not(windows))]
+    {
+        argument.to_string_lossy().chars().count()
+    }
+}
+
 /// The new start's command line after the program's name: this run's `flags`, then
-/// `--safe-mode` where `safe`, then what is `open`.
+/// `--safe-mode` where `safe`, then what is `open`; of photos alone, the active one alone,
+/// first, where all of them would take the line past [`MOST_CHARACTERS`].
 pub fn arguments(flags: &[OsString], safe: bool, open: &Open) -> Vec<OsString> {
     let mut arguments = flags.to_vec();
     if safe {
         arguments.push(SAFE_MODE_FLAG.into());
     }
-    arguments.extend(open.arguments());
+    let opened = open.arguments();
+    let length = |arguments: &[OsString]| -> usize {
+        arguments
+            .iter()
+            .map(|argument| characters(argument) + 3)
+            .sum()
+    };
+    if length(&arguments) + length(&opened) > MOST_CHARACTERS
+        && let Open::Photos(paths) = open
+    {
+        let count = paths.len();
+        tracing::warn!(
+            target: "control",
+            "restart: {count} photos too long a command line, the active one alone"
+        );
+        arguments.extend(opened.into_iter().take(1));
+    } else {
+        arguments.extend(opened);
+    }
     arguments
 }
 
@@ -379,31 +440,73 @@ pub(crate) mod tests {
         Err(std::io::ErrorKind::NotFound.into())
     }
 
-    /// What is open becomes what the new start opens: a photo alone by its path, a folder
-    /// by `--reopen-last` where it is what was open last, else by its root; nothing, or
-    /// one no longer there, by `--no-reopen-last`, the start window.
+    /// What is open becomes what the new start opens: photos alone by their paths, the
+    /// active one first, a folder by `--reopen-last` where it is what was open last, else
+    /// by its root; nothing, or what is no longer there, by `--no-reopen-last`, the start
+    /// window.
     #[test]
     fn the_new_start_opens_what_is_open() {
         let (root, photo) = (Path::new("/photos/Trips"), Path::new("/a/IMG_1.CR3"));
         let flags = os(&["-d", "settings", "--conf", "scale=2"]);
-        let open = Open::of(Some(root), None, Some(root));
+        let open = Open::of(Some(root), &[], None, Some(root));
         assert_eq!(
             arguments(&flags, false, &open),
             os(&["-d", "settings", "--conf", "scale=2", "--reopen-last"])
         );
-        let open = Open::of(Some(root), None, Some(Path::new("/elsewhere")));
+        let open = Open::of(Some(root), &[], None, Some(Path::new("/elsewhere")));
         assert_eq!(arguments(&[], false, &open), os(&["/photos/Trips"]));
-        let open = Open::of(None, Some(photo), Some(root));
-        assert_eq!(open, Open::Photo(photo.to_owned()));
+        let alone = [photo.to_owned()];
+        let open = Open::of(None, &alone, Some(photo), Some(root));
+        assert_eq!(open, Open::Photos(alone.to_vec()));
         assert_eq!(
             arguments(&flags[..2], true, &open),
             os(&["-d", "settings", "--safe-mode", "/a/IMG_1.CR3"])
         );
         assert_eq!(open.clone().there(|_| true), open);
         assert_eq!(open.there(|_| false), Open::Nothing);
-        let folder = Open::of(Some(root), None, Some(root));
+        // Several photos alone: every one, the active one first; those gone left out.
+        let several = [
+            PathBuf::from("/a/IMG_1.CR3"),
+            PathBuf::from("/b/DSC_2.NEF"),
+            PathBuf::from("/a/IMG_3.CR3"),
+        ];
+        let active = Some(Path::new("/b/DSC_2.NEF"));
+        let open = Open::of(None, &several, active, None);
+        assert_eq!(
+            arguments(&[], false, &open),
+            os(&["/b/DSC_2.NEF", "/a/IMG_1.CR3", "/a/IMG_3.CR3"])
+        );
+        let kept = open.there(|path| path != Path::new("/b/DSC_2.NEF"));
+        assert_eq!(
+            arguments(&[], false, &kept),
+            os(&["/a/IMG_1.CR3", "/a/IMG_3.CR3"])
+        );
+        let open = Open::of(None, &several, Some(Path::new("/c/x.ARW")), None);
+        assert_eq!(open, Open::Photos(several.to_vec()));
+        // So many that the line would pass Windows' limit: the active one alone.
+        let many: Vec<PathBuf> = (0..800)
+            .map(|i| PathBuf::from(format!("/photos/Wedding 2026/Selects/IMG_{i:04}.CR3")))
+            .collect();
+        let active = Some(many[7].as_path());
+        let open = Open::of(None, &many, active, None);
+        let line = arguments(&flags, false, &open);
+        let mut wanted = flags.clone();
+        wanted.push(many[7].clone().into());
+        assert_eq!(line, wanted);
+        let fits = Open::of(None, &many[..600], active, None);
+        assert_eq!(arguments(&flags, false, &fits).len(), flags.len() + 600);
+        // Names not in ASCII are counted in characters, as Windows counts its UTF-16 units,
+        // never in bytes: 650 of these fit, though their bytes would not.
+        let named: Vec<PathBuf> = (0..650)
+            .map(|i| PathBuf::from(format!("/фото/Весілля 2026/Вибране/IMG_{i:04}.CR3")))
+            .collect();
+        let bytes: usize = named.iter().map(|path| path.as_os_str().len() + 3).sum();
+        assert!(bytes > MOST_CHARACTERS);
+        let fits = Open::of(None, &named, Some(named[0].as_path()), None);
+        assert_eq!(arguments(&flags, false, &fits).len(), flags.len() + 650);
+        let folder = Open::of(Some(root), &[], None, Some(root));
         assert_eq!(folder.there(|_| false), Open::Nothing);
-        assert_eq!(Open::of(None, None, Some(root)), Open::Nothing);
+        assert_eq!(Open::of(None, &[], None, Some(root)), Open::Nothing);
         assert_eq!(
             arguments(&[], false, &Open::Nothing),
             os(&["--no-reopen-last"])

@@ -17,11 +17,14 @@
 //! Drag and drop onto the main window (`docs/gui.md`, The menu bar, File): what is dropped
 //! opens as Open Folder… or Open… would open it.
 //!
-//! - A folder opens as Open Folder… does, and raws as Open… does, from the first one's
-//!   folder. Of several folders, or raws from several folders, the first opens.
+//! - A folder opens as Open Folder… does, the first of several, and raws as Open… does,
+//!   every raw dropped together in one photo (`docs/library.md`, One photo), from any
+//!   folders, the first active.
 //! - An edit, `IMG.ARW.apxmp`, opens its photo, `IMG.ARW` beside it, as the raw would;
 //!   one whose photo is not there is refused with a message naming the photo. So do the
 //!   edits the system opens with the app, Open With's and a double-click's.
+//! - The app's command line is taken as a drop is ([`Drops::look_given`]), each path
+//!   resolved first, a refusal's reason also written to stderr.
 //! - A library's or a project's file, `Name.aplibrary` or `Name.approject`, is refused with
 //!   a message until libraries and projects open (Phase 5), and so is anything else that
 //!   is neither a folder nor a raw the decoder reads.
@@ -64,11 +67,11 @@ pub enum Kind {
 pub enum Dropped {
     /// A folder, opened as Open Folder… opens one.
     Folder(PathBuf),
-    /// Raws from one folder, opened as Open… opens them: the first, and those dropped with
-    /// it from its folder, in the order dropped.
+    /// Raws, opened together as Open… opens them, in one photo: the first, active, and the
+    /// others dropped after it, from any folders, in the order dropped.
     Raws {
         first: PathBuf,
-        beside: Vec<PathBuf>,
+        others: Vec<PathBuf>,
     },
     /// Nothing that opens: the first path dropped, and why.
     Refused { path: PathBuf, why: Refusal },
@@ -101,9 +104,8 @@ pub fn kind(path: &Path) -> Kind {
     found(path).unwrap_or(Kind::Other)
 }
 
-/// What `path` is, as [`kind`] says, or why the disk cannot say, as for nothing there:
-/// what the command line names is told so (`main.rs`, `arguments`).
-pub fn found(path: &Path) -> std::io::Result<Kind> {
+/// What `path` is, as [`kind`] says, or why the disk cannot say, as for nothing there.
+fn found(path: &Path) -> std::io::Result<Kind> {
     let metadata = std::fs::metadata(path)?;
     Ok(if metadata.is_dir() {
         Kind::Folder
@@ -114,9 +116,10 @@ pub fn found(path: &Path) -> std::io::Result<Kind> {
 
 /// What dropping `paths` opens, each asked with `kind` in order until the first that
 /// opens, an edit standing for its photo ([`sidecar::photo_for`]): a folder; or a raw,
-/// with the raws dropped after it from its folder, told by their names alone; or, where
-/// none opens, the first library's or project's file or edit without its photo refused,
-/// where one was among them, else the first path. None for nothing dropped.
+/// with every raw dropped after it, from any folders, each once, an edit's photo where
+/// `kind` finds it a raw; or, where none opens, the first library's or project's file or
+/// edit without its photo refused, where one was among them, else the first path. None
+/// for nothing dropped.
 pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<Dropped> {
     let photos: Vec<PathBuf> = paths.iter().map(|path| photo(path)).collect();
     let mut refused = None;
@@ -127,23 +130,23 @@ pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<D
         match kind(photo) {
             Kind::Folder if !edit => return Some(Dropped::Folder(path.clone())),
             Kind::Raw => {
-                let folder = photo.parent();
-                // Each once: a raw dropped with its edit is one photo. A folder named like
-                // an edit stands for no photo.
-                let mut beside: Vec<PathBuf> = Vec::new();
+                // Each once: a raw dropped with its edit is one photo. A folder, named like
+                // a raw or an edit, and an edit whose photo is not there stand for none.
+                // A folder named like an edit is asked as itself, never as a raw beside it.
+                let mut others: Vec<PathBuf> = Vec::new();
                 let later = paths[i + 1..].iter().zip(&photos[i + 1..]);
                 for (given, other) in later {
-                    let same = other.parent() == folder && named_raw(other);
-                    if same
+                    let folder = other != given && kind(given) == Kind::Folder;
+                    if !folder
                         && other != photo
-                        && !beside.contains(other)
-                        && (other == given || kind(given) != Kind::Folder)
+                        && !others.contains(other)
+                        && kind(other) == Kind::Raw
                     {
-                        beside.push(other.clone());
+                        others.push(other.clone());
                     }
                 }
                 let first = photo.clone();
-                return Some(Dropped::Raws { first, beside });
+                return Some(Dropped::Raws { first, others });
             }
             Kind::Library if !edit => refused = refused.or(Some((path, Refusal::Library))),
             // Named as a raw, yet no raw there: the photo is gone, or was never beside it.
@@ -162,9 +165,9 @@ fn photo(path: &Path) -> PathBuf {
 }
 
 /// What Open…'s answer `paths` opens, told by their names alone, the dialog having shown
-/// only files: the first raw, or the first path refused as a drop of it would be, should
-/// a name typed into the dialog be a library's file or another that is no raw. None for
-/// no path.
+/// only files: the raws chosen, together, the first active, or the first path refused as
+/// a drop of it would be, should a name typed into the dialog be a library's file or
+/// another that is no raw. None for no path.
 pub fn chosen(paths: &[PathBuf]) -> Option<Dropped> {
     opens(paths, file_kind)
 }
@@ -180,8 +183,90 @@ fn file_kind(path: &Path) -> Kind {
     }
 }
 
+/// What the paths the app's command line gave open, as a drop of them would, each
+/// [`resolved`] first as `kind` finds it; where nothing opens, the reason is written to
+/// stderr too, for a terminal, the alert in the window saying it for a launcher, which
+/// has none (`docs/packaging.md`, Opening a raw from the system). Where something opens,
+/// each path left out that would open nothing on its own is written there with its reason,
+/// as a photo not there among photos that are; the window says nothing of them.
+fn given_opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<Dropped> {
+    let paths: Vec<PathBuf> = paths
+        .iter()
+        .map(|path| resolved(path, kind(path) == Kind::Folder))
+        .collect();
+    let dropped = opens(&paths, &mut kind);
+    let refused = match &dropped {
+        Some(Dropped::Refused { path, why }) => vec![(path.clone(), *why)],
+        Some(_) => left_out(&paths, &mut kind),
+        None => Vec::new(),
+    };
+    for (path, why) in refused {
+        let missing = std::fs::metadata(&path).err();
+        eprintln!("apertrust: {}", refused_line(&path, why, missing.as_ref()));
+    }
+    dropped
+}
+
+/// The paths of `paths` that would open nothing on their own, each with why, as `kind`
+/// finds them: what a drop of them all leaves out without a word.
+fn left_out(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Vec<(PathBuf, Refusal)> {
+    let alone = |path: &PathBuf, kind: &mut dyn FnMut(&Path) -> Kind| match opens(
+        std::slice::from_ref(path),
+        kind,
+    ) {
+        Some(Dropped::Refused { path, why }) => Some((path, why)),
+        _ => None,
+    };
+    paths
+        .iter()
+        .filter_map(|path| alone(path, &mut kind))
+        .collect()
+}
+
+/// Why `path`, the command line's, opens nothing, as stderr says it: what the disk said
+/// where it could not be asked about, `missing`, as for nothing there; else `why`.
+pub fn refused_line(path: &Path, why: Refusal, missing: Option<&std::io::Error>) -> String {
+    let given = path.display();
+    if let Some(error) = missing {
+        return format!("{given}: {error}");
+    }
+    match why {
+        Refusal::Library => format!("{given}: libraries and projects come in a later version"),
+        Refusal::NoPhoto => {
+            let photo = photo(path);
+            let photo = crate::file_name(&photo);
+            format!("{given}: its photo, {photo}, is not in the same folder")
+        }
+        Refusal::Unknown => format!("{given}: only folders and raw photos open"),
+    }
+}
+
+/// `path`, a `folder` or a photo the command line names, as the app keeps it: absolute,
+/// from the folder the app starts in, its `.` and `..` and links resolved, a photo's in its
+/// folder alone, so a photo that is a link keeps its own name, and its folder is where the
+/// link lies. On Windows only made absolute, since a resolved path there is a `\\?\` one
+/// the file manager and the dialogs show as it is. One that cannot be resolved is kept
+/// absolute.
+pub fn resolved(path: &Path, folder: bool) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    if cfg!(windows) {
+        return absolute;
+    }
+    let canonical = |path: &Path| std::fs::canonicalize(path).ok();
+    let resolved = if folder {
+        canonical(&absolute)
+    } else {
+        let (parent, name) = (absolute.parent(), absolute.file_name());
+        parent
+            .zip(name)
+            .and_then(|(parent, name)| Some(canonical(parent)?.join(name)))
+    };
+    resolved.unwrap_or(absolute)
+}
+
 /// A drop being looked at, on its thread, until the frame that takes what it opens; or the
-/// files the system asked the app to open, Open With's, which open as a drop of them would.
+/// files the system asked the app to open, Open With's, and the paths its command line
+/// gave, which open as a drop of them would.
 #[derive(Default)]
 pub struct Drops {
     looking: Option<Receiver<Option<Dropped>>>,
@@ -205,12 +290,27 @@ impl Drops {
     /// looked at, so a share that hangs never holds a frame; `ctx` is asked for a frame
     /// once they have been.
     pub fn look(&mut self, paths: Vec<PathBuf>, ctx: &egui::Context) {
+        self.spawn(paths, false, ctx);
+    }
+
+    /// Looks at the paths the app's command line gave, as [`Drops::look`] does, each
+    /// resolved first, a refusal's reason also on stderr ([`given_opens`]).
+    pub fn look_given(&mut self, paths: Vec<PathBuf>, ctx: &egui::Context) {
+        self.spawn(paths, true, ctx);
+    }
+
+    fn spawn(&mut self, paths: Vec<PathBuf>, given: bool, ctx: &egui::Context) {
         let (answer, looking) = mpsc::channel();
         let ctx = ctx.clone();
         let looked = std::thread::Builder::new()
             .name("drop".into())
             .spawn(move || {
-                let _ = answer.send(opens(&paths, kind));
+                let dropped = if given {
+                    given_opens(&paths, kind)
+                } else {
+                    opens(&paths, kind)
+                };
+                let _ = answer.send(dropped);
                 ctx.request_repaint();
             });
         match looked {
@@ -294,9 +394,9 @@ pub(crate) mod tests {
         names.iter().map(PathBuf::from).collect()
     }
 
-    fn raws(first: &str, beside: &[&str]) -> Dropped {
-        let (first, beside) = (PathBuf::from(first), paths(beside));
-        Dropped::Raws { first, beside }
+    fn raws(first: &str, others: &[&str]) -> Dropped {
+        let (first, others) = (PathBuf::from(first), paths(others));
+        Dropped::Raws { first, others }
     }
 
     /// The kinds the disk would answer, by name: a folder where the name has no dot.
@@ -312,13 +412,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_first_folder_or_the_raws_of_the_first_raw_s_folder_open() {
+    fn the_first_folder_or_every_raw_from_the_first_on_opens() {
         let opens = |names: &[&str]| opens(&paths(names), by_name);
         assert_eq!(
             opens(&["/a/Wedding", "/a/Portraits"]),
             Some(Dropped::Folder(PathBuf::from("/a/Wedding")))
         );
-        // Raws from two folders: the first's, with those beside it, in the order dropped.
+        // Raws from two folders: all of them, together, in the order dropped.
         assert_eq!(
             opens(&[
                 "/a/IMG_2.CR3",
@@ -326,7 +426,7 @@ pub(crate) mod tests {
                 "/a/IMG_1.cr3",
                 "/a/notes.txt"
             ]),
-            Some(raws("/a/IMG_2.CR3", &["/a/IMG_1.cr3"]))
+            Some(raws("/a/IMG_2.CR3", &["/b/DSC_1.NEF", "/a/IMG_1.cr3"]))
         );
         // A raw before a folder opens, and a folder before a raw.
         assert_eq!(
@@ -370,7 +470,8 @@ pub(crate) mod tests {
             opens(&["/a/IMG_1.CR3.apxmp"]),
             Some(raws("/a/IMG_1.CR3", &[]))
         );
-        // Edits and raws together: each edit its photo, which is not given twice.
+        // Edits and raws together, from two folders: each edit its photo, which is not
+        // given twice.
         assert_eq!(
             opens(&[
                 "/a/IMG_2.CR3.apxmp",
@@ -379,7 +480,10 @@ pub(crate) mod tests {
                 "/b/DSC_1.NEF.apxmp",
                 "/a/IMG_3.CR3.apxmp"
             ]),
-            Some(raws("/a/IMG_2.CR3", &["/a/IMG_1.CR3", "/a/IMG_3.CR3"]))
+            Some(raws(
+                "/a/IMG_2.CR3",
+                &["/a/IMG_1.CR3", "/b/DSC_1.NEF", "/a/IMG_3.CR3"]
+            ))
         );
         assert_eq!(
             opens(&["/a/IMG_1.CR3", "/a/IMG_2.CR3", "/a/IMG_2.CR3.apxmp"]),
@@ -420,10 +524,15 @@ pub(crate) mod tests {
             opens(&["/a/notes.txt", "/a/IMG_1.CR3.apxmp", "/a/IMG_1.CR3"]),
             refused("/a/IMG_1.CR3.apxmp", Refusal::NoPhoto)
         );
-        // Anything that opens still does; of the refusals that say more, the first.
+        // Anything that opens still does; of the refusals that say more, the first. After
+        // a raw, an edit whose photo is gone stands for nothing.
         assert_eq!(
             opens(&["/a/IMG_1.CR3.apxmp", "/a/IMG_2.CR3"]),
             Some(raws("/a/IMG_2.CR3", &[]))
+        );
+        assert_eq!(
+            opens(&["/a/IMG_2.CR3", "/a/IMG_1.CR3.apxmp", "/a/IMG_3.CR3"]),
+            Some(raws("/a/IMG_2.CR3", &["/a/IMG_3.CR3"]))
         );
         assert_eq!(
             opens(&["/a/Home.aplibrary", "/a/IMG_1.CR3.apxmp"]),
@@ -459,8 +568,8 @@ pub(crate) mod tests {
         let path = |bytes: &[u8]| PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
         let (raw, notes) = (path(b"/a/IMG_\xff.CR3"), path(b"/a/\xff.txt"));
         let first = raw.clone();
-        let beside = Vec::new();
-        assert_eq!(chosen(&[raw]), Some(Dropped::Raws { first, beside }));
+        let others = Vec::new();
+        assert_eq!(chosen(&[raw]), Some(Dropped::Raws { first, others }));
         let why = Refusal::Unknown;
         assert_eq!(
             chosen(std::slice::from_ref(&notes)),
@@ -497,10 +606,10 @@ pub(crate) mod tests {
             std::fs::write(edit, b"").expect("an edit");
         }
         let first = folder.0.join("IMG_1.CR3");
-        let beside = Vec::new();
+        let others = Vec::new();
         assert_eq!(
             opens(&edits[..1], kind),
-            Some(Dropped::Raws { first, beside })
+            Some(Dropped::Raws { first, others })
         );
         let (path, why) = (edits[1].clone(), Refusal::NoPhoto);
         assert_eq!(
@@ -512,13 +621,128 @@ pub(crate) mod tests {
         std::fs::create_dir(&album).expect("a folder");
         let dropped = opens(std::slice::from_ref(&album), kind);
         assert_eq!(dropped, Some(Dropped::Folder(album)));
-        // Nor is one dropped after a raw taken for a photo beside it.
+        // Nor is one dropped after a raw taken for a photo beside it, nor a folder named
+        // like a raw.
         let album = folder.0.join("Album.CR3.apxmp");
         std::fs::create_dir(&album).expect("a folder");
+        let named = folder.0.join("Trip.CR3");
+        std::fs::create_dir(&named).expect("a folder");
+        let first = folder.0.join("IMG_1.CR3");
+        let dropped = opens(&[first.clone(), album.clone(), named], kind);
+        let others = Vec::new();
+        assert_eq!(dropped, Some(Dropped::Raws { first, others }));
+        // Even with a raw named as its photo beside it, which was not dropped.
+        std::fs::write(folder.0.join("Album.CR3"), b"").expect("a raw");
         let first = folder.0.join("IMG_1.CR3");
         let dropped = opens(&[first.clone(), album], kind);
-        let beside = Vec::new();
-        assert_eq!(dropped, Some(Dropped::Raws { first, beside }));
+        let others = Vec::new();
+        assert_eq!(dropped, Some(Dropped::Raws { first, others }));
+    }
+
+    /// The command line's paths open as a drop of them would, each resolved first: made
+    /// absolute, `.` and `..` resolved, to the folder they lead to and a photo in it; on
+    /// Windows only made absolute, which resolves them too. A photo that is a link keeps
+    /// its name and the folder where it lies.
+    #[test]
+    fn the_command_line_s_paths_are_resolved_and_open_as_a_drop_s() {
+        let scratch = crate::settings::testing::Folder::new("given-paths");
+        let days = scratch.0.join("Days");
+        std::fs::create_dir(&days).expect("a folder");
+        let raw = scratch.0.join("IMG_1.CR3");
+        std::fs::write(&raw, b"").expect("a raw");
+        let folder = if cfg!(windows) {
+            scratch.0.clone()
+        } else {
+            std::fs::canonicalize(&scratch.0).expect("there")
+        };
+        for dots in [scratch.0.join("."), days.join("..")] {
+            let opened = given_opens(std::slice::from_ref(&dots), kind);
+            let given = Some(Dropped::Folder(folder.clone()));
+            assert_eq!(opened, given, "{}", dots.display());
+        }
+        let edit = days.join("..").join("IMG_1.CR3.apxmp");
+        std::fs::write(&edit, b"").expect("an edit");
+        for given in [days.join("..").join("IMG_1.CR3"), edit] {
+            let (first, others) = (folder.join("IMG_1.CR3"), Vec::new());
+            let opened = given_opens(&[given], kind);
+            assert_eq!(opened, Some(Dropped::Raws { first, others }));
+        }
+        #[cfg(unix)]
+        {
+            let link = days.join("Best.CR3");
+            std::os::unix::fs::symlink(&raw, &link).expect("a link");
+            let (first, others) = (folder.join("Days").join("Best.CR3"), Vec::new());
+            let opened = given_opens(&[link], kind);
+            assert_eq!(opened, Some(Dropped::Raws { first, others }));
+        }
+        // A relative path, from the folder the app starts in.
+        let relative = given_opens(&[PathBuf::from("nowhere.txt")], kind);
+        let path = std::path::absolute("nowhere.txt").expect("absolute");
+        let why = Refusal::Unknown;
+        assert_eq!(relative, Some(Dropped::Refused { path, why }));
+    }
+
+    /// Of the command line's paths, those a drop leaves out that would open nothing on
+    /// their own, which stderr names: a photo not there, an edit without its photo, a file
+    /// that is no raw; never a raw or a folder that is there.
+    #[test]
+    fn what_opens_nothing_among_what_opens_is_named() {
+        let gone = |path: &Path| {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+            if name == "IMG_1.CR3" || name == "IMG_9.CR3" {
+                Kind::Other
+            } else {
+                by_name(path)
+            }
+        };
+        let given = paths(&[
+            "/a/IMG_2.CR3",
+            "/a/IMG_1.CR3.apxmp",
+            "/b/IMG_9.CR3",
+            "/a/notes.txt",
+            "/a/Wedding",
+            "/b/IMG_3.CR3",
+        ]);
+        assert_eq!(
+            opens(&given, gone),
+            Some(raws("/a/IMG_2.CR3", &["/b/IMG_3.CR3"]))
+        );
+        let named = |path: &str, why| (PathBuf::from(path), why);
+        assert_eq!(
+            left_out(&given, gone),
+            [
+                named("/a/IMG_1.CR3.apxmp", Refusal::NoPhoto),
+                named("/b/IMG_9.CR3", Refusal::Unknown),
+                named("/a/notes.txt", Refusal::Unknown),
+            ]
+        );
+    }
+
+    /// What stderr says of a path the command line gave that opens nothing: what the disk
+    /// said where nothing is there, else the refusal's reason.
+    #[test]
+    fn a_refusal_s_reason_on_stderr_names_the_path() {
+        let edit = Path::new("/a/IMG_1.CR3.apxmp");
+        let named = |path: &Path, said: &str| format!("{}: {said}", path.display());
+        assert_eq!(
+            refused_line(edit, Refusal::NoPhoto, None),
+            named(edit, "its photo, IMG_1.CR3, is not in the same folder")
+        );
+        let home = Path::new("/a/Home.aplibrary");
+        assert_eq!(
+            refused_line(home, Refusal::Library, None),
+            named(home, "libraries and projects come in a later version")
+        );
+        assert_eq!(
+            refused_line(edit, Refusal::Unknown, None),
+            named(edit, "only folders and raw photos open")
+        );
+        let gone = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let said = refused_line(edit, Refusal::Unknown, Some(&gone));
+        assert_eq!(said, named(edit, &gone.to_string()));
     }
 
     /// A window in the default theme, the photo's surround over its left part and the
@@ -587,7 +811,7 @@ pub(crate) mod tests {
             drops.looked(),
             Some(Dropped::Raws {
                 first,
-                beside: Vec::new()
+                others: Vec::new()
             })
         );
         assert_eq!(drops.looked(), None);

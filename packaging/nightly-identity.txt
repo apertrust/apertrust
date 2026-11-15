@@ -26,7 +26,7 @@ name = "Apertrust.Edit" => name = "Apertrust.Nightly.Edit"
 
 # linux/org.apertrust.Apertrust.desktop; its icon stays Apertrust's.
 Name=Apertrust => Name=Apertrust Nightly
-Exec=apertrust --in-folder %F => Exec=apertrust-nightly --in-folder %F
+Exec=apertrust %F => Exec=apertrust-nightly %F
 StartupWMClass=apertrust => StartupWMClass=apertrust-nightly
 
 # linux/org.apertrust.Apertrust.metainfo.xml

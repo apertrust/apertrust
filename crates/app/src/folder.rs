@@ -22,10 +22,10 @@
 //!   keeps the number of its latest open or close ([`FolderState::opening`],
 //!   [`FolderState::choosing`], [`FolderState::closing`]); an event naming another is an
 //!   earlier command's and dropped.
-//! - **The root and the active folder:** a way in (Open Folder…, Open…, a drop, a recent,
-//!   Open This Folder, the command line) opens a folder that becomes Browse's root, at the
-//!   top of its tree, and only it enters the recents ([`Outcome::Opened`]). A folder chosen
-//!   in the tree is opened too, the library listing its photos, but the root, the
+//! - **The root and the active folder:** a way in (Open Folder…, a dropped folder, a
+//!   recent, Open This Folder, the command line) opens a folder that becomes Browse's root,
+//!   at the top of its tree, and only it enters the recents ([`Outcome::Opened`]). A folder
+//!   chosen in the tree is opened too, the library listing its photos, but the root, the
 //!   subfolders listed and the recents stay as they were (`docs/gui.md`, Browse).
 //! - **The photos** accumulate from the `Listed` chunks, in the listing's order, until one says
 //!   `done`.
@@ -39,8 +39,8 @@
 //!   listing, so they go with the folder; each change raises [`FolderState::generation`],
 //!   which the textures made of them compare (`thumbnails.rs`, `docs/gui.md`, Derived
 //!   caches).
-//! - **A photo alone,** from a terminal, is [`Folder::Alone`]: no folder is asked for, and
-//!   the grid panel holds that one photo ([`FolderState::alone`]).
+//! - **Photos alone,** one or several opened together by any route, are [`Folder::Alone`]:
+//!   no folder is asked for, and the grid panel holds just them ([`FolderState::alone`]).
 //! - **The order** the grid panel shows the photos in is the grid bar's sort
 //!   ([`FolderState::sort`], [`sorted`]), worked out again when the sort changes, a chunk
 //!   comes or the capture times do (`Taken`, once the listing is done); until they come,
@@ -72,14 +72,18 @@ pub enum Folder {
         path: PathBuf,
         reason: Option<String>,
     },
-    /// One photo alone, from a terminal (`docs/library.md`, One photo): no folder listed,
-    /// the grid panel holding the photo by itself.
+    /// One photo, opened by any route (`docs/library.md`, One photo), or several opened
+    /// together, from any folders: no folder listed, the grid panel holding just them.
     Alone {
-        /// The photo's path, absolute.
-        path: PathBuf,
-        /// Its one cell: its name, and its edit state as the session reports it. Nothing
-        /// else is read of it, so its size is 0 and its modified time none.
-        photo: Photo,
+        /// The photos' paths, absolute, in the order opened, each once.
+        paths: Vec<PathBuf>,
+        /// Their cells, in the same order: each one's name, and its edit state as the
+        /// session reports it. Nothing else is read of them, so their size is 0 and their
+        /// modified time none.
+        photos: Vec<Photo>,
+        /// The active one among them, whose folder Open This Folder opens: the first, then
+        /// the latest of them opened ([`FolderState::locate`]).
+        active: usize,
     },
 }
 
@@ -133,15 +137,6 @@ pub enum Outcome {
     Opened(PathBuf),
     /// The folder at this path could not be opened, for this reason.
     Failed { path: PathBuf, reason: String },
-}
-
-/// What File › Open… does to the folder ([`FolderState::to_show`]).
-#[derive(Debug, PartialEq)]
-pub enum Show {
-    /// This folder, the root or one inside it, chosen in its tree, which stays.
-    Choose(PathBuf),
-    /// This folder, opened as a way in: the tree's root from now on.
-    Open(PathBuf),
 }
 
 /// The folder, and what is needed to tell its events from an earlier open's.
@@ -238,23 +233,49 @@ impl FolderState {
         self.reorder();
     }
 
-    /// The photo at `path`, absolute, is opened alone, at the start, before any folder is
-    /// asked for (`docs/library.md`, One photo): nothing is listed, and the grid panel
-    /// holds it by itself until a folder opens.
-    pub fn alone(&mut self, path: PathBuf) {
-        let name = path
-            .file_name()
-            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        let photo = Photo {
-            name,
+    /// The photos at `paths`, absolute, are opened alone, together, the first active
+    /// (`docs/library.md`, One photo), with no folder open or after the folder open was
+    /// closed ([`FolderState::closing`]): nothing is listed, and the grid panel holds just
+    /// them, each once, in the order given, until a folder opens.
+    pub fn alone(&mut self, paths: Vec<PathBuf>) {
+        let mut unique: Vec<PathBuf> = Vec::with_capacity(paths.len());
+        for path in paths {
+            if !unique.contains(&path) {
+                unique.push(path);
+            }
+        }
+        let cell = |path: &PathBuf| Photo {
+            name: path
+                .file_name()
+                .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
             size: 0,
             modified: None,
             edit: library::EditState::None,
         };
+        let photos = unique.iter().map(cell).collect();
         self.job = None;
-        self.folder = Folder::Alone { path, photo };
+        self.active = None;
+        self.folder = Folder::Alone {
+            paths: unique,
+            photos,
+            active: 0,
+        };
         self.generation += 1;
         self.reorder();
+    }
+
+    /// The active one of the photos alone, and its folder, which Open This Folder opens;
+    /// none in any other mode.
+    pub fn alone_active(&self) -> Option<(&Path, &Path)> {
+        alone_active(&self.folder)
+    }
+
+    /// The paths of the photos alone, in the order opened; none in any other mode.
+    pub fn alone_paths(&self) -> &[PathBuf] {
+        match &self.folder {
+            Folder::Alone { paths, .. } => paths,
+            _ => &[],
+        }
     }
 
     /// The folder is closed by the command numbered `number`: nothing is open at once, and
@@ -317,7 +338,7 @@ impl FolderState {
     pub fn photos(&self) -> &[Photo] {
         match &self.folder {
             Folder::Open(listing) => &listing.photos,
-            Folder::Alone { photo, .. } => std::slice::from_ref(photo),
+            Folder::Alone { photos, .. } => photos,
             _ => &[],
         }
     }
@@ -348,7 +369,10 @@ impl FolderState {
     pub fn edited(&mut self, path: &Path, edited: bool) {
         let photo = match &mut self.folder {
             Folder::Open(listing) => listing.position(path).map(|i| &mut listing.photos[i]),
-            Folder::Alone { path: alone, photo } => same(alone, path).then_some(photo),
+            Folder::Alone { paths, photos, .. } => {
+                let at = paths.iter().position(|alone| same(alone, path));
+                at.map(|i| &mut photos[i])
+            }
             _ => None,
         };
         let Some(photo) = photo else {
@@ -377,7 +401,7 @@ impl FolderState {
         });
         self.order = match &self.folder {
             Folder::Open(listing) => sorted(&listing.photos, listing.taken.as_deref(), sort),
-            Folder::Alone { .. } => vec![0],
+            Folder::Alone { photos, .. } => (0..photos.len()).collect(),
             _ => Vec::new(),
         };
         self.place = vec![0; self.order.len()];
@@ -387,11 +411,16 @@ impl FolderState {
     }
 
     /// Finds `photo`, the photo open, in the listing again, for [`FolderState::active`]: to
-    /// be called when the photo or the listing changes, which is when its place can.
+    /// be called when the photo or the listing changes, which is when its place can. One of
+    /// the photos alone becomes their active one, which stays while none of them is open.
     pub fn locate(&mut self, photo: Option<&Path>) {
-        self.active = match (&self.folder, photo) {
+        self.active = match (&mut self.folder, photo) {
             (Folder::Open(listing), Some(photo)) => listing.position(photo),
-            (Folder::Alone { path, .. }, Some(photo)) => same(path, photo).then_some(0),
+            (Folder::Alone { paths, active, .. }, Some(photo)) => {
+                let at = paths.iter().position(|alone| same(alone, photo));
+                *active = at.unwrap_or(*active);
+                at
+            }
             _ => None,
         };
     }
@@ -450,22 +479,6 @@ impl FolderState {
             Folder::Opening { path } => Some(path),
             Folder::None | Folder::Failed { .. } | Folder::Alone { .. } => None,
         }
-    }
-
-    /// What File › Open… of the photo at `photo` does to the folder (`docs/gui.md`, File):
-    /// where the photo's folder is the root or inside its tree, the root and the tree stay
-    /// and that folder is chosen in it, unless it is active already; elsewhere, or with no
-    /// root, it is opened as a way in, the tree's root and a recent from then on. Paths
-    /// compare as absolute, since a raw named on the command line may be relative.
-    pub fn to_show(&self, photo: &Path) -> Option<Show> {
-        let folder = std::path::absolute(photo.parent()?).ok()?;
-        let absolute = |path: Option<&Path>| path.and_then(|path| std::path::absolute(path).ok());
-        let inside = absolute(self.root()).is_some_and(|root| library::inside(&root, &folder));
-        if !inside {
-            return Some(Show::Open(folder));
-        }
-        let active = absolute(self.shown()).as_ref() == Some(&folder);
-        (!active).then_some(Show::Choose(folder))
     }
 
     /// Takes in `event`, if it is the folder's: a `Library` event of the latest command, or
@@ -578,9 +591,12 @@ impl FolderState {
                     reason: reason.clone(),
                 })
             }
+            // Photos opened alone once the folder was closed stay.
             LibraryEvent::Closed { .. } => {
-                self.folder = Folder::None;
-                self.reorder();
+                if !matches!(self.folder, Folder::Alone { .. }) {
+                    self.folder = Folder::None;
+                    self.reorder();
+                }
                 None
             }
             LibraryEvent::Thumbnail {
@@ -655,6 +671,15 @@ impl FolderState {
             _ => {}
         }
     }
+}
+
+/// The active one of `folder`'s photos alone, and its folder; none in any other mode.
+pub fn alone_active(folder: &Folder) -> Option<(&Path, &Path)> {
+    let Folder::Alone { paths, active, .. } = folder else {
+        return None;
+    };
+    let photo = paths.get(*active)?;
+    Some((photo, photo.parent()?))
 }
 
 /// Whether `alone`, an absolute path, is the photo at `photo`, which may be relative.
@@ -1249,58 +1274,50 @@ mod tests {
         assert_eq!(state.active(), None);
     }
 
+    /// Photos opened together alone: each once, in the order opened, the grid panel holding
+    /// just them, the first active, then whichever of them opens; their edit marks follow
+    /// the session's values, and the close of the folder left, sent before them, leaves
+    /// them.
     #[test]
-    fn a_photo_opened_is_a_way_in_to_its_folder_unless_that_is_in_the_root_s_tree() {
-        // The folders compare as absolute, so on Windows they take the current drive.
+    fn photos_opened_alone_are_held_together_the_first_active() {
+        // Compared as absolute, so on Windows they take the current drive.
         let absolute = |path: &str| std::path::absolute(path).unwrap();
+        let (x, y, z) = (
+            absolute("/photos/a/x.ARW"),
+            absolute("/photos/b/y.ARW"),
+            absolute("/photos/a/z.ARW"),
+        );
         let mut state = FolderState::default();
-        let photo = Path::new("/photos/a/x.ARW");
-        assert_eq!(
-            state.to_show(photo),
-            Some(Show::Open(absolute("/photos/a")))
-        );
-        // The root, active, being opened or open: nothing.
-        let root = absolute("/photos/a");
-        state.opening(root.clone(), 1);
-        assert_eq!(state.to_show(photo), None);
-        state.apply(&Event::Library(LibraryEvent::Opened {
-            open: 1,
-            name: "a".to_owned(),
-            folder: root.clone(),
-        }));
-        assert_eq!(state.to_show(photo), None);
-        // Another folder of its tree active: the root chosen, which stays.
-        state.choosing(root.join("Edits"), 2);
-        assert_eq!(state.to_show(photo), Some(Show::Choose(root.clone())));
-        // The photo's folder inside the root's tree: chosen there, the root staying, and
-        // nothing where it is active already.
-        let inside = Path::new("/photos/a/Edits/y.ARW");
-        assert_eq!(state.to_show(inside), None);
-        let deeper = Path::new("/photos/a/Selects/Day 1/z.ARW");
-        assert_eq!(
-            state.to_show(deeper),
-            Some(Show::Choose(absolute("/photos/a/Selects/Day 1")))
-        );
-        // Outside it: opened as the root, a way in; a `..` that leads out of it too.
-        assert_eq!(
-            state.to_show(Path::new("/photos/ab/y.ARW")),
-            Some(Show::Open(absolute("/photos/ab")))
-        );
-        assert_eq!(
-            state.to_show(Path::new("/photos/a/Edits/../../b/y.ARW")),
-            Some(Show::Open(absolute("/photos/a/Edits/../../b")))
-        );
-        assert_eq!(
-            state.to_show(Path::new("/photos/b/y.ARW")),
-            Some(Show::Open(absolute("/photos/b")))
-        );
-        // A way in that failed leaves no root: the photo's own folder is opened.
-        state.opening(PathBuf::from("/photos/gone"), 3);
-        state.apply(&failed(3));
-        assert_eq!(
-            state.to_show(photo),
-            Some(Show::Open(absolute("/photos/a")))
-        );
+        state.opening(absolute("/photos/a"), 1);
+        state.apply(&opened(1, "/photos/a"));
+        state.closing(2);
+        state.alone(vec![x.clone(), y.clone(), x.clone(), z.clone()]);
+        assert_eq!(state.alone_paths(), [x.clone(), y.clone(), z.clone()]);
+        let names: Vec<&str> = state.photos().iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["x.ARW", "y.ARW", "z.ARW"]);
+        assert_eq!(state.order(), [0, 1, 2]);
+        assert_eq!((state.root(), state.shown()), (None, None));
+        let folder = |path: &Path| path.parent().unwrap().to_owned();
+        let active = |state: &FolderState| {
+            let (photo, folder) = state.alone_active()?;
+            Some((photo.to_owned(), folder.to_owned()))
+        };
+        assert_eq!(active(&state), Some((x.clone(), folder(&x))));
+        state.apply(&Event::Library(LibraryEvent::Closed { open: 2 }));
+        assert!(matches!(state.folder, Folder::Alone { .. }));
+        // The first opens, then another of them, which Open This Folder then follows.
+        state.locate(Some(&x));
+        assert_eq!(state.active_shown(), Some(0));
+        state.locate(Some(&y));
+        assert_eq!(state.active_shown(), Some(1));
+        assert_eq!(active(&state), Some((y.clone(), folder(&y))));
+        // None of them open: no active cell, Open This Folder still the last one's.
+        state.locate(None);
+        assert_eq!(state.active_shown(), None);
+        assert_eq!(active(&state), Some((y.clone(), folder(&y))));
+        state.edited(&z, true);
+        assert_eq!(state.photos()[2].edit, EditState::Edited);
+        assert_eq!(state.photos()[0].edit, EditState::None);
     }
 
     #[test]

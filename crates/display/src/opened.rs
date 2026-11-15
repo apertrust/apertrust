@@ -32,8 +32,8 @@
 //! for [`take_reopened`] and wakes the app ([`on_reopen`]), then lets AppKit do what it
 //! does by default, bringing a minimised window back.
 //!
-//! Windows and Linux pass the files as arguments (`--in-folder`), which the app reads
-//! itself; there nothing arrives here, and no app runs without a window.
+//! Windows and Linux pass the files as arguments, alone, which the app reads itself; there
+//! nothing arrives here, and no app runs without a window.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
